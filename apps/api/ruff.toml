@@ -1,0 +1,25 @@
+# Ruff configuration scoped to the Python backend.
+
+# Only lint the backend source tree.
+src = ["apps/api"]
+
+# Ignore Alembic migrations
+exclude = [
+  "alembic",
+]
+
+[lint]
+
+# Enforced cleanup CI tranche:
+# - E402: module level import not at top of file
+# - F401: imported but unused
+# - F821: undefined name
+# - B: bugbear correctness checks, with FastAPI dependency and exception-chain
+#   backlog staged separately below.
+
+select = ["E402", "F401", "F821", "B"]
+ignore = []
+
+[lint.per-file-ignores]
+# Allow non-top-level imports in the main entrypoint only.
+"app.py" = ["E402"]
