@@ -1,0 +1,133 @@
+# .gitignore
+
+########################################
+# OS & Editor
+########################################
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+########################################
+# Node / TypeScript / Frontend
+########################################
+node_modules/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.vercel/
+.turbo/
+.cache/
+.parcel-cache/
+playwright-report/
+test-results/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+.pnpm-store
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Yarn 2+ (Berry)
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+
+########################################
+# Python / Backend
+########################################
+__pycache__/
+*.py[cod]
+*$py.class
+.archive
+
+# Virtual environments
+.venv/
+venv/
+.conda/
+.azure-codex
+.uv-cache/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Type checking / tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.nox/
+.tox/
+
+# Coverage / reports (both py and js)
+coverage/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.nyc_output/
+lcov.info
+
+# Jupyter
+.ipynb_checkpoints
+
+########################################
+# Environment & Secrets
+########################################
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Service account keys and secrets
+secrets/
+*.json.key
+*-key.json
+
+# Local development environment overrides
+local-env/
+api_image.out
+sql.out
+
+########################################
+# Deployment
+########################################
+deploy/outputs/
+.local/
+
+########################################
+# Misc logs
+########################################
+logs/
+*.log
+log/
+
+########################################
+# AI Tool Config
+########################################
+.claude/
+
+########################################
+# Documentation
+########################################
+docs/roadmap/*
+!docs/roadmap/AI SDK v7/
+!docs/roadmap/AI SDK v7/**
+!docs/roadmap/TODO - PACKAGE FIRST MONOREPO/
+!docs/roadmap/TODO - PACKAGE FIRST MONOREPO/**
+docs/proposals/
+docs/marketing/

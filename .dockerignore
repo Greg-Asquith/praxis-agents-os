@@ -1,0 +1,15 @@
+.git
+.local
+secrets
+
+**/.DS_Store
+**/._*
+**/node_modules
+**/.next
+**/dist
+**/test-results
+**/tsconfig.tsbuildinfo
+
+apps/api/.venv
+apps/api/.pytest_cache
+apps/api/.ruff_cache
