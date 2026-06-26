@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100" role="img" aria-label="Praxis Agents">
+  <circle cx="50" cy="50" r="50" fill="#F7F4EC"/>
+  <g fill="none" stroke="#92400E" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" transform="translate(30.875 25.25) scale(2.25) rotate(270 11 11)">
+    <path d="M 1 1 L 21 1 L 21 8 A 8 8 0 0 1 13 16 A 5 5 0 0 1 8 11 A 3 3 0 0 1 11 8 A 2 2 0 0 1 13 10 A 1 1 0 0 1 12 11"/>
+  </g>
+
+</svg>
