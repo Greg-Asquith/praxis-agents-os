@@ -1,0 +1,85 @@
+# docker-compose.yml
+
+volumes:
+  praxis-agents-template-postgres-data:
+    driver: local
+  praxis-agents-template-web-app-pnpm-node-modules:
+    driver: local
+  praxis-agents-template-web-next:
+    driver: local
+
+networks:
+  praxis-agents-template-network:
+    driver: bridge
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - praxis-agents-template-postgres-data:/var/lib/postgresql/data
+      - ./deployment/local/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - praxis-agents-template-network
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: dev
+    container_name: api
+    ports:
+      - "127.0.0.1:8000:8080"
+    volumes:
+      - ./apps/api:/app
+      - ./.local/storage:/app/.local/storage
+    env_file:
+      - ./.local/generated/local.api.env
+      - ./.local/targets/local.secrets.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
+    networks:
+      - praxis-agents-template-network
+    depends_on:
+      postgres:
+        condition: service_started
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: dev
+      #args:
+        #NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
+        #NEXT_PUBLIC_URL: http://localhost:3000
+    container_name: web
+    ports:
+      - "127.0.0.1:3000:8080"
+    volumes:
+      - ./apps/web:/apps/web
+      - ./packages:/packages
+      - praxis-agents-template-web-app-pnpm-node-modules:/apps/web/node_modules
+      - praxis-agents-template-web-next:/apps/web/.next
+    env_file: ./.local/generated/local.web.env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
+      NEXT_PUBLIC_URL: http://localhost:3000
+      API_BASE_URL: http://api:8080/api
+    networks:
+      - praxis-agents-template-network
+    depends_on:
+      api:
+        condition: service_started
