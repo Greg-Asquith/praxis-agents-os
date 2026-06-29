@@ -25,6 +25,9 @@ class AuditAction(StrEnum):
 class AuditResourceType(StrEnum):
     """The kind of resource an event concerns."""
 
+    USER = "user"
+    USER_AUTH = "user_auth"
+    SESSION = "session"
     WORKSPACE = "workspace"
     WORKSPACE_MEMBERSHIP = "workspace_membership"
     INVITATION = "invitation"

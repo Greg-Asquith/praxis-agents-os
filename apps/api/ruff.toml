@@ -47,6 +47,8 @@ combine-as-imports = true
 "main.py" = ["E402", "S104"]
 # SQLAlchemy declared_attr receives the mapped class; cls is intentional.
 "models/base.py" = ["N805"]
+# Pytest tests should use normal assert statements.
+"tests/**/*.py" = ["S101"]
 
 [format]
 quote-style = "double"

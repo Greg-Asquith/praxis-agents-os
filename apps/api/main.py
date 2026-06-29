@@ -27,6 +27,7 @@ from middleware import (
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
 )
+from routes import api_router
 from services.notifications.registration import register_notification_action_handlers
 
 # Initialize logging as early as possible so all subsequent loggers/middleware use it
@@ -103,6 +104,9 @@ app.add_middleware(
 
 # Register custom exception handlers including overrides for FastAPI and Starlette built-in HTTPException
 register_exception_handlers(app)
+
+# Register API routes.
+app.include_router(api_router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG, log_level="info")

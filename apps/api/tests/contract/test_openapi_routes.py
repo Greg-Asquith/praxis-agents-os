@@ -1,0 +1,35 @@
+# apps/api/tests/contract/test_openapi_routes.py
+"""Auth and user route contract tests."""
+
+
+def test_auth_and_user_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = set(openapi_schema["paths"])
+
+    assert {
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/me",
+        "/api/v1/auth/oauth/providers",
+        "/api/v1/auth/oauth/{provider_name}/authorization-url",
+        "/api/v1/auth/oauth/{provider_name}/callback",
+        "/api/v1/auth/sessions",
+        "/api/v1/auth/totp/verify",
+        "/api/v1/users/",
+        "/api/v1/users/{user_id}",
+        "/api/v1/users/{user_id}/password",
+    } <= paths
+
+
+def test_oauth_routes_are_api_posts_not_browser_redirect_gets(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = openapi_schema["paths"]
+
+    start_route = paths["/api/v1/auth/oauth/{provider_name}/authorization-url"]
+    callback_route = paths["/api/v1/auth/oauth/{provider_name}/callback"]
+
+    assert {"post"} == set(start_route)
+    assert {"post"} == set(callback_route)

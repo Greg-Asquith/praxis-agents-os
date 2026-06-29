@@ -12,14 +12,11 @@ Provides:
 - Key rotation support
 """
 
-import base64
 import hashlib
 import hmac
-import json
 import logging
 import secrets
 import time
-from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 from pwdlib import PasswordHash

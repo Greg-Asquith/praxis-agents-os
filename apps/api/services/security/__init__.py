@@ -7,7 +7,10 @@ write never rolls back the request being protected.
 """
 
 from services.security.enums import SecurityEventType
-from services.security.events import safe_record_security_event
+from services.security.events import (
+    safe_record_security_event,
+    safe_record_security_event_committed,
+)
 from services.security.queries import (
     count_security_events,
     get_security_event,
@@ -20,4 +23,5 @@ __all__ = [
     "get_security_event",
     "list_security_events",
     "safe_record_security_event",
+    "safe_record_security_event_committed",
 ]

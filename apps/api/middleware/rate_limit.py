@@ -6,12 +6,11 @@ import logging
 from collections.abc import Callable
 
 from fastapi import Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.database import get_async_db_session_factory
 from core.rate_limiting import get_client_ip, rate_limiter
-from core.settings import settings
 from services.security import SecurityEventType, safe_record_security_event
 
 logger = logging.getLogger(__name__)
@@ -132,25 +131,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
     def _rate_limited_response(self, endpoint: str, limit_type: str, result) -> Response:
-        # Special handling for OAuth starts to redirect to login with message.
-        # Do not apply redirect for providers listing; return standard 429 instead.
-        if "/auth/oauth" in endpoint and not endpoint.startswith("/api/v1/auth/oauth/providers"):
-            login_url = (
-                f"{settings.FRONTEND_URL}/login?error=Too%20many%20attempts.%20Try%20again%20later"
-            )
-            response = RedirectResponse(url=login_url, status_code=303)
-        else:
-            body = {
-                "detail": f"Rate limit exceeded. Try again in {result.retry_after} seconds.",
-                "rate_limit": {
-                    "limit": result.limit,
-                    "remaining": max(0, result.limit - result.attempts),
-                    "reset": int(result.reset_time.timestamp()),
-                    "retry_after": result.retry_after,
-                    "type": limit_type,
-                },
-            }
-            response = JSONResponse(status_code=429, content=body)
+        body = {
+            "detail": f"Rate limit exceeded. Try again in {result.retry_after} seconds.",
+            "rate_limit": {
+                "limit": result.limit,
+                "remaining": max(0, result.limit - result.attempts),
+                "reset": int(result.reset_time.timestamp()),
+                "retry_after": result.retry_after,
+                "type": limit_type,
+            },
+        }
+        response = JSONResponse(status_code=429, content=body)
 
         self._attach_rate_limit_headers(response, result)
         if result.retry_after is not None:

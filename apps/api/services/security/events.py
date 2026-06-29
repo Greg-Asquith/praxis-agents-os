@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import get_async_db_session_factory
 from models.security import SecurityEvent
 from services.security.enums import SecurityEventType
 from utils.json_safe import json_safe_details
@@ -61,3 +62,19 @@ async def safe_record_security_event(db: AsyncSession, **kwargs: Any) -> None:
             await _record_security_event(db, **kwargs)
     except Exception:
         logger.error("Failed to record security event; request preserved", exc_info=True)
+
+
+async def safe_record_security_event_committed(**kwargs: Any) -> None:
+    """Record a security event in an independent committed transaction.
+
+    Use this for auth/security failures that intentionally return a 4xx response:
+    request-scoped database work is rolled back for those responses, but the
+    security record still needs to survive.
+    """
+    try:
+        session_factory = get_async_db_session_factory()
+        async with session_factory() as db:
+            await safe_record_security_event(db, **kwargs)
+            await db.commit()
+    except Exception:
+        logger.error("Failed to record committed security event", exc_info=True)

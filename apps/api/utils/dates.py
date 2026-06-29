@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from core.exceptions.general import AppValidationError
 
+
 def normalize_utc_datetime(value: datetime | None, *, field: str) -> datetime | None:
     """Normalize an aware datetime to UTC and reject naive values."""
 

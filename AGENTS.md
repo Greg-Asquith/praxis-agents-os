@@ -48,6 +48,17 @@ Alembic, Pydantic settings, and `uv`.
   startup to mutate database schema.
 - Keep settings in `core/settings`; validate unsafe production combinations there.
 - Keep route modules thin. Put reusable domain logic in `services`.
+- Each API route operation must live in its own route file. Route package
+  `__init__.py` files may only compose routers from those operation modules.
+- Each service operation must live in its own service file. Service package
+  `__init__.py` files may only re-export operation functions.
+- Service-specific helpers belong in `utils.py` inside that service directory.
+  Helpers that are not service-specific and could be reused belong in the
+  top-level `apps/api/utils/` package.
+- Keep API tests organized by intent under `apps/api/tests`: contract, routes,
+  services, integration, middleware, factories, and support. Do not add random
+  root-level `test_*.py` files. Test key behavior and high-risk flows rather
+  than creating one test file per route or service operation by default.
 - Preserve auditability for sensitive operations. Workspace, security, approval,
   notification, and schedule flows should leave enough context to debug later.
 - Keep error handling structured through the existing exception layer.
@@ -65,8 +76,7 @@ uv run alembic upgrade heads
 uv run uvicorn main:app --reload --port 8000
 ```
 
-No API test suite is committed yet. Add focused tests when adding behavior, then
-run them with `uv run pytest`.
+Add focused API tests when adding behavior, then run them with `uv run pytest`.
 
 Create migrations from `apps/api`:
 
