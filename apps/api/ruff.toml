@@ -1,7 +1,9 @@
 # Ruff configuration scoped to the Python backend.
 
 # Only lint the backend source tree.
-src = ["apps/api"]
+src = ["."]
+target-version = "py312"
+line-length = 100
 
 # Ignore Alembic migrations
 exclude = [
@@ -9,17 +11,44 @@ exclude = [
 ]
 
 [lint]
+select = [
+  "E",
+  "F",
+  "W",
+  "I",
+  "UP",
+  "B",
+  "C4",
+  "SIM",
+  "RET",
+  "PIE",
+  "PERF",
+  "RUF",
+  "ASYNC",
+  "FAST",
+  "DTZ",
+  "T20",
+  "S",
+  "N",
+  "TRY004",
+  "TRY400",
+]
+ignore = [
+  "E501",
+  "S105",
+]
 
-# Enforced cleanup CI tranche:
-# - E402: module level import not at top of file
-# - F401: imported but unused
-# - F821: undefined name
-# - B: bugbear correctness checks, with FastAPI dependency and exception-chain
-#   backlog staged separately below.
-
-select = ["E402", "F401", "F821", "B"]
-ignore = []
+[lint.isort]
+known-first-party = ["core", "middleware", "models", "services", "utils"]
+combine-as-imports = true
 
 [lint.per-file-ignores]
-# Allow non-top-level imports in the main entrypoint only.
-"app.py" = ["E402"]
+# Allow non-top-level imports and hardcoded 0.0.0.0 bind in the main entrypoint only.
+"main.py" = ["E402", "S104"]
+# SQLAlchemy declared_attr receives the mapped class; cls is intentional.
+"models/base.py" = ["N805"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

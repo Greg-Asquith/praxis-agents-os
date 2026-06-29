@@ -1,7 +1,7 @@
 # apps/api/Dockerfile
 
 # --- Builder: install locked uv deps with build tools, then discard tools ---
-FROM python:3.12-slim AS builder
+FROM python:3.12.10-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,13 +22,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python deps first to maximize layer cache.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-default-groups \
-    --group document-processing \
-    --group observability \
-    --group providers
+RUN uv sync --locked --no-dev
 
 # --- Runtime: minimal image + non-root user ---
-FROM python:3.12-slim AS runtime
+FROM python:3.12.10-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -53,10 +50,15 @@ FROM runtime AS dev
 
 ENV WATCHFILES_FORCE_POLLING=true
 
-CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080} --reload --reload-dir /app"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --reload --reload-dir /app"]
 
 # --- Production ---
 FROM runtime AS production
 
+# TCP-level liveness probe using only stdlib; upgrade to an HTTP /healthz
+# check once a health endpoint exists (curl is not present in slim images).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c "import socket, os; s=socket.create_connection(('localhost', int(os.getenv('PORT','8080'))), timeout=5); s.close()"
+
 # Respect Cloud Run's PORT and bind to all interfaces.
-CMD ["sh", "-c", "fastapi run --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

@@ -25,7 +25,6 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - praxis-agents-template-postgres-data:/var/lib/postgresql/data
-      - ./deployment/local/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 30s

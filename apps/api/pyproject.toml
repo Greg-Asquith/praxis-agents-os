@@ -1,12 +1,31 @@
 [project]
 name = "api"
 version = "0.1.0"
-description = "Add your description here"
+description = "Praxis Agents OS backend API"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.18.5",
+    "asyncpg>=0.31.0",
+    "croniter>=6.2.2",
+    "cryptography>=49.0.0",
+    "fastapi>=0.138.1",
+    "greenlet>=3.3.0",
+    "httpx2>=2.5.0",
+    "prometheus-client>=0.25.0",
+    "pwdlib[argon2]>=0.3.0",
+    "pydantic-settings>=2.14.2",
+    "pyjwt>=2.13.0",
+    "pyotp>=2.10.0",
+    "sqlalchemy>=2.0.51",
+    "tzdata>=2026.2",
+    "uvicorn>=0.49.0",
+]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "ruff>=0.15.19",
 ]
