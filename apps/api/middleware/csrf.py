@@ -43,9 +43,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, exempt_paths: list | None = None):
         super().__init__(app)
         self.exempt_paths = exempt_paths or [
-            # Local filesystem direct-upload URLs are HMAC-signed storage
-            # capabilities. They mirror cloud signed uploads, which bypass
-            # app cookies and CSRF middleware entirely.
+            # Pre-auth session creation endpoints must tolerate stale local auth cookies. They are JSON/CORS-gated and issue a new session.
+            "/api/v1/auth/register",
+            "/api/v1/auth/login",
+            "/api/v1/auth/oauth",
+            # Local filesystem direct-upload URLs are HMAC-signed storage capabilities. They mirror cloud signed uploads, which bypass app cookies and CSRF middleware entirely.
             "/api/v1/storage/local/upload",
             # Health/metrics are GET-only; keep list accurate for clarity
             "/api/health",
