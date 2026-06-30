@@ -2,19 +2,17 @@
 
 """Create and stream one interactive conversation turn."""
 
-import asyncio
-from collections.abc import AsyncIterator
 from uuid import UUID
 
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
-from core.settings import settings
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import create_agent_run, reap_abandoned_runs
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
+from services.agents.runtime import streaming as runtime_streaming
 from services.agents.runtime.events import (
     EVENT_RUN_STATUS,
     STREAM_PROTOCOL_VERSION,
@@ -30,7 +28,8 @@ from services.conversations.utils import (
     get_message_by_client_message_id,
 )
 
-SSE_KEEPALIVE_FRAME = ": keepalive\n\n"
+SSE_KEEPALIVE_FRAME = runtime_streaming.SSE_KEEPALIVE_FRAME
+_drain_sse_sink = runtime_streaming.drain_sse_sink
 
 
 async def create_conversation_turn_stream(
@@ -122,31 +121,3 @@ async def create_conversation_turn_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-async def _drain_sse_sink(sink: StreamSink) -> AsyncIterator[str]:
-    pending_frame: asyncio.Task[str | None] | None = None
-    try:
-        while True:
-            if pending_frame is None:
-                pending_frame = asyncio.create_task(sink.next_frame())
-
-            done, _pending = await asyncio.wait(
-                {pending_frame},
-                timeout=settings.AGENT_RUN_STREAM_KEEPALIVE_SECONDS,
-            )
-            if not done:
-                yield SSE_KEEPALIVE_FRAME
-                continue
-
-            frame = pending_frame.result()
-            pending_frame = None
-            if frame is None:
-                break
-            yield frame
-    except asyncio.CancelledError:
-        raise
-    finally:
-        if pending_frame is not None and not pending_frame.done():
-            pending_frame.cancel()
-        sink.detach()

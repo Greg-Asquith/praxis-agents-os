@@ -2,33 +2,33 @@
 
 """Execute one agent turn through Pydantic AI."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+from pydantic_ai import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
-from pydantic_core import to_jsonable_python
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import ConflictError, NotFoundError
-from models.agent import Agent
+from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
-from models.conversation import Conversation
-from services.agent_runs import (
-    complete_agent_run,
-    fail_agent_run,
-    record_run_usage,
-    start_agent_run_with_lease,
-)
 from services.agent_runs.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
+    RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
-    RunUsageSnapshot,
-    is_terminal,
 )
+from services.agent_runs.start_with_lease import start_agent_run_with_lease
+from services.agents.runtime.approval_events import (
+    emit_approval_required_events,
+    emit_deferred_tool_resume_events,
+    is_deferred_tool_resume_event,
+)
+from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.events import (
     EVENT_DONE,
     EVENT_ERROR,
@@ -36,8 +36,14 @@ from services.agents.runtime.events import (
     EventTranslationState,
     emit_agent_stream_event,
 )
-from services.agents.runtime.loop import RuntimeDeps, build_runtime_agent
-from services.agents.runtime.persistence import load_message_history, persist_new_messages
+from services.agents.runtime.load_context import load_actor_context, load_run_context
+from services.agents.runtime.loop import build_runtime_agent
+from services.agents.runtime.persistence import load_message_history
+from services.agents.runtime.run_persistence import (
+    persist_failed_run,
+    persist_successful_run,
+    persist_suspended_run,
+)
 from services.agents.runtime.sinks import EventSink, NullSink
 
 
@@ -55,30 +61,58 @@ async def execute_run(
     *,
     conversation_id: UUID,
     run_id: UUID,
-    user_prompt: str,
+    user_prompt: str | None,
     sink: EventSink | None = None,
     model: Model | None = None,
     client_message_id: str | None = None,
     owner_instance_id: str | None = None,
+    expected_status: str | None = RUN_STATUS_PENDING,
+    message_history: Sequence[ModelMessage] | None = None,
+    deferred_tool_results: DeferredToolResults | None = None,
 ) -> ExecuteRunResult:
-    """Drive one agent turn to completion and persist its durable side effects.
+    """Drive one agent turn to completion or approval suspension.
 
     The user prompt is persisted from Pydantic AI's ``new_messages()``; callers
-    must not insert a separate user message for the same turn. This function owns
-    the run lifecycle transaction boundaries: it commits the running+lease state
-    before provider streaming, commits final messages/usage/status after the
-    stream, and commits failures before re-raising so rollback-based dependencies
-    do not erase diagnostic state.
+    must not insert a separate user message for the same turn. Resume callers
+    pass rehydrated ``message_history`` and ``deferred_tool_results`` instead of a
+    new prompt. This function owns the run lifecycle transaction boundaries: it
+    commits the running+lease state before provider streaming, commits final
+    messages/usage/status after the stream, and commits failures before
+    re-raising so rollback-based dependencies do not erase diagnostic state.
     """
-    run, conversation, agent = await _load_run_context(
+    run, conversation, agent = await load_run_context(
         db,
         conversation_id=conversation_id,
         run_id=run_id,
+        lock_run=True,
     )
     event_sink = sink or NullSink(run_id=run.id, conversation_id=conversation.id)
     started = False
 
     try:
+        if expected_status is not None and run.status != expected_status:
+            raise ConflictError(
+                "Agent run is not in the expected state for execution",
+                conflicting_resource="agent_run",
+                details={
+                    "run_id": str(run.id),
+                    "run_status": run.status,
+                    "expected_status": expected_status,
+                },
+            )
+        if user_prompt is None and deferred_tool_results is None:
+            raise ConflictError(
+                "Agent run needs a prompt or deferred tool results",
+                conflicting_resource="agent_run",
+                details={"run_id": str(run.id)},
+            )
+        if deferred_tool_results is not None and message_history is None:
+            raise ConflictError(
+                "Agent run resume needs rehydrated message history",
+                conflicting_resource="agent_run",
+                details={"run_id": str(run.id)},
+            )
+
         await start_agent_run_with_lease(
             db,
             run,
@@ -92,10 +126,17 @@ async def execute_run(
         if run.model_name is None:
             run.model_name = runtime_agent.resolved_model.qualified_id
 
-        history = await load_message_history(db, conversation_id=conversation.id)
+        history = (
+            list(message_history)
+            if message_history is not None
+            else await load_message_history(db, conversation_id=conversation.id)
+        )
+        user, workspace = await load_actor_context(db, run)
         await db.commit()
         deps = RuntimeDeps(
             db=db,
+            user=user,
+            workspace=workspace,
             conversation=conversation,
             agent=agent,
             run=run,
@@ -103,17 +144,31 @@ async def execute_run(
         )
         state = EventTranslationState()
         terminal_result = None
+        deferred_tool_call_ids = (
+            set(deferred_tool_results.approvals)
+            if deferred_tool_results is not None
+            else set()
+        )
 
         async with runtime_agent.agent.run_stream_events(
             user_prompt,
             deps=deps,
             message_history=history,
+            deferred_tool_results=deferred_tool_results,
             conversation_id=str(conversation.id),
             usage_limits=runtime_agent.usage_limits,
         ) as stream:
             async for event in stream:
                 if isinstance(event, AgentRunResultEvent):
                     terminal_result = event.result
+                    continue
+                if (
+                    deferred_tool_results is not None
+                    and is_deferred_tool_resume_event(
+                        event,
+                        deferred_tool_call_ids=deferred_tool_call_ids,
+                    )
+                ):
                     continue
                 await emit_agent_stream_event(
                     event_sink,
@@ -125,7 +180,36 @@ async def execute_run(
         if terminal_result is None:
             raise RuntimeError("Pydantic AI stream ended without a terminal result")
 
-        final_run, new_message_count = await _persist_successful_run(
+        if deferred_tool_results is not None:
+            await emit_deferred_tool_resume_events(
+                event_sink,
+                message_history=history,
+                new_messages=terminal_result.new_messages(),
+                deferred_tool_results=deferred_tool_results,
+            )
+
+        if isinstance(terminal_result.output, DeferredToolRequests):
+            suspended_run, new_message_count = await persist_suspended_run(
+                db,
+                conversation_id=conversation.id,
+                run_id=run.id,
+                terminal_result=terminal_result,
+                deferred_tool_requests=terminal_result.output,
+                client_message_id=client_message_id,
+            )
+            await emit_approval_required_events(event_sink, terminal_result.output)
+            await event_sink.emit(
+                EVENT_RUN_STATUS,
+                {"status": RUN_STATUS_AWAITING_APPROVAL},
+            )
+            await event_sink.emit(EVENT_DONE, {"status": RUN_STATUS_AWAITING_APPROVAL})
+            return ExecuteRunResult(
+                run=suspended_run,
+                output=terminal_result.output,
+                new_message_count=new_message_count,
+            )
+
+        final_run, new_message_count = await persist_successful_run(
             db,
             conversation_id=conversation.id,
             run_id=run.id,
@@ -156,7 +240,7 @@ async def execute_run(
         await db.rollback()
         terminal_status = RUN_STATUS_FAILED
         if started:
-            failed_run = await _persist_failed_run(
+            failed_run = await persist_failed_run(
                 db,
                 run_id=run.id,
                 error_code=exc.__class__.__name__,
@@ -185,139 +269,3 @@ async def execute_run(
         raise
     finally:
         await event_sink.close()
-
-
-async def _persist_successful_run(
-    db: AsyncSession,
-    *,
-    conversation_id: UUID,
-    run_id: UUID,
-    terminal_result: Any,
-    client_message_id: str | None,
-) -> tuple[AgentRun, int]:
-    run, conversation, _agent = await _load_run_context(
-        db,
-        conversation_id=conversation_id,
-        run_id=run_id,
-        populate_existing=True,
-    )
-    if is_terminal(run.status):
-        await db.commit()
-        return run, 0
-    if run.status != RUN_STATUS_RUNNING:
-        raise ConflictError(
-            "Agent run is no longer running",
-            conflicting_resource="agent_run",
-            details={"run_id": str(run.id), "status": run.status},
-        )
-
-    persisted_messages = await persist_new_messages(
-        db,
-        conversation=conversation,
-        run_id=run.id,
-        messages=terminal_result.new_messages(),
-        client_message_id=client_message_id,
-    )
-    await record_run_usage(db, run, _usage_snapshot(terminal_result.usage))
-    await complete_agent_run(db, run)
-    await db.commit()
-    return run, len(persisted_messages)
-
-
-async def _persist_failed_run(
-    db: AsyncSession,
-    *,
-    run_id: UUID,
-    error_code: str,
-    error_message: str,
-) -> AgentRun | None:
-    run = await db.get(AgentRun, run_id, populate_existing=True)
-    if run is None:
-        await db.commit()
-        return None
-    if is_terminal(run.status):
-        await db.commit()
-        return run
-
-    await fail_agent_run(
-        db,
-        run,
-        error_code=error_code,
-        error_message=error_message,
-    )
-    await db.commit()
-    return run
-
-
-async def _load_run_context(
-    db: AsyncSession,
-    *,
-    conversation_id: UUID,
-    run_id: UUID,
-    populate_existing: bool = False,
-) -> tuple[AgentRun, Conversation, Agent]:
-    run_stmt = select(AgentRun).where(
-        AgentRun.id == run_id,
-        AgentRun.deleted == False,  # noqa: E712
-    )
-    if populate_existing:
-        run_stmt = run_stmt.execution_options(populate_existing=True)
-    run = await db.scalar(run_stmt)
-    if run is None:
-        raise NotFoundError(
-            "Agent run not found",
-            resource_type="agent_run",
-            resource_id=str(run_id),
-        )
-    if run.conversation_id != conversation_id:
-        raise ConflictError(
-            "Agent run does not belong to this conversation",
-            conflicting_resource="agent_run",
-            details={
-                "run_id": str(run.id),
-                "run_conversation_id": str(run.conversation_id),
-                "requested_conversation_id": str(conversation_id),
-            },
-        )
-
-    conversation_stmt = select(Conversation).where(
-        Conversation.id == conversation_id,
-        Conversation.deleted == False,  # noqa: E712
-    )
-    if populate_existing:
-        conversation_stmt = conversation_stmt.execution_options(populate_existing=True)
-    conversation = await db.scalar(conversation_stmt)
-    if conversation is None:
-        raise NotFoundError(
-            "Conversation not found",
-            resource_type="conversation",
-            resource_id=str(conversation_id),
-        )
-
-    agent_stmt = select(Agent).where(
-        Agent.id == run.agent_id,
-        Agent.deleted == False,  # noqa: E712
-    )
-    if populate_existing:
-        agent_stmt = agent_stmt.execution_options(populate_existing=True)
-    agent = await db.scalar(agent_stmt)
-    if agent is None:
-        raise NotFoundError(
-            "Agent not found",
-            resource_type="agent",
-            resource_id=str(run.agent_id),
-        )
-
-    return run, conversation, agent
-
-
-def _usage_snapshot(usage) -> RunUsageSnapshot:
-    raw = to_jsonable_python(usage)
-    return RunUsageSnapshot(
-        input_tokens=getattr(usage, "input_tokens", None),
-        input_tokens_cached=getattr(usage, "cache_read_tokens", None),
-        output_tokens=getattr(usage, "output_tokens", None),
-        requests=getattr(usage, "requests", None),
-        tool_calls=getattr(usage, "tool_calls", None),
-        raw_json=raw if isinstance(raw, dict) else {"usage": raw},
-    )

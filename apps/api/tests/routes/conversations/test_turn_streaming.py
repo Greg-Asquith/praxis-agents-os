@@ -10,7 +10,9 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from pydantic_ai import DeferredToolRequests
 from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.test import TestModel
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -22,13 +24,17 @@ from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import complete_agent_run, create_agent_run, start_agent_run
+from services.agents.runtime import execute_run
+from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
     EVENT_DONE,
     EVENT_RUN_STATUS,
+    EVENT_TOOL_CALL,
+    EVENT_TOOL_RESULT,
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.sinks import CollectingSink, EventSink
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationTurnCreateRequest
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -361,6 +367,135 @@ async def test_get_active_run_lazily_reaps_expired_run(
     assert stored is not None
     await db_session.refresh(stored)
     assert stored.status == "failed"
+
+
+async def test_resume_run_rejects_run_not_awaiting_approval(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
+    run = await create_agent_run(
+        db_session,
+        conversation_id=conversation.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger="interactive",
+    )
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        f"/api/v1/agent-runs/{run.id}/resume",
+        headers=headers,
+        json={
+            "decisions": [
+                {"tool_call_id": "tool-call-1", "decision": "approved"},
+            ],
+        },
+    )
+
+    assert response.status_code == 409
+    body: Mapping[str, object] = response.json()
+    assert body["conflicting_resource"] == "agent_run"
+    assert body["run_status"] == "pending"
+
+
+async def test_resume_run_streams_approved_tool_to_completion(
+    app: FastAPI,
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.loop.build_model",
+        lambda _resolved_model: TestModel(),
+    )
+    async with committed_db_session_factory() as db:
+        user, workspace, agent, conversation, headers = await _authenticated_context(db)
+        agent.tool_names = ["add_numbers"]
+        agent.tool_policies = {"add_numbers": "approval"}
+        run = await create_agent_run(
+            db,
+            conversation_id=conversation.id,
+            agent_id=agent.id,
+            workspace_id=workspace.id,
+            user_id=user.id,
+            trigger="interactive",
+        )
+        suspended = await execute_run(
+            db,
+            conversation_id=conversation.id,
+            run_id=run.id,
+            user_prompt="Add two numbers",
+            sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
+            model=TestModel(),
+        )
+        assert isinstance(suspended.output, DeferredToolRequests)
+
+        stored_run = await db.get(AgentRun, run.id)
+        assert stored_run is not None
+        tool_call_id = load_suspended_run_state(stored_run).pending_tool_call_ids[0]
+
+    try:
+        transport = ASGITransport(app=app)
+        async with (
+            AsyncClient(transport=transport, base_url="http://testserver") as client,
+            client.stream(
+                "POST",
+                f"/api/v1/agent-runs/{run.id}/resume",
+                headers=headers,
+                json={
+                    "decisions": [
+                        {
+                            "tool_call_id": tool_call_id,
+                            "decision": "approved",
+                            "override_args": {"a": 4, "b": 7},
+                        },
+                    ],
+                },
+            ) as response,
+        ):
+            body = (await response.aread()).decode()
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
+        assert f"event: {EVENT_RUN_STATUS}" in body
+        assert '"status":"awaiting_approval"' in body
+        assert f"event: {EVENT_TOOL_CALL}" in body
+        assert f"event: {EVENT_TOOL_RESULT}" in body
+        assert f'"tool_call_id":"{tool_call_id}"' in body
+        assert '"args":{"a":4,"b":7}' in body
+        assert '"result":11' in body
+        assert f"event: {EVENT_DONE}" in body
+        assert '"status":"completed"' in body
+
+        async with committed_db_session_factory() as db:
+            stored_run = await db.get(AgentRun, run.id)
+            assert stored_run is not None
+            assert stored_run.status == "completed"
+
+            messages = (
+                await db.scalars(
+                    select(ConversationMessage)
+                    .where(ConversationMessage.conversation_id == conversation.id)
+                    .order_by(ConversationMessage.sequence)
+                )
+            ).all()
+            assert [message.role for message in messages] == [
+                "user",
+                "assistant",
+                "tool",
+                "assistant",
+            ]
+            assert "11" in str(messages[2].parts)
+    finally:
+        await _delete_committed_context(
+            committed_db_session_factory,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            agent_id=agent.id,
+            conversation_id=conversation.id,
+        )
 
 
 async def _wait_for_run_status(

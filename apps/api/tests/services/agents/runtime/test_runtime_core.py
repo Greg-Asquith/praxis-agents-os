@@ -12,8 +12,23 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from pydantic_ai import Agent as PydanticAgent
-from pydantic_ai.messages import PartStartEvent, TextPart
+from pydantic_ai import (
+    Agent as PydanticAgent,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ToolApproved,
+    ToolDenied,
+)
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelRequest,
+    ModelResponse,
+    PartStartEvent,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import delete, select, update
@@ -27,9 +42,21 @@ from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs import create_agent_run
-from services.agent_runs.domain import RUN_STATUS_COMPLETED, RUN_STATUS_FAILED
+from services.agent_runs.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_COMPLETED,
+    RUN_STATUS_FAILED,
+)
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime import execute_run
+from services.agents.runtime.approval_events import (
+    emit_deferred_tool_resume_events,
+    is_deferred_tool_resume_event,
+)
+from services.agents.runtime.approval_state import (
+    APPROVAL_STATE_METADATA_KEY,
+    load_suspended_run_state,
+)
 from services.agents.runtime.events import (
     EVENT_DONE,
     EVENT_ERROR,
@@ -37,6 +64,7 @@ from services.agents.runtime.events import (
     EVENT_MESSAGE_END,
     EVENT_MESSAGE_START,
     EVENT_RUN_STATUS,
+    EVENT_TOOL_APPROVAL_REQUIRED,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
     EventTranslationState,
@@ -101,6 +129,119 @@ async def test_event_translation_emits_text_from_part_start() -> None:
 
     assert [event.event for event in sink.events] == [EVENT_MESSAGE_START, EVENT_MESSAGE_DELTA]
     assert sink.events[1].data["text"] == "hello"
+
+
+async def test_deferred_resume_filter_only_suppresses_deferred_tool_ids() -> None:
+    """Fresh post-resume tool calls should keep using normal stream translation."""
+    deferred_tool_call_id = "deferred-tool-call"
+    fresh_tool_call_id = "fresh-tool-call"
+    deferred_tool_call_ids = {deferred_tool_call_id}
+
+    assert is_deferred_tool_resume_event(
+        FunctionToolCallEvent(
+            part=ToolCallPart(
+                tool_name="approved_tool",
+                args={"value": 1},
+                tool_call_id=deferred_tool_call_id,
+            )
+        ),
+        deferred_tool_call_ids=deferred_tool_call_ids,
+    )
+    assert is_deferred_tool_resume_event(
+        FunctionToolResultEvent(
+            part=ToolReturnPart(
+                tool_name="approved_tool",
+                content="approved",
+                tool_call_id=deferred_tool_call_id,
+            )
+        ),
+        deferred_tool_call_ids=deferred_tool_call_ids,
+    )
+    assert not is_deferred_tool_resume_event(
+        FunctionToolCallEvent(
+            part=ToolCallPart(
+                tool_name="fresh_tool",
+                args={"value": 2},
+                tool_call_id=fresh_tool_call_id,
+            )
+        ),
+        deferred_tool_call_ids=deferred_tool_call_ids,
+    )
+    assert not is_deferred_tool_resume_event(
+        FunctionToolResultEvent(
+            part=ToolReturnPart(
+                tool_name="fresh_tool",
+                content="fresh",
+                tool_call_id=fresh_tool_call_id,
+            )
+        ),
+        deferred_tool_call_ids=deferred_tool_call_ids,
+    )
+
+
+async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> None:
+    """New tool results produced after resume should not become orphan replay events."""
+    deferred_tool_call_id = "deferred-tool-call"
+    fresh_tool_call_id = "fresh-tool-call"
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+
+    await emit_deferred_tool_resume_events(
+        sink,
+        message_history=[
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="approved_tool",
+                        args={"value": 1},
+                        tool_call_id=deferred_tool_call_id,
+                    )
+                ]
+            )
+        ],
+        new_messages=[
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="approved_tool",
+                        content="approved",
+                        tool_call_id=deferred_tool_call_id,
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="fresh_tool",
+                        args={"value": 2},
+                        tool_call_id=fresh_tool_call_id,
+                    )
+                ]
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="fresh_tool",
+                        content="fresh",
+                        tool_call_id=fresh_tool_call_id,
+                    )
+                ]
+            ),
+        ],
+        deferred_tool_results=DeferredToolResults(
+            approvals={
+                deferred_tool_call_id: ToolApproved(
+                    override_args={"value": 10}
+                )
+            }
+        ),
+    )
+
+    assert [(event.event, event.data["tool_call_id"]) for event in sink.events] == [
+        (EVENT_TOOL_CALL, deferred_tool_call_id),
+        (EVENT_TOOL_RESULT, deferred_tool_call_id),
+    ]
+    assert sink.events[0].data["args"] == {"value": 10}
+    assert sink.events[1].data["result"] == "approved"
 
 
 @pytest_asyncio.fixture
@@ -196,6 +337,211 @@ async def test_execute_run_persists_messages_usage_and_events(
     assert EVENT_MESSAGE_DELTA in event_names
     assert event_names[-2:] == [EVENT_RUN_STATUS, EVENT_DONE]
     assert _joined_message_deltas(sink) == result.output
+
+
+async def test_execute_run_suspends_when_tool_requires_approval(
+    db_session: AsyncSession,
+    runtime_context: RuntimeContext,
+) -> None:
+    await _configure_agent_tools(
+        db_session,
+        agent_id=runtime_context.agent_id,
+        tool_names=["add_numbers"],
+        tool_policies={"add_numbers": "approval"},
+    )
+    sink = CollectingSink(
+        run_id=runtime_context.run_id,
+        conversation_id=runtime_context.conversation_id,
+    )
+
+    result = await execute_run(
+        db_session,
+        conversation_id=runtime_context.conversation_id,
+        run_id=runtime_context.run_id,
+        user_prompt="Add two numbers",
+        sink=sink,
+        model=TestModel(),
+        client_message_id="approval-client",
+    )
+
+    assert isinstance(result.output, DeferredToolRequests)
+    assert result.run.status == RUN_STATUS_AWAITING_APPROVAL
+    assert result.new_message_count == 2
+
+    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
+    assert stored_run is not None
+    assert stored_run.status == RUN_STATUS_AWAITING_APPROVAL
+    assert stored_run.lease_expires_at is None
+    assert APPROVAL_STATE_METADATA_KEY in (stored_run.metadata_json or {})
+
+    suspended_state = load_suspended_run_state(stored_run)
+    assert suspended_state.pending_tool_call_ids == [
+        result.output.approvals[0].tool_call_id
+    ]
+
+    messages = (
+        await db_session.scalars(
+            select(ConversationMessage)
+            .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
+            .order_by(ConversationMessage.sequence)
+        )
+    ).all()
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert messages[0].client_message_id == "approval-client"
+
+    event_names = [event.event for event in sink.events]
+    assert EVENT_TOOL_CALL in event_names
+    assert EVENT_TOOL_APPROVAL_REQUIRED in event_names
+    assert event_names[-2:] == [EVENT_RUN_STATUS, EVENT_DONE]
+    assert sink.events[-2].data["status"] == RUN_STATUS_AWAITING_APPROVAL
+    assert sink.events[-1].data["status"] == RUN_STATUS_AWAITING_APPROVAL
+
+
+async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
+    db_session: AsyncSession,
+    runtime_context: RuntimeContext,
+) -> None:
+    await _configure_agent_tools(
+        db_session,
+        agent_id=runtime_context.agent_id,
+        tool_names=["add_numbers"],
+        tool_policies={"add_numbers": "approval"},
+    )
+    suspended = await execute_run(
+        db_session,
+        conversation_id=runtime_context.conversation_id,
+        run_id=runtime_context.run_id,
+        user_prompt="Add two numbers",
+        sink=CollectingSink(
+            run_id=runtime_context.run_id,
+            conversation_id=runtime_context.conversation_id,
+        ),
+        model=TestModel(),
+    )
+    assert isinstance(suspended.output, DeferredToolRequests)
+
+    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
+    assert stored_run is not None
+    suspended_state = load_suspended_run_state(stored_run)
+    tool_call_id = suspended_state.pending_tool_call_ids[0]
+    resume_sink = CollectingSink(
+        run_id=runtime_context.run_id,
+        conversation_id=runtime_context.conversation_id,
+    )
+
+    resumed = await execute_run(
+        db_session,
+        conversation_id=runtime_context.conversation_id,
+        run_id=runtime_context.run_id,
+        user_prompt=None,
+        sink=resume_sink,
+        model=TestModel(),
+        expected_status=RUN_STATUS_AWAITING_APPROVAL,
+        message_history=suspended_state.message_history,
+        deferred_tool_results=DeferredToolResults(
+            approvals={tool_call_id: ToolApproved(override_args={"a": 2, "b": 3})}
+        ),
+    )
+
+    assert resumed.run.status == RUN_STATUS_COMPLETED
+    assert not isinstance(resumed.output, DeferredToolRequests)
+    assert "5" in str(resumed.output)
+    assert resumed.new_message_count == 2
+    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
+    assert stored_run is not None
+    assert stored_run.status == RUN_STATUS_COMPLETED
+    assert APPROVAL_STATE_METADATA_KEY not in (stored_run.metadata_json or {})
+
+    messages = (
+        await db_session.scalars(
+            select(ConversationMessage)
+            .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
+            .order_by(ConversationMessage.sequence)
+        )
+    ).all()
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert [event.event for event in resume_sink.events][-2:] == [
+        EVENT_RUN_STATUS,
+        EVENT_DONE,
+    ]
+    resume_event_names = [event.event for event in resume_sink.events]
+    assert EVENT_TOOL_CALL in resume_event_names
+    assert EVENT_TOOL_RESULT in resume_event_names
+    tool_result_events = [
+        event for event in resume_sink.events if event.event == EVENT_TOOL_RESULT
+    ]
+    tool_call_events = [
+        event for event in resume_sink.events if event.event == EVENT_TOOL_CALL
+    ]
+    assert tool_call_events[0].data["args"] == {"a": 2, "b": 3}
+    assert tool_result_events[0].data["tool_call_id"] == tool_call_id
+    assert tool_result_events[0].data["name"] == "add_numbers"
+    assert tool_result_events[0].data["result"] == 5
+
+
+async def test_execute_run_resumes_denied_tool_with_typed_denial(
+    db_session: AsyncSession,
+    runtime_context: RuntimeContext,
+) -> None:
+    await _configure_agent_tools(
+        db_session,
+        agent_id=runtime_context.agent_id,
+        tool_names=["add_numbers"],
+        tool_policies={"add_numbers": "approval"},
+    )
+    suspended = await execute_run(
+        db_session,
+        conversation_id=runtime_context.conversation_id,
+        run_id=runtime_context.run_id,
+        user_prompt="Add two numbers",
+        sink=CollectingSink(
+            run_id=runtime_context.run_id,
+            conversation_id=runtime_context.conversation_id,
+        ),
+        model=TestModel(),
+    )
+    assert isinstance(suspended.output, DeferredToolRequests)
+
+    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
+    assert stored_run is not None
+    suspended_state = load_suspended_run_state(stored_run)
+    tool_call_id = suspended_state.pending_tool_call_ids[0]
+
+    resumed = await execute_run(
+        db_session,
+        conversation_id=runtime_context.conversation_id,
+        run_id=runtime_context.run_id,
+        user_prompt=None,
+        sink=CollectingSink(
+            run_id=runtime_context.run_id,
+            conversation_id=runtime_context.conversation_id,
+        ),
+        model=TestModel(),
+        expected_status=RUN_STATUS_AWAITING_APPROVAL,
+        message_history=suspended_state.message_history,
+        deferred_tool_results=DeferredToolResults(
+            approvals={tool_call_id: ToolDenied("Denied by test")}
+        ),
+    )
+
+    assert resumed.run.status == RUN_STATUS_COMPLETED
+    assert not isinstance(resumed.output, DeferredToolRequests)
+
+    messages = (
+        await db_session.scalars(
+            select(ConversationMessage)
+            .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
+            .order_by(ConversationMessage.sequence)
+        )
+    ).all()
+    tool_messages = [message for message in messages if message.role == "tool"]
+    assert tool_messages
+    assert "Denied by test" in str(tool_messages[0].parts)
 
 
 async def test_execute_run_has_no_open_transaction_while_streaming(
@@ -365,6 +711,20 @@ def _joined_message_deltas(sink: CollectingSink) -> str:
     return "".join(
         event.data["text"] for event in sink.events if event.event == EVENT_MESSAGE_DELTA
     )
+
+
+async def _configure_agent_tools(
+    db: AsyncSession,
+    *,
+    agent_id: UUID,
+    tool_names: list[str],
+    tool_policies: dict[str, str] | None = None,
+) -> None:
+    agent = await db.get(Agent, agent_id)
+    assert agent is not None
+    agent.tool_names = tool_names
+    agent.tool_policies = tool_policies
+    await db.flush()
 
 
 async def _create_committed_runtime_context(
