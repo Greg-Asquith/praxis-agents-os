@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.sessions import session_manager
 from core.exceptions.auth import AuthenticationError
 from models.user import User
-from services.auth.schemas import AuthResponse, AuthSession, AuthUser, TotpVerifyRequest
+from services.auth.schemas import AuthResponse, AuthSession, TotpVerifyRequest
 from services.auth.utils import (
+    build_auth_user,
     record_auth_security_event,
     session_token_from_request,
     set_auth_cookies,
@@ -78,7 +79,7 @@ async def verify_totp(
         details={"session_id": upgraded["session_id"]},
     )
     return AuthResponse(
-        user=AuthUser.from_user(user),
+        user=await build_auth_user(db, user),
         session=AuthSession(expires_at=upgraded["expires_at"], twofa_verified=True),
         requires_twofa=False,
     )

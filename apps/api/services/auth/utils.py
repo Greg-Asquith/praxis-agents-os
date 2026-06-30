@@ -28,6 +28,24 @@ from utils.security import generate_csrf_token
 logger = logging.getLogger(__name__)
 
 _OAUTH_STATE_TTL = timedelta(minutes=10)
+_AUTH_USER_REFRESH_FIELDS = [
+    "id",
+    "email",
+    "display_name",
+    "avatar_url",
+    "is_active",
+    "default_workspace_id",
+    "totp_enabled",
+    "created_at",
+    "updated_at",
+]
+
+
+async def build_auth_user(db: AsyncSession, user: User) -> AuthUser:
+    """Return a public auth user after refreshing server-managed columns."""
+    await db.flush()
+    await db.refresh(user, attribute_names=_AUTH_USER_REFRESH_FIELDS)
+    return AuthUser.from_user(user)
 
 
 def set_auth_cookies(response: Response, *, session_token: str, expires_at: datetime) -> None:
@@ -97,8 +115,9 @@ async def issue_auth_response(
         user_email=user.email,
         details={**details, "session_id": session_result["session_id"]},
     )
+    auth_user = None if require_twofa else await build_auth_user(db, user)
     return AuthResponse(
-        user=None if require_twofa else AuthUser.from_user(user),
+        user=auth_user,
         session=AuthSession(
             expires_at=session_result["expires_at"],
             twofa_verified=session_result["twofa_verified"],
@@ -215,4 +234,3 @@ def session_token_from_request(request: Request) -> str | None:
     if scheme.lower() == "bearer" and credentials:
         return credentials.strip()
     return None
-

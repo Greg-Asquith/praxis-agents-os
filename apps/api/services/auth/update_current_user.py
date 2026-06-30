@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.user import User
 from services.audit_events import AuditAction, record_user_audit_event
 from services.auth.schemas import AuthUser, CurrentUserUpdateRequest
+from services.auth.utils import build_auth_user
 
 
 async def update_current_user(
@@ -35,4 +36,4 @@ async def update_current_user(
             details={"fields": changed_fields},
             request=request,
         )
-    return AuthUser.from_user(user)
+    return await build_auth_user(db, user)
