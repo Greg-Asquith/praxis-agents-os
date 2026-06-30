@@ -154,6 +154,7 @@ async def execute_run(
         )
     except Exception as exc:
         await db.rollback()
+        terminal_status = RUN_STATUS_FAILED
         if started:
             failed_run = await _persist_failed_run(
                 db,
@@ -161,15 +162,26 @@ async def execute_run(
                 error_code=exc.__class__.__name__,
                 error_message=str(exc),
             )
-            if failed_run is not None and failed_run.status == RUN_STATUS_FAILED:
-                await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_FAILED})
-                await event_sink.emit(
-                    EVENT_ERROR,
-                    {
-                        "code": failed_run.error_code or exc.__class__.__name__,
-                        "message": failed_run.error_message or str(exc),
-                    },
-                )
+            if failed_run is not None:
+                terminal_status = failed_run.status
+                await event_sink.emit(EVENT_RUN_STATUS, {"status": failed_run.status})
+                if failed_run.status == RUN_STATUS_FAILED:
+                    await event_sink.emit(
+                        EVENT_ERROR,
+                        {
+                            "code": failed_run.error_code or exc.__class__.__name__,
+                            "message": failed_run.error_message or str(exc),
+                        },
+                    )
+        else:
+            await event_sink.emit(
+                EVENT_ERROR,
+                {
+                    "code": exc.__class__.__name__,
+                    "message": str(exc),
+                },
+            )
+        await event_sink.emit(EVENT_DONE, {"status": terminal_status})
         raise
     finally:
         await event_sink.close()

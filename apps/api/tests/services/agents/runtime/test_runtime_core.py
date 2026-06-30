@@ -288,7 +288,8 @@ async def test_execute_run_commits_failed_status_before_reraising(
     assert "Missing credential" in (stored_run.error_message or "")
 
     event_names = [event.event for event in sink.events]
-    assert event_names == [EVENT_RUN_STATUS, EVENT_RUN_STATUS, EVENT_ERROR]
+    assert event_names == [EVENT_RUN_STATUS, EVENT_RUN_STATUS, EVENT_ERROR, EVENT_DONE]
+    assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 
 async def test_worker_renews_lease_during_turn_longer_than_original_ttl(

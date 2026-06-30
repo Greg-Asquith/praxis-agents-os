@@ -15,7 +15,11 @@ from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import create_agent_run, reap_abandoned_runs
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
-from services.agents.runtime.events import EVENT_RUN_STATUS
+from services.agents.runtime.events import (
+    EVENT_RUN_STATUS,
+    STREAM_PROTOCOL_VERSION,
+    STREAM_VERSION_HEADER,
+)
 from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.worker import run_turn_worker
@@ -114,6 +118,7 @@ async def create_conversation_turn_stream(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            STREAM_VERSION_HEADER: STREAM_PROTOCOL_VERSION,
             "X-Accel-Buffering": "no",
         },
     )

@@ -25,6 +25,9 @@ EVENT_TOOL_RESULT = "tool.result"
 EVENT_ERROR = "error"
 EVENT_DONE = "done"
 
+STREAM_PROTOCOL_VERSION = "1"
+STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"
+
 
 @dataclass
 class EventTranslationState:

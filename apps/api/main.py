@@ -29,6 +29,7 @@ from middleware import (
 )
 from routes import api_router
 from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
+from services.agents.runtime.events import STREAM_VERSION_HEADER
 from services.notifications.registration import register_notification_action_handlers
 
 # Initialize logging as early as possible so all subsequent loggers/middleware use it
@@ -104,6 +105,7 @@ app.add_middleware(
         "Origin",
         "User-Agent",
     ],
+    expose_headers=[STREAM_VERSION_HEADER],
 )
 
 # Register custom exception handlers including overrides for FastAPI and Starlette built-in HTTPException

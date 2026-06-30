@@ -22,7 +22,12 @@ from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import complete_agent_run, create_agent_run, start_agent_run
-from services.agents.runtime.events import EVENT_DONE, EVENT_RUN_STATUS
+from services.agents.runtime.events import (
+    EVENT_DONE,
+    EVENT_RUN_STATUS,
+    STREAM_PROTOCOL_VERSION,
+    STREAM_VERSION_HEADER,
+)
 from services.agents.runtime.sinks import EventSink
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationTurnCreateRequest
@@ -107,6 +112,7 @@ async def test_create_turn_stream_returns_ordered_sse_events(
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
     assert body.index('"status":"pending"') < body.index('"status":"running"')
     assert "event: done" in body
 
