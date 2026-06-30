@@ -201,6 +201,11 @@ class AgentScheduleRun(BaseModel):
         ForeignKey("conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    agent_run_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     failed_at = Column(DateTime(timezone=True), nullable=True)
@@ -212,6 +217,7 @@ class AgentScheduleRun(BaseModel):
     user = relationship("User", foreign_keys=[user_id])
     agent = relationship("Agent", foreign_keys=[agent_id])
     conversation = relationship("Conversation", foreign_keys=[conversation_id])
+    agent_run = relationship("AgentRun", foreign_keys=[agent_run_id])
 
     __table_args__ = (
         CheckConstraint(
@@ -257,5 +263,11 @@ class AgentScheduleRun(BaseModel):
             "conversation_id",
             unique=True,
             postgresql_where=text("conversation_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_agent_schedule_runs_agent_run",
+            "agent_run_id",
+            unique=True,
+            postgresql_where=text("agent_run_id IS NOT NULL"),
         ),
     )

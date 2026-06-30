@@ -11,6 +11,7 @@ mapper before any relationships are resolved. This prevents errors like:
 # All models must be imported to register them with SQLAlchemy's mapper.
 # base is imported indirectly by every model module; listed here explicitly for clarity.
 from models.agent import Agent, AgentSchedule, AgentScheduleRun  # noqa: F401
+from models.agent_run import AgentRun  # noqa: F401
 from models.audit_event import AuditEvent  # noqa: F401
 from models.base import BaseModel  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
