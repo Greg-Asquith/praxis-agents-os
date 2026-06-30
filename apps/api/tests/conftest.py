@@ -10,6 +10,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from pydantic_ai import models as pydantic_ai_models
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -17,6 +18,7 @@ from tests.support.database import make_async_test_database_url, require_test_da
 from tests.support.settings import configure_test_environment
 
 configure_test_environment()
+pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
 
 
 @pytest.fixture(scope="session")

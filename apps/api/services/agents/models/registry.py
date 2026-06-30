@@ -73,7 +73,8 @@ _CATALOG: tuple[ModelInfo, ...] = (
         context_window=800_000,
         supports_thinking=True,
         supports_vision=True,
-    ),ModelInfo(
+    ),
+    ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-opus-4-6",
         display_name="Claude Opus 4.6",
