@@ -23,6 +23,8 @@ EVENT_MESSAGE_END = "message.end"
 EVENT_TOOL_CALL = "tool.call"
 EVENT_TOOL_RESULT = "tool.result"
 EVENT_TOOL_APPROVAL_REQUIRED = "tool.approval_required"
+EVENT_CONVERSATION_CREATED = "conversation.created"
+EVENT_CONVERSATION_UPDATED = "conversation.updated"
 EVENT_ERROR = "error"
 EVENT_DONE = "done"
 

@@ -48,6 +48,20 @@ def test_model_catalog_route_is_registered_under_api_v1(
     assert "/api/v1/models/catalog" in paths
 
 
+def test_conversation_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = set(openapi_schema["paths"])
+
+    assert {
+        "/api/v1/conversations/",
+        "/api/v1/conversations/{conversation_id}",
+        "/api/v1/conversations/{conversation_id}/turns",
+        "/api/v1/conversations/{conversation_id}/messages",
+        "/api/v1/conversations/{conversation_id}/active-run",
+    } <= paths
+
+
 def test_oauth_routes_are_api_posts_not_browser_redirect_gets(
     openapi_schema: dict[str, object],
 ) -> None:

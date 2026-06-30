@@ -27,6 +27,8 @@ from services.agent_runs import complete_agent_run, create_agent_run, start_agen
 from services.agents.runtime import execute_run
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
+    EVENT_CONVERSATION_CREATED,
+    EVENT_CONVERSATION_UPDATED,
     EVENT_DONE,
     EVENT_RUN_STATUS,
     EVENT_TOOL_CALL,
@@ -121,6 +123,259 @@ async def test_create_turn_stream_returns_ordered_sse_events(
     assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
     assert body.index('"status":"pending"') < body.index('"status":"running"')
     assert "event: done" in body
+
+
+async def test_create_conversation_stream_creates_conversation_and_first_run(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, _workspace, agent, _existing_conversation, headers = await _authenticated_context(
+        db_session
+    )
+
+    async def fake_title_worker(
+        *,
+        conversation_id: UUID,
+        user_prompt: str,
+        fallback_title: str,
+        sink: EventSink,
+    ) -> None:
+        assert user_prompt == "Plan the launch"
+        assert fallback_title == "Plan the launch"
+        conversation = await db_session.get(Conversation, conversation_id)
+        assert conversation is not None
+        conversation.title = "Launch planning"
+        conversation.metadata_json = {
+            "title": {"source": "model", "model": "function:title"}
+        }
+        await db_session.flush()
+        await sink.emit(
+            EVENT_CONVERSATION_UPDATED,
+            {
+                "conversation": {
+                    "id": str(conversation.id),
+                    "title": "Launch planning",
+                    "active_agent_id": str(agent.id),
+                    "agent_slug": agent.slug,
+                }
+            },
+        )
+
+    async def fake_worker(
+        *,
+        run_id: UUID,
+        conversation_id: UUID,
+        user_prompt: str,
+        sink: EventSink,
+        client_message_id: str | None = None,
+        model=None,
+    ) -> None:
+        assert user_prompt == "Plan the launch"
+        assert client_message_id == "first-message"
+        await sink.emit(EVENT_RUN_STATUS, {"status": "running"})
+        await sink.emit(EVENT_DONE, {"status": "completed"})
+        await sink.close()
+
+    monkeypatch.setattr(
+        "services.conversations.create_conversation_stream.run_conversation_title_worker",
+        fake_title_worker,
+    )
+    monkeypatch.setattr(
+        "services.conversations.create_conversation_stream.run_turn_worker",
+        fake_worker,
+    )
+
+    async with db_async_client.stream(
+        "POST",
+        "/api/v1/conversations/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "user_prompt": "Plan the launch",
+            "client_message_id": "first-message",
+        },
+    ) as response:
+        body = (await response.aread()).decode()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
+    assert body.index(f"event: {EVENT_CONVERSATION_CREATED}") < body.index(
+        f"event: {EVENT_RUN_STATUS}"
+    )
+    assert body.index(f"event: {EVENT_CONVERSATION_UPDATED}") < body.index(
+        f"event: {EVENT_DONE}"
+    )
+    assert '"title":"Plan the launch"' in body
+    assert '"title":"Launch planning"' in body
+    assert f'"active_agent_id":"{agent.id}"' in body
+    assert f'"agent_slug":"{agent.slug}"' in body
+    assert "event: done" in body
+
+    created_conversation = await db_session.scalar(
+        select(Conversation)
+        .where(
+            Conversation.active_agent_id == agent.id,
+            Conversation.title == "Launch planning",
+        )
+        .order_by(Conversation.created_at.desc())
+    )
+    assert created_conversation is not None
+    assert created_conversation.agent_slug == agent.slug
+    assert created_conversation.metadata_json == {
+        "title": {"source": "model", "model": "function:title"}
+    }
+    created_run = await db_session.scalar(
+        select(AgentRun).where(AgentRun.conversation_id == created_conversation.id)
+    )
+    assert created_run is not None
+    assert created_run.agent_id == agent.id
+    assert created_run.status == "pending"
+    assert created_run.metadata_json == {"client_message_id": "first-message"}
+
+
+async def test_create_conversation_rejects_inactive_agent_without_creating_run(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, agent, _existing_conversation, headers = await _authenticated_context(
+        db_session
+    )
+    agent.is_active = False
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        "/api/v1/conversations/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "user_prompt": "Plan the launch",
+        },
+    )
+
+    assert response.status_code == 409
+    body: Mapping[str, object] = response.json()
+    assert body["conflicting_resource"] == "agent"
+    assert body["agent_id"] == str(agent.id)
+
+    runs = (await db_session.scalars(select(AgentRun))).all()
+    assert runs == []
+
+
+async def test_list_conversations_returns_current_user_workspace_conversations(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, agent, existing_conversation, headers = await _authenticated_context(
+        db_session
+    )
+    existing_conversation.title = "Existing"
+    existing_conversation.agent_slug = agent.slug
+    older = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        title="Older",
+        active_agent_id=agent.id,
+        agent_slug=agent.slug,
+        last_message_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    newest = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        title="Newest",
+        active_agent_id=agent.id,
+        agent_slug=agent.slug,
+        last_message_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    deleted = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        title="Deleted",
+        active_agent_id=agent.id,
+        agent_slug=agent.slug,
+    )
+    deleted.soft_delete(deleted_by=user.id, cascade=False)
+    db_session.add_all([older, newest, deleted])
+    await db_session.commit()
+
+    response = await db_async_client.get(
+        "/api/v1/conversations/",
+        headers=headers,
+        params={"limit": 10, "offset": 0},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert body["limit"] == 10
+    assert body["offset"] == 0
+    assert [conversation["title"] for conversation in body["conversations"]] == [
+        "Existing",
+        "Newest",
+        "Older",
+    ]
+    assert all(conversation["active_agent_id"] == str(agent.id) for conversation in body["conversations"])
+
+
+async def test_delete_conversation_soft_deletes_and_hides_conversation(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, _workspace, _agent, conversation, headers = await _authenticated_context(db_session)
+
+    response = await db_async_client.delete(
+        f"/api/v1/conversations/{conversation.id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 204
+    await db_session.refresh(conversation)
+    assert conversation.deleted is True
+    assert conversation.deleted_by == user.id
+
+    list_response = await db_async_client.get("/api/v1/conversations/", headers=headers)
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] == 0
+
+    messages_response = await db_async_client.get(
+        f"/api/v1/conversations/{conversation.id}/messages",
+        headers=headers,
+    )
+    assert messages_response.status_code == 404
+
+
+async def test_delete_conversation_rejects_active_run(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
+    active_run = await create_agent_run(
+        db_session,
+        conversation_id=conversation.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger="interactive",
+    )
+    await start_agent_run(db_session, active_run)
+    await db_session.commit()
+
+    response = await db_async_client.delete(
+        f"/api/v1/conversations/{conversation.id}",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    body: Mapping[str, object] = response.json()
+    assert body["conflicting_resource"] == "agent_run"
+    assert body["active_run_id"] == str(active_run.id)
+
+    await db_session.refresh(conversation)
+    assert conversation.deleted is False
 
 
 async def test_create_turn_stream_disconnect_completes_and_persists_with_real_worker(

@@ -7,7 +7,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import NotFoundError
+from core.exceptions.general import ConflictError, NotFoundError
+from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
 from models.user import User
@@ -38,6 +39,35 @@ async def get_conversation_for_actor(
             resource_id=str(conversation_id),
         )
     return conversation
+
+
+async def get_assignable_agent_for_workspace(
+    db: AsyncSession,
+    *,
+    workspace: Workspace,
+    agent_id: UUID,
+) -> Agent:
+    """Load an active agent that can be assigned to a new conversation."""
+    agent = await db.scalar(
+        select(Agent).where(
+            Agent.id == agent_id,
+            Agent.workspace_id == workspace.id,
+            Agent.deleted == False,  # noqa: E712
+        )
+    )
+    if agent is None:
+        raise NotFoundError(
+            "Agent not found",
+            resource_type="agent",
+            resource_id=str(agent_id),
+        )
+    if not agent.is_active:
+        raise ConflictError(
+            "Agent is not active",
+            conflicting_resource="agent",
+            details={"agent_id": str(agent.id)},
+        )
+    return agent
 
 
 async def get_active_run_for_conversation(

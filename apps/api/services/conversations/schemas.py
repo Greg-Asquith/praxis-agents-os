@@ -9,7 +9,29 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent_run import AgentRun
-from models.conversation import ConversationMessage
+from models.conversation import Conversation, ConversationMessage
+
+
+class ConversationCreateRequest(BaseModel):
+    agent_id: UUID
+    user_prompt: str = Field(min_length=1, max_length=20000)
+    client_message_id: str | None = Field(default=None, max_length=128)
+
+    @field_validator("user_prompt")
+    @classmethod
+    def normalize_user_prompt(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("user_prompt must not be blank")
+        return normalized
+
+    @field_validator("client_message_id")
+    @classmethod
+    def normalize_client_message_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class ConversationTurnCreateRequest(BaseModel):
@@ -33,6 +55,30 @@ class ConversationTurnCreateRequest(BaseModel):
         return normalized or None
 
 
+class ConversationRead(BaseModel):
+    id: UUID
+    user_id: UUID
+    workspace_id: UUID
+    created_by: UUID
+    title: str | None = None
+    description: str | None = None
+    status: str
+    metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
+    unread: bool
+    source: str
+    last_message_at: datetime | None = None
+    active_agent_id: UUID | None = None
+    agent_slug: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    @classmethod
+    def from_conversation(cls, conversation: Conversation) -> "ConversationRead":
+        return cls.model_validate(conversation)
+
+
 class ConversationMessageRead(BaseModel):
     id: UUID
     conversation_id: UUID
@@ -50,19 +96,7 @@ class ConversationMessageRead(BaseModel):
 
     @classmethod
     def from_message(cls, message: ConversationMessage) -> "ConversationMessageRead":
-        return cls(
-            id=message.id,
-            conversation_id=message.conversation_id,
-            role=message.role,
-            parts=message.parts,
-            metadata_json=message.metadata_json,
-            tool_name=message.tool_name,
-            error_json=message.error_json,
-            sequence=message.sequence,
-            client_message_id=message.client_message_id,
-            created_at=message.created_at,
-            updated_at=message.updated_at,
-        )
+        return cls.model_validate(message)
 
 
 class ConversationMessagesResponse(BaseModel):
@@ -97,3 +131,10 @@ class AgentRunRead(BaseModel):
 
 class ConversationActiveRunResponse(BaseModel):
     active_run: AgentRunRead | None
+
+
+class ConversationsListResponse(BaseModel):
+    conversations: list[ConversationRead]
+    total: int
+    limit: int
+    offset: int
