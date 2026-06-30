@@ -9,6 +9,7 @@ import {
 
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
 import { LoginRoute } from "@/features/auth/routes/login-route"
+import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callback-route"
 import { ProfileRoute } from "@/features/auth/routes/profile-route"
 import { RegisterRoute } from "@/features/auth/routes/register-route"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
@@ -94,9 +95,21 @@ const profileRoute = createRoute({
   component: ProfileRoute,
 })
 
+const oauthLinkCallbackRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/oauth/link/callback",
+  component: OAuthLinkCallbackRoute,
+})
+
 const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute]),
-  appRoute.addChildren([homeRoute, workspacesRoute, workspaceSettingsRoute, profileRoute]),
+  appRoute.addChildren([
+    homeRoute,
+    workspacesRoute,
+    workspaceSettingsRoute,
+    profileRoute,
+    oauthLinkCallbackRoute,
+  ]),
 ])
 
 export function createAppRouter(queryClient: QueryClient) {

@@ -35,6 +35,23 @@ export type IdentitiesResponse = {
   identities: AuthIdentity[]
 }
 
+export type AuthProvider = {
+  name: string
+  display_name: string
+  icon: string
+}
+
+export type AuthProvidersResponse = {
+  providers: AuthProvider[]
+}
+
+export type OAuthAuthorizationUrlResponse = {
+  provider: string
+  authorization_url: string
+  state: string
+  expires_at: string
+}
+
 export type UpdateCurrentUserRequest = {
   display_name?: string | null
   avatar_url?: string | null

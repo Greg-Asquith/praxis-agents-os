@@ -75,7 +75,7 @@ export function ProfileForm() {
             <Field>
               <FieldLabel htmlFor="profile-email">Email</FieldLabel>
               <Input id="profile-email" value={user.email} disabled readOnly />
-              <FieldDescription>Email changes aren&apos;t available yet.</FieldDescription>
+              <FieldDescription>Your email address can&apos;t be changed.</FieldDescription>
             </Field>
 
             <Field>
