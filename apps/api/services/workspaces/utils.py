@@ -22,10 +22,13 @@ from services.security import (
 from utils.request import request_ip
 
 MANAGER_ROLES = {WorkspaceRole.OWNER.value, WorkspaceRole.ADMIN.value}
-READ_ROLES = {
+EDITOR_ROLES = {
     WorkspaceRole.OWNER.value,
     WorkspaceRole.ADMIN.value,
     WorkspaceRole.MEMBER.value,
+}
+READ_ROLES = {
+    *EDITOR_ROLES,
     WorkspaceRole.READ_ONLY.value,
 }
 

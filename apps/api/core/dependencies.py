@@ -29,6 +29,7 @@ from models.agent import AgentScheduleRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.workspaces.get_default_workspace import require_default_workspace_membership_for_user
+from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES, READ_ROLES
 
 logger = logging.getLogger(__name__)
 _INTERNAL_TOKEN_WORKSPACE_ATTR = "_internal_token_workspace_id"
@@ -258,6 +259,6 @@ def require_role(allowed_roles: list[str]):
 
 
 # Admins have equivalent permissions to owners in app semantics
-require_owner = require_role(["owner", "admin"])
-require_editor = require_role(["owner", "admin", "member"])
-require_read = require_role(["owner", "admin", "member", "read_only"])
+require_owner = require_role(sorted(MANAGER_ROLES))
+require_editor = require_role(sorted(EDITOR_ROLES))
+require_read = require_role(sorted(READ_ROLES))

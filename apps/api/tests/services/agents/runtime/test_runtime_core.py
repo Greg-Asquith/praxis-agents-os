@@ -48,7 +48,6 @@ from services.agent_runs.domain import (
     RUN_STATUS_FAILED,
 )
 from services.agents.models.domain import ModelConfigurationError
-from services.agents.runtime import execute_run
 from services.agents.runtime.approval_events import (
     emit_deferred_tool_resume_events,
     is_deferred_tool_resume_event,
@@ -70,6 +69,7 @@ from services.agents.runtime.events import (
     EventTranslationState,
     emit_agent_stream_event,
 )
+from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.worker import run_turn_worker
 from tests.factories import build_user, build_workspace

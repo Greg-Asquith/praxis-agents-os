@@ -48,6 +48,21 @@ def test_model_catalog_route_is_registered_under_api_v1(
     assert "/api/v1/models/catalog" in paths
 
 
+def test_agent_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = set(openapi_schema["paths"])
+
+    assert {
+        "/api/v1/agents/",
+        "/api/v1/agents/{agent_id}",
+    } <= paths
+    assert {"get", "post"} <= set(openapi_schema["paths"]["/api/v1/agents/"])
+    assert {"get", "patch", "delete"} <= set(
+        openapi_schema["paths"]["/api/v1/agents/{agent_id}"]
+    )
+
+
 def test_conversation_routes_are_registered_under_api_v1(
     openapi_schema: dict[str, object],
 ) -> None:

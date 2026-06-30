@@ -3,6 +3,7 @@
 """Route tests for conversation turn streaming and heal reads."""
 
 import asyncio
+import importlib
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -24,7 +25,6 @@ from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import complete_agent_run, create_agent_run, start_agent_run
-from services.agents.runtime import execute_run
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
     EVENT_CONVERSATION_CREATED,
@@ -36,6 +36,7 @@ from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
+from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink, EventSink
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationTurnCreateRequest
@@ -177,12 +178,20 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         await sink.emit(EVENT_DONE, {"status": "completed"})
         await sink.close()
 
+    # Patch the module object directly: the services.conversations package re-exports a
+    # same-named create_conversation_stream function that shadows the submodule, so a
+    # string target would resolve to the function instead of the module.
+    create_conversation_stream_module = importlib.import_module(
+        "services.conversations.create_conversation_stream"
+    )
     monkeypatch.setattr(
-        "services.conversations.create_conversation_stream.run_conversation_title_worker",
+        create_conversation_stream_module,
+        "run_conversation_title_worker",
         fake_title_worker,
     )
     monkeypatch.setattr(
-        "services.conversations.create_conversation_stream.run_turn_worker",
+        create_conversation_stream_module,
+        "run_turn_worker",
         fake_worker,
     )
 

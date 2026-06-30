@@ -4,18 +4,14 @@
 
 from typing import Any
 
+# execute_run is intentionally not re-exported here: the submodule services.agents.runtime.execute_run shadows any same-named package attribute, so import the function explicitly via that module path.
 __all__ = [
-    "execute_run",
     "run_task_registry",
     "sweep_abandoned_agent_runs_on_startup",
 ]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "execute_run":
-        from services.agents.runtime.execute_run import execute_run
-
-        return execute_run
     if name == "run_task_registry":
         from services.agents.runtime.run_manager import run_task_registry
 

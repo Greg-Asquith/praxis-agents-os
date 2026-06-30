@@ -32,6 +32,7 @@ class AuditResourceType(StrEnum):
     WORKSPACE_MEMBERSHIP = "workspace_membership"
     INVITATION = "invitation"
     NOTIFICATION = "notification"
+    AGENT = "agent"
     AGENT_SCHEDULE = "agent_schedule"
     AGENT_SCHEDULE_RUN = "agent_schedule_run"
 

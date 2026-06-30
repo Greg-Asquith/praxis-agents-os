@@ -63,7 +63,7 @@ class ConversationRead(BaseModel):
     title: str | None = None
     description: str | None = None
     status: str
-    metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
+    metadata_json: dict[str, Any] | None = Field(default=None, serialization_alias="metadata")
     unread: bool
     source: str
     last_message_at: datetime | None = None
@@ -84,9 +84,9 @@ class ConversationMessageRead(BaseModel):
     conversation_id: UUID
     role: str
     parts: dict[str, Any]
-    metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
+    metadata_json: dict[str, Any] | None = Field(default=None, serialization_alias="metadata")
     tool_name: str | None = None
-    error_json: dict[str, Any] | None = Field(default=None, alias="error")
+    error_json: dict[str, Any] | None = Field(default=None, serialization_alias="error")
     sequence: int
     client_message_id: str | None = None
     created_at: datetime
