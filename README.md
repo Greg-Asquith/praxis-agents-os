@@ -15,10 +15,9 @@ This repository is in an early porting stage.
 
 - The backend foundation is present, including settings, database models,
   migrations, middleware, auth/session utilities, audit/security services,
-  workspace services, notifications, and schedule domain logic.
-- The web app is still a minimal Next.js shell and has not yet been replaced with
-  the Praxis product interface.
-- Public API routes are not yet wired into `apps/api/main.py`.
+  workspace services, routes, notifications, and schedule domain logic.
+- The web app is a Vite SPA with the initial Praxis auth, shell, and workspace
+  management foundation.
 - Docker Compose is present for local integration work, but the Docker setup is
   still being normalized as the workspace moves to the final package managers and
   app layout.
@@ -31,7 +30,7 @@ Expect sharp edges while the old system is being reduced and rebuilt.
 .
 +-- apps/
 |   +-- api/      # FastAPI backend, SQLAlchemy models, Alembic migrations
-|   +-- web/      # Next.js frontend
+|   +-- web/      # Vite frontend
 +-- docker-compose.yml
 +-- AGENTS.md     # Contributor and coding-agent guidance
 +-- README.md
@@ -50,10 +49,12 @@ Backend:
 
 Frontend:
 
-- Next.js 16
 - React 19
+- Vite
 - TypeScript
 - Tailwind CSS 4
+- TanStack Router and TanStack Query
+- shadcn/base-nova components
 - `pnpm` for dependency management
 
 Local infrastructure:
@@ -70,6 +71,37 @@ Install these before running the apps locally:
 - Node.js 22
 - `pnpm`
 - Docker Desktop or another Docker Compose compatible runtime
+
+## Local Make Targets
+
+The root `GNUmakefile` wraps the common local development flow and includes
+sectioned targets from `makefile/`.
+
+Create missing local env files and install dependencies:
+
+```bash
+make bootstrap
+```
+
+Start the local database, apply migrations, and run the API and web app together:
+
+```bash
+make dev
+```
+
+Useful focused targets:
+
+```bash
+make db-up
+make migrate
+make api-dev
+make web-dev
+make compose-up
+make check
+```
+
+`make dev` runs the API at `http://localhost:8000` and the web app at
+`http://localhost:3000`.
 
 ## Backend Development
 
@@ -175,9 +207,7 @@ touch .local/targets/local.secrets.env
 Create `.local/generated/local.web.env` with local frontend configuration:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api
-NEXT_PUBLIC_URL=http://localhost:3000
-API_BASE_URL=http://api:8080/api
+VITE_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
 Intended local service URLs:
@@ -194,8 +224,8 @@ frontend commands above when you need a dependable local development loop.
 The active work is to turn the extracted foundations into a coherent open source
 agent operating system:
 
-- Replace scaffolded frontend screens with the Praxis control-plane UI.
-- Add explicit API routes for the existing domain services.
+- Extend the Vite control-plane UI beyond auth and workspace management.
+- Add explicit API routes for new domain services as they become product surfaces.
 - Keep auth, workspace boundaries, approval flows, audit events, and scheduling
   easy to inspect and test.
 - Remove custom or unused legacy features instead of carrying them forward.

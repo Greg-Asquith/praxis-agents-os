@@ -67,7 +67,7 @@ services:
       - praxis-agents-template-web-app-pnpm-node-modules:/app/node_modules
     env_file: ./.local/generated/local.web.env
     environment:
-      VITE_API_BASE_URL: http://localhost:8000/api
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
     networks:
       - praxis-agents-template-network
     depends_on:
