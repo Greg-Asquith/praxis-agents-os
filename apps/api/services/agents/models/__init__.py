@@ -3,6 +3,7 @@
 """Model registry, resolution, and factory for the agent runtime."""
 
 from services.agents.models.factory import build_model
+from services.agents.models.list_model_catalog import list_model_catalog
 from services.agents.models.registry import (
     find_model,
     get_model,
@@ -18,6 +19,7 @@ __all__ = [
     "find_model",
     "get_model",
     "is_known",
+    "list_model_catalog",
     "list_models",
     "provider_api_key",
     "qualified_id",

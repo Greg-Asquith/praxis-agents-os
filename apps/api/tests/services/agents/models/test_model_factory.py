@@ -38,6 +38,12 @@ def test_provider_api_key_missing_raises(monkeypatch):
         provider_api_key("openai")
 
 
+def test_provider_api_key_blank_raises(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("   "))
+    with pytest.raises(ModelConfigurationError):
+        provider_api_key("openai")
+
+
 def test_build_anthropic_model(monkeypatch):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
     model = build_model(_spec("anthropic", "claude-sonnet-4-6"))

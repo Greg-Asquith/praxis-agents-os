@@ -8,17 +8,26 @@ Pure unit tests: no database, no network, no provider construction.
 from types import SimpleNamespace
 
 import pytest
+from pydantic import SecretStr
 
 from core.settings import settings
 from services.agents.models import (
     get_model,
     is_known,
+    list_model_catalog,
     list_models,
     qualified_id,
     resolve_agent_model,
     resolve_naming_model,
 )
-from services.agents.models.domain import DEFAULT_MAX_STEPS, ModelConfigurationError
+from services.agents.models.domain import (
+    DEFAULT_MAX_STEPS,
+    PROVIDER_ANTHROPIC,
+    PROVIDER_AZURE,
+    PROVIDER_GOOGLE,
+    PROVIDER_OPENAI,
+    ModelConfigurationError,
+)
 
 
 def _agent(**overrides):
@@ -66,6 +75,73 @@ def test_list_models_excludes_deprecated_by_default():
     assert {m.qualified_id for m in visible} <= {m.qualified_id for m in all_models}
 
 
+# Catalog route payload
+
+
+def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-test"))
+    monkeypatch.setattr(settings, "DEFAULT_MODEL_PROVIDER", PROVIDER_OPENAI)
+    monkeypatch.setattr(settings, "DEFAULT_MODEL", "gpt-5.4-mini")
+
+    response = list_model_catalog()
+
+    assert {model.provider for model in response.models} == {PROVIDER_OPENAI}
+    assert {model.id for model in response.models} == {
+        model.qualified_id for model in list_models() if model.provider == PROVIDER_OPENAI
+    }
+    assert response.defaults.agent_model == "openai:gpt-5.4-mini"
+
+    providers = {provider.provider: provider for provider in response.providers}
+    assert providers[PROVIDER_OPENAI].configured is True
+    assert providers[PROVIDER_OPENAI].model_count == len(response.models)
+    assert providers[PROVIDER_ANTHROPIC].configured is False
+    assert providers[PROVIDER_GOOGLE].configured is False
+
+
+def test_model_catalog_treats_blank_api_keys_as_unconfigured(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("   "))
+    monkeypatch.setattr(settings, "DEFAULT_MODEL_PROVIDER", PROVIDER_OPENAI)
+    monkeypatch.setattr(settings, "DEFAULT_MODEL", "gpt-5.4-mini")
+
+    response = list_model_catalog()
+
+    assert response.models == []
+    assert response.defaults.agent_model is None
+    providers = {provider.provider: provider for provider in response.providers}
+    assert providers[PROVIDER_OPENAI].configured is False
+
+
+def test_model_catalog_lists_google_models_when_vertex_project_is_configured(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    google_model = next(model for model in list_models() if model.provider == PROVIDER_GOOGLE)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "DEFAULT_MODEL_PROVIDER", PROVIDER_GOOGLE)
+    monkeypatch.setattr(settings, "DEFAULT_MODEL", google_model.model)
+
+    response = list_model_catalog()
+
+    assert {model.provider for model in response.models} == {PROVIDER_GOOGLE}
+    assert response.defaults.agent_model == google_model.qualified_id
+    providers = {provider.provider: provider for provider in response.providers}
+    assert providers[PROVIDER_GOOGLE].configured is True
+
+
+def test_model_catalog_reports_configured_azure_without_catalog_models(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", SecretStr("azure-key"))
+    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", "https://example.openai.azure.com")
+
+    response = list_model_catalog()
+
+    assert response.models == []
+    providers = {provider.provider: provider for provider in response.providers}
+    assert providers[PROVIDER_AZURE].configured is True
+    assert providers[PROVIDER_AZURE].model_count == 0
+
+
 # Resolution
 
 
@@ -111,3 +187,14 @@ def test_resolve_naming_model_returns_configured_model():
     resolved = resolve_naming_model()
     assert resolved.provider == settings.CONVERSATION_NAMING_PROVIDER
     assert resolved.model == settings.CONVERSATION_NAMING_MODEL
+
+
+def _clear_model_provider_settings(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", None)
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
+    monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", None)

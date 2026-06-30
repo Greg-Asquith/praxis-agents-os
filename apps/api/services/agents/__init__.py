@@ -1,7 +1,5 @@
 # apps/api/services/agents/__init__.py
 
-"""Agent runtime services."""
+"""Agent service namespace."""
 
-from services.agents.runtime import execute_run
-
-__all__ = ["execute_run"]
+__all__: list[str] = []

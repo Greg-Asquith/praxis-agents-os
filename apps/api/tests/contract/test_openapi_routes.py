@@ -40,6 +40,14 @@ def test_workspace_routes_are_registered_under_api_v1(
     } <= paths
 
 
+def test_model_catalog_route_is_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = set(openapi_schema["paths"])
+
+    assert "/api/v1/models/catalog" in paths
+
+
 def test_oauth_routes_are_api_posts_not_browser_redirect_gets(
     openapi_schema: dict[str, object],
 ) -> None:
