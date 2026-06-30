@@ -19,6 +19,7 @@ from services.audit_events.queries import (
     list_audit_events,
 )
 from services.audit_events.user_events import record_user_audit_event
+from services.audit_events.workspace_events import record_workspace_audit_event
 
 __all__ = [
     "AuditAction",
@@ -29,5 +30,6 @@ __all__ = [
     "get_audit_event",
     "list_audit_events",
     "record_user_audit_event",
+    "record_workspace_audit_event",
     "safe_record_operation_audit_event",
 ]

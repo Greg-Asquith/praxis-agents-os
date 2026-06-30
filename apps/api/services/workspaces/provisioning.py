@@ -15,12 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.audit_events import (
-    AuditAction,
-    AuditActorType,
-    AuditResourceType,
-    safe_record_operation_audit_event,
-)
+from services.audit_events import AuditAction, AuditResourceType
+from services.audit_events.workspace_events import record_workspace_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -105,16 +101,14 @@ async def provision_personal_workspace(db: AsyncSession, user: User) -> Workspac
         user.id,
     )
 
-    await safe_record_operation_audit_event(
+    await record_workspace_audit_event(
         db,
+        request=None,
         workspace_id=workspace.id,
         action=AuditAction.CREATE,
         resource_type=AuditResourceType.WORKSPACE,
         resource_id=workspace.id,
-        actor_type=AuditActorType.USER,
-        actor_id=user.id,
-        actor_display=user.email,
-        requested_by_user_id=user.id,
+        actor=user,
         details={"slug": workspace.slug, "is_personal": True, "role": "owner"},
     )
 
