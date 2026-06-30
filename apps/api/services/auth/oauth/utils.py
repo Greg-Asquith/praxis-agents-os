@@ -154,6 +154,59 @@ def create_oauth_state(
     return token, expires_at
 
 
+def create_oauth_link_state(
+    *,
+    provider_name: str,
+    redirect_uri: str,
+    user_id: Any,
+    next_path: str | None,
+) -> tuple[str, datetime]:
+    expires_at = datetime.now(UTC) + _OAUTH_STATE_TTL
+    payload = {
+        "type": "oauth_link_state",
+        "provider": provider_name,
+        "redirect_uri": redirect_uri,
+        "user_id": str(user_id),
+        "next_path": safe_next_path(next_path),
+        "jti": secrets.token_urlsafe(24),
+        "exp": int(expires_at.timestamp()),
+        "iat": int(datetime.now(UTC).timestamp()),
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY.get_secret_value(), algorithm="HS256")
+    return token, expires_at
+
+
+def verify_oauth_link_state(state: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(
+            state,
+            settings.SECRET_KEY.get_secret_value(),
+            algorithms=["HS256"],
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise OAuthAuthenticationError(
+            "OAuth state has expired", provider="unknown", endpoint="state"
+        ) from exc
+    except jwt.InvalidTokenError as exc:
+        raise OAuthAuthenticationError(
+            "OAuth state is invalid", provider="unknown", endpoint="state"
+        ) from exc
+
+    if payload.get("type") != "oauth_link_state":
+        raise OAuthAuthenticationError(
+            "OAuth state is invalid",
+            provider=str(payload.get("provider") or "unknown"),
+            endpoint="state",
+        )
+    if not payload.get("provider") or not payload.get("redirect_uri") or not payload.get("user_id"):
+        raise OAuthAuthenticationError(
+            "OAuth state is incomplete",
+            provider=str(payload.get("provider") or "unknown"),
+            endpoint="state",
+        )
+    return payload
+
+
 def verify_oauth_state(state: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(

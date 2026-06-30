@@ -8,11 +8,14 @@ from routes.auth.get_identities import router as get_identities_router
 from routes.auth.get_me import router as get_me_router
 from routes.auth.login import router as login_router
 from routes.auth.logout import router as logout_router
+from routes.auth.oauth.complete_oauth_link import router as complete_oauth_link_router
 from routes.auth.oauth.complete_oauth_login import router as complete_oauth_login_router
 from routes.auth.oauth.create_oauth_authorization_url import (
     router as create_oauth_authorization_url_router,
 )
 from routes.auth.oauth.list_oauth_providers import router as list_oauth_providers_router
+from routes.auth.oauth.start_oauth_link import router as start_oauth_link_router
+from routes.auth.oauth.unlink_oauth_provider import router as unlink_oauth_provider_router
 from routes.auth.password.change_password import router as change_password_router
 from routes.auth.register import router as register_router
 from routes.auth.sessions.list_sessions import router as list_sessions_router
@@ -40,6 +43,9 @@ router.include_router(revoke_session_router)
 router.include_router(change_password_router)
 router.include_router(create_oauth_authorization_url_router)
 router.include_router(complete_oauth_login_router)
+router.include_router(start_oauth_link_router)
+router.include_router(complete_oauth_link_router)
+router.include_router(unlink_oauth_provider_router)
 router.include_router(setup_totp_router)
 router.include_router(enable_totp_router)
 router.include_router(verify_totp_router)

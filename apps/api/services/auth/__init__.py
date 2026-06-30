@@ -4,9 +4,12 @@
 
 from services.auth.list_user_identities import list_user_identities
 from services.auth.logout import logout
+from services.auth.oauth.complete_oauth_link import complete_oauth_link
 from services.auth.oauth.complete_oauth_login import complete_oauth_login
 from services.auth.oauth.create_oauth_authorization_url import create_oauth_authorization_url
 from services.auth.oauth.list_oauth_providers import list_oauth_providers
+from services.auth.oauth.start_oauth_link import start_oauth_link
+from services.auth.oauth.unlink_oauth_provider import unlink_oauth_provider
 from services.auth.password.change_password import change_password
 from services.auth.password.login_with_password import login_with_password
 from services.auth.password.register_with_password import register_with_password
@@ -22,6 +25,7 @@ from services.auth.update_current_user import update_current_user
 
 __all__ = [
     "change_password",
+    "complete_oauth_link",
     "complete_oauth_login",
     "create_oauth_authorization_url",
     "disable_totp",
@@ -36,6 +40,8 @@ __all__ = [
     "revoke_session_by_id",
     "revoke_sessions",
     "setup_totp",
+    "start_oauth_link",
+    "unlink_oauth_provider",
     "update_current_user",
     "verify_totp",
 ]
