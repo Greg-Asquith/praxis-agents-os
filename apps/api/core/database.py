@@ -66,13 +66,10 @@ def get_async_db_session_factory() -> async_sessionmaker[AsyncSession]:
 
 async def configure_async_db_session(session: AsyncSession) -> None:
     """Apply per-session database settings used by request and fallback sessions."""
-    try:
-        await session.execute(
-            text("SET ivfflat.probes = :probes"),
-            {"probes": settings.IVFFLAT_PROBES},
-        )
-    except Exception:
-        logger.debug("Skipping ivfflat.probes session setting", exc_info=True)
+    # PostgreSQL SET statements do not accept bind parameters for configuration values, so interpolate the validated integer setting directly.
+    await session.execute(
+        text(f"SET ivfflat.probes = {settings.IVFFLAT_PROBES}"),
+    )
 
 
 async def get_async_db_session(request: Request) -> AsyncGenerator[AsyncSession]:

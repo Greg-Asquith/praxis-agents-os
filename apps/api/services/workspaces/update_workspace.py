@@ -87,5 +87,6 @@ async def update_workspace(
             actor=actor,
             details={"fields": changed_fields, "slug": workspace.slug},
         )
+        await db.refresh(workspace)
 
     return WorkspaceRead.from_workspace(workspace, current_user_role=membership.role)

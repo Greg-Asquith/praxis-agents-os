@@ -147,6 +147,11 @@ async def accept_invitation(
             },
         )
 
+    await db.refresh(workspace)
+    await db.refresh(membership)
+    await db.refresh(invitation)
+    membership.user = actor
+
     return WorkspaceInvitationAcceptResponse(
         workspace=WorkspaceRead.from_workspace(workspace, current_user_role=membership.role),
         membership=WorkspaceMembershipRead.from_membership(membership),

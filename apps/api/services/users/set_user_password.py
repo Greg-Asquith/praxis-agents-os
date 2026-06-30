@@ -36,4 +36,5 @@ async def set_user_password(
         request=request,
         details={"field": "password", "revoked_sessions": revoked_sessions},
     )
+    await db.refresh(user)
     return UserRead.from_user(user)

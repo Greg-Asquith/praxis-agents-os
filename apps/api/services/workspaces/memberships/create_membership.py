@@ -105,4 +105,6 @@ async def create_membership(
             "role": role,
         },
     )
+    await db.refresh(membership)
+    membership.user = user
     return WorkspaceMembershipRead.from_membership(membership)

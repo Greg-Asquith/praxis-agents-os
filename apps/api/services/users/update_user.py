@@ -52,5 +52,6 @@ async def update_user(
             request=request,
             details={"fields": changed_fields, "revoked_sessions": revoked_sessions},
         )
+        await db.refresh(user)
 
     return UserRead.from_user(user)

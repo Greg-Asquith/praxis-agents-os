@@ -107,6 +107,7 @@ async def create_invitation(
             "role": invitation.role,
         },
     )
+    await db.refresh(invitation)
     return WorkspaceInvitationCreateResponse(
         invitation=WorkspaceInvitationRead.from_invitation(invitation),
         token=raw_token,

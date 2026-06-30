@@ -58,7 +58,7 @@ Frontend:
 
 Local infrastructure:
 
-- Postgres 17 with pgvector
+- Postgres 17 with pgvector available; pgvector is enabled by Alembic
 - Docker Compose for local service orchestration
 
 ## Prerequisites
@@ -74,7 +74,8 @@ Install these before running the apps locally:
 ## Backend Development
 
 Start a Postgres database first. The default `apps/api/.env.example` expects
-Postgres at `localhost:5432`; the bundled Compose database service is one option:
+Postgres at `localhost:5432`; the bundled Compose database service starts a
+local Postgres instance with pgvector available:
 
 ```bash
 docker compose up -d postgres
@@ -89,8 +90,9 @@ uv run alembic upgrade heads
 uv run uvicorn main:app --reload --port 8000
 ```
 
-The API reads configuration from environment variables or `.env`. Local defaults
-are documented in `apps/api/.env.example`.
+The API reads configuration from environment variables or `.env`. Local defaults are documented in `apps/api/.env.example`.
+
+The database server must expose the `vector` extension. Alembic enables it with `CREATE EXTENSION IF NOT EXISTS "vector"` during core migrations; if the provider does not make pgvector available, migration fails instead of silently degrading.
 
 Important notes:
 

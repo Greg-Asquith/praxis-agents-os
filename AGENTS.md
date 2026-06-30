@@ -17,8 +17,7 @@ and aligned with the product direction.
 
 - `apps/api` is the FastAPI backend.
 - `apps/web` is the Next.js frontend.
-- `docker-compose.yml` defines local Postgres with pgvector, the API, and the web
-  app.
+- `docker-compose.yml` defines local Postgres with pgvector available, the API, and the web app. pgvector is enabled through Alembic.
 
 The repository is still early in the port. Some foundations exist before their
 public routes or UI are complete. Prefer honest incremental work over filling gaps

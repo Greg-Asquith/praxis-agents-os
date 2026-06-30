@@ -52,4 +52,5 @@ async def create_user(
         workspace_id=workspace.id,
         details={"source": "admin", "is_active": payload.is_active},
     )
+    await db.refresh(user)
     return UserRead.from_user(user)

@@ -80,5 +80,6 @@ async def update_membership(
                 "role": new_role,
             },
         )
+        await db.refresh(membership)
 
     return WorkspaceMembershipRead.from_membership(membership)

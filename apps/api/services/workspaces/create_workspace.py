@@ -35,12 +35,13 @@ async def create_workspace(
             is_personal=False,
             status="active",
         )
-        db.add(candidate)
         try:
             async with db.begin_nested():
+                db.add(candidate)
                 await db.flush([candidate])
         except IntegrityError as exc:
-            db.expunge(candidate)
+            if candidate in db:
+                db.expunge(candidate)
             if slug_was_supplied:
                 raise ConflictError(
                     "A workspace with that slug already exists",
@@ -78,6 +79,7 @@ async def create_workspace(
             "owner_membership_id": str(membership.id),
         },
     )
+    await db.refresh(workspace)
     return WorkspaceRead.from_workspace(
         workspace,
         current_user_role=WorkspaceRole.OWNER,

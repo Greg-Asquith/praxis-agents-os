@@ -65,14 +65,15 @@ async def provision_personal_workspace(db: AsyncSession, user: User) -> Workspac
             is_personal=True,
             status="active",
         )
-        db.add(candidate)
         try:
             async with db.begin_nested():
+                db.add(candidate)
                 await db.flush([candidate])
             workspace = candidate
             break
         except IntegrityError:
-            db.expunge(candidate)
+            if candidate in db:
+                db.expunge(candidate)
             continue
 
     if workspace is None:

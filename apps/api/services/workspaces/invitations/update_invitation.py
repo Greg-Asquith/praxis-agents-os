@@ -93,5 +93,6 @@ async def update_invitation(
                 "fields": changed_fields,
             },
         )
+        await db.refresh(invitation)
 
     return WorkspaceInvitationRead.from_invitation(invitation)
