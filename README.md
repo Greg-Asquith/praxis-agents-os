@@ -141,8 +141,10 @@ uv run ruff check .
 uv run alembic check
 ```
 
-No API test suite is committed yet. When you add behavior, add focused tests and
-run them with `uv run pytest`.
+The API has a test suite under `apps/api/tests` (organized by intent: contract,
+routes, services, integration, middleware, factories, support). Run it with
+`uv run pytest`. Database-backed tests skip cleanly unless `TEST_DATABASE_URL` is
+set. When you add behavior, add focused tests alongside it.
 
 ## Database Migrations
 

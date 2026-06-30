@@ -19,6 +19,7 @@ from core.settings.database import DatabaseSettingsMixin
 from core.settings.email import EmailSettingsMixin
 from core.settings.files import FilesSettingsMixin
 from core.settings.gcp import GcpSettingsMixin
+from core.settings.models import LLMSettingsMixin
 from core.settings.providers import ProviderSettingsMixin
 from core.settings.rate_limit import RateLimitSettingsMixin
 from core.settings.security import SecuritySettingsMixin
@@ -35,6 +36,7 @@ class Settings(
     EmailSettingsMixin,
     FilesSettingsMixin,
     GcpSettingsMixin,
+    LLMSettingsMixin,
     ProviderSettingsMixin,
     RateLimitSettingsMixin,
     SecuritySettingsMixin,
