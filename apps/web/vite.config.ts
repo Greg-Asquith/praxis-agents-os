@@ -11,4 +11,14 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    host: true,
+    port: 8080,
+    // Bind mounts don't emit native FS events in containers; poll so HMR works.
+    watch: { usePolling: true },
+  },
+  preview: {
+    host: true,
+    port: 8080,
+  },
 })

@@ -1,8 +1,9 @@
 {
-  "name": "web-vite",
+  "name": "web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

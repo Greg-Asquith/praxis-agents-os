@@ -16,7 +16,7 @@ and aligned with the product direction.
 ## Current Shape
 
 - `apps/api` is the FastAPI backend.
-- `apps/web` is the Next.js frontend.
+- `apps/web` is the Vite + React single-page frontend.
 - `docker-compose.yml` defines local Postgres with pgvector available, the API, and the web app. pgvector is enabled through Alembic.
 
 The repository is still early in the port. Some foundations exist before their
@@ -93,18 +93,16 @@ uv run alembic revision --autogenerate \
 
 ## Frontend Standards
 
-The frontend lives in `apps/web` and uses Next.js, React, TypeScript, Tailwind,
-and `pnpm`.
+The frontend lives in `apps/web` and uses Vite, React, TypeScript, Tailwind, and `pnpm`. It is a single-page app with no server runtime: it talks to the FastAPI backend over REST and consumes agent turns over SSE.
 
-- Use the App Router conventions already present in the app.
+- Follow the client-router and component conventions already present in the app.
 - Build the real product interface, not marketing pages, unless the task
   explicitly asks for marketing content.
 - Keep UI dense, practical, and clear. This is an operational tool for building
   and running agents.
 - Prefer simple, accessible controls over custom widgets.
 - Do not leave default scaffold copy, metadata, or assets in user-facing screens.
-- Keep frontend environment values explicit with `NEXT_PUBLIC_*` only where the
-  value is safe to expose to browsers.
+- Keep frontend environment values explicit with `VITE_*` only. Every such value is inlined into the browser bundle, so expose only values safe to make public.
 
 Useful frontend commands:
 

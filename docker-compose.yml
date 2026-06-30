@@ -5,8 +5,6 @@ volumes:
     driver: local
   praxis-agents-template-web-app-pnpm-node-modules:
     driver: local
-  praxis-agents-template-web-next:
-    driver: local
 
 networks:
   praxis-agents-template-network:
@@ -58,25 +56,18 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: apps/web/Dockerfile
+      context: ./apps/web
+      dockerfile: Dockerfile
       target: dev
-      #args:
-        #NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
-        #NEXT_PUBLIC_URL: http://localhost:3000
     container_name: web
     ports:
       - "127.0.0.1:3000:8080"
     volumes:
-      - ./apps/web:/apps/web
-      - ./packages:/packages
-      - praxis-agents-template-web-app-pnpm-node-modules:/apps/web/node_modules
-      - praxis-agents-template-web-next:/apps/web/.next
+      - ./apps/web:/app
+      - praxis-agents-template-web-app-pnpm-node-modules:/app/node_modules
     env_file: ./.local/generated/local.web.env
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
-      NEXT_PUBLIC_URL: http://localhost:3000
-      API_BASE_URL: http://api:8080/api
+      VITE_API_BASE_URL: http://localhost:8000/api
     networks:
       - praxis-agents-template-network
     depends_on:
