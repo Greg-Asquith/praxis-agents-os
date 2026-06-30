@@ -124,10 +124,4 @@ log/
 ########################################
 # Documentation
 ########################################
-docs/roadmap/*
-!docs/roadmap/AI SDK v7/
-!docs/roadmap/AI SDK v7/**
-!docs/roadmap/TODO - PACKAGE FIRST MONOREPO/
-!docs/roadmap/TODO - PACKAGE FIRST MONOREPO/**
-docs/proposals/
-docs/marketing/
+docs/*
