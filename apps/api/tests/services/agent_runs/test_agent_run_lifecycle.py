@@ -8,7 +8,7 @@ TEST_DATABASE_URL via the shared db_session fixture chain.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -28,6 +28,7 @@ from services.agent_runs import (
     mark_run_awaiting_approval,
     record_run_usage,
     start_agent_run,
+    start_agent_run_with_lease,
 )
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
@@ -201,6 +202,26 @@ async def test_running_to_completed_stamps_timestamps(
     await complete_agent_run(db_session, run)
     assert run.status == RUN_STATUS_COMPLETED
     assert run.completed_at is not None
+
+
+async def test_start_with_lease_sets_owner_and_expiry(
+    db_session: AsyncSession, run_context: RunContext
+) -> None:
+    now = datetime.now(UTC)
+    run = await _create(db_session, run_context)
+
+    await start_agent_run_with_lease(
+        db_session,
+        run,
+        owner_instance_id="api-1",
+        now=now,
+        ttl_seconds=30,
+    )
+
+    assert run.status == RUN_STATUS_RUNNING
+    assert run.started_at is not None
+    assert run.owner_instance_id == "api-1"
+    assert run.lease_expires_at == now + timedelta(seconds=30)
 
 
 async def test_awaiting_approval_then_resume(

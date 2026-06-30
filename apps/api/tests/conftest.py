@@ -96,6 +96,36 @@ async def db_session_factory(
 
 
 @pytest_asyncio.fixture
+async def committed_db_session_factory(
+    migrated_test_database: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Bind app database sessions to independent committed Postgres connections.
+
+    Use this only for durability/concurrency tests where separate workers must
+    observe committed state and contend on real Postgres row locks.
+    """
+    from core import database as database_module
+
+    engine = create_async_engine(
+        make_async_test_database_url(migrated_test_database),
+        poolclass=NullPool,
+    )
+    session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr(database_module, "_async_engine", engine)
+    monkeypatch.setattr(database_module, "_async_session_factory", session_factory)
+
+    try:
+        yield session_factory
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def db_session(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[AsyncSession]:

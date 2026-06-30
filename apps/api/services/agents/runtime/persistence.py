@@ -51,6 +51,7 @@ async def persist_new_messages(
     conversation: Conversation,
     run_id: UUID,
     messages: Sequence[ModelMessage],
+    client_message_id: str | None = None,
 ) -> list[ConversationMessage]:
     """Append newly produced Pydantic AI messages to a conversation."""
     serialized = _dump_messages(messages)
@@ -60,10 +61,16 @@ async def persist_new_messages(
     next_sequence = await _next_sequence(db, conversation_id=conversation.id)
     now = datetime.now(UTC)
     rows: list[ConversationMessage] = []
+    user_client_message_id = client_message_id
     for index, message in enumerate(serialized):
+        role = _role_for_message(message)
+        row_client_message_id = None
+        if user_client_message_id is not None and role == "user":
+            row_client_message_id = user_client_message_id
+            user_client_message_id = None
         row = ConversationMessage(
             conversation_id=conversation.id,
-            role=_role_for_message(message),
+            role=role,
             parts=message,
             metadata_json={
                 "source": PYDANTIC_AI_MESSAGE_SOURCE,
@@ -72,6 +79,7 @@ async def persist_new_messages(
             },
             tool_name=_first_tool_name(message),
             sequence=next_sequence + index,
+            client_message_id=row_client_message_id,
         )
         db.add(row)
         rows.append(row)

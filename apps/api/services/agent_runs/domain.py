@@ -34,7 +34,9 @@ TERMINAL_RUN_STATUSES = frozenset(
 
 # Allowed forward transitions. A terminal status has no outgoing edges.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    RUN_STATUS_PENDING: frozenset({RUN_STATUS_RUNNING, RUN_STATUS_CANCELLED}),
+    RUN_STATUS_PENDING: frozenset(
+        {RUN_STATUS_RUNNING, RUN_STATUS_FAILED, RUN_STATUS_CANCELLED}
+    ),
     RUN_STATUS_RUNNING: frozenset(
         {
             RUN_STATUS_AWAITING_APPROVAL,

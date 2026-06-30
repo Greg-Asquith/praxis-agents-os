@@ -13,10 +13,12 @@ from models.agent import Agent, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_SCHEDULED,
+    TERMINAL_RUN_STATUSES,
     can_transition,
 )
 
@@ -65,6 +67,8 @@ async def transition_run_status(
         run.failed_at = now
         run.error_code = error_code
         run.error_message = sanitize_error_message(error_message)
+    if target in TERMINAL_RUN_STATUSES or target == RUN_STATUS_AWAITING_APPROVAL:
+        run.lease_expires_at = None
 
     await db.flush()
     return run

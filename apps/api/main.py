@@ -28,6 +28,7 @@ from middleware import (
     SecurityHeadersMiddleware,
 )
 from routes import api_router
+from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
 from services.notifications.registration import register_notification_action_handlers
 
 # Initialize logging as early as possible so all subsequent loggers/middleware use it
@@ -51,10 +52,13 @@ async def lifespan(app: FastAPI):
         logger.error("Database connection failed", exc_info=True)
         raise
 
+    await sweep_abandoned_agent_runs_on_startup()
+
     yield
 
     # Shutdown
     logger.info("Shutting down FastAPI application...")
+    await run_task_registry.drain(max_wait_seconds=settings.AGENT_RUN_SHUTDOWN_DRAIN_SECONDS)
     await close_db_connections()
 
 

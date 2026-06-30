@@ -10,6 +10,7 @@ All secrets should be loaded from environment variables or secret management sys
 from pydantic import model_validator
 from pydantic_settings import SettingsConfigDict
 
+from core.settings.agents import AgentRunSettingsMixin
 from core.settings.app import AppSettingsMixin
 from core.settings.auth import AuthSettingsMixin
 from core.settings.aws import AwsSettingsMixin
@@ -28,6 +29,7 @@ from core.settings.urls import UrlSettingsMixin
 
 class Settings(
     SettingsBase,
+    AgentRunSettingsMixin,
     AppSettingsMixin,
     AuthSettingsMixin,
     AwsSettingsMixin,
@@ -60,6 +62,12 @@ class Settings(
 
         if self.EMAIL_PROVIDER == "console" and self.ENVIRONMENT != "local":
             raise ValueError("EMAIL_PROVIDER=console is only allowed when ENVIRONMENT=local")
+
+        if self.AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS >= self.AGENT_RUN_LEASE_TTL_SECONDS:
+            raise ValueError(
+                "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS must be less than "
+                "AGENT_RUN_LEASE_TTL_SECONDS"
+            )
 
         if self.STORAGE_PROVIDER == "azure_blob":
             required_fields = {

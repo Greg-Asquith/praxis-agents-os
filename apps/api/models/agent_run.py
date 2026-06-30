@@ -54,6 +54,8 @@ class AgentRun(BaseModel):
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     failed_at = Column(DateTime(timezone=True), nullable=True)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    owner_instance_id = Column(String(128), nullable=True)
 
     # Hot usage columns for billing/audit queries; usage_json keeps the full RunUsage.
     input_tokens = Column(BigInteger, nullable=True)
@@ -92,6 +94,11 @@ class AgentRun(BaseModel):
             "workspace_id",
             "status",
             postgresql_where=text("deleted = false"),
+        ),
+        Index(
+            "ix_agent_runs_lease_expiry",
+            "lease_expires_at",
+            postgresql_where=text("deleted = false AND status IN ('pending', 'running')"),
         ),
     )
 

@@ -76,28 +76,51 @@ class CollectingSink(SequencedSink):
 class StreamSink(SequencedSink):
     """Async queue sink that yields formatted SSE frames."""
 
-    def __init__(self, *, run_id: UUID, conversation_id: UUID, max_queue_size: int = 256):
+    def __init__(self, *, run_id: UUID, conversation_id: UUID, max_queue_size: int = 0):
         super().__init__(run_id=run_id, conversation_id=conversation_id)
         self._queue: asyncio.Queue[SinkEvent | None] = asyncio.Queue(maxsize=max_queue_size)
         self._closed = False
+        self._detached = False
 
     async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
-        if self._closed:
+        if self._closed or self._detached:
             return
-        await self._queue.put(self._event(event, payload))
+        try:
+            self._queue.put_nowait(self._event(event, payload))
+        except asyncio.QueueFull:
+            self.detach()
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        await self._queue.put(None)
+        if not self._detached:
+            try:
+                self._queue.put_nowait(None)
+            except asyncio.QueueFull:
+                self.detach()
+
+    def detach(self) -> None:
+        """Stop queueing events after the live HTTP client has gone away."""
+        self._detached = True
+
+    @property
+    def detached(self) -> bool:
+        return self._detached
+
+    async def next_frame(self) -> str | None:
+        """Wait for and format the next SSE frame, or return None when closed."""
+        event = await self._queue.get()
+        if event is None:
+            return None
+        return format_sse_event(event)
 
     async def __aiter__(self) -> AsyncIterator[str]:
         while True:
-            event = await self._queue.get()
-            if event is None:
+            frame = await self.next_frame()
+            if frame is None:
                 break
-            yield format_sse_event(event)
+            yield frame
 
 
 def format_sse_event(event: SinkEvent) -> str:
