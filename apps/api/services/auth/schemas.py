@@ -41,6 +41,22 @@ class AuthProvidersResponse(BaseModel):
     providers: list[AuthProvider]
 
 
+class ConnectedIdentity(BaseModel):
+    """A single linked sign-in method (OAuth provider) for a user."""
+
+    provider: str
+    email: str | None = None
+    email_verified: bool
+    created_at: datetime
+
+
+class IdentitiesResponse(BaseModel):
+    """The current user's connected sign-in methods."""
+
+    has_password: bool
+    identities: list[ConnectedIdentity]
+
+
 class AuthSession(BaseModel):
     expires_at: datetime
     twofa_verified: bool

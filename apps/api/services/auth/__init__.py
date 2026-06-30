@@ -2,6 +2,7 @@
 
 """Authentication service operations."""
 
+from services.auth.list_user_identities import list_user_identities
 from services.auth.logout import logout
 from services.auth.oauth.complete_oauth_login import complete_oauth_login
 from services.auth.oauth.create_oauth_authorization_url import create_oauth_authorization_url
@@ -27,6 +28,7 @@ __all__ = [
     "enable_totp",
     "list_oauth_providers",
     "list_sessions",
+    "list_user_identities",
     "login_with_password",
     "logout",
     "refresh_session",

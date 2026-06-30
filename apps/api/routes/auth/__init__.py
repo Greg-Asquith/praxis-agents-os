@@ -4,6 +4,7 @@
 
 from fastapi import APIRouter
 
+from routes.auth.get_identities import router as get_identities_router
 from routes.auth.get_me import router as get_me_router
 from routes.auth.login import router as login_router
 from routes.auth.logout import router as logout_router
@@ -30,6 +31,7 @@ router.include_router(register_router)
 router.include_router(login_router)
 router.include_router(logout_router)
 router.include_router(get_me_router)
+router.include_router(get_identities_router)
 router.include_router(update_me_router)
 router.include_router(refresh_session_router)
 router.include_router(list_sessions_router)
