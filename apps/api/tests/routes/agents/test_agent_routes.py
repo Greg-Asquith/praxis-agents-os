@@ -80,7 +80,7 @@ async def test_create_agent_route_persists_public_model_shape(
             "allowed_agent_ids": [str(delegate.id)],
             "model_provider": "OPENAI",
             "model": "gpt-5.4-mini",
-            "model_settings": {"temperature": 0.2},
+            "model_settings": {"temperature": 0.2, "thinking": "high"},
             "max_steps": 12,
             "is_favorite": True,
             "metadata": {"accent": "green"},
@@ -99,6 +99,7 @@ async def test_create_agent_route_persists_public_model_shape(
     assert body["allowed_agent_ids"] == [str(delegate.id)]
     assert body["model_provider"] == "openai"
     assert body["model"] == "gpt-5.4-mini"
+    assert body["model_settings"] == {"temperature": 0.2, "thinking": "high"}
     assert body["metadata"] == {"accent": "green"}
 
     fetch_response = await db_async_client.get(
@@ -304,3 +305,25 @@ async def test_create_agent_rejects_unknown_runtime_tool(
     body = response.json()
     assert body["field"] == "tool_names"
     assert body["unknown_tools"] == ["not_a_tool"]
+
+
+async def test_create_agent_rejects_invalid_unified_thinking_setting(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+
+    response = await db_async_client.post(
+        "/api/v1/agents/",
+        headers=headers,
+        json={
+            "name": "Bad Thinking Agent",
+            "instructions": "Use a portable model setting.",
+            "model_settings": {"thinking": "maximum"},
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["title"] == "Request Validation Error"
+    assert "model_settings.thinking" in body["detail"]

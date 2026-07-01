@@ -1,4 +1,5 @@
 # apps/api/tests/contract/test_openapi_routes.py
+
 """Auth, user, and workspace route contract tests."""
 
 
@@ -80,6 +81,17 @@ def test_conversation_routes_are_registered_under_api_v1(
         "/api/v1/conversations/{conversation_id}/turns",
         "/api/v1/conversations/{conversation_id}/messages",
         "/api/v1/conversations/{conversation_id}/active-run",
+    } <= paths
+
+
+def test_agent_run_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = set(openapi_schema["paths"])
+
+    assert {
+        "/api/v1/agent-runs/{run_id}/approval-state",
+        "/api/v1/agent-runs/{run_id}/resume",
     } <= paths
 
 
