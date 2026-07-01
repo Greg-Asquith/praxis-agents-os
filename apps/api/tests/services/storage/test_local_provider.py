@@ -8,12 +8,12 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from core.settings import settings
 from services.storage.domain import StorageBucket, make_storage_object_ref
-from services.storage.errors import StorageProviderUnavailableError, StorageValidationError
+from services.storage.errors import StorageValidationError
 from services.storage.factory import get_storage_provider
 from services.storage.paths import validate_object_key
 from services.storage.providers.local import LocalStorageProvider
-from services.storage.providers.unavailable import UnavailableStorageProvider
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
@@ -127,18 +127,13 @@ async def test_object_key_validation_rejects_traversal() -> None:
             make_storage_object_ref(StorageBucket.PRIVATE, bad_key)
 
 
-async def test_cloud_provider_factory_returns_explicit_unavailable_stub(monkeypatch) -> None:
-    from core.settings import settings
-
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "s3")
+async def test_local_provider_factory_returns_local_provider(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
+    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
     reset_storage_provider_cache()
     try:
         provider = get_storage_provider()
 
-        assert isinstance(provider, UnavailableStorageProvider)
-        with pytest.raises(StorageProviderUnavailableError):
-            await provider.stat_object(
-                make_storage_object_ref(StorageBucket.PRIVATE, "workspaces/ws_1/file.txt")
-            )
+        assert isinstance(provider, LocalStorageProvider)
     finally:
         reset_storage_provider_cache()

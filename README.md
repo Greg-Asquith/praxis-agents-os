@@ -3,11 +3,7 @@
 Open source foundations for the system behind
 [Praxis Agents](https://www.praxis-agents.ai/).
 
-Praxis Agents OS is being rebuilt from a larger internal project into a cleaner,
-smaller codebase for creating, operating, and governing AI agents. The focus is
-on practical agent workflows: workspaces, identity, approvals, auditability,
-notifications, schedules, conversations, skills, and integrations that can be
-maintained by a small team.
+Praxis Agents OS is being rebuilt from a larger internal project into a cleaner, smaller codebase for creating, operating, and governing AI agents. The focus i on practical agent workflows: workspaces, identity, approvals, auditability notifications, schedules, conversations, skills, and integrations that can be maintained by a small team.
 
 ## Status
 
@@ -18,9 +14,7 @@ This repository is in an early porting stage.
   workspace services, routes, notifications, and schedule domain logic.
 - The web app is a Vite SPA with the initial Praxis auth, shell, and workspace
   management foundation.
-- Docker Compose is present for local integration work, but the Docker setup is
-  still being normalized as the workspace moves to the final package managers and
-  app layout.
+- Docker Compose is present for local integration work, but the Docker setup is still being normalized as the workspace moves to the final package managers and app layout.
 
 Expect sharp edges while the old system is being reduced and rebuilt.
 
@@ -124,6 +118,15 @@ uv run uvicorn main:app --reload --port 8000
 
 The API reads configuration from environment variables or `.env`. Local defaults are documented in `apps/api/.env.example`.
 
+Cloud object storage SDKs are optional extras. Local development defaults to `STORAGE_PROVIDER=local_fs` and does not install cloud SDKs. For a cloud-backed deployment, install the matching extra and build the image with the same provider selection, for example:
+
+```bash
+uv sync --extra s3
+docker build --build-arg STORAGE_EXTRA=s3 apps/api
+```
+
+Supported storage extras are `gcs`, `s3`, and `azure`.
+
 The database server must expose the `vector` extension. Alembic enables it with `CREATE EXTENSION IF NOT EXISTS "vector"` during core migrations; if the provider does not make pgvector available, migration fails instead of silently degrading.
 
 Important notes:
@@ -141,10 +144,8 @@ uv run ruff check .
 uv run alembic check
 ```
 
-The API has a test suite under `apps/api/tests` (organized by intent: contract,
-routes, services, integration, middleware, factories, support). Run it with
-`uv run pytest`. Database-backed tests skip cleanly unless `TEST_DATABASE_URL` is
-set. When you add behavior, add focused tests alongside it.
+The API has a test suite under `apps/api/tests` (organized by intent: contract, routes, services, integration, middleware, factories, support). Run it with
+`uv run pytest`. Database-backed tests skip cleanly unless `TEST_DATABASE_URL` is set. When you add behavior, add focused tests alongside it.
 
 ## Database Migrations
 
@@ -195,8 +196,7 @@ pnpm build
 
 ## Docker Compose
 
-The root `docker-compose.yml` defines local Postgres, API, and web services.
-Compose expects local env files under `.local/`; those files are not committed.
+The root `docker-compose.yml` defines local Postgres, API, worker, and web services. Compose expects local env files under `.local/`; those files are not committed.
 
 Create the local folders and env files:
 
@@ -218,13 +218,11 @@ Intended local service URLs:
 - API: `http://localhost:8000`
 - Postgres: `postgresql://postgres:postgres@localhost:5432/postgres`
 
-Because the Docker setup is still being normalized, prefer the manual backend and
-frontend commands above when you need a dependable local development loop.
+Because the Docker setup is still being normalized, prefer the manual backend and frontend commands above when you need a dependable local development loop.
 
 ## Project Direction
 
-The active work is to turn the extracted foundations into a coherent open source
-agent operating system:
+The active work is to turn the extracted foundations into a coherent open source agent operating system:
 
 - Extend the Vite control-plane UI beyond auth and workspace management.
 - Add explicit API routes for new domain services as they become product surfaces.
@@ -235,8 +233,7 @@ agent operating system:
 
 ## Contributing
 
-Read `AGENTS.md` before making changes. It captures the repository expectations
-for coding agents and contributors.
+Read `AGENTS.md` before making changes. It captures the repository expectations for coding agents and contributors.
 
 In short:
 
@@ -248,5 +245,4 @@ In short:
 
 ## License
 
-No license file has been committed yet. Add one before treating this repository as
-ready for public redistribution.
+No license file has been committed yet. Add one before treating this repository as ready for public redistribution.

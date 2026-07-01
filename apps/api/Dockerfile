@@ -21,8 +21,9 @@ RUN apt-get update \
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python deps first to maximize layer cache.
+ARG STORAGE_EXTRA=""
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-dev ${STORAGE_EXTRA:+--extra ${STORAGE_EXTRA}}
 
 # --- Runtime: minimal image + non-root user ---
 FROM python:3.12.10-slim AS runtime

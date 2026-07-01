@@ -9,8 +9,10 @@ import threading
 from core.settings import settings
 from services.storage.errors import StorageProviderUnavailableError
 from services.storage.provider import StorageProvider
+from services.storage.providers.azure_blob import AzureBlobStorageProvider
+from services.storage.providers.gcs import GcsStorageProvider
 from services.storage.providers.local import LocalStorageProvider
-from services.storage.providers.unavailable import UnavailableStorageProvider
+from services.storage.providers.s3 import S3StorageProvider
 
 _storage_provider: StorageProvider | None = None
 _storage_provider_key: str | None = None
@@ -31,8 +33,18 @@ def get_storage_provider() -> StorageProvider:
 
         if provider_key == "local_fs":
             provider: StorageProvider = LocalStorageProvider.from_settings(settings)
+        elif provider_key == "gcs":
+            provider = GcsStorageProvider.from_settings(settings)
+        elif provider_key == "s3":
+            provider = S3StorageProvider.from_settings(settings)
+        elif provider_key == "azure_blob":
+            provider = AzureBlobStorageProvider.from_settings(settings)
         else:
-            provider = UnavailableStorageProvider(provider_key)
+            raise StorageProviderUnavailableError(
+                "Unknown storage provider",
+                provider_key=provider_key,
+                operation="get_storage_provider",
+            )
 
         _storage_provider = provider
         _storage_provider_key = provider_key
