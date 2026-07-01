@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import configure_async_db_session, get_async_db_session_factory
 from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
@@ -32,6 +33,7 @@ from services.conversations.naming import (
     fallback_conversation_title,
     run_conversation_title_worker,
 )
+from services.conversations.prune_failed import prune_failed_empty_conversation_for_run
 from services.conversations.schemas import ConversationCreateRequest, ConversationRead
 from services.conversations.utils import get_assignable_agent_for_workspace
 
@@ -107,6 +109,7 @@ async def create_conversation_stream(
         _run_initial_conversation_worker(
             run_id=run.id,
             conversation_id=conversation.id,
+            actor_id=actor.id,
             user_prompt=payload.user_prompt,
             fallback_title=title.title,
             sink=sink,
@@ -130,6 +133,7 @@ async def _run_initial_conversation_worker(
     *,
     run_id: UUID,
     conversation_id: UUID,
+    actor_id: UUID,
     user_prompt: str,
     fallback_title: str,
     sink: StreamSink,
@@ -156,6 +160,39 @@ async def _run_initial_conversation_worker(
         sink=delayed_done_sink,
         client_message_id=client_message_id,
     )
+    await _prune_failed_initial_conversation(
+        run_id=run_id,
+        conversation_id=conversation_id,
+        actor_id=actor_id,
+    )
+
+
+async def _prune_failed_initial_conversation(
+    *,
+    run_id: UUID,
+    conversation_id: UUID,
+    actor_id: UUID,
+) -> None:
+    session_factory = get_async_db_session_factory()
+    session = session_factory()
+    try:
+        await configure_async_db_session(session)
+        await prune_failed_empty_conversation_for_run(
+            session,
+            conversation_id=conversation_id,
+            run_id=run_id,
+            deleted_by_user_id=actor_id,
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        logger.warning(
+            "Failed to prune empty initial conversation",
+            exc_info=True,
+            extra={"run_id": str(run_id), "conversation_id": str(conversation_id)},
+        )
+    finally:
+        await session.close()
 
 
 def _spawn_title_task(coro, *, name: str) -> asyncio.Task[None]:

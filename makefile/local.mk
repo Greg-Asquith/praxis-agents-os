@@ -30,11 +30,11 @@ web-install: ## Install frontend dependencies with pnpm
 	cd $(WEB_DIR) && pnpm install
 
 .PHONY: dev
-dev: local-env ## Start Postgres, migrate, then run API and web dev servers
+dev: local-env ## Start Postgres, migrate, then run API, worker, and web dev servers
 	@$(MAKE) db-up
 	@$(MAKE) db-wait
 	@$(MAKE) migrate
-	@$(MAKE) -j2 api-dev web-dev
+	@$(MAKE) -j3 api-dev worker-dev web-dev
 
 .PHONY: db-up
 db-up: local-env ## Start local Postgres in Docker
@@ -61,6 +61,10 @@ migrate: local-env ## Apply all Alembic migrations
 .PHONY: api-dev
 api-dev: local-env ## Run the FastAPI development server on http://localhost:8000
 	cd $(API_DIR) && uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
+
+.PHONY: worker-dev
+worker-dev: local-env ## Run the scheduled agent runner
+	cd $(API_DIR) && uv run python -m workers.agent_runner
 
 .PHONY: web-dev
 web-dev: local-env ## Run the Vite development server on http://localhost:3000

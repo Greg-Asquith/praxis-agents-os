@@ -8,6 +8,7 @@ from services.conversations.create_turn_stream import create_conversation_turn_s
 from services.conversations.delete_conversation import delete_conversation
 from services.conversations.list_conversations import list_conversations
 from services.conversations.list_messages import list_conversation_messages
+from services.conversations.prune_failed import prune_failed_empty_conversation_for_run
 
 __all__ = [
     "create_conversation_stream",
@@ -16,4 +17,5 @@ __all__ = [
     "get_conversation_active_run",
     "list_conversation_messages",
     "list_conversations",
+    "prune_failed_empty_conversation_for_run",
 ]

@@ -25,6 +25,7 @@ from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import complete_agent_run, create_agent_run, start_agent_run
+from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
     EVENT_CONVERSATION_CREATED,
@@ -207,6 +208,8 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     ) as response:
         body = (await response.aread()).decode()
 
+    await _drain_initial_conversation_background_work()
+
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
@@ -248,7 +251,7 @@ async def test_create_conversation_rejects_inactive_agent_without_creating_run(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
 ) -> None:
-    _user, _workspace, agent, _existing_conversation, headers = await _authenticated_context(
+    _user, _workspace, agent, existing_conversation, headers = await _authenticated_context(
         db_session
     )
     agent.is_active = False
@@ -268,8 +271,81 @@ async def test_create_conversation_rejects_inactive_agent_without_creating_run(
     assert body["conflicting_resource"] == "agent"
     assert body["agent_id"] == str(agent.id)
 
-    runs = (await db_session.scalars(select(AgentRun))).all()
+    runs = (
+        await db_session.scalars(
+            select(AgentRun).where(AgentRun.conversation_id == existing_conversation.id)
+        )
+    ).all()
     assert runs == []
+
+
+async def test_create_conversation_runtime_failure_prunes_empty_conversation(
+    app: FastAPI,
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with committed_db_session_factory() as db:
+        user, workspace, agent, _existing_conversation, headers = await _authenticated_context(db)
+
+    def broken_model(_resolved_model):
+        raise ModelConfigurationError("Missing credential", details={"provider": "openai"})
+
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", broken_model)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with (
+            AsyncClient(transport=transport, base_url="http://testserver") as client,
+            client.stream(
+                "POST",
+                "/api/v1/conversations/",
+                headers=headers,
+                json={
+                    "agent_id": str(agent.id),
+                    "user_prompt": "Please fail before saving messages",
+                },
+            ) as response,
+        ):
+            body = (await response.aread()).decode()
+
+        assert response.status_code == 200
+        assert "event: error" in body
+        assert "event: done" in body
+
+        await _drain_initial_conversation_background_work()
+        await _wait_for_non_deleted_conversation_count(
+            committed_db_session_factory,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            count=1,
+        )
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            list_response = await client.get("/api/v1/conversations/", headers=headers)
+
+        assert list_response.status_code == 200
+        assert list_response.json()["total"] == 1
+
+        async with committed_db_session_factory() as db:
+            pruned = await db.scalar(
+                select(Conversation).where(
+                    Conversation.user_id == user.id,
+                    Conversation.workspace_id == workspace.id,
+                    Conversation.title == "Please fail before saving messages",
+                    Conversation.deleted == True,  # noqa: E712
+                )
+            )
+            assert pruned is not None
+    finally:
+        try:
+            await _drain_initial_conversation_background_work()
+        finally:
+            await _delete_committed_workspace_context(
+                committed_db_session_factory,
+                user_id=user.id,
+                workspace_id=workspace.id,
+            )
 
 
 async def test_list_conversations_returns_current_user_workspace_conversations(
@@ -783,6 +859,106 @@ async def _wait_for_run_status(
         if asyncio.get_running_loop().time() >= deadline:
             raise AssertionError(f"Timed out waiting for run status {status!r}")
         await asyncio.sleep(0.05)
+
+
+async def _wait_for_non_deleted_conversation_count(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    user_id: UUID,
+    workspace_id: UUID,
+    count: int,
+    timeout_seconds: float = 3,
+) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while True:
+        async with session_factory() as db:
+            conversations = (
+                await db.scalars(
+                    select(Conversation).where(
+                        Conversation.user_id == user_id,
+                        Conversation.workspace_id == workspace_id,
+                        Conversation.deleted == False,  # noqa: E712
+                    )
+                )
+            ).all()
+            if len(conversations) == count:
+                return
+        if asyncio.get_running_loop().time() >= deadline:
+            raise AssertionError(
+                f"Timed out waiting for {count} non-deleted conversations"
+            )
+        await asyncio.sleep(0.05)
+
+
+async def _drain_initial_conversation_background_work(
+    *,
+    max_wait_seconds: float = 3,
+) -> None:
+    from services.agents.runtime.run_manager import run_task_registry
+
+    await run_task_registry.drain(max_wait_seconds=max_wait_seconds)
+
+    create_conversation_stream_module = importlib.import_module(
+        "services.conversations.create_conversation_stream"
+    )
+    title_tasks = [
+        task
+        for task in create_conversation_stream_module._background_title_tasks
+        if not task.done()
+    ]
+    if not title_tasks:
+        return
+
+    done, pending = await asyncio.wait(title_tasks, timeout=max_wait_seconds)
+    for task in done:
+        task.result()
+    if pending:
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        raise AssertionError(
+            f"Timed out waiting for {len(pending)} conversation title task(s)"
+        )
+
+
+async def _delete_committed_workspace_context(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    user_id: UUID,
+    workspace_id: UUID,
+) -> None:
+    async with session_factory() as db:
+        conversation_ids = (
+            await db.scalars(
+                select(Conversation.id).where(
+                    Conversation.user_id == user_id,
+                    Conversation.workspace_id == workspace_id,
+                )
+            )
+        ).all()
+        if conversation_ids:
+            await db.execute(
+                delete(ConversationMessage).where(
+                    ConversationMessage.conversation_id.in_(conversation_ids)
+                )
+            )
+            await db.execute(
+                delete(AgentRun).where(AgentRun.conversation_id.in_(conversation_ids))
+            )
+            await db.execute(delete(Conversation).where(Conversation.id.in_(conversation_ids)))
+        await db.execute(delete(Agent).where(Agent.workspace_id == workspace_id))
+        await db.execute(
+            delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
+        )
+        await db.execute(delete(Session).where(Session.user_id == user_id))
+        await db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(default_workspace_id=None)
+        )
+        await db.execute(delete(User).where(User.id == user_id))
+        await db.execute(delete(Workspace).where(Workspace.id == workspace_id))
+        await db.commit()
 
 
 async def _delete_committed_context(

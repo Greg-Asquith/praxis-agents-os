@@ -6,6 +6,31 @@ from pydantic import Field
 
 
 class AgentRunSettingsMixin:
+    AGENT_SCHEDULE_WORKER_POLL_SECONDS: float = Field(
+        default=5.0,
+        gt=0,
+        description="Seconds between scheduled agent runner polling passes.",
+    )
+    AGENT_SCHEDULE_WORKER_BATCH_SIZE: int = Field(
+        default=25,
+        gt=0,
+        description="Maximum schedule fire times claimed by one worker polling pass.",
+    )
+    AGENT_SCHEDULE_RUN_CLAIM_TTL_SECONDS: int = Field(
+        default=300,
+        gt=0,
+        description="Seconds before a claimed schedule run can be reclaimed.",
+    )
+    AGENT_SCHEDULE_RUN_MAX_ATTEMPTS: int = Field(
+        default=3,
+        gt=0,
+        description="Maximum claim/setup attempts before disabling a schedule.",
+    )
+    AGENT_SCHEDULE_WORKER_SHUTDOWN_SECONDS: float = Field(
+        default=30.0,
+        gt=0,
+        description="Seconds to wait for scheduled worker shutdown.",
+    )
     AGENT_RUN_LEASE_TTL_SECONDS: int = Field(
         default=90,
         gt=0,

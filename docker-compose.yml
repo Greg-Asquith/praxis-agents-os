@@ -54,6 +54,27 @@ services:
       postgres:
         condition: service_started
 
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: dev
+    container_name: worker
+    command: ["python", "-m", "workers.agent_runner"]
+    volumes:
+      - ./apps/api:/app
+      - ./.local/storage:/app/.local/storage
+    env_file:
+      - ./.local/generated/local.api.env
+      - ./.local/targets/local.secrets.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
+    networks:
+      - praxis-agents-template-network
+    depends_on:
+      postgres:
+        condition: service_started
+
   web:
     build:
       context: ./apps/web

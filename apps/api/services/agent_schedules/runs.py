@@ -223,7 +223,7 @@ def mark_run_completed(
         schedule.next_run_at = next_run
 
 
-async def _fail_run_terminally(
+async def mark_run_terminal_failure_and_disable_schedule(
     db: AsyncSession,
     schedule: AgentSchedule,
     run: AgentScheduleRun,
@@ -232,7 +232,7 @@ async def _fail_run_terminally(
     code: str,
     message: str,
 ) -> None:
-    """Mark a run terminal (disabling its schedule) and audit the disable."""
+    """Mark a schedule run terminal, disable its schedule, and audit the disable."""
     mark_run_terminal_failure(schedule, run, now=now, code=code, message=message)
     await safe_record_operation_audit_event(
         db,
@@ -286,7 +286,7 @@ async def claim_due_schedule_runs(
 
         agent = schedule.agent
         if agent is None or agent.deleted:
-            await _fail_run_terminally(
+            await mark_run_terminal_failure_and_disable_schedule(
                 db,
                 schedule,
                 run,
@@ -297,7 +297,7 @@ async def claim_due_schedule_runs(
             continue
 
         if not agent.is_active:
-            await _fail_run_terminally(
+            await mark_run_terminal_failure_and_disable_schedule(
                 db,
                 schedule,
                 run,
