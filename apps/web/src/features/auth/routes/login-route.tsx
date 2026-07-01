@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input"
 import { useLoginMutation } from "@/features/auth/api/login"
 import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
+import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-providers"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
 
@@ -55,58 +56,62 @@ export function LoginRoute() {
         </span>
       }
     >
-      <form onSubmit={handleSubmit}>
-        <FieldGroup>
-          {formError && (
-            <Alert variant="destructive">
-              <AlertTitle>Sign in failed</AlertTitle>
-              <AlertDescription>{formError}</AlertDescription>
-            </Alert>
-          )}
+      <div className="flex flex-col gap-5">
+        <OAuthLoginProviders />
 
-          {twoFactorPending && (
-            <Alert>
-              <AlertTitle>Two-step verification required</AlertTitle>
-              <AlertDescription>
-                Your password was accepted. Entering a verification code will be available with
-                account security settings.
-              </AlertDescription>
-            </Alert>
-          )}
+        <form onSubmit={handleSubmit}>
+          <FieldGroup>
+            {formError && (
+              <Alert variant="destructive">
+                <AlertTitle>Sign in failed</AlertTitle>
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
 
-          <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
-            <Input
-              autoComplete="email"
-              id="email"
-              name="email"
-              placeholder="you@example.com"
-              required
-              type="email"
-            />
-          </Field>
+            {twoFactorPending && (
+              <Alert>
+                <AlertTitle>Two-step verification required</AlertTitle>
+                <AlertDescription>
+                  Your password was accepted. Entering a verification code will be available with
+                  account security settings.
+                </AlertDescription>
+              </Alert>
+            )}
 
-          <Field>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
-            <Input
-              autoComplete="current-password"
-              id="password"
-              name="password"
-              required
-              type="password"
-            />
-            <FieldDescription>Use the same password you use for this workspace.</FieldDescription>
-          </Field>
+            <Field>
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <Input
+                autoComplete="email"
+                id="email"
+                name="email"
+                placeholder="you@example.com"
+                required
+                type="email"
+              />
+            </Field>
 
-          <Field>
-            <Button className="w-full" disabled={loginMutation.isPending} type="submit">
-              <LogInIcon data-icon="inline-start" />
-              {loginMutation.isPending ? "Signing in" : "Sign in"}
-            </Button>
-            <FieldError />
-          </Field>
-        </FieldGroup>
-      </form>
+            <Field>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <Input
+                autoComplete="current-password"
+                id="password"
+                name="password"
+                required
+                type="password"
+              />
+              <FieldDescription>Use the same password you use for this workspace.</FieldDescription>
+            </Field>
+
+            <Field>
+              <Button className="w-full" disabled={loginMutation.isPending} type="submit">
+                <LogInIcon data-icon="inline-start" />
+                {loginMutation.isPending ? "Signing in" : "Sign in"}
+              </Button>
+              <FieldError />
+            </Field>
+          </FieldGroup>
+        </form>
+      </div>
     </AuthCard>
   )
 }

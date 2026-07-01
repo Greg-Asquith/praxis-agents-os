@@ -13,7 +13,9 @@ import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
 import { AgentDetailRoute } from "@/features/agents/routes/agent-detail-route"
 import { AgentsRoute } from "@/features/agents/routes/agents-route"
 import { LoginRoute } from "@/features/auth/routes/login-route"
+import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
 import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callback-route"
+import { OAuthLoginCallbackRoute } from "@/features/auth/routes/oauth-login-callback-route"
 import { ProfileRoute } from "@/features/auth/routes/profile-route"
 import { RegisterRoute } from "@/features/auth/routes/register-route"
 import { ConversationRoute } from "@/features/conversations/routes/conversation-route"
@@ -61,6 +63,12 @@ const registerRoute = createRoute({
   getParentRoute: () => authRoute,
   path: "/register",
   component: RegisterRoute,
+})
+
+const oauthLoginCallbackRoute = createRoute({
+  getParentRoute: () => authRoute,
+  path: OAUTH_LOGIN_CALLBACK_PATH,
+  component: OAuthLoginCallbackRoute,
 })
 
 const appRoute = createRoute({
@@ -132,7 +140,7 @@ const oauthLinkCallbackRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
-  authRoute.addChildren([loginRoute, registerRoute]),
+  authRoute.addChildren([loginRoute, registerRoute, oauthLoginCallbackRoute]),
   appRoute.addChildren([
     homeRoute,
     conversationsRoute.addChildren([conversationRoute]),

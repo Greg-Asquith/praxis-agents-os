@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { useRegisterMutation } from "@/features/auth/api/register"
 import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
+import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-providers"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
 
@@ -52,56 +53,60 @@ export function RegisterRoute() {
         </span>
       }
     >
-      <form onSubmit={handleSubmit}>
-        <FieldGroup>
-          {formError && (
-            <Alert variant="destructive">
-              <AlertTitle>Registration failed</AlertTitle>
-              <AlertDescription>{formError}</AlertDescription>
-            </Alert>
-          )}
+      <div className="flex flex-col gap-5">
+        <OAuthLoginProviders />
 
-          <Field>
-            <FieldLabel htmlFor="display_name">Name</FieldLabel>
-            <Input
-              autoComplete="name"
-              id="display_name"
-              name="display_name"
-              placeholder="Ada Lovelace"
-            />
-          </Field>
+        <form onSubmit={handleSubmit}>
+          <FieldGroup>
+            {formError && (
+              <Alert variant="destructive">
+                <AlertTitle>Registration failed</AlertTitle>
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
 
-          <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
-            <Input
-              autoComplete="email"
-              id="email"
-              name="email"
-              placeholder="you@example.com"
-              required
-              type="email"
-            />
-          </Field>
+            <Field>
+              <FieldLabel htmlFor="display_name">Name</FieldLabel>
+              <Input
+                autoComplete="name"
+                id="display_name"
+                name="display_name"
+                placeholder="Ada Lovelace"
+              />
+            </Field>
 
-          <Field>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
-            <Input
-              autoComplete="new-password"
-              id="password"
-              minLength={8}
-              name="password"
-              required
-              type="password"
-            />
-            <FieldDescription>Use at least 8 characters.</FieldDescription>
-          </Field>
+            <Field>
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <Input
+                autoComplete="email"
+                id="email"
+                name="email"
+                placeholder="you@example.com"
+                required
+                type="email"
+              />
+            </Field>
 
-          <Button className="w-full" disabled={registerMutation.isPending} type="submit">
-            <UserPlusIcon data-icon="inline-start" />
-            {registerMutation.isPending ? "Creating account" : "Create account"}
-          </Button>
-        </FieldGroup>
-      </form>
+            <Field>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <Input
+                autoComplete="new-password"
+                id="password"
+                minLength={8}
+                name="password"
+                required
+                type="password"
+              />
+              <FieldDescription>Use at least 8 characters.</FieldDescription>
+            </Field>
+
+            <Button className="w-full" disabled={registerMutation.isPending} type="submit">
+              <UserPlusIcon data-icon="inline-start" />
+              {registerMutation.isPending ? "Creating account" : "Create account"}
+            </Button>
+          </FieldGroup>
+        </form>
+      </div>
     </AuthCard>
   )
 }
