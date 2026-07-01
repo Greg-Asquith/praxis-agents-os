@@ -106,6 +106,7 @@ class Settings(
             required_fields = {
                 "S3_PUBLIC_ASSETS_BUCKET": self.S3_PUBLIC_ASSETS_BUCKET,
                 "S3_PRIVATE_ASSETS_BUCKET": self.S3_PRIVATE_ASSETS_BUCKET,
+                "AWS_REGION": self.AWS_REGION,
                 "PUBLIC_ASSETS_BASE_URL": self.PUBLIC_ASSETS_BASE_URL,
             }
             missing_fields = [

@@ -15,6 +15,10 @@ class AwsSettingsMixin:
         default="",
         description="S3 bucket for private originals and documents. Required when STORAGE_PROVIDER=s3.",
     )
+    AWS_REGION: str = Field(
+        default="",
+        description="AWS region for S3 clients and presigned URLs. Required when STORAGE_PROVIDER=s3.",
+    )
 
     # AWS SES Config
     SES_REGION: str = Field(default="eu-west-2", description="AWS SES region")

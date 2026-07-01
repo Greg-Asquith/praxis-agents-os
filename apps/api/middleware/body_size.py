@@ -46,6 +46,11 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
         "/api/v1/example": _base64_request_limit(
             settings.MAX_FILE_SIZE_AI_IMAGE
         ),
+        f"{settings.API_V1_PREFIX}/storage/upload": max(
+            settings.MAX_FILE_SIZE_AGENT_FILE,
+            settings.MAX_FILE_SIZE_DOCUMENT,
+            settings.MAX_FILE_SIZE_AI_VIDEO,
+        ),
     }
 
     def __init__(

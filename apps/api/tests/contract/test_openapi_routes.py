@@ -77,6 +77,18 @@ def test_conversation_routes_are_registered_under_api_v1(
     } <= paths
 
 
+def test_storage_provider_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = set(openapi_schema["paths"])
+
+    assert {
+        "/api/v1/storage/public/{object_key}",
+        "/api/v1/storage/private/{object_key}",
+        "/api/v1/storage/upload/{bucket}/{object_key}",
+    } <= paths
+
+
 def test_oauth_routes_are_api_posts_not_browser_redirect_gets(
     openapi_schema: dict[str, object],
 ) -> None:
