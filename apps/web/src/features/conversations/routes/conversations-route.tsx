@@ -14,23 +14,45 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
+import { useAgentsQuery } from "@/features/agents/api/list-agents"
+import type { Agent, AgentsListResponse } from "@/features/agents/types"
+import { useConversationsQuery } from "@/features/conversations/api/list-conversations"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { ConversationList } from "@/features/conversations/components/conversation-list"
 import {
   ConversationWorkspaceContext,
   type ConversationWorkspaceContextValue,
 } from "@/features/conversations/conversation-workspace-context"
-import { useConversationsQuery } from "@/features/conversations/api/list-conversations"
-import { useAgentsQuery } from "@/features/agents/api/list-agents"
-import type { Agent } from "@/features/agents/types"
-import type { ConversationMessage } from "@/features/conversations/types"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
 import { useAgentStream } from "@/features/conversations/stream/use-agent-stream"
+import type {
+  ConversationMessage,
+  ConversationsListResponse,
+} from "@/features/conversations/types"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { pluralize } from "@/lib/format"
 
 export function ConversationsRoute() {
+  const { workspace } = useActiveWorkspace()
   const { data: conversationsData } = useConversationsQuery({ limit: 100 })
   const { data: agentsData } = useAgentsQuery({ includeInactive: false, limit: 100 })
+
+  return (
+    <ConversationWorkspaceShell
+      key={workspace.id}
+      agentsData={agentsData}
+      conversationsData={conversationsData}
+    />
+  )
+}
+
+function ConversationWorkspaceShell({
+  agentsData,
+  conversationsData,
+}: {
+  agentsData: AgentsListResponse
+  conversationsData: ConversationsListResponse
+}) {
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const selectedConversationId = params.conversationId ?? null

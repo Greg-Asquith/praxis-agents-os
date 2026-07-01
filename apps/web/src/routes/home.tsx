@@ -102,8 +102,13 @@ export function HomeRoute() {
               <BlocksIcon className="size-4" />
               Agents
             </CardTitle>
-            <CardDescription>Agent management is not available yet.</CardDescription>
+            <CardDescription>Configure models, tools, delegation, and approvals.</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button variant="outline" size="sm" render={<Link to="/agents" />}>
+              Manage agents
+            </Button>
+          </CardContent>
         </Card>
         <Card size="sm">
           <CardHeader>
@@ -120,7 +125,7 @@ export function HomeRoute() {
               <ShieldCheckIcon className="size-4" />
               Approvals
             </CardTitle>
-            <CardDescription>Approval decisions are not available yet.</CardDescription>
+            <CardDescription>Approval decisions appear inside waiting conversations.</CardDescription>
           </CardHeader>
         </Card>
       </div>

@@ -68,6 +68,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       let observedConversationId: string | null = null
       let observedRunId: string | null = null
       let observedDoneStatus: AgentRunStatus | null = null
+      let observedConversationCreated = false
 
       try {
         const response = await request(abortController.signal)
@@ -81,6 +82,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
           }
           dispatch({ type: "event", event: streamEvent })
           if (streamEvent.event === "conversation.created") {
+            observedConversationCreated = true
             onConversationCreated?.(streamEvent.data.conversation.id)
           }
         }
@@ -95,11 +97,15 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null
         }
-        await invalidateStreamQueries(queryClient, observedConversationId)
+        await invalidateStreamQueries(queryClient, {
+          conversationCreated: observedConversationCreated,
+          conversationId: observedConversationId,
+          status: observedDoneStatus,
+        })
         if (
           observedConversationId !== null &&
           observedRunId !== null &&
-          shouldClearSettledStream(observedDoneStatus)
+          shouldClearSettledStream(observedDoneStatus, observedConversationCreated)
         ) {
           dispatch({
             type: "resetSettledRun",
@@ -175,12 +181,23 @@ function toStreamError(error: unknown): StreamError {
   return { code: "stream_failed", message: "The agent stream failed." }
 }
 
-async function invalidateStreamQueries(queryClient: QueryClient, conversationId: string | null) {
+async function invalidateStreamQueries(
+  queryClient: QueryClient,
+  {
+    conversationCreated,
+    conversationId,
+    status,
+  }: {
+    conversationCreated: boolean
+    conversationId: string | null
+    status: AgentRunStatus | null
+  }
+) {
   const invalidations = [
     queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
   ]
 
-  if (conversationId !== null) {
+  if (conversationId !== null && shouldInvalidateConversationDetails(status, conversationCreated)) {
     invalidations.push(
       queryClient.invalidateQueries({
         queryKey: conversationsQueryKeys.messages(conversationId),
@@ -198,6 +215,17 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
 }
 
-function shouldClearSettledStream(status: AgentRunStatus | null) {
-  return status === "completed" || status === "cancelled"
+function shouldClearSettledStream(status: AgentRunStatus | null, conversationCreated: boolean) {
+  return (
+    status === "completed" ||
+    status === "cancelled" ||
+    (status === "failed" && conversationCreated)
+  )
+}
+
+function shouldInvalidateConversationDetails(
+  status: AgentRunStatus | null,
+  conversationCreated: boolean
+) {
+  return !(status === "failed" && conversationCreated)
 }

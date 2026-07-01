@@ -2,31 +2,66 @@
 
 import { useEffect, useMemo } from "react"
 import { useParams } from "@tanstack/react-router"
-import { useSuspenseQuery } from "@tanstack/react-query"
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 
 import { Separator } from "@/components/ui/separator"
+import { ApprovalControls } from "@/features/conversations/components/approval-controls"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { ConversationNotFound } from "@/features/conversations/components/conversation-not-found"
 import { MessageList } from "@/features/conversations/components/message-list"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
+import { conversationsQueryKeys } from "@/features/conversations/api/list-conversations"
+import { useAgentRunApprovalStateQuery } from "@/features/conversations/api/get-approval-state"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
 import { useConversationHealLoop } from "@/features/conversations/hooks/use-conversation-heal-loop"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
+import type {
+  AgentRunResumeDecision,
+  Conversation,
+  PendingToolApproval,
+} from "@/features/conversations/types"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { getErrorMessage } from "@/lib/api/errors"
 
 export function ConversationRoute() {
   const params = useParams({ strict: false })
   const conversationId = requireConversationId(params.conversationId)
-  const { clearPersistedPendingMessages, conversations, pendingUserMessages, stream } =
-    useConversationWorkspace()
+  const { workspace } = useActiveWorkspace()
+  const { conversations, stream } = useConversationWorkspace()
+  const streamConversation =
+    stream.conversation?.id === conversationId && stream.conversation.workspace_id === workspace.id
+      ? stream.conversation
+      : null
+  const conversation =
+    conversations.find((item) => item.id === conversationId) ?? streamConversation
+
+  if (!conversation) {
+    return <ConversationNotFound />
+  }
+
+  return <ConversationDetail conversation={conversation} conversationId={conversationId} />
+}
+
+function ConversationDetail({
+  conversation,
+  conversationId,
+}: {
+  conversation: Conversation
+  conversationId: string
+}) {
+  const queryClient = useQueryClient()
+  const { clearPersistedPendingMessages, pendingUserMessages, stream } = useConversationWorkspace()
   const messagesQuery = useSuspenseQuery(conversationMessagesQueryOptions(conversationId))
   const activeRunQuery = useSuspenseQuery(conversationActiveRunQueryOptions(conversationId))
-  const conversation =
-    conversations.find((item) => item.id === conversationId) ??
-    (stream.conversation?.id === conversationId ? stream.conversation : null)
   const activeRun = activeRunQuery.data.active_run
+  const shouldLoadApprovalState = activeRun?.status === "awaiting_approval"
+  const approvalStateQuery = useAgentRunApprovalStateQuery(
+    activeRun?.id ?? "",
+    shouldLoadApprovalState
+  )
   const streamMessages = useMemo(
     () => (stream.conversationId === conversationId ? stream.messages : []),
     [conversationId, stream.conversationId, stream.messages]
@@ -38,6 +73,16 @@ export function ConversationRoute() {
   const streamApprovals = useMemo(
     () => (stream.conversationId === conversationId ? Object.values(stream.approvals) : []),
     [stream.conversationId, stream.approvals, conversationId]
+  )
+  const pendingApprovals = useMemo(
+    () =>
+      getPendingApprovals({
+        activeRunId: activeRun?.id ?? null,
+        recoveredApprovals: approvalStateQuery.data?.approvals ?? [],
+        streamApprovals,
+        streamRunId: stream.runId,
+      }),
+    [activeRun?.id, approvalStateQuery.data?.approvals, stream.runId, streamApprovals]
   )
   useConversationHealLoop(conversationId, activeRun)
   const scrollRef = useConversationAutoScroll({
@@ -51,13 +96,28 @@ export function ConversationRoute() {
     clearPersistedPendingMessages(messagesQuery.data.messages)
   }, [clearPersistedPendingMessages, messagesQuery.data.messages])
 
-  if (!conversation) {
-    return <ConversationNotFound />
-  }
-
   const composerDisabledReason = getConversationComposerDisabledReason(activeRun)
   const streamError =
     stream.conversationId === conversationId ? (stream.error?.message ?? null) : null
+  const approvalError = approvalStateQuery.error
+    ? getErrorMessage(approvalStateQuery.error)
+    : null
+  const isResumingRun =
+    activeRun !== null && stream.isStreaming && stream.runId === activeRun.id
+
+  async function handleApprovalSubmit(decisions: AgentRunResumeDecision[]) {
+    if (!activeRun) {
+      return
+    }
+
+    await stream.resumeRun({
+      runId: activeRun.id,
+      payload: { decisions },
+    })
+    await queryClient.invalidateQueries({
+      queryKey: conversationsQueryKeys.approvalState(activeRun.id),
+    })
+  }
 
   return (
     <div className="flex h-full min-h-[640px] min-w-0 flex-col">
@@ -80,7 +140,16 @@ export function ConversationRoute() {
       </div>
 
       <Separator />
-      <footer className="p-3">
+      <footer className="flex flex-col gap-3 p-3">
+        {activeRun?.status === "awaiting_approval" && (
+          <ApprovalControls
+            approvals={pendingApprovals}
+            error={approvalError}
+            isLoading={approvalStateQuery.isLoading}
+            isSubmitting={isResumingRun}
+            onSubmit={handleApprovalSubmit}
+          />
+        )}
         <ConversationComposer
           mode="turn"
           conversationId={conversationId}
@@ -89,6 +158,28 @@ export function ConversationRoute() {
       </footer>
     </div>
   )
+}
+
+function getPendingApprovals({
+  activeRunId,
+  recoveredApprovals,
+  streamApprovals,
+  streamRunId,
+}: {
+  activeRunId: string | null
+  recoveredApprovals: PendingToolApproval[]
+  streamApprovals: PendingToolApproval[]
+  streamRunId: string | null
+}) {
+  if (recoveredApprovals.length > 0) {
+    return recoveredApprovals
+  }
+
+  if (activeRunId !== null && streamRunId === activeRunId) {
+    return streamApprovals
+  }
+
+  return []
 }
 
 function requireConversationId(value: string | undefined) {

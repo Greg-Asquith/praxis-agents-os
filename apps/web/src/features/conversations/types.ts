@@ -91,3 +91,15 @@ export type AgentRunResumeDecision = {
 export type AgentRunResumeRequest = {
   decisions: AgentRunResumeDecision[]
 }
+
+export type PendingToolApproval = {
+  tool_call_id: string
+  name: string
+  args: unknown
+}
+
+export type AgentRunApprovalStateResponse = {
+  run_id: string
+  conversation_id: string
+  approvals: PendingToolApproval[]
+}

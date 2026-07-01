@@ -1,3 +1,5 @@
+// apps/web/src/app/router.tsx
+
 import type { QueryClient } from "@tanstack/react-query"
 import {
   createRootRouteWithContext,
@@ -8,6 +10,8 @@ import {
 } from "@tanstack/react-router"
 
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
+import { AgentDetailRoute } from "@/features/agents/routes/agent-detail-route"
+import { AgentsRoute } from "@/features/agents/routes/agents-route"
 import { LoginRoute } from "@/features/auth/routes/login-route"
 import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callback-route"
 import { ProfileRoute } from "@/features/auth/routes/profile-route"
@@ -97,6 +101,18 @@ const conversationRoute = createRoute({
   component: ConversationRoute,
 })
 
+const agentsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/agents",
+  component: AgentsRoute,
+})
+
+const agentDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/agents/$agentId",
+  component: AgentDetailRoute,
+})
+
 const workspaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspace-settings",
@@ -120,6 +136,8 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     homeRoute,
     conversationsRoute.addChildren([conversationRoute]),
+    agentsRoute,
+    agentDetailRoute,
     workspacesRoute,
     workspaceSettingsRoute,
     profileRoute,

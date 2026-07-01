@@ -3,6 +3,7 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { AgentsListResponse } from "@/features/agents/types"
+import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 import { apiRequest } from "@/lib/api/client"
 
 type ListAgentsParams = {
@@ -13,8 +14,15 @@ type ListAgentsParams = {
 
 export const agentsQueryKeys = {
   all: ["agents"] as const,
-  lists: () => [...agentsQueryKeys.all, "list"] as const,
+  workspace: () => [...agentsQueryKeys.all, activeWorkspaceQueryScope()] as const,
+  details: () => [...agentsQueryKeys.workspace(), "detail"] as const,
+  detail: (agentId: string) => [...agentsQueryKeys.details(), agentId] as const,
+  lists: () => [...agentsQueryKeys.workspace(), "list"] as const,
   list: (params: ListAgentsParams = {}) => [...agentsQueryKeys.lists(), params] as const,
+}
+
+function activeWorkspaceQueryScope() {
+  return getActiveWorkspaceSlug() ?? "__no_workspace__"
 }
 
 export async function listAgents({

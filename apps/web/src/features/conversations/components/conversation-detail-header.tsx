@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import type { AgentRun, AgentRunStatus, Conversation } from "@/features/conversations/types"
 import { isRunStatusPolling } from "@/features/conversations/message-parts"
 import { formatDateTime } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 
 export function ConversationDetailHeader({
   activeRun,
@@ -15,6 +16,9 @@ export function ConversationDetailHeader({
   activeRun: AgentRun | null
   conversation: Conversation
 }) {
+  const scheduleContext =
+    conversation.source === "scheduled" ? getScheduleContext(conversation.metadata) : null
+
   return (
     <header className="flex flex-col gap-3 p-4">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
@@ -29,6 +33,11 @@ export function ConversationDetailHeader({
           <p className="text-muted-foreground mt-1 truncate text-sm">
             {conversation.agent_slug ?? conversation.active_agent_id ?? "No active agent"}
           </p>
+          {scheduleContext && (
+            <p className="text-muted-foreground mt-1 truncate text-xs">
+              {scheduleContext}
+            </p>
+          )}
         </div>
         <div className="text-muted-foreground shrink-0 text-left text-xs md:text-right">
           <p>Last activity</p>
@@ -41,6 +50,41 @@ export function ConversationDetailHeader({
       {activeRun && <ActiveRunBanner activeRun={activeRun} />}
     </header>
   )
+}
+
+function getScheduleContext(metadata: Record<string, unknown> | null) {
+  if (!isRecord(metadata)) {
+    return null
+  }
+
+  const schedule = metadata["schedule"]
+  if (!isRecord(schedule)) {
+    return null
+  }
+
+  const parts = [
+    compactMetadataPart("Schedule", schedule["schedule_id"]),
+    compactMetadataPart("Run", schedule["schedule_run_id"]),
+    compactMetadataPart("Scheduled", schedule["scheduled_for"], formatDateTime),
+  ].filter((part): part is string => part !== null)
+
+  return parts.length > 0 ? parts.join(" · ") : null
+}
+
+function compactMetadataPart(
+  label: string,
+  value: unknown,
+  formatter: (value: string) => string = shortIdentifier
+) {
+  if (typeof value !== "string" || value.length === 0) {
+    return null
+  }
+
+  return `${label} ${formatter(value)}`
+}
+
+function shortIdentifier(value: string) {
+  return value.length > 12 ? value.slice(0, 8) : value
 }
 
 function ActiveRunBanner({ activeRun }: { activeRun: AgentRun }) {

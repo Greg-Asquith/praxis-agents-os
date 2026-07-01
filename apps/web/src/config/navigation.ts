@@ -3,12 +3,27 @@
 import {
   BlocksIcon,
   LayoutDashboardIcon,
+  type LucideIcon,
   MessagesSquareIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react"
 
-export const mainNavigation = [
+type NavigationItem =
+  | {
+      label: string
+      to: string
+      icon: LucideIcon
+      disabled: false
+    }
+  | {
+      label: string
+      to: null
+      icon: LucideIcon
+      disabled: true
+    }
+
+export const mainNavigation: NavigationItem[] = [
   {
     label: "Home",
     to: "/",
@@ -23,9 +38,9 @@ export const mainNavigation = [
   },
   {
     label: "Agents",
-    to: null,
+    to: "/agents",
     icon: BlocksIcon,
-    disabled: true,
+    disabled: false,
   },
   {
     label: "Workspaces",

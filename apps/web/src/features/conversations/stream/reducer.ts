@@ -90,7 +90,7 @@ export function reduceStreamEvent(
   state: AgentStreamState,
   streamEvent: StreamEvent
 ): AgentStreamState {
-  if (state.done) {
+  if (state.done && streamEvent.event !== "conversation.updated") {
     return state
   }
 
