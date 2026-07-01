@@ -36,6 +36,18 @@ dev: local-env ## Start Postgres, migrate, then run API, worker, and web dev ser
 	@$(MAKE) migrate
 	@$(MAKE) -j3 api-dev worker-dev web-dev
 
+.PHONY: dev-kill
+dev-kill: ## Stop local API and web dev servers on their configured ports
+	@pids="$$(lsof -tiTCP:$(API_PORT) -sTCP:LISTEN) $$(lsof -tiTCP:$(WEB_PORT) -sTCP:LISTEN)"; \
+	pids="$$(printf '%s\n' "$$pids" | tr ' ' '\n' | awk 'NF' | sort -u)"; \
+	if [ -z "$$pids" ]; then \
+		echo "No local API or web dev listeners found."; \
+	else \
+		echo "Stopping local API/web listener PIDs:"; \
+		printf '  %s\n' $$pids; \
+		kill $$pids; \
+	fi
+
 .PHONY: db-up
 db-up: local-env ## Start local Postgres in Docker
 	$(COMPOSE) up -d postgres
@@ -60,7 +72,7 @@ migrate: local-env ## Apply all Alembic migrations
 
 .PHONY: api-dev
 api-dev: local-env ## Run the FastAPI development server on http://localhost:8000
-	cd $(API_DIR) && uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
+	cd $(API_DIR) && uv run uvicorn main:app --reload --host 127.0.0.1 --port $(API_PORT)
 
 .PHONY: worker-dev
 worker-dev: local-env ## Run the scheduled agent runner
@@ -68,4 +80,4 @@ worker-dev: local-env ## Run the scheduled agent runner
 
 .PHONY: web-dev
 web-dev: local-env ## Run the Vite development server on http://localhost:3000
-	cd $(WEB_DIR) && pnpm dev --host 127.0.0.1 --port 3000
+	cd $(WEB_DIR) && pnpm dev --host 127.0.0.1 --port $(WEB_PORT)
