@@ -8,7 +8,7 @@ export const RUNTIME_TOOL_OPTIONS = [
   {
     name: "get_runtime_context",
     label: "Runtime context",
-    description: "Read the current workspace, conversation, agent, and run identifiers.",
+    description: "Let the agent read workspace and run context during a conversation.",
   },
   {
     name: "add_numbers",
@@ -19,6 +19,10 @@ export const RUNTIME_TOOL_OPTIONS = [
 
 export type RuntimeToolName = (typeof RUNTIME_TOOL_OPTIONS)[number]["name"]
 export type RuntimeToolMode = "off" | ToolPolicyValue
+
+export function runtimeToolLabel(toolName: string) {
+  return RUNTIME_TOOL_OPTIONS.find((tool) => tool.name === toolName)?.label ?? null
+}
 
 export const RUNTIME_TOOL_MODE_LABELS: Record<RuntimeToolMode, string> = {
   approval: "Approval",

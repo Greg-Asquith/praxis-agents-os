@@ -4,7 +4,12 @@ import { AlertCircleIcon, CircleDashedIcon, CircleIcon, ShieldAlertIcon } from "
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { conversationAgentLabel, sourceLabel } from "@/features/conversations/format"
+import {
+  conversationAgentLabel,
+  runStatusLabel,
+  sourceLabel,
+  supportIdentifier,
+} from "@/features/conversations/format"
 import { isRunStatusPolling } from "@/features/conversations/message-parts"
 import type { AgentRun, AgentRunStatus, Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
@@ -48,7 +53,24 @@ export function ConversationDetailHeader({
             {conversationAgentLabel(conversation, "No active agent")}
           </p>
           {scheduleContext && (
-            <p className="text-muted-foreground mt-1 truncate text-xs">{scheduleContext}</p>
+            <div className="text-muted-foreground mt-1 text-xs">
+              <p className="truncate">{scheduleContext.label}</p>
+              {scheduleContext.supportDetails.length > 0 && (
+                <details className="mt-1">
+                  <summary className="hover:text-foreground cursor-pointer">
+                    Support details
+                  </summary>
+                  <dl className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    {scheduleContext.supportDetails.map((detail) => (
+                      <div className="flex min-w-0 gap-1" key={detail.label}>
+                        <dt>{detail.label}</dt>
+                        <dd className="font-mono">{detail.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
+              )}
+            </div>
           )}
         </div>
         <div className="text-muted-foreground shrink-0 text-left text-xs md:text-right">
@@ -74,29 +96,28 @@ function getScheduleContext(metadata: Record<string, unknown> | null) {
     return null
   }
 
-  const parts = [
-    compactMetadataPart("Schedule", schedule["schedule_id"]),
-    compactMetadataPart("Run", schedule["schedule_run_id"]),
-    compactMetadataPart("Scheduled", schedule["scheduled_for"], formatDateTime),
-  ].filter((part): part is string => part !== null)
+  const scheduledFor =
+    typeof schedule["scheduled_for"] === "string"
+      ? `Scheduled for ${formatDateTime(schedule["scheduled_for"])}`
+      : "Scheduled conversation"
+  const supportDetails = [
+    supportMetadataPart("Schedule", schedule["schedule_id"]),
+    supportMetadataPart("Run", schedule["schedule_run_id"]),
+  ].filter((part): part is { label: string; value: string } => part !== null)
 
-  return parts.length > 0 ? parts.join(" · ") : null
+  return {
+    label: scheduledFor,
+    supportDetails,
+  }
 }
 
-function compactMetadataPart(
-  label: string,
-  value: unknown,
-  formatter: (value: string) => string = shortIdentifier
-) {
+function supportMetadataPart(label: string, value: unknown) {
   if (typeof value !== "string" || value.length === 0) {
     return null
   }
 
-  return `${label} ${formatter(value)}`
-}
-
-function shortIdentifier(value: string) {
-  return value.length > 12 ? value.slice(0, 8) : value
+  const identifier = supportIdentifier(value)
+  return identifier ? { label, value: identifier } : null
 }
 
 function ActiveRunBanner({ activeRun }: { activeRun: AgentRun }) {
@@ -141,19 +162,12 @@ function ActiveRunBanner({ activeRun }: { activeRun: AgentRun }) {
 
 function RunStatusBadge({ status }: { status: AgentRunStatus }) {
   if (status === "failed" || status === "cancelled") {
-    return <Badge variant="destructive">{statusLabel(status)}</Badge>
+    return <Badge variant="destructive">{runStatusLabel(status)}</Badge>
   }
 
   if (status === "awaiting_approval") {
-    return <Badge variant="secondary">{statusLabel(status)}</Badge>
+    return <Badge variant="secondary">{runStatusLabel(status)}</Badge>
   }
 
-  return <Badge>{statusLabel(status)}</Badge>
-}
-
-function statusLabel(status: AgentRunStatus) {
-  if (status === "awaiting_approval") {
-    return "awaiting approval"
-  }
-  return status
+  return <Badge>{runStatusLabel(status)}</Badge>
 }

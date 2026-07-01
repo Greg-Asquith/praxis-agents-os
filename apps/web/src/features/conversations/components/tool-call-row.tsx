@@ -9,6 +9,8 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { runtimeToolLabel } from "@/features/agents/runtime-tools"
+import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { safeJsonPreview } from "@/features/conversations/message-parts"
 import { cn } from "@/lib/utils"
@@ -19,7 +21,9 @@ type ToolCallRowProps = {
 }
 
 export function ToolCallRow({ activity, compact = false }: ToolCallRowProps) {
-  const title = titleForActivity(activity)
+  const toolLabel = runtimeToolLabel(activity.name)
+  const title = toolLabel ?? "Tool call"
+  const supportLabel = toolLabel ? null : supportIdentifier(activity.name)
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
 
@@ -33,9 +37,13 @@ export function ToolCallRow({ activity, compact = false }: ToolCallRowProps) {
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <ToolActivityIcon activity={activity} />
-          <div className="min-w-0">
+          <div className="min-w-0" title={toolLabel ? `Tool: ${activity.name}` : undefined}>
             <p className="truncate font-medium">{title}</p>
-            <p className="text-muted-foreground truncate font-mono text-xs">{activity.name}</p>
+            {supportLabel && (
+              <p className="text-muted-foreground truncate font-mono text-xs">
+                Tool {supportLabel}
+              </p>
+            )}
           </div>
         </div>
         <Badge variant={badgeVariantForActivity(activity)}>{statusLabel(activity)}</Badge>
@@ -78,19 +86,6 @@ function ToolActivityIcon({ activity }: { activity: ToolActivity }) {
     return <CircleDashedIcon className="text-muted-foreground size-4 shrink-0" />
   }
   return <WrenchIcon className="text-muted-foreground size-4 shrink-0" />
-}
-
-function titleForActivity(activity: ToolActivity) {
-  if (activity.status === "awaiting_approval") {
-    return "Approval required"
-  }
-  if (activity.kind === "result") {
-    return "Tool result"
-  }
-  if (activity.kind === "retry") {
-    return "Tool retry"
-  }
-  return "Tool call"
 }
 
 function statusLabel(activity: ToolActivity) {

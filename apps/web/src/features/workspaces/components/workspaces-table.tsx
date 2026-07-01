@@ -15,6 +15,7 @@ import {
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
 import { WorkspaceRoleBadge } from "@/features/workspaces/components/workspace-role-badge"
+import { workspaceStatusLabel } from "@/features/workspaces/format"
 import type { Workspace } from "@/features/workspaces/types"
 import { formatDateTime } from "@/lib/format"
 
@@ -51,7 +52,7 @@ export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-2">
-                <Badge variant="outline">{workspace.status}</Badge>
+                <Badge variant="outline">{workspaceStatusLabel(workspace.status)}</Badge>
                 {workspace.is_personal && <Badge variant="secondary">Personal</Badge>}
                 {activeWorkspace.id === workspace.id && <Badge>Active</Badge>}
               </div>

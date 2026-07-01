@@ -24,6 +24,19 @@ export function pluralize(count: number, singular: string, plural = `${singular}
   return count === 1 ? singular : plural
 }
 
+export function titleCaseToken(value: string, fallback: string) {
+  const words = value
+    .trim()
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+
+  if (words.length === 0) {
+    return fallback
+  }
+
+  return words.map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`).join(" ")
+}
+
 export function initials(value: string | null | undefined) {
   if (!value) {
     return "PA"

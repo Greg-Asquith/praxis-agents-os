@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { runtimeToolLabel } from "@/features/agents/runtime-tools"
+import { supportIdentifier } from "@/features/conversations/format"
 import { safeJsonPreview } from "@/features/conversations/message-parts"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 
@@ -113,14 +115,29 @@ export function ApprovalControls({
             )}
             {approvals.map((approval) => {
               const decision = decisions[approval.tool_call_id] ?? DEFAULT_DECISION
+              const toolLabel = runtimeToolLabel(approval.name)
+              const supportToolName = toolLabel ? null : supportIdentifier(approval.name)
+              const supportToolCallId = supportIdentifier(approval.tool_call_id) ?? "unknown"
 
               return (
                 <div className="grid gap-3 rounded-lg border p-3" key={approval.tool_call_id}>
                   <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">{approval.name}</p>
-                        <Badge variant="outline">{approval.tool_call_id}</Badge>
+                        <p
+                          className="font-medium"
+                          title={toolLabel ? `Tool: ${approval.name}` : undefined}
+                        >
+                          {toolLabel ?? "Tool call"}
+                        </p>
+                        <Badge variant="outline" title={approval.tool_call_id}>
+                          Call {supportToolCallId}
+                        </Badge>
+                        {supportToolName && (
+                          <Badge variant="outline" title={approval.name}>
+                            Tool {supportToolName}
+                          </Badge>
+                        )}
                       </div>
                       <pre className="bg-muted text-muted-foreground mt-2 max-h-48 overflow-auto rounded-lg p-3 text-xs">
                         {safeJsonPreview(approval.args)}
