@@ -30,8 +30,7 @@ from services.agent_schedules.runs import (
 from services.conversations.prune_failed import prune_failed_empty_conversation_for_run
 from utils.dates import normalize_utc_datetime
 
-_FINALIZED_SCHEDULE_RUN_STATUSES = {
-    RUN_STATUS_AWAITING_APPROVAL,
+_TERMINAL_SCHEDULE_RUN_STATUSES = {
     RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_TERMINAL_FAILED,
@@ -62,7 +61,7 @@ async def finalize_schedule_run_execution(
             },
         )
 
-    if schedule_run.status in _FINALIZED_SCHEDULE_RUN_STATUSES:
+    if schedule_run.status in _TERMINAL_SCHEDULE_RUN_STATUSES:
         return
 
     if agent_run.status == AGENT_RUN_STATUS_COMPLETED:

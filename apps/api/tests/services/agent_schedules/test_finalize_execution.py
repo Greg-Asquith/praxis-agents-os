@@ -117,6 +117,28 @@ async def test_completed_generic_run_retires_once_schedule(db_session: AsyncSess
     assert schedule.last_run_at is not None
 
 
+async def test_awaiting_schedule_run_with_completed_generic_run_retires_once_schedule(
+    db_session: AsyncSession,
+) -> None:
+    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
+        await _prepared_schedule_context(db_session)
+    )
+    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
+    await start_agent_run(db_session, run)
+    await complete_agent_run(db_session, run)
+
+    await finalize_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+        agent_run_id=run.id,
+    )
+
+    assert schedule_run.status == RUN_STATUS_COMPLETED
+    assert schedule.is_active is False
+    assert schedule.next_run_at is None
+    assert schedule.last_run_at is not None
+
+
 async def test_awaiting_approval_does_not_advance_schedule(db_session: AsyncSession) -> None:
     _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
         await _prepared_schedule_context(db_session, schedule_type="interval")
@@ -136,10 +158,54 @@ async def test_awaiting_approval_does_not_advance_schedule(db_session: AsyncSess
     assert schedule.is_active is True
 
 
+async def test_awaiting_schedule_run_with_awaiting_generic_run_stays_paused(
+    db_session: AsyncSession,
+) -> None:
+    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
+        await _prepared_schedule_context(db_session, schedule_type="interval")
+    )
+    original_next_run_at = schedule.next_run_at
+    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
+    await start_agent_run(db_session, run)
+    await mark_run_awaiting_approval(db_session, run)
+
+    await finalize_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+        agent_run_id=run.id,
+    )
+
+    assert schedule_run.status == RUN_STATUS_AWAITING_APPROVAL
+    assert schedule.next_run_at == original_next_run_at
+    assert schedule.is_active is True
+
+
 async def test_failed_generic_run_terminally_fails_schedule(db_session: AsyncSession) -> None:
     _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
         await _prepared_schedule_context(db_session)
     )
+    await start_agent_run(db_session, run)
+    await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
+
+    await finalize_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+        agent_run_id=run.id,
+    )
+
+    assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+    assert schedule_run.last_error_code == "provider"
+    assert schedule.is_active is False
+    assert schedule.next_run_at is None
+
+
+async def test_awaiting_schedule_run_with_failed_generic_run_terminally_fails_schedule(
+    db_session: AsyncSession,
+) -> None:
+    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
+        await _prepared_schedule_context(db_session)
+    )
+    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
     await start_agent_run(db_session, run)
     await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
 

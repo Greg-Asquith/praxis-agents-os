@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from pydantic_ai import DeferredToolResults, ToolApproved
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,6 +23,9 @@ from services.agent_schedules.runs import (
     RUN_STATUS_TERMINAL_FAILED,
 )
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agents.runtime.sinks import NullSink
+from services.agents.runtime.worker import run_resume_worker
 from tests.factories import build_user, build_workspace
 from workers.agent_runner import run_once
 
@@ -128,6 +132,61 @@ async def test_run_once_suspends_approval_required_schedule(
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "awaiting_approval"
+
+
+async def test_resume_worker_finalizes_scheduled_approval_resume(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    schedule_id = await _create_due_schedule(
+        committed_db_session_factory,
+        tool_names=["add_numbers"],
+        tool_policies={"add_numbers": "approval"},
+    )
+
+    attempted = await run_once(owner_instance_id="test-worker", model=TestModel())
+
+    assert attempted >= 1
+    async with committed_db_session_factory() as db:
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == RUN_STATUS_AWAITING_APPROVAL
+        assert schedule_run.agent_run_id is not None
+        assert schedule_run.conversation_id is not None
+
+        agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert agent_run is not None
+        assert agent_run.status == "awaiting_approval"
+        suspended_state = load_suspended_run_state(agent_run)
+        tool_call_id = suspended_state.pending_tool_call_ids[0]
+        run_id = agent_run.id
+        conversation_id = schedule_run.conversation_id
+
+    await run_resume_worker(
+        run_id=run_id,
+        conversation_id=conversation_id,
+        message_history=suspended_state.message_history,
+        deferred_tool_results=DeferredToolResults(
+            approvals={tool_call_id: ToolApproved(override_args={"a": 2, "b": 3})}
+        ),
+        sink=NullSink(run_id=run_id, conversation_id=conversation_id),
+        model=TestModel(),
+    )
+
+    async with committed_db_session_factory() as db:
+        schedule = await db.get(AgentSchedule, schedule_id)
+        assert schedule is not None
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == RUN_STATUS_COMPLETED
+        assert schedule.is_active is False
+
+        agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert agent_run is not None
+        assert agent_run.status == "completed"
 
 
 async def test_run_once_provider_failure_disables_schedule_and_prunes_conversation(

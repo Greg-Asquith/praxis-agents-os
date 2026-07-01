@@ -4,7 +4,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
@@ -20,6 +20,7 @@ from services.agent_schedules.finalize_schedule_run_execution import (
 )
 from services.agent_schedules.runs import (
     RUN_STATUS_ACCEPTED,
+    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_RUNNING,
     mark_run_retryable_failure,
     mark_run_terminal_failure_and_disable_schedule,
@@ -41,13 +42,20 @@ async def reconcile_schedule_run_execution(
 
     result = await db.execute(
         select(AgentScheduleRun)
+        .outerjoin(AgentRun, AgentScheduleRun.agent_run_id == AgentRun.id)
         .where(
             AgentScheduleRun.deleted == False,  # noqa: E712
-            AgentScheduleRun.status.in_({RUN_STATUS_ACCEPTED, RUN_STATUS_RUNNING}),
+            or_(
+                AgentScheduleRun.status.in_({RUN_STATUS_ACCEPTED, RUN_STATUS_RUNNING}),
+                and_(
+                    AgentScheduleRun.status == RUN_STATUS_AWAITING_APPROVAL,
+                    AgentRun.status.in_(TERMINAL_RUN_STATUSES),
+                ),
+            ),
         )
         .order_by(AgentScheduleRun.created_at)
         .limit(batch_size or DEFAULT_RECONCILE_BATCH_SIZE)
-        .with_for_update(skip_locked=True)
+        .with_for_update(skip_locked=True, of=AgentScheduleRun)
     )
     schedule_runs = list(result.scalars())
 

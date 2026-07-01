@@ -14,12 +14,14 @@ from services.agent_runs import (
     complete_agent_run,
     create_agent_run,
     fail_agent_run,
+    mark_run_awaiting_approval,
     start_agent_run,
 )
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import reconcile_schedule_run_execution
 from services.agent_schedules.runs import (
     RUN_STATUS_ACCEPTED,
+    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_RETRYABLE_FAILED,
     RUN_STATUS_RUNNING,
@@ -122,6 +124,53 @@ async def test_reconcile_running_schedule_with_completed_generic_run(
     assert reconciled == 1
     assert schedule_run.status == RUN_STATUS_COMPLETED
     assert schedule.is_active is False
+
+
+async def test_reconcile_awaiting_schedule_with_completed_generic_run(
+    db_session: AsyncSession,
+) -> None:
+    schedule, schedule_run, run = await _running_schedule_with_run(db_session)
+    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
+    await start_agent_run(db_session, run)
+    await complete_agent_run(db_session, run)
+
+    reconciled = await reconcile_schedule_run_execution(db_session)
+
+    assert reconciled == 1
+    assert schedule_run.status == RUN_STATUS_COMPLETED
+    assert schedule.is_active is False
+
+
+async def test_reconcile_awaiting_schedule_with_failed_generic_run(
+    db_session: AsyncSession,
+) -> None:
+    schedule, schedule_run, run = await _running_schedule_with_run(db_session)
+    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
+    await start_agent_run(db_session, run)
+    await fail_agent_run(db_session, run, error_code="abandoned", error_message="stale")
+
+    reconciled = await reconcile_schedule_run_execution(db_session)
+
+    assert reconciled == 1
+    assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+    assert schedule.is_active is False
+
+
+async def test_reconcile_excludes_still_paused_awaiting_schedule_run(
+    db_session: AsyncSession,
+) -> None:
+    schedule, schedule_run, run = await _running_schedule_with_run(db_session)
+    original_next_run_at = schedule.next_run_at
+    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
+    await start_agent_run(db_session, run)
+    await mark_run_awaiting_approval(db_session, run)
+
+    reconciled = await reconcile_schedule_run_execution(db_session)
+
+    assert reconciled == 0
+    assert schedule_run.status == RUN_STATUS_AWAITING_APPROVAL
+    assert schedule.next_run_at == original_next_run_at
+    assert schedule.is_active is True
 
 
 async def test_reconcile_expired_accepted_run_without_generic_run(

@@ -12,9 +12,17 @@ from uuid import UUID
 from pydantic_ai import DeferredToolResults
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
+from sqlalchemy import select
 
 from core.database import configure_async_db_session, get_async_db_session_factory
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_PENDING
+from core.exceptions.general import ConflictError
+from models.agent import AgentScheduleRun
+from models.agent_run import AgentRun
+from services.agent_runs.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_PENDING,
+    RUN_STATUS_RUNNING,
+)
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
 from services.agents.runtime.sinks import EventSink
@@ -128,8 +136,63 @@ async def run_resume_worker(
             with suppress(asyncio.CancelledError):
                 await heartbeat_task
         await session.close()
+        await _finalize_linked_schedule_run(run_id)
         await sink.close()
 
 
 def _owner_instance_id() -> str:
     return f"{os.uname().nodename}:{os.getpid()}"
+
+
+async def _finalize_linked_schedule_run(run_id: UUID) -> None:
+    """Finalize a schedule run linked to a resumed generic run, if one exists."""
+    from services.agent_schedules.finalize_schedule_run_execution import (
+        finalize_schedule_run_execution,
+    )
+
+    session_factory = get_async_db_session_factory()
+    async with session_factory() as db:
+        await configure_async_db_session(db)
+        schedule_run_id: UUID | None = None
+        try:
+            run = await db.get(AgentRun, run_id)
+            if run is None or run.deleted:
+                return
+            if run.status in {RUN_STATUS_PENDING, RUN_STATUS_RUNNING}:
+                return
+
+            schedule_run = await db.scalar(
+                select(AgentScheduleRun).where(
+                    AgentScheduleRun.agent_run_id == run_id,
+                    AgentScheduleRun.deleted == False,  # noqa: E712
+                )
+            )
+            if schedule_run is None:
+                return
+
+            schedule_run_id = schedule_run.id
+            await finalize_schedule_run_execution(
+                db,
+                schedule_run_id=schedule_run.id,
+                agent_run_id=run_id,
+            )
+            await db.commit()
+        except ConflictError:
+            await db.rollback()
+            logger.warning(
+                "Linked scheduled agent run could not be finalized yet",
+                exc_info=True,
+                extra={
+                    "run_id": str(run_id),
+                    "schedule_run_id": str(schedule_run_id) if schedule_run_id else None,
+                },
+            )
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Linked scheduled agent run finalization failed",
+                extra={
+                    "run_id": str(run_id),
+                    "schedule_run_id": str(schedule_run_id) if schedule_run_id else None,
+                },
+            )
