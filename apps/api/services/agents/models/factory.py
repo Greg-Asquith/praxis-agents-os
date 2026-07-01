@@ -12,7 +12,7 @@ from google.genai import Client
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.azure import AzureProvider
 from pydantic_ai.providers.google import GoogleProvider
@@ -40,7 +40,7 @@ def build_model(spec: ResolvedModel) -> Model:
 
     if spec.provider == PROVIDER_OPENAI:
         provider = OpenAIProvider(api_key=provider_api_key(PROVIDER_OPENAI))
-        return OpenAIChatModel(spec.model, provider=provider, settings=model_settings)
+        return OpenAIResponsesModel(spec.model, provider=provider, settings=model_settings)
 
     if spec.provider == PROVIDER_GOOGLE:
         return GoogleModel(spec.model, provider=_google_provider(), settings=model_settings)
