@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query"
-import { CheckIcon, KeyRoundIcon, LinkIcon } from "lucide-react"
+import { CheckIcon, KeyRoundIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +14,7 @@ import {
   OAUTH_LINK_PROVIDER_STORAGE_KEY,
   useStartOauthLinkMutation,
 } from "@/features/auth/api/oauth-link"
+import { OAuthProviderIcon } from "@/features/auth/components/oauth-provider-icon"
 import { useUnlinkOauthMutation } from "@/features/auth/api/unlink-oauth"
 import { getErrorMessage } from "@/lib/api/errors"
 
@@ -140,7 +141,7 @@ export function SignInMethods() {
                 size="sm"
                 variant="outline"
               >
-                <LinkIcon data-icon="inline-start" />
+                <OAuthProviderIcon provider={provider.icon || provider.name} />
                 Connect {provider.display_name}
               </Button>
             ))}

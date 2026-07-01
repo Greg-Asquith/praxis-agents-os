@@ -6,7 +6,7 @@ import { LogInIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useLoginMutation } from "@/features/auth/api/login"
 import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
@@ -52,7 +52,7 @@ export function LoginRoute() {
       description="Use your Praxis account to continue."
       footer={
         <span>
-          New here? <AuthLink to="/register">Create an account</AuthLink>
+          <AuthLink to="/register">Create a New Account</AuthLink>
         </span>
       }
     >
@@ -99,7 +99,6 @@ export function LoginRoute() {
                 required
                 type="password"
               />
-              <FieldDescription>Use the same password you use for this workspace.</FieldDescription>
             </Field>
 
             <Field>

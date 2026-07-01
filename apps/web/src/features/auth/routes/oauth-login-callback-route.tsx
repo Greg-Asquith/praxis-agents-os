@@ -11,24 +11,40 @@ import {
   useCompleteOauthLoginMutation,
 } from "@/features/auth/api/oauth-login"
 import { AuthCard } from "@/features/auth/components/auth-card"
+import {
+  clearOauthCallbackProvider,
+  readOauthCallback,
+  type OAuthCallbackInput,
+} from "@/features/auth/oauth-callback"
 import { getErrorMessage } from "@/lib/api/errors"
 
-function readCallback() {
-  const params = new URLSearchParams(window.location.search)
-  const provider = window.sessionStorage.getItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY)
-  window.sessionStorage.removeItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY)
-  return {
-    code: params.get("code"),
-    provider,
-    providerError: params.get("error"),
-    state: params.get("state"),
+import type { AuthResponse } from "@/features/auth/types"
+
+const loginCompletionPromises = new Map<string, Promise<AuthResponse>>()
+
+function loginCompletionKey(input: OAuthCallbackInput) {
+  return `${input.provider}:${input.state}:${input.code}`
+}
+
+function completeLoginOnce(
+  input: OAuthCallbackInput,
+  completeLogin: (input: OAuthCallbackInput) => Promise<AuthResponse>
+) {
+  const key = loginCompletionKey(input)
+  const existing = loginCompletionPromises.get(key)
+  if (existing) {
+    return existing
   }
+
+  const promise = completeLogin(input)
+  loginCompletionPromises.set(key, promise)
+  return promise
 }
 
 export function OAuthLoginCallbackRoute() {
   const navigate = useNavigate()
-  const { mutate: completeLogin } = useCompleteOauthLoginMutation()
-  const [callback] = useState(readCallback)
+  const { mutateAsync: completeLogin } = useCompleteOauthLoginMutation()
+  const [callback] = useState(() => readOauthCallback(OAUTH_LOGIN_PROVIDER_STORAGE_KEY))
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [twoFactorPending, setTwoFactorPending] = useState(false)
   const startedRef = useRef(false)
@@ -54,20 +70,20 @@ export function OAuthLoginCallbackRoute() {
       return
     }
     startedRef.current = true
+    clearOauthCallbackProvider(OAUTH_LOGIN_PROVIDER_STORAGE_KEY)
 
-    completeLogin(parsed.ready, {
-      onSuccess: (response) => {
+    void completeLoginOnce(parsed.ready, completeLogin)
+      .then((response) => {
         if (response.requires_twofa) {
           setTwoFactorPending(true)
           return
         }
-        void navigate({ to: "/", replace: true })
-      },
-      onError: (error) => {
+        window.location.replace("/")
+      })
+      .catch((error: unknown) => {
         setMutationError(getErrorMessage(error))
-      },
-    })
-  }, [parsed, completeLogin, navigate])
+      })
+  }, [parsed, completeLogin])
 
   const error = parsed.error ?? mutationError
 

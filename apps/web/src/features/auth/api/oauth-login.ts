@@ -7,7 +7,10 @@ import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants
 import type { AuthResponse, OAuthAuthorizationUrlResponse } from "@/features/auth/types"
 import { apiRequest } from "@/lib/api/client"
 
-export { OAUTH_LOGIN_CALLBACK_PATH, OAUTH_LOGIN_PROVIDER_STORAGE_KEY } from "@/features/auth/oauth-login-constants"
+export {
+  OAUTH_LOGIN_CALLBACK_PATH,
+  OAUTH_LOGIN_PROVIDER_STORAGE_KEY,
+} from "@/features/auth/oauth-login-constants"
 
 type OAuthRedirectPayload = {
   redirect_uri?: string
@@ -50,11 +53,11 @@ export function useCompleteOauthLoginMutation() {
 
   return useMutation({
     mutationFn: completeOauthLogin,
-    onSuccess: async (response) => {
+    onSuccess: (response) => {
       if (response.user) {
         queryClient.setQueryData(currentUserQueryKey, response.user)
       }
-      await queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: currentUserQueryOptions().queryKey,
       })
     },

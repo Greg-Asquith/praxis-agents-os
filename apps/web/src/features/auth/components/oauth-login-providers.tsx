@@ -1,8 +1,7 @@
 // apps/web/src/features/auth/components/oauth-login-providers.tsx
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { LogInIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -12,28 +11,55 @@ import {
   OAUTH_LOGIN_PROVIDER_STORAGE_KEY,
   useStartOauthLoginMutation,
 } from "@/features/auth/api/oauth-login"
+import { OAuthProviderIcon } from "@/features/auth/components/oauth-provider-icon"
 import { getErrorMessage } from "@/lib/api/errors"
+
+const PENDING_FEEDBACK_DELAY_MS = 500
 
 export function OAuthLoginProviders() {
   const providersQuery = useQuery(oauthProvidersQueryOptions())
   const startLoginMutation = useStartOauthLoginMutation()
+  const startInFlightRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [pendingProvider, setPendingProvider] = useState<string | null>(null)
+  const [showPendingFeedback, setShowPendingFeedback] = useState(false)
 
   const providers = providersQuery.data?.providers ?? []
 
+  useEffect(() => {
+    if (!pendingProvider || !startLoginMutation.isPending) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowPendingFeedback(true)
+    }, PENDING_FEEDBACK_DELAY_MS)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [pendingProvider, startLoginMutation.isPending])
+
   function handleStart(provider: string) {
+    if (startInFlightRef.current) {
+      return
+    }
+
+    startInFlightRef.current = true
     setError(null)
     setPendingProvider(provider)
-    window.sessionStorage.setItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY, provider)
+    setShowPendingFeedback(false)
 
     startLoginMutation.mutate(provider, {
       onSuccess: (response) => {
+        window.sessionStorage.setItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY, response.provider)
         window.location.assign(response.authorization_url)
       },
       onError: (mutationError) => {
+        startInFlightRef.current = false
         window.sessionStorage.removeItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY)
         setPendingProvider(null)
+        setShowPendingFeedback(false)
         setError(getErrorMessage(mutationError))
       },
     })
@@ -54,11 +80,12 @@ export function OAuthLoginProviders() {
 
       <div className="grid gap-2">
         {providers.map((provider) => {
-          const isPending = pendingProvider === provider.name && startLoginMutation.isPending
+          const showOpeningState =
+            showPendingFeedback && pendingProvider === provider.name && startLoginMutation.isPending
           return (
             <Button
               className="w-full"
-              disabled={startLoginMutation.isPending}
+              disabled={showPendingFeedback}
               key={provider.name}
               onClick={() => {
                 handleStart(provider.name)
@@ -66,8 +93,10 @@ export function OAuthLoginProviders() {
               type="button"
               variant="outline"
             >
-              <LogInIcon data-icon="inline-start" />
-              {isPending ? `Opening ${provider.display_name}` : `Continue with ${provider.display_name}`}
+              <OAuthProviderIcon provider={provider.icon || provider.name} />
+              {showOpeningState
+                ? `Opening ${provider.display_name}`
+                : `Continue with ${provider.display_name}`}
             </Button>
           )
         })}
