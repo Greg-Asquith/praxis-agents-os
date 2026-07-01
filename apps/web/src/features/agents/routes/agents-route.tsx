@@ -16,6 +16,7 @@ export function AgentsRoute() {
   const { data: modelCatalog } = useModelCatalogQuery()
   const activeAgents = countActiveAgents(agentsData.agents)
   const approvalGatedAgents = countApprovalGatedAgents(agentsData.agents)
+  const hasAgents = agentsData.agents.length > 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -24,10 +25,12 @@ export function AgentsRoute() {
           <p className="text-muted-foreground text-sm font-medium">Agent runtime</p>
           <h1 className="font-heading text-2xl font-semibold tracking-normal">Agents</h1>
         </div>
-        <Button render={<Link to="/agents/new" />}>
-          <PlusIcon data-icon="inline-start" />
-          New agent
-        </Button>
+        {hasAgents ? (
+          <Button render={<Link to="/agents/new" />}>
+            <PlusIcon data-icon="inline-start" />
+            New agent
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

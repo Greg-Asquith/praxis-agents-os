@@ -1,10 +1,11 @@
 // apps/web/src/features/agents/components/agents-table.tsx
 
 import { Link } from "@tanstack/react-router"
-import { Settings2Icon } from "lucide-react"
+import { BotIcon, PlusIcon, Settings2Icon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import {
   Table,
   TableBody,
@@ -29,12 +30,18 @@ export function AgentsTable({
 }) {
   if (agents.length === 0) {
     return (
-      <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-        <h2 className="font-heading text-lg font-semibold">No agents yet</h2>
-        <p className="text-muted-foreground mt-2 max-w-md text-sm">
-          Create the first workspace agent to start conversations and configure approval policies.
-        </p>
-      </div>
+      <EmptyState
+        action={
+          <Button render={<Link to="/agents/new" />}>
+            <PlusIcon data-icon="inline-start" />
+            New agent
+          </Button>
+        }
+        description="Create the first workspace agent to start conversations and configure approval policies."
+        icon={<BotIcon className="size-5" />}
+        size="compact"
+        title="No agents yet"
+      />
     )
   }
 

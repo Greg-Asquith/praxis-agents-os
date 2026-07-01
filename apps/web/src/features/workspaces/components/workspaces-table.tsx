@@ -1,9 +1,11 @@
 // apps/web/src/features/workspaces/components/workspaces-table.tsx
 
 import { Link } from "@tanstack/react-router"
+import { BriefcaseBusinessIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import {
   Table,
   TableBody,
@@ -13,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { CreateWorkspaceDialog } from "@/features/workspaces/components/create-workspace-dialog"
 import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
 import { WorkspaceRoleBadge } from "@/features/workspaces/components/workspace-role-badge"
 import { workspaceStatusLabel } from "@/features/workspaces/format"
@@ -21,6 +24,18 @@ import { formatDateTime } from "@/lib/format"
 
 export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
   const { workspace: activeWorkspace, setWorkspaceBySlug } = useActiveWorkspace()
+
+  if (workspaces.length === 0) {
+    return (
+      <EmptyState
+        action={<CreateWorkspaceDialog />}
+        description="Create a workspace to separate access, audit records, and agent configuration."
+        icon={<BriefcaseBusinessIcon className="size-5" />}
+        size="compact"
+        title="No workspaces yet"
+      />
+    )
+  }
 
   return (
     <Table>

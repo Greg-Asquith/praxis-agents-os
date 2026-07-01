@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { CircleIcon, ClockIcon, MessageSquareTextIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/ui/empty-state"
 import { conversationAgentLabel, sourceLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
@@ -17,15 +18,12 @@ type ConversationListProps = {
 export function ConversationList({ conversations, selectedConversationId }: ConversationListProps) {
   if (conversations.length === 0) {
     return (
-      <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed p-5 text-center">
-        <div className="bg-muted text-muted-foreground mb-3 flex size-9 items-center justify-center rounded-full">
-          <MessageSquareTextIcon className="size-4" />
-        </div>
-        <p className="text-sm font-medium">No conversations</p>
-        <p className="text-muted-foreground mt-1 text-xs">
-          Start a new conversation from the action above.
-        </p>
-      </div>
+      <EmptyState
+        description="Start a new conversation from the action above."
+        icon={<MessageSquareTextIcon className="size-5" />}
+        size="compact"
+        title="No conversations"
+      />
     )
   }
 

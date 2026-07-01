@@ -8,6 +8,7 @@ import { pluralize } from "@/lib/format"
 
 export function WorkspacesRoute() {
   const { data } = useWorkspacesQuery()
+  const hasWorkspaces = data.workspaces.length > 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -16,7 +17,7 @@ export function WorkspacesRoute() {
           <p className="text-muted-foreground text-sm font-medium">Workspace access</p>
           <h1 className="font-heading text-2xl font-semibold tracking-normal">Workspaces</h1>
         </div>
-        <CreateWorkspaceDialog />
+        {hasWorkspaces ? <CreateWorkspaceDialog /> : null}
       </div>
 
       <Card>

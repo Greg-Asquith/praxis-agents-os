@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router"
 import { MessageSquarePlusIcon, MessageSquareTextIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Separator } from "@/components/ui/separator"
 import { useConversationsQuery } from "@/features/conversations/api/list-conversations"
 import { ConversationList } from "@/features/conversations/components/conversation-list"
@@ -19,6 +20,7 @@ export function ConversationsRoute() {
     () => sortConversations(conversationsData.conversations),
     [conversationsData.conversations]
   )
+  const hasConversations = conversations.length > 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -32,10 +34,12 @@ export function ConversationsRoute() {
             </p>
           </div>
         </div>
-        <Button render={<Link to="/conversations/new" />}>
-          <MessageSquarePlusIcon data-icon="inline-start" />
-          New conversation
-        </Button>
+        {hasConversations ? (
+          <Button render={<Link to="/conversations/new" />}>
+            <MessageSquarePlusIcon data-icon="inline-start" />
+            New conversation
+          </Button>
+        ) : null}
       </div>
 
       <section className="bg-background rounded-xl border">
@@ -46,16 +50,16 @@ export function ConversationsRoute() {
             </h2>
             <p className="text-muted-foreground text-xs">Sorted by recent activity.</p>
           </div>
-          {conversations.length > 0 && (
+          {hasConversations ? (
             <Button size="sm" variant="outline" render={<Link to="/conversations/new" />}>
               <MessageSquarePlusIcon data-icon="inline-start" />
               Start new
             </Button>
-          )}
+          ) : null}
         </div>
         <Separator />
         <div className="p-2 md:p-3">
-          {conversations.length > 0 ? (
+          {hasConversations ? (
             <ConversationList conversations={conversations} selectedConversationId={null} />
           ) : (
             <ConversationEmptyState />
@@ -68,18 +72,16 @@ export function ConversationsRoute() {
 
 function ConversationEmptyState() {
   return (
-    <div className="flex min-h-72 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
-      <div className="bg-muted text-muted-foreground mb-4 flex size-10 items-center justify-center rounded-full">
-        <MessageSquareTextIcon className="size-5" />
-      </div>
-      <h2 className="font-heading text-lg font-medium">No conversations yet</h2>
-      <p className="text-muted-foreground mt-2 max-w-sm text-sm">
-        Start a blank chat, choose an active agent, and the thread will appear here.
-      </p>
-      <Button className="mt-4" render={<Link to="/conversations/new" />}>
-        <MessageSquarePlusIcon data-icon="inline-start" />
-        New conversation
-      </Button>
-    </div>
+    <EmptyState
+      action={
+        <Button render={<Link to="/conversations/new" />}>
+          <MessageSquarePlusIcon data-icon="inline-start" />
+          New conversation
+        </Button>
+      }
+      description="Start a blank chat, choose an active agent, and the thread will appear here."
+      icon={<MessageSquareTextIcon className="size-5" />}
+      title="No conversations yet"
+    />
   )
 }
