@@ -136,9 +136,7 @@ function WorkspaceSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={
-          <Button variant="outline" className="h-9 max-w-56 justify-start gap-2 px-2.5" />
-        }
+        render={<Button variant="outline" className="h-9 max-w-56 justify-start gap-2 px-2.5" />}
       >
         <WorkspaceIcon size="sm" workspace={workspace} />
         <span className="min-w-0 truncate text-sm font-medium">{workspace.name}</span>

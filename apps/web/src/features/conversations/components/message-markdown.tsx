@@ -52,7 +52,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     return (
       <pre
         className={cn(
-          "text-foreground text-sm leading-7 break-words whitespace-pre-wrap",
+          "text-foreground text-sm leading-7 wrap-break-word whitespace-pre-wrap",
           className
         )}
       >
@@ -97,7 +97,7 @@ function markdownComponents(): Components {
       const isExternal = typeof href === "string" && /^https?:\/\//i.test(href)
       return (
         <a
-          className="text-primary break-words underline underline-offset-2 hover:opacity-80"
+          className="text-primary wrap-break-word underline underline-offset-2 hover:opacity-80"
           href={href}
           rel={isExternal ? "noopener noreferrer" : undefined}
           target={isExternal ? "_blank" : undefined}
@@ -199,7 +199,7 @@ function markdownComponents(): Components {
       </ol>
     ),
     p: ({ children, ...props }) => (
-      <p className="mb-3 break-words whitespace-pre-wrap last:mb-0" {...props}>
+      <p className="mb-3 wrap-break-word whitespace-pre-wrap last:mb-0" {...props}>
         {children}
       </p>
     ),
@@ -248,13 +248,7 @@ function markdownComponents(): Components {
   }
 }
 
-function MarkdownCodeBlock({
-  code,
-  language,
-}: {
-  code: string
-  language: string
-}) {
+function MarkdownCodeBlock({ code, language }: { code: string; language: string }) {
   const { copied, copy } = useClipboardCopy()
 
   function handleCopy() {

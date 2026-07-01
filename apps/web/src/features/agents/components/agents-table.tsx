@@ -7,6 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
+  ResponsiveList,
+  ResponsiveListItem,
+  ResponsiveListMeta,
+} from "@/components/ui/responsive-list"
+import {
   Table,
   TableBody,
   TableCell,
@@ -46,69 +51,137 @@ export function AgentsTable({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Model</TableHead>
-            <TableHead>Runtime</TableHead>
-            <TableHead>Updated</TableHead>
-            <TableHead>
-              <span className="sr-only">Actions</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {agents.map((agent) => {
-            const approvalPolicyTools = countApprovalPolicyTools(agent)
+    <div className="flex flex-col gap-3">
+      <ResponsiveList>
+        {agents.map((agent) => (
+          <AgentMobileRow key={agent.id} agent={agent} modelCatalog={modelCatalog} />
+        ))}
+      </ResponsiveList>
 
-            return (
-              <TableRow key={agent.id}>
-                <TableCell>
-                  <div className="flex min-w-56 flex-col gap-1">
-                    <span className="font-medium">{agent.name}</span>
-                    <span className="text-muted-foreground text-xs">{agent.slug}</span>
-                    {agent.description && (
-                      <span className="text-muted-foreground max-w-md truncate text-xs">
-                        {agent.description}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <AgentStatusBadges agent={agent} />
-                </TableCell>
-                <TableCell>{formatAgentModel(agent, modelCatalog)}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline">
-                      {agent.tool_names.length} {pluralize(agent.tool_names.length, "tool")}
-                    </Badge>
-                    {approvalPolicyTools > 0 && (
-                      <Badge variant="secondary">
-                        {approvalPolicyTools} approval {pluralize(approvalPolicyTools, "gate")}
+      <div className="hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Model</TableHead>
+              <TableHead>Runtime</TableHead>
+              <TableHead>Updated</TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {agents.map((agent) => {
+              const approvalPolicyTools = countApprovalPolicyTools(agent)
+
+              return (
+                <TableRow key={agent.id}>
+                  <TableCell>
+                    <div className="flex min-w-56 flex-col gap-1">
+                      <span className="font-medium">{agent.name}</span>
+                      <span className="text-muted-foreground text-xs">{agent.slug}</span>
+                      {agent.description && (
+                        <span className="text-muted-foreground max-w-md truncate text-xs">
+                          {agent.description}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <AgentStatusBadges agent={agent} />
+                  </TableCell>
+                  <TableCell>{formatAgentModel(agent, modelCatalog)}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline">
+                        {agent.tool_names.length} {pluralize(agent.tool_names.length, "tool")}
                       </Badge>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>{formatDateTime(agent.updated_at)}</TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
-                  >
-                    <Settings2Icon data-icon="inline-start" />
-                    Configure
-                  </Button>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+                      {approvalPolicyTools > 0 && (
+                        <Badge variant="secondary">
+                          {approvalPolicyTools} approval {pluralize(approvalPolicyTools, "gate")}
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>{formatDateTime(agent.updated_at)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
+                    >
+                      <Settings2Icon data-icon="inline-start" />
+                      Configure
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
+  )
+}
+
+function AgentMobileRow({
+  agent,
+  modelCatalog,
+}: {
+  agent: Agent
+  modelCatalog: ModelCatalogResponse
+}) {
+  const approvalPolicyTools = countApprovalPolicyTools(agent)
+
+  return (
+    <ResponsiveListItem>
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate font-medium">{agent.name}</p>
+            <p className="text-muted-foreground truncate text-xs">{agent.slug}</p>
+          </div>
+          <AgentStatusBadges agent={agent} />
+        </div>
+
+        {agent.description ? (
+          <p className="text-muted-foreground line-clamp-2 text-xs leading-5">
+            {agent.description}
+          </p>
+        ) : null}
+
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <ResponsiveListMeta label="Model">
+            {formatAgentModel(agent, modelCatalog)}
+          </ResponsiveListMeta>
+          <ResponsiveListMeta label="Runtime">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline">
+                {agent.tool_names.length} {pluralize(agent.tool_names.length, "tool")}
+              </Badge>
+              {approvalPolicyTools > 0 && (
+                <Badge variant="secondary">
+                  {approvalPolicyTools} approval {pluralize(approvalPolicyTools, "gate")}
+                </Badge>
+              )}
+            </div>
+          </ResponsiveListMeta>
+          <ResponsiveListMeta label="Updated">
+            {formatDateTime(agent.updated_at)}
+          </ResponsiveListMeta>
+        </dl>
+
+        <Button
+          className="w-full"
+          variant="outline"
+          render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
+        >
+          <Settings2Icon data-icon="inline-start" />
+          Configure
+        </Button>
+      </div>
+    </ResponsiveListItem>
   )
 }
