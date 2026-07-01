@@ -2,7 +2,7 @@
 
 import { env } from "@/config/env"
 import { getCsrfToken } from "@/lib/api/csrf"
-import { ApiError, type ApiProblem } from "@/lib/api/errors"
+import { parseApiError } from "@/lib/api/errors"
 import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 
 type QueryValue = string | number | boolean | null | undefined
@@ -68,34 +68,16 @@ function buildRequest(
   return { url: buildUrl(path, query), init: requestInit }
 }
 
-async function parseProblem(response: Response) {
-  const contentType = response.headers.get("content-type") ?? ""
-  if (!contentType.includes("application/json")) {
-    return null
-  }
-
-  try {
-    return (await response.json()) as ApiProblem
-  } catch {
-    return null
-  }
-}
-
-function problemMessage(problem: ApiProblem | null, fallback: string) {
-  return problem?.detail ?? problem?.message ?? problem?.title ?? fallback
+export async function apiFetch(path: string, options: ApiRequestOptions = {}) {
+  const { url, init } = buildRequest(path, options)
+  return fetch(url, init)
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}) {
-  const { url, init } = buildRequest(path, options)
-  const response = await fetch(url, init)
+  const response = await apiFetch(path, options)
 
   if (!response.ok) {
-    const problem = await parseProblem(response)
-    throw new ApiError({
-      status: response.status,
-      message: problemMessage(problem, response.statusText),
-      problem,
-    })
+    throw await parseApiError(response)
   }
 
   if (response.status === 204) {
