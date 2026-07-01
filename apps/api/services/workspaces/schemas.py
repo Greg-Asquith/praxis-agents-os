@@ -50,9 +50,8 @@ class WorkspacesListResponse(BaseModel):
 class WorkspaceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=3, max_length=100)
-    icon_url: str | None = Field(default=None, max_length=2048)
 
-    @field_validator("name", "slug", "icon_url")
+    @field_validator("name", "slug")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -64,9 +63,8 @@ class WorkspaceCreateRequest(BaseModel):
 class WorkspaceUpdateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     slug: str | None = Field(default=None, min_length=3, max_length=100)
-    icon_url: str | None = Field(default=None, max_length=2048)
 
-    @field_validator("name", "slug", "icon_url")
+    @field_validator("name", "slug")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:

@@ -45,10 +45,6 @@ async def update_workspace(
             workspace.name = payload.name
             changed_fields.append("name")
 
-    if "icon_url" in payload.model_fields_set and payload.icon_url != workspace.icon_url:
-        workspace.icon_url = payload.icon_url
-        changed_fields.append("icon_url")
-
     if "slug" in payload.model_fields_set:
         if payload.slug is None:
             raise AppValidationError("slug cannot be null", field="slug")

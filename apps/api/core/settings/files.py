@@ -77,8 +77,8 @@ class FilesSettingsMixin:
         description="Allowed image MIME types",
     )
     ALLOWED_ICON_TYPES: str = Field(
-        default="image/jpeg,image/png,image/svg+xml,image/webp",
-        description="Allowed icon MIME types",
+        default="image/jpeg,image/png,image/webp",
+        description="Allowed raster icon MIME types",
     )
     ALLOWED_DOCUMENT_TYPES: str = Field(
         default="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown",

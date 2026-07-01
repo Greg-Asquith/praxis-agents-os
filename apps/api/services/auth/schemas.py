@@ -121,9 +121,8 @@ class OAuthCallbackRequest(BaseModel):
 
 class CurrentUserUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
-    avatar_url: str | None = Field(default=None, max_length=2048)
 
-    @field_validator("display_name", "avatar_url")
+    @field_validator("display_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:

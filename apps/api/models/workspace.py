@@ -43,6 +43,7 @@ class Workspace(BaseModel):
     slug = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, nullable=False)
     icon_url = Column(String, nullable=True)
+    icon_object_key = Column(String, nullable=True)
     is_personal = Column(Boolean, default=False, nullable=False, server_default=text("false"))
     status = Column(String, default="active", nullable=False, server_default=text("'active'"))
 

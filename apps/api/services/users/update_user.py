@@ -30,9 +30,6 @@ async def update_user(
     if "display_name" in payload.model_fields_set and payload.display_name != user.display_name:
         user.display_name = payload.display_name
         changed_fields.append("display_name")
-    if "avatar_url" in payload.model_fields_set and payload.avatar_url != user.avatar_url:
-        user.avatar_url = payload.avatar_url
-        changed_fields.append("avatar_url")
     if "is_active" in payload.model_fields_set:
         if payload.is_active is None:
             raise AppValidationError("is_active cannot be null", field="is_active")

@@ -31,7 +31,6 @@ async def create_workspace(
         candidate = Workspace(
             slug=candidate_slug,
             name=payload.name,
-            icon_url=payload.icon_url,
             is_personal=False,
             status="active",
         )

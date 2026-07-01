@@ -96,7 +96,7 @@ async def upsert_oauth_user(
 
     if not user.display_name:
         user.display_name = provider_display_name(provider_name, profile)
-    if not user.avatar_url:
+    if user.avatar_object_key is None and not user.avatar_url:
         user.avatar_url = provider_avatar_url(profile)
 
     if auth_record is None:

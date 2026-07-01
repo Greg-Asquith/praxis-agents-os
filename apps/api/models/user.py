@@ -52,6 +52,7 @@ class User(BaseModel):
     email = Column(CITEXT, unique=True, nullable=False, index=True)
     display_name = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
+    avatar_object_key = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
     default_workspace_id = Column(
         UUID(as_uuid=True),

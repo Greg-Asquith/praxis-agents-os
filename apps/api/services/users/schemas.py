@@ -41,7 +41,6 @@ class UsersListResponse(BaseModel):
 class UserCreateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     display_name: str | None = Field(default=None, max_length=255)
-    avatar_url: str | None = Field(default=None, max_length=2048)
     password: str | None = Field(default=None, min_length=8, max_length=1024)
     is_active: bool = True
 
@@ -50,7 +49,7 @@ class UserCreateRequest(BaseModel):
     def _normalize_email(cls, value: str) -> str:
         return normalize_email(value)
 
-    @field_validator("display_name", "avatar_url")
+    @field_validator("display_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -61,10 +60,9 @@ class UserCreateRequest(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
-    avatar_url: str | None = Field(default=None, max_length=2048)
     is_active: bool | None = None
 
-    @field_validator("display_name", "avatar_url")
+    @field_validator("display_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:

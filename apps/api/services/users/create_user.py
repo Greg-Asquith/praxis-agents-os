@@ -29,7 +29,6 @@ async def create_user(
     user = User(
         email=email,
         display_name=payload.display_name,
-        avatar_url=payload.avatar_url,
         is_active=payload.is_active,
     )
     if payload.password:
