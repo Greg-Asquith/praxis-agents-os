@@ -9,16 +9,18 @@ import { ActiveWorkspaceProvider } from "@/features/workspaces/components/active
 
 function AppLayoutFallback() {
   return (
-    <div className="bg-background flex min-h-screen">
-      <div className="bg-sidebar hidden w-64 border-r p-4 md:flex md:flex-col md:gap-4">
+    <div className="bg-background flex h-dvh overflow-hidden">
+      <div className="bg-sidebar hidden h-dvh w-[280px] shrink-0 border-r p-4 md:flex md:flex-col md:gap-4">
         <Skeleton className="h-8 w-36" />
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-8 w-full" />
       </div>
-      <main className="flex flex-1 flex-col gap-4 p-6">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-36 w-full" />
-        <Skeleton className="h-64 w-full" />
+      <main className="min-h-0 flex-1 overflow-hidden p-6">
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-36 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
       </main>
     </div>
   )

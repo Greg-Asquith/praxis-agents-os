@@ -4,7 +4,6 @@ import {
   BlocksIcon,
   LayoutDashboardIcon,
   type LucideIcon,
-  MessagesSquareIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react"
@@ -28,12 +27,6 @@ export const mainNavigation: NavigationItem[] = [
     label: "Home",
     to: "/",
     icon: LayoutDashboardIcon,
-    disabled: false,
-  },
-  {
-    label: "Conversations",
-    to: "/conversations",
-    icon: MessagesSquareIcon,
     disabled: false,
   },
   {
