@@ -1,16 +1,9 @@
 // apps/web/src/features/agents/components/agent-runtime-section.tsx
 
-import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
   FieldLegend,
@@ -38,14 +31,17 @@ import {
   type AgentFormState,
   type ModelOption,
 } from "@/features/agents/components/agent-form-model"
+import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 
 export function AgentRuntimeSection({
+  fieldErrors,
   modelOptions,
   selectedModelOption,
   setField,
   setToolMode,
   state,
 }: {
+  fieldErrors: Record<"maxSteps" | "modelSelection", string | undefined>
   modelOptions: ModelOption[]
   selectedModelOption: ModelOption | undefined
   setField: AgentFormFieldSetter
@@ -56,59 +52,45 @@ export function AgentRuntimeSection({
   const selectedThinkingOption = THINKING_OPTIONS.find((option) => option.value === state.thinking)
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Runtime</CardTitle>
-        <CardDescription>Model override, step budget, and tool approval policy.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <>
+      <AgentFormSection
+        description="Choose the model override and thinking behavior for this agent."
+        eyebrow="Model"
+        title="Model selection"
+      >
         <FieldGroup>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_180px]">
-            <Field>
-              <FieldLabel htmlFor="agent-model">Model</FieldLabel>
-              <Select
-                onValueChange={(value) => {
-                  setField("modelSelection", value ?? state.modelSelection)
-                }}
-                value={state.modelSelection}
+          <Field data-invalid={fieldErrors.modelSelection ? true : undefined}>
+            <FieldLabel htmlFor="agent-model">Model</FieldLabel>
+            <Select
+              onValueChange={(value) => {
+                setField("modelSelection", value ?? state.modelSelection)
+              }}
+              value={state.modelSelection}
+            >
+              <SelectTrigger
+                aria-invalid={fieldErrors.modelSelection ? true : undefined}
+                id="agent-model"
+                className="w-full scroll-mt-20"
               >
-                <SelectTrigger id="agent-model" className="w-full">
-                  <SelectValue placeholder="Use workspace default" />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  <SelectGroup>
-                    <SelectLabel>Configured models</SelectLabel>
-                    {modelOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        <span className="flex min-w-0 flex-col">
-                          <span>{option.label}</span>
-                          <span className="text-muted-foreground text-xs">
-                            {option.description}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription>{selectedModelOption?.description}</FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="agent-max-steps">Max steps</FieldLabel>
-              <Input
-                id="agent-max-steps"
-                inputMode="numeric"
-                max={100}
-                min={1}
-                onChange={(event) => {
-                  setField("maxSteps", event.currentTarget.value)
-                }}
-                type="number"
-                value={state.maxSteps}
-              />
-            </Field>
-          </div>
+                <SelectValue placeholder="Use workspace default" />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectLabel>Configured models</SelectLabel>
+                  {modelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="flex min-w-0 flex-col">
+                        <span>{option.label}</span>
+                        <span className="text-muted-foreground text-xs">{option.description}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>{selectedModelOption?.description}</FieldDescription>
+            <FieldError>{fieldErrors.modelSelection}</FieldError>
+          </Field>
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field>
@@ -148,7 +130,7 @@ export function AgentRuntimeSection({
               </FieldDescription>
             </Field>
 
-            {selectedModelIsAzure && (
+            {selectedModelIsAzure ? (
               <Field>
                 <FieldLabel htmlFor="agent-azure-deployment">Azure deployment</FieldLabel>
                 <Input
@@ -159,22 +141,95 @@ export function AgentRuntimeSection({
                   value={state.azureDeployment}
                 />
               </Field>
-            )}
+            ) : null}
           </div>
+        </FieldGroup>
+      </AgentFormSection>
 
+      <AgentFormSection
+        description="Set the run budget and whether this agent appears as active or favored."
+        eyebrow="Runtime limits"
+        title="Step budget and availability"
+      >
+        <FieldGroup>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field data-invalid={fieldErrors.maxSteps ? true : undefined}>
+              <FieldLabel htmlFor="agent-max-steps">Max steps</FieldLabel>
+              <Input
+                aria-invalid={fieldErrors.maxSteps ? true : undefined}
+                className="scroll-mt-20"
+                id="agent-max-steps"
+                inputMode="numeric"
+                max={100}
+                min={1}
+                onChange={(event) => {
+                  setField("maxSteps", event.currentTarget.value)
+                }}
+                type="number"
+                value={state.maxSteps}
+              />
+              <FieldError>{fieldErrors.maxSteps}</FieldError>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="agent-active">Availability</FieldLabel>
+              <Select
+                onValueChange={(value) => {
+                  setField("isActive", value === "false" ? "false" : "true")
+                }}
+                value={state.isActive}
+              >
+                <SelectTrigger id="agent-active" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value="true">Active</SelectItem>
+                    <SelectItem value="false">Inactive</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="agent-favorite">Favorite</FieldLabel>
+              <Select
+                onValueChange={(value) => {
+                  setField("isFavorite", value === "true" ? "true" : "false")
+                }}
+                value={state.isFavorite}
+              >
+                <SelectTrigger id="agent-favorite" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value="false">No</SelectItem>
+                    <SelectItem value="true">Yes</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </FieldGroup>
+      </AgentFormSection>
+
+      <AgentFormSection
+        description="Choose which runtime tools are available and which ones require approval."
+        eyebrow="Tools"
+        title="Tools and approval policy"
+      >
+        <FieldGroup>
           <FieldSet>
             <FieldLegend>Runtime tools</FieldLegend>
             <div className="grid gap-3">
               {RUNTIME_TOOL_OPTIONS.map((tool) => (
                 <div
-                  className="flex flex-col justify-between gap-3 rounded-lg border p-3 md:flex-row md:items-center"
+                  className="flex flex-col justify-between gap-3 rounded-md border p-3 md:flex-row md:items-center"
                   key={tool.name}
                 >
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{tool.label}</p>
-                      <Badge variant="outline">{tool.name}</Badge>
-                    </div>
+                    <p className="font-medium">{tool.label}</p>
                     <p className="text-muted-foreground mt-1 text-sm">{tool.description}</p>
                   </div>
                   <Select
@@ -210,7 +265,7 @@ export function AgentRuntimeSection({
             </FieldDescription>
           </FieldSet>
         </FieldGroup>
-      </CardContent>
-    </Card>
+      </AgentFormSection>
+    </>
   )
 }

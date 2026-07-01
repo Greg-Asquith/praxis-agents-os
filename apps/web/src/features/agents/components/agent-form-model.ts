@@ -79,6 +79,12 @@ export type AgentFormState = {
   toolModes: Record<RuntimeToolName, RuntimeToolMode>
 }
 
+export type AgentFormValidationEntry = {
+  fieldId: string
+  label: string
+  message: string
+}
+
 export type AgentFormFieldSetter = <K extends keyof AgentFormState>(
   field: K,
   value: AgentFormState[K]
@@ -168,14 +174,13 @@ export function buildAgentPayload(
 ): AgentCreateRequest | AgentUpdateRequest | string {
   const name = state.name.trim()
   const instructions = state.instructions.trim()
+  const validationEntries = validateAgentFormState(state, mode)
   const maxSteps = parseMaxSteps(state.maxSteps)
   const modelSelection = parseModelSelection(state.modelSelection, state.azureDeployment)
 
-  if (!name) {
-    return "Name is required."
-  }
-  if (!instructions) {
-    return "Instructions are required."
+  const firstValidationEntry = validationEntries[0]
+  if (firstValidationEntry) {
+    return firstValidationEntry.message
   }
   if (typeof maxSteps === "string") {
     return maxSteps
@@ -221,6 +226,75 @@ export function buildAgentPayload(
   }
 }
 
+export function validateAgentFormState(
+  state: AgentFormState,
+  mode: "create" | "edit"
+): AgentFormValidationEntry[] {
+  const entries: AgentFormValidationEntry[] = []
+
+  if (!state.name.trim()) {
+    entries.push({
+      fieldId: "agent-name",
+      label: "Name",
+      message: "Name is required.",
+    })
+  }
+
+  if (mode === "edit" && !state.slug.trim()) {
+    entries.push({
+      fieldId: "agent-slug",
+      label: "Slug",
+      message: "Slug is required for existing agents.",
+    })
+  }
+
+  if (!state.instructions.trim()) {
+    entries.push({
+      fieldId: "agent-instructions",
+      label: "Instructions",
+      message: "Instructions are required.",
+    })
+  }
+
+  const maxSteps = parseMaxSteps(state.maxSteps)
+  if (typeof maxSteps === "string") {
+    entries.push({
+      fieldId: "agent-max-steps",
+      label: "Max steps",
+      message: maxSteps,
+    })
+  }
+
+  const modelSelection = parseModelSelection(state.modelSelection, state.azureDeployment)
+  if (typeof modelSelection === "string") {
+    entries.push({
+      fieldId: "agent-model",
+      label: "Model",
+      message: modelSelection,
+    })
+  }
+
+  return entries
+}
+
+export function isAgentFormDirty(current: AgentFormState, initial: AgentFormState) {
+  return (
+    current.name !== initial.name ||
+    current.slug !== initial.slug ||
+    current.description !== initial.description ||
+    current.instructions !== initial.instructions ||
+    current.modelSelection !== initial.modelSelection ||
+    current.azureDeployment !== initial.azureDeployment ||
+    current.maxSteps !== initial.maxSteps ||
+    current.isActive !== initial.isActive ||
+    current.isFavorite !== initial.isFavorite ||
+    current.thinking !== initial.thinking ||
+    !stringArraysEqual(current.allowedAgentIds, initial.allowedAgentIds) ||
+    !toolModesEqual(current.toolModes, initial.toolModes) ||
+    JSON.stringify(current.modelSettings) !== JSON.stringify(initial.modelSettings)
+  )
+}
+
 function initialToolModes(agent: Agent | null): Record<RuntimeToolName, RuntimeToolMode> {
   const toolNames = new Set(agent?.tool_names ?? [])
   const policies = agent?.tool_policies ?? {}
@@ -235,6 +309,21 @@ function initialToolModes(agent: Agent | null): Record<RuntimeToolName, RuntimeT
       get_runtime_context: "off",
     }
   )
+}
+
+function stringArraysEqual(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  return left.every((value, index) => value === right[index])
+}
+
+function toolModesEqual(
+  left: Record<RuntimeToolName, RuntimeToolMode>,
+  right: Record<RuntimeToolName, RuntimeToolMode>
+) {
+  return RUNTIME_TOOL_OPTIONS.every((tool) => left[tool.name] === right[tool.name])
 }
 
 function modelSelectionFromAgent(agent: Agent | null) {

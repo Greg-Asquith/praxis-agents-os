@@ -1,89 +1,89 @@
 // apps/web/src/features/agents/components/agent-profile-section.tsx
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import type { AgentFormFieldSetter, AgentFormState } from "@/features/agents/components/agent-form-model"
+import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 
 export function AgentProfileSection({
+  fieldErrors,
   mode,
   setField,
   state,
 }: {
+  fieldErrors: Record<"instructions" | "name" | "slug", string | undefined>
   mode: "create" | "edit"
   setField: AgentFormFieldSetter
   state: AgentFormState
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Profile</CardTitle>
-        <CardDescription>Name, routing slug, and operating instructions.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <FieldGroup>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor="agent-name">Name</FieldLabel>
-              <Input
-                id="agent-name"
-                onChange={(event) => {
-                  setField("name", event.currentTarget.value)
-                }}
-                required
-                value={state.name}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="agent-slug">Slug</FieldLabel>
-              <Input
-                id="agent-slug"
-                onChange={(event) => {
-                  setField("slug", event.currentTarget.value)
-                }}
-                placeholder={mode === "create" ? "Generated from name" : undefined}
-                required={mode === "edit"}
-                value={state.slug}
-              />
-            </Field>
-          </div>
-
-          <Field>
-            <FieldLabel htmlFor="agent-description">Description</FieldLabel>
-            <Textarea
-              className="min-h-20"
-              id="agent-description"
+    <AgentFormSection
+      description="Name the agent and write the instructions it should follow during workspace runs."
+      eyebrow="Identity"
+      title="Name, description, and instructions"
+    >
+      <FieldGroup>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field data-invalid={fieldErrors.name ? true : undefined}>
+            <FieldLabel htmlFor="agent-name">Name</FieldLabel>
+            <Input
+              aria-invalid={fieldErrors.name ? true : undefined}
+              className="scroll-mt-20"
+              id="agent-name"
               onChange={(event) => {
-                setField("description", event.currentTarget.value)
-              }}
-              value={state.description}
-            />
-          </Field>
-
-          <Field>
-            <FieldLabel htmlFor="agent-instructions">Instructions</FieldLabel>
-            <Textarea
-              className="min-h-48"
-              id="agent-instructions"
-              onChange={(event) => {
-                setField("instructions", event.currentTarget.value)
+                setField("name", event.currentTarget.value)
               }}
               required
-              value={state.instructions}
+              value={state.name}
             />
-            <FieldDescription>
-              These instructions become the agent system prompt for workspace runs.
-            </FieldDescription>
+            <FieldError>{fieldErrors.name}</FieldError>
           </Field>
-        </FieldGroup>
-      </CardContent>
-    </Card>
+          <Field data-invalid={fieldErrors.slug ? true : undefined}>
+            <FieldLabel htmlFor="agent-slug">Slug</FieldLabel>
+            <Input
+              aria-invalid={fieldErrors.slug ? true : undefined}
+              className="scroll-mt-20"
+              id="agent-slug"
+              onChange={(event) => {
+                setField("slug", event.currentTarget.value)
+              }}
+              placeholder={mode === "create" ? "Generated from name" : undefined}
+              required={mode === "edit"}
+              value={state.slug}
+            />
+            <FieldError>{fieldErrors.slug}</FieldError>
+          </Field>
+        </div>
+
+        <Field>
+          <FieldLabel htmlFor="agent-description">Description</FieldLabel>
+          <Textarea
+            className="min-h-20"
+            id="agent-description"
+            onChange={(event) => {
+              setField("description", event.currentTarget.value)
+            }}
+            value={state.description}
+          />
+        </Field>
+
+        <Field data-invalid={fieldErrors.instructions ? true : undefined}>
+          <FieldLabel htmlFor="agent-instructions">Instructions</FieldLabel>
+          <Textarea
+            aria-invalid={fieldErrors.instructions ? true : undefined}
+            className="scroll-mt-20 min-h-48"
+            id="agent-instructions"
+            onChange={(event) => {
+              setField("instructions", event.currentTarget.value)
+            }}
+            required
+            value={state.instructions}
+          />
+          <FieldDescription>Keep this durable and specific to the agent&apos;s role.</FieldDescription>
+          <FieldError>{fieldErrors.instructions}</FieldError>
+        </Field>
+      </FieldGroup>
+    </AgentFormSection>
   )
 }

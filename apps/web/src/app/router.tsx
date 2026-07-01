@@ -12,6 +12,7 @@ import {
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
 import { AgentDetailRoute } from "@/features/agents/routes/agent-detail-route"
 import { AgentsRoute } from "@/features/agents/routes/agents-route"
+import { NewAgentRoute } from "@/features/agents/routes/new-agent-route"
 import { LoginRoute } from "@/features/auth/routes/login-route"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
 import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callback-route"
@@ -129,6 +130,12 @@ const agentsRoute = createRoute({
   component: AgentsRoute,
 })
 
+const newAgentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/agents/new",
+  component: NewAgentRoute,
+})
+
 const agentDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/agents/$agentId",
@@ -160,6 +167,7 @@ const routeTree = rootRoute.addChildren([
     conversationsRoute,
     conversationRuntimeRoute.addChildren([newConversationRoute, conversationRoute]),
     agentsRoute,
+    newAgentRoute,
     agentDetailRoute,
     workspacesRoute,
     workspaceSettingsRoute,

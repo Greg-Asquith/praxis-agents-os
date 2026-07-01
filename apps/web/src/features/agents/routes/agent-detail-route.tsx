@@ -149,9 +149,16 @@ export function AgentDetailRoute() {
         key={`${agent.id}:${agent.updated_at}`}
         agent={agent}
         agents={agentsData.agents}
+        cancelLabel="Back to agents"
+        cancelTo="/agents"
         isSubmitting={updateAgentMutation.isPending}
         mode="edit"
         modelCatalog={modelCatalog}
+        onChange={() => {
+          if (saved) {
+            setSaved(false)
+          }
+        }}
         onSubmit={handleUpdateAgent}
       />
     </div>
