@@ -3,7 +3,10 @@
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import type { AgentFormFieldSetter, AgentFormState } from "@/features/agents/components/agent-form-model"
+import type {
+  AgentFormFieldSetter,
+  AgentFormState,
+} from "@/features/agents/components/agent-form-model"
 import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 
 export function AgentProfileSection({
@@ -72,7 +75,7 @@ export function AgentProfileSection({
           <FieldLabel htmlFor="agent-instructions">Instructions</FieldLabel>
           <Textarea
             aria-invalid={fieldErrors.instructions ? true : undefined}
-            className="scroll-mt-20 min-h-48"
+            className="min-h-48 scroll-mt-20"
             id="agent-instructions"
             onChange={(event) => {
               setField("instructions", event.currentTarget.value)
@@ -80,7 +83,9 @@ export function AgentProfileSection({
             required
             value={state.instructions}
           />
-          <FieldDescription>Keep this durable and specific to the agent&apos;s role.</FieldDescription>
+          <FieldDescription>
+            Keep this durable and specific to the agent&apos;s role.
+          </FieldDescription>
           <FieldError>{fieldErrors.instructions}</FieldError>
         </Field>
       </FieldGroup>

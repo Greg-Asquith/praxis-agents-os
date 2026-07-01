@@ -1,13 +1,13 @@
 // apps/web/src/features/models/types.ts
 
-export type ModelCatalogProvider = {
+type ModelCatalogProvider = {
   provider: string
   display_name: string
   configured: boolean
   model_count: number
 }
 
-export type ModelCatalogEntry = {
+type ModelCatalogEntry = {
   id: string
   provider: string
   model: string
@@ -20,7 +20,7 @@ export type ModelCatalogEntry = {
   default_settings: Record<string, unknown>
 }
 
-export type ModelCatalogDefaults = {
+type ModelCatalogDefaults = {
   agent_model: string | null
 }
 

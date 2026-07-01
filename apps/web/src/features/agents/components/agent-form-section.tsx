@@ -14,7 +14,7 @@ export function AgentFormSection({
   title: string
 }) {
   return (
-    <section className="rounded-md border bg-card p-4">
+    <section className="bg-card rounded-md border p-4">
       <div className="mb-4 flex flex-col gap-1">
         <p className="text-muted-foreground text-xs font-medium">{eyebrow}</p>
         <h2 className="font-heading text-lg font-semibold tracking-normal">{title}</h2>

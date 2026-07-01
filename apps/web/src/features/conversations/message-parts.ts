@@ -3,11 +3,11 @@
 import type { AgentRunStatus, ConversationMessage } from "@/features/conversations/types"
 import { isRecord } from "@/lib/guards"
 
-export type ParsedMessageRole = "user" | "assistant" | "tool" | "system" | "unknown"
+type ParsedMessageRole = "user" | "assistant" | "tool" | "system" | "unknown"
 
-export type ToolActivityKind = "call" | "result" | "approval" | "retry" | "unknown"
+type ToolActivityKind = "call" | "result" | "approval" | "retry" | "unknown"
 
-export type ToolActivityStatus =
+type ToolActivityStatus =
   "running" | "awaiting_approval" | "completed" | "failed" | "denied" | "unknown"
 
 export type ToolActivity = {
@@ -20,7 +20,7 @@ export type ToolActivity = {
   outcome?: string | null
 }
 
-export type UnsupportedMessagePart = {
+type UnsupportedMessagePart = {
   id: string
   label: string
   preview: string
@@ -49,8 +49,6 @@ const PREVIEW_LIMIT = 2400
 const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "native-tool-return"])
 
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
-
-const TERMINAL_STATUSES: ReadonlySet<AgentRunStatus> = new Set(["completed", "failed", "cancelled"])
 
 export function parseConversationMessages(
   messages: ConversationMessage[],
@@ -87,7 +85,7 @@ export function parseConversationMessages(
   }))
 }
 
-export function parseConversationMessage(message: ConversationMessage): ParsedConversationMessage {
+function parseConversationMessage(message: ConversationMessage): ParsedConversationMessage {
   const rawParts = getMessageParts(message.parts)
   const parsed: ParsedConversationMessage = {
     id: message.id,
@@ -219,10 +217,6 @@ export function pendingMessagesForConversation(
         (message.conversationId === null && pendingConversationIdAlias === conversationId)) &&
       !persistedClientIds.has(message.clientMessageId)
   )
-}
-
-export function isTerminalRunStatus(status: AgentRunStatus | null | undefined) {
-  return status !== undefined && status !== null && TERMINAL_STATUSES.has(status)
 }
 
 export function isRunStatusPolling(status: AgentRunStatus | null | undefined) {

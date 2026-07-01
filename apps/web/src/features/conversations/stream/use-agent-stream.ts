@@ -222,9 +222,7 @@ function isAbortError(error: unknown) {
 
 function shouldClearSettledStream(status: AgentRunStatus | null, conversationCreated: boolean) {
   return (
-    status === "completed" ||
-    status === "cancelled" ||
-    (status === "failed" && conversationCreated)
+    status === "completed" || status === "cancelled" || (status === "failed" && conversationCreated)
   )
 }
 

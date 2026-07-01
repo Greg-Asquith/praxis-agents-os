@@ -14,12 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useDeleteAgentMutation } from "@/features/agents/api/delete-agent"
 import { useAgentQuery } from "@/features/agents/api/get-agent"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
@@ -71,12 +66,7 @@ export function AgentDetailRoute() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="flex min-w-0 flex-col gap-3">
-          <Button
-            className="w-fit"
-            size="sm"
-            variant="outline"
-            render={<Link to="/agents" />}
-          >
+          <Button className="w-fit" size="sm" variant="outline" render={<Link to="/agents" />}>
             <ArrowLeftIcon data-icon="inline-start" />
             Agents
           </Button>

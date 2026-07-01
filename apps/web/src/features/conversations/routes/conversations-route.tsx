@@ -26,9 +26,7 @@ export function ConversationsRoute() {
         <div className="flex min-w-0 flex-col gap-2">
           <p className="text-muted-foreground text-sm font-medium">{workspace.name}</p>
           <div>
-            <h1 className="font-heading text-2xl font-semibold tracking-normal">
-              Conversations
-            </h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-normal">Conversations</h1>
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
               Recent workspace threads, approvals, and scheduled agent activity.
             </p>

@@ -6,11 +6,11 @@ import { conversationsQueryKeys } from "@/features/conversations/api/list-conver
 import type { AgentRunApprovalStateResponse } from "@/features/conversations/types"
 import { apiRequest } from "@/lib/api/client"
 
-export async function getAgentRunApprovalState(runId: string) {
+async function getAgentRunApprovalState(runId: string) {
   return apiRequest<AgentRunApprovalStateResponse>(`/agent-runs/${runId}/approval-state`)
 }
 
-export function agentRunApprovalStateQueryOptions(runId: string) {
+function agentRunApprovalStateQueryOptions(runId: string) {
   return queryOptions({
     queryKey: conversationsQueryKeys.approvalState(runId),
     queryFn: () => getAgentRunApprovalState(runId),

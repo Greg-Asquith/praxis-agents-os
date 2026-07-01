@@ -3,7 +3,6 @@
 import { env } from "@/config/env"
 import { getCsrfToken } from "@/lib/api/csrf"
 import { parseApiError } from "@/lib/api/errors"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 
 type QueryValue = string | number | boolean | null | undefined
 
@@ -12,7 +11,15 @@ type ApiRequestOptions = Omit<RequestInit, "body"> & {
   query?: Record<string, QueryValue>
 }
 
+type ApiRequestHeadersProvider = () => Record<string, string | null | undefined>
+
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
+
+let apiRequestHeadersProvider: ApiRequestHeadersProvider | null = null
+
+export function setApiRequestHeadersProvider(provider: ApiRequestHeadersProvider | null) {
+  apiRequestHeadersProvider = provider
+}
 
 function buildUrl(path: string, query?: Record<string, QueryValue>) {
   const url = new URL(
@@ -42,9 +49,10 @@ function buildRequest(
     requestHeaders.set("Content-Type", "application/json")
   }
 
-  const activeWorkspace = getActiveWorkspaceSlug()
-  if (activeWorkspace) {
-    requestHeaders.set("X-Workspace", activeWorkspace)
+  for (const [key, value] of Object.entries(apiRequestHeadersProvider?.() ?? {})) {
+    if (value !== undefined && value !== null) {
+      requestHeaders.set(key, value)
+    }
   }
 
   if (UNSAFE_METHODS.has(normalizedMethod)) {

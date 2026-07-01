@@ -4,10 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
 import { identitiesQueryKey } from "@/features/auth/api/get-identities"
-import type {
-  IdentitiesResponse,
-  OAuthAuthorizationUrlResponse,
-} from "@/features/auth/types"
+import type { IdentitiesResponse, OAuthAuthorizationUrlResponse } from "@/features/auth/types"
 
 // Provider name stashed before an OAuth link redirect so the callback route
 // knows which provider to complete when the browser returns.

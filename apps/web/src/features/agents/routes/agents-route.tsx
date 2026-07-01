@@ -4,18 +4,9 @@ import { Link } from "@tanstack/react-router"
 import { BotIcon, PlusIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
-import {
-  countActiveAgents,
-  countApprovalGatedAgents,
-} from "@/features/agents/agent-metrics"
+import { countActiveAgents, countApprovalGatedAgents } from "@/features/agents/agent-metrics"
 import { AgentsTable } from "@/features/agents/components/agents-table"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 import { pluralize } from "@/lib/format"

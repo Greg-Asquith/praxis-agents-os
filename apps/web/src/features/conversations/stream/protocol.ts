@@ -5,7 +5,7 @@ import type { AgentRunStatus, Conversation } from "@/features/conversations/type
 export const STREAM_PROTOCOL_VERSION = "1"
 export const STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"
 
-export const STREAM_EVENT_NAMES = [
+const STREAM_EVENT_NAMES = [
   "conversation.created",
   "conversation.updated",
   "run.status",
@@ -23,7 +23,7 @@ export type StreamEventName = (typeof STREAM_EVENT_NAMES)[number]
 
 const STREAM_EVENT_NAME_SET: ReadonlySet<string> = new Set(STREAM_EVENT_NAMES)
 
-export type StreamEnvelope = {
+type StreamEnvelope = {
   run_id: string
   conversation_id: string
   seq: number

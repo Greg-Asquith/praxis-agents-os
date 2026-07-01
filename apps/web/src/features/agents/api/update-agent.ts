@@ -11,7 +11,7 @@ type UpdateAgentInput = {
   payload: AgentUpdateRequest
 }
 
-export async function updateAgent({ agentId, payload }: UpdateAgentInput) {
+async function updateAgent({ agentId, payload }: UpdateAgentInput) {
   return apiRequest<Agent>(`/agents/${agentId}`, {
     body: payload,
     method: "PATCH",

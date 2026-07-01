@@ -1,6 +1,6 @@
 // apps/web/src/lib/storage.ts
 
-export type StorageObjectRef = {
+type StorageObjectRef = {
   bucket: "public" | "private"
   key: string
 }
@@ -24,8 +24,4 @@ export type AssetUploadGrant = {
   upload_token: string
   max_size_bytes: number
   expires_at: string
-}
-
-export type AssetConfirmRequest = {
-  upload_token: string
 }

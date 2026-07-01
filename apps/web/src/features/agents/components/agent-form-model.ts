@@ -14,9 +14,9 @@ import type {
 } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 
-export const DEFAULT_MODEL_SELECTION = "__default__"
+const DEFAULT_MODEL_SELECTION = "__default__"
 export const NO_AGENT_SELECTION = "__none__"
-export const THINKING_DEFAULT = "__default__"
+const THINKING_DEFAULT = "__default__"
 
 export const THINKING_OPTIONS = [
   {
@@ -61,7 +61,7 @@ export const THINKING_OPTIONS = [
   },
 ] as const
 
-export type ThinkingSelection = (typeof THINKING_OPTIONS)[number]["value"]
+type ThinkingSelection = (typeof THINKING_OPTIONS)[number]["value"]
 
 export type AgentFormState = {
   allowedAgentIds: string[]
@@ -164,10 +164,7 @@ export function buildAgentPayload(
   state: AgentFormState,
   mode: "create"
 ): AgentCreateRequest | string
-export function buildAgentPayload(
-  state: AgentFormState,
-  mode: "edit"
-): AgentUpdateRequest | string
+export function buildAgentPayload(state: AgentFormState, mode: "edit"): AgentUpdateRequest | string
 export function buildAgentPayload(
   state: AgentFormState,
   mode: "create" | "edit"
@@ -301,7 +298,7 @@ function initialToolModes(agent: Agent | null): Record<RuntimeToolName, RuntimeT
   return RUNTIME_TOOL_OPTIONS.reduce<Record<RuntimeToolName, RuntimeToolMode>>(
     (toolModes, tool) => {
       const savedPolicy = policies[tool.name]
-      toolModes[tool.name] = toolNames.has(tool.name) ? savedPolicy ?? "auto" : "off"
+      toolModes[tool.name] = toolNames.has(tool.name) ? (savedPolicy ?? "auto") : "off"
       return toolModes
     },
     {

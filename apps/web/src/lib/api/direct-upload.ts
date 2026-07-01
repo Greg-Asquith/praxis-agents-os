@@ -2,11 +2,7 @@
 
 import type { SignedUpload } from "@/lib/storage"
 
-export async function uploadFileDirectly(
-  upload: SignedUpload,
-  file: File,
-  maxSizeBytes: number
-) {
+export async function uploadFileDirectly(upload: SignedUpload, file: File, maxSizeBytes: number) {
   if (file.size > maxSizeBytes) {
     throw new Error("Selected file is larger than the upload limit.")
   }

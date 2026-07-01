@@ -10,7 +10,7 @@ export async function getAgent(agentId: string) {
   return apiRequest<Agent>(`/agents/${agentId}`)
 }
 
-export function agentQueryOptions(agentId: string) {
+function agentQueryOptions(agentId: string) {
   return queryOptions({
     queryKey: agentsQueryKeys.detail(agentId),
     queryFn: () => getAgent(agentId),

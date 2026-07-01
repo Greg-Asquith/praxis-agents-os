@@ -65,8 +65,8 @@ export function AgentFormShell({
 
       <div className="flex flex-col gap-4">{children}</div>
 
-      <div className="sticky bottom-0 z-10 -mx-1 border-t bg-background/95 px-1 py-3 backdrop-blur">
-        <div className="flex flex-col gap-3 rounded-md border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="bg-background/95 sticky bottom-0 z-10 -mx-1 border-t px-1 py-3 backdrop-blur">
+        <div className="bg-card flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted-foreground text-sm">{stateMessage}</p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button

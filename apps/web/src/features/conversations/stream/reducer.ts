@@ -3,7 +3,7 @@
 import type { AgentRunStatus, Conversation } from "@/features/conversations/types"
 import type { StreamError, StreamEvent } from "@/features/conversations/stream/protocol"
 
-export type AgentStreamStatus = "idle" | AgentRunStatus
+type AgentStreamStatus = "idle" | AgentRunStatus
 
 export type ChatMessageDraft = {
   id: string
@@ -89,10 +89,7 @@ export function agentStreamReducer(
   }
 }
 
-export function reduceStreamEvent(
-  state: AgentStreamState,
-  streamEvent: StreamEvent
-): AgentStreamState {
+function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): AgentStreamState {
   if (state.done && streamEvent.event !== "conversation.updated") {
     return state
   }

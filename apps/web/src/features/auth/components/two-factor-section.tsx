@@ -163,9 +163,7 @@ export function TwoFactorSection() {
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="text-sm font-medium">Scan with an authenticator app</p>
-                  <p className="text-muted-foreground text-xs">
-                    Or enter this secret manually:
-                  </p>
+                  <p className="text-muted-foreground text-xs">Or enter this secret manually:</p>
                   <code className="bg-muted rounded-md px-2 py-1 font-mono text-xs break-all">
                     {setup.secret}
                   </code>

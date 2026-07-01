@@ -23,7 +23,7 @@ export type AuthResponse = {
   requires_twofa: boolean
 }
 
-export type AuthIdentity = {
+type AuthIdentity = {
   provider: string
   email: string | null
   email_verified: boolean
@@ -35,7 +35,7 @@ export type IdentitiesResponse = {
   identities: AuthIdentity[]
 }
 
-export type AuthProvider = {
+type AuthProvider = {
   name: string
   display_name: string
   icon: string

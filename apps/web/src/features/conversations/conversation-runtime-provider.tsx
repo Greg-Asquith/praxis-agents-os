@@ -89,8 +89,6 @@ function ConversationRuntimeScope({ children }: { children: ReactNode }) {
   )
 
   return (
-    <ConversationWorkspaceContext value={contextValue}>
-      {children}
-    </ConversationWorkspaceContext>
+    <ConversationWorkspaceContext value={contextValue}>{children}</ConversationWorkspaceContext>
   )
 }

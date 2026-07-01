@@ -135,7 +135,9 @@ export function HomeRoute() {
               <ShieldCheckIcon className="size-4" />
               Approvals
             </CardTitle>
-            <CardDescription>Approval decisions appear inside waiting conversations.</CardDescription>
+            <CardDescription>
+              Approval decisions appear inside waiting conversations.
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>

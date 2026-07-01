@@ -25,10 +25,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { safeJsonPreview } from "@/features/conversations/message-parts"
-import type {
-  AgentRunResumeDecision,
-  PendingToolApproval,
-} from "@/features/conversations/types"
+import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 
 type LocalDecision = {
   decision: "approved" | "denied"

@@ -6,7 +6,7 @@ import { agentsQueryKeys } from "@/features/agents/api/list-agents"
 import type { Agent, AgentCreateRequest } from "@/features/agents/types"
 import { apiRequest } from "@/lib/api/client"
 
-export async function createAgent(payload: AgentCreateRequest) {
+async function createAgent(payload: AgentCreateRequest) {
   return apiRequest<Agent>("/agents/", {
     body: payload,
     method: "POST",

@@ -9,8 +9,8 @@ import {
 } from "@tanstack/react-query"
 
 import type { Conversation, ConversationsListResponse } from "@/features/conversations/types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 import { apiRequest } from "@/lib/api/client"
+import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 
 type ListConversationsParams = {
   limit?: number
@@ -35,22 +35,19 @@ function activeWorkspaceQueryScope() {
   return getActiveWorkspaceSlug() ?? "__no_workspace__"
 }
 
-export async function listConversations({ limit = 100, offset = 0 }: ListConversationsParams = {}) {
+async function listConversations({ limit = 100, offset = 0 }: ListConversationsParams = {}) {
   return apiRequest<ConversationsListResponse>("/conversations/", {
     query: { limit, offset },
   })
 }
 
-export async function markConversationRead(conversationId: string) {
+async function markConversationRead(conversationId: string) {
   return apiRequest<Conversation>(`/conversations/${conversationId}/read`, {
     method: "POST",
   })
 }
 
-export async function invalidateConversationQueries(
-  queryClient: QueryClient,
-  conversationId?: string
-) {
+async function invalidateConversationQueries(queryClient: QueryClient, conversationId?: string) {
   const invalidations = [
     queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
   ]
@@ -69,7 +66,7 @@ export async function invalidateConversationQueries(
   await Promise.all(invalidations)
 }
 
-export function conversationsQueryOptions(params: ListConversationsParams = {}) {
+function conversationsQueryOptions(params: ListConversationsParams = {}) {
   return queryOptions({
     queryKey: conversationsQueryKeys.list(params),
     queryFn: () => listConversations(params),

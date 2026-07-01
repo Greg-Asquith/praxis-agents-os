@@ -5,13 +5,13 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { apiRequest } from "@/lib/api/client"
 
-export const modelCatalogQueryKey = ["models", "catalog"] as const
+const modelCatalogQueryKey = ["models", "catalog"] as const
 
-export async function listModelCatalog() {
+async function listModelCatalog() {
   return apiRequest<ModelCatalogResponse>("/models/catalog")
 }
 
-export function modelCatalogQueryOptions() {
+function modelCatalogQueryOptions() {
   return queryOptions({
     queryKey: modelCatalogQueryKey,
     queryFn: listModelCatalog,
