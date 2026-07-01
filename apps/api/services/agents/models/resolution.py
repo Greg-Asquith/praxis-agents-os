@@ -13,6 +13,7 @@ from core.settings import settings
 from services.agents.models.domain import (
     DEFAULT_MAX_STEPS,
     PROVIDER_AZURE,
+    PROVIDER_OPENAI,
     ModelConfigurationError,
     ResolvedModel,
 )
@@ -44,6 +45,7 @@ def resolve_agent_model(agent) -> ResolvedModel:
     default_settings = {} if provider == PROVIDER_AZURE else dict(_require_active(provider, model).default_settings)
 
     merged: dict[str, Any] = {**default_settings, **(agent.model_settings or {})}
+    _apply_openai_reasoning_summary(provider, merged)
     max_steps = agent.max_steps or DEFAULT_MAX_STEPS
 
     return ResolvedModel(
@@ -53,6 +55,18 @@ def resolve_agent_model(agent) -> ResolvedModel:
         max_steps=max_steps,
         azure_deployment=agent.azure_deployment,
     )
+
+
+def _apply_openai_reasoning_summary(provider: str, merged: dict[str, Any]) -> None:
+    """Ask OpenAI's Responses API for a readable reasoning summary when thinking is on.
+
+    Without this the Responses API returns only encrypted reasoning (a signature with
+    empty content), so the transcript can never show real thinking. The unified
+    ``thinking`` setting only controls reasoning effort, so request the summary here.
+    """
+    if provider != PROVIDER_OPENAI or not merged.get("thinking"):
+        return
+    merged.setdefault("openai_reasoning_summary", "auto")
 
 
 def resolve_naming_model() -> ResolvedModel:
