@@ -4,7 +4,6 @@ import { useState, type SyntheticEvent } from "react"
 import { ShieldCheckIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -14,32 +13,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { FieldGroup } from "@/components/ui/field"
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { runtimeToolLabel } from "@/features/agents/runtime-tools"
-import { supportIdentifier } from "@/features/conversations/format"
-import { safeJsonPreview } from "@/features/conversations/message-parts"
+  buildResumeDecisions,
+  DEFAULT_APPROVAL_DECISION,
+  summarizeApprovalDecisions,
+  type LocalApprovalDecision,
+  type LocalApprovalDecisionMap,
+} from "@/features/conversations/approval-decisions"
+import { ApprovalDecisionCard } from "@/features/conversations/components/approval-decision-card"
+import { ApprovalDecisionSummaryPanel } from "@/features/conversations/components/approval-decision-summary"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
-
-type LocalDecision = {
-  decision: "approved" | "denied"
-  message: string
-  overrideArgs: string
-}
-
-const DEFAULT_DECISION: LocalDecision = {
-  decision: "denied",
-  message: "",
-  overrideArgs: "",
-}
 
 export function ApprovalControls({
   approvals,
@@ -54,8 +38,9 @@ export function ApprovalControls({
   isSubmitting: boolean
   onSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
 }) {
-  const [decisions, setDecisions] = useState<Record<string, LocalDecision>>({})
+  const [decisions, setDecisions] = useState<LocalApprovalDecisionMap>({})
   const [formError, setFormError] = useState<string | null>(null)
+  const decisionSummary = summarizeApprovalDecisions(approvals, decisions)
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -91,186 +76,76 @@ export function ApprovalControls({
             Approval decisions
           </CardTitle>
           <CardDescription>
-            Review every pending tool call before resuming this run.
+            Review every pending tool request before this run continues.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <FieldGroup>
-            {error && (
+            {error ? (
               <Alert variant="destructive">
                 <AlertTitle>Approval state unavailable</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
-            )}
-            {formError && (
+            ) : null}
+            {formError ? (
               <Alert variant="destructive">
                 <AlertTitle>Run not resumed</AlertTitle>
                 <AlertDescription>{formError}</AlertDescription>
               </Alert>
-            )}
-            {isLoading && (
+            ) : null}
+            {isLoading ? (
               <p className="text-muted-foreground rounded-lg border border-dashed p-3 text-sm">
                 Loading pending approvals.
               </p>
-            )}
-            {approvals.map((approval) => {
-              const decision = decisions[approval.tool_call_id] ?? DEFAULT_DECISION
-              const toolLabel = runtimeToolLabel(approval.name)
-              const supportToolName = toolLabel ? null : supportIdentifier(approval.name)
-              const supportToolCallId = supportIdentifier(approval.tool_call_id) ?? "unknown"
-
-              return (
-                <div className="grid gap-3 rounded-lg border p-3" key={approval.tool_call_id}>
-                  <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p
-                          className="font-medium"
-                          title={toolLabel ? `Tool: ${approval.name}` : undefined}
-                        >
-                          {toolLabel ?? "Tool call"}
-                        </p>
-                        <Badge variant="outline" title={approval.tool_call_id}>
-                          Call {supportToolCallId}
-                        </Badge>
-                        {supportToolName && (
-                          <Badge variant="outline" title={approval.name}>
-                            Tool {supportToolName}
-                          </Badge>
-                        )}
-                      </div>
-                      <pre className="bg-muted text-muted-foreground mt-2 max-h-48 overflow-auto rounded-lg p-3 text-xs">
-                        {safeJsonPreview(approval.args)}
-                      </pre>
-                    </div>
-                    <Select
-                      onValueChange={(value) => {
-                        setDecision(approval.tool_call_id, {
-                          ...decision,
-                          decision: value === "approved" ? "approved" : "denied",
-                        })
-                      }}
-                      value={decision.decision}
-                    >
-                      <SelectTrigger className="w-full md:w-36" size="sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent align="end">
-                        <SelectGroup>
-                          <SelectItem value="denied">Deny</SelectItem>
-                          <SelectItem value="approved">Approve</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {decision.decision === "approved" ? (
-                    <Field>
-                      <FieldLabel htmlFor={`${approval.tool_call_id}-override`}>
-                        Override args
-                      </FieldLabel>
-                      <Textarea
-                        className="min-h-24 font-mono text-xs"
-                        id={`${approval.tool_call_id}-override`}
-                        onChange={(event) => {
-                          setDecision(approval.tool_call_id, {
-                            ...decision,
-                            overrideArgs: event.currentTarget.value,
-                          })
-                        }}
-                        placeholder="Optional JSON object"
-                        value={decision.overrideArgs}
-                      />
-                      <FieldDescription>
-                        Leave blank to approve the tool call with its original args.
-                      </FieldDescription>
-                    </Field>
-                  ) : (
-                    <Field>
-                      <FieldLabel htmlFor={`${approval.tool_call_id}-message`}>
-                        Denial message
-                      </FieldLabel>
-                      <Textarea
-                        className="min-h-20"
-                        id={`${approval.tool_call_id}-message`}
-                        onChange={(event) => {
-                          setDecision(approval.tool_call_id, {
-                            ...decision,
-                            message: event.currentTarget.value,
-                          })
-                        }}
-                        placeholder="Optional message for the agent"
-                        value={decision.message}
-                      />
-                    </Field>
-                  )}
-                </div>
-              )
-            })}
+            ) : null}
+            {approvals.map((approval) => (
+              <ApprovalDecisionCard
+                approval={approval}
+                decision={decisions[approval.tool_call_id] ?? DEFAULT_APPROVAL_DECISION}
+                key={approval.tool_call_id}
+                onDecisionChange={(decision) => {
+                  setDecision(approval.tool_call_id, decision)
+                }}
+              />
+            ))}
+            {approvals.length > 0 ? (
+              <ApprovalDecisionSummaryPanel summary={decisionSummary} />
+            ) : null}
           </FieldGroup>
         </CardContent>
         <CardFooter className="justify-end">
-          <Button disabled={approvals.length === 0 || isLoading || isSubmitting} type="submit">
+          <Button
+            disabled={
+              approvals.length === 0 || isLoading || isSubmitting || !decisionSummary.allDecided
+            }
+            type="submit"
+          >
             <ShieldCheckIcon data-icon="inline-start" />
-            {isSubmitting ? "Resuming" : "Resume run"}
+            {submitButtonLabel({
+              allDecided: decisionSummary.allDecided,
+              isSubmitting,
+            })}
           </Button>
         </CardFooter>
       </Card>
     </form>
   )
 
-  function setDecision(toolCallId: string, decision: LocalDecision) {
+  function setDecision(toolCallId: string, decision: LocalApprovalDecision) {
     setDecisions((current) => ({ ...current, [toolCallId]: decision }))
   }
 }
 
-function buildResumeDecisions(
-  approvals: PendingToolApproval[],
-  decisions: Record<string, LocalDecision>
-): AgentRunResumeDecision[] | string {
-  const payload: AgentRunResumeDecision[] = []
-
-  for (const approval of approvals) {
-    const decision = decisions[approval.tool_call_id]
-    const effectiveDecision = decision ?? DEFAULT_DECISION
-
-    if (effectiveDecision.decision === "denied") {
-      payload.push({
-        decision: "denied",
-        message: effectiveDecision.message.trim() || null,
-        tool_call_id: approval.tool_call_id,
-      })
-      continue
-    }
-
-    const overrideArgs = parseOverrideArgs(effectiveDecision.overrideArgs)
-    if (typeof overrideArgs === "string") {
-      return overrideArgs
-    }
-
-    payload.push({
-      decision: "approved",
-      override_args: overrideArgs,
-      tool_call_id: approval.tool_call_id,
-    })
+function submitButtonLabel({
+  allDecided,
+  isSubmitting,
+}: {
+  allDecided: boolean
+  isSubmitting: boolean
+}) {
+  if (isSubmitting) {
+    return "Submitting decisions"
   }
 
-  return payload
-}
-
-function parseOverrideArgs(value: string): Record<string, unknown> | null | string {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed) as unknown
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return "Override args must be a JSON object."
-    }
-    return parsed as Record<string, unknown>
-  } catch {
-    return "Override args must be valid JSON."
-  }
+  return allDecided ? "Submit decisions" : "Choose decisions"
 }
