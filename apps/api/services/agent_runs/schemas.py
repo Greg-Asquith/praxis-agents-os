@@ -3,6 +3,7 @@
 """Pydantic contracts for agent-run routes."""
 
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -40,3 +41,15 @@ class AgentRunResumeDecision(BaseModel):
 
 class AgentRunResumeRequest(BaseModel):
     decisions: list[AgentRunResumeDecision] = Field(min_length=1)
+
+
+class PendingToolApprovalRead(BaseModel):
+    tool_call_id: str
+    name: str
+    args: Any
+
+
+class AgentRunApprovalStateResponse(BaseModel):
+    run_id: UUID
+    conversation_id: UUID
+    approvals: list[PendingToolApprovalRead]

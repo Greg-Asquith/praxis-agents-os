@@ -20,7 +20,6 @@ from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
 from services.agents.runtime import streaming as runtime_streaming
 from services.agents.runtime.events import (
     EVENT_CONVERSATION_CREATED,
-    EVENT_DONE,
     EVENT_RUN_STATUS,
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
@@ -148,7 +147,7 @@ async def _run_initial_conversation_worker(
         ),
         name=f"conversation-title:{conversation_id}",
     )
-    delayed_done_sink = _DelayDoneUntilTaskSink(
+    title_update_sink = _CloseAfterTitleTaskSink(
         sink,
         title_task,
         wait_timeout_seconds=TITLE_UPDATE_STREAM_WAIT_SECONDS,
@@ -157,7 +156,7 @@ async def _run_initial_conversation_worker(
         run_id=run_id,
         conversation_id=conversation_id,
         user_prompt=user_prompt,
-        sink=delayed_done_sink,
+        sink=title_update_sink,
         client_message_id=client_message_id,
     )
     await _prune_failed_initial_conversation(
@@ -202,8 +201,8 @@ def _spawn_title_task(coro, *, name: str) -> asyncio.Task[None]:
     return task
 
 
-class _DelayDoneUntilTaskSink:
-    """Forward run events, but keep terminal done behind setup side work."""
+class _CloseAfterTitleTaskSink:
+    """Forward terminal events immediately, then briefly keep the stream open for title updates."""
 
     def __init__(
         self,
@@ -218,8 +217,6 @@ class _DelayDoneUntilTaskSink:
         self._waited = False
 
     async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
-        if event == EVENT_DONE:
-            await self._wait_for_pending_task()
         await self._delegate.emit(event, payload)
 
     async def close(self) -> None:

@@ -135,6 +135,7 @@ async def _persist_title_update(
     conversation.title = title.title
     conversation.metadata_json = metadata
     await db.commit()
+    await db.refresh(conversation)
     await sink.emit(
         EVENT_CONVERSATION_UPDATED,
         {

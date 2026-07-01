@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from models.agent import Agent
 
 ToolPolicyValue = Literal["auto", "approval"]
+VALID_THINKING_VALUES = {"minimal", "low", "medium", "high", "xhigh"}
 
 
 class AgentRead(BaseModel):
@@ -110,6 +111,11 @@ class AgentCreateRequest(BaseModel):
     ) -> dict[str, ToolPolicyValue] | None:
         return _normalize_tool_policy_keys(value)
 
+    @field_validator("model_settings")
+    @classmethod
+    def validate_model_settings(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _validate_model_settings(value)
+
 
 class AgentUpdateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
@@ -172,6 +178,11 @@ class AgentUpdateRequest(BaseModel):
     ) -> dict[str, ToolPolicyValue] | None:
         return _normalize_tool_policy_keys(value)
 
+    @field_validator("model_settings")
+    @classmethod
+    def validate_model_settings(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _validate_model_settings(value)
+
 
 def _normalize_text_list(value: list[str], *, field_name: str) -> list[str]:
     normalized: list[str] = []
@@ -200,3 +211,21 @@ def _normalize_tool_policy_keys(
             raise ValueError("tool_policies contains duplicate tool names")
         normalized[name] = policy
     return normalized
+
+
+def _validate_model_settings(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+
+    thinking = value.get("thinking")
+    if (
+        thinking is not None
+        and not isinstance(thinking, bool)
+        and (not isinstance(thinking, str) or thinking not in VALID_THINKING_VALUES)
+    ):
+        raise ValueError(
+            "model_settings.thinking must be true, false, or one of: "
+            f"{', '.join(sorted(VALID_THINKING_VALUES))}"
+        )
+
+    return dict(value) or None

@@ -216,9 +216,6 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert body.index(f"event: {EVENT_CONVERSATION_CREATED}") < body.index(
         f"event: {EVENT_RUN_STATUS}"
     )
-    assert body.index(f"event: {EVENT_CONVERSATION_UPDATED}") < body.index(
-        f"event: {EVENT_DONE}"
-    )
     assert '"title":"Plan the launch"' in body
     assert '"title":"Launch planning"' in body
     assert f'"active_agent_id":"{agent.id}"' in body
