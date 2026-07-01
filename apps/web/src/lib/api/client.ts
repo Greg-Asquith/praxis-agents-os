@@ -3,7 +3,7 @@
 import { env } from "@/config/env"
 import { getCsrfToken } from "@/lib/api/csrf"
 import { ApiError, type ApiProblem } from "@/lib/api/errors"
-import { getActiveWorkspaceSlug } from "@/lib/api/workspace-context"
+import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 
 type QueryValue = string | number | boolean | null | undefined
 

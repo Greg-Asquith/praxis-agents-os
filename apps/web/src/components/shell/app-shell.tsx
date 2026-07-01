@@ -22,19 +22,9 @@ import { Separator } from "@/components/ui/separator"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useLogoutMutation } from "@/features/auth/api/logout"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
+import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
-
-function initials(value: string | null | undefined) {
-  if (!value) {
-    return "PA"
-  }
-
-  const parts = value.split(/\s+|@/).filter(Boolean)
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("")
-}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -179,6 +169,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                         setWorkspaceBySlug(item.slug)
                       }}
                     >
+                      <WorkspaceIcon size="sm" workspace={item} />
                       <span className="truncate">{item.name}</span>
                     </DropdownMenuItem>
                   ))}
@@ -198,8 +189,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuContent>
             </DropdownMenu>
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{appConfig.shortName}</p>
-              <p className="text-muted-foreground truncate text-xs">{workspace.name}</p>
+              <div className="flex min-w-0 items-center gap-2">
+                <WorkspaceIcon size="sm" workspace={workspace} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{appConfig.shortName}</p>
+                  <p className="text-muted-foreground truncate text-xs">{workspace.name}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -211,6 +207,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Button variant="outline" className="hidden h-auto justify-between px-3 py-2 md:flex" />
               }
             >
+              <WorkspaceIcon size="sm" workspace={workspace} />
               <span className="max-w-44 truncate text-sm font-medium">{workspace.name}</span>
               <ChevronDownIcon data-icon="inline-end" />
             </DropdownMenuTrigger>
@@ -224,6 +221,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       setWorkspaceBySlug(item.slug)
                     }}
                   >
+                    <WorkspaceIcon size="sm" workspace={item} />
                     <span className="truncate">{item.name}</span>
                   </DropdownMenuItem>
                 ))}

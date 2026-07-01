@@ -1,4 +1,4 @@
-// apps/web/src/lib/api/workspace-context.ts
+// apps/web/src/features/workspaces/workspace-context.ts
 
 let activeWorkspaceSlug: string | null = null
 

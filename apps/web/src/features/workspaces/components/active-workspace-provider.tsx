@@ -7,7 +7,7 @@ import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useWorkspacesQuery } from "@/features/workspaces/api/list-workspaces"
 import type { Workspace } from "@/features/workspaces/types"
 import { ActiveWorkspaceContext } from "@/features/workspaces/components/active-workspace-context"
-import { setActiveWorkspaceSlug } from "@/lib/api/workspace-context"
+import { setActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 
 const STORAGE_KEY = "praxis.activeWorkspaceSlug"
 

@@ -2,8 +2,10 @@
 
 import { useState, type SyntheticEvent } from "react"
 import { useSuspenseQuery } from "@tanstack/react-query"
+import { Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -15,39 +17,73 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  useConfirmAvatarUploadMutation,
+  useCreateAvatarUploadMutation,
+  useDeleteAvatarMutation,
+} from "@/features/auth/api/avatar"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useUpdateCurrentUserMutation } from "@/features/auth/api/update-current-user"
+import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
+import { initials } from "@/lib/format"
 import { formString } from "@/lib/forms"
 
 export function ProfileForm() {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const updateMutation = useUpdateCurrentUserMutation()
+  const createAvatarUploadMutation = useCreateAvatarUploadMutation()
+  const confirmAvatarUploadMutation = useConfirmAvatarUploadMutation()
+  const deleteAvatarMutation = useDeleteAvatarMutation()
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const isPending =
+    updateMutation.isPending ||
+    createAvatarUploadMutation.isPending ||
+    confirmAvatarUploadMutation.isPending ||
+    deleteAvatarMutation.isPending
 
-  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setSaved(false)
 
     const formData = new FormData(event.currentTarget)
-    const avatarUrl = formString(formData, "avatar_url").trim()
 
-    updateMutation.mutate(
-      {
+    try {
+      await updateMutation.mutateAsync({
         display_name: formString(formData, "display_name").trim() || null,
-        avatar_url: avatarUrl.length > 0 ? avatarUrl : null,
-      },
-      {
-        onSuccess: () => {
-          setSaved(true)
-        },
-        onError: (mutationError) => {
-          setError(getErrorMessage(mutationError))
-        },
+      })
+
+      if (avatarFile) {
+        const uploadGrant = await createAvatarUploadMutation.mutateAsync({
+          content_type: avatarFile.type,
+          filename: avatarFile.name || "avatar",
+          size_bytes: avatarFile.size,
+        })
+        await uploadFileDirectly(uploadGrant.upload, avatarFile, uploadGrant.max_size_bytes)
+        await confirmAvatarUploadMutation.mutateAsync(uploadGrant.upload_token)
+        setAvatarFile(null)
       }
-    )
+
+      setSaved(true)
+    } catch (mutationError) {
+      setError(getErrorMessage(mutationError))
+    }
+  }
+
+  async function handleDeleteAvatar() {
+    setError(null)
+    setSaved(false)
+
+    try {
+      await deleteAvatarMutation.mutateAsync()
+      setAvatarFile(null)
+      setSaved(true)
+    } catch (mutationError) {
+      setError(getErrorMessage(mutationError))
+    }
   }
 
   return (
@@ -56,7 +92,12 @@ export function ProfileForm() {
         <CardTitle>Profile</CardTitle>
         <CardDescription>Update how you appear across Praxis.</CardDescription>
       </CardHeader>
-      <form key={user.updated_at} onSubmit={handleSubmit}>
+      <form
+        key={user.updated_at}
+        onSubmit={(event) => {
+          void handleSubmit(event)
+        }}
+      >
         <CardContent>
           <FieldGroup>
             {error && (
@@ -88,19 +129,46 @@ export function ProfileForm() {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="profile-avatar-url">Avatar URL</FieldLabel>
-              <Input
-                defaultValue={user.avatar_url ?? ""}
-                id="profile-avatar-url"
-                name="avatar_url"
-                type="url"
-              />
+              <FieldLabel htmlFor="profile-avatar-file">Avatar</FieldLabel>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Avatar size="lg" className="size-14">
+                  {user.avatar_url && <AvatarImage src={user.avatar_url} />}
+                  <AvatarFallback>{initials(user.display_name ?? user.email)}</AvatarFallback>
+                </Avatar>
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <Input
+                    accept="image/jpeg,image/png,image/webp"
+                    id="profile-avatar-file"
+                    onChange={(event) => {
+                      setAvatarFile(event.currentTarget.files?.[0] ?? null)
+                    }}
+                    type="file"
+                  />
+                  <FieldDescription>
+                    {avatarFile ? avatarFile.name : "JPEG, PNG, or WebP."}
+                  </FieldDescription>
+                </div>
+                {user.avatar_url && (
+                  <Button
+                    aria-label="Remove avatar"
+                    disabled={isPending}
+                    onClick={() => {
+                      void handleDeleteAvatar()
+                    }}
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2Icon />
+                  </Button>
+                )}
+              </div>
             </Field>
           </FieldGroup>
         </CardContent>
         <CardFooter>
-          <Button disabled={updateMutation.isPending} type="submit">
-            {updateMutation.isPending ? "Saving" : "Save changes"}
+          <Button disabled={isPending} type="submit">
+            {isPending ? "Saving" : "Save changes"}
           </Button>
         </CardFooter>
       </form>

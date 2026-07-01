@@ -54,7 +54,6 @@ export type OAuthAuthorizationUrlResponse = {
 
 export type UpdateCurrentUserRequest = {
   display_name?: string | null
-  avatar_url?: string | null
 }
 
 export type ChangePasswordRequest = {

@@ -13,11 +13,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useDeleteWorkspaceMutation } from "@/features/workspaces/api/delete-workspace"
 import { useUpdateWorkspaceMutation } from "@/features/workspaces/api/update-workspace"
+import {
+  useConfirmWorkspaceIconUploadMutation,
+  useCreateWorkspaceIconUploadMutation,
+  useDeleteWorkspaceIconMutation,
+} from "@/features/workspaces/api/workspace-icon"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
+import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
 
@@ -25,36 +32,60 @@ export function WorkspaceSettingsForm() {
   const { workspace, workspaces, setWorkspaceBySlug } = useActiveWorkspace()
   const updateWorkspaceMutation = useUpdateWorkspaceMutation()
   const deleteWorkspaceMutation = useDeleteWorkspaceMutation()
+  const createIconUploadMutation = useCreateWorkspaceIconUploadMutation()
+  const confirmIconUploadMutation = useConfirmWorkspaceIconUploadMutation()
+  const deleteIconMutation = useDeleteWorkspaceIconMutation()
+  const [iconSelection, setIconSelection] = useState<{
+    file: File
+    workspaceId: string
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const iconFile = iconSelection?.workspaceId === workspace.id ? iconSelection.file : null
 
   const canManage =
     workspace.current_user_role === "owner" || workspace.current_user_role === "admin"
   const canDelete = workspace.current_user_role === "owner" && !workspace.is_personal
+  const isSaving =
+    updateWorkspaceMutation.isPending ||
+    createIconUploadMutation.isPending ||
+    confirmIconUploadMutation.isPending ||
+    deleteIconMutation.isPending
 
-  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
 
     const formData = new FormData(event.currentTarget)
-    const iconUrl = formString(formData, "icon_url").trim()
 
-    updateWorkspaceMutation.mutate(
-      {
+    try {
+      let updatedWorkspace = await updateWorkspaceMutation.mutateAsync({
         workspaceId: workspace.id,
         payload: {
-          icon_url: iconUrl.length > 0 ? iconUrl : null,
           name: formString(formData, "name").trim(),
         },
-      },
-      {
-        onSuccess: (updatedWorkspace) => {
-          setWorkspaceBySlug(updatedWorkspace.slug)
-        },
-        onError: (mutationError) => {
-          setError(getErrorMessage(mutationError))
-        },
+      })
+
+      if (iconFile) {
+        const uploadGrant = await createIconUploadMutation.mutateAsync({
+          workspaceId: workspace.id,
+          payload: {
+            content_type: iconFile.type,
+            filename: iconFile.name || "workspace-icon",
+            size_bytes: iconFile.size,
+          },
+        })
+        await uploadFileDirectly(uploadGrant.upload, iconFile, uploadGrant.max_size_bytes)
+        updatedWorkspace = await confirmIconUploadMutation.mutateAsync({
+          uploadToken: uploadGrant.upload_token,
+          workspaceId: workspace.id,
+        })
+        setIconSelection(null)
       }
-    )
+
+      setWorkspaceBySlug(updatedWorkspace.slug)
+    } catch (mutationError) {
+      setError(getErrorMessage(mutationError))
+    }
   }
 
   function handleDelete() {
@@ -78,13 +109,30 @@ export function WorkspaceSettingsForm() {
     })
   }
 
+  async function handleDeleteIcon() {
+    setError(null)
+
+    try {
+      const updatedWorkspace = await deleteIconMutation.mutateAsync(workspace.id)
+      setIconSelection(null)
+      setWorkspaceBySlug(updatedWorkspace.slug)
+    } catch (mutationError) {
+      setError(getErrorMessage(mutationError))
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Workspace details</CardTitle>
         <CardDescription>Update the name and icon for the active workspace.</CardDescription>
       </CardHeader>
-      <form key={`${workspace.id}:${workspace.updated_at}`} onSubmit={handleSubmit}>
+      <form
+        key={`${workspace.id}:${workspace.updated_at}`}
+        onSubmit={(event) => {
+          void handleSubmit(event)
+        }}
+      >
         <CardContent>
           <FieldGroup>
             {error && (
@@ -106,24 +154,49 @@ export function WorkspaceSettingsForm() {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="settings-icon">Icon URL</FieldLabel>
-              <Input
-                defaultValue={workspace.icon_url ?? ""}
-                disabled={!canManage}
-                id="settings-icon"
-                name="icon_url"
-                type="url"
-              />
+              <FieldLabel htmlFor="settings-icon-file">Icon</FieldLabel>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <WorkspaceIcon size="lg" workspace={workspace} />
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <Input
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={!canManage}
+                    id="settings-icon-file"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] ?? null
+                      setIconSelection(file ? { file, workspaceId: workspace.id } : null)
+                    }}
+                    type="file"
+                  />
+                  <FieldDescription>
+                    {iconFile ? iconFile.name : "JPEG, PNG, or WebP."}
+                  </FieldDescription>
+                </div>
+                {workspace.icon_url && (
+                  <Button
+                    aria-label="Remove workspace icon"
+                    disabled={!canManage || isSaving}
+                    onClick={() => {
+                      void handleDeleteIcon()
+                    }}
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Trash2Icon />
+                  </Button>
+                )}
+              </div>
             </Field>
           </FieldGroup>
         </CardContent>
         <CardFooter className="justify-between gap-3">
-          <Button disabled={!canManage || updateWorkspaceMutation.isPending} type="submit">
-            {updateWorkspaceMutation.isPending ? "Saving" : "Save changes"}
+          <Button disabled={!canManage || isSaving} type="submit">
+            {isSaving ? "Saving" : "Save changes"}
           </Button>
           {canDelete && (
             <Button
-              disabled={deleteWorkspaceMutation.isPending}
+              disabled={deleteWorkspaceMutation.isPending || isSaving}
               onClick={handleDelete}
               type="button"
               variant="destructive"

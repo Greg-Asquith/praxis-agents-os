@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
 import { WorkspaceRoleBadge } from "@/features/workspaces/components/workspace-role-badge"
 import type { Workspace } from "@/features/workspaces/types"
 import { formatDateTime } from "@/lib/format"
@@ -37,9 +38,12 @@ export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
         {workspaces.map((workspace) => (
           <TableRow key={workspace.id}>
             <TableCell>
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className="font-medium">{workspace.name}</span>
-                <span className="text-muted-foreground text-xs">{workspace.slug}</span>
+              <div className="flex min-w-0 items-center gap-3">
+                <WorkspaceIcon workspace={workspace} />
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="font-medium">{workspace.name}</span>
+                  <span className="text-muted-foreground text-xs">{workspace.slug}</span>
+                </div>
               </div>
             </TableCell>
             <TableCell>

@@ -26,13 +26,11 @@ export type WorkspacesListResponse = {
 export type WorkspaceCreateRequest = {
   name: string
   slug?: string | null
-  icon_url?: string | null
 }
 
 export type WorkspaceUpdateRequest = {
   name?: string | null
   slug?: string | null
-  icon_url?: string | null
 }
 
 type WorkspaceMembership = {
