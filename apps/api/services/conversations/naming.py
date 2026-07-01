@@ -17,6 +17,10 @@ from services.agents.models import build_model, resolve_naming_model
 from services.agents.runtime.events import EVENT_CONVERSATION_UPDATED
 from services.agents.runtime.sinks import EventSink
 from services.conversations.schemas import ConversationRead
+from services.conversations.utils import (
+    get_active_run_for_conversation,
+    get_conversation_agent_name,
+)
 
 TITLE_MAX_LENGTH = 80
 
@@ -61,7 +65,9 @@ async def generate_conversation_title(
     title = _normalize_title(result.output.title)
     if not title:
         title = fallback_conversation_title(user_prompt)
-        return ConversationTitle(title=title, source="fallback", model_name=result.response.model_name)
+        return ConversationTitle(
+            title=title, source="fallback", model_name=result.response.model_name
+        )
     return ConversationTitle(title=title, source="model", model_name=result.response.model_name)
 
 
@@ -136,13 +142,17 @@ async def _persist_title_update(
     conversation.metadata_json = metadata
     await db.commit()
     await db.refresh(conversation)
+    agent_name = await get_conversation_agent_name(db, conversation=conversation)
+    active_run = await get_active_run_for_conversation(db, conversation_id=conversation.id)
     await sink.emit(
         EVENT_CONVERSATION_UPDATED,
         {
-            "conversation": ConversationRead.from_conversation(conversation).model_dump(
-                mode="json",
-                by_alias=True,
-            )
+            "conversation": ConversationRead.from_projection(
+                conversation,
+                agent_name=agent_name,
+                active_run_id=active_run.id if active_run is not None else None,
+                active_run_status=active_run.status if active_run is not None else None,
+            ).model_dump(mode="json", by_alias=True)
         },
     )
 

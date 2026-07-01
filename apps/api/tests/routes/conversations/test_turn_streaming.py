@@ -24,7 +24,12 @@ from models.conversation import Conversation, ConversationMessage
 from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
-from services.agent_runs import complete_agent_run, create_agent_run, start_agent_run
+from services.agent_runs import (
+    complete_agent_run,
+    create_agent_run,
+    mark_run_awaiting_approval,
+    start_agent_run,
+)
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
@@ -148,9 +153,7 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         conversation = await db_session.get(Conversation, conversation_id)
         assert conversation is not None
         conversation.title = "Launch planning"
-        conversation.metadata_json = {
-            "title": {"source": "model", "model": "function:title"}
-        }
+        conversation.metadata_json = {"title": {"source": "model", "model": "function:title"}}
         await db_session.flush()
         await sink.emit(
             EVENT_CONVERSATION_UPDATED,
@@ -354,6 +357,7 @@ async def test_list_conversations_returns_current_user_workspace_conversations(
     )
     existing_conversation.title = "Existing"
     existing_conversation.agent_slug = agent.slug
+    existing_conversation.unread = True
     older = Conversation(
         user_id=user.id,
         workspace_id=workspace.id,
@@ -382,6 +386,17 @@ async def test_list_conversations_returns_current_user_workspace_conversations(
     )
     deleted.soft_delete(deleted_by=user.id, cascade=False)
     db_session.add_all([older, newest, deleted])
+    await db_session.flush()
+    active_run = await create_agent_run(
+        db_session,
+        conversation_id=newest.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger="interactive",
+    )
+    await start_agent_run(db_session, active_run)
+    await mark_run_awaiting_approval(db_session, active_run)
     await db_session.commit()
 
     response = await db_async_client.get(
@@ -400,7 +415,76 @@ async def test_list_conversations_returns_current_user_workspace_conversations(
         "Newest",
         "Older",
     ]
-    assert all(conversation["active_agent_id"] == str(agent.id) for conversation in body["conversations"])
+    assert all(
+        conversation["active_agent_id"] == str(agent.id) for conversation in body["conversations"]
+    )
+    assert all(conversation["agent_name"] == agent.name for conversation in body["conversations"])
+
+    by_title = {conversation["title"]: conversation for conversation in body["conversations"]}
+    assert by_title["Existing"]["unread"] is True
+    assert by_title["Existing"]["active_run_id"] is None
+    assert by_title["Existing"]["needs_approval"] is False
+    assert by_title["Newest"]["active_run_id"] == str(active_run.id)
+    assert by_title["Newest"]["active_run_status"] == "awaiting_approval"
+    assert by_title["Newest"]["needs_approval"] is True
+
+
+async def test_mark_conversation_read_is_idempotent_for_owner(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, agent, conversation, headers = await _authenticated_context(db_session)
+    conversation.title = "Unread thread"
+    conversation.agent_slug = agent.slug
+    conversation.unread = True
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        f"/api/v1/conversations/{conversation.id}/read",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(conversation.id)
+    assert body["unread"] is False
+    assert body["agent_name"] == agent.name
+
+    await db_session.refresh(conversation)
+    assert conversation.unread is False
+
+    second_response = await db_async_client.post(
+        f"/api/v1/conversations/{conversation.id}/read",
+        headers=headers,
+    )
+
+    assert second_response.status_code == 200
+    assert second_response.json()["unread"] is False
+
+
+async def test_mark_conversation_read_rejects_other_workspace_user(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, _agent, conversation, _headers = await _authenticated_context(db_session)
+    conversation.unread = True
+    (
+        _other_user,
+        _other_workspace,
+        _other_agent,
+        _other_conversation,
+        other_headers,
+    ) = await _authenticated_context(db_session)
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        f"/api/v1/conversations/{conversation.id}/read",
+        headers=other_headers,
+    )
+
+    assert response.status_code == 404
+    await db_session.refresh(conversation)
+    assert conversation.unread is True
 
 
 async def test_delete_conversation_soft_deletes_and_hides_conversation(
@@ -881,9 +965,7 @@ async def _wait_for_non_deleted_conversation_count(
             if len(conversations) == count:
                 return
         if asyncio.get_running_loop().time() >= deadline:
-            raise AssertionError(
-                f"Timed out waiting for {count} non-deleted conversations"
-            )
+            raise AssertionError(f"Timed out waiting for {count} non-deleted conversations")
         await asyncio.sleep(0.05)
 
 
@@ -913,9 +995,7 @@ async def _drain_initial_conversation_background_work(
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
-        raise AssertionError(
-            f"Timed out waiting for {len(pending)} conversation title task(s)"
-        )
+        raise AssertionError(f"Timed out waiting for {len(pending)} conversation title task(s)")
 
 
 async def _delete_committed_workspace_context(
@@ -939,20 +1019,14 @@ async def _delete_committed_workspace_context(
                     ConversationMessage.conversation_id.in_(conversation_ids)
                 )
             )
-            await db.execute(
-                delete(AgentRun).where(AgentRun.conversation_id.in_(conversation_ids))
-            )
+            await db.execute(delete(AgentRun).where(AgentRun.conversation_id.in_(conversation_ids)))
             await db.execute(delete(Conversation).where(Conversation.id.in_(conversation_ids)))
         await db.execute(delete(Agent).where(Agent.workspace_id == workspace_id))
         await db.execute(
             delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
         )
         await db.execute(delete(Session).where(Session.user_id == user_id))
-        await db.execute(
-            update(User)
-            .where(User.id == user_id)
-            .values(default_workspace_id=None)
-        )
+        await db.execute(update(User).where(User.id == user_id).values(default_workspace_id=None))
         await db.execute(delete(User).where(User.id == user_id))
         await db.execute(delete(Workspace).where(Workspace.id == workspace_id))
         await db.commit()
@@ -980,11 +1054,7 @@ async def _delete_committed_context(
             delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
         )
         await db.execute(delete(Session).where(Session.user_id == user_id))
-        await db.execute(
-            update(User)
-            .where(User.id == user_id)
-            .values(default_workspace_id=None)
-        )
+        await db.execute(update(User).where(User.id == user_id).values(default_workspace_id=None))
         await db.execute(delete(User).where(User.id == user_id))
         await db.execute(delete(Workspace).where(Workspace.id == workspace_id))
         await db.commit()

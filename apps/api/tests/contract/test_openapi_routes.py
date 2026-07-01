@@ -65,9 +65,7 @@ def test_agent_routes_are_registered_under_api_v1(
         "/api/v1/agents/{agent_id}",
     } <= paths
     assert {"get", "post"} <= set(openapi_schema["paths"]["/api/v1/agents/"])
-    assert {"get", "patch", "delete"} <= set(
-        openapi_schema["paths"]["/api/v1/agents/{agent_id}"]
-    )
+    assert {"get", "patch", "delete"} <= set(openapi_schema["paths"]["/api/v1/agents/{agent_id}"])
 
 
 def test_conversation_routes_are_registered_under_api_v1(
@@ -81,6 +79,7 @@ def test_conversation_routes_are_registered_under_api_v1(
         "/api/v1/conversations/{conversation_id}/turns",
         "/api/v1/conversations/{conversation_id}/messages",
         "/api/v1/conversations/{conversation_id}/active-run",
+        "/api/v1/conversations/{conversation_id}/read",
     } <= paths
 
 

@@ -1,8 +1,14 @@
 // apps/web/src/features/conversations/api/list-conversations.ts
 
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
+import {
+  queryOptions,
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+  type QueryClient,
+} from "@tanstack/react-query"
 
-import type { ConversationsListResponse } from "@/features/conversations/types"
+import type { Conversation, ConversationsListResponse } from "@/features/conversations/types"
 import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 import { apiRequest } from "@/lib/api/client"
 
@@ -35,6 +41,34 @@ export async function listConversations({ limit = 100, offset = 0 }: ListConvers
   })
 }
 
+export async function markConversationRead(conversationId: string) {
+  return apiRequest<Conversation>(`/conversations/${conversationId}/read`, {
+    method: "POST",
+  })
+}
+
+export async function invalidateConversationQueries(
+  queryClient: QueryClient,
+  conversationId?: string
+) {
+  const invalidations = [
+    queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
+  ]
+
+  if (conversationId) {
+    invalidations.push(
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.messages(conversationId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.activeRun(conversationId),
+      })
+    )
+  }
+
+  await Promise.all(invalidations)
+}
+
 export function conversationsQueryOptions(params: ListConversationsParams = {}) {
   return queryOptions({
     queryKey: conversationsQueryKeys.list(params),
@@ -45,4 +79,15 @@ export function conversationsQueryOptions(params: ListConversationsParams = {}) 
 
 export function useConversationsQuery(params: ListConversationsParams = {}) {
   return useSuspenseQuery(conversationsQueryOptions(params))
+}
+
+export function useMarkConversationReadMutation() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: markConversationRead,
+    onSuccess: async (_conversation, conversationId) => {
+      await invalidateConversationQueries(queryClient, conversationId)
+    },
+  })
 }

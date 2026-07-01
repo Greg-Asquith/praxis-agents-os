@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
+from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 
 
 class ConversationCreateRequest(BaseModel):
@@ -69,6 +70,10 @@ class ConversationRead(BaseModel):
     last_message_at: datetime | None = None
     active_agent_id: UUID | None = None
     agent_slug: str | None = None
+    agent_name: str | None = None
+    active_run_id: UUID | None = None
+    active_run_status: str | None = None
+    needs_approval: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -77,6 +82,25 @@ class ConversationRead(BaseModel):
     @classmethod
     def from_conversation(cls, conversation: Conversation) -> "ConversationRead":
         return cls.model_validate(conversation)
+
+    @classmethod
+    def from_projection(
+        cls,
+        conversation: Conversation,
+        *,
+        agent_name: str | None,
+        active_run_id: UUID | None,
+        active_run_status: str | None,
+    ) -> "ConversationRead":
+        read_model = cls.from_conversation(conversation)
+        return read_model.model_copy(
+            update={
+                "agent_name": agent_name,
+                "active_run_id": active_run_id,
+                "active_run_status": active_run_status,
+                "needs_approval": active_run_status == RUN_STATUS_AWAITING_APPROVAL,
+            }
+        )
 
 
 class ConversationMessageRead(BaseModel):

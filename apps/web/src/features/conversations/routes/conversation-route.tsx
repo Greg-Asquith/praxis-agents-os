@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/routes/conversation-route.tsx
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { useParams } from "@tanstack/react-router"
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 
@@ -12,7 +12,10 @@ import { ConversationNotFound } from "@/features/conversations/components/conver
 import { MessageList } from "@/features/conversations/components/message-list"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
-import { conversationsQueryKeys } from "@/features/conversations/api/list-conversations"
+import {
+  conversationsQueryKeys,
+  useMarkConversationReadMutation,
+} from "@/features/conversations/api/list-conversations"
 import { useAgentRunApprovalStateQuery } from "@/features/conversations/api/get-approval-state"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
@@ -54,6 +57,8 @@ function ConversationDetail({
 }) {
   const queryClient = useQueryClient()
   const { clearPersistedPendingMessages, pendingUserMessages, stream } = useConversationWorkspace()
+  const { mutate: markConversationRead } = useMarkConversationReadMutation()
+  const pendingMarkReadConversationIdRef = useRef<string | null>(null)
   const messagesQuery = useSuspenseQuery(conversationMessagesQueryOptions(conversationId))
   const activeRunQuery = useSuspenseQuery(conversationActiveRunQueryOptions(conversationId))
   const activeRun = activeRunQuery.data.active_run
@@ -96,14 +101,31 @@ function ConversationDetail({
     clearPersistedPendingMessages(messagesQuery.data.messages)
   }, [clearPersistedPendingMessages, messagesQuery.data.messages])
 
+  useEffect(() => {
+    if (!conversation.unread) {
+      if (pendingMarkReadConversationIdRef.current === conversationId) {
+        pendingMarkReadConversationIdRef.current = null
+      }
+      return
+    }
+
+    if (pendingMarkReadConversationIdRef.current === conversationId) {
+      return
+    }
+
+    pendingMarkReadConversationIdRef.current = conversationId
+    markConversationRead(conversationId, {
+      onError: () => {
+        pendingMarkReadConversationIdRef.current = null
+      },
+    })
+  }, [conversation.unread, conversationId, markConversationRead])
+
   const composerDisabledReason = getConversationComposerDisabledReason(activeRun)
   const streamError =
     stream.conversationId === conversationId ? (stream.error?.message ?? null) : null
-  const approvalError = approvalStateQuery.error
-    ? getErrorMessage(approvalStateQuery.error)
-    : null
-  const isResumingRun =
-    activeRun !== null && stream.isStreaming && stream.runId === activeRun.id
+  const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
+  const isResumingRun = activeRun !== null && stream.isStreaming && stream.runId === activeRun.id
 
   async function handleApprovalSubmit(decisions: AgentRunResumeDecision[]) {
     if (!activeRun) {

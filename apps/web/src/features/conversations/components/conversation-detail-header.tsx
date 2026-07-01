@@ -1,11 +1,12 @@
 // apps/web/src/features/conversations/components/conversation-detail-header.tsx
 
-import { AlertCircleIcon, CircleDashedIcon, ShieldAlertIcon } from "lucide-react"
+import { AlertCircleIcon, CircleDashedIcon, CircleIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import type { AgentRun, AgentRunStatus, Conversation } from "@/features/conversations/types"
+import { conversationAgentLabel, sourceLabel } from "@/features/conversations/format"
 import { isRunStatusPolling } from "@/features/conversations/message-parts"
+import type { AgentRun, AgentRunStatus, Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -18,25 +19,36 @@ export function ConversationDetailHeader({
 }) {
   const scheduleContext =
     conversation.source === "scheduled" ? getScheduleContext(conversation.metadata) : null
+  const displayedRunStatus = activeRun?.status ?? conversation.active_run_status
 
   return (
     <header className="flex flex-col gap-3 p-4">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{conversation.source}</Badge>
-            {activeRun && <RunStatusBadge status={activeRun.status} />}
+            <Badge variant="outline">{sourceLabel(conversation.source)}</Badge>
+            {displayedRunStatus && <RunStatusBadge status={displayedRunStatus} />}
+            {conversation.needs_approval && displayedRunStatus !== "awaiting_approval" && (
+              <Badge variant="secondary">
+                <ShieldAlertIcon data-icon="inline-start" />
+                Approval
+              </Badge>
+            )}
+            {conversation.unread && (
+              <Badge variant="outline">
+                <CircleIcon className="fill-current" data-icon="inline-start" />
+                Unread
+              </Badge>
+            )}
           </div>
           <h2 className="font-heading truncate text-xl font-semibold">
             {conversation.title ?? "Untitled conversation"}
           </h2>
           <p className="text-muted-foreground mt-1 truncate text-sm">
-            {conversation.agent_slug ?? conversation.active_agent_id ?? "No active agent"}
+            {conversationAgentLabel(conversation, "No active agent")}
           </p>
           {scheduleContext && (
-            <p className="text-muted-foreground mt-1 truncate text-xs">
-              {scheduleContext}
-            </p>
+            <p className="text-muted-foreground mt-1 truncate text-xs">{scheduleContext}</p>
           )}
         </div>
         <div className="text-muted-foreground shrink-0 text-left text-xs md:text-right">

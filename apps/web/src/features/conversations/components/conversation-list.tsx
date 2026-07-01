@@ -1,9 +1,10 @@
 // apps/web/src/features/conversations/components/conversation-list.tsx
 
 import { Link } from "@tanstack/react-router"
-import { ClockIcon, MessageSquareTextIcon } from "lucide-react"
+import { CircleIcon, ClockIcon, MessageSquareTextIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { conversationAgentLabel, sourceLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -49,12 +50,26 @@ export function ConversationList({ conversations, selectedConversationId }: Conv
                   {conversation.title ?? "Untitled conversation"}
                 </p>
                 <p className="text-muted-foreground truncate text-xs">
-                  {conversation.agent_slug ?? conversation.active_agent_id ?? "No agent"}
+                  {conversationAgentLabel(conversation)}
                 </p>
               </div>
-              {conversation.source !== "direct" && (
-                <Badge variant="outline">{conversation.source}</Badge>
-              )}
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                {conversation.needs_approval && (
+                  <Badge variant="secondary">
+                    <ShieldAlertIcon data-icon="inline-start" />
+                    Approval
+                  </Badge>
+                )}
+                {conversation.unread && (
+                  <Badge variant="outline">
+                    <CircleIcon className="fill-current" data-icon="inline-start" />
+                    Unread
+                  </Badge>
+                )}
+                {conversation.source !== "direct" && (
+                  <Badge variant="outline">{sourceLabel(conversation.source)}</Badge>
+                )}
+              </div>
             </div>
             <div className="text-muted-foreground flex items-center gap-1 text-xs">
               <ClockIcon className="size-3" />

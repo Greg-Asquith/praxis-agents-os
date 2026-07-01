@@ -88,6 +88,22 @@ async def get_active_run_for_conversation(
     )
 
 
+async def get_conversation_agent_name(
+    db: AsyncSession,
+    *,
+    conversation: Conversation,
+) -> str | None:
+    """Return the active agent display name for a conversation, if one is assigned."""
+    if conversation.active_agent_id is None:
+        return None
+    return await db.scalar(
+        select(Agent.name).where(
+            Agent.id == conversation.active_agent_id,
+            Agent.workspace_id == conversation.workspace_id,
+        )
+    )
+
+
 async def get_message_by_client_message_id(
     db: AsyncSession,
     *,

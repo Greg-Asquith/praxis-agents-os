@@ -17,6 +17,10 @@ export type Conversation = {
   last_message_at: string | null
   active_agent_id: string | null
   agent_slug: string | null
+  agent_name: string | null
+  active_run_id: string | null
+  active_run_status: AgentRunStatus | null
+  needs_approval: boolean
   created_at: string
   updated_at: string
 }

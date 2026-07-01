@@ -96,10 +96,12 @@ async def create_conversation_stream(
     await sink.emit(
         EVENT_CONVERSATION_CREATED,
         {
-            "conversation": ConversationRead.from_conversation(conversation).model_dump(
-                mode="json",
-                by_alias=True,
-            )
+            "conversation": ConversationRead.from_projection(
+                conversation,
+                agent_name=agent.name,
+                active_run_id=run.id,
+                active_run_status=run.status,
+            ).model_dump(mode="json", by_alias=True)
         },
     )
     await sink.emit(EVENT_RUN_STATUS, {"status": run.status})
@@ -233,9 +235,7 @@ class _CloseAfterTitleTaskSink:
                 timeout=self._wait_timeout_seconds,
             )
         except TimeoutError:
-            logger.warning(
-                "Timed out waiting for conversation title update before closing stream"
-            )
+            logger.warning("Timed out waiting for conversation title update before closing stream")
         except Exception:
             logger.warning("Conversation title task failed before stream close", exc_info=True)
 
