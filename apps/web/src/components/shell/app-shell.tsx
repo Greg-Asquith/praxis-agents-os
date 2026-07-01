@@ -2,7 +2,14 @@
 
 import { useCallback, type ReactNode } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
-import { ChevronDownIcon, LogOutIcon, MenuIcon, MessagesSquareIcon, UserIcon } from "lucide-react"
+import {
+  ChevronDownIcon,
+  LogOutIcon,
+  MenuIcon,
+  MessageSquarePlusIcon,
+  MessagesSquareIcon,
+  UserIcon,
+} from "lucide-react"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { AppBreadcrumbs } from "@/components/shell/app-breadcrumbs"
@@ -36,6 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
+  const isConversationWorkspaceRoute = isConversationWorkspacePath(pathname)
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const { data: conversationsData } = useConversationsQuery({ limit: 50 })
   const logoutMutation = useLogoutMutation()
@@ -85,7 +93,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
           </div>
         </header>
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main
+          className={cn(
+            "min-h-0 min-w-0 flex-1 p-4 md:p-6",
+            isConversationWorkspaceRoute ? "overflow-hidden" : "overflow-y-auto"
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   )
@@ -285,6 +300,10 @@ function MobileMenu({
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel>Conversations</DropdownMenuLabel>
+            <DropdownMenuItem render={<Link to="/conversations/new" />}>
+              <MessageSquarePlusIcon />
+              New conversation
+            </DropdownMenuItem>
             <DropdownMenuItem render={<Link to="/conversations" />}>
               <MessagesSquareIcon />
               Open conversations
@@ -329,4 +348,12 @@ function isNavigationActive(pathname: string, itemPath: string) {
   }
 
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`)
+}
+
+function isConversationWorkspacePath(pathname: string) {
+  if (pathname === "/conversations" || !pathname.startsWith("/conversations/")) {
+    return false
+  }
+
+  return true
 }

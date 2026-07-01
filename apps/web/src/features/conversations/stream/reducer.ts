@@ -44,6 +44,7 @@ export type AgentStreamAction =
   | { type: "start" }
   | { type: "reset" }
   | { type: "resetSettledRun"; runId: string; conversationId: string }
+  | { type: "finishClosedStream" }
   | { type: "event"; event: StreamEvent }
   | { type: "fail"; error: StreamError }
 
@@ -79,6 +80,8 @@ export function agentStreamReducer(
       }
 
       return initialAgentStreamState
+    case "finishClosedStream":
+      return { ...state, done: true }
     case "fail":
       return withStreamError(state, action.error)
     case "event":

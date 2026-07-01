@@ -18,8 +18,10 @@ import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callba
 import { OAuthLoginCallbackRoute } from "@/features/auth/routes/oauth-login-callback-route"
 import { ProfileRoute } from "@/features/auth/routes/profile-route"
 import { RegisterRoute } from "@/features/auth/routes/register-route"
+import { ConversationRuntimeRoute } from "@/features/conversations/routes/conversation-runtime-route"
 import { ConversationRoute } from "@/features/conversations/routes/conversation-route"
 import { ConversationsRoute } from "@/features/conversations/routes/conversations-route"
+import { NewConversationRoute } from "@/features/conversations/routes/new-conversation-route"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { WorkspaceSettingsRoute } from "@/features/workspaces/routes/workspace-settings-route"
 import { WorkspacesRoute } from "@/features/workspaces/routes/workspaces-route"
@@ -103,9 +105,21 @@ const conversationsRoute = createRoute({
   component: ConversationsRoute,
 })
 
+const conversationRuntimeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  id: "conversation-runtime",
+  component: ConversationRuntimeRoute,
+})
+
+const newConversationRoute = createRoute({
+  getParentRoute: () => conversationRuntimeRoute,
+  path: "/conversations/new",
+  component: NewConversationRoute,
+})
+
 const conversationRoute = createRoute({
-  getParentRoute: () => conversationsRoute,
-  path: "$conversationId",
+  getParentRoute: () => conversationRuntimeRoute,
+  path: "/conversations/$conversationId",
   component: ConversationRoute,
 })
 
@@ -143,7 +157,8 @@ const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute, oauthLoginCallbackRoute]),
   appRoute.addChildren([
     homeRoute,
-    conversationsRoute.addChildren([conversationRoute]),
+    conversationsRoute,
+    conversationRuntimeRoute.addChildren([newConversationRoute, conversationRoute]),
     agentsRoute,
     agentDetailRoute,
     workspacesRoute,

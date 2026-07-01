@@ -69,6 +69,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       let observedRunId: string | null = null
       let observedDoneStatus: AgentRunStatus | null = null
       let observedConversationCreated = false
+      let streamClosedNormally = false
 
       try {
         const response = await request(abortController.signal)
@@ -86,6 +87,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
             onConversationCreated?.(streamEvent.data.conversation.id)
           }
         }
+        streamClosedNormally = true
       } catch (error) {
         if (isAbortError(error)) {
           return
@@ -96,6 +98,9 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       } finally {
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null
+        }
+        if (streamClosedNormally && observedDoneStatus === null) {
+          dispatch({ type: "finishClosedStream" })
         }
         await invalidateStreamQueries(queryClient, {
           conversationCreated: observedConversationCreated,

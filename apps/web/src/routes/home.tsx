@@ -1,7 +1,13 @@
 // apps/web/src/routes/home.tsx
 
 import { Link } from "@tanstack/react-router"
-import { BlocksIcon, CalendarClockIcon, MessagesSquareIcon, ShieldCheckIcon } from "lucide-react"
+import {
+  BlocksIcon,
+  CalendarClockIcon,
+  MessageSquarePlusIcon,
+  MessagesSquareIcon,
+  ShieldCheckIcon,
+} from "lucide-react"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
@@ -90,9 +96,13 @@ export function HomeRoute() {
             </CardTitle>
             <CardDescription>Talk to active agents in a workspace thread.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button size="sm" render={<Link to="/conversations/new" />}>
+              <MessageSquarePlusIcon data-icon="inline-start" />
+              New conversation
+            </Button>
             <Button variant="outline" size="sm" render={<Link to="/conversations" />}>
-              Open conversations
+              Open list
             </Button>
           </CardContent>
         </Card>

@@ -35,7 +35,7 @@ export function SidebarConversations({ conversations, pathname }: SidebarConvers
           aria-label="New conversation"
           size="icon-xs"
           variant="ghost"
-          render={<Link to="/conversations" />}
+          render={<Link to="/conversations/new" />}
         >
           <MessageSquarePlusIcon />
         </Button>

@@ -20,6 +20,7 @@ import { useAgentRunApprovalStateQuery } from "@/features/conversations/api/get-
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
 import { useConversationHealLoop } from "@/features/conversations/hooks/use-conversation-heal-loop"
+import { conversationAgentLabel } from "@/features/conversations/format"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
 import type {
   AgentRunResumeDecision,
@@ -126,6 +127,7 @@ function ConversationDetail({
     stream.conversationId === conversationId ? (stream.error?.message ?? null) : null
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRun !== null && stream.isStreaming && stream.runId === activeRun.id
+  const assistantLabel = conversationAgentLabel(conversation, "Agent")
 
   async function handleApprovalSubmit(decisions: AgentRunResumeDecision[]) {
     if (!activeRun) {
@@ -142,13 +144,16 @@ function ConversationDetail({
   }
 
   return (
-    <div className="flex h-full min-h-[640px] min-w-0 flex-col">
-      <ConversationDetailHeader activeRun={activeRun} conversation={conversation} />
-      <Separator />
+    <div className="bg-background flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border">
+      <div className="shrink-0">
+        <ConversationDetailHeader activeRun={activeRun} conversation={conversation} />
+      </div>
+      <Separator className="shrink-0" />
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 pb-6">
         <MessageList
           activeRun={activeRun}
+          assistantLabel={assistantLabel}
           conversationId={conversationId}
           isStreaming={stream.isStreaming && stream.conversationId === conversationId}
           messages={messagesQuery.data.messages}
@@ -161,8 +166,8 @@ function ConversationDetail({
         />
       </div>
 
-      <Separator />
-      <footer className="flex flex-col gap-3 p-3">
+      <Separator className="shrink-0" />
+      <footer className="flex shrink-0 flex-col gap-3 p-3">
         {activeRun?.status === "awaiting_approval" && (
           <ApprovalControls
             approvals={pendingApprovals}

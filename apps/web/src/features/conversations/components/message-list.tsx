@@ -23,6 +23,7 @@ type MessageListProps = {
   conversationId: string
   messages: ConversationMessage[]
   activeRun: AgentRun | null
+  assistantLabel: string
   pendingUserMessages: PendingUserMessage[]
   streamMessages: ChatMessageDraft[]
   streamToolCalls: ToolCallState[]
@@ -36,6 +37,7 @@ export function MessageList({
   conversationId,
   messages,
   activeRun,
+  assistantLabel,
   pendingUserMessages,
   streamMessages,
   streamToolCalls,
@@ -81,7 +83,7 @@ export function MessageList({
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {parsedMessages.map((message) => (
-        <MessageRow key={message.id} message={message} />
+        <MessageRow key={message.id} assistantLabel={assistantLabel} message={message} />
       ))}
 
       {visiblePendingUserMessages.map((message) => (
@@ -92,6 +94,7 @@ export function MessageList({
         streamMessages.map((message) => (
           <AssistantDraftRow
             key={message.id}
+            assistantLabel={assistantLabel}
             id={message.id}
             text={message.text}
             streaming={message.status === "streaming"}
@@ -99,7 +102,7 @@ export function MessageList({
         ))}
 
       {shouldShowStream && liveToolActivities.length > 0 && (
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-1 py-1">
+        <div className="flex w-full flex-col gap-2 px-1 py-1">
           {liveToolActivities.map((activity) => (
             <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
           ))}
@@ -107,14 +110,14 @@ export function MessageList({
       )}
 
       {shouldShowStream && isStreaming && streamMessages.length === 0 && (
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-1 py-3 text-sm">
+        <div className="flex w-full items-center gap-2 px-1 py-3 text-sm">
           <CircleDashedIcon className="text-muted-foreground size-4 animate-spin" />
           <span className="text-muted-foreground">Agent is working</span>
         </div>
       )}
 
       {streamError && (
-        <div className="mx-auto w-full max-w-3xl px-1 py-2">
+        <div className="w-full px-1 py-2">
           <Alert variant="destructive">
             <AlertTitle>Stream failed</AlertTitle>
             <AlertDescription>{streamError}</AlertDescription>

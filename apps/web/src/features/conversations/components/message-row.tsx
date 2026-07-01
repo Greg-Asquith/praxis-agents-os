@@ -14,17 +14,24 @@ import type {
 
 type MessageRowProps =
   | {
+      assistantLabel?: string
       message: ParsedConversationMessage
       pendingMessage?: never
       streaming?: boolean
     }
   | {
+      assistantLabel?: string
       message?: never
       pendingMessage: PendingUserMessage
       streaming?: never
     }
 
-export function MessageRow({ message, pendingMessage, streaming = false }: MessageRowProps) {
+export function MessageRow({
+  assistantLabel = "Agent",
+  message,
+  pendingMessage,
+  streaming = false,
+}: MessageRowProps) {
   if (pendingMessage) {
     return (
       <UserMessageShell createdAt={pendingMessage.createdAt} pending>
@@ -43,7 +50,11 @@ export function MessageRow({ message, pendingMessage, streaming = false }: Messa
 
   if (message.role === "assistant") {
     return (
-      <AssistantMessageShell createdAt={message.createdAt} streaming={streaming}>
+      <AssistantMessageShell
+        createdAt={message.createdAt}
+        label={assistantLabel}
+        streaming={streaming}
+      >
         <MessageContentParts message={message} />
       </AssistantMessageShell>
     )
@@ -57,16 +68,18 @@ export function MessageRow({ message, pendingMessage, streaming = false }: Messa
 }
 
 export function AssistantDraftRow({
+  assistantLabel = "Agent",
   id,
   text,
   streaming,
 }: {
+  assistantLabel?: string
   id: string
   text: string
   streaming: boolean
 }) {
   return (
-    <AssistantMessageShell createdAt={null} streaming={streaming}>
+    <AssistantMessageShell createdAt={null} label={assistantLabel} streaming={streaming}>
       <MessageMarkdown content={text || "Working..."} />
       <span className="sr-only">{id}</span>
     </AssistantMessageShell>
@@ -111,7 +124,7 @@ function MessageToolActivities({ message }: { message: ParsedConversationMessage
 
 function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-1">
+    <div className="flex w-full flex-col gap-2 px-1">
       <MessageToolActivities message={message} />
       {message.text.map((text, index) => (
         <div
@@ -128,7 +141,7 @@ function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
 
 function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-1">
+    <div className="flex w-full flex-col gap-2 px-1">
       <div className="text-muted-foreground rounded-lg border border-dashed px-3 py-2 text-sm">
         Unsupported {message.role} message
       </div>

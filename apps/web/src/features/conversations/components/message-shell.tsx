@@ -35,21 +35,23 @@ export function UserMessageShell({
 export function AssistantMessageShell({
   children,
   createdAt,
+  label = "Agent",
   streaming,
 }: {
   children: ReactNode
   createdAt: string | null
+  label?: string
   streaming?: boolean
 }) {
   return (
     <div className="group/message flex w-full justify-start px-1 py-2">
-      <div className="mx-auto flex w-full max-w-3xl gap-3">
+      <div className="flex w-full gap-3">
         <div className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-full">
           <BotIcon className="size-4" />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex min-w-0 items-center gap-2 text-xs">
-            <span className="font-medium">Agent</span>
+            <span className="truncate font-medium">{label}</span>
             {createdAt && <time className="text-muted-foreground">{formatTime(createdAt)}</time>}
             {streaming && <span className="bg-foreground/70 size-1.5 animate-pulse rounded-full" />}
           </div>

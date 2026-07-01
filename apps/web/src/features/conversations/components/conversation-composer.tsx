@@ -48,13 +48,17 @@ export function ConversationComposer(props: ConversationComposerProps) {
   const promptText = prompt.trim()
   const effectiveSelectedAgentId = selectedAgentId ?? activeAgents[0]?.id ?? ""
   const isCreateWithoutAgent = props.mode === "create" && activeAgents.length === 0
+  const isCurrentStreamBlocking =
+    props.mode === "create"
+      ? stream.isStreaming
+      : stream.isStreaming && stream.conversationId === props.conversationId
   const disabledReason =
     props.disabledReason ??
     (isCreateWithoutAgent ? "No active agents are available." : null) ??
-    (stream.isStreaming ? "The current turn is still running." : null)
+    (isCurrentStreamBlocking ? "The current turn is still running." : null)
   const isDisabled =
     Boolean(disabledReason) ||
-    stream.isStreaming ||
+    isCurrentStreamBlocking ||
     !promptText ||
     (props.mode === "create" && !effectiveSelectedAgentId)
 
@@ -120,10 +124,10 @@ export function ConversationComposer(props: ConversationComposerProps) {
     >
       <FieldGroup className={cn("gap-3", props.compact && "gap-2")}>
         {props.mode === "create" && (
-          <Field data-disabled={activeAgents.length === 0 || stream.isStreaming}>
+          <Field data-disabled={activeAgents.length === 0 || isCurrentStreamBlocking}>
             <FieldLabel htmlFor="conversation-agent">Agent</FieldLabel>
             <Select
-              disabled={activeAgents.length === 0 || stream.isStreaming}
+              disabled={activeAgents.length === 0 || isCurrentStreamBlocking}
               onValueChange={(value) => {
                 setSelectedAgentId(value)
               }}
@@ -141,7 +145,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
                   ) : (
                     activeAgents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
-                        {agent.name} ({agent.slug})
+                        {agentSelectLabel(agent)}
                       </SelectItem>
                     ))
                   )}
@@ -197,4 +201,12 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
 function createClientMessageId() {
   return globalThis.crypto.randomUUID()
+}
+
+function agentSelectLabel(agent: Agent) {
+  if (!agent.slug || agent.slug === agent.name) {
+    return agent.name
+  }
+
+  return `${agent.name} · ${agent.slug}`
 }
