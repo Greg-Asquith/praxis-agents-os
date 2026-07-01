@@ -66,22 +66,25 @@ export function parseConversationMessages(
     }
   }
 
-  if (activeRunStatus !== "awaiting_approval") {
-    return parsed
-  }
+  const runAwaitsApproval = activeRunStatus === "awaiting_approval"
+  const runIsExecuting = isRunStatusPolling(activeRunStatus)
 
   return parsed.map((message) => ({
     ...message,
     toolActivities: message.toolActivities.map((activity) => {
-      if (activity.kind !== "call" || !activity.id || completedToolCallIds.has(activity.id)) {
+      if (activity.kind !== "call" || !activity.id) {
         return activity
       }
-
-      return {
-        ...activity,
-        kind: "approval",
-        status: "awaiting_approval",
+      if (completedToolCallIds.has(activity.id)) {
+        return { ...activity, status: "completed" as const }
       }
+      if (runAwaitsApproval) {
+        return { ...activity, kind: "approval" as const, status: "awaiting_approval" as const }
+      }
+      if (!runIsExecuting) {
+        return { ...activity, status: "unknown" as const }
+      }
+      return activity
     }),
   }))
 }
