@@ -25,27 +25,38 @@ export function ConversationDetailHeader({
   const scheduleContext =
     conversation.source === "scheduled" ? getScheduleContext(conversation.metadata) : null
   const displayedRunStatus = activeRun?.status ?? conversation.active_run_status
+  const showApprovalBadge =
+    conversation.needs_approval && displayedRunStatus !== "awaiting_approval"
+  const hasBadges =
+    conversation.source === "scheduled" ||
+    Boolean(displayedRunStatus) ||
+    showApprovalBadge ||
+    conversation.unread
 
   return (
     <header className="flex flex-col gap-3 p-4">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
         <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{sourceLabel(conversation.source)}</Badge>
-            {displayedRunStatus && <RunStatusBadge status={displayedRunStatus} />}
-            {conversation.needs_approval && displayedRunStatus !== "awaiting_approval" && (
-              <Badge variant="secondary">
-                <ShieldAlertIcon data-icon="inline-start" />
-                Approval
-              </Badge>
-            )}
-            {conversation.unread && (
-              <Badge variant="outline">
-                <CircleIcon className="fill-current" data-icon="inline-start" />
-                Unread
-              </Badge>
-            )}
-          </div>
+          {hasBadges && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {conversation.source === "scheduled" && (
+                <Badge variant="outline">{sourceLabel(conversation.source)}</Badge>
+              )}
+              {displayedRunStatus && <RunStatusBadge status={displayedRunStatus} />}
+              {showApprovalBadge && (
+                <Badge variant="secondary">
+                  <ShieldAlertIcon data-icon="inline-start" />
+                  Approval
+                </Badge>
+              )}
+              {conversation.unread && (
+                <Badge variant="outline">
+                  <CircleIcon className="fill-current" data-icon="inline-start" />
+                  Unread
+                </Badge>
+              )}
+            </div>
+          )}
           <h2 className="font-heading truncate text-xl font-semibold">
             {conversation.title ?? "Untitled conversation"}
           </h2>

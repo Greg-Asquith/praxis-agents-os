@@ -2,13 +2,13 @@
 
 import {
   CheckCircle2Icon,
+  ChevronRightIcon,
   CircleDashedIcon,
   ShieldAlertIcon,
   TriangleAlertIcon,
   WrenchIcon,
 } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { runtimeToolLabel } from "@/features/agents/runtime-tools"
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -26,96 +26,122 @@ export function ToolCallRow({ activity, compact = false }: ToolCallRowProps) {
   const supportLabel = toolLabel ? null : supportIdentifier(activity.name)
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
+  const expandable = hasArgs || hasResult
+  const textSize = compact ? "text-xs" : "text-sm"
+
+  const header = (
+    <>
+      <ChevronRightIcon
+        className={cn(
+          "text-muted-foreground size-3.5 shrink-0 transition-transform group-open/tool:rotate-90",
+          !expandable && "invisible"
+        )}
+      />
+      <ToolActivityIcon activity={activity} />
+      <span className="min-w-0 truncate">
+        <span className="text-foreground font-medium">
+          {verbForActivity(activity)} {title}
+        </span>
+        {supportLabel && (
+          <span className="text-muted-foreground ml-1.5 font-mono text-xs">{supportLabel}</span>
+        )}
+      </span>
+      <StatusSuffix activity={activity} />
+    </>
+  )
+
+  if (!expandable) {
+    return (
+      <div className={cn("text-muted-foreground flex min-w-0 items-center gap-2", textSize)}>
+        {header}
+      </div>
+    )
+  }
 
   return (
-    <div
-      className={cn(
-        "border-border/80 bg-muted/30 flex min-w-0 flex-col gap-2 rounded-lg border px-3 py-2 text-sm",
-        compact && "px-2 py-1.5 text-xs"
-      )}
-    >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <ToolActivityIcon activity={activity} />
-          <div className="min-w-0" title={toolLabel ? `Tool: ${activity.name}` : undefined}>
-            <p className="truncate font-medium">{title}</p>
-            {supportLabel && (
-              <p className="text-muted-foreground truncate font-mono text-xs">
-                Tool {supportLabel}
-              </p>
-            )}
-          </div>
-        </div>
-        <Badge variant={badgeVariantForActivity(activity)}>{statusLabel(activity)}</Badge>
+    <details className="group/tool min-w-0">
+      <summary
+        className={cn(
+          "text-muted-foreground hover:text-foreground flex min-w-0 cursor-pointer list-none items-center gap-2",
+          textSize
+        )}
+      >
+        {header}
+      </summary>
+      <div className="mt-2 ml-5 flex flex-col gap-3">
+        {hasArgs && <JsonBlock label="Arguments" value={activity.args} />}
+        {hasResult && <JsonBlock label="Result" value={activity.result} />}
       </div>
+    </details>
+  )
+}
 
-      {(hasArgs || hasResult) && (
-        <div className="grid gap-2 md:grid-cols-2">
-          {hasArgs && <JsonDisclosure label="Arguments" value={activity.args} />}
-          {hasResult && <JsonDisclosure label="Result" value={activity.result} />}
-        </div>
-      )}
+function JsonBlock({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-muted-foreground mb-1 text-xs font-medium">{label}</p>
+      <pre className="bg-muted/50 max-h-64 overflow-auto rounded-md p-2 text-xs leading-relaxed whitespace-pre-wrap">
+        {safeJsonPreview(value)}
+      </pre>
     </div>
   )
 }
 
-function JsonDisclosure({ label, value }: { label: string; value: unknown }) {
+function StatusSuffix({ activity }: { activity: ToolActivity }) {
+  const suffix = statusSuffix(activity)
+  if (!suffix) {
+    return null
+  }
+
   return (
-    <details className="group/details min-w-0">
-      <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs font-medium">
-        {label}
-      </summary>
-      <pre className="bg-background mt-2 max-h-64 overflow-auto rounded-md border p-2 text-xs leading-relaxed whitespace-pre-wrap">
-        {safeJsonPreview(value)}
-      </pre>
-    </details>
+    <span
+      className={cn(
+        "shrink-0 text-xs",
+        activity.status === "failed" || activity.status === "denied"
+          ? "text-destructive"
+          : "text-muted-foreground"
+      )}
+    >
+      {suffix}
+    </span>
   )
 }
 
 function ToolActivityIcon({ activity }: { activity: ToolActivity }) {
   if (activity.status === "awaiting_approval") {
-    return <ShieldAlertIcon className="text-muted-foreground size-4 shrink-0" />
+    return <ShieldAlertIcon className="text-muted-foreground size-3.5 shrink-0" />
   }
   if (activity.status === "failed" || activity.status === "denied") {
-    return <TriangleAlertIcon className="text-muted-foreground size-4 shrink-0" />
+    return <TriangleAlertIcon className="text-destructive size-3.5 shrink-0" />
   }
   if (activity.status === "completed") {
-    return <CheckCircle2Icon className="text-muted-foreground size-4 shrink-0" />
+    return <CheckCircle2Icon className="text-muted-foreground size-3.5 shrink-0" />
   }
   if (activity.status === "running") {
-    return <CircleDashedIcon className="text-muted-foreground size-4 shrink-0" />
+    return <CircleDashedIcon className="text-muted-foreground size-3.5 shrink-0 animate-spin" />
   }
-  return <WrenchIcon className="text-muted-foreground size-4 shrink-0" />
+  return <WrenchIcon className="text-muted-foreground size-3.5 shrink-0" />
 }
 
-function statusLabel(activity: ToolActivity) {
-  if (activity.status === "awaiting_approval") {
-    return "Waiting"
-  }
-  if (activity.status === "completed") {
-    return "Done"
-  }
-  if (activity.status === "failed") {
-    return "Failed"
-  }
-  if (activity.status === "denied") {
-    return "Denied"
-  }
+function verbForActivity(activity: ToolActivity) {
   if (activity.status === "running") {
     return "Running"
   }
-  return "Unknown"
+  if (activity.status === "awaiting_approval") {
+    return "Requested"
+  }
+  return "Ran"
 }
 
-function badgeVariantForActivity(activity: ToolActivity) {
-  if (activity.status === "failed" || activity.status === "denied") {
-    return "destructive" as const
-  }
+function statusSuffix(activity: ToolActivity) {
   if (activity.status === "awaiting_approval") {
-    return "secondary" as const
+    return "· waiting"
   }
-  if (activity.status === "completed") {
-    return "outline" as const
+  if (activity.status === "failed") {
+    return "· failed"
   }
-  return "secondary" as const
+  if (activity.status === "denied") {
+    return "· denied"
+  }
+  return null
 }

@@ -33,6 +33,7 @@ export type ParsedConversationMessage = {
   clientMessageId: string | null
   createdAt: string
   text: string[]
+  thinking: string[]
   toolActivities: ToolActivity[]
   unsupportedParts: UnsupportedMessagePart[]
 }
@@ -94,6 +95,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     clientMessageId: message.client_message_id,
     createdAt: message.created_at,
     text: [],
+    thinking: [],
     toolActivities: [],
     unsupportedParts: [],
   }
@@ -134,6 +136,16 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const text = stringValue(part["content"])
       if (text) {
         parsed.text.push(text)
+      }
+      return
+    }
+
+    if (partKind === "thinking" || partKind === "redacted-thinking") {
+      // Encrypted/redacted reasoning arrives with an empty content and only a signature;
+      // keep the block out of the transcript entirely rather than dumping the raw part.
+      const thinking = stringValue(part["content"])
+      if (thinking) {
+        parsed.thinking.push(thinking)
       }
       return
     }

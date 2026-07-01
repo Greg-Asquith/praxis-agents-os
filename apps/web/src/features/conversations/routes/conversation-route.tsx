@@ -167,8 +167,8 @@ function ConversationDetail({
       </div>
 
       <Separator className="shrink-0" />
-      <footer className="flex shrink-0 flex-col gap-3 p-3">
-        {activeRun?.status === "awaiting_approval" && (
+      <footer className="flex max-h-[45%] shrink-0 flex-col gap-3 overflow-y-auto p-3">
+        {activeRun?.status === "awaiting_approval" ? (
           <ApprovalControls
             approvals={pendingApprovals}
             error={approvalError}
@@ -176,12 +176,13 @@ function ConversationDetail({
             isSubmitting={isResumingRun}
             onSubmit={handleApprovalSubmit}
           />
+        ) : (
+          <ConversationComposer
+            mode="turn"
+            conversationId={conversationId}
+            disabledReason={composerDisabledReason}
+          />
         )}
-        <ConversationComposer
-          mode="turn"
-          conversationId={conversationId}
-          disabledReason={composerDisabledReason}
-        />
       </footer>
     </div>
   )

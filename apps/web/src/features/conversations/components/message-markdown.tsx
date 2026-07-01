@@ -20,8 +20,6 @@ import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { reactNodeToText } from "@/lib/react-node"
 import { cn } from "@/lib/utils"
 
-type MarkdownTone = "assistant" | "user"
-
 const MAX_MARKDOWN_LENGTH = 200_000
 const REMARK_PLUGINS = [remarkGfm]
 const SANITIZE_SCHEMA = {
@@ -40,25 +38,21 @@ const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [
 export const MessageMarkdown = memo(function MessageMarkdown({
   className,
   content,
-  tone = "assistant",
 }: {
   className?: string
   content: string
-  tone?: MarkdownTone
 }) {
   const shouldParseMarkdown = content.length <= MAX_MARKDOWN_LENGTH
   const blocks = useMemo(
     () => (shouldParseMarkdown ? parseMarkdownIntoBlocks(content) : []),
     [content, shouldParseMarkdown]
   )
-  const components = useMemo(() => markdownComponentsForTone(tone), [tone])
 
   if (!shouldParseMarkdown) {
     return (
       <pre
         className={cn(
-          "text-sm leading-7 break-words whitespace-pre-wrap",
-          tone === "user" ? "text-primary-foreground" : "text-foreground",
+          "text-foreground text-sm leading-7 break-words whitespace-pre-wrap",
           className
         )}
       >
@@ -68,17 +62,11 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   }
 
   return (
-    <div
-      className={cn(
-        "min-w-0 text-sm leading-7",
-        tone === "user" ? "text-primary-foreground" : "text-foreground",
-        className
-      )}
-    >
+    <div className={cn("text-foreground min-w-0 text-sm leading-7", className)}>
       {blocks.map((block, index) => (
         <MemoizedMarkdownBlock
           key={`${String(index)}:${String(block.length)}`}
-          components={components}
+          components={MARKDOWN_COMPONENTS}
           content={block}
         />
       ))}
@@ -101,21 +89,15 @@ const MemoizedMarkdownBlock = memo(
   (previous, next) => previous.content === next.content
 )
 
-function markdownComponentsForTone(tone: MarkdownTone): Components {
-  const isUser = tone === "user"
-  const inlineCodeClassName = isUser
-    ? "bg-primary-foreground/15 text-primary-foreground"
-    : "bg-muted text-foreground"
+const MARKDOWN_COMPONENTS: Components = markdownComponents()
 
+function markdownComponents(): Components {
   return {
     a: ({ children, href, ...props }) => {
       const isExternal = typeof href === "string" && /^https?:\/\//i.test(href)
       return (
         <a
-          className={cn(
-            "break-words underline underline-offset-2 hover:opacity-80",
-            isUser ? "text-primary-foreground" : "text-primary"
-          )}
+          className="text-primary break-words underline underline-offset-2 hover:opacity-80"
           href={href}
           rel={isExternal ? "noopener noreferrer" : undefined}
           target={isExternal ? "_blank" : undefined}
@@ -127,10 +109,7 @@ function markdownComponentsForTone(tone: MarkdownTone): Components {
     },
     blockquote: ({ children, ...props }) => (
       <blockquote
-        className={cn(
-          "my-4 border-l-2 pl-4 italic",
-          isUser ? "border-primary-foreground/40" : "border-border text-muted-foreground"
-        )}
+        className="border-border text-muted-foreground my-4 border-l-2 pl-4 italic"
         {...props}
       >
         {children}
@@ -148,7 +127,7 @@ function markdownComponentsForTone(tone: MarkdownTone): Components {
 
       return (
         <code
-          className={cn("rounded px-1.5 py-0.5 font-mono text-[0.85em]", inlineCodeClassName)}
+          className="bg-muted text-foreground rounded px-1.5 py-0.5 font-mono text-[0.85em]"
           {...props}
         >
           {children}
@@ -181,12 +160,7 @@ function markdownComponentsForTone(tone: MarkdownTone): Components {
         {children}
       </h4>
     ),
-    hr: (props) => (
-      <hr
-        className={cn("my-5", isUser ? "border-primary-foreground/30" : "border-border")}
-        {...props}
-      />
-    ),
+    hr: (props) => <hr className="border-border my-5" {...props} />,
     input: ({ checked, disabled, type, ...props }) => {
       if (type !== "checkbox") {
         return <input type={type} {...props} />
@@ -236,7 +210,6 @@ function markdownComponentsForTone(tone: MarkdownTone): Components {
           <MarkdownCodeBlock
             code={reactNodeToText(props.children).replace(/\n$/, "")}
             language={getCodeLanguage(props.className)}
-            tone={tone}
           />
         )
       }
@@ -278,14 +251,11 @@ function markdownComponentsForTone(tone: MarkdownTone): Components {
 function MarkdownCodeBlock({
   code,
   language,
-  tone,
 }: {
   code: string
   language: string
-  tone: MarkdownTone
 }) {
   const { copied, copy } = useClipboardCopy()
-  const isUser = tone === "user"
 
   function handleCopy() {
     void copy(code)
@@ -293,20 +263,8 @@ function MarkdownCodeBlock({
 
   return (
     <div className="group/code my-3 overflow-hidden rounded-lg border">
-      <div
-        className={cn(
-          "flex items-center justify-between gap-3 border-b px-3 py-1.5",
-          isUser ? "border-primary-foreground/20" : "bg-muted/60"
-        )}
-      >
-        <span
-          className={cn(
-            "font-mono text-xs",
-            isUser ? "text-primary-foreground/75" : "text-muted-foreground"
-          )}
-        >
-          {language}
-        </span>
+      <div className="bg-muted/60 flex items-center justify-between gap-3 border-b px-3 py-1.5">
+        <span className="text-muted-foreground font-mono text-xs">{language}</span>
         <Button
           aria-label={copied ? "Copied code" : "Copy code"}
           size="icon-xs"
@@ -317,12 +275,7 @@ function MarkdownCodeBlock({
           {copied ? <CheckIcon /> : <CopyIcon />}
         </Button>
       </div>
-      <pre
-        className={cn(
-          "max-w-full overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre",
-          isUser ? "bg-primary-foreground/10" : "bg-background"
-        )}
-      >
+      <pre className="bg-background max-w-full overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">
         <code>{code}</code>
       </pre>
     </div>

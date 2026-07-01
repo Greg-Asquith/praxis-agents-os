@@ -1,5 +1,7 @@
 // apps/web/src/features/conversations/components/message-row.tsx
 
+import { ChevronRightIcon } from "lucide-react"
+
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
 import {
@@ -35,7 +37,7 @@ export function MessageRow({
   if (pendingMessage) {
     return (
       <UserMessageShell createdAt={pendingMessage.createdAt} pending>
-        <MessageMarkdown content={pendingMessage.text} tone="user" />
+        <MessageMarkdown content={pendingMessage.text} />
       </UserMessageShell>
     )
   }
@@ -43,7 +45,7 @@ export function MessageRow({
   if (message.role === "user") {
     return (
       <UserMessageShell createdAt={message.createdAt}>
-        <MessageTextParts message={message} tone="user" />
+        <MessageTextParts message={message} />
       </UserMessageShell>
     )
   }
@@ -89,26 +91,41 @@ export function AssistantDraftRow({
 function MessageContentParts({ message }: { message: ParsedConversationMessage }) {
   return (
     <>
-      <MessageTextParts message={message} tone="assistant" />
+      <ThinkingParts message={message} />
+      <MessageTextParts message={message} />
       <MessageToolActivities message={message} />
       <UnsupportedPartRows message={message} />
     </>
   )
 }
 
-function MessageTextParts({
-  message,
-  tone,
-}: {
-  message: ParsedConversationMessage
-  tone: "assistant" | "user"
-}) {
+function MessageTextParts({ message }: { message: ParsedConversationMessage }) {
   return (
     <>
       {message.text.map((text, index) => (
-        <MessageMarkdown key={`${message.id}:text:${String(index)}`} content={text} tone={tone} />
+        <MessageMarkdown key={`${message.id}:text:${String(index)}`} content={text} />
       ))}
     </>
+  )
+}
+
+function ThinkingParts({ message }: { message: ParsedConversationMessage }) {
+  if (message.thinking.length === 0) {
+    return null
+  }
+
+  return (
+    <details className="group/thinking min-w-0">
+      <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium">
+        <ChevronRightIcon className="size-3.5 transition-transform group-open/thinking:rotate-90" />
+        Thought
+      </summary>
+      <div className="text-muted-foreground border-border/70 mt-2 ml-1.5 border-l pl-3 text-sm italic">
+        {message.thinking.map((thought, index) => (
+          <MessageMarkdown key={`${message.id}:thinking:${String(index)}`} content={thought} />
+        ))}
+      </div>
+    </details>
   )
 }
 

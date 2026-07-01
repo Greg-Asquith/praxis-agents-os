@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
             <AppBreadcrumbs conversations={conversationsData.conversations} pathname={pathname} />
           </div>
-          <div className="hidden w-60 shrink-0 md:block lg:w-72">
+          <div className="hidden shrink-0 md:block">
             <WorkspaceSwitcher
               setWorkspaceBySlug={setWorkspaceBySlug}
               workspace={workspace}
@@ -137,19 +137,14 @@ function WorkspaceSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" className="h-auto w-full justify-start px-2 py-2 text-left" />
+          <Button variant="outline" className="h-9 max-w-56 justify-start gap-2 px-2.5" />
         }
       >
-        <WorkspaceIcon workspace={workspace} />
-        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-          <span className="max-w-full truncate text-sm font-medium">{workspace.name}</span>
-          <span className="text-muted-foreground max-w-full truncate text-xs">
-            Switch workspace
-          </span>
-        </span>
-        <ChevronDownIcon data-icon="inline-end" className="ml-auto" />
+        <WorkspaceIcon size="sm" workspace={workspace} />
+        <span className="min-w-0 truncate text-sm font-medium">{workspace.name}</span>
+        <ChevronDownIcon data-icon="inline-end" className="text-muted-foreground" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-64">
+      <DropdownMenuContent align={align} className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
           {workspaces.map((item) => (

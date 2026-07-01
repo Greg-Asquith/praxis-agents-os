@@ -1,7 +1,7 @@
 // apps/web/src/config/navigation.ts
 
 import {
-  BlocksIcon,
+  BotIcon,
   LayoutDashboardIcon,
   type LucideIcon,
   SettingsIcon,
@@ -32,7 +32,7 @@ export const mainNavigation: NavigationItem[] = [
   {
     label: "Agents",
     to: "/agents",
-    icon: BlocksIcon,
+    icon: BotIcon,
     disabled: false,
   },
   {

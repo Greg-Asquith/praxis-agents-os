@@ -81,7 +81,7 @@ export function MessageList({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-6">
       {parsedMessages.map((message) => (
         <MessageRow key={message.id} assistantLabel={assistantLabel} message={message} />
       ))}
