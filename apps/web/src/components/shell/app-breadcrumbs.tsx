@@ -121,7 +121,7 @@ function getBreadcrumbs({
     if (detail === "new") {
       return [
         { key: "conversations", label: "Conversations", to: "/conversations" },
-        { key: "conversations-new", label: "New conversation" },
+        { key: "conversations-new", label: "New Conversation" },
       ]
     }
 

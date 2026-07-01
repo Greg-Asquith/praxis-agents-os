@@ -66,7 +66,7 @@ async function invalidateConversationQueries(queryClient: QueryClient, conversat
   await Promise.all(invalidations)
 }
 
-function conversationsQueryOptions(params: ListConversationsParams = {}) {
+export function conversationsQueryOptions(params: ListConversationsParams = {}) {
   return queryOptions({
     queryKey: conversationsQueryKeys.list(params),
     queryFn: () => listConversations(params),

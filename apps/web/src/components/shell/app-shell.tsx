@@ -295,7 +295,7 @@ function MobileMenu({
             <DropdownMenuLabel>Conversations</DropdownMenuLabel>
             <DropdownMenuItem render={<Link to="/conversations/new" />}>
               <MessageSquarePlusIcon />
-              New conversation
+              New Conversation
             </DropdownMenuItem>
             <DropdownMenuItem render={<Link to="/conversations" />}>
               <MessagesSquareIcon />

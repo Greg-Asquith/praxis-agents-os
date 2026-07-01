@@ -105,7 +105,7 @@ async def run_conversation_title_worker(
 def fallback_conversation_title(user_prompt: str) -> str:
     """Deterministic local title used when model naming is unavailable."""
     first_line = " ".join(user_prompt.split())
-    return _truncate_title(first_line or "New conversation")
+    return _truncate_title(first_line or "New Conversation")
 
 
 async def _safe_generate_title(user_prompt: str, *, fallback_title: str) -> ConversationTitle:

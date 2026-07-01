@@ -1,29 +1,44 @@
 // apps/web/src/features/conversations/components/conversation-list.tsx
 
+import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
-import { CircleIcon, ClockIcon, MessageSquareTextIcon, ShieldAlertIcon } from "lucide-react"
+import { ClockIcon, MessageSquareTextIcon } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
-import { conversationAgentLabel, sourceLabel } from "@/features/conversations/format"
+import {
+  ConversationBadges,
+  type ConversationSourceVisibility,
+} from "@/features/conversations/components/conversation-badges"
+import { conversationAgentLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type ConversationListProps = {
   conversations: Conversation[]
+  emptyState?: ReactNode
   selectedConversationId?: string | null
+  showRunStatus?: boolean
+  sourceVisibility?: ConversationSourceVisibility
 }
 
-export function ConversationList({ conversations, selectedConversationId }: ConversationListProps) {
+export function ConversationList({
+  conversations,
+  emptyState,
+  selectedConversationId,
+  showRunStatus = false,
+  sourceVisibility = "non-direct",
+}: ConversationListProps) {
   if (conversations.length === 0) {
     return (
-      <EmptyState
-        description="Start a new conversation from the action above."
-        icon={<MessageSquareTextIcon className="size-5" />}
-        size="compact"
-        title="No conversations"
-      />
+      emptyState ?? (
+        <EmptyState
+          description="Start a new conversation from the action above."
+          icon={<MessageSquareTextIcon className="size-5" />}
+          size="compact"
+          title="No conversations"
+        />
+      )
     )
   }
 
@@ -42,7 +57,7 @@ export function ConversationList({ conversations, selectedConversationId }: Conv
               isSelected && "bg-muted border-border"
             )}
           >
-            <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-col justify-between gap-2 md:flex-row md:items-start">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
                   {conversation.title ?? "Untitled conversation"}
@@ -51,23 +66,11 @@ export function ConversationList({ conversations, selectedConversationId }: Conv
                   {conversationAgentLabel(conversation)}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                {conversation.needs_approval && (
-                  <Badge variant="secondary">
-                    <ShieldAlertIcon data-icon="inline-start" />
-                    Approval
-                  </Badge>
-                )}
-                {conversation.unread && (
-                  <Badge variant="outline">
-                    <CircleIcon className="fill-current" data-icon="inline-start" />
-                    Unread
-                  </Badge>
-                )}
-                {conversation.source !== "direct" && (
-                  <Badge variant="outline">{sourceLabel(conversation.source)}</Badge>
-                )}
-              </div>
+              <ConversationBadges
+                conversation={conversation}
+                runStatus={showRunStatus ? conversation.active_run_status : null}
+                sourceVisibility={sourceVisibility}
+              />
             </div>
             <div className="text-muted-foreground flex items-center gap-1 text-xs">
               <ClockIcon className="size-3" />

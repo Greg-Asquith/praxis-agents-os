@@ -39,7 +39,7 @@ async function listAgents({
   })
 }
 
-function agentsQueryOptions(params: ListAgentsParams = {}) {
+export function agentsQueryOptions(params: ListAgentsParams = {}) {
   return queryOptions({
     queryKey: agentsQueryKeys.list(params),
     queryFn: () => listAgents(params),

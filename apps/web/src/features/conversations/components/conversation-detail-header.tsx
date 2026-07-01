@@ -1,17 +1,12 @@
 // apps/web/src/features/conversations/components/conversation-detail-header.tsx
 
-import { AlertCircleIcon, CircleDashedIcon, CircleIcon, ShieldAlertIcon } from "lucide-react"
+import { AlertCircleIcon, CircleDashedIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
-import {
-  conversationAgentLabel,
-  runStatusLabel,
-  sourceLabel,
-  supportIdentifier,
-} from "@/features/conversations/format"
+import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
+import { conversationAgentLabel, supportIdentifier } from "@/features/conversations/format"
 import { isRunStatusPolling } from "@/features/conversations/message-parts"
-import type { AgentRun, AgentRunStatus, Conversation } from "@/features/conversations/types"
+import type { AgentRun, Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -27,36 +22,18 @@ export function ConversationDetailHeader({
   const displayedRunStatus = activeRun?.status ?? conversation.active_run_status
   const showApprovalBadge =
     conversation.needs_approval && displayedRunStatus !== "awaiting_approval"
-  const hasBadges =
-    conversation.source === "scheduled" ||
-    Boolean(displayedRunStatus) ||
-    showApprovalBadge ||
-    conversation.unread
 
   return (
     <header className="flex flex-col gap-3 p-4">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
         <div className="min-w-0">
-          {hasBadges && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {conversation.source === "scheduled" && (
-                <Badge variant="outline">{sourceLabel(conversation.source)}</Badge>
-              )}
-              {displayedRunStatus && <RunStatusBadge status={displayedRunStatus} />}
-              {showApprovalBadge && (
-                <Badge variant="secondary">
-                  <ShieldAlertIcon data-icon="inline-start" />
-                  Approval
-                </Badge>
-              )}
-              {conversation.unread && (
-                <Badge variant="outline">
-                  <CircleIcon className="fill-current" data-icon="inline-start" />
-                  Unread
-                </Badge>
-              )}
-            </div>
-          )}
+          <ConversationBadges
+            className="mb-2 justify-start gap-2"
+            conversation={conversation}
+            runStatus={displayedRunStatus}
+            showApproval={showApprovalBadge}
+            sourceVisibility="scheduled"
+          />
           <h2 className="font-heading truncate text-xl font-semibold">
             {conversation.title ?? "Untitled conversation"}
           </h2>
@@ -169,16 +146,4 @@ function ActiveRunBanner({ activeRun }: { activeRun: AgentRun }) {
   }
 
   return null
-}
-
-function RunStatusBadge({ status }: { status: AgentRunStatus }) {
-  if (status === "failed" || status === "cancelled") {
-    return <Badge variant="destructive">{runStatusLabel(status)}</Badge>
-  }
-
-  if (status === "awaiting_approval") {
-    return <Badge variant="secondary">{runStatusLabel(status)}</Badge>
-  }
-
-  return <Badge>{runStatusLabel(status)}</Badge>
 }

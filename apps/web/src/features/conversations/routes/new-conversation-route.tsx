@@ -27,7 +27,7 @@ export function NewConversationRoute() {
               </Badge>
             )}
           </div>
-          <h1 className="font-heading text-xl font-semibold">New conversation</h1>
+          <h1 className="font-heading text-xl font-semibold">New Conversation</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {activeAgentCount} active {activeAgentCount === 1 ? "agent" : "agents"} available.
           </p>

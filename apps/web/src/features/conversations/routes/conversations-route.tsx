@@ -37,7 +37,7 @@ export function ConversationsRoute() {
         {hasConversations ? (
           <Button render={<Link to="/conversations/new" />}>
             <MessageSquarePlusIcon data-icon="inline-start" />
-            New conversation
+            New Conversation
           </Button>
         ) : null}
       </div>
@@ -76,7 +76,7 @@ function ConversationEmptyState() {
       action={
         <Button render={<Link to="/conversations/new" />}>
           <MessageSquarePlusIcon data-icon="inline-start" />
-          New conversation
+          New Conversation
         </Button>
       }
       description="Start a blank chat, choose an active agent, and the thread will appear here."
