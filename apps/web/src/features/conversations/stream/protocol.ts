@@ -1,9 +1,6 @@
 // apps/web/src/features/conversations/stream/protocol.ts
 
-import type {
-  AgentRunStatus,
-  Conversation,
-} from "@/features/conversations/types"
+import type { AgentRunStatus, Conversation } from "@/features/conversations/types"
 
 export const STREAM_PROTOCOL_VERSION = "1"
 export const STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"

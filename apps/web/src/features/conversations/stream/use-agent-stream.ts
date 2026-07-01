@@ -8,6 +8,7 @@ import { createConversationStream } from "@/features/conversations/api/create-co
 import { createTurnStream } from "@/features/conversations/api/create-turn-stream"
 import { resumeRunStream } from "@/features/conversations/api/resume-run-stream"
 import type {
+  AgentRunStatus,
   AgentRunResumeRequest,
   ConversationCreateRequest,
   ConversationTurnCreateRequest,
@@ -36,15 +37,16 @@ type ResumeRunInput = {
 
 type StreamRequest = (signal: AbortSignal) => Promise<Response>
 
+type UseAgentStreamOptions = {
+  onConversationCreated?: (conversationId: string) => void
+}
+
 const STREAMING_STATUSES = new Set(["pending", "running", "awaiting_approval"])
 
-export function useAgentStream() {
+export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions = {}) {
   const queryClient = useQueryClient()
   const abortControllerRef = useRef<AbortController | null>(null)
-  const [state, dispatch] = useReducer(
-    agentStreamReducer,
-    initialAgentStreamState
-  )
+  const [state, dispatch] = useReducer(agentStreamReducer, initialAgentStreamState)
 
   useEffect(() => {
     return () => {
@@ -64,6 +66,8 @@ export function useAgentStream() {
       dispatch({ type: "start" })
 
       let observedConversationId: string | null = null
+      let observedRunId: string | null = null
+      let observedDoneStatus: AgentRunStatus | null = null
 
       try {
         const response = await request(abortController.signal)
@@ -71,7 +75,14 @@ export function useAgentStream() {
 
         for await (const streamEvent of parseSseStream(response.body)) {
           observedConversationId = streamEvent.data.conversation_id
+          observedRunId = streamEvent.data.run_id
+          if (streamEvent.event === "done") {
+            observedDoneStatus = streamEvent.data.status
+          }
           dispatch({ type: "event", event: streamEvent })
+          if (streamEvent.event === "conversation.created") {
+            onConversationCreated?.(streamEvent.data.conversation.id)
+          }
         }
       } catch (error) {
         if (isAbortError(error)) {
@@ -85,9 +96,20 @@ export function useAgentStream() {
           abortControllerRef.current = null
         }
         await invalidateStreamQueries(queryClient, observedConversationId)
+        if (
+          observedConversationId !== null &&
+          observedRunId !== null &&
+          shouldClearSettledStream(observedDoneStatus)
+        ) {
+          dispatch({
+            type: "resetSettledRun",
+            conversationId: observedConversationId,
+            runId: observedRunId,
+          })
+        }
       }
     },
-    [queryClient]
+    [onConversationCreated, queryClient]
   )
 
   const sendFirstMessage = useCallback(
@@ -153,10 +175,7 @@ function toStreamError(error: unknown): StreamError {
   return { code: "stream_failed", message: "The agent stream failed." }
 }
 
-async function invalidateStreamQueries(
-  queryClient: QueryClient,
-  conversationId: string | null
-) {
+async function invalidateStreamQueries(queryClient: QueryClient, conversationId: string | null) {
   const invalidations = [
     queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
   ]
@@ -177,4 +196,8 @@ async function invalidateStreamQueries(
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
+}
+
+function shouldClearSettledStream(status: AgentRunStatus | null) {
+  return status === "completed" || status === "cancelled"
 }

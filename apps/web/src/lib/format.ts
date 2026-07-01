@@ -1,5 +1,10 @@
 // apps/web/src/lib/format.ts
 
+const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+})
+
 export function formatDateTime(value: string | null | undefined) {
   if (!value) {
     return "Never"
@@ -9,6 +14,10 @@ export function formatDateTime(value: string | null | undefined) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value))
+}
+
+export function formatTime(value: string | Date) {
+  return TIME_FORMATTER.format(new Date(value))
 }
 
 export function pluralize(count: number, singular: string, plural = `${singular}s`) {

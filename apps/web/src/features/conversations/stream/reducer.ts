@@ -1,13 +1,7 @@
 // apps/web/src/features/conversations/stream/reducer.ts
 
-import type {
-  AgentRunStatus,
-  Conversation,
-} from "@/features/conversations/types"
-import type {
-  StreamError,
-  StreamEvent,
-} from "@/features/conversations/stream/protocol"
+import type { AgentRunStatus, Conversation } from "@/features/conversations/types"
+import type { StreamError, StreamEvent } from "@/features/conversations/stream/protocol"
 
 export type AgentStreamStatus = "idle" | AgentRunStatus
 
@@ -49,6 +43,7 @@ export type AgentStreamState = {
 export type AgentStreamAction =
   | { type: "start" }
   | { type: "reset" }
+  | { type: "resetSettledRun"; runId: string; conversationId: string }
   | { type: "event"; event: StreamEvent }
   | { type: "fail"; error: StreamError }
 
@@ -73,6 +68,16 @@ export function agentStreamReducer(
     case "start":
       return { ...initialAgentStreamState, status: "pending" }
     case "reset":
+      return initialAgentStreamState
+    case "resetSettledRun":
+      if (
+        state.runId !== action.runId ||
+        state.conversationId !== action.conversationId ||
+        !state.done
+      ) {
+        return state
+      }
+
       return initialAgentStreamState
     case "fail":
       return withStreamError(state, action.error)
@@ -251,19 +256,13 @@ function appendMessageDelta(
   )
 }
 
-function completeMessage(
-  messages: ChatMessageDraft[],
-  messageId: string
-): ChatMessageDraft[] {
+function completeMessage(messages: ChatMessageDraft[], messageId: string): ChatMessageDraft[] {
   return messages.map((message) =>
     message.id === messageId ? { ...message, status: "complete" as const } : message
   )
 }
 
-function withStreamError(
-  state: AgentStreamState,
-  error: StreamError
-): AgentStreamState {
+function withStreamError(state: AgentStreamState, error: StreamError): AgentStreamState {
   return {
     ...state,
     done: true,

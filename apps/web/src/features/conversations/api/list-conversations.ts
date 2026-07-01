@@ -21,10 +21,7 @@ export const conversationsQueryKeys = {
     [...conversationsQueryKeys.all, conversationId, "active-run"] as const,
 }
 
-export async function listConversations({
-  limit = 100,
-  offset = 0,
-}: ListConversationsParams = {}) {
+export async function listConversations({ limit = 100, offset = 0 }: ListConversationsParams = {}) {
   return apiRequest<ConversationsListResponse>("/conversations/", {
     query: { limit, offset },
   })

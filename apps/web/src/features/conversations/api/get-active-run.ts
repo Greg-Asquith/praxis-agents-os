@@ -7,9 +7,7 @@ import type { ConversationActiveRunResponse } from "@/features/conversations/typ
 import { apiRequest } from "@/lib/api/client"
 
 export async function getActiveRun(conversationId: string) {
-  return apiRequest<ConversationActiveRunResponse>(
-    `/conversations/${conversationId}/active-run`
-  )
+  return apiRequest<ConversationActiveRunResponse>(`/conversations/${conversationId}/active-run`)
 }
 
 export function conversationActiveRunQueryOptions(conversationId: string) {

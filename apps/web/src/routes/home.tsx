@@ -1,7 +1,7 @@
 // apps/web/src/routes/home.tsx
 
 import { Link } from "@tanstack/react-router"
-import { BlocksIcon, CalendarClockIcon, ShieldCheckIcon } from "lucide-react"
+import { BlocksIcon, CalendarClockIcon, MessagesSquareIcon, ShieldCheckIcon } from "lucide-react"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
@@ -81,14 +81,28 @@ export function HomeRoute() {
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessagesSquareIcon className="size-4" />
+              Conversations
+            </CardTitle>
+            <CardDescription>Talk to active agents in a workspace thread.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" size="sm" render={<Link to="/conversations" />}>
+              Open conversations
+            </Button>
+          </CardContent>
+        </Card>
         <Card size="sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BlocksIcon className="size-4" />
               Agents
             </CardTitle>
-            <CardDescription>No agents are connected yet.</CardDescription>
+            <CardDescription>Agent management is not available yet.</CardDescription>
           </CardHeader>
         </Card>
         <Card size="sm">
@@ -97,7 +111,7 @@ export function HomeRoute() {
               <CalendarClockIcon className="size-4" />
               Schedules
             </CardTitle>
-            <CardDescription>Scheduled runs will appear here.</CardDescription>
+            <CardDescription>Schedule management is not available yet.</CardDescription>
           </CardHeader>
         </Card>
         <Card size="sm">
@@ -106,7 +120,7 @@ export function HomeRoute() {
               <ShieldCheckIcon className="size-4" />
               Approvals
             </CardTitle>
-            <CardDescription>Approval requests will appear here.</CardDescription>
+            <CardDescription>Approval decisions are not available yet.</CardDescription>
           </CardHeader>
         </Card>
       </div>

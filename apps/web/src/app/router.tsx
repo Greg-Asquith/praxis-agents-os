@@ -12,6 +12,8 @@ import { LoginRoute } from "@/features/auth/routes/login-route"
 import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callback-route"
 import { ProfileRoute } from "@/features/auth/routes/profile-route"
 import { RegisterRoute } from "@/features/auth/routes/register-route"
+import { ConversationRoute } from "@/features/conversations/routes/conversation-route"
+import { ConversationsRoute } from "@/features/conversations/routes/conversations-route"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { WorkspaceSettingsRoute } from "@/features/workspaces/routes/workspace-settings-route"
 import { WorkspacesRoute } from "@/features/workspaces/routes/workspaces-route"
@@ -83,6 +85,18 @@ const workspacesRoute = createRoute({
   component: WorkspacesRoute,
 })
 
+const conversationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/conversations",
+  component: ConversationsRoute,
+})
+
+const conversationRoute = createRoute({
+  getParentRoute: () => conversationsRoute,
+  path: "$conversationId",
+  component: ConversationRoute,
+})
+
 const workspaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspace-settings",
@@ -105,6 +119,7 @@ const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute]),
   appRoute.addChildren([
     homeRoute,
+    conversationsRoute.addChildren([conversationRoute]),
     workspacesRoute,
     workspaceSettingsRoute,
     profileRoute,

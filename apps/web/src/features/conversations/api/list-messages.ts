@@ -7,9 +7,7 @@ import type { ConversationMessagesResponse } from "@/features/conversations/type
 import { apiRequest } from "@/lib/api/client"
 
 export async function listMessages(conversationId: string) {
-  return apiRequest<ConversationMessagesResponse>(
-    `/conversations/${conversationId}/messages`
-  )
+  return apiRequest<ConversationMessagesResponse>(`/conversations/${conversationId}/messages`)
 }
 
 export function conversationMessagesQueryOptions(conversationId: string) {

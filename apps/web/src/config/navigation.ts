@@ -1,10 +1,24 @@
-import { BlocksIcon, LayoutDashboardIcon, SettingsIcon, UsersIcon } from "lucide-react"
+// apps/web/src/config/navigation.ts
+
+import {
+  BlocksIcon,
+  LayoutDashboardIcon,
+  MessagesSquareIcon,
+  SettingsIcon,
+  UsersIcon,
+} from "lucide-react"
 
 export const mainNavigation = [
   {
     label: "Home",
     to: "/",
     icon: LayoutDashboardIcon,
+    disabled: false,
+  },
+  {
+    label: "Conversations",
+    to: "/conversations",
+    icon: MessagesSquareIcon,
     disabled: false,
   },
   {

@@ -5,6 +5,7 @@ import {
   type StreamEvent,
   type StreamEventName,
 } from "@/features/conversations/stream/protocol"
+import { isRecord } from "@/lib/guards"
 
 export async function* parseSseStream(
   stream: ReadableStream<Uint8Array> | null
@@ -24,9 +25,7 @@ export async function* parseSseStream(
         break
       }
 
-      buffer = normalizeLineEndings(
-        `${buffer}${decoder.decode(result.value, { stream: true })}`
-      )
+      buffer = normalizeLineEndings(`${buffer}${decoder.decode(result.value, { stream: true })}`)
 
       let frameEnd = buffer.indexOf("\n\n")
       while (frameEnd !== -1) {
@@ -117,8 +116,4 @@ function parseJsonData(eventName: StreamEventName, value: string): unknown {
 
 function normalizeLineEndings(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

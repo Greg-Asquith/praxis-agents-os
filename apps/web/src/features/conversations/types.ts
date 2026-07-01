@@ -1,12 +1,7 @@
 // apps/web/src/features/conversations/types.ts
 
 export type AgentRunStatus =
-  | "pending"
-  | "running"
-  | "awaiting_approval"
-  | "completed"
-  | "failed"
-  | "cancelled"
+  "pending" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled"
 
 export type Conversation = {
   id: string
