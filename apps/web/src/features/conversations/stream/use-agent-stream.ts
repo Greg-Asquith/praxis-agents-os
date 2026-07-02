@@ -23,6 +23,7 @@ import {
   STREAM_VERSION_HEADER,
   type StreamError,
 } from "@/features/conversations/stream/protocol"
+import { seedStreamQueryCache } from "@/features/conversations/stream/query-cache"
 import { ApiError, parseApiError } from "@/lib/api/errors"
 
 type SendTurnInput = {
@@ -92,6 +93,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
             observedDoneStatus = streamEvent.data.status
           }
           dispatch({ type: "event", event: streamEvent })
+          seedStreamQueryCache(queryClient, streamEvent)
           if (streamEvent.event === "conversation.created") {
             observedConversationCreated = true
             onConversationCreated?.(streamEvent.data.conversation.id)
@@ -219,6 +221,9 @@ async function invalidateStreamQueries(
 
   if (conversationId !== null && shouldInvalidateConversationDetails(status, conversationCreated)) {
     invalidations.push(
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.detail(conversationId),
+      }),
       queryClient.invalidateQueries({
         queryKey: conversationsQueryKeys.messages(conversationId),
       }),

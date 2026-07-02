@@ -1,11 +1,7 @@
 // apps/web/src/features/conversations/components/conversation-detail-header.tsx
 
-import { AlertCircleIcon, CircleDashedIcon } from "lucide-react"
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
 import { conversationAgentLabel, supportIdentifier } from "@/features/conversations/format"
-import { isRunStatusPolling } from "@/features/conversations/message-parts"
 import type { AgentRun, Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
@@ -32,7 +28,7 @@ export function ConversationDetailHeader({
             conversation={conversation}
             runStatus={displayedRunStatus}
             showApproval={showApprovalBadge}
-            sourceVisibility="scheduled"
+            sourceVisibility="non-direct"
           />
           <h2 className="font-heading truncate text-xl font-semibold">
             {conversation.title ?? "Untitled conversation"}

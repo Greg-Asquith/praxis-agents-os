@@ -1,16 +1,19 @@
 // apps/web/src/features/conversations/components/message-list.tsx
 
 import { useMemo } from "react"
-import { CircleDashedIcon, MessageSquareTextIcon } from "lucide-react"
+import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ApprovalControls } from "@/features/conversations/components/approval-controls"
-import { AssistantDraftRow, MessageRow } from "@/features/conversations/components/message-row"
-import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
+import {
+  AssistantLiveActivityRow,
+  MessageRow,
+} from "@/features/conversations/components/message-row"
 import type {
   AgentRun,
   AgentRunResumeDecision,
   ConversationMessage,
+  PendingDelegatedApproval,
   PendingToolApproval,
 } from "@/features/conversations/types"
 import type {
@@ -20,6 +23,9 @@ import type {
 } from "@/features/conversations/stream/reducer"
 import {
   parseConversationMessages,
+  delegationDetailsForToolActivity,
+  delegationDetailsForPendingApproval,
+  mergeDelegationDetails,
   normalizeToolArgs,
   pendingMessagesForConversation,
   type PendingUserMessage,
@@ -43,6 +49,7 @@ type MessageListProps = {
   streamConversationId: string | null
   isStreaming: boolean
   onApprovalSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
+  pendingDelegations: PendingDelegatedApproval[]
 }
 
 export function MessageList({
@@ -51,6 +58,7 @@ export function MessageList({
   activeRun,
   approvalError,
   approvals,
+  pendingDelegations,
   assistantLabel,
   isApprovalLoading,
   isApprovalSubmitting,
@@ -64,8 +72,8 @@ export function MessageList({
   onApprovalSubmit,
 }: MessageListProps) {
   const parsedMessages = useMemo(
-    () => parseConversationMessages(messages, activeRun?.status),
-    [messages, activeRun?.status]
+    () => parseConversationMessages(messages, activeRun?.status, pendingDelegations),
+    [messages, activeRun?.status, pendingDelegations]
   )
   const visiblePendingUserMessages = pendingMessagesForConversation(
     pendingUserMessages,
@@ -94,7 +102,8 @@ export function MessageList({
     parsedMessages.length > 0 ||
     visiblePendingUserMessages.length > 0 ||
     hasInlineApprovals ||
-    (shouldShowStream && (streamMessages.length > 0 || visibleLiveToolActivities.length > 0))
+    (shouldShowStream &&
+      (isStreaming || streamMessages.length > 0 || visibleLiveToolActivities.length > 0))
 
   if (!hasMessages) {
     return (
@@ -121,23 +130,14 @@ export function MessageList({
       ))}
 
       {shouldShowStream &&
-        streamMessages.map((message) => (
-          <AssistantDraftRow
-            key={message.id}
+        (isStreaming || streamMessages.length > 0 || visibleLiveToolActivities.length > 0) && (
+          <AssistantLiveActivityRow
             assistantLabel={assistantLabel}
-            id={message.id}
-            text={message.text}
-            streaming={message.status === "streaming"}
+            isStreaming={isStreaming}
+            messages={streamMessages}
+            toolActivities={visibleLiveToolActivities}
           />
-        ))}
-
-      {shouldShowStream && visibleLiveToolActivities.length > 0 && (
-        <div className="flex w-full flex-col gap-2 px-1 py-1">
-          {visibleLiveToolActivities.map((activity) => (
-            <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
-          ))}
-        </div>
-      )}
+        )}
 
       {hasInlineApprovals && (
         <ApprovalControls
@@ -148,13 +148,6 @@ export function MessageList({
           isSubmitting={isApprovalSubmitting}
           onSubmit={onApprovalSubmit}
         />
-      )}
-
-      {shouldShowStream && isStreaming && streamMessages.length === 0 && (
-        <div className="flex w-full items-center gap-2 px-1 py-3 text-sm">
-          <CircleDashedIcon className="text-muted-foreground size-4 animate-spin" />
-          <span className="text-muted-foreground">Agent is working</span>
-        </div>
       )}
 
       {streamError && (
@@ -173,27 +166,72 @@ function buildLiveToolActivities(
   toolCalls: ToolCallState[],
   approvals: ApprovalState[]
 ): ToolActivity[] {
-  const activities = toolCalls.map((toolCall): ToolActivity => ({
-    id: toolCall.tool_call_id,
-    kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
-    status: toolCall.status,
-    name: toolCall.name,
-    args: normalizeToolArgs(toolCall.args),
-    result: toolCall.result,
-  }))
+  const activities = toolCalls.map((toolCall): ToolActivity => {
+    const args = normalizeToolArgs(toolCall.args)
+    const activity: ToolActivity = {
+      id: toolCall.tool_call_id,
+      kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
+      status: toolCall.status,
+      name: toolCall.name,
+      args,
+      result: toolCall.result,
+    }
+    const delegate = delegationDetailsForToolActivity(toolCall.name, args, toolCall.result)
+    if (delegate) {
+      activity.delegate = delegate
+    }
+    return activity
+  })
+  const activityIndexesById = new Map(activities.map((activity, index) => [activity.id, index]))
+
+  for (const delegation of approvals
+    .map((approval) => approval.delegation)
+    .filter((value): value is PendingDelegatedApproval => Boolean(value))) {
+    const existingIndex = activityIndexesById.get(delegation.parent_tool_call_id)
+    if (existingIndex === undefined) {
+      activities.push({
+        id: delegation.parent_tool_call_id,
+        kind: "approval",
+        status: "awaiting_approval",
+        name: "delegate_to_agent",
+        delegate: delegationDetailsForPendingApproval(delegation),
+      })
+      activityIndexesById.set(delegation.parent_tool_call_id, activities.length - 1)
+      continue
+    }
+
+    const existing = activities[existingIndex]
+    if (existing === undefined) {
+      continue
+    }
+    const pendingDelegate = delegationDetailsForPendingApproval(delegation, existing.args)
+    const delegate = mergeDelegationDetails(existing.delegate, pendingDelegate) ?? pendingDelegate
+    activities[existingIndex] = {
+      ...existing,
+      delegate,
+      kind: "approval",
+      status: "awaiting_approval",
+    }
+  }
 
   for (const approval of approvals) {
     if (activities.some((activity) => activity.id === approval.tool_call_id)) {
       continue
     }
 
-    activities.push({
+    const args = normalizeToolArgs(approval.args)
+    const activity: ToolActivity = {
       id: approval.tool_call_id,
       kind: "approval",
       status: "awaiting_approval",
       name: approval.name,
-      args: normalizeToolArgs(approval.args),
-    })
+      args,
+    }
+    const delegate = delegationDetailsForToolActivity(approval.name, args)
+    if (delegate) {
+      activity.delegate = delegate
+    }
+    activities.push(activity)
   }
 
   return activities

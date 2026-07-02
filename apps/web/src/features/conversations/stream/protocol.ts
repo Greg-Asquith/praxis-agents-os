@@ -1,6 +1,10 @@
 // apps/web/src/features/conversations/stream/protocol.ts
 
-import type { AgentRunStatus, Conversation } from "@/features/conversations/types"
+import type {
+  AgentRunStatus,
+  Conversation,
+  PendingDelegatedApproval,
+} from "@/features/conversations/types"
 
 export const STREAM_PROTOCOL_VERSION = "1"
 export const STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"
@@ -73,7 +77,12 @@ export type StreamEvent =
     }
   | {
       event: "tool.approval_required"
-      data: StreamEnvelope & { tool_call_id: string; name: string; args: unknown }
+      data: StreamEnvelope & {
+        tool_call_id: string
+        name: string
+        args: unknown
+        delegation?: PendingDelegatedApproval | null
+      }
     }
   | {
       event: "error"

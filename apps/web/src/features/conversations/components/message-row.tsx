@@ -12,7 +12,9 @@ import { UnsupportedPartRows } from "@/features/conversations/components/unsuppo
 import type {
   ParsedConversationMessage,
   PendingUserMessage,
+  ToolActivity,
 } from "@/features/conversations/message-parts"
+import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
 
 type MessageRowProps =
   | {
@@ -69,21 +71,32 @@ export function MessageRow({
   return <UnsupportedMessageRow message={message} />
 }
 
-export function AssistantDraftRow({
+export function AssistantLiveActivityRow({
   assistantLabel = "Agent",
-  id,
-  text,
-  streaming,
+  isStreaming,
+  messages,
+  toolActivities,
 }: {
   assistantLabel?: string
-  id: string
-  text: string
-  streaming: boolean
+  isStreaming: boolean
+  messages: ChatMessageDraft[]
+  toolActivities: ToolActivity[]
 }) {
   return (
-    <AssistantMessageShell createdAt={null} label={assistantLabel} streaming={streaming}>
-      <MessageMarkdown content={text || "Working..."} />
-      <span className="sr-only">{id}</span>
+    <AssistantMessageShell createdAt={null} label={assistantLabel} streaming={isStreaming}>
+      {toolActivities.map((activity) => (
+        <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
+      ))}
+      {messages.length > 0 ? (
+        messages.map((message) => (
+          <div key={message.id}>
+            <MessageMarkdown content={message.text || "Working..."} />
+            <span className="sr-only">{message.id}</span>
+          </div>
+        ))
+      ) : (
+        <p className="text-muted-foreground text-sm">Working...</p>
+      )}
     </AssistantMessageShell>
   )
 }

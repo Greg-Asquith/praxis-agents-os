@@ -57,6 +57,8 @@ export type AgentRun = {
   agent_id: string
   workspace_id: string
   user_id: string
+  parent_run_id: string | null
+  delegation_depth: number
   trigger: string
   status: AgentRunStatus
   model_name: string | null
@@ -100,10 +102,21 @@ export type PendingToolApproval = {
   tool_call_id: string
   name: string
   args: unknown
+  delegation?: PendingDelegatedApproval | null
+}
+
+export type PendingDelegatedApproval = {
+  parent_tool_call_id: string
+  child_agent_id: string
+  child_agent_name: string
+  child_conversation_id: string
+  child_run_id: string
+  pending_approval_count: number
 }
 
 export type AgentRunApprovalStateResponse = {
   run_id: string
   conversation_id: string
   approvals: PendingToolApproval[]
+  delegations: PendingDelegatedApproval[]
 }

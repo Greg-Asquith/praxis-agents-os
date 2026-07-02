@@ -1,7 +1,12 @@
 // apps/web/src/features/conversations/message-parts.ts
 
-import type { AgentRunStatus, ConversationMessage } from "@/features/conversations/types"
-import { isRecord } from "@/lib/guards"
+import type {
+  AgentRunStatus,
+  ConversationMessage,
+  PendingDelegatedApproval,
+} from "@/features/conversations/types"
+import { truncateForPreview } from "@/lib/format"
+import { isRecord, stringValue, optionalString } from "@/lib/guards"
 
 type ParsedMessageRole = "user" | "assistant" | "tool" | "system" | "unknown"
 
@@ -12,6 +17,19 @@ type ToolActivityStatus =
 
 type ToolApprovalDecision = "approved" | "denied"
 
+export type DelegationToolActivity = {
+  status: "running" | "awaiting_approval" | "completed" | "failed" | "unknown"
+  agentId: string | null
+  agentName: string | null
+  taskPreview: string | null
+  output: string | null
+  error: string | null
+  runId: string | null
+  conversationId: string | null
+  pendingApprovalCount: number
+  truncated: boolean
+}
+
 export type ToolActivity = {
   id: string
   kind: ToolActivityKind
@@ -19,6 +37,7 @@ export type ToolActivity = {
   name: string
   args?: unknown
   decision?: ToolApprovalDecision
+  delegate?: DelegationToolActivity
   result?: unknown
   outcome?: string | null
 }
@@ -49,17 +68,24 @@ export type PendingUserMessage = {
 }
 
 const PREVIEW_LIMIT = 2400
+const DELEGATION_TASK_PREVIEW_LIMIT = 500
 
 const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "native-tool-return"])
 
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
 
+const DELEGATE_TO_AGENT_TOOL_NAME = "delegate_to_agent"
+
 export function parseConversationMessages(
   messages: ConversationMessage[],
-  activeRunStatus?: AgentRunStatus | null
+  activeRunStatus?: AgentRunStatus | null,
+  pendingDelegations: PendingDelegatedApproval[] = []
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey } = pairToolResults(parsed)
+  const pendingDelegationsByParentCallId = new Map(
+    pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
+  )
 
   const runAwaitsApproval = activeRunStatus === "awaiting_approval"
   const runIsExecuting = isRunStatusPolling(activeRunStatus)
@@ -73,13 +99,28 @@ export function parseConversationMessages(
             return activity
           }
 
+          const pendingDelegate = pendingDelegationsByParentCallId.get(activity.id)
+          const activityDelegate = pendingDelegate
+            ? mergeDelegationDetails(
+                activity.delegate,
+                delegationDetailsForPendingApproval(pendingDelegate, activity.args)
+              )
+            : activity.delegate
+          const activityWithDelegate = activityDelegate
+            ? { ...activity, delegate: activityDelegate }
+            : activity
+
           const result = resultsByCallKey.get(toolActivityKey(messageIndex, activityIndex))
           if (result) {
+            const delegate = mergeDelegationDetails(activityDelegate, result.delegate)
             const mergedActivity: ToolActivity = {
               ...activity,
               outcome: result.outcome ?? null,
               result: result.result,
               status: result.status,
+            }
+            if (delegate) {
+              mergedActivity.delegate = delegate
             }
             if (result.args !== undefined) {
               mergedActivity.args = result.args
@@ -90,12 +131,16 @@ export function parseConversationMessages(
             return mergedActivity
           }
           if (runAwaitsApproval) {
-            return { ...activity, kind: "approval" as const, status: "awaiting_approval" as const }
+            return {
+              ...activityWithDelegate,
+              kind: "approval" as const,
+              status: "awaiting_approval" as const,
+            }
           }
           if (!runIsExecuting) {
-            return { ...activity, status: "unknown" as const }
+            return { ...activityWithDelegate, status: "unknown" as const }
           }
-          return activity
+          return activityWithDelegate
         })
         .filter((activity, activityIndex) => {
           if (
@@ -220,13 +265,20 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     }
 
     if (partKind && TOOL_CALL_PART_KINDS.has(partKind)) {
-      parsed.toolActivities.push({
+      const name = stringValue(part["tool_name"]) ?? "tool"
+      const args = normalizeToolArgs(part["args"])
+      const activity: ToolActivity = {
         id: stringValue(part["tool_call_id"]) ?? partId,
         kind: "call",
         status: "running",
-        name: stringValue(part["tool_name"]) ?? "tool",
-        args: normalizeToolArgs(part["args"]),
-      })
+        name,
+        args,
+      }
+      const delegate = delegationDetailsForToolActivity(name, args)
+      if (delegate) {
+        activity.delegate = delegate
+      }
+      parsed.toolActivities.push(activity)
       return
     }
 
@@ -234,13 +286,18 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const outcome = stringValue(part["outcome"])
       const toolCallId = stringValue(part["tool_call_id"]) ?? partId
       const approvalMetadata = approvalMetadataForTool(message.metadata, toolCallId)
+      const name = stringValue(part["tool_name"]) ?? "tool"
       const activity: ToolActivity = {
         id: toolCallId,
         kind: "result",
         status: approvalMetadata?.decision === "denied" ? "denied" : statusFromOutcome(outcome),
-        name: stringValue(part["tool_name"]) ?? "tool",
+        name,
         result: part["content"],
         outcome,
+      }
+      const delegate = delegationDetailsForToolActivity(name, undefined, part["content"])
+      if (delegate) {
+        activity.delegate = delegate
       }
       if (approvalMetadata?.effectiveArgs !== undefined) {
         activity.args = normalizeToolArgs(approvalMetadata.effectiveArgs)
@@ -431,6 +488,100 @@ export function normalizeToolArgs(value: unknown) {
   }
 }
 
+export function delegationDetailsForToolActivity(
+  name: string,
+  args: unknown,
+  result?: unknown
+): DelegationToolActivity | undefined {
+  if (name !== DELEGATE_TO_AGENT_TOOL_NAME) {
+    return undefined
+  }
+
+  const normalizedArgs = normalizeToolArgs(args)
+  const argRecord = isRecord(normalizedArgs) ? normalizedArgs : null
+  const resultRecord = isRecord(result) ? result : null
+  const pendingApprovals = resultRecord?.["pending_approvals"]
+  const pendingApprovalCount = Array.isArray(pendingApprovals) ? pendingApprovals.length : 0
+
+  return {
+    status: delegationStatus(resultRecord?.["status"]) ?? "running",
+    agentId: optionalString(resultRecord?.["agent_id"]) ?? optionalString(argRecord?.["agent_id"]),
+    agentName: optionalString(resultRecord?.["agent_name"]),
+    taskPreview: truncateForPreview(
+      optionalString(argRecord?.["task"]),
+      DELEGATION_TASK_PREVIEW_LIMIT
+    ),
+    output: optionalString(resultRecord?.["output"]),
+    error: optionalString(resultRecord?.["error"]),
+    runId: optionalString(resultRecord?.["run_id"]),
+    conversationId: optionalString(resultRecord?.["conversation_id"]),
+    pendingApprovalCount,
+    truncated: resultRecord?.["truncated"] === true,
+  }
+}
+
+export function delegationDetailsForPendingApproval(
+  delegation: PendingDelegatedApproval,
+  args?: unknown
+): DelegationToolActivity {
+  const normalizedArgs = normalizeToolArgs(args)
+  const argRecord = isRecord(normalizedArgs) ? normalizedArgs : null
+
+  return {
+    status: "awaiting_approval",
+    agentId: delegation.child_agent_id,
+    agentName: delegation.child_agent_name,
+    taskPreview: truncateForPreview(
+      optionalString(argRecord?.["task"]),
+      DELEGATION_TASK_PREVIEW_LIMIT
+    ),
+    output: null,
+    error: null,
+    runId: delegation.child_run_id,
+    conversationId: delegation.child_conversation_id,
+    pendingApprovalCount: delegation.pending_approval_count,
+    truncated: false,
+  }
+}
+
+export function mergeDelegationDetails(
+  callDelegate: DelegationToolActivity | undefined,
+  resultDelegate: DelegationToolActivity | undefined
+): DelegationToolActivity | undefined {
+  if (!callDelegate) {
+    return resultDelegate
+  }
+  if (!resultDelegate) {
+    return callDelegate
+  }
+
+  return {
+    status: resultDelegate.status,
+    agentId: resultDelegate.agentId ?? callDelegate.agentId,
+    agentName: resultDelegate.agentName ?? callDelegate.agentName,
+    taskPreview: callDelegate.taskPreview ?? resultDelegate.taskPreview,
+    output: resultDelegate.output,
+    error: resultDelegate.error,
+    runId: resultDelegate.runId,
+    conversationId: resultDelegate.conversationId,
+    pendingApprovalCount: resultDelegate.pendingApprovalCount,
+    truncated: resultDelegate.truncated,
+  }
+}
+
+function delegationStatus(value: unknown): DelegationToolActivity["status"] | null {
+  if (
+    value === "running" ||
+    value === "awaiting_approval" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "unknown"
+  ) {
+    return value
+  }
+  return null
+}
+
 function statusFromOutcome(outcome: string | null | undefined): ToolActivityStatus {
   if (outcome === "failed") {
     return "failed"
@@ -459,6 +610,8 @@ function normalizeRole(role: string): ParsedMessageRole {
   return "unknown"
 }
 
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null
-}
+
+
+
+
+

@@ -1,6 +1,10 @@
 // apps/web/src/features/conversations/stream/reducer.ts
 
-import type { AgentRunStatus, Conversation } from "@/features/conversations/types"
+import type {
+  AgentRunStatus,
+  Conversation,
+  PendingDelegatedApproval,
+} from "@/features/conversations/types"
 import type { StreamError, StreamEvent } from "@/features/conversations/stream/protocol"
 
 type AgentStreamStatus = "idle" | AgentRunStatus
@@ -24,6 +28,7 @@ export type ApprovalState = {
   tool_call_id: string
   name: string
   args: unknown
+  delegation?: PendingDelegatedApproval | null
   status: "pending"
 }
 
@@ -176,6 +181,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
     case "tool.approval_required": {
       const approval = {
         args: streamEvent.data.args,
+        delegation: streamEvent.data.delegation ?? null,
         name: streamEvent.data.name,
         status: "pending" as const,
         tool_call_id: streamEvent.data.tool_call_id,

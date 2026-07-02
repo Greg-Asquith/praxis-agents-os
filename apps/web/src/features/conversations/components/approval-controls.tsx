@@ -15,7 +15,10 @@ import {
 import { ApprovalDecisionSummaryPanel } from "@/features/conversations/components/approval-decision-summary"
 import { AssistantMessageShell } from "@/features/conversations/components/message-shell"
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
-import { normalizeToolArgs } from "@/features/conversations/message-parts"
+import {
+  delegationDetailsForPendingApproval,
+  normalizeToolArgs,
+} from "@/features/conversations/message-parts"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 
 export function ApprovalControls({
@@ -86,10 +89,15 @@ export function ApprovalControls({
         ) : null}
         {approvals.map((approval) => {
           const decision = decisions[approval.tool_call_id] ?? DEFAULT_APPROVAL_DECISION
+          const args = normalizeToolArgs(approval.args)
+          const delegate = approval.delegation
+            ? delegationDetailsForPendingApproval(approval.delegation, args)
+            : null
           return (
             <ToolCallRow
               activity={{
-                args: normalizeToolArgs(approval.args),
+                args,
+                ...(delegate ? { delegate } : {}),
                 id: approval.tool_call_id,
                 kind: "approval",
                 name: approval.name,

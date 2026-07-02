@@ -23,6 +23,8 @@ export const conversationsQueryKeys = {
   lists: () => [...conversationsQueryKeys.workspace(), "list"] as const,
   list: (params: ListConversationsParams = {}) =>
     [...conversationsQueryKeys.lists(), params] as const,
+  detail: (conversationId: string) =>
+    [...conversationsQueryKeys.workspace(), conversationId, "detail"] as const,
   messages: (conversationId: string) =>
     [...conversationsQueryKeys.workspace(), conversationId, "messages"] as const,
   activeRun: (conversationId: string) =>
@@ -54,6 +56,9 @@ async function invalidateConversationQueries(queryClient: QueryClient, conversat
 
   if (conversationId) {
     invalidations.push(
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.detail(conversationId),
+      }),
       queryClient.invalidateQueries({
         queryKey: conversationsQueryKeys.messages(conversationId),
       }),

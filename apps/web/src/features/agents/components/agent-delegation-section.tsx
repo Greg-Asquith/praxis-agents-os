@@ -75,13 +75,13 @@ export function AgentDelegationSection({
 
   return (
     <AgentFormSection
-      description="Limit which active agents this agent can call during a run."
-      eyebrow="Delegation boundary"
-      title="Allowed sub-agents"
+      description="Choose active workspace agents this agent can call during a run."
+      eyebrow="Delegation"
+      title="Can delegate to"
     >
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="agent-delegate">Allowed sub-agent</FieldLabel>
+          <FieldLabel htmlFor="agent-delegate">Can delegate to</FieldLabel>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Select
               disabled={availableDelegateAgents.length === 0}
@@ -127,7 +127,7 @@ export function AgentDelegationSection({
         <div className="flex flex-col gap-2">
           {selectedDelegateAgents.length === 0 ? (
             <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
-              No sub-agents are allowed.
+              This agent cannot delegate yet.
             </p>
           ) : (
             selectedDelegateAgents.map(({ agent: selectedAgent, id }) => {
