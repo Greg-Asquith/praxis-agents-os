@@ -3,7 +3,7 @@
 """Round-trip Pydantic AI messages through ConversationMessage rows."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -52,6 +52,7 @@ async def persist_new_messages(
     run_id: UUID,
     messages: Sequence[ModelMessage],
     client_message_id: str | None = None,
+    tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[ConversationMessage]:
     """Append newly produced Pydantic AI messages to a conversation."""
     serialized = _dump_messages(messages)
@@ -68,15 +69,22 @@ async def persist_new_messages(
         if user_client_message_id is not None and role == "user":
             row_client_message_id = user_client_message_id
             user_client_message_id = None
+        metadata = {
+            "source": PYDANTIC_AI_MESSAGE_SOURCE,
+            "agent_run_id": str(run_id),
+            "pydantic_kind": message.get("kind"),
+        }
+        approval_results = _tool_approval_metadata_for_message(
+            message,
+            tool_approval_metadata_by_call_id,
+        )
+        if approval_results:
+            metadata["approval_results"] = approval_results
         row = ConversationMessage(
             conversation_id=conversation.id,
             role=role,
             parts=message,
-            metadata_json={
-                "source": PYDANTIC_AI_MESSAGE_SOURCE,
-                "agent_run_id": str(run_id),
-                "pydantic_kind": message.get("kind"),
-            },
+            metadata_json=metadata,
             tool_name=_first_tool_name(message),
             sequence=next_sequence + index,
             client_message_id=row_client_message_id,
@@ -132,3 +140,24 @@ def _first_tool_name(message: dict[str, Any]) -> str | None:
         if isinstance(part, dict) and part.get("tool_name"):
             return str(part["tool_name"])
     return None
+
+
+def _tool_approval_metadata_for_message(
+    message: dict[str, Any],
+    tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] | None,
+) -> dict[str, Mapping[str, Any]]:
+    if not tool_approval_metadata_by_call_id:
+        return {}
+
+    approval_results: dict[str, Mapping[str, Any]] = {}
+    for part in message.get("parts", []):
+        if not isinstance(part, dict):
+            continue
+        tool_call_id = part.get("tool_call_id")
+        if not isinstance(tool_call_id, str):
+            continue
+        approval_metadata = tool_approval_metadata_by_call_id.get(tool_call_id)
+        if approval_metadata is not None:
+            approval_results[tool_call_id] = approval_metadata
+
+    return approval_results

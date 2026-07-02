@@ -4,9 +4,15 @@ import { useMemo } from "react"
 import { CircleDashedIcon, MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ApprovalControls } from "@/features/conversations/components/approval-controls"
 import { AssistantDraftRow, MessageRow } from "@/features/conversations/components/message-row"
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
-import type { AgentRun, ConversationMessage } from "@/features/conversations/types"
+import type {
+  AgentRun,
+  AgentRunResumeDecision,
+  ConversationMessage,
+  PendingToolApproval,
+} from "@/features/conversations/types"
 import type {
   ApprovalState,
   ChatMessageDraft,
@@ -14,6 +20,7 @@ import type {
 } from "@/features/conversations/stream/reducer"
 import {
   parseConversationMessages,
+  normalizeToolArgs,
   pendingMessagesForConversation,
   type PendingUserMessage,
   type ToolActivity,
@@ -23,7 +30,11 @@ type MessageListProps = {
   conversationId: string
   messages: ConversationMessage[]
   activeRun: AgentRun | null
+  approvalError: string | null
+  approvals: PendingToolApproval[]
   assistantLabel: string
+  isApprovalLoading: boolean
+  isApprovalSubmitting: boolean
   pendingUserMessages: PendingUserMessage[]
   streamMessages: ChatMessageDraft[]
   streamToolCalls: ToolCallState[]
@@ -31,13 +42,18 @@ type MessageListProps = {
   streamError?: string | null
   streamConversationId: string | null
   isStreaming: boolean
+  onApprovalSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
 }
 
 export function MessageList({
   conversationId,
   messages,
   activeRun,
+  approvalError,
+  approvals,
   assistantLabel,
+  isApprovalLoading,
+  isApprovalSubmitting,
   pendingUserMessages,
   streamMessages,
   streamToolCalls,
@@ -45,6 +61,7 @@ export function MessageList({
   streamError,
   streamConversationId,
   isStreaming,
+  onApprovalSubmit,
 }: MessageListProps) {
   const parsedMessages = useMemo(
     () => parseConversationMessages(messages, activeRun?.status),
@@ -61,10 +78,23 @@ export function MessageList({
     () => buildLiveToolActivities(streamToolCalls, streamApprovals),
     [streamToolCalls, streamApprovals]
   )
+  const approvalIds = useMemo(
+    () => new Set(approvals.map((approval) => approval.tool_call_id)),
+    [approvals]
+  )
+  const visibleLiveToolActivities = useMemo(
+    () =>
+      liveToolActivities.filter(
+        (activity) => !(approvalIds.has(activity.id) && activity.status === "awaiting_approval")
+      ),
+    [approvalIds, liveToolActivities]
+  )
+  const hasInlineApprovals = approvals.length > 0 || isApprovalLoading || Boolean(approvalError)
   const hasMessages =
     parsedMessages.length > 0 ||
     visiblePendingUserMessages.length > 0 ||
-    (shouldShowStream && (streamMessages.length > 0 || liveToolActivities.length > 0))
+    hasInlineApprovals ||
+    (shouldShowStream && (streamMessages.length > 0 || visibleLiveToolActivities.length > 0))
 
   if (!hasMessages) {
     return (
@@ -101,12 +131,23 @@ export function MessageList({
           />
         ))}
 
-      {shouldShowStream && liveToolActivities.length > 0 && (
+      {shouldShowStream && visibleLiveToolActivities.length > 0 && (
         <div className="flex w-full flex-col gap-2 px-1 py-1">
-          {liveToolActivities.map((activity) => (
+          {visibleLiveToolActivities.map((activity) => (
             <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
           ))}
         </div>
+      )}
+
+      {hasInlineApprovals && (
+        <ApprovalControls
+          approvals={approvals}
+          assistantLabel={assistantLabel}
+          error={approvalError}
+          isLoading={isApprovalLoading}
+          isSubmitting={isApprovalSubmitting}
+          onSubmit={onApprovalSubmit}
+        />
       )}
 
       {shouldShowStream && isStreaming && streamMessages.length === 0 && (
@@ -137,7 +178,7 @@ function buildLiveToolActivities(
     kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
     status: toolCall.status,
     name: toolCall.name,
-    args: toolCall.args,
+    args: normalizeToolArgs(toolCall.args),
     result: toolCall.result,
   }))
 
@@ -151,7 +192,7 @@ function buildLiveToolActivities(
       kind: "approval",
       status: "awaiting_approval",
       name: approval.name,
-      args: approval.args,
+      args: normalizeToolArgs(approval.args),
     })
   }
 

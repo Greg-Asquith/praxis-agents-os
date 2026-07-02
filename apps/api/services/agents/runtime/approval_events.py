@@ -5,7 +5,12 @@
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from pydantic_ai import DeferredToolRequests, DeferredToolResults
+from pydantic_ai import (
+    DeferredToolRequests,
+    DeferredToolResults,
+    ToolApproved,
+    ToolDenied,
+)
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -92,6 +97,53 @@ async def emit_deferred_tool_resume_events(
             )
 
 
+def build_deferred_tool_result_metadata(
+    *,
+    message_history: Sequence[ModelMessage],
+    new_messages: Sequence[ModelMessage],
+    deferred_tool_results: DeferredToolResults,
+) -> dict[str, dict[str, Any]]:
+    """Return display metadata for persisted approved/denied tool results."""
+    tool_return_ids = _tool_return_ids(new_messages)
+    if not tool_return_ids:
+        return {}
+
+    tool_calls = _tool_calls_by_id([*message_history, *new_messages])
+    metadata: dict[str, dict[str, Any]] = {}
+
+    for tool_call_id, approval_result in deferred_tool_results.approvals.items():
+        if tool_call_id not in tool_return_ids:
+            continue
+
+        call = tool_calls.get(tool_call_id)
+        override_args = getattr(approval_result, "override_args", None)
+        effective_args = (
+            _effective_tool_args(
+                tool_call_id=tool_call_id,
+                original_args=call.args,
+                deferred_tool_results=deferred_tool_results,
+            )
+            if call is not None
+            else override_args
+        )
+        result_metadata: dict[str, Any] = {
+            "decision": _decision_for_approval_result(approval_result),
+        }
+
+        if call is not None:
+            result_metadata["original_args"] = to_jsonable_python(call.args)
+        if call is not None or override_args is not None:
+            result_metadata["effective_args"] = to_jsonable_python(effective_args)
+        if isinstance(approval_result, ToolApproved) and override_args is not None:
+            result_metadata["override_args"] = to_jsonable_python(override_args)
+        if isinstance(approval_result, ToolDenied):
+            result_metadata["message"] = approval_result.message
+
+        metadata[tool_call_id] = result_metadata
+
+    return metadata
+
+
 def _tool_calls_by_id(messages: Sequence[ModelMessage]) -> dict[str, Any]:
     calls: dict[str, Any] = {}
     for message in messages:
@@ -99,6 +151,18 @@ def _tool_calls_by_id(messages: Sequence[ModelMessage]) -> dict[str, Any]:
             if getattr(part, "part_kind", None) == "tool-call":
                 calls[part.tool_call_id] = part
     return calls
+
+
+def _tool_return_ids(messages: Sequence[ModelMessage]) -> set[str]:
+    tool_return_ids: set[str] = set()
+    for message in messages:
+        for part in getattr(message, "parts", []):
+            if getattr(part, "part_kind", None) != "tool-return":
+                continue
+            tool_call_id = getattr(part, "tool_call_id", None)
+            if tool_call_id is not None:
+                tool_return_ids.add(tool_call_id)
+    return tool_return_ids
 
 
 def _effective_tool_args(
@@ -110,3 +174,9 @@ def _effective_tool_args(
     approval_result = deferred_tool_results.approvals.get(tool_call_id)
     override_args = getattr(approval_result, "override_args", None)
     return override_args if override_args is not None else original_args
+
+
+def _decision_for_approval_result(approval_result: Any) -> str:
+    if isinstance(approval_result, ToolDenied):
+        return "denied"
+    return "approved"

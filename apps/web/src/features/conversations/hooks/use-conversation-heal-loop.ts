@@ -9,6 +9,7 @@ import { isRunStatusPolling } from "@/features/conversations/message-parts"
 import type { AgentRun, ConversationActiveRunResponse } from "@/features/conversations/types"
 
 const HEAL_POLL_DELAYS_MS = [250, 750, 1500] as const
+const MAX_CONSECUTIVE_HEAL_ERRORS = 3
 
 export function useConversationHealLoop(conversationId: string, activeRun: AgentRun | null) {
   const queryClient = useQueryClient()
@@ -23,6 +24,7 @@ export function useConversationHealLoop(conversationId: string, activeRun: Agent
 
     async function pollUntilSettled() {
       let attempt = 0
+      let consecutiveErrors = 0
 
       while (!isCancelled()) {
         await sleep(healPollDelay(attempt))
@@ -44,9 +46,15 @@ export function useConversationHealLoop(conversationId: string, activeRun: Agent
           ])
           activeRunResponse = results[0]
         } catch {
-          return
+          consecutiveErrors += 1
+          if (consecutiveErrors >= MAX_CONSECUTIVE_HEAL_ERRORS) {
+            return
+          }
+          attempt += 1
+          continue
         }
 
+        consecutiveErrors = 0
         if (!isRunStatusPolling(activeRunResponse.active_run?.status)) {
           return
         }

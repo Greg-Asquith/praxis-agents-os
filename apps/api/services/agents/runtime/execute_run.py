@@ -24,6 +24,7 @@ from services.agent_runs.domain import (
 )
 from services.agent_runs.start_with_lease import start_agent_run_with_lease
 from services.agents.runtime.approval_events import (
+    build_deferred_tool_result_metadata,
     emit_approval_required_events,
     emit_deferred_tool_resume_events,
     is_deferred_tool_resume_event,
@@ -209,12 +210,23 @@ async def execute_run(
                 new_message_count=new_message_count,
             )
 
+        tool_approval_metadata_by_call_id = (
+            build_deferred_tool_result_metadata(
+                message_history=history,
+                new_messages=terminal_result.new_messages(),
+                deferred_tool_results=deferred_tool_results,
+            )
+            if deferred_tool_results is not None
+            else None
+        )
+
         final_run, new_message_count = await persist_successful_run(
             db,
             conversation_id=conversation.id,
             run_id=run.id,
             terminal_result=terminal_result,
             client_message_id=client_message_id,
+            tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
         )
         if final_run.status == RUN_STATUS_COMPLETED:
             await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_COMPLETED})

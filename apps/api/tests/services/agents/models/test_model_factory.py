@@ -10,7 +10,7 @@ import pytest
 from pydantic import SecretStr
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 
 from core.settings import settings
 from services.agents.models import build_model, provider_api_key
@@ -53,7 +53,7 @@ def test_build_anthropic_model(monkeypatch):
 def test_build_openai_model(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
     model = build_model(_spec("openai", "gpt-5.4-mini", settings={"temperature": 0.5}))
-    assert isinstance(model, OpenAIChatModel)
+    assert isinstance(model, OpenAIResponsesModel)
 
 
 def test_build_google_model_gemini_api(monkeypatch):

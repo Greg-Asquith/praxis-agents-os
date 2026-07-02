@@ -10,23 +10,48 @@ import {
 } from "lucide-react"
 
 import { runtimeToolLabel } from "@/features/agents/runtime-tools"
+import {
+  approveDecision,
+  denyDecision,
+  type LocalApprovalDecision,
+} from "@/features/conversations/approval-decisions"
+import { ApprovalDecisionButtons } from "@/features/conversations/components/approval-decision-buttons"
+import {
+  ApprovalDenialMessageField,
+  ApprovalOverrideInputField,
+} from "@/features/conversations/components/approval-decision-fields"
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { safeJsonPreview } from "@/features/conversations/message-parts"
 import { cn } from "@/lib/utils"
 
-type ToolCallRowProps = {
-  activity: ToolActivity
-  compact?: boolean
+type ToolApprovalDecisionControls = {
+  decision: LocalApprovalDecision
+  disabled?: boolean
+  onDecisionChange: (decision: LocalApprovalDecision) => void
 }
 
-export function ToolCallRow({ activity, compact = false }: ToolCallRowProps) {
+type ToolCallRowProps = {
+  approvalDecision?: ToolApprovalDecisionControls
+  activity: ToolActivity
+  compact?: boolean
+  defaultOpen?: boolean
+}
+
+export function ToolCallRow({
+  activity,
+  approvalDecision,
+  compact = false,
+  defaultOpen = false,
+}: ToolCallRowProps) {
   const toolLabel = runtimeToolLabel(activity.name)
   const title = toolLabel ?? "Tool call"
   const supportLabel = toolLabel ? null : supportIdentifier(activity.name)
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
-  const expandable = hasArgs || hasResult
+  const decisionLabel = decisionForActivity(activity)
+  const expandable =
+    hasArgs || hasResult || decisionLabel !== null || approvalDecision !== undefined
   const textSize = compact ? "text-xs" : "text-sm"
 
   const header = (
@@ -59,7 +84,7 @@ export function ToolCallRow({ activity, compact = false }: ToolCallRowProps) {
   }
 
   return (
-    <details className="group/tool min-w-0">
+    <details className="group/tool min-w-0" open={defaultOpen ? true : undefined}>
       <summary
         className={cn(
           "text-muted-foreground hover:text-foreground flex min-w-0 cursor-pointer list-none items-center gap-2",
@@ -69,10 +94,84 @@ export function ToolCallRow({ activity, compact = false }: ToolCallRowProps) {
         {header}
       </summary>
       <div className="mt-2 ml-5 flex flex-col gap-3">
-        {hasArgs && <JsonBlock label="Arguments" value={activity.args} />}
-        {hasResult && <JsonBlock label="Result" value={activity.result} />}
+        {hasArgs && <JsonBlock label="Input" value={activity.args} />}
+        {approvalDecision ? (
+          <ApprovalDecisionBlock activity={activity} controls={approvalDecision} label={title} />
+        ) : decisionLabel ? (
+          <TextBlock label="Decision" value={decisionLabel} />
+        ) : null}
+        {hasResult && <JsonBlock label="Output" value={activity.result} />}
       </div>
     </details>
+  )
+}
+
+function ApprovalDecisionBlock({
+  activity,
+  controls,
+  label,
+}: {
+  activity: ToolActivity
+  controls: ToolApprovalDecisionControls
+  label: string
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-muted-foreground mb-2 text-xs font-medium">Decision</p>
+      <div className="flex min-w-0 flex-col gap-3">
+        <ApprovalDecisionButtons
+          decision={controls.decision.decision}
+          disabled={controls.disabled ?? false}
+          label={label}
+          onApprove={() => {
+            controls.onDecisionChange(approveDecision(controls.decision))
+          }}
+          onDeny={() => {
+            controls.onDecisionChange(denyDecision(controls.decision))
+          }}
+        />
+        {controls.decision.decision === "approved" ? (
+          <ApprovalOverrideInputField
+            id={`${activity.id}-override`}
+            onChange={(overrideArgs) => {
+              controls.onDecisionChange({
+                decision: "approved",
+                message: "",
+                overrideArgs,
+              })
+            }}
+            value={controls.decision.overrideArgs}
+          />
+        ) : null}
+        {controls.decision.decision === "denied" ? (
+          <ApprovalDenialMessageField
+            id={`${activity.id}-message`}
+            onChange={(message) => {
+              controls.onDecisionChange({
+                decision: "denied",
+                message,
+                overrideArgs: "",
+              })
+            }}
+            value={controls.decision.message}
+          />
+        ) : null}
+        {controls.decision.decision === "pending" ? (
+          <p className="text-muted-foreground bg-muted/30 rounded-md px-3 py-2 text-xs">
+            Choose approve or deny for this request.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function TextBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-muted-foreground mb-1 text-xs font-medium">{label}</p>
+      <p className="bg-muted/50 rounded-md p-2 text-xs leading-relaxed">{value}</p>
+    </div>
   )
 }
 
@@ -130,6 +229,9 @@ function verbForActivity(activity: ToolActivity) {
   if (activity.status === "awaiting_approval") {
     return "Requested"
   }
+  if (activity.status === "denied") {
+    return "Denied"
+  }
   return "Ran"
 }
 
@@ -142,6 +244,22 @@ function statusSuffix(activity: ToolActivity) {
   }
   if (activity.status === "denied") {
     return "· denied"
+  }
+  return null
+}
+
+function decisionForActivity(activity: ToolActivity) {
+  if (activity.decision === "approved") {
+    return "Approved"
+  }
+  if (activity.decision === "denied") {
+    return "Denied"
+  }
+  if (activity.status === "awaiting_approval") {
+    return "Waiting for approval"
+  }
+  if (activity.status === "denied") {
+    return "Denied"
   }
   return null
 }

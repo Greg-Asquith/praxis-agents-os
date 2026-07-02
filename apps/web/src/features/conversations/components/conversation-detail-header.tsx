@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/components/conversation-detail-header.tsx
 
-import { AlertCircleIcon, CircleDashedIcon, ShieldAlertIcon } from "lucide-react"
+import { AlertCircleIcon, CircleDashedIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
@@ -68,8 +68,6 @@ export function ConversationDetailHeader({
           </p>
         </div>
       </div>
-
-      {activeRun && <ActiveRunBanner activeRun={activeRun} />}
     </header>
   )
 }
@@ -106,44 +104,4 @@ function supportMetadataPart(label: string, value: unknown) {
 
   const identifier = supportIdentifier(value)
   return identifier ? { label, value: identifier } : null
-}
-
-function ActiveRunBanner({ activeRun }: { activeRun: AgentRun }) {
-  if (activeRun.status === "awaiting_approval") {
-    return (
-      <Alert>
-        <ShieldAlertIcon />
-        <AlertTitle>Approval required</AlertTitle>
-        <AlertDescription>
-          This run is waiting for a tool decision before it can continue.
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  if (activeRun.status === "failed") {
-    return (
-      <Alert variant="destructive">
-        <AlertCircleIcon />
-        <AlertTitle>Run failed</AlertTitle>
-        <AlertDescription>
-          {activeRun.error_message ?? "The agent run ended before completing."}
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  if (isRunStatusPolling(activeRun.status)) {
-    return (
-      <Alert>
-        <CircleDashedIcon className="animate-spin" />
-        <AlertTitle>Agent is working</AlertTitle>
-        <AlertDescription>
-          New messages will appear here as the run saves progress.
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  return null
 }

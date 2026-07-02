@@ -4,7 +4,7 @@ import type { ApprovalDecisionSummary } from "@/features/conversations/approval-
 
 export function ApprovalDecisionSummaryPanel({ summary }: { summary: ApprovalDecisionSummary }) {
   return (
-    <div className="bg-muted/20 rounded-lg border p-3 text-sm">
+    <div className="min-w-0 text-sm">
       <p className="font-medium">{formatDecisionSummary(summary)}</p>
       {!summary.allDecided ? (
         <p className="text-muted-foreground mt-1">

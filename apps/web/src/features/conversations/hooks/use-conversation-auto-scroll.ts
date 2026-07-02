@@ -5,11 +5,13 @@ import { useEffect, useMemo, useRef } from "react"
 import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
 
 export function useConversationAutoScroll({
+  approvalCount,
   messageCount,
   pendingMessageCount,
   streamMessages,
   streamToolCount,
 }: {
+  approvalCount: number
   messageCount: number
   pendingMessageCount: number
   streamMessages: ChatMessageDraft[]
@@ -28,7 +30,7 @@ export function useConversationAutoScroll({
     }
 
     element.scrollTo({ top: element.scrollHeight })
-  }, [messageCount, pendingMessageCount, streamTextSignature, streamToolCount])
+  }, [approvalCount, messageCount, pendingMessageCount, streamTextSignature, streamToolCount])
 
   return scrollRef
 }

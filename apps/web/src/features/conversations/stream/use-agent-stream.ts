@@ -41,12 +41,17 @@ type UseAgentStreamOptions = {
   onConversationCreated?: (conversationId: string) => void
 }
 
-const STREAMING_STATUSES = new Set(["pending", "running", "awaiting_approval"])
+const STREAMING_STATUSES = new Set(["pending", "running"])
 
 export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions = {}) {
   const queryClient = useQueryClient()
   const abortControllerRef = useRef<AbortController | null>(null)
   const [state, dispatch] = useReducer(agentStreamReducer, initialAgentStreamState)
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
 
   useEffect(() => {
     return () => {
@@ -58,7 +63,12 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
   const runStream = useCallback(
     async (request: StreamRequest) => {
       if (abortControllerRef.current !== null) {
-        throw new Error("An agent stream is already running.")
+        if (stateRef.current.status !== "awaiting_approval") {
+          throw new Error("An agent stream is already running.")
+        }
+
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
       }
 
       const abortController = new AbortController()
@@ -99,7 +109,8 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null
         }
-        if (streamClosedNormally && observedDoneStatus === null) {
+        const closedWithoutDone = streamClosedNormally && observedDoneStatus === null
+        if (closedWithoutDone) {
           dispatch({ type: "finishClosedStream" })
         }
         await invalidateStreamQueries(queryClient, {
@@ -110,7 +121,11 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
         if (
           observedConversationId !== null &&
           observedRunId !== null &&
-          shouldClearSettledStream(observedDoneStatus, observedConversationCreated)
+          shouldClearSettledStream({
+            closedWithoutDone,
+            conversationCreated: observedConversationCreated,
+            status: observedDoneStatus,
+          })
         ) {
           dispatch({
             type: "resetSettledRun",
@@ -220,9 +235,24 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
 }
 
-function shouldClearSettledStream(status: AgentRunStatus | null, conversationCreated: boolean) {
+function shouldClearSettledStream({
+  closedWithoutDone,
+  conversationCreated,
+  status,
+}: {
+  closedWithoutDone: boolean
+  conversationCreated: boolean
+  status: AgentRunStatus | null
+}) {
+  if (closedWithoutDone) {
+    return true
+  }
+
   return (
-    status === "completed" || status === "cancelled" || (status === "failed" && conversationCreated)
+    status === "awaiting_approval" ||
+    status === "completed" ||
+    status === "cancelled" ||
+    (status === "failed" && conversationCreated)
   )
 }
 

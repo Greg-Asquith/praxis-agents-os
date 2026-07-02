@@ -465,6 +465,15 @@ async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
         "tool",
         "assistant",
     ]
+    approval_results = (messages[2].metadata_json or {}).get("approval_results")
+    assert approval_results == {
+        tool_call_id: {
+            "decision": "approved",
+            "effective_args": {"a": 2, "b": 3},
+            "original_args": {"a": 0, "b": 0},
+            "override_args": {"a": 2, "b": 3},
+        }
+    }
     assert [event.event for event in resume_sink.events][-2:] == [
         EVENT_RUN_STATUS,
         EVENT_DONE,
@@ -542,6 +551,15 @@ async def test_execute_run_resumes_denied_tool_with_typed_denial(
     tool_messages = [message for message in messages if message.role == "tool"]
     assert tool_messages
     assert "Denied by test" in str(tool_messages[0].parts)
+    approval_results = (tool_messages[0].metadata_json or {}).get("approval_results")
+    assert approval_results == {
+        tool_call_id: {
+            "decision": "denied",
+            "effective_args": {"a": 0, "b": 0},
+            "message": "Denied by test",
+            "original_args": {"a": 0, "b": 0},
+        }
+    }
 
 
 async def test_execute_run_has_no_open_transaction_while_streaming(

@@ -2,6 +2,7 @@
 
 """Persist runtime execution outcomes back to agent-run state."""
 
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
@@ -80,6 +81,7 @@ async def persist_successful_run(
     run_id: UUID,
     terminal_result: Any,
     client_message_id: str | None,
+    tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[AgentRun, int]:
     """Store messages and complete a running run."""
     run, conversation, _agent = await load_run_context(
@@ -104,6 +106,7 @@ async def persist_successful_run(
         run_id=run.id,
         messages=terminal_result.new_messages(),
         client_message_id=client_message_id,
+        tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
     )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
     run.metadata_json = clear_suspended_run_metadata(run)

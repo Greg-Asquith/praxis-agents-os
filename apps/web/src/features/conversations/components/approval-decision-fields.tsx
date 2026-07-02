@@ -13,7 +13,7 @@ export function ApprovalOverrideInputField({
   value: string
 }) {
   return (
-    <details className="rounded-md border border-dashed p-3">
+    <details className="bg-muted/30 rounded-md p-3">
       <summary className="hover:text-foreground cursor-pointer text-sm font-medium">
         Advanced: override input
       </summary>
