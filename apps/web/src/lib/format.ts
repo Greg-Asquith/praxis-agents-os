@@ -67,3 +67,11 @@ export function normalize(target: string | null) {
   const normalized = target?.trim().toLowerCase() ?? ""
   return normalized || null
 }
+
+
+export function truncateForPreview(value: string | null, limit: number) {
+  if (value === null || value.length <= limit) {
+    return value
+  }
+  return `${value.slice(0, limit)}...`
+}
