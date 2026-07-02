@@ -11,6 +11,7 @@ from pydantic_ai import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
+from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
@@ -21,8 +22,13 @@ from services.agent_runs.domain import (
     RUN_STATUS_FAILED,
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
+    RUN_TRIGGER_DELEGATED,
 )
 from services.agent_runs.start_with_lease import start_agent_run_with_lease
+from services.agents.delegation_approval import (
+    DELEGATED_APPROVAL_KIND,
+    DELEGATED_APPROVAL_KIND_KEY,
+)
 from services.agents.runtime.approval_events import (
     build_deferred_tool_result_metadata,
     emit_approval_required_events,
@@ -30,6 +36,7 @@ from services.agents.runtime.approval_events import (
     is_deferred_tool_resume_event,
 )
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.delegation import list_visible_delegate_agents
 from services.agents.runtime.events import (
     EVENT_DONE,
     EVENT_ERROR,
@@ -70,6 +77,7 @@ async def execute_run(
     expected_status: str | None = RUN_STATUS_PENDING,
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
+    usage: RunUsage | None = None,
 ) -> ExecuteRunResult:
     """Drive one agent turn to completion or approval suspension.
 
@@ -123,7 +131,22 @@ async def execute_run(
         started = True
         await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_RUNNING})
 
-        runtime_agent = build_runtime_agent(agent, model=model)
+        user, workspace = await load_actor_context(db, run)
+        enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
+        delegate_agents = (
+            await list_visible_delegate_agents(db, caller=agent, workspace=workspace)
+            if enable_delegation
+            else []
+        )
+        # Pydantic AI still needs the original tool registered to resolve an approved deferred delegation; the tool body re-checks live policy.
+        force_delegation_tools = _has_delegated_deferred_results(deferred_tool_results)
+        runtime_agent = build_runtime_agent(
+            agent,
+            model=model,
+            delegate_agents=delegate_agents,
+            enable_delegation=enable_delegation,
+            force_delegation_tools=force_delegation_tools,
+        )
         if run.model_name is None:
             run.model_name = runtime_agent.resolved_model.qualified_id
 
@@ -132,7 +155,6 @@ async def execute_run(
             if message_history is not None
             else await load_message_history(db, conversation_id=conversation.id)
         )
-        user, workspace = await load_actor_context(db, run)
         await db.commit()
         deps = RuntimeDeps(
             db=db,
@@ -142,6 +164,7 @@ async def execute_run(
             agent=agent,
             run=run,
             sink=event_sink,
+            delegation_depth=run.delegation_depth or 0,
         )
         state = EventTranslationState()
         terminal_result = None
@@ -158,6 +181,7 @@ async def execute_run(
             deferred_tool_results=deferred_tool_results,
             conversation_id=str(conversation.id),
             usage_limits=runtime_agent.usage_limits,
+            usage=usage,
         ) as stream:
             async for event in stream:
                 if isinstance(event, AgentRunResultEvent):
@@ -254,7 +278,7 @@ async def execute_run(
         if started:
             failed_run = await persist_failed_run(
                 db,
-                run_id=run.id,
+                run_id=run_id,
                 error_code=exc.__class__.__name__,
                 error_message=str(exc),
             )
@@ -281,3 +305,16 @@ async def execute_run(
         raise
     finally:
         await event_sink.close()
+
+
+def _has_delegated_deferred_results(
+    deferred_tool_results: DeferredToolResults | None,
+) -> bool:
+    if deferred_tool_results is None:
+        return False
+
+    return any(
+        isinstance(metadata, dict)
+        and metadata.get(DELEGATED_APPROVAL_KIND_KEY) == DELEGATED_APPROVAL_KIND
+        for metadata in deferred_tool_results.metadata.values()
+    )

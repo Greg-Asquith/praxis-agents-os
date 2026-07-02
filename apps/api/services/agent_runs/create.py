@@ -22,10 +22,14 @@ async def create_agent_run(
     trigger: str,
     model_name: str | None = None,
     metadata: dict | None = None,
+    parent_run_id: UUID | None = None,
+    delegation_depth: int = 0,
 ) -> AgentRun:
     """Insert a pending run for one agent turn and return it (flushed, not committed)."""
     if trigger not in ALL_RUN_TRIGGERS:
         raise CustomValueError(f"Unknown agent run trigger: {trigger!r}")
+    if delegation_depth < 0:
+        raise CustomValueError("Agent run delegation_depth must be non-negative")
     await validate_run_context(
         db,
         conversation_id=conversation_id,
@@ -43,6 +47,8 @@ async def create_agent_run(
         status=RUN_STATUS_PENDING,
         model_name=model_name,
         metadata_json=metadata,
+        parent_run_id=parent_run_id,
+        delegation_depth=delegation_depth,
     )
     db.add(run)
     await db.flush()

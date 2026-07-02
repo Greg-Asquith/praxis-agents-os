@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     text,
@@ -41,6 +42,17 @@ class AgentRun(BaseModel):
         UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
     )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    parent_run_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    delegation_depth = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
 
     # How the run was triggered; status tracks its lifecycle.
     trigger = Column(String(32), nullable=False)
@@ -74,12 +86,24 @@ class AgentRun(BaseModel):
     agent = relationship("Agent", foreign_keys=[agent_id])
     workspace = relationship("Workspace", foreign_keys=[workspace_id])
     user = relationship("User", foreign_keys=[user_id])
+    parent_run = relationship(
+        "AgentRun",
+        remote_side="AgentRun.id",
+        foreign_keys=[parent_run_id],
+        back_populates="child_runs",
+    )
+    child_runs = relationship(
+        "AgentRun",
+        foreign_keys=[parent_run_id],
+        back_populates="parent_run",
+    )
 
     __table_args__ = (
         CheckConstraint(
-            "trigger IN ('interactive', 'scheduled')",
+            "trigger IN ('interactive', 'scheduled', 'delegated')",
             name="agent_runs_trigger_check",
         ),
+        CheckConstraint("delegation_depth >= 0", name="agent_runs_delegation_depth_check"),
         CheckConstraint(
             "status IN ("
             "'pending', 'running', 'awaiting_approval', "
@@ -99,6 +123,12 @@ class AgentRun(BaseModel):
             "ix_agent_runs_lease_expiry",
             "lease_expires_at",
             postgresql_where=text("deleted = false AND status IN ('pending', 'running')"),
+        ),
+        Index(
+            "ix_agent_runs_parent_created",
+            "parent_run_id",
+            "created_at",
+            postgresql_where=text("parent_run_id IS NOT NULL"),
         ),
     )
 

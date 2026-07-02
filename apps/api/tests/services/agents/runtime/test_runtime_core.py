@@ -70,7 +70,7 @@ from services.agents.runtime.events import (
     emit_agent_stream_event,
 )
 from services.agents.runtime.execute_run import execute_run
-from services.agents.runtime.sinks import CollectingSink
+from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.worker import run_turn_worker
 from tests.factories import build_user, build_workspace
 
@@ -337,6 +337,56 @@ async def test_execute_run_persists_messages_usage_and_events(
     assert EVENT_MESSAGE_DELTA in event_names
     assert event_names[-2:] == [EVENT_RUN_STATUS, EVENT_DONE]
     assert _joined_message_deltas(sink) == result.output
+
+
+async def test_execute_run_streams_message_delta_before_model_completes(
+    db_session: AsyncSession,
+    runtime_context: RuntimeContext,
+) -> None:
+    """Live sinks must receive text deltas before the model run reaches completion."""
+    release_stream = asyncio.Event()
+    sink = StreamSink(
+        run_id=runtime_context.run_id,
+        conversation_id=runtime_context.conversation_id,
+    )
+
+    async def delayed_stream(_messages, _agent_info):
+        yield "first "
+        await release_stream.wait()
+        yield "second"
+
+    task = asyncio.create_task(
+        execute_run(
+            db_session,
+            conversation_id=runtime_context.conversation_id,
+            run_id=runtime_context.run_id,
+            user_prompt="Hello",
+            sink=sink,
+            model=FunctionModel(
+                stream_function=delayed_stream,
+                model_name="delayed-stream",
+            ),
+        )
+    )
+
+    try:
+        while True:
+            frame = await asyncio.wait_for(sink.next_frame(), timeout=1)
+            assert frame is not None
+            if f"event: {EVENT_MESSAGE_DELTA}" in frame:
+                assert '"text":"first "' in frame
+                assert not task.done()
+                break
+
+        release_stream.set()
+        result = await asyncio.wait_for(task, timeout=2)
+        assert result.output == "first second"
+    finally:
+        release_stream.set()
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 async def test_execute_run_suspends_when_tool_requires_approval(

@@ -132,6 +132,24 @@ async def test_create_turn_stream_returns_ordered_sse_events(
     assert "event: done" in body
 
 
+async def test_create_turn_stream_rejects_delegated_transcripts(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, _agent, conversation, headers = await _authenticated_context(db_session)
+    conversation.source = "delegated"
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        f"/api/v1/conversations/{conversation.id}/turns",
+        headers=headers,
+        json={"user_prompt": "Do not append to this transcript."},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Delegated agent transcripts are read-only"
+
+
 async def test_create_conversation_stream_creates_conversation_and_first_run(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

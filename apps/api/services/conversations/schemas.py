@@ -3,7 +3,7 @@
 """Pydantic contracts for conversation routes."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,6 +12,7 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 
+ConversationSource = Literal["direct", "scheduled", "delegated"]
 
 class ConversationCreateRequest(BaseModel):
     agent_id: UUID
@@ -66,7 +67,7 @@ class ConversationRead(BaseModel):
     status: str
     metadata_json: dict[str, Any] | None = Field(default=None, serialization_alias="metadata")
     unread: bool
-    source: str
+    source: ConversationSource
     last_message_at: datetime | None = None
     active_agent_id: UUID | None = None
     agent_slug: str | None = None
@@ -134,6 +135,8 @@ class AgentRunRead(BaseModel):
     agent_id: UUID
     workspace_id: UUID
     user_id: UUID
+    parent_run_id: UUID | None = None
+    delegation_depth: int
     trigger: str
     status: str
     model_name: str | None = None

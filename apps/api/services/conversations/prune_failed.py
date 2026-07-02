@@ -8,10 +8,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent_run import AgentRun
-from models.conversation import Conversation, ConversationMessage
+from models.conversation import (
+    CONVERSATION_SOURCE_DIRECT,
+    CONVERSATION_SOURCE_SCHEDULED,
+    Conversation,
+    ConversationMessage,
+)
 from services.agent_runs.domain import RUN_STATUS_FAILED
 
-_PRUNABLE_SOURCES = {"direct", "scheduled"}
+_PRUNABLE_SOURCES = {CONVERSATION_SOURCE_DIRECT, CONVERSATION_SOURCE_SCHEDULED}
 
 
 async def prune_failed_empty_conversation_for_run(

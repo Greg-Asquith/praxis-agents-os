@@ -19,6 +19,18 @@ from sqlalchemy.orm import relationship
 
 from models.base import BaseModel
 
+CONVERSATION_SOURCE_DIRECT = "direct"
+CONVERSATION_SOURCE_SCHEDULED = "scheduled"
+CONVERSATION_SOURCE_DELEGATED = "delegated"
+
+ALL_CONVERSATION_SOURCES = frozenset(
+    {
+        CONVERSATION_SOURCE_DIRECT,
+        CONVERSATION_SOURCE_SCHEDULED,
+        CONVERSATION_SOURCE_DELEGATED,
+    }
+)
+
 
 class Conversation(BaseModel):
     """Represents a persisted chat conversation for a user."""
@@ -36,7 +48,12 @@ class Conversation(BaseModel):
     status = Column(String(32), nullable=False, default="active", server_default=text("'active'"))
     metadata_json = Column("metadata", JSONB, nullable=True)
     unread = Column(Boolean, nullable=False, default=False, server_default=text("false"))
-    source = Column(String(32), nullable=False, default="direct", server_default=text("'direct'"))
+    source = Column(
+        String(32),
+        nullable=False,
+        default=CONVERSATION_SOURCE_DIRECT,
+        server_default=text(f"'{CONVERSATION_SOURCE_DIRECT}'"),
+    )
     schedule_id = Column(
         UUID(as_uuid=True),
         ForeignKey("agent_schedules.id", ondelete="SET NULL"),
@@ -74,7 +91,11 @@ class Conversation(BaseModel):
     __table_args__ = (
         CheckConstraint("status IN ('active', 'archived')", name="conversations_status_check"),
         CheckConstraint(
-            "source IN ('direct', 'scheduled', 'agent_call')",
+            "source IN ("
+            f"'{CONVERSATION_SOURCE_DIRECT}', "
+            f"'{CONVERSATION_SOURCE_SCHEDULED}', "
+            f"'{CONVERSATION_SOURCE_DELEGATED}'"
+            ")",
             name="conversations_source_check",
         ),
         Index("ix_conversations_user_created", "user_id", "created_at"),

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi.responses import StreamingResponse
 from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,8 +16,15 @@ from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
+from services.agent_runs.utils import load_delegated_child_run_for_approval
+from services.agents.delegation_approval import (
+    DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY,
+)
 from services.agents.runtime import streaming as runtime_streaming
-from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agents.runtime.approval_state import (
+    SuspendedRunState,
+    load_suspended_run_state,
+)
 from services.agents.runtime.events import (
     EVENT_RUN_STATUS,
     STREAM_PROTOCOL_VERSION,
@@ -58,8 +66,10 @@ async def resume_agent_run_stream(
         )
 
     suspended_state = load_suspended_run_state(run)
-    deferred_tool_results = _build_deferred_tool_results(
-        pending_tool_call_ids=suspended_state.pending_tool_call_ids,
+    deferred_tool_results = await _build_deferred_tool_results(
+        db,
+        run=run,
+        suspended_state=suspended_state,
         decisions=payload.decisions,
     )
 
@@ -88,9 +98,11 @@ async def resume_agent_run_stream(
     )
 
 
-def _build_deferred_tool_results(
+async def _build_deferred_tool_results(
+    db: AsyncSession,
     *,
-    pending_tool_call_ids: list[str],
+    run: AgentRun,
+    suspended_state: SuspendedRunState,
     decisions: list[AgentRunResumeDecision],
 ) -> DeferredToolResults:
     by_id: dict[str, AgentRunResumeDecision] = {}
@@ -107,7 +119,34 @@ def _build_deferred_tool_results(
             details={"duplicate_tool_call_ids": duplicate_ids},
         )
 
-    expected = set(pending_tool_call_ids)
+    direct_pending_tool_call_ids: list[str] = []
+    delegated_child_states: dict[str, tuple[dict[str, object], SuspendedRunState]] = {}
+
+    for approval in suspended_state.deferred_tool_requests.approvals:
+        metadata = suspended_state.deferred_tool_requests.metadata.get(
+            approval.tool_call_id
+        )
+        child_run = await load_delegated_child_run_for_approval(
+            db,
+            parent_run=run,
+            metadata=metadata,
+        )
+        if child_run is None:
+            direct_pending_tool_call_ids.append(approval.tool_call_id)
+            continue
+
+        if not isinstance(metadata, dict):
+            direct_pending_tool_call_ids.append(approval.tool_call_id)
+            continue
+        delegated_child_states[approval.tool_call_id] = (
+            metadata,
+            load_suspended_run_state(child_run),
+        )
+
+    expected = set(direct_pending_tool_call_ids)
+    for _metadata, child_state in delegated_child_states.values():
+        expected.update(child_state.pending_tool_call_ids)
+
     received = set(by_id)
     if received != expected:
         raise AppValidationError(
@@ -120,13 +159,39 @@ def _build_deferred_tool_results(
         )
 
     approvals = {}
-    for tool_call_id in pending_tool_call_ids:
-        decision = by_id[tool_call_id]
-        if decision.decision == "approved":
-            approvals[tool_call_id] = ToolApproved(override_args=decision.override_args)
-        else:
-            approvals[tool_call_id] = ToolDenied(
-                decision.message or "Denied by user"
-            )
+    metadata_by_parent_tool_call_id: dict[str, dict[str, object]] = {}
+    for tool_call_id in direct_pending_tool_call_ids:
+        approvals[tool_call_id] = _approval_result_for_decision(by_id[tool_call_id])
 
-    return DeferredToolResults(approvals=approvals)
+    for parent_tool_call_id, (
+        parent_metadata,
+        child_state,
+    ) in delegated_child_states.items():
+        child_results = DeferredToolResults(
+            approvals={
+                child_tool_call_id: _approval_result_for_decision(
+                    by_id[child_tool_call_id]
+                )
+                for child_tool_call_id in child_state.pending_tool_call_ids
+            }
+        )
+        approvals[parent_tool_call_id] = ToolApproved()
+        metadata_by_parent_tool_call_id[parent_tool_call_id] = {
+            **parent_metadata,
+            DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY: to_jsonable_python(
+                child_results
+            ),
+        }
+
+    return DeferredToolResults(
+        approvals=approvals,
+        metadata=metadata_by_parent_tool_call_id,
+    )
+
+
+def _approval_result_for_decision(
+    decision: AgentRunResumeDecision,
+) -> ToolApproved | ToolDenied:
+    if decision.decision == "approved":
+        return ToolApproved(override_args=decision.override_args)
+    return ToolDenied(decision.message or "Denied by user")

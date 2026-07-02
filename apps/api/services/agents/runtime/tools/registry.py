@@ -53,7 +53,7 @@ RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {
 }
 
 
-def build_runtime_tools(agent: Agent):
+def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     tool_names = _normalize_tool_names(agent.tool_names or [])
     policies = _normalize_tool_policies(agent.tool_policies or {})
@@ -75,6 +75,11 @@ def build_runtime_tools(agent: Agent):
                 policy=policies.get(name, definition.default_policy),
             )
         )
+
+    if include_delegation:
+        from services.agents.runtime.delegation import build_delegation_tools
+
+        tools.extend(build_delegation_tools())
 
     return tools
 

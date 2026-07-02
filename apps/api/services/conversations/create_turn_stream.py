@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
+from models.conversation import CONVERSATION_SOURCE_DELEGATED
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import create_agent_run, reap_abandoned_runs
@@ -47,6 +48,13 @@ async def create_conversation_turn_stream(
         workspace=workspace,
         conversation_id=conversation_id,
     )
+    if conversation.source == CONVERSATION_SOURCE_DELEGATED:
+        raise ConflictError(
+            "Delegated agent transcripts are read-only",
+            conflicting_resource="conversation",
+            details={"conversation_id": str(conversation.id), "source": conversation.source},
+        )
+
     if conversation.active_agent_id is None:
         raise ConflictError(
             "Conversation has no active agent",

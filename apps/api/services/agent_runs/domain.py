@@ -55,8 +55,11 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
 
 RUN_TRIGGER_INTERACTIVE = "interactive"
 RUN_TRIGGER_SCHEDULED = "scheduled"
+RUN_TRIGGER_DELEGATED = "delegated"
 
-ALL_RUN_TRIGGERS = frozenset({RUN_TRIGGER_INTERACTIVE, RUN_TRIGGER_SCHEDULED})
+ALL_RUN_TRIGGERS = frozenset(
+    {RUN_TRIGGER_INTERACTIVE, RUN_TRIGGER_SCHEDULED, RUN_TRIGGER_DELEGATED}
+)
 
 
 def can_transition(current: str, target: str) -> bool:

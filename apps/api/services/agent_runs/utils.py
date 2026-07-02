@@ -21,6 +21,11 @@ from services.agent_runs.domain import (
     TERMINAL_RUN_STATUSES,
     can_transition,
 )
+from services.agents.delegation_approval import (
+    DELEGATED_APPROVAL_CHILD_RUN_ID_KEY,
+    DELEGATED_APPROVAL_KIND,
+    DELEGATED_APPROVAL_KIND_KEY,
+)
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
 
@@ -133,6 +138,35 @@ async def validate_run_context(
             conflicting_resource="agent_run",
             details=_stringify_details(mismatches),
         )
+
+
+async def load_delegated_child_run_for_approval(
+    db: AsyncSession,
+    *,
+    parent_run: AgentRun,
+    metadata: dict[str, object] | None,
+) -> AgentRun | None:
+    """Load a suspended delegated child run referenced by parent approval metadata."""
+    if not isinstance(metadata, dict):
+        return None
+    if metadata.get(DELEGATED_APPROVAL_KIND_KEY) != DELEGATED_APPROVAL_KIND:
+        return None
+
+    try:
+        child_run_id = UUID(str(metadata[DELEGATED_APPROVAL_CHILD_RUN_ID_KEY]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    return await db.scalar(
+        select(AgentRun).where(
+            AgentRun.id == child_run_id,
+            AgentRun.parent_run_id == parent_run.id,
+            AgentRun.workspace_id == parent_run.workspace_id,
+            AgentRun.user_id == parent_run.user_id,
+            AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
+            AgentRun.deleted == False,  # noqa: E712
+        )
+    )
 
 
 def validate_schedule_run_link(schedule_run: AgentScheduleRun, run: AgentRun) -> None:

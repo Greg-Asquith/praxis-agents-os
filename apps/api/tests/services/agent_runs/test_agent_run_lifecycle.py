@@ -36,6 +36,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_FAILED,
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
+    RUN_TRIGGER_DELEGATED,
     RunUsageSnapshot,
 )
 from tests.factories import build_user, build_workspace
@@ -115,6 +116,42 @@ async def test_create_rejects_unknown_trigger(
 ) -> None:
     with pytest.raises(CustomValueError):
         await _create(db_session, run_context, trigger="telepathy")
+
+
+async def test_create_delegated_run_records_parent_and_depth(
+    db_session: AsyncSession, run_context: RunContext
+) -> None:
+    parent_run = await _create(db_session, run_context)
+
+    child_run = await create_agent_run(
+        db_session,
+        conversation_id=run_context.conversation_id,
+        agent_id=run_context.agent_id,
+        workspace_id=run_context.workspace_id,
+        user_id=run_context.user_id,
+        trigger=RUN_TRIGGER_DELEGATED,
+        parent_run_id=parent_run.id,
+        delegation_depth=1,
+    )
+
+    assert child_run.trigger == RUN_TRIGGER_DELEGATED
+    assert child_run.parent_run_id == parent_run.id
+    assert child_run.delegation_depth == 1
+
+
+async def test_create_rejects_negative_delegation_depth(
+    db_session: AsyncSession, run_context: RunContext
+) -> None:
+    with pytest.raises(CustomValueError, match="delegation_depth"):
+        await create_agent_run(
+            db_session,
+            conversation_id=run_context.conversation_id,
+            agent_id=run_context.agent_id,
+            workspace_id=run_context.workspace_id,
+            user_id=run_context.user_id,
+            trigger=RUN_TRIGGER_DELEGATED,
+            delegation_depth=-1,
+        )
 
 
 async def test_create_rejects_conversation_workspace_mismatch(

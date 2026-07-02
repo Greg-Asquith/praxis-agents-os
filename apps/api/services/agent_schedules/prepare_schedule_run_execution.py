@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import ConflictError, NotFoundError
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
-from models.conversation import Conversation
+from models.conversation import CONVERSATION_SOURCE_SCHEDULED, Conversation
 from services.agent_runs import create_agent_run, link_schedule_run
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules.runs import (
@@ -196,7 +196,7 @@ async def _ensure_conversation(
         workspace_id=schedule.workspace_id,
         created_by=schedule.user_id,
         title=fallback_conversation_title(prompt),
-        source="scheduled",
+        source=CONVERSATION_SOURCE_SCHEDULED,
         schedule_id=schedule.id,
         schedule_run_id=schedule_run.id,
         active_agent_id=schedule.agent_id,

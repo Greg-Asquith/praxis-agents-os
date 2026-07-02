@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent
 from models.agent_run import AgentRun
-from models.conversation import Conversation
+from models.conversation import CONVERSATION_SOURCE_DELEGATED, Conversation
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import (
@@ -34,6 +34,7 @@ async def list_conversations(
         Conversation.workspace_id == workspace.id,
         Conversation.user_id == actor.id,
         Conversation.deleted == False,  # noqa: E712
+        Conversation.source != CONVERSATION_SOURCE_DELEGATED,
     )
     total = await db.scalar(select(func.count()).select_from(Conversation).where(*filters))
     active_runs = (
@@ -41,8 +42,7 @@ async def list_conversations(
             AgentRun.id.label("active_run_id"),
             AgentRun.conversation_id.label("conversation_id"),
             AgentRun.status.label("active_run_status"),
-            # More than one active run is a lifecycle anomaly; project the newest
-            # one so the list remains stable without repairing data in a read path.
+            # More than one active run is a lifecycle anomaly; project the newest one so the list remains stable without repairing data in a read path.
             func.row_number()
             .over(
                 partition_by=AgentRun.conversation_id,

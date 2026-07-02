@@ -25,3 +25,4 @@ class RuntimeDeps:
     agent: Agent
     run: AgentRun
     sink: EventSink
+    delegation_depth: int = 0

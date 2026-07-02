@@ -43,13 +43,24 @@ class AgentRunResumeRequest(BaseModel):
     decisions: list[AgentRunResumeDecision] = Field(min_length=1)
 
 
+class PendingDelegatedApprovalRead(BaseModel):
+    parent_tool_call_id: str
+    child_agent_id: UUID
+    child_agent_name: str
+    child_conversation_id: UUID
+    child_run_id: UUID
+    pending_approval_count: int = Field(ge=0)
+
+
 class PendingToolApprovalRead(BaseModel):
     tool_call_id: str
     name: str
     args: Any
+    delegation: PendingDelegatedApprovalRead | None = None
 
 
 class AgentRunApprovalStateResponse(BaseModel):
     run_id: UUID
     conversation_id: UUID
     approvals: list[PendingToolApprovalRead]
+    delegations: list[PendingDelegatedApprovalRead] = Field(default_factory=list)

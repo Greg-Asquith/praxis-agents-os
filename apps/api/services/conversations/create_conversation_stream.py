@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import configure_async_db_session, get_async_db_session_factory
-from models.conversation import Conversation
+from models.conversation import CONVERSATION_SOURCE_DIRECT, Conversation
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import create_agent_run
@@ -71,6 +71,7 @@ async def create_conversation_stream(
         user_id=actor.id,
         workspace_id=workspace.id,
         created_by=actor.id,
+        source=CONVERSATION_SOURCE_DIRECT,
         title=title.title,
         active_agent_id=agent_id,
         agent_slug=agent_slug,
