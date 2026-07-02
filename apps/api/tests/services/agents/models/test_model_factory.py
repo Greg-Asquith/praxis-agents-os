@@ -15,6 +15,7 @@ from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from core.settings import settings
 from services.agents.models import build_model, provider_api_key
 from services.agents.models.domain import ModelConfigurationError, ResolvedModel
+from services.agents.models.utils import retrying_http_client
 
 
 def _spec(provider, model, **kw):
@@ -48,12 +49,14 @@ def test_build_anthropic_model(monkeypatch):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
     model = build_model(_spec("anthropic", "claude-sonnet-4-6"))
     assert isinstance(model, AnthropicModel)
+    assert model.provider.client._client is retrying_http_client()
 
 
 def test_build_openai_model(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
     model = build_model(_spec("openai", "gpt-5.4-mini", settings={"temperature": 0.5}))
     assert isinstance(model, OpenAIResponsesModel)
+    assert model.provider.client._client is retrying_http_client()
 
 
 def test_build_google_model_gemini_api(monkeypatch):

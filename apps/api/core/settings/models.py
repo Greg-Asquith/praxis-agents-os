@@ -41,6 +41,23 @@ class LLMSettingsMixin:
         description="Model used to generate conversation titles.",
     )
 
+    # Provider HTTP retry policy. Max attempts of 1 means one try and no retry.
+    LLM_HTTP_RETRY_MAX_ATTEMPTS: int = Field(
+        default=4,
+        gt=0,
+        description="Maximum provider HTTP attempts; set to 1 to disable retries.",
+    )
+    LLM_HTTP_RETRY_MAX_WAIT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        description="Maximum exponential-backoff wait in seconds between provider HTTP retries.",
+    )
+    LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS: float = Field(
+        default=120.0,
+        gt=0,
+        description="Maximum wait honored from provider Retry-After headers, in seconds.",
+    )
+
     # Provider credentials. Nullable so local/dev can run without every key;
     # required in production for the active providers (validated below).
     ANTHROPIC_API_KEY: SecretStr | None = Field(default=None, description="Anthropic API key.")

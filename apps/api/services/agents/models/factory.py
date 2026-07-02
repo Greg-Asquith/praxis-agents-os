@@ -27,7 +27,7 @@ from services.agents.models.domain import (
     ModelConfigurationError,
     ResolvedModel,
 )
-from services.agents.models.utils import provider_api_key
+from services.agents.models.utils import provider_api_key, retrying_http_client
 
 
 def build_model(spec: ResolvedModel) -> Model:
@@ -35,11 +35,17 @@ def build_model(spec: ResolvedModel) -> Model:
     model_settings = dict(spec.settings) or None
 
     if spec.provider == PROVIDER_ANTHROPIC:
-        provider = AnthropicProvider(api_key=provider_api_key(PROVIDER_ANTHROPIC))
+        provider = AnthropicProvider(
+            api_key=provider_api_key(PROVIDER_ANTHROPIC),
+            http_client=retrying_http_client(),
+        )
         return AnthropicModel(spec.model, provider=provider, settings=model_settings)
 
     if spec.provider == PROVIDER_OPENAI:
-        provider = OpenAIProvider(api_key=provider_api_key(PROVIDER_OPENAI))
+        provider = OpenAIProvider(
+            api_key=provider_api_key(PROVIDER_OPENAI),
+            http_client=retrying_http_client(),
+        )
         return OpenAIResponsesModel(spec.model, provider=provider, settings=model_settings)
 
     if spec.provider == PROVIDER_GOOGLE:
@@ -57,7 +63,10 @@ def build_model(spec: ResolvedModel) -> Model:
 def _google_provider() -> GoogleProvider:
     """Gemini Developer API by default; Vertex AI (ADC) when configured."""
     if not settings.GOOGLE_VERTEX_AI:
-        return GoogleProvider(api_key=provider_api_key(PROVIDER_GOOGLE))
+        return GoogleProvider(
+            api_key=provider_api_key(PROVIDER_GOOGLE),
+            http_client=retrying_http_client(),
+        )
 
     project = settings.GOOGLE_VERTEX_PROJECT or settings.GCP_PROJECT_ID
     if not project:
@@ -66,6 +75,7 @@ def _google_provider() -> GoogleProvider:
             details={"provider": PROVIDER_GOOGLE},
         )
 
+    # Vertex uses google-genai's transport rather than the shared httpx client.
     client = Client(vertexai=True, project=project, location=settings.GOOGLE_VERTEX_LOCATION)
     return GoogleProvider(client=client)
 
@@ -83,6 +93,7 @@ def _build_azure_model(spec: ResolvedModel, model_settings) -> Model:
         azure_endpoint=endpoint,
         api_version=settings.AZURE_OPENAI_API_VERSION,
         api_key=provider_api_key(PROVIDER_AZURE),
+        http_client=retrying_http_client(),
     )
     deployment = spec.azure_deployment or spec.model
     return OpenAIChatModel(deployment, provider=provider, settings=model_settings)
