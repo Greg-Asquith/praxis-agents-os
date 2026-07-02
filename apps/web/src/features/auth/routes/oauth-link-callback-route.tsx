@@ -86,7 +86,7 @@ export function OAuthLinkCallbackRoute() {
       {error ? (
         <>
           <Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t connect provider</AlertTitle>
+            <AlertTitle>Couldn&apos;t Connect Provider</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
           <Button
@@ -95,7 +95,7 @@ export function OAuthLinkCallbackRoute() {
             }}
             variant="outline"
           >
-            Back to profile settings
+            Back to Profile Settings
           </Button>
         </>
       ) : (

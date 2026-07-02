@@ -28,6 +28,7 @@ import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { initials } from "@/lib/format"
 import { formString } from "@/lib/forms"
+import { appConfig } from "@/config/app"
 
 export function ProfileForm() {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
@@ -90,7 +91,7 @@ export function ProfileForm() {
     <Card>
       <CardHeader>
         <CardTitle>Profile</CardTitle>
-        <CardDescription>Update how you appear across Praxis.</CardDescription>
+        <CardDescription>Update how you appear across {appConfig.name}.</CardDescription>
       </CardHeader>
       <form
         key={user.updated_at}
@@ -102,13 +103,13 @@ export function ProfileForm() {
           <FieldGroup>
             {error && (
               <Alert variant="destructive">
-                <AlertTitle>Profile not updated</AlertTitle>
+                <AlertTitle>Profile Not Updated</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
             {saved && (
               <Alert>
-                <AlertTitle>Profile updated</AlertTitle>
+                <AlertTitle>Profile Updated</AlertTitle>
                 <AlertDescription>Your changes have been saved.</AlertDescription>
               </Alert>
             )}
@@ -120,7 +121,7 @@ export function ProfileForm() {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="profile-display-name">Display name</FieldLabel>
+              <FieldLabel htmlFor="profile-display-name">Display Name</FieldLabel>
               <Input
                 defaultValue={user.display_name ?? ""}
                 id="profile-display-name"
@@ -168,7 +169,7 @@ export function ProfileForm() {
         </CardContent>
         <CardFooter>
           <Button disabled={isPending} type="submit">
-            {isPending ? "Saving" : "Save changes"}
+            {isPending ? "Saving" : "Save Changes"}
           </Button>
         </CardFooter>
       </form>

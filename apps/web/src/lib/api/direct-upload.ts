@@ -1,6 +1,6 @@
 // apps/web/src/lib/api/direct-upload.ts
 
-import type { SignedUpload } from "@/lib/storage"
+import type { SignedUpload } from "@/features/storage/types"
 
 export async function uploadFileDirectly(upload: SignedUpload, file: File, maxSizeBytes: number) {
   if (file.size > maxSizeBytes) {

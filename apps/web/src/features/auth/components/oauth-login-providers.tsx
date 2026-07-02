@@ -1,6 +1,6 @@
 // apps/web/src/features/auth/components/oauth-login-providers.tsx
 
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -14,8 +14,6 @@ import {
 import { OAuthProviderIcon } from "@/features/auth/components/oauth-provider-icon"
 import { getErrorMessage } from "@/lib/api/errors"
 
-const PENDING_FEEDBACK_DELAY_MS = 500
-
 export function OAuthLoginProviders() {
   const providersQuery = useQuery(oauthProvidersQueryOptions())
   const startLoginMutation = useStartOauthLoginMutation()
@@ -25,20 +23,6 @@ export function OAuthLoginProviders() {
   const [showPendingFeedback, setShowPendingFeedback] = useState(false)
 
   const providers = providersQuery.data?.providers ?? []
-
-  useEffect(() => {
-    if (!pendingProvider || !startLoginMutation.isPending) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setShowPendingFeedback(true)
-    }, PENDING_FEEDBACK_DELAY_MS)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [pendingProvider, startLoginMutation.isPending])
 
   function handleStart(provider: string) {
     if (startInFlightRef.current) {

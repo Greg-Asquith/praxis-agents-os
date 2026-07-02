@@ -98,7 +98,7 @@ export function OAuthLoginCallbackRoute() {
           }}
           variant="link"
         >
-          Back to sign in
+          Back to Sign In
         </Button>
       }
     >

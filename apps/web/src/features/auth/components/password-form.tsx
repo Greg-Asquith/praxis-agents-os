@@ -66,19 +66,19 @@ export function PasswordForm() {
           <FieldGroup>
             {error && (
               <Alert variant="destructive">
-                <AlertTitle>Password not changed</AlertTitle>
+                <AlertTitle>Password Not Changed</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
             {saved && (
               <Alert>
-                <AlertTitle>Password changed</AlertTitle>
+                <AlertTitle>Password Changed</AlertTitle>
                 <AlertDescription>Use your new password next time you sign in.</AlertDescription>
               </Alert>
             )}
 
             <Field>
-              <FieldLabel htmlFor="current-password">Current password</FieldLabel>
+              <FieldLabel htmlFor="current-password">Current Password</FieldLabel>
               <Input
                 autoComplete="current-password"
                 id="current-password"
@@ -89,7 +89,7 @@ export function PasswordForm() {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="new-password">New password</FieldLabel>
+              <FieldLabel htmlFor="new-password">New Password</FieldLabel>
               <Input
                 autoComplete="new-password"
                 id="new-password"
@@ -101,7 +101,7 @@ export function PasswordForm() {
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="confirm-password">Confirm new password</FieldLabel>
+              <FieldLabel htmlFor="confirm-password">Confirm New Password</FieldLabel>
               <Input
                 autoComplete="new-password"
                 id="confirm-password"
@@ -115,7 +115,7 @@ export function PasswordForm() {
         </CardContent>
         <CardFooter>
           <Button disabled={changePasswordMutation.isPending} type="submit">
-            {changePasswordMutation.isPending ? "Updating" : "Update password"}
+            {changePasswordMutation.isPending ? "Updating" : "Update Password"}
           </Button>
         </CardFooter>
       </form>

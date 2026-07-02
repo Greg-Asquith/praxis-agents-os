@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { workspacesQueryKey } from "@/features/workspaces/api/list-workspaces"
 import type { Workspace } from "@/features/workspaces/types"
 import { apiRequest } from "@/lib/api/client"
-import type { AssetUploadGrant, AssetUploadRequest } from "@/lib/storage"
+import type { AssetUploadGrant, AssetUploadRequest } from "@/features/storage/types"
 
 type WorkspaceIconUploadInput = {
   workspaceId: string

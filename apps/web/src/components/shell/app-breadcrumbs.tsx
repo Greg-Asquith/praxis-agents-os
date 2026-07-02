@@ -7,6 +7,7 @@ import { ChevronRightIcon } from "lucide-react"
 import { getAgent } from "@/features/agents/api/get-agent"
 import { agentsQueryKeys } from "@/features/agents/api/list-agents"
 import type { Conversation } from "@/features/conversations/types"
+import { titleFromSegment } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type BreadcrumbRoute = "/" | "/agents" | "/conversations" | "/workspaces" | "/workspace-settings"
@@ -105,7 +106,7 @@ function getBreadcrumbs({
     if (detail === "new") {
       return [
         { key: "agents", label: "Agents", to: "/agents" },
-        { key: "agents-new", label: "New agent" },
+        { key: "agents-new", label: "New Agent" },
       ]
     }
 
@@ -138,11 +139,11 @@ function getBreadcrumbs({
   }
 
   if (section === "workspace-settings") {
-    return [{ key: "settings", label: "Settings" }]
+    return [{ key: "settings", label: "Workspace Settings" }]
   }
 
   if (section === "profile") {
-    return [{ key: "profile", label: "Profile settings" }]
+    return [{ key: "profile", label: "Profile Settings" }]
   }
 
   return [
@@ -173,12 +174,4 @@ function getPathSegments(pathname: string) {
     .split("/")
     .filter(Boolean)
     .map((segment) => decodeURIComponent(segment))
-}
-
-function titleFromSegment(segment: string) {
-  return segment
-    .split("-")
-    .filter(Boolean)
-    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
-    .join(" ")
 }

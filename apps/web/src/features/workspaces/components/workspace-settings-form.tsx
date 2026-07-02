@@ -122,7 +122,7 @@ export function WorkspaceSettingsForm() {
   }
 
   return (
-    <Card>
+    <Card className="border-0! border-none!">
       <CardHeader>
         <CardTitle>Workspace details</CardTitle>
         <CardDescription>Update the name and icon for the active workspace.</CardDescription>

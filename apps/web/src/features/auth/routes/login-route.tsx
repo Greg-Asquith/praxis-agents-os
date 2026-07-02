@@ -48,7 +48,7 @@ export function LoginRoute() {
 
   return (
     <AuthCard
-      title="Sign in"
+      title="Sign In"
       description="Use your Praxis account to continue."
       footer={
         <span>
@@ -63,14 +63,14 @@ export function LoginRoute() {
           <FieldGroup>
             {formError && (
               <Alert variant="destructive">
-                <AlertTitle>Sign in failed</AlertTitle>
+                <AlertTitle>Sign In Failed</AlertTitle>
                 <AlertDescription>{formError}</AlertDescription>
               </Alert>
             )}
 
             {twoFactorPending && (
               <Alert>
-                <AlertTitle>Two-step verification required</AlertTitle>
+                <AlertTitle>Two-Step Verification Required</AlertTitle>
                 <AlertDescription>
                   Your password was accepted. Entering a verification code will be available with
                   account security settings.
@@ -104,7 +104,7 @@ export function LoginRoute() {
             <Field>
               <Button className="w-full" disabled={loginMutation.isPending} type="submit">
                 <LogInIcon data-icon="inline-start" />
-                {loginMutation.isPending ? "Signing in" : "Sign in"}
+                {loginMutation.isPending ? "Signing In" : "Sign in"}
               </Button>
               <FieldError />
             </Field>

@@ -53,12 +53,12 @@ function UserMenu({ onSignOut, user }: { onSignOut: () => void; user: AuthUser }
           <DropdownMenuLabel>Account</DropdownMenuLabel>
           <DropdownMenuItem render={<Link to="/profile" />}>
             <UserIcon />
-            Profile settings
+            Profile Settings
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onSignOut}>
             <LogOutIcon />
-            Sign out
+            Sign Out
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

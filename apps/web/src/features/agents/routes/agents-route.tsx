@@ -6,7 +6,7 @@ import { BotIcon, PlusIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
-import { countActiveAgents, countApprovalGatedAgents } from "@/features/agents/agent-metrics"
+import { countActiveAgents } from "@/features/agents/agent-metrics"
 import { AgentsTable } from "@/features/agents/components/agents-table"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 import { pluralize } from "@/lib/format"
@@ -15,7 +15,6 @@ export function AgentsRoute() {
   const { data: agentsData } = useAgentsQuery({ includeInactive: true, limit: 100 })
   const { data: modelCatalog } = useModelCatalogQuery()
   const activeAgents = countActiveAgents(agentsData.agents)
-  const approvalGatedAgents = countApprovalGatedAgents(agentsData.agents)
   const hasAgents = agentsData.agents.length > 0
 
   return (
@@ -50,14 +49,6 @@ export function AgentsRoute() {
             <CardTitle>Active</CardTitle>
             <CardDescription>
               {activeAgents} {pluralize(activeAgents, "agent")} available for runs
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Approval gated</CardTitle>
-            <CardDescription>
-              {approvalGatedAgents} {pluralize(approvalGatedAgents, "agent")} has human review
             </CardDescription>
           </CardHeader>
         </Card>

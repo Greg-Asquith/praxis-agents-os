@@ -19,7 +19,7 @@ export function NotFoundRoute() {
             window.location.assign(authRecovery ? "/login" : "/")
           }}
         >
-          {authRecovery ? "Back to sign in" : "Go to overview"}
+          {authRecovery ? "Back to Sign In" : "Home"}
         </Button>
       </div>
     </main>

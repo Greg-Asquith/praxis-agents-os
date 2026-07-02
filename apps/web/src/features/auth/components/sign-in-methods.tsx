@@ -69,7 +69,7 @@ export function SignInMethods() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sign-in methods</CardTitle>
+        <CardTitle>Sign In Methods</CardTitle>
         <CardDescription>How you can sign in to your account.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">

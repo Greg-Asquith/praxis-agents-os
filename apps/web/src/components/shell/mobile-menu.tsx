@@ -74,12 +74,12 @@ export function MobileMenu({
             </DropdownMenuItem>
             <DropdownMenuItem render={<Link to="/conversations" />}>
               <MessagesSquareIcon />
-              Open conversations
+              View All Conversations
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
+            <DropdownMenuLabel>Switch Workspace</DropdownMenuLabel>
             {workspaces.map((item) => (
               <DropdownMenuItem
                 key={item.id}
@@ -97,11 +97,11 @@ export function MobileMenu({
             <DropdownMenuLabel>{workspace.name}</DropdownMenuLabel>
             <DropdownMenuItem render={<Link to="/profile" />}>
               <UserIcon />
-              Profile settings
+              Profile Settings
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onSignOut}>
               <LogOutIcon />
-              Sign out
+              Sign Out
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

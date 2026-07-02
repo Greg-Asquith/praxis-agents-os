@@ -15,9 +15,12 @@ export function AuthLayoutRoute() {
           <span className="font-heading text-sm font-medium">{appConfig.name}</span>
         </div>
         <div className="max-w-xl">
-          <p className="text-muted-foreground text-sm font-medium">Agent operations</p>
+          <p className="text-muted-foreground text-sm font-medium">
+            The Operating Intelligence Layer
+          </p>
           <h1 className="font-heading mt-3 max-w-lg text-3xl font-semibold tracking-normal">
-            Workspaces, identity, and agent controls in one place.
+            An AI Operating System that remembers your work, respects your rules, and acts on the
+            real systems your team uses.
           </h1>
         </div>
       </section>

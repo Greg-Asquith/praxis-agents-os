@@ -32,7 +32,7 @@ export function WorkspaceIcon({
       {workspace.icon_url ? (
         <img alt="" className="size-full object-cover" src={workspace.icon_url} />
       ) : (
-        <span className="px-1.5 leading-none">{initials(workspace.name)}</span>
+        <span className="px-2 leading-none">{initials(workspace.name)[0]}</span>
       )}
     </span>
   )

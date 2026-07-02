@@ -25,7 +25,7 @@ export function ErrorRoute({ error }: { error: unknown }) {
               window.location.reload()
             }}
           >
-            Try again
+            Try Again
           </Button>
           {authRecovery ? <BackToSignInButton /> : <AppRecoveryActions />}
         </div>
@@ -42,7 +42,7 @@ function BackToSignInButton() {
         window.location.assign("/login")
       }}
     >
-      Back to sign in
+      Back to Sign In
     </Button>
   )
 }
@@ -56,7 +56,7 @@ function AppRecoveryActions() {
           window.location.assign("/")
         }}
       >
-        Go to overview
+        Home
       </Button>
       <Button
         variant="ghost"
@@ -64,7 +64,7 @@ function AppRecoveryActions() {
           window.location.assign("/profile")
         }}
       >
-        Profile settings
+        Profile Settings
       </Button>
     </>
   )

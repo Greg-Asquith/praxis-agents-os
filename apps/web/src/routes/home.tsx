@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Separator } from "@/components/ui/separator"
-import { countActiveAgents, countApprovalGatedAgents } from "@/features/agents/agent-metrics"
+import { countActiveAgents } from "@/features/agents/agent-metrics"
 import { agentsQueryOptions } from "@/features/agents/api/list-agents"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { conversationsQueryOptions } from "@/features/conversations/api/list-conversations"
@@ -61,7 +61,6 @@ export function HomeRoute() {
     [conversations]
   )
   const activeAgents = countActiveAgents(agents)
-  const approvalGatedAgents = countApprovalGatedAgents(agents)
   const conversationsNeedingApproval = conversations.filter(
     (conversation) => conversation.needs_approval
   ).length
@@ -73,9 +72,7 @@ export function HomeRoute() {
         <div className="flex min-w-0 flex-col gap-2">
           <p className="text-muted-foreground text-sm font-medium">{workspace.name}</p>
           <div>
-            <h1 className="font-heading text-2xl font-semibold tracking-normal">
-              Operations dashboard
-            </h1>
+            <h1 className="font-heading text-2xl font-semibold tracking-normal">Dashboard</h1>
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
               Live agent state, approvals, and recent workspace conversations.
             </p>
@@ -110,7 +107,7 @@ export function HomeRoute() {
           description="Active agents with human review"
           icon={<StarsIcon className="size-4" />}
           label="Approval-gated agents"
-          value={approvalGatedAgents}
+          value={0}
         />
       </section>
 
@@ -193,7 +190,7 @@ export function HomeRoute() {
             </p>
             <Button variant="outline" size="sm" render={<Link to="/workspace-settings" />}>
               <Settings2Icon data-icon="inline-start" />
-              Workspace settings
+              Workspace Settings
             </Button>
           </CardContent>
         </Card>
@@ -207,7 +204,7 @@ export function HomeRoute() {
           <CardContent className="flex flex-col gap-3">
             <p className="text-muted-foreground text-sm">Current workspace: {workspace.name}</p>
             <Button variant="outline" size="sm" render={<Link to="/workspaces" />}>
-              Manage workspaces
+              Manage Workspaces
             </Button>
           </CardContent>
         </Card>
@@ -224,7 +221,7 @@ export function HomeRoute() {
             </p>
             <Button variant="outline" size="sm" render={<Link to="/agents" />}>
               <BotIcon data-icon="inline-start" />
-              Manage agents
+              Manage Agents
             </Button>
           </CardContent>
         </Card>
@@ -240,7 +237,7 @@ export function HomeRoute() {
             <Separator />
             <Button variant="outline" size="sm" render={<Link to="/profile" />}>
               <UserCircleIcon data-icon="inline-start" />
-              Profile settings
+              Profile Settings
             </Button>
           </CardContent>
         </Card>

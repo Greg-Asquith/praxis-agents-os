@@ -14,9 +14,9 @@ import type {
 } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 
-const DEFAULT_MODEL_SELECTION = "__default__"
-export const NO_AGENT_SELECTION = "__none__"
-const THINKING_DEFAULT = "__default__"
+const DEFAULT_MODEL_SELECTION = "Default"
+export const NO_AGENT_SELECTION = "None"
+const THINKING_DEFAULT = "Default"
 
 export const THINKING_OPTIONS = [
   {

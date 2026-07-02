@@ -36,7 +36,7 @@ export function WorkspaceSwitcher({
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-56">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Switch workspace</DropdownMenuLabel>
+          <DropdownMenuLabel>Switch Workspace</DropdownMenuLabel>
           {workspaces.map((item) => (
             <DropdownMenuItem
               key={item.id}

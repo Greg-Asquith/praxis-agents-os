@@ -96,7 +96,7 @@ export function TwoFactorSection() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldCheckIcon className="size-4" />
-          Two-factor authentication
+          Two-Factor Authentication
           {user.totp_enabled && <Badge variant="secondary">Enabled</Badge>}
         </CardTitle>
         <CardDescription>
@@ -108,14 +108,14 @@ export function TwoFactorSection() {
         <FieldGroup>
           {error && (
             <Alert variant="destructive">
-              <AlertTitle>Something went wrong</AlertTitle>
+              <AlertTitle>Something Went Wrong</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
           {backupCodes && (
             <Alert>
-              <AlertTitle>Save your backup codes</AlertTitle>
+              <AlertTitle>Save Your Backup Codes</AlertTitle>
               <AlertDescription>
                 Store these somewhere safe. Each code can be used once if you lose your
                 authenticator. They won&apos;t be shown again.
@@ -190,14 +190,14 @@ export function TwoFactorSection() {
       <CardFooter className="gap-3">
         {!user.totp_enabled && !setup && (
           <Button disabled={setupMutation.isPending} onClick={startSetup} type="button">
-            {setupMutation.isPending ? "Preparing" : "Set up two-factor"}
+            {setupMutation.isPending ? "Preparing" : "Set Up Two-Factor"}
           </Button>
         )}
 
         {!user.totp_enabled && setup && (
           <>
             <Button disabled={enableMutation.isPending} form="totp-enable-form" type="submit">
-              {enableMutation.isPending ? "Verifying" : "Verify and enable"}
+              {enableMutation.isPending ? "Verifying" : "Verify and Enable"}
             </Button>
             <Button onClick={cancelSetup} type="button" variant="outline">
               Cancel
@@ -213,7 +213,7 @@ export function TwoFactorSection() {
             type="button"
             variant="destructive"
           >
-            Turn off
+            Turn Off
           </Button>
         )}
 

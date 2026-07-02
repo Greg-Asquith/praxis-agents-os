@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { currentUserQueryKey } from "@/features/auth/api/get-current-user"
 import type { AuthUser } from "@/features/auth/types"
 import { apiRequest } from "@/lib/api/client"
-import type { AssetUploadGrant, AssetUploadRequest } from "@/lib/storage"
+import type { AssetUploadGrant, AssetUploadRequest } from "@/features/storage/types"
 
 async function createAvatarUpload(payload: AssetUploadRequest) {
   return apiRequest<AssetUploadGrant>("/auth/me/avatar/upload", {
