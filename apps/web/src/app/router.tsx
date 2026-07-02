@@ -5,31 +5,15 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
 } from "@tanstack/react-router"
 
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
-import { AgentDetailRoute } from "@/features/agents/routes/agent-detail-route"
-import { AgentsRoute } from "@/features/agents/routes/agents-route"
-import { NewAgentRoute } from "@/features/agents/routes/new-agent-route"
-import { LoginRoute } from "@/features/auth/routes/login-route"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
-import { OAuthLinkCallbackRoute } from "@/features/auth/routes/oauth-link-callback-route"
-import { OAuthLoginCallbackRoute } from "@/features/auth/routes/oauth-login-callback-route"
-import { ProfileRoute } from "@/features/auth/routes/profile-route"
-import { RegisterRoute } from "@/features/auth/routes/register-route"
-import { ConversationRuntimeRoute } from "@/features/conversations/routes/conversation-runtime-route"
-import { ConversationRoute } from "@/features/conversations/routes/conversation-route"
-import { ConversationsRoute } from "@/features/conversations/routes/conversations-route"
-import { NewConversationRoute } from "@/features/conversations/routes/new-conversation-route"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
-import { WorkspaceSettingsRoute } from "@/features/workspaces/routes/workspace-settings-route"
-import { WorkspacesRoute } from "@/features/workspaces/routes/workspaces-route"
-import { AppLayoutRoute } from "@/routes/app-layout"
-import { AuthLayoutRoute } from "@/routes/auth-layout"
 import { ErrorRoute } from "@/routes/error-route"
-import { HomeRoute } from "@/routes/home"
 import { NotFoundRoute } from "@/routes/not-found"
 import { PendingRoute } from "@/routes/pending"
 
@@ -53,25 +37,31 @@ const authRoute = createRoute({
       throw redirect({ to: "/" })
     }
   },
-  component: AuthLayoutRoute,
+  component: lazyRouteComponent(() => import("@/routes/auth-layout"), "AuthLayoutRoute"),
 })
 
 const loginRoute = createRoute({
   getParentRoute: () => authRoute,
   path: "/login",
-  component: LoginRoute,
+  component: lazyRouteComponent(() => import("@/features/auth/routes/login-route"), "LoginRoute"),
 })
 
 const registerRoute = createRoute({
   getParentRoute: () => authRoute,
   path: "/register",
-  component: RegisterRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/auth/routes/register-route"),
+    "RegisterRoute"
+  ),
 })
 
 const oauthLoginCallbackRoute = createRoute({
   getParentRoute: () => authRoute,
   path: OAUTH_LOGIN_CALLBACK_PATH,
-  component: OAuthLoginCallbackRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/auth/routes/oauth-login-callback-route"),
+    "OAuthLoginCallbackRoute"
+  ),
 })
 
 const appRoute = createRoute({
@@ -85,79 +75,112 @@ const appRoute = createRoute({
 
     await context.queryClient.ensureQueryData(workspacesQueryOptions())
   },
-  component: AppLayoutRoute,
+  component: lazyRouteComponent(() => import("@/routes/app-layout"), "AppLayoutRoute"),
 })
 
 const homeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/",
-  component: HomeRoute,
+  component: lazyRouteComponent(() => import("@/routes/home"), "HomeRoute"),
 })
 
 const workspacesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspaces",
-  component: WorkspacesRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/workspaces/routes/workspaces-route"),
+    "WorkspacesRoute"
+  ),
 })
 
 const conversationsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/conversations",
-  component: ConversationsRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/conversations/routes/conversations-route"),
+    "ConversationsRoute"
+  ),
 })
 
 const conversationRuntimeRoute = createRoute({
   getParentRoute: () => appRoute,
   id: "conversation-runtime",
-  component: ConversationRuntimeRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/conversations/routes/conversation-runtime-route"),
+    "ConversationRuntimeRoute"
+  ),
 })
 
 const newConversationRoute = createRoute({
   getParentRoute: () => conversationRuntimeRoute,
   path: "/conversations/new",
-  component: NewConversationRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/conversations/routes/new-conversation-route"),
+    "NewConversationRoute"
+  ),
 })
 
 const conversationRoute = createRoute({
   getParentRoute: () => conversationRuntimeRoute,
   path: "/conversations/$conversationId",
-  component: ConversationRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/conversations/routes/conversation-route"),
+    "ConversationRoute"
+  ),
 })
 
 const agentsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/agents",
-  component: AgentsRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/agents/routes/agents-route"),
+    "AgentsRoute"
+  ),
 })
 
 const newAgentRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/agents/new",
-  component: NewAgentRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/agents/routes/new-agent-route"),
+    "NewAgentRoute"
+  ),
 })
 
 const agentDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/agents/$agentId",
-  component: AgentDetailRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/agents/routes/agent-detail-route"),
+    "AgentDetailRoute"
+  ),
 })
 
 const workspaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspace-settings",
-  component: WorkspaceSettingsRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/workspaces/routes/workspace-settings-route"),
+    "WorkspaceSettingsRoute"
+  ),
 })
 
 const profileRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/profile",
-  component: ProfileRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/auth/routes/profile-route"),
+    "ProfileRoute"
+  ),
 })
 
 const oauthLinkCallbackRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/oauth/link/callback",
-  component: OAuthLinkCallbackRoute,
+  component: lazyRouteComponent(
+    () => import("@/features/auth/routes/oauth-link-callback-route"),
+    "OAuthLinkCallbackRoute"
+  ),
 })
 
 const routeTree = rootRoute.addChildren([

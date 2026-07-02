@@ -1,7 +1,7 @@
 // apps/web/src/routes/pending.tsx
 
 import { Skeleton } from "@/components/ui/skeleton"
-import { AppLayoutFallback } from "@/routes/app-layout"
+import { AppLayoutFallback } from "@/routes/app-layout-fallback"
 import { currentPathname, isAuthRecoveryPath } from "@/routes/recovery-paths"
 
 export function PendingRoute() {
