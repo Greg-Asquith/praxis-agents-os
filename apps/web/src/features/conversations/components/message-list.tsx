@@ -68,7 +68,7 @@ export function MessageList({
 
   if (!hasMessages) {
     return (
-      <div className="flex min-h-80 flex-col items-center justify-center rounded-xl border border-dashed p-8 text-center">
+      <div className="flex min-h-80 flex-col items-center justify-center p-8 text-center">
         <div className="bg-muted text-muted-foreground mb-4 flex size-10 items-center justify-center rounded-full">
           <MessageSquareTextIcon className="size-5" />
         </div>

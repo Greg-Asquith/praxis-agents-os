@@ -199,7 +199,7 @@ function markdownComponents(): Components {
       </ol>
     ),
     p: ({ children, ...props }) => (
-      <p className="mb-3 wrap-break-word whitespace-pre-wrap last:mb-0" {...props}>
+      <p className="mb-1 wrap-break-word last:mb-0" {...props}>
         {children}
       </p>
     ),

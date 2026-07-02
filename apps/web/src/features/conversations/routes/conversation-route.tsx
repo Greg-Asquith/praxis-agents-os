@@ -144,45 +144,49 @@ function ConversationDetail({
   }
 
   return (
-    <div className="bg-background flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border">
+    <div className="bg-background flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <div className="shrink-0">
         <ConversationDetailHeader activeRun={activeRun} conversation={conversation} />
       </div>
       <Separator className="shrink-0" />
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 pb-6">
-        <MessageList
-          activeRun={activeRun}
-          assistantLabel={assistantLabel}
-          conversationId={conversationId}
-          isStreaming={stream.isStreaming && stream.conversationId === conversationId}
-          messages={messagesQuery.data.messages}
-          pendingUserMessages={pendingUserMessages}
-          streamApprovals={streamApprovals}
-          streamConversationId={stream.conversationId}
-          streamError={streamError}
-          streamMessages={streamMessages}
-          streamToolCalls={streamToolCalls}
-        />
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl px-4 py-4 pb-6">
+          <MessageList
+            activeRun={activeRun}
+            assistantLabel={assistantLabel}
+            conversationId={conversationId}
+            isStreaming={stream.isStreaming && stream.conversationId === conversationId}
+            messages={messagesQuery.data.messages}
+            pendingUserMessages={pendingUserMessages}
+            streamApprovals={streamApprovals}
+            streamConversationId={stream.conversationId}
+            streamError={streamError}
+            streamMessages={streamMessages}
+            streamToolCalls={streamToolCalls}
+          />
+        </div>
       </div>
 
       <Separator className="shrink-0" />
-      <footer className="flex max-h-[45%] shrink-0 flex-col gap-3 overflow-y-auto p-3">
-        {activeRun?.status === "awaiting_approval" ? (
-          <ApprovalControls
-            approvals={pendingApprovals}
-            error={approvalError}
-            isLoading={approvalStateQuery.isLoading}
-            isSubmitting={isResumingRun}
-            onSubmit={handleApprovalSubmit}
-          />
-        ) : (
-          <ConversationComposer
-            mode="turn"
-            conversationId={conversationId}
-            disabledReason={composerDisabledReason}
-          />
-        )}
+      <footer className="max-h-[45%] shrink-0 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3">
+          {activeRun?.status === "awaiting_approval" ? (
+            <ApprovalControls
+              approvals={pendingApprovals}
+              error={approvalError}
+              isLoading={approvalStateQuery.isLoading}
+              isSubmitting={isResumingRun}
+              onSubmit={handleApprovalSubmit}
+            />
+          ) : (
+            <ConversationComposer
+              mode="turn"
+              conversationId={conversationId}
+              disabledReason={composerDisabledReason}
+            />
+          )}
+        </div>
       </footer>
     </div>
   )

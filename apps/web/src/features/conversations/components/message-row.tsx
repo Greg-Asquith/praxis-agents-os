@@ -146,7 +146,7 @@ function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
       {message.text.map((text, index) => (
         <div
           key={`${message.id}:tool-text:${String(index)}`}
-          className="text-muted-foreground rounded-lg border px-3 py-2 text-sm"
+          className="text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 text-sm"
         >
           <MessageMarkdown content={text} />
         </div>
@@ -159,7 +159,7 @@ function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
 function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage }) {
   return (
     <div className="flex w-full flex-col gap-2 px-1">
-      <div className="text-muted-foreground rounded-lg border border-dashed px-3 py-2 text-sm">
+      <div className="text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 text-sm">
         Unsupported {message.role} message
       </div>
       <MessageContentParts message={message} />

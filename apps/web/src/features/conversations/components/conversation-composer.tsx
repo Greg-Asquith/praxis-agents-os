@@ -19,7 +19,6 @@ import type { Agent } from "@/features/agents/types"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
 import { getErrorMessage } from "@/lib/api/errors"
-import { cn } from "@/lib/utils"
 
 type ConversationComposerProps =
   | {
@@ -27,14 +26,12 @@ type ConversationComposerProps =
       agents: Agent[]
       conversationId?: never
       disabledReason?: string | null
-      compact?: boolean
     }
   | {
       mode: "turn"
       agents?: never
       conversationId: string
       disabledReason?: string | null
-      compact?: boolean
     }
 
 export function ConversationComposer(props: ConversationComposerProps) {
@@ -115,14 +112,8 @@ export function ConversationComposer(props: ConversationComposerProps) {
   }
 
   return (
-    <form
-      className={cn(
-        "bg-background flex flex-col gap-3 rounded-xl border p-3 shadow-sm",
-        props.compact && "rounded-lg p-2"
-      )}
-      onSubmit={handleSubmit}
-    >
-      <FieldGroup className={cn("gap-3", props.compact && "gap-2")}>
+    <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
+      <FieldGroup className="gap-3">
         {props.mode === "create" && (
           <Field data-disabled={activeAgents.length === 0 || isCurrentStreamBlocking}>
             <FieldLabel htmlFor="conversation-agent">Agent</FieldLabel>
@@ -169,7 +160,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
           <Textarea
             id="conversation-prompt"
             aria-label={props.mode === "create" ? "First message" : "Message"}
-            className="max-h-52 min-h-24 resize-y"
+            className="max-h-52 min-h-12 resize-y"
             disabled={Boolean(disabledReason)}
             onChange={(event) => {
               setPrompt(event.currentTarget.value)
