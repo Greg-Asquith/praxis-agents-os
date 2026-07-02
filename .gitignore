@@ -125,3 +125,4 @@ log/
 # Documentation
 ########################################
 docs/*
+!docs/plans/
