@@ -128,7 +128,12 @@ function buildStreamAgentRun(
     user_id: conversation.user_id,
     parent_run_id: null,
     delegation_depth: 0,
-    trigger: conversation.source === "scheduled" ? "scheduled" : "interactive",
+    trigger:
+      conversation.source === "scheduled"
+        ? "scheduled"
+        : conversation.source === "delegated"
+          ? "delegated"
+          : "interactive",
     status,
     model_name: null,
     started_at: null,
