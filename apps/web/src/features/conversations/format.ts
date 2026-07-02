@@ -4,7 +4,6 @@ import type { AgentRunStatus, Conversation } from "@/features/conversations/type
 import { titleCaseToken } from "@/lib/format"
 
 const SOURCE_LABELS: Record<string, string> = {
-  agent_call: "Delegated",
   delegated: "Delegated",
   direct: "Direct",
   scheduled: "Scheduled",

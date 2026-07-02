@@ -226,7 +226,7 @@ function ConversationDetail({
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
   const assistantLabel = conversationAgentLabel(conversation, "Agent")
-  const isReadOnlyTranscript = conversation.source === "agent_call"
+  const isReadOnlyTranscript = conversation.source === "delegated"
 
   async function handleApprovalSubmit(decisions: AgentRunResumeDecision[]) {
     if (!activeRun) {

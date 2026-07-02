@@ -3,6 +3,9 @@
 export type AgentRunStatus =
   "pending" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled"
 
+type ConversationSource = "direct" | "scheduled" | "delegated"
+type AgentRunTrigger = "interactive" | "scheduled" | "delegated"
+
 export type Conversation = {
   id: string
   user_id: string
@@ -13,7 +16,7 @@ export type Conversation = {
   status: string
   metadata: Record<string, unknown> | null
   unread: boolean
-  source: string
+  source: ConversationSource
   last_message_at: string | null
   active_agent_id: string | null
   agent_slug: string | null
@@ -59,7 +62,7 @@ export type AgentRun = {
   user_id: string
   parent_run_id: string | null
   delegation_depth: number
-  trigger: string
+  trigger: AgentRunTrigger
   status: AgentRunStatus
   model_name: string | null
   started_at: string | null
