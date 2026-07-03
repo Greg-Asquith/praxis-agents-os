@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_schedules.domain import ScheduleConfig, calculate_next_run
@@ -263,14 +263,32 @@ async def claim_due_schedule_runs(
     """Claim due schedule fire times with row locks so overlapping workers split work."""
 
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
+    current_run = aliased(AgentScheduleRun)
 
     result = await db.execute(
         select(AgentSchedule)
         .options(selectinload(AgentSchedule.agent))
+        .outerjoin(
+            current_run,
+            and_(
+                current_run.schedule_id == AgentSchedule.id,
+                current_run.scheduled_for == AgentSchedule.next_run_at,
+                current_run.deleted == False,  # noqa: E712
+            ),
+        )
         .where(
             AgentSchedule.is_active == True,  # noqa: E712
             AgentSchedule.deleted == False,  # noqa: E712
             AgentSchedule.next_run_at <= now_utc,
+            or_(
+                current_run.id.is_(None),
+                current_run.status.in_({RUN_STATUS_PENDING, RUN_STATUS_RETRYABLE_FAILED}),
+                and_(
+                    current_run.status == RUN_STATUS_CLAIMED,
+                    current_run.claim_expires_at.is_not(None),
+                    current_run.claim_expires_at <= now_utc,
+                ),
+            ),
         )
         .order_by(AgentSchedule.next_run_at, AgentSchedule.created_at)
         .limit(batch_size)

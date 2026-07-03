@@ -46,6 +46,7 @@ async def update_schedule(
     changed_fields: list[str] = []
     timing_fields = set(payload.model_fields_set).intersection(TIMING_FIELD_NAMES)
     config: ScheduleConfig | None = None
+    was_active = schedule.is_active
 
     if timing_fields:
         config = _normalize_timing_update(schedule, payload, supplied_fields=timing_fields)
@@ -65,19 +66,24 @@ async def update_schedule(
     if "is_active" in payload.model_fields_set:
         if payload.is_active is None:
             raise AppValidationError("is_active cannot be null", field="is_active")
-        if payload.is_active and not schedule.is_active:
+        set_if_changed(schedule, "is_active", payload.is_active, changed_fields)
+        if payload.is_active and (not was_active or config is not None):
             config = config or normalize_schedule_from_row(schedule)
-            set_if_changed(schedule, "is_active", True, changed_fields)
             set_if_changed(
                 schedule,
                 "next_run_at",
                 calculate_next_run(config, basis=datetime.now(UTC)),
                 changed_fields,
             )
-        elif not payload.is_active and schedule.is_active:
-            set_if_changed(schedule, "is_active", False, changed_fields)
+        elif not payload.is_active:
+            set_if_changed(schedule, "next_run_at", None, changed_fields)
     elif config is not None:
-        set_if_changed(schedule, "next_run_at", calculate_next_run(config), changed_fields)
+        set_if_changed(
+            schedule,
+            "next_run_at",
+            calculate_next_run(config) if schedule.is_active else None,
+            changed_fields,
+        )
 
     if changed_fields:
         await db.flush()

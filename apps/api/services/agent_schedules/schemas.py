@@ -96,7 +96,7 @@ class AgentScheduleRead(BaseModel):
                 "execution_params": schedule.execution_params,
                 "is_active": schedule.is_active,
                 "last_run_at": schedule.last_run_at,
-                "next_run_at": schedule.next_run_at,
+                "next_run_at": schedule.next_run_at if schedule.is_active else None,
                 "created_at": schedule.created_at,
                 "updated_at": schedule.updated_at,
                 "health": schedule_health_from_run(latest_run),

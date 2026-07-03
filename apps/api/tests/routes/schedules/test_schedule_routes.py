@@ -190,6 +190,32 @@ async def test_create_schedule_rejects_invalid_payloads(
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
+async def test_create_inactive_schedule_has_no_next_run(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=_workspace, user=_user)
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        "/api/v1/schedules/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "schedule_type": "interval",
+            "interval_minutes": 15,
+            "default_prompt": "Run this.",
+            "is_active": False,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["is_active"] is False
+    assert body["next_run_at"] is None
+
+
 async def test_create_schedule_rejects_cross_workspace_agent(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -338,9 +364,12 @@ async def test_list_schedules_filters_and_includes_latest_run_health(
         "/api/v1/schedules/?include_inactive=true",
         headers=headers,
     )
-    include_ids = {item["id"] for item in include_inactive.json()["items"]}
+    include_body = include_inactive.json()
+    include_ids = {item["id"] for item in include_body["items"]}
     assert str(inactive.id) in include_ids
     assert str(deleted.id) not in include_ids
+    inactive_item = next(item for item in include_body["items"] if item["id"] == str(inactive.id))
+    assert inactive_item["next_run_at"] is None
 
     filtered = await db_async_client.get(
         f"/api/v1/schedules/?agent_id={agent.id}&include_inactive=true",
@@ -377,6 +406,7 @@ async def test_pause_enable_and_expired_once_enable(
     )
     assert pause_response.status_code == 200
     assert pause_response.json()["is_active"] is False
+    assert pause_response.json()["next_run_at"] is None
 
     enable_response = await db_async_client.post(
         f"/api/v1/schedules/{schedule.id}/enable",
@@ -402,6 +432,35 @@ async def test_pause_enable_and_expired_once_enable(
         )
     )
     assert {AuditAction.DISABLE.value, AuditAction.ENABLE.value} <= audit_actions
+
+
+async def test_update_active_schedule_timing_recalculates_next_run_with_active_payload(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=workspace, user=user)
+    original_next_run_at = datetime.now(UTC) + timedelta(minutes=15)
+    schedule = await _create_schedule(
+        db_session,
+        workspace=workspace,
+        user=user,
+        agent=agent,
+        next_run_at=original_next_run_at,
+    )
+    await db_session.commit()
+
+    response = await db_async_client.patch(
+        f"/api/v1/schedules/{schedule.id}",
+        headers=headers,
+        json={"schedule_type": "interval", "interval_minutes": 30, "is_active": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_active"] is True
+    assert body["interval_minutes"] == 30
+    assert datetime.fromisoformat(body["next_run_at"]) > original_next_run_at
 
 
 async def test_run_now_requires_active_schedule_and_audits_execute(

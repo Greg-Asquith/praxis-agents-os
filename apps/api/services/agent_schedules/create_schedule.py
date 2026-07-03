@@ -57,7 +57,7 @@ async def create_schedule(
         default_prompt=normalize_default_prompt(payload.default_prompt),
         execution_params=payload.execution_params,
         is_active=payload.is_active,
-        next_run_at=calculate_next_run(config),
+        next_run_at=calculate_next_run(config) if payload.is_active else None,
     )
     db.add(schedule)
     await db.flush()

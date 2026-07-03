@@ -31,6 +31,7 @@ async def pause_schedule(
 
     if schedule.is_active:
         schedule.is_active = False
+        schedule.next_run_at = None
         await db.flush()
         await record_workspace_audit_event(
             db,
