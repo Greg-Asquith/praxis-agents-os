@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic_ai import DeferredToolRequests, DeferredToolResults
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import FunctionToolCallEvent, ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.usage import RunUsage
@@ -46,7 +46,11 @@ from services.agents.runtime.events import (
     EventTranslationState,
     emit_agent_stream_event,
 )
-from services.agents.runtime.load_context import load_actor_context, load_run_context
+from services.agents.runtime.load_context import (
+    load_actor_context,
+    load_agent_skills,
+    load_run_context,
+)
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.persistence import load_message_history
 from services.agents.runtime.run_persistence import (
@@ -55,6 +59,7 @@ from services.agents.runtime.run_persistence import (
     persist_suspended_run,
 )
 from services.agents.runtime.sinks import EventSink, NullSink
+from services.agents.runtime.skills import record_skill_activation
 
 
 @dataclass(frozen=True)
@@ -97,6 +102,7 @@ async def execute_run(
         run_id=run_id,
         lock_run=True,
     )
+    skills = await load_agent_skills(db, agent)
     event_sink = sink or NullSink(run_id=run.id, conversation_id=conversation.id)
     started = False
 
@@ -148,6 +154,7 @@ async def execute_run(
             delegate_agents=delegate_agents,
             enable_delegation=enable_delegation,
             force_delegation_tools=force_delegation_tools,
+            skills=skills,
         )
         if run.model_name is None:
             run.model_name = runtime_agent.resolved_model.qualified_id
@@ -204,6 +211,12 @@ async def execute_run(
                     )
                 ):
                     continue
+                part = getattr(event, "part", None)
+                if (
+                    isinstance(event, FunctionToolCallEvent)
+                    and getattr(part, "tool_kind", None) == "capability-load"
+                ):
+                    record_skill_activation(skills, part, run=run)
                 await emit_agent_stream_event(
                     event_sink,
                     event,

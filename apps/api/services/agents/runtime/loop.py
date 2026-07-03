@@ -12,29 +12,17 @@ from pydantic_ai.usage import UsageLimits
 
 from core.settings import settings
 from models.agent import Agent
+from models.skills import Skill
 from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.capabilities import build_runtime_capabilities
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.delegation.tool_names import (
-    DELEGATE_TO_AGENT_TOOL_NAME,
-    LIST_DELEGATE_AGENTS_TOOL_NAME,
+from services.agents.runtime.prompt import (
+    build_system_prompt,
+    runtime_prompt_blocks,
 )
+from services.agents.runtime.skills import build_skill_capabilities
 from services.agents.runtime.tools import build_runtime_tools
-
-DELEGATION_INSTRUCTIONS = f"""\
-You may delegate clearly bounded subtasks to other agents only when a listed
-delegate is better suited than handling the work yourself.
-
-Delegation rules:
-- Call {LIST_DELEGATE_AGENTS_TOOL_NAME} before {DELEGATE_TO_AGENT_TOOL_NAME}.
-- Use {DELEGATE_TO_AGENT_TOOL_NAME} only with an id returned by {LIST_DELEGATE_AGENTS_TOOL_NAME}.
-- Give the delegate complete task instructions and relevant context.
-- Treat the delegate result as supporting evidence; you remain responsible for
-  the final answer to the user.
-- If a delegated run needs approval, tell the user what is pending instead of
-  retrying the same delegation.
-"""
 
 
 @dataclass(frozen=True)
@@ -53,6 +41,7 @@ def build_runtime_agent(
     delegate_agents: Sequence[Agent] = (),
     enable_delegation: bool = True,
     force_delegation_tools: bool = False,
+    skills: Sequence[Skill] = (),
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
     resolved_model = resolve_agent_model(agent)
@@ -72,7 +61,10 @@ def build_runtime_agent(
             deps_type=RuntimeDeps,
             output_type=[str, DeferredToolRequests],
             tools=build_runtime_tools(agent, include_delegation=include_delegation),
-            capabilities=build_runtime_capabilities(agent),
+            capabilities=[
+                *build_runtime_capabilities(agent),
+                *build_skill_capabilities(skills),
+            ],
         ),
         resolved_model=resolved_model,
         usage_limits=UsageLimits(
@@ -89,6 +81,6 @@ def _agent_name(agent: Agent) -> str:
 
 
 def _runtime_instructions(agent: Agent, *, include_delegation: bool) -> str:
-    if not include_delegation:
-        return agent.instructions
-    return f"{agent.instructions.rstrip()}\n\n{DELEGATION_INSTRUCTIONS}"
+    return build_system_prompt(
+        runtime_prompt_blocks(agent, include_delegation=include_delegation)
+    )

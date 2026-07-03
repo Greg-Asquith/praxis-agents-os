@@ -25,7 +25,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
-- **Depends on**: docs/plans/018-runtime-skill-disclosure.md (activations must
+- **Depends on**: docs/plans/complete/018-runtime-skill-disclosure.md (activations must
   exist to render); docs/plans/019-skills-management-ui.md (skill name
   resolution — soft dependency, a fallback is specified)
 - **Category**: direction (feature completeness)
