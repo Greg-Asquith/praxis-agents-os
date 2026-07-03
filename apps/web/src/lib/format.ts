@@ -15,6 +15,16 @@ export function formatDateTime(
   }).format(new Date(value))
 }
 
+export function formatBytes(value: number) {
+  if (value >= 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} KB`
+  }
+  return `${String(value)} B`
+}
+
 export function formatTime(
   value: string | Date,
   hour: "numeric" | "2-digit" | undefined = "numeric",

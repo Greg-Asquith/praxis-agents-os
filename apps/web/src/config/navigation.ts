@@ -6,6 +6,7 @@ import {
   LayoutDashboardIcon,
   type LucideIcon,
   SettingsIcon,
+  SparklesIcon,
   UsersIcon,
 } from "lucide-react"
 
@@ -36,6 +37,12 @@ const mainNavigation: NavigationItem[] = [
     label: "Agents",
     to: "/agents",
     icon: BotIcon,
+    disabled: false,
+  },
+  {
+    label: "Skills",
+    to: "/skills",
+    icon: SparklesIcon,
     disabled: false,
   },
   {

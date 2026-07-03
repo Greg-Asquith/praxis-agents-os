@@ -25,6 +25,9 @@
   CRUD screens work with 016 alone)
 - **Category**: direction (feature foundation)
 - **Planned at**: commit `ccb721b`, 2026-07-01
+- **Completed at**: 2026-07-03
+- **Verification**: `pnpm check` from `apps/web`
+- **Status**: DONE
 
 ## Why this matters
 
@@ -357,14 +360,14 @@ smoke pass with the API running (`pnpm dev` + backend):
 
 ALL must hold (run from `apps/web`):
 
-- [ ] `pnpm check` exits 0
-- [ ] `grep -rn "Skill management is not available" src/` returns no matches
-- [ ] `grep -rn "skill_ids: \[\]" src/features/agents/` returns no matches
-- [ ] `test ! -f src/features/agents/components/agent-state-section.tsx`
-- [ ] `grep -n '"/skills"' src/config/navigation.ts` returns one match
-- [ ] `git status` shows no modified files outside the in-scope list (leave
+- [x] `pnpm check` exits 0
+- [x] `grep -rn "Skill management is not available" src/` returns no matches
+- [x] `grep -rn "skill_ids: \[\]" src/features/agents/` returns no matches
+- [x] `test ! -f src/features/agents/components/agent-state-section.tsx`
+- [x] `grep -n '"/skills"' src/config/navigation.ts` returns one match
+- [x] `git status` shows no modified files outside the in-scope list (leave
       any unrelated pre-existing working-tree changes untouched)
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 

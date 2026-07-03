@@ -15,10 +15,11 @@ import { AgentDelegationSection } from "@/features/agents/components/agent-deleg
 import { AgentFormShell } from "@/features/agents/components/agent-form-shell"
 import { AgentProfileSection } from "@/features/agents/components/agent-profile-section"
 import { AgentRuntimeSection } from "@/features/agents/components/agent-runtime-section"
-import { AgentStateSection } from "@/features/agents/components/agent-state-section"
+import { AgentSkillsSection } from "@/features/agents/components/agent-skills-section"
 import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { Agent, AgentCreateRequest, AgentUpdateRequest } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
+import { useSkillsQuery } from "@/features/skills/api/list-skills"
 import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
 
@@ -47,6 +48,7 @@ type AgentFormProps =
 export function AgentForm(props: AgentFormProps) {
   const agent = props.mode === "edit" ? props.agent : null
   const { data: toolCatalog } = useToolCatalogQuery()
+  const { data: skillsData } = useSkillsQuery({ limit: 100 })
   const initialState = useMemo(
     () => initialAgentFormState(agent, toolCatalog.tools),
     [agent, toolCatalog.tools]
@@ -164,7 +166,11 @@ export function AgentForm(props: AgentFormProps) {
             setField("allowedAgentIds", allowedAgentIds)
           }}
         />
-        <AgentStateSection skillIds={agent?.skill_ids ?? []} />
+        <AgentSkillsSection
+          setField={setField}
+          skillIds={state.skillIds}
+          skills={skillsData.skills}
+        />
       </AgentFormShell>
     </form>
   )

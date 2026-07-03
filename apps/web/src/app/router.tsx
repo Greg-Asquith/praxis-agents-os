@@ -156,6 +156,33 @@ const agentDetailRoute = createRoute({
   ),
 })
 
+const skillsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/skills",
+  component: lazyRouteComponent(
+    () => import("@/features/skills/routes/skills-route"),
+    "SkillsRoute"
+  ),
+})
+
+const newSkillRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/skills/new",
+  component: lazyRouteComponent(
+    () => import("@/features/skills/routes/new-skill-route"),
+    "NewSkillRoute"
+  ),
+})
+
+const skillDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/skills/$skillId",
+  component: lazyRouteComponent(
+    () => import("@/features/skills/routes/skill-detail-route"),
+    "SkillDetailRoute"
+  ),
+})
+
 const schedulesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules",
@@ -219,6 +246,9 @@ const routeTree = rootRoute.addChildren([
     agentsRoute,
     newAgentRoute,
     agentDetailRoute,
+    skillsRoute,
+    newSkillRoute,
+    skillDetailRoute,
     schedulesRoute,
     newScheduleRoute,
     scheduleDetailRoute,

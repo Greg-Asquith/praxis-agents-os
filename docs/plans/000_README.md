@@ -40,7 +40,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
 | 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | DONE |
 | 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016, 017 (for document reading) | DONE |
-| 019 | Build the skills management UI | P1 | L | 016, 017 | TODO |
+| 019 | Build the skills management UI | P1 | L | 016, 017 | DONE |
 | 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | TODO |
 | 021 | Add the schedule REST routes | P1 | L | - | DONE |
 | 022 | Build the schedules management UI | P1 | L | 021 | DONE |
@@ -121,6 +121,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   the owning skill is loaded, capability-load events update `last_used_at`,
   and `runtime/prompt.py` provides the ordered `PromptBlock` system-prompt
   assembler required by Gate G2.
+- `019` marked DONE 2026-07-03: the web app now exposes `/skills`,
+  `/skills/new`, and `/skills/$skillId` for skill CRUD and document
+  management; the agent form replaces the old read-only skills placeholder
+  with active-skill assignment, sends `skill_ids` on create/update, and the
+  Skills nav item is live. `pnpm check` passed from `apps/web`.
 - `013` and `018` interact: history trimming MUST preserve
   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
   lose loaded skills on resume. Whichever plan lands second must honor the

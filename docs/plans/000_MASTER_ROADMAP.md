@@ -111,8 +111,9 @@ Not a numbered plan; a checklist chore:
 - Mark 009 DONE in the README (delegation landed at `f83d210`; verify the
   approval-resume path for delegated runs while confirming).
 - Verify/refresh statuses of 010–020 (verified 2026-07-03: 010, 011, 012,
-  016, 017, and 018 are DONE; 013–015 and 019–020 remain TODO; skills CRUD,
-  the skill document pipeline, and runtime skill disclosure now exist).
+  016, 017, 018, and 019 are DONE; 013–015 and 020 remain TODO; skills CRUD,
+  the skill document pipeline, runtime skill disclosure, and the management UI
+  now exist).
 - Point the README at this document as the ordering authority.
 
 ### Lane R — Runtime Hardening (existing plans, interleave early)
@@ -147,7 +148,7 @@ Not a numbered plan; a checklist chore:
 ### Phase 2 — Skills (existing plans 016–020; gate G2)
 
 Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
-2026-07-03) → 019 → 020. Two roadmap-level additions:
+2026-07-03) → 019 (DONE 2026-07-03) → 020. Two roadmap-level additions:
 
 - 018 delivered the **system-prompt assembly design** (ordered, budgeted
   blocks with an extension point) that 034/040/049 later plug into — not
@@ -235,7 +236,7 @@ management (043–049).
 If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
+018 (DONE) → 028 (DONE) → 019 (DONE) → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.
 

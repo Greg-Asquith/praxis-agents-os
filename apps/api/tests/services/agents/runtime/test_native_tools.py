@@ -9,7 +9,6 @@ from pydantic_ai.messages import NativeToolCallPart, NativeToolReturnPart, PartS
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.exceptions.general import AppValidationError
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -76,18 +75,15 @@ def test_web_search_catalog_entry_is_native_function_tool() -> None:
     assert entry.provider == "native"
     assert entry.kind == "function"
     assert entry.effect == "read"
-    assert entry.default_policy == "auto"
-    assert entry.supported_policies == ["auto"]
-    assert definition.supports_approval is False
+    assert entry.default_policy == "approval"
+    assert entry.supported_policies == ["approval", "auto"]
+    assert definition.supports_approval is True
     assert definition.output_model is web_search_tools.WebSearchOutput
 
-    with pytest.raises(AppValidationError) as exc_info:
-        validate_tool_configuration(
-            tool_names=["web_search"],
-            tool_policies={"web_search": "approval"},
-        )
-
-    assert exc_info.value.field == "tool_policies"
+    assert validate_tool_configuration(
+        tool_names=["web_search"],
+        tool_policies={"web_search": "approval"},
+    ) == {"web_search": "approval"}
 
 
 def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> None:
