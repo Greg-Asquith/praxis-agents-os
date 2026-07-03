@@ -8,7 +8,10 @@ import {
   ConversationWorkspaceContext,
   type ConversationWorkspaceContextValue,
 } from "@/features/conversations/conversation-workspace-context"
-import type { PendingUserMessage } from "@/features/conversations/message-parts"
+import {
+  persistedClientMessageIds,
+  type PendingUserMessage,
+} from "@/features/conversations/message-parts"
 import { sortConversations } from "@/features/conversations/sort"
 import { useAgentStream } from "@/features/conversations/stream/use-agent-stream"
 import type { ConversationMessage } from "@/features/conversations/types"
@@ -40,11 +43,7 @@ function ConversationRuntimeScope({ children }: { children: ReactNode }) {
   }, [])
 
   const clearPersistedPendingMessages = useCallback((messages: ConversationMessage[]) => {
-    const persistedClientIds = new Set(
-      messages
-        .map((message) => message.client_message_id)
-        .filter((value): value is string => typeof value === "string" && value.length > 0)
-    )
+    const persistedClientIds = persistedClientMessageIds(messages)
     if (persistedClientIds.size === 0) {
       return
     }

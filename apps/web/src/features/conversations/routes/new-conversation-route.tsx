@@ -8,9 +8,11 @@ import { Separator } from "@/components/ui/separator"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
+import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 
 export function NewConversationRoute() {
   const { data: agentsData } = useAgentsQuery({ includeInactive: false, limit: 100 })
+  const { data: modelCatalog } = useModelCatalogQuery()
   const { stream } = useConversationWorkspace()
   const activeAgentCount = agentsData.agents.filter((agent) => agent.is_active).length
 
@@ -67,7 +69,11 @@ export function NewConversationRoute() {
       <Separator />
       <footer className="shrink-0">
         <div className="mx-auto w-full max-w-5xl px-4 py-3">
-          <ConversationComposer mode="create" agents={agentsData.agents} />
+          <ConversationComposer
+            mode="create"
+            agents={agentsData.agents}
+            modelCatalog={modelCatalog}
+          />
         </div>
       </footer>
     </div>

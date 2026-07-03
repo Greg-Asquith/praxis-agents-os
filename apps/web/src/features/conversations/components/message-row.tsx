@@ -152,9 +152,9 @@ function ThinkingBlock({ content, idPrefix }: { content: string[]; idPrefix: str
     <details className="group/thinking min-w-0">
       <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium">
         <ChevronRightIcon className="size-3.5 transition-transform group-open/thinking:rotate-90" />
-        Thought
+        View Thoughts
       </summary>
-      <div className="text-muted-foreground border-border/70 mt-2 ml-1.5 border-l pl-3 text-sm italic">
+      <div className="text-muted-foreground border-border/70 mt-2 ml-1.5 border-l pl-3 italic">
         {content.map((thought, index) => (
           <MessageMarkdown key={`${idPrefix}:${String(index)}`} content={thought} />
         ))}

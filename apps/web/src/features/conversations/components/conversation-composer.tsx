@@ -15,21 +15,25 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { formatAgentModel } from "@/features/agents/components/agent-model-label"
 import type { Agent } from "@/features/agents/types"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
+import type { ModelCatalogResponse } from "@/features/models/types"
 import { getErrorMessage } from "@/lib/api/errors"
 
 type ConversationComposerProps =
   | {
       mode: "create"
       agents: Agent[]
+      modelCatalog: ModelCatalogResponse
       conversationId?: never
       disabledReason?: string | null
     }
   | {
       mode: "turn"
       agents?: never
+      modelCatalog?: never
       conversationId: string
       disabledReason?: string | null
     }
@@ -44,6 +48,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
   const promptText = prompt.trim()
   const effectiveSelectedAgentId = selectedAgentId ?? activeAgents[0]?.id ?? ""
+  const selectedAgent = activeAgents.find((agent) => agent.id === effectiveSelectedAgentId) ?? null
   const isCreateWithoutAgent = props.mode === "create" && activeAgents.length === 0
   const isCurrentStreamBlocking =
     props.mode === "create"
@@ -125,7 +130,9 @@ export function ConversationComposer(props: ConversationComposerProps) {
               value={effectiveSelectedAgentId}
             >
               <SelectTrigger id="conversation-agent" size="sm" className="w-full">
-                <SelectValue placeholder="Select an agent" />
+                <SelectValue placeholder="Select an agent">
+                  {selectedAgent ? agentSelectLabel(selectedAgent, props.modelCatalog) : null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent align="start">
                 <SelectGroup>
@@ -136,7 +143,12 @@ export function ConversationComposer(props: ConversationComposerProps) {
                   ) : (
                     activeAgents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
-                        {agentSelectLabel(agent)}
+                        <span className="flex min-w-0 flex-col">
+                          <span>{agent.name}</span>
+                          <span className="text-muted-foreground text-xs">
+                            {formatAgentModel(agent, props.modelCatalog)}
+                          </span>
+                        </span>
                       </SelectItem>
                     ))
                   )}
@@ -194,10 +206,6 @@ function createClientMessageId() {
   return globalThis.crypto.randomUUID()
 }
 
-function agentSelectLabel(agent: Agent) {
-  if (!agent.slug || agent.slug === agent.name) {
-    return agent.name
-  }
-
-  return `${agent.name} · ${agent.slug}`
+function agentSelectLabel(agent: Agent, modelCatalog: ModelCatalogResponse) {
+  return `${agent.name} · ${formatAgentModel(agent, modelCatalog)}`
 }

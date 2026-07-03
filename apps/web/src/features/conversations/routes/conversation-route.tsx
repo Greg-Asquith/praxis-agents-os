@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/routes/conversation-route.tsx
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams } from "@tanstack/react-router"
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { LockKeyholeIcon } from "lucide-react"
@@ -12,14 +12,13 @@ import { MessageList } from "@/features/conversations/components/message-list"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
-import {
-  conversationsQueryKeys,
-  useMarkConversationReadMutation,
-} from "@/features/conversations/api/list-conversations"
+import { conversationsQueryKeys } from "@/features/conversations/api/list-conversations"
 import { useAgentRunApprovalStateQuery } from "@/features/conversations/api/get-approval-state"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
 import { useConversationHealLoop } from "@/features/conversations/hooks/use-conversation-heal-loop"
+import { useConversationReadReceipt } from "@/features/conversations/hooks/use-conversation-read-receipt"
+import { useConversationRunState } from "@/features/conversations/hooks/use-conversation-run-state"
 import { conversationAgentLabel } from "@/features/conversations/format"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
 import {
@@ -30,8 +29,6 @@ import type {
   AgentRunResumeDecision,
   Conversation,
   ConversationActiveRunResponse,
-  PendingDelegatedApproval,
-  PendingToolApproval,
 } from "@/features/conversations/types"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -65,8 +62,6 @@ function ConversationDetail({
 }) {
   const queryClient = useQueryClient()
   const { clearPersistedPendingMessages, pendingUserMessages, stream } = useConversationWorkspace()
-  const { mutate: markConversationRead } = useMarkConversationReadMutation()
-  const pendingMarkReadConversationIdRef = useRef<string | null>(null)
   const [submittingApprovalRunId, setSubmittingApprovalRunId] = useState<string | null>(null)
   const isLiveStreamConversation = stream.conversationId === conversationId
   const streamActiveRun = streamActiveRunFromState({
@@ -95,57 +90,23 @@ function ConversationDetail({
     activeRunId ?? "",
     shouldLoadApprovalState
   )
-  const hasPersistedStreamRun = useMemo(
-    () =>
-      stream.runId !== null &&
-      messagesQuery.data.messages.some(
-        (message) => message.metadata?.["agent_run_id"] === stream.runId
-      ),
-    [messagesQuery.data.messages, stream.runId]
-  )
-  const shouldRenderStream = shouldRenderConversationStream({
+  const {
+    pendingApprovals,
+    pendingDelegations,
+    shouldRenderStream,
+    streamError,
+    streamMessages,
+    streamToolCalls,
+    visibleStreamApprovals,
+  } = useConversationRunState({
     activeRun,
     conversationId,
-    hasPersistedStreamRun,
-    streamConversationId: stream.conversationId,
+    messages: messagesQuery.data.messages,
+    recoveredApprovals: approvalStateQuery.data?.approvals ?? [],
+    recoveredDelegations: approvalStateQuery.data?.delegations ?? [],
+    stream,
     submittingApprovalRunId,
   })
-  const streamMessages = useMemo(
-    () => (shouldRenderStream ? stream.messages : []),
-    [shouldRenderStream, stream.messages]
-  )
-  const streamToolCalls = useMemo(
-    () => (shouldRenderStream ? Object.values(stream.toolCalls) : []),
-    [shouldRenderStream, stream.toolCalls]
-  )
-  const streamApprovals = useMemo(
-    () => (isLiveStreamConversation ? Object.values(stream.approvals) : []),
-    [isLiveStreamConversation, stream.approvals]
-  )
-  const visibleStreamApprovals = useMemo(
-    () => (shouldRenderStream ? streamApprovals : []),
-    [shouldRenderStream, streamApprovals]
-  )
-  const pendingApprovals = useMemo(
-    () =>
-      getPendingApprovals({
-        activeRunId,
-        recoveredApprovals: approvalStateQuery.data?.approvals ?? [],
-        streamApprovals,
-        streamRunId: stream.runId,
-      }),
-    [activeRunId, approvalStateQuery.data?.approvals, stream.runId, streamApprovals]
-  )
-  const pendingDelegations = useMemo(
-    () =>
-      getPendingDelegations({
-        activeRunId,
-        recoveredDelegations: approvalStateQuery.data?.delegations ?? [],
-        streamApprovals,
-        streamRunId: stream.runId,
-      }),
-    [activeRunId, approvalStateQuery.data?.delegations, stream.runId, streamApprovals]
-  )
   useConversationHealLoop(conversationId, activeRun)
   const scrollRef = useConversationAutoScroll({
     approvalCount: pendingApprovals.length,
@@ -158,71 +119,12 @@ function ConversationDetail({
   useEffect(() => {
     clearPersistedPendingMessages(messagesQuery.data.messages)
   }, [clearPersistedPendingMessages, messagesQuery.data.messages])
-
-  useEffect(() => {
-    if (stream.conversationId !== conversationId) {
-      return
-    }
-
-    const streamMatchesPendingApproval =
-      activeRunStatus === "awaiting_approval" &&
-      activeRunId !== null &&
-      submittingApprovalRunId !== activeRunId &&
-      stream.runId === activeRunId
-    const streamMatchesPersistedSettledRun = activeRunId === null && hasPersistedStreamRun
-
-    if (!streamMatchesPendingApproval && !streamMatchesPersistedSettledRun) {
-      return
-    }
-
-    if (
-      stream.isStreaming ||
-      stream.messages.length > 0 ||
-      Object.keys(stream.toolCalls).length > 0 ||
-      Object.keys(stream.approvals).length > 0
-    ) {
-      stream.reset()
-    }
-  }, [
-    activeRunId,
-    activeRunStatus,
+  useConversationReadReceipt({
     conversationId,
-    hasPersistedStreamRun,
-    stream,
-    stream.conversationId,
-    stream.isStreaming,
-    stream.messages.length,
-    stream.runId,
-    stream.toolCalls,
-    stream.approvals,
-    submittingApprovalRunId,
-  ])
-
-  useEffect(() => {
-    if (!conversation.unread) {
-      if (pendingMarkReadConversationIdRef.current === conversationId) {
-        pendingMarkReadConversationIdRef.current = null
-      }
-      return
-    }
-
-    if (pendingMarkReadConversationIdRef.current === conversationId) {
-      return
-    }
-
-    pendingMarkReadConversationIdRef.current = conversationId
-    markConversationRead(conversationId, {
-      onError: () => {
-        pendingMarkReadConversationIdRef.current = null
-      },
-    })
-  }, [conversation.unread, conversationId, markConversationRead])
+    unread: conversation.unread,
+  })
 
   const composerDisabledReason = getConversationComposerDisabledReason(activeRun)
-  const streamError =
-    shouldRenderStream && stream.conversationId === conversationId
-      ? (stream.error?.message ?? null)
-      : null
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
   const assistantLabel = conversationAgentLabel(conversation, "Agent")
@@ -300,80 +202,6 @@ function ConversationDetail({
       )}
     </div>
   )
-}
-
-function getPendingApprovals({
-  activeRunId,
-  recoveredApprovals,
-  streamApprovals,
-  streamRunId,
-}: {
-  activeRunId: string | null
-  recoveredApprovals: PendingToolApproval[]
-  streamApprovals: PendingToolApproval[]
-  streamRunId: string | null
-}) {
-  if (recoveredApprovals.length > 0) {
-    return recoveredApprovals
-  }
-
-  if (activeRunId !== null && streamRunId === activeRunId) {
-    return streamApprovals
-  }
-
-  return []
-}
-
-function getPendingDelegations({
-  activeRunId,
-  recoveredDelegations,
-  streamApprovals,
-  streamRunId,
-}: {
-  activeRunId: string | null
-  recoveredDelegations: PendingDelegatedApproval[]
-  streamApprovals: PendingToolApproval[]
-  streamRunId: string | null
-}) {
-  if (recoveredDelegations.length > 0) {
-    return recoveredDelegations
-  }
-
-  if (activeRunId === null || streamRunId !== activeRunId) {
-    return []
-  }
-
-  return streamApprovals.map((approval) => approval.delegation).filter(isPendingDelegatedApproval)
-}
-
-function isPendingDelegatedApproval(
-  delegation: PendingDelegatedApproval | null | undefined
-): delegation is PendingDelegatedApproval {
-  return delegation !== null && delegation !== undefined
-}
-
-function shouldRenderConversationStream({
-  activeRun,
-  conversationId,
-  hasPersistedStreamRun,
-  streamConversationId,
-  submittingApprovalRunId,
-}: {
-  activeRun: { id: string; status: string } | null
-  conversationId: string
-  hasPersistedStreamRun: boolean
-  streamConversationId: string | null
-  submittingApprovalRunId: string | null
-}) {
-  if (streamConversationId !== conversationId) {
-    return false
-  }
-
-  if (activeRun === null && hasPersistedStreamRun) {
-    return false
-  }
-
-  return activeRun?.status !== "awaiting_approval" || submittingApprovalRunId === activeRun.id
 }
 
 function requireConversationId(value: string | undefined) {
