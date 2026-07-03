@@ -57,7 +57,7 @@ integrations (041), knowledge (046), memory (048), artifacts (050) — ships
 as registry entries. Today the "registry" is a two-entry hardcoded dict with
 no provider concept, no effect metadata, no read API, and a frontend list
 that must be kept in sync by hand (the code comment in
-`runtime-tools.ts:5-6` says exactly that). This plan turns the kernel into
+`runtime-tools.ts:4-5` says exactly that). This plan turns the kernel into
 the actual contract: typed definitions, decorator registration with
 import-time invariants, policy-capability metadata that write-time
 validation enforces, and a catalog endpoint. Plans 026 (dispatch/audit) and
@@ -207,7 +207,10 @@ Rework `registry.py`:
   request), and registers it.
 - Move the two demo tools to a new `core.py` "provider package" using the
   decorator (`provider="core"`, labels "Runtime context" / "Add numbers" to
-  match the current frontend strings, `effect="read"`); `registry.py`
+  match the current frontend strings, `effect="read"`). Note: only the
+  *labels* match the frontend; the registry `description` strings are terser
+  than the frontend's hardcoded copy, so 027's catalog-driven form will show
+  the backend descriptions — expected, not a regression; `registry.py`
   imports `core` for its registration side effect with a comment naming that
   as the assembly point future providers (028, 034, 041, 046, 048, 050)
   extend.

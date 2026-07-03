@@ -52,38 +52,59 @@ Two design rules from the digest are load-bearing here:
 All paths relative to `apps/api`. Verified against the installed
 `pydantic-ai==2.1.0` (pinned in `uv.lock`).
 
-- `services/agents/runtime/loop.py:29-50` — agent construction; instructions
-  come straight from the DB row, capabilities are agent-agnostic:
+- `services/agents/runtime/loop.py:45-78` — agent construction (requoted
+  2026-07-03 at `9208c47`; the delegation commit `f83d210` added the three
+  delegation parameters and `_runtime_instructions`, and the token-cap
+  commit `05df2d0` added `total_tokens_limit`):
 
   ```python
-  def build_runtime_agent(agent: Agent, *, model: Model | None = None) -> RuntimeAgent:
+  def build_runtime_agent(
+      agent: Agent,
+      *,
+      model: Model | None = None,
+      delegate_agents: Sequence[Agent] = (),
+      enable_delegation: bool = True,
+      force_delegation_tools: bool = False,
+  ) -> RuntimeAgent:
       resolved_model = resolve_agent_model(agent)
       runtime_model = model or build_model(resolved_model)
+      ...
       return RuntimeAgent(
           agent=PydanticAgent(
               runtime_model,
               name=_agent_name(agent),
-              instructions=agent.instructions,
+              instructions=_runtime_instructions(agent, include_delegation=...),
               deps_type=RuntimeDeps,
               output_type=[str, DeferredToolRequests],
-              tools=build_runtime_tools(agent),
+              tools=build_runtime_tools(agent, include_delegation=include_delegation),
               capabilities=build_runtime_capabilities(agent),
           ),
           resolved_model=resolved_model,
-          usage_limits=UsageLimits(request_limit=resolved_model.max_steps),
+          usage_limits=UsageLimits(
+              request_limit=resolved_model.max_steps,
+              total_tokens_limit=settings.AGENT_RUN_TOTAL_TOKENS_LIMIT,
+          ),
       )
   ```
+
+  `_runtime_instructions(agent, *, include_delegation)` (`loop.py:87-91`)
+  concatenates `agent.instructions` + `DELEGATION_INSTRUCTIONS` — this is
+  the seam Step 6 generalizes into the system-prompt assembler.
 
 - `services/agents/runtime/capabilities.py:15-49` —
   `build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDeps]]`
   currently returns only a `Hooks(id="praxis-runtime-hooks")` with
   before/after tool-execute logging. It ignores its argument.
-- `services/agents/runtime/context.py:17-27` — `RuntimeDeps` (frozen
-  dataclass): `db, user, workspace, conversation, agent, run, sink`.
-- `services/agents/runtime/execute_run.py:83-88, 125, 153-178` — the driver:
-  `load_run_context(...)` → `build_runtime_agent(agent, model=model)` →
-  `runtime_agent.agent.run_stream_events(...)`; inside the event loop every
-  non-terminal event goes through `emit_agent_stream_event`.
+- `services/agents/runtime/context.py:17-28` — `RuntimeDeps` (frozen
+  dataclass): `db, user, workspace, conversation, agent, run, sink,
+  delegation_depth=0` (the last added by `f83d210`).
+- `services/agents/runtime/execute_run.py` — the driver:
+  `load_run_context(...)` at l.92 → `build_runtime_agent(agent, model=model,
+  delegate_agents=…, enable_delegation=…, force_delegation_tools=…)` at
+  l.143-149 → `runtime_agent.agent.run_stream_events(...)`; the event loop
+  `async for event in stream:` is at l.186-203 and already contains an
+  `AgentRunResultEvent` guard and an `is_deferred_tool_resume_event` skip
+  before `emit_agent_stream_event` (l.198).
 - `services/agents/runtime/load_context.py:18-81` — `load_run_context` loads
   run + conversation + agent rows. No skill loading exists anywhere.
 - `models/agent.py:59` — `skill_ids = Column(JSONB, nullable=False, default=list, ...)`
@@ -92,9 +113,13 @@ All paths relative to `apps/api`. Verified against the installed
   `instructions`, `documentation_refs` (plan-017 manifest:
   `{name: {"original": key, "markdown": key, "status": "ready"|"failed", ...}}`),
   `is_active`, `last_used_at`.
-- `services/agents/runtime/events.py:92-113` — `FunctionToolCallEvent` /
+- `services/agents/runtime/events.py:107-129` — `FunctionToolCallEvent` /
   `FunctionToolResultEvent` are translated to generic `tool.call` /
-  `tool.result` sink events keyed by `tool_call_id`/`tool_name`.
+  `tool.result` sink events keyed by `tool_call_id`/`tool_name`. (Commit
+  `6af36b5` shifted these lines and made the translator channel-aware: SSE
+  `message.start`/`message.delta` now carry a `channel: "text"|"thinking"`
+  field — background context for plan 020; the tool-event translation is
+  unchanged.)
 - Storage read surface (plan 002): `services/storage/factory.py::get_storage_provider()`,
   `provider.get_object(ref)`, `make_storage_object_ref(StorageBucket.PRIVATE, key)`.
 
@@ -148,10 +173,15 @@ All paths relative to `apps/api`. Verified against the installed
 
 - `apps/api/services/agents/runtime/skills.py` (create — capability + tool assembly)
 - `apps/api/services/agents/runtime/load_context.py` (add `load_agent_skills`)
-- `apps/api/services/agents/runtime/loop.py` (accept `skills` parameter)
+- `apps/api/services/agents/runtime/loop.py` (accept `skills` parameter;
+  generalize `_runtime_instructions` per Step 6)
+- `apps/api/services/agents/runtime/prompt.py` (create — the system-prompt
+  assembler, Step 6)
 - `apps/api/services/agents/runtime/execute_run.py` (fetch skills, pass them,
   record activations)
 - `apps/api/tests/services/agents/runtime/test_runtime_skills.py` (create)
+- `apps/api/tests/services/agents/runtime/test_prompt_assembly.py` (create,
+  Step 6)
 - Existing call sites of `build_runtime_agent` in tests, if the signature
   change breaks them (find with `grep -rn "build_runtime_agent" --include="*.py" . | grep -v .venv`)
 
@@ -278,25 +308,33 @@ def skill_capability_id(skill: Skill) -> str:
 
 ### Step 3: Thread skills through construction
 
-- `loop.py`: change the signature to
-  `build_runtime_agent(agent: Agent, *, skills: Sequence[Skill] = (), model: Model | None = None)`
-  and pass
+- `loop.py`: **add** a keyword-only `skills: Sequence[Skill] = ()` to the
+  existing signature — which already carries `model`, `delegate_agents`,
+  `enable_delegation`, and `force_delegation_tools` (see the requoted
+  constructor in "Current state"); do NOT rewrite the signature or you will
+  drop the delegation parameters and the token cap — and set
   `capabilities=[*build_runtime_capabilities(agent), *build_skill_capabilities(skills)]`.
-- `execute_run.py`: after `load_run_context(...)` (line ~83), add
-  `skills = await load_agent_skills(db, agent)` and pass
-  `build_runtime_agent(agent, skills=skills, model=model)` at line ~125.
+  Leave `instructions`, `tools`, and `usage_limits` untouched.
+- `execute_run.py`: after `load_run_context(...)` (l.92), add
+  `skills = await load_agent_skills(db, agent)` and merge `skills=skills`
+  into the existing `build_runtime_agent(...)` call at l.143-149,
+  **preserving the delegation kwargs**.
 - Fix any other `build_runtime_agent` call sites found by
   `grep -rn "build_runtime_agent" --include="*.py" . | grep -v .venv`
   (keyword-only `skills` defaults to empty, so most call sites need no change —
-  verify rather than assume).
+  verify rather than assume; the delegation runtime under
+  `runtime/delegation/` is a known caller).
 
 **Verify**: `uv run pytest tests/services/agents/runtime -q` → all pass
 (existing tests, no skills assigned → behavior unchanged).
 
 ### Step 4: Record activations (`last_used_at`)
 
-In `execute_run.py`'s event loop (the `async for event in stream:` block),
-before `emit_agent_stream_event`, detect activations:
+In `execute_run.py`'s event loop (the `async for event in stream:` block at
+l.186-203), before `emit_agent_stream_event` (l.198) — note the loop already
+has an `AgentRunResultEvent` guard and an `is_deferred_tool_resume_event`
+skip; insert after those so resumes are not double-counted — detect
+activations:
 
 ```python
 part = getattr(event, "part", None)
@@ -350,6 +388,50 @@ state" (both `model_fn` and `stream_function` are required). Cases:
 **Verify**: `uv run pytest tests/services/agents/runtime/test_runtime_skills.py -q`
 → all pass. Then the full gates in Done criteria.
 
+### Step 6: System-prompt assembler (Gate G2 deliverable — roadmap requirement)
+
+The roadmap (`000_MASTER_ROADMAP.md` §Phase 2, Gate G2, decision D6) requires
+this plan to deliver **the system-prompt assembly design** — ordered,
+budgeted blocks with an extension point — that plans 034 (`<available_files>`
+block), 040 (active integration context block), and 049 (core-memory block)
+later plug into. Skills themselves ride capabilities, not the prompt, so this
+step is small but load-bearing: it prevents three future plans from each
+accreting their own string concatenation onto `_runtime_instructions`.
+
+Create `runtime/prompt.py`:
+
+```python
+@dataclass(frozen=True)
+class PromptBlock:
+    key: str          # stable identity, e.g. "identity", "delegation"
+    content: str      # rendered text; empty string → block omitted
+    budget: int | None = None  # optional soft char budget; truncate + log when exceeded
+
+def build_system_prompt(blocks: Sequence[PromptBlock]) -> str:
+    """Join non-empty blocks with blank-line separators, in the given order."""
+```
+
+- Ordering is the caller's list order; define the canonical order in ONE
+  place: a `runtime_prompt_blocks(agent, *, include_delegation) ->
+  list[PromptBlock]` function that today returns
+  `[PromptBlock("identity", agent.instructions),
+  PromptBlock("delegation", DELEGATION_INSTRUCTIONS if include_delegation else "")]`.
+- Budgets are soft in v1: truncate the block content at `budget` chars with a
+  trailing `"\n[truncated]"` marker and a `logger.warning` — future plans
+  (034/040/049) set real budgets; today's two blocks pass `None`.
+- Refactor `_runtime_instructions` in `loop.py` to delegate to
+  `build_system_prompt(runtime_prompt_blocks(...))` — behavior must be
+  byte-identical for the current two blocks (assert this in a test against
+  the old concatenation).
+- Extension point: future plans append `PromptBlock`s to
+  `runtime_prompt_blocks` — never concatenate strings elsewhere. Say this in
+  the module docstring.
+
+Tests (`test_prompt_assembly.py`): ordering respected; empty blocks omitted;
+budget truncation + marker; the `_runtime_instructions` equivalence check.
+
+**Verify**: `uv run pytest tests/services/agents/runtime -q` → all pass.
+
 ## Test plan
 
 Covered by Step 5 — the risk surfaces are: capability id stability (test 2
@@ -366,6 +448,8 @@ ALL must hold (run from `apps/api`):
 - [ ] `uv run pytest tests/routes/conversations -q` exits 0
 - [ ] `grep -n "skill_capability_id" services/agents/runtime/skills.py` matches
 - [ ] `grep -n "load_agent_skills" services/agents/runtime/execute_run.py` matches
+- [ ] `grep -n "build_system_prompt" services/agents/runtime/loop.py` matches
+      (Step 6 assembler is wired, not just created)
 - [ ] `grep -rn "documentation_refs\[" services/agents/runtime/` returns no
       matches for **mutation** (reads are fine; the runtime never writes the manifest)
 - [ ] `git status` shows no modified files outside the in-scope list
@@ -395,9 +479,16 @@ Stop and report back (do not improvise) if:
   in message history. Any `ProcessHistory` trimming MUST preserve those pairs
   or agents silently lose loaded skills mid-conversation. Plan 013's executor
   must read this note; a cross-reference lives in the plans README.
-- **Interaction with plan 009 (delegation)**: delegated sub-agents build their
-  own runtime agents; when that lands, decide whether sub-agents get their own
-  `skill_ids` treatment (they should — this module is reusable as-is).
+- **Interaction with plan 009 (delegation — landed)**: delegated sub-agents
+  build their own runtime agents via the same `build_runtime_agent`; decide
+  whether sub-agents get their own `skill_ids` treatment (they should — this
+  module is reusable as-is; the keyword-only default keeps them skill-less
+  until wired).
+- **The Step 6 assembler is the G2 contract**: plans 034
+  (`<available_files>`), 040 (active context), and 049 (core memories) add
+  `PromptBlock`s to `runtime_prompt_blocks` with real budgets. If any of
+  them concatenates strings around it instead, that is a regression of this
+  plan.
 - **Prompt-cache cost**: per the digest, instructions-only deferral is
   cache-stable, but tool-visibility changes on load can break provider prompt
   caches. The shared reader tool is deliberately **non-deferred** so the tool

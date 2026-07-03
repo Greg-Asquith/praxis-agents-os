@@ -120,7 +120,8 @@ Frontend:
   — shows the raw token in a read-only `<Input>` (L98) with no copy button;
   role hardcoded `"member"` (L52).
 - **No frontend accept-invite route exists.** Clipboard hook ready to reuse:
-  `apps/web/src/hooks/use-clipboard-copy.ts` (`useClipboardCopy` L38).
+  `apps/web/src/hooks/use-clipboard-copy.ts` (`useClipboardCopy` defined at
+  L5, returns `{ copied, copy }`).
 - API conventions: one module per endpoint under `features/<feature>/api/`;
   `features/auth/api/update-current-user.ts` already wraps `PATCH /auth/me`
   and writes back `currentUserQueryKey` (L22). Auth-gated pages hang off
@@ -226,22 +227,26 @@ audit rows).
 ### Step 3: Hook it into full-session issuance
 
 First **read `services/auth/utils.py` `issue_auth_response`** (L78) and list
-its callers (`grep -rn "issue_auth_response" services/`). Expected callers:
-password login, password register, OAuth completion, and the 2FA completion
-service.
+its callers (`grep -rn "issue_auth_response" services/`). Verified callers
+(2026-07-03 at `9208c47`) — exactly three, all with a `require_twofa`
+variable: password login (`login_with_password.py:90`), register
+(`register_with_password.py:95`), OAuth completion
+(`complete_oauth_login.py:94`). The 2FA completion path does **not** flow
+through `issue_auth_response`: `services/auth/totp/verify_totp.py` upgrades
+the partial session directly (`session_manager.upgrade_partial_session` at
+`:65`) and calls `build_auth_user` at `:82`.
 
-- If all full-session issuances flow through `issue_auth_response`: call
+- In `issue_auth_response`: call
   `accept_pending_invitations_for_user(db, user=user, request=request)`
-  there, **only when `require_twofa` is False** (a partial 2FA session is not
+  **only when `require_twofa` is False** (a partial 2FA session is not
   an authenticated user yet). Place it before the response is built so the
   new memberships are queryable immediately after login.
-- If the 2FA completion path does NOT go through `issue_auth_response` with
-  `require_twofa=False`, add the call to that completion service as well and
-  note both call sites in a short comment.
+- In `verify_totp.py`: add the auto-accept call after the session upgrade
+  succeeds and before `build_auth_user`; note both call sites in a short
+  comment.
 
-Session **refresh** must not trigger acceptance — confirm the refresh path
-does not call `issue_auth_response` (if it does, gate on event type and
-record that in the plan-completion note).
+Session **refresh** does not call `issue_auth_response` (verified) — so
+refresh cannot trigger acceptance; re-confirm during execution.
 
 **Verify**: `uv run ruff check .` → exit 0.
 

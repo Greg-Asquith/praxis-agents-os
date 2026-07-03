@@ -61,8 +61,9 @@ a run, what a tool call did, or why a provider errored. The needed packages
 
 - Settings conventions: mixins under `apps/api/core/settings/` with
   `Field(default=..., description=...)`; production-unsafe combinations are
-  validated in settings (see `core/settings/models.py:74-108` for a
-  `model_validator(mode="after")` example).
+  validated in settings (see `core/settings/models.py:91-125` for a
+  `model_validator(mode="after")` example — moved from line 74 by the
+  token-cap commit `05df2d0`).
 
 - Telemetry-safety note from the maintained Pydantic AI skill: traces are
   diagnostic data; `include_content=True` puts prompts/tool args into spans.
@@ -153,9 +154,12 @@ Behavior:
   `logfire.instrument_pydantic_ai` signature for how it accepts
   `InstrumentationSettings` or an `include_content`-style option
   (`uv run python -c "import logfire, inspect; print(inspect.signature(logfire.instrument_pydantic_ai))"`);
-  if it does not accept one, fall back to
+  pre-checked against logfire 4.37.0: it DOES accept `include_content` and
+  `version`, but its `version` is `Literal[1,2,3]` while
+  `InstrumentationSettings(version=...)` is `Literal[2,3,4,5]` — the
   `Agent.instrument_all(InstrumentationSettings(include_content=settings.AGENT_TRACING_INCLUDE_CONTENT))`
-  after `logfire.configure(...)`.
+  fallback after `logfire.configure(...)` is the safer path for content
+  control; re-verify the installed signature either way.
 - Idempotent: guard with a module-level flag so repeated calls (tests, reload)
   don't double-instrument.
 
@@ -209,9 +213,17 @@ Stop and report back if:
 
 ## Maintenance notes
 
-- Agents already get explicit `name=` values (`loop.py:53-56` slugs,
+- Agents already get explicit `name=` values (`loop.py:81-84` `_agent_name`
+  slugs — moved from 53-56 by the delegation commit,
   `conversation_title_generator` in naming.py), so spans will be well-labeled —
   keep that convention for future agents.
+- **Plan 026 coordination (README dependency note)**: tool-call spans should
+  ultimately wrap 026's `dispatch.py` choke point — one span per invocation
+  with the same attributes as the audit row, never a second interception
+  layer. This plan instruments at the agent level only
+  (`Agent.instrument_all`) and leaves the dispatch seam untouched; if this
+  lands before 026, that agent-level layer IS the named hook point and 026
+  rebases onto it, and if 026 lands first, wrap its `dispatch.py`.
 - When evals (`pydantic_evals`, already installed) are adopted, they attach to
   this same Logfire/OTel wiring.
 - Deferred: workspace-scoped trace attributes (adding `workspace_id`/`run_id`

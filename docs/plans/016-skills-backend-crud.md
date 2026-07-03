@@ -77,6 +77,7 @@ only on activation (level 2).
   api_router.include_router(auth_router)
   api_router.include_router(conversations_router)
   api_router.include_router(models_router)
+  api_router.include_router(schedules_router)  # added by 021 (9208c47)
   api_router.include_router(storage_router)
   ...
   ```
@@ -296,7 +297,8 @@ the corresponding `services/agents/<op>.py`:
 `routes/skills/__init__.py` composes with
 `APIRouter(prefix="/skills", tags=["skills"])`. In `routes/__init__.py`, import
 and include `skills_router` keeping alphabetical order (between
-`models_router` and `storage_router`).
+`schedules_router` and `storage_router` — `schedules_router` landed with
+plan 021).
 
 **Verify**: `uv run ruff check .` → exit 0, and
 `uv run python -c "from main import app; print([r.path for r in app.routes if 'skills' in r.path])"`

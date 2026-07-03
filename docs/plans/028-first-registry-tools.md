@@ -93,11 +93,16 @@ tool, rather than during integrations. After this plan, the pattern for
   columns per plan 021's report). **No todo/plan storage exists anywhere.**
 - pydantic-ai 2.1.0 (repo digest `docs/pydantic-ai/04:163-197`): `WebSearch`
   is provider-adaptive (`native=`/`local=` knobs); provider-native tools
-  execute in the request prefix; **exact capability constructor args, the
-  builtin-tool event/part shapes, and which of our configured providers
-  support native search must be probed against the installed package, not
-  assumed** (plan 018 set the precedent for recording probe results in the
-  plan/code).
+  execute in the request prefix. **Import path (verified 2026-07-03 against
+  the installed package): `from pydantic_ai.capabilities import WebSearch` —
+  it is NOT importable from top-level `pydantic_ai` (that raises and suggests
+  `WebSearchTool`, which is the native-tool *config object*, a different
+  thing). Constructor: `WebSearch(*, native=…, local=…, search_context_size=…,
+  user_location=…, blocked_domains=…, allowed_domains=…, max_uses=…, id=…,
+  defer_loading=…, description=…)`.** The builtin-tool event/part shapes and
+  which of our configured providers support native search must still be
+  probed against the installed package, not assumed (plan 018 set the
+  precedent for recording probe results in the plan/code).
 - Migrations: `core` branch; `uq_`/`ix_` naming and JSONB defaults per
   existing models (`models/agent.py` JSONB columns with
   `server_default=text("'[]'::jsonb")`).
@@ -154,8 +159,10 @@ tool, rather than during integrations. After this plan, the pattern for
 
 ### Step 1: Probe (scratch, not committed)
 
-Against the installed pydantic-ai 2.1.0, record: `WebSearch` import path and
-constructor signature; whether capabilities can be instantiated per-run
+Against the installed pydantic-ai 2.1.0, record: `WebSearch` import path
+(`from pydantic_ai.capabilities import WebSearch` — pre-verified, see
+"Current state") and constructor signature; whether capabilities can be
+instantiated per-run
 (vs per-agent) and mixed with `Hooks` in `capabilities=[...]`; which model
 providers configured in `core/settings` support native search (from the
 capability's own provider table); the exact builtin tool call/result
@@ -237,8 +244,14 @@ needs no change — `web_search` is a normal catalog name; its
 
 ### Step 5: Builtin-call audit
 
-Per Step 1's part shapes: in the event translation path of `execute_run`,
-on a builtin tool call/result pair emit
+Per Step 1's part shapes: in the event translation path of `execute_run` —
+`events.py::emit_agent_stream_event`, called from `execute_run.py:198`.
+Note: commit `6af36b5` rewrote this translator to be channel-aware
+(`text`/`thinking` channels, `PartDeltaEvent` filtered by
+`TextPartDelta`/`ThinkingPartDelta`); it still handles
+`FunctionToolCallEvent` and `PartStartEvent`/`PartEndEvent`, so add the
+builtin-part branch alongside the new channel logic, not the older
+structure. On a builtin tool call/result pair emit
 `record_tool_invocation_audit_event(tool_name="web_search",
 tool_provider="native", args digest from the call part's input, latency
 null, outcome/status from the result part)`. Guard so unknown future builtin

@@ -114,7 +114,9 @@ All confirmed on 2026-07-01 against the installed `pydantic-ai==2.1.0` in
 9. **Capabilities on demand (2.1.0)**: `AbstractCapability.defer_loading: bool`
    field; deferred capabilities REQUIRE a stable explicit `id`; loading happens
    via an auto-injected `load_capability` tool; loaded state is reconstructed
-   from `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs in message
+   from `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs (both live
+   in `pydantic_ai.messages`, NOT `pydantic_ai.capabilities` — verified
+   against 2.1.0; pin the module when editing the digest) in message
    history — **a history processor that strips those parts forces re-loading**
    (directly relevant to Plan 013's trimmer; turn-boundary trimming keeps the
    pairs intact within kept turns).

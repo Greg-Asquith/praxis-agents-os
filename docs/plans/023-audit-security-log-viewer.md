@@ -84,7 +84,7 @@ Backend — everything exists except routes/schemas:
   WORKSPACE_MEMBERSHIP, AGENT_SCHEDULE, USER.
 - `apps/api/models/security.py` — `security_events`: `event_type(100)`,
   `ip_address` INET, `endpoint`, `user_email`, `user_agent`, `details` JSONB,
-  `request_id`, `occurred_at`. **No workspace column.** 26 event types in
+  `request_id`, `occurred_at`. **No workspace column.** 27 event types in
   `services/security/enums.py:16-42`. Queries mirror audit:
   `list_security_events`/`count_security_events`/`get_security_event`
   (`services/security/queries.py:41-99`).
@@ -105,9 +105,11 @@ Frontend:
   `workspace-settings-form.tsx:45-47` computes `canManage` from
   `useActiveWorkspace().workspace.current_user_role`. **No reusable
   permission hook exists.**
-- JSON rendering precedent: `JsonBlock` inside
-  `features/conversations/components/tool-call-row.tsx` (pretty-printed,
-  collapsible `<details>`). Check the repo's arch lint (`pnpm check`
+- JSON rendering precedent: `JsonBlock` in
+  `features/conversations/components/tool-call-content-blocks.tsx:14`
+  (props `{label, value}`; renders a scrollable `<pre>` via
+  `safeJsonPreview`, not collapsible — it moved out of `tool-call-row.tsx`
+  in commit `603fff7`). Check the repo's arch lint (`pnpm check`
   includes an `arch` rule) before importing across features; if cross-feature
   import is disallowed, lift `JsonBlock` into `src/components/ui/` as part
   of this plan rather than duplicating it.
@@ -148,7 +150,8 @@ Frontend:
 - `apps/web/src/app/router.tsx`, `src/config/navigation.ts`,
   `src/components/shell/app-breadcrumbs.tsx` (modify)
 - `apps/web/src/components/ui/json-block.tsx` (create only if the arch rule
-  forbids importing conversations' `JsonBlock`)
+  forbids importing conversations' `JsonBlock` from
+  `tool-call-content-blocks.tsx`)
 
 **Out of scope (do NOT touch):**
 
@@ -184,6 +187,15 @@ filters fail loudly instead of silently returning everything… **check the
 query builder first**: `_filtered_select` applies exact-match filters, so an
 unknown value returns an empty page — still validate, an empty page for a
 typo'd filter is a debugging trap.
+
+Data caveat: some existing audit rows carry **raw-string `resource_type`
+values not in `AuditResourceType`** — the schedule-run execution services
+(`prepare_schedule_run_execution.py` / `finalize_schedule_run_execution.py`)
+write `"conversation"` and `"agent_run"` (plus `"agent_schedule_run"`, which
+IS in the enum). Unfiltered lists will include them; the table renders the
+raw string fine, but the filter dropdown can't target them. Validate filter
+*input* against the enum anyway — do not "fix" the writers here (read-only
+plan).
 
 `get_event.py`: wrap `get_audit_event(db, event_id=…,
 workspace_id=workspace.id)`; `None` → `NotFoundError(resource_type=

@@ -61,9 +61,9 @@ resource type before its row exists in these tables.
   email allowlist (`require_super_admin`, `core/dependencies.py:222-235`).
 - Existing per-resource authz precedents: agents (EDITOR write —
   `require_agent_write_access`), schedules (owner-or-admin mutate —
-  `services/agent_schedules/authorisation.py`), invitations/memberships
-  (MANAGER), audit viewer (MANAGER, plan 023), security events
-  (super-admin, plan 023).
+  `services/agent_schedules/authorisation.py`, landed with 021),
+  invitations/memberships (MANAGER). Planned (not yet enforced — 023 is
+  TODO): audit viewer (MANAGER), security events (super-admin).
 - Soft-delete: `BaseModel` `deleted/deleted_at/deleted_by`
   (`models/base.py:33-115`) everywhere; **no sweeper hard-deletes anything
   today**, and blob deletion exists only for avatars/icons.
@@ -147,8 +147,8 @@ citation against code. Legend: ✓ allowed, — denied. All cells
 | Edit/delete own-scope (user/agent) memories (049) | — | ✓ | ✓ | ✓ |
 | Create artifacts via agents (050) | follows tool policy | ✓ | ✓ | ✓ |
 | Create/revoke artifact share links (051) | — | — | ✓ | ✓ |
-| View audit log *(enforced: 023 MANAGER)* | — | — | ✓ | ✓ |
-| View security events *(enforced: 023 super-admin)* | — | — | — | — |
+| View audit log *(planned in 023: MANAGER — down-mark to default if 023 not landed at write time)* | — | — | ✓ | ✓ |
+| View security events *(planned in 023: super-admin)* | — | — | — | — |
 | Configure agent tool policies *(enforced: EDITOR via agents)* | — | ✓ | ✓ | ✓ |
 
 ### Step 3: §2 Approval defaults per tool effect

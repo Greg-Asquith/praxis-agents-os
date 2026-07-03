@@ -6,10 +6,14 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
-> **Drift check (run first)**: `git diff --stat ccb721b..HEAD -- apps/web/src`
+> **Drift check (run first)**: `git diff --stat ccb721b..HEAD -- apps/web/src/features/agents apps/web/src/app/router.tsx apps/web/src/config/navigation.ts`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> mismatch, treat it as a STOP condition. (The check is deliberately scoped
+> to this plan's anchors: `features/conversations/` was heavily reshaped by
+> `603fff7`/`6af36b5` — that churn is expected and out of scope here.
+> Anchors re-verified 2026-07-03 at `9208c47`: agent-form-model
+> `skill_ids: []` now at l.210, router agent routes at l.132-158.)
 
 ## Status
 

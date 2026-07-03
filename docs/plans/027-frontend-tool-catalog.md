@@ -6,9 +6,15 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
-> **Drift check (run first)**: `git diff --stat f83d210..HEAD -- apps/web/src/features/agents/ apps/web/src/features/models/ apps/web/src/features/conversations/components/tool-call-row.tsx`
+> **Drift check (run first)**: `git diff --stat f83d210..HEAD -- apps/web/src/features/agents/ apps/web/src/features/models/ apps/web/src/features/conversations/components/tool-call-row.tsx apps/web/src/features/conversations/components/delegation-tool-row.tsx`
 > Plan 025 must be DONE (the catalog endpoint must exist). If the agent-form
 > files differ structurally from the "Current state" excerpts, STOP.
+>
+> **Known benign drift (verified 2026-07-03 at `9208c47`)**: commit `603fff7`
+> heavily reshaped `features/conversations/` (new `delegation-tool-row.tsx`,
+> `message-parts/` package, rewritten `tool-call-row.tsx`). The agent-form
+> files were untouched. Expect that churn; the chat-side consumers are
+> already re-anchored below.
 
 ## Status
 
@@ -30,7 +36,11 @@
    moves to runtime behavior (unknown-name handling, decision 3).
 2. **Backend labels win.** Plan 025 seeded the registry `label`s with the
    exact strings the frontend hardcodes ("Runtime context", "Add numbers"),
-   so switching the source produces no visible copy change.
+   so switching the source produces no visible label change. **Descriptions
+   DO change**: the frontend hardcodes longer copy than the backend registry
+   descriptions ("Read the current Praxis workspace, conversation, agent,
+   and run identifiers." / "Add two integers."), so the form's description
+   text becomes the backend's terser strings — expected, not a regression.
 3. **Tools configured on an agent but absent from the catalog render as
    "Unavailable" rows, preserved on save.** Saving an agent must never
    silently strip a grant because the catalog momentarily lacks the tool
@@ -49,7 +59,7 @@
 ## Why this matters
 
 The frontend tool list is hardcoded with a comment begging for this exact
-plan (`runtime-tools.ts:5-6`: "Keep this list aligned with … until the
+plan (`runtime-tools.ts:4-5`: "Keep this list aligned with … until the
 backend exposes a public runtime-tool catalog endpoint"). Plan 028 adds real
 tools and Phases 3–6 add dozens more; without this plan, every one of them
 requires a hand-synced frontend edit and a deploy-ordering dance. After it,
@@ -67,11 +77,12 @@ frontend changes.
   (`useModelCatalogQuery`) → consumed by `agent-form-model.ts` /
   `agent-runtime-section.tsx`.
 - The hardcoded list: `apps/web/src/features/agents/runtime-tools.ts` —
-  `RUNTIME_TOOL_OPTIONS` (lines 7–18), `RuntimeToolName` derived as a
+  `RUNTIME_TOOL_OPTIONS` (lines 7–19), `RuntimeToolName` derived as a
   compile-time union (line 20), `runtimeToolLabel(name)` (line 23, **also
-  consumed by the chat surface** — `tool-call-row.tsx:16,62`),
-  `RuntimeToolMode = "off" | ToolPolicyValue` and `RUNTIME_TOOL_MODE_LABELS`
-  (lines 27–31).
+  consumed by TWO chat components** — `tool-call-row.tsx:3` import / `:49`
+  usage, and `delegation-tool-row.tsx:7` import / `:50` usage, the latter
+  added by `603fff7`), `RuntimeToolMode = "off" | ToolPolicyValue` and
+  `RUNTIME_TOOL_MODE_LABELS` (lines 21, 27–31).
 - Couplings in `agent-form-model.ts`: `AgentFormState.toolModes:
   Record<RuntimeToolName, RuntimeToolMode>` (line 79); `initialToolModes`
   (295–309) with a **hardcoded fallback object literal**
@@ -110,6 +121,8 @@ frontend changes.
   `agent-runtime-section.tsx`
 - `apps/web/src/features/conversations/components/tool-call-row.tsx` (label
   lookup)
+- `apps/web/src/features/conversations/components/delegation-tool-row.tsx`
+  (label lookup — second `runtimeToolLabel` consumer since `603fff7`)
 - `apps/web/src/features/tools/use-tool-labels.ts` (create — shared label
   hook)
 - Conditional (only if 023 AND 026 are DONE):
@@ -190,10 +203,12 @@ hidden consumers — if a new consumer appears, read it before changing it).
 
 ### Step 4: Chat labels + metrics
 
-- `tool-call-row.tsx`: replace `runtimeToolLabel` with `useToolLabels()`
-  from Step 1 (fallback = raw name covers delegation tools and any
-  uncatalogued names — confirm delegation rows still render their existing
-  special-cased labels if they bypass the generic label path).
+- `tool-call-row.tsx` AND `delegation-tool-row.tsx`: replace
+  `runtimeToolLabel` with `useToolLabels()` from Step 1 in both (fallback =
+  raw name covers delegation tools and any uncatalogued names).
+  `delegation-tool-row.tsx:50` currently does
+  `runtimeToolLabel(activity.name) ?? activity.name` — the hook's built-in
+  fallback replaces that `??` chain.
 - `agent-metrics.ts`: confirm the approval count still derives purely from
   `tool_policies` (expected: no change).
 
@@ -205,6 +220,8 @@ Only if plans 023 and 026 are both DONE: add `tool_name` (text input) and
 `tool_provider` filters to `audit-filter-bar.tsx` and the two columns to
 `audit-events-table.tsx`, using the label hook for display. If either is not
 landed, record this step as a follow-up in your completion note instead.
+(As of 2026-07-03 neither is landed — no `features/audit/` and no audit
+routes exist — so expect to skip this step unless they ship first.)
 
 **Verify**: `pnpm lint && pnpm build` → exit 0.
 

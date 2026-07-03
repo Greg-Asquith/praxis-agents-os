@@ -6,10 +6,19 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
-> **Drift check (run first)**: `git diff --stat ccb721b..HEAD -- apps/web/src/features/conversations`
-> If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **Drift check (run first)**: `git diff --stat 9208c47..HEAD -- apps/web/src/features/conversations`
+> If any in-scope file changed since this plan was **re-anchored**
+> (2026-07-03 at `9208c47`), compare the "Current state" excerpts against
+> the live code before proceeding; on a mismatch, treat it as a STOP
+> condition.
+>
+> **Re-anchoring note**: commits `603fff7` (conversations tidy-up) and
+> `6af36b5` (reasoning streaming) restructured this feature after the plan
+> was first written — `message-parts.ts` became the `message-parts/`
+> package, tool rendering moved to a shared row-shell component system with
+> a `DelegationToolRow` precedent, and the SSE gained a
+> `channel: "text"|"thinking"` field. All excerpts and steps below were
+> updated for that structure; do not consult older revisions of this plan.
 
 ## Status
 
@@ -33,7 +42,7 @@ the live stream and persisted history.
 
 **Deliberate design decision — do not add a new SSE event.** The frontend SSE
 parser hard-rejects unknown event names
-(`stream/sse.ts:73-75` throws `Unsupported stream event`), so introducing a
+(`stream/sse.ts:74` throws `Unsupported stream event`), so introducing a
 `skill.activated` event server-side would break any client running the older
 bundle mid-deploy. Everything needed already flows through the existing
 protocol: live activations arrive as `tool.call`/`tool.result` events with
@@ -62,9 +71,9 @@ format (probed against the backend's pinned `pydantic-ai==2.1.0`):
 Frontend pieces:
 
 - `features/conversations/stream/protocol.ts` — event whitelist
-  (`STREAM_EVENT_NAMES`) and the discriminated `StreamEvent` union.
-  **Unchanged by this plan.**
-- `features/conversations/stream/reducer.ts:15-21, 146-175` — `tool.call` /
+  (`STREAM_EVENT_NAMES`, line 12; `tool.call`/`tool.result` at 19-20) and
+  the discriminated `StreamEvent` union. **Unchanged by this plan.**
+- `features/conversations/stream/reducer.ts:24-30` — `tool.call` /
   `tool.result` land in `state.toolCalls: Record<string, ToolCallState>`:
 
   ```ts
@@ -78,44 +87,45 @@ Frontend pieces:
   ```
 
   Activation entries therefore already exist in live state with
-  `name === "load_capability"`. **The reducer needs no change** unless Step 2
-  reveals the live renderer cannot distinguish them (it can, by name).
-- `features/conversations/message-parts.ts` — persisted-message parser.
-  `ToolActivity` (lines 13-21) has `{id, kind: "call"|"result"|"approval"|"retry"|"unknown",
-  status, name, args?, result?, outcome?}`. Tool parts are matched by part
-  kind at lines 156-178:
-
-  ```ts
-  if (partKind && TOOL_CALL_PART_KINDS.has(partKind)) {
-    parsed.toolActivities.push({
-      id: stringValue(part["tool_call_id"]) ?? partId,
-      kind: "call",
-      status: "running",
-      name: stringValue(part["tool_name"]) ?? "tool",
-      args: normalizeToolArgs(part["args"]),
-    })
-    return
-  }
-  ```
-
-  `TOOL_CALL_PART_KINDS = {"tool-call", "builtin-tool-call", "native-tool-call"}`,
-  `TOOL_RESULT_PART_KINDS = {"tool-return", ...}` — capability-load parts
-  already fall into these sets (their `part_kind` is plain
-  `tool-call`/`tool-return`); today they render as a generic tool row. The
-  parser does **not** read the `tool_kind` field yet.
-  `parseConversationMessages` (lines 54-90) post-processes: result activities
-  mark matching call activities `completed`; un-resulted calls become
-  `approval`/`unknown` depending on run status.
-- `features/conversations/components/tool-call-row.tsx` — the collapsible
-  `<details>` row used for tool activities (status icon, verb, Arguments /
-  Result JSON blocks). The new activation row is a sibling of this component.
-- `features/conversations/components/message-row.tsx` — renders a parsed
-  message's `thinking` → `text` → `toolActivities` (via `ToolCallRow`) →
-  `unsupportedParts`. This is where the activation row slots in.
+  `name === "load_capability"`. **The reducer needs no change.**
+- `features/conversations/message-parts/` — the persisted-message parser is
+  now a package (`{index,types,parse,utils,delegation,pair-tool-results,
+  pending-messages}.ts`), split out of the old single file by `603fff7`:
+  - `types.ts:25-35` — `ToolActivity`: `{id, kind:
+    "call"|"result"|"approval"|"retry"|"unknown", status, name, args?,
+    result?, outcome?, decision?, delegate?: DelegationToolActivity}`; the
+    status union includes `"failed"|"denied"`.
+  - `parse.ts:32-33` — `TOOL_CALL_PART_KINDS = {"tool-call",
+    "builtin-tool-call", "native-tool-call"}` / `TOOL_RESULT_PART_KINDS`.
+    Capability-load parts already fall into these sets (their `part_kind`
+    is plain `tool-call`/`tool-return`); today they render as a generic
+    tool row. The parser does **not** read the `tool_kind` field yet.
+  - `parse.ts:178-221` — the tool call/result matching branches.
+  - `parse.ts:35-112` — `parseConversationMessages`. **Call/result pairing
+    already exists**: `pairToolResults` + the `consumedResultKeys` filter
+    (`parse.ts:41, 101-108`) collapse a call+result into a single
+    `kind: "call"` activity whose status is upgraded to `completed` — so
+    persisted history needs NO manual dedup in this plan.
+  - `normalizeToolArgs` lives in `message-parts/utils.ts`.
+- `features/conversations/components/tool-call-row.tsx` — the row used for
+  tool activities. It already demonstrates the specialized-row pattern this
+  plan should copy: `tool-call-row.tsx:38-45` does
+  `if (activity.delegate) return <DelegationToolRow …>`. Shared building
+  blocks live in `tool-activity-row-shell.tsx` (`ToolActivityRowShell`,
+  `ToolActivityRowHeader`) and `tool-activity-status.tsx`
+  (`ActivityStatusIcon`/`ActivityStatusSuffix`); JSON blocks in
+  `tool-call-content-blocks.tsx`.
+- `features/conversations/components/message-row.tsx` — maps activities to
+  `ToolCallRow` in **two** places: `AssistantLiveActivityRow` (live,
+  l.87-89) and `MessageToolActivities` (persisted, l.169-171). It also
+  renders `ThinkingBlock` (l.146-164, added by `6af36b5` — a
+  `<details>`/"View Thoughts" collapse driven by the `channel: "thinking"`
+  stream field); the activation row is a sibling in the same assistant
+  stack, no collision.
 - `features/conversations/components/message-list.tsx` — merges live stream
-  state into renderable rows; its `buildLiveToolActivities` (around lines
-  131-159 per recon — **read the actual function before editing**) converts
-  `state.toolCalls` into the same `ToolActivity` shape for in-flight runs.
+  state into renderable rows; `buildLiveToolActivities` is at l.165-238
+  (imports from the `message-parts` barrel at l.24-33); the `toolCalls.map`
+  block to annotate is l.169-184.
 - Skill display names: plan 019 exposes `skillsQueryOptions` /
   `useSkillsQuery` from `@/features/skills/api/list-skills` (workspace-scoped
   TanStack Query). Skills carry `id`, `name`, `human_name`.
@@ -134,10 +144,15 @@ Frontend pieces:
 
 **In scope**:
 
-- `apps/web/src/features/conversations/message-parts.ts` (discriminate
+- `apps/web/src/features/conversations/message-parts/types.ts` (extend
+  `ToolActivity` with `toolKind?`)
+- `apps/web/src/features/conversations/message-parts/parse.ts` (discriminate
   capability-load parts)
 - `apps/web/src/features/conversations/components/skill-activation-row.tsx` (create)
-- `apps/web/src/features/conversations/components/message-row.tsx` (render the new row)
+- `apps/web/src/features/conversations/components/tool-call-row.tsx` (the
+  routing branch — mirror the existing `DelegationToolRow` branch at
+  l.38-45; regular tools including `read_skill_document` keep their
+  existing rendering)
 - `apps/web/src/features/conversations/components/message-list.tsx` (live-stream mapping)
 - `apps/web/src/features/conversations/skill-activation.ts` (create — small
   pure helpers: capability-id parsing, display-name resolution types)
@@ -148,9 +163,9 @@ Frontend pieces:
   protocol and reducer are deliberately unchanged. If you believe a reducer
   change is required, re-read Step 2; if still required, STOP and report.
 - Backend files — plan 018 already emits everything needed.
-- `tool-call-row.tsx` — regular tools (including `read_skill_document`) keep
-  their existing rendering.
-- Approval flow components.
+- `message-row.tsx` — with the branch living inside `ToolCallRow` (Step 4),
+  both of its render sites are covered without touching it.
+- Approval flow components; `delegation-tool-row.tsx`.
 
 ## Git workflow
 
@@ -170,33 +185,40 @@ export function skillIdFromCapabilityArgs(args: unknown): string | null
 ```
 
 `skillIdFromCapabilityArgs` accepts the activity's args (object **or** JSON
-string — parse defensively like `normalizeToolArgs` in `message-parts.ts`),
-reads `id`, and returns the UUID after `SKILL_CAPABILITY_PREFIX`, or `null`
-for non-skill capability loads (render those as a plain tool row).
+string — parse defensively like `normalizeToolArgs` in
+`message-parts/utils.ts`), reads `id`, and returns the UUID after
+`SKILL_CAPABILITY_PREFIX`, or `null` for non-skill capability loads (render
+those as a plain tool row).
 
 **Verify**: `pnpm typecheck` → exit 0.
 
 ### Step 2: Discriminate in the persisted parser
 
-In `message-parts.ts`:
+In the `message-parts/` package:
 
-- Extend `ToolActivity` with an optional field: `toolKind?: string`. Keep
-  `kind` untouched — the completed/approval post-processing in
-  `parseConversationMessages` keys off `kind: "call"|"result"` and must keep
-  working for activations too (an activation has a call and a return like any
-  tool).
-- In the `TOOL_CALL_PART_KINDS` branch and the `TOOL_RESULT_PART_KINDS`
-  branch, add `toolKind: stringValue(part["tool_kind"]) ?? undefined` to the
-  pushed activity. Mind `exactOptionalPropertyTypes`: only include the
-  property when defined, e.g. spread `...(toolKind ? { toolKind } : {})`.
+- `types.ts:25-35`: extend `ToolActivity` with an optional field:
+  `toolKind?: string`. Keep `kind` untouched — the completed/approval
+  post-processing and the `pairToolResults` collapsing key off
+  `kind: "call"|"result"` and must keep working for activations too (an
+  activation has a call and a return like any tool).
+- `parse.ts:178-221`: in the `TOOL_CALL_PART_KINDS` branch and the
+  `TOOL_RESULT_PART_KINDS` branch, add
+  `toolKind: stringValue(part["tool_kind"]) ?? undefined` to the pushed
+  activity. Mind `exactOptionalPropertyTypes`: only include the property
+  when defined, e.g. spread `...(toolKind ? { toolKind } : {})`. Confirm
+  the pairing step (`pair-tool-results.ts`) carries `toolKind` through when
+  it merges a result into its call.
 
 **Verify**: `pnpm typecheck` → exit 0.
 
 ### Step 3: The activation row — `components/skill-activation-row.tsx`
 
-A compact, non-collapsible row (visually lighter than `ToolCallRow` — model
-its container styling on the collapsed `ToolCallRow` summary line so it sits
-naturally in the same stack):
+A compact, non-collapsible row. **Compose the shared shells rather than
+hand-copying styling**: `ToolActivityRowShell` / `ToolActivityRowHeader`
+(`tool-activity-row-shell.tsx`) and `ActivityStatusIcon` /
+`ActivityStatusSuffix` (`tool-activity-status.tsx`) — the same pieces
+`ToolCallRow` and `DelegationToolRow` are built from, so the activation row
+sits naturally in the same stack:
 
 - Props: `{ activity: ToolActivity }`.
 - Resolve the skill: `skillIdFromCapabilityArgs(activity.args)`, then look up
@@ -219,7 +241,13 @@ naturally in the same stack):
 
 ### Step 4: Route activities to the right row
 
-In `message-row.tsx`, where `toolActivities` map to `ToolCallRow`, branch:
+Branch **inside `ToolCallRow`** (`tool-call-row.tsx`), mirroring the
+existing delegation branch at l.38-45
+(`if (activity.delegate) return <DelegationToolRow …>`). This single edit
+covers BOTH render sites — `message-row.tsx` maps activities to
+`ToolCallRow` in `AssistantLiveActivityRow` (live, l.87-89) and
+`MessageToolActivities` (persisted, l.169-171) — so `message-row.tsx`
+itself stays untouched:
 
 ```ts
 const isSkillActivation =
@@ -228,22 +256,24 @@ const isSkillActivation =
 ```
 
 - `isSkillActivation && skillIdFromCapabilityArgs(activity.args)` →
-  `SkillActivationRow`.
-- `isSkillActivation` with a null skill id → keep `ToolCallRow` (unknown
-  capability kind; honest fallback).
-- Suppress the duplicate: an activation produces both a call and a result
-  activity with the same id; render the **call** activity only (its status is
-  upgraded to `completed` by the parser once the result exists) and skip
-  result activities whose `toolKind === "capability-load"`. Check how the
-  existing renderer deduplicates call/result pairs for regular tools first —
-  mirror whatever it does (if it renders both today, only change behavior for
-  capability-load activities).
+  `return <SkillActivationRow activity={activity} />` (place after the
+  delegation branch).
+- `isSkillActivation` with a null skill id → fall through to the normal
+  rendering (unknown capability kind; honest fallback).
+- Dedup: **persisted history is already collapsed** — `pairToolResults` +
+  `consumedResultKeys` (`parse.ts:41, 101-108`) merge call+result into a
+  single `kind: "call"` activity upgraded to `completed`, so no manual
+  suppression is needed there. Only verify the LIVE path: check whether
+  `buildLiveToolActivities` emits one activity per `ToolCallState` (it
+  should — the reducer keys by `tool_call_id`); if it ever yields separate
+  call/result activities, suppress the result one for
+  `toolKind === "capability-load"` only.
 
-In `message-list.tsx`, read `buildLiveToolActivities` and make the live
-mapping carry the same information: live `ToolCallState` has no `tool_kind`,
-so set `toolKind: "capability-load"` when
-`name === LOAD_CAPABILITY_TOOL_NAME` while building the live activities. No
-reducer change.
+In `message-list.tsx`, in the `toolCalls.map` block of
+`buildLiveToolActivities` (l.169-184), make the live mapping carry the same
+information: live `ToolCallState` has no `tool_kind`, so set
+`toolKind: "capability-load"` when `name === LOAD_CAPABILITY_TOOL_NAME`
+while building the live activities. No reducer change.
 
 **Verify**: `pnpm typecheck && pnpm lint` → exit 0.
 
@@ -273,7 +303,8 @@ ALL must hold (run from `apps/web`):
 
 - [ ] `pnpm check` exits 0
 - [ ] `grep -rn "capability-load" src/features/conversations/` matches in
-      `message-parts.ts`, `message-list.tsx` (or the row component), per Steps 2–4
+      `message-parts/parse.ts`, `message-list.tsx`, and `tool-call-row.tsx`
+      (or the row component), per Steps 2–4
 - [ ] `grep -n "skill.activated" src/` returns no matches (no new SSE event
       was introduced)
 - [ ] `git diff --name-only` shows only in-scope files (leave any unrelated

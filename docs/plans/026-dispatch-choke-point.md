@@ -92,7 +92,7 @@ tool execution.
   (`delegation/approvals.py:23-41`).
 - Scheduled runs: same `execute_run`, `trigger="scheduled"`; an
   approval-required tool suspends the run and the schedule run mirrors
-  `awaiting_approval` (`finalize_schedule_run_execution.py:72-76`);
+  `awaiting_approval` (`finalize_schedule_run_execution.py:72-73`);
   reconcile propagates late outcomes. Delegation is currently **enabled**
   for scheduled runs.
 - Audit: `audit_events` has **no `tool_name`/`tool_provider` columns**
@@ -170,14 +170,20 @@ tool execution.
 
 ### Step 1: Probe the hook surface (no production code yet)
 
-Write a throwaway script (scratch, not committed) that inspects the
-installed `pydantic_ai` 2.1.0 `Hooks` capability: list the `hooks.on.*`
-decorator names and the exact signature of the tool-execution hooks
-(names like `before_tool_execute` / `after_tool_execute` per the digest —
-verify, do not assume). Confirm: (a) the hook receives the tool name, args,
-and `RunContext` (so `ctx.deps` reaches `RuntimeDeps`); (b) raising/returning
-from the before-hook can block execution with a model-visible message;
-(c) hooks fire for tools passed via `tools=[...]` (not only toolsets).
+**Largely pre-answered (verified 2026-07-03 at `9208c47`):** the hook API
+exists and is already in use — `runtime/capabilities.py:21-49` constructs
+`Hooks(id="praxis-runtime-hooks")` and registers
+`@hooks.on.before_tool_execute async def (ctx, *, call, tool_def, args)` and
+`@hooks.on.after_tool_execute async def (ctx, *, call, tool_def, args,
+result)`, reading `ctx.deps.run/conversation/agent` and `call.tool_name`.
+`hooks.on` also exposes `tool_execute`, `tool_execute_error`, and
+`before_tool_validate`. So (a) is confirmed: hooks receive `RunContext.deps`.
+
+The remaining genuinely open probes — write a throwaway script (scratch,
+not committed) against the installed `pydantic_ai` 2.1.0 to confirm:
+(b) raising/returning from the before-hook can block execution with a
+model-visible message; (c) hooks fire for tools passed via `tools=[...]`
+(not only toolsets), and for approval-denied replays.
 
 Record the findings as a comment block at the top of `dispatch.py`. If no
 tool-execution hook exists in 2.1.0, fall back to a wrapper toolset
@@ -355,6 +361,9 @@ Stop and report back (do not improvise) if:
 - Plan 014 (OTel) should wrap the same `dispatch.py` seam — one span per
   invocation with the same attributes as the audit row. Do not let it grow a
   second interception layer.
+- Plan 028's builtin-call audit hooks into the `events.py` translator, which
+  commit `6af36b5` refactored to be channel-aware (`text`/`thinking`) — 028's
+  insertion lands in that changed code, not the pre-`6af36b5` structure.
 - Plan 041 (Google Ads et al.) relies on: write tools declaring
   `effect="write"` + `output_model`, envelope enforcement on non-interactive
   principals, and `denied_approval` audit rows. Its "spend ops pause on

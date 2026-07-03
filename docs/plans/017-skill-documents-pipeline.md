@@ -372,10 +372,19 @@ Stop and report back (do not improvise) if:
 
 ## Maintenance notes
 
+- **Reuse contract (roadmap requirement — Phase 3 / plan 033).**
+  `convert_document_to_markdown` / `_convert_sync` and the
+  `original_ref`/`markdown_ref` helpers must be structured as a standalone,
+  storage-ref-agnostic conversion module so plan 033 (background
+  extraction→markdown jobs over Files) can call the same code path. Do not
+  couple conversion to the skills manifest: keep the manifest-write in the
+  confirm service and the conversion in a reusable helper. The roadmap is
+  explicit that 033 must NOT build a second converter
+  (`000_MASTER_ROADMAP.md` §Phase 2 note and plan 033's scope).
 - **Conversion runs in-request** (`asyncio.to_thread`). If real-world uploads
   are large/slow, move conversion to a background job keyed off the manifest
   `status` (add `"converting"` to the status literal then). This was
-  deliberately deferred.
+  deliberately deferred — and dovetails with the 033 reuse contract above.
 - **Converted markdown is untrusted user content.** Plan 018 must present it to
   agents as data, not instructions (it wraps tool returns accordingly). Any
   future indexing/embedding of these docs must treat them the same way.

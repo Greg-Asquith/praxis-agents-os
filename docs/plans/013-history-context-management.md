@@ -16,14 +16,17 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (a wrong trim can produce provider-rejected histories or lose context silently)
-- **Depends on**: none (compatible with 011/012; merge independently)
+- **Depends on**: **execute AFTER plan 018** (roadmap constraint, D2/README):
+  trimming must preserve `LoadCapabilityCallPart`/`LoadCapabilityReturnPart`
+  pairs or agents silently lose loaded skills on resume — see the
+  capability-load invariant below. Compatible with 011/012 (both DONE).
 - **Category**: tech-debt / correctness-at-scale
 - **Planned at**: commit `1a51665`, 2026-07-01
 
 ## Why this matters
 
 Every turn feeds the *entire* stored conversation into the model. The code
-admits this is a stopgap — `persistence.py:27-29`: "Pending: this intentionally
+admits this is a stopgap — `persistence.py:27-28`: "Pending: this intentionally
 returns the full stored history. Add trimming or summarization before treating
 long-running conversations as context-safe." Long conversations will eventually
 exceed provider context windows (hard failure) and, before that, cost linearly
@@ -52,7 +55,8 @@ processor decides what the model sees per request.").
   ```
 
   New runtime capabilities are appended to this list. The consuming site is
-  `loop.py:46` (`capabilities=build_runtime_capabilities(agent)`).
+  `loop.py:71` (`capabilities=build_runtime_capabilities(agent)` — moved from
+  line 46 by the delegation commit `f83d210`).
 
 - Verified against installed `pydantic-ai==2.1.0`:
   `from pydantic_ai.capabilities import ProcessHistory` works.
@@ -72,9 +76,21 @@ processor decides what the model sees per request.").
   return (or vice versa) via a processor produces an invalid history that some
   providers reject" (06 doc, Gotchas).
 
-- The runtime uses `instructions=` (not `system_prompt=`) — `loop.py:42` — so
-  instructions are re-sent on every request regardless of history content. No
-  `ReinjectSystemPrompt` is needed; trimming cannot lose the system prompt.
+- The runtime uses `instructions=` (not `system_prompt=`) — `loop.py:64`,
+  now assembled via `_runtime_instructions(agent, include_delegation=...)`
+  (which may append `DELEGATION_INSTRUCTIONS`) — so instructions are re-sent
+  on every request regardless of history content. No `ReinjectSystemPrompt`
+  is needed; trimming cannot lose the system prompt.
+
+- **Capability-load invariant (plan 018 interaction — the reason this plan
+  runs after 018).** Once 018 lands, loaded-skill state is reconstructed
+  from `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs in history
+  (both live in `pydantic_ai.messages` and subclass
+  `ToolCallPart`/`ToolReturnPart`). A trimmer that drops them silently
+  un-loads skills on resume. Turn-boundary trimming keeps pairs *within* a
+  kept turn, but does NOT protect a kept turn that depends on a capability
+  loaded in a trimmed *earlier* turn — that cross-turn hazard must be
+  handled explicitly (see Step 2 requirement 3).
 
 - The approval resume path (`resume_run_stream.py` →
   `execute_run(message_history=..., deferred_tool_results=...)`) replays a
@@ -155,6 +171,14 @@ Create `apps/api/services/agents/runtime/history.py`. Requirements:
    `settings.AGENT_HISTORY_MAX_TURNS` (no-op passthrough when the setting is
    `None`). Read the setting at call time, not import time, so tests can
    patch it.
+3. **Preserve capability loads across the cut (018 invariant).** Before
+   discarding trimmed turns, scan them for
+   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs
+   (`pydantic_ai.messages`; identifiable via `tool_kind ==
+   "capability-load"`) and re-prepend each surviving pair (call + return,
+   in order) ahead of the kept turns, so capabilities loaded in trimmed
+   turns remain loaded for the model. Add a test asserting a
+   `LoadCapability*` pair from a trimmed turn survives trimming.
 
 Match the module docstring/comment style of neighbors (single terse lines; see
 `events.py`, `persistence.py`).
@@ -196,6 +220,9 @@ Create `apps/api/tests/services/agents/runtime/test_history_trimming.py`
    the captured request contains only the final prior turn plus the new prompt.
 5. **Integration — disabled**: with the setting patched to `None`, the captured
    messages equal the full input history plus the new prompt.
+6. **Unit — capability-load survival**: a history where turn 1 contains a
+   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pair and
+   `max_turns=1` keeps the pair (re-prepended) alongside the final turn.
 
 **Verify**: `cd apps/api && uv run pytest tests/services/agents/runtime/test_history_trimming.py -q` → all pass
 
@@ -222,6 +249,9 @@ is actually wired into the runtime agent, not just unit-correct.
 
 Stop and report back if:
 
+- Plan 018 is not DONE (this plan must trim histories that already carry
+  capability-load parts, with the preservation rule tested — not land first
+  and hope).
 - `ProcessHistory` import fails or rejects a plain callable (package drift).
 - The FunctionModel capture shows the processor NOT running on the
   `run_stream_events` path (capability registered but never invoked) — that
@@ -243,3 +273,7 @@ Stop and report back if:
 - Reviewers should scrutinize the turn-boundary definition against real
   multi-tool histories (especially denied-tool `retry-prompt` shapes) before
   merge.
+- This plan honors plan 018's maintenance note: history trimming MUST
+  preserve `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs
+  (Step 2 requirement 3). If 018 has not landed when this executes, STOP —
+  the ordering is a roadmap constraint, not a suggestion.
