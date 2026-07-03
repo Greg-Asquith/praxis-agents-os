@@ -127,16 +127,22 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
     await db_session.flush()
 
     agent = _agent("Tool Caller", workspace_id=workspace.id, user_id=user.id)
-    agent.tool_names = ["get_runtime_context"]
+    agent.tool_names = ["test_runtime_context"]
     db_session.add(agent)
     await db_session.flush()
 
     base_tools = build_runtime_tools(agent)
     delegation_tools = build_runtime_tools(agent, include_delegation=True)
 
-    assert [tool.name for tool in base_tools] == ["get_runtime_context"]
+    assert [tool.name for tool in base_tools] == [
+        "read_todos",
+        "write_todos",
+        "test_runtime_context",
+    ]
     assert [tool.name for tool in delegation_tools] == [
-        "get_runtime_context",
+        "read_todos",
+        "write_todos",
+        "test_runtime_context",
         "list_delegate_agents",
         "delegate_to_agent",
     ]
@@ -312,8 +318,8 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
 ) -> None:
     runtime_context = await _create_committed_delegation_context(
         committed_db_session_factory,
-        child_tool_names=["add_numbers"],
-        child_tool_policies={"add_numbers": "approval"},
+        child_tool_names=["test_add_numbers"],
+        child_tool_policies={"test_add_numbers": "approval"},
     )
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -326,10 +332,10 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
     ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
         tool_names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in tool_names:
-            if "add_numbers" in tool_names and not _has_tool_return(messages, "add_numbers"):
+            if "test_add_numbers" in tool_names and not _has_tool_return(messages, "test_add_numbers"):
                 yield {
                     0: DeltaToolCall(
-                        name="add_numbers",
+                        name="test_add_numbers",
                         json_args=json.dumps({"a": 2, "b": 3}),
                         tool_call_id="child-add",
                     )
@@ -388,7 +394,7 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
             event.data for event in sink.events if event.event == EVENT_TOOL_APPROVAL_REQUIRED
         ]
         assert [(event["tool_call_id"], event["name"]) for event in approval_events] == [
-            ("child-add", "add_numbers")
+            ("child-add", "test_add_numbers")
         ]
         delegated_metadata = suspended.run.metadata_json["approval_state"][
             "deferred_tool_requests"
@@ -437,7 +443,7 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                     else approval.args,
                 )
                 for approval in approval_state.approvals
-            ] == [("child-add", "add_numbers", {"a": 2, "b": 3})]
+            ] == [("child-add", "test_add_numbers", {"a": 2, "b": 3})]
             assert approval_state.approvals[0].delegation is not None
             assert approval_state.approvals[0].delegation.child_run_id == child_run.id
             assert (
@@ -495,8 +501,8 @@ async def test_delegated_child_approval_resume_rechecks_allowlist(
 ) -> None:
     runtime_context = await _create_committed_delegation_context(
         committed_db_session_factory,
-        child_tool_names=["add_numbers"],
-        child_tool_policies={"add_numbers": "approval"},
+        child_tool_names=["test_add_numbers"],
+        child_tool_policies={"test_add_numbers": "approval"},
     )
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -512,10 +518,10 @@ async def test_delegated_child_approval_resume_rechecks_allowlist(
 
         tool_names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in tool_names:
-            if "add_numbers" in tool_names and not _has_tool_return(messages, "add_numbers"):
+            if "test_add_numbers" in tool_names and not _has_tool_return(messages, "test_add_numbers"):
                 yield {
                     0: DeltaToolCall(
-                        name="add_numbers",
+                        name="test_add_numbers",
                         json_args=json.dumps({"a": 2, "b": 3}),
                         tool_call_id="child-add",
                     )

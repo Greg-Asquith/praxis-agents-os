@@ -4,7 +4,8 @@
 
 Resolution is agent-driven: every agent carries its own provider/model/settings,
 so delegation to a specialist agent automatically inherits that agent's model.
-The only non-agent use case today is conversation naming, a settings constant.
+Non-agent utility models, such as conversation naming and native helper tools,
+resolve from settings-owned constants.
 """
 
 from typing import Any

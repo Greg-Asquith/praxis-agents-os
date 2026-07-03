@@ -12,6 +12,7 @@ class ToolCatalogEntry(BaseModel):
     provider: str
     label: str
     description: str
+    kind: str
     effect: str
     default_policy: str
     supported_policies: list[str]
@@ -24,6 +25,7 @@ class ToolCatalogEntry(BaseModel):
             provider=definition.provider,
             label=definition.label,
             description=definition.description,
+            kind=definition.kind,
             effect=definition.effect,
             default_policy=definition.default_policy,
             supported_policies=sorted(definition.allowed_policies()),

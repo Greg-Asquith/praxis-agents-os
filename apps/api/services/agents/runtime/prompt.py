@@ -28,6 +28,13 @@ Delegation rules:
   retrying the same delegation.
 """
 
+PLANNING_TOOL_NAME = "write_todos"
+PLANNING_INSTRUCTIONS = """\
+Use the conversation todo list for multi-step work. Keep it current by replacing
+the list as priorities change, maintain exactly one in_progress item while
+actively working, and clear the list when the task is complete.
+"""
+
 
 @dataclass(frozen=True)
 class PromptBlock:
@@ -42,6 +49,10 @@ def runtime_prompt_blocks(agent: Agent, *, include_delegation: bool) -> list[Pro
     """Return the canonical ordered prompt blocks for one runtime agent."""
     return [
         PromptBlock("identity", agent.instructions),
+        PromptBlock(
+            "planning",
+            PLANNING_INSTRUCTIONS,
+        ),
         PromptBlock(
             "delegation",
             DELEGATION_INSTRUCTIONS if include_delegation else "",

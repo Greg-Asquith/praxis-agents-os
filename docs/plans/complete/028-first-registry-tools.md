@@ -37,30 +37,31 @@
    `default_policy="auto"` — approval on a self-notes tool would train users
    to rubber-stamp. The 026 envelope can still deny it wholesale for
    hypothetical locked-down principals.
-3. **Native web search ships as a `capability`-kind registry entry.**
-   pydantic-ai's `WebSearch` is a capability, not a function tool, so the
-   contract gains a second kind (`kind: "function" | "capability"` +
-   `capability_factory`) — the amendment 025's maintenance note anticipated.
-   Policy/catalog/write-time validation treat it like any entry; mounting
-   differs (it joins `capabilities=[...]`, not `tools=[...]`).
+3. **Native web search ships as a normal `function` entry with
+   `provider="native"`.** pydantic-ai's `WebSearch` capability cannot choose
+   a model independently from the active agent request. The shipped
+   `web_search` tool therefore runs a short helper agent with native search
+   enabled and returns the helper's answer to the active agent. This is the
+   pattern future native tools such as image creation should follow when the
+   executor model may differ from the active agent model.
 4. **Native-only in v1, no DuckDuckGo local fallback** — no new scraping
-   dependency, deterministic provider behavior. Entries declare
-   `supported_model_providers`; at mounting time an agent whose resolved
-   model provider lacks native search gets the capability **skipped with a
-   log line** (mirror of `is_tool_allowed` skip semantics from 025), never a
-   broken run. `WebFetch` is explicitly deferred (SSRF/story needs 029's
-   governance pass).
+   dependency, deterministic provider behavior. `web_search` exposes
+   `model_provider` and optional `model` as tool arguments, validates them
+   against the available native-search providers, and uses the active agent
+   model only when no provider is requested and it supports native search.
+   This lets an OpenAI agent use, for example, Anthropic native web search
+   on a single call.
 5. **Approval is not offered for native search** (`supports_approval=False`,
-   `effect="read"`): provider-native execution happens server-side at the
-   model provider — our choke point cannot intercept it, so offering an
-   approval mode would be a lie. It CAN still be audited after the fact
-   (decision 6) and switched off per agent.
-6. **Builtin tool calls are audited from stream events.** Provider-native
-   invocations surface as builtin tool parts in the event stream;
-   `execute_run`'s translator emits the same
-   `record_tool_invocation_audit_event` with `tool_provider="native"` and a
-   digest of the search input. Latency is provider-side and recorded as
-   null.
+   `effect="read"`): the outer `web_search` call is read-only and provider
+   execution happens inside the helper model request, so approval would not
+   intercept the provider-native call itself. The tool can still be switched
+   off per agent.
+6. **Native helper tool calls are audited by the dispatch choke point.**
+   Because `web_search` is mounted as a normal runtime function tool, 026's
+   dispatch hook emits the digest-only audit row with
+   `tool_provider="native"`. The event translator still understands
+   provider-native parts for any future direct capability use, but the shipped
+   search path does not rely on active-model builtin parts.
 
 ## Why this matters
 
@@ -68,10 +69,11 @@ Two demo tools prove nothing about the registry's ergonomics; these entries
 do. The TODO tool gives every agent visible multi-step planning (the chat UI
 already renders tool calls generically, so plans are user-legible for free)
 — the NOTES ask, built our way. Native web search is the first
-capability-backed entry and forces the registry to answer "how do
+native provider-backed entry and forces the registry to answer "how do
 provider-native tools get policy/audit treatment" *now*, with a read-only
-tool, rather than during integrations. After this plan, the pattern for
-034/041/046/048/050 tools is fully rehearsed.
+tool and a per-call selectable helper model, rather than during
+integrations. After this plan, the pattern for 034/041/046/048/050 tools is
+fully rehearsed.
 
 ## Current state
 
@@ -126,11 +128,12 @@ tool, rather than during integrations. After this plan, the pattern for
   `capability_factory`, `supported_model_providers`; validation)
 - `apps/api/services/agents/runtime/tools/planning.py` (create — provider
   module: `write_todos`, `read_todos`)
-- `apps/api/services/agents/runtime/tools/native.py` (create — provider
-  module: `web_search` capability entry)
+- `apps/api/services/agents/runtime/tools/native/web_search.py` (create —
+  provider module: helper-model backed `web_search` function entry)
 - `apps/api/services/agents/runtime/tools/registry.py` (assembly imports;
-  `build_runtime_native_capabilities(agent, resolved_model)`)
-- `apps/api/services/agents/runtime/loop.py` (mount native capabilities)
+  capability entries remain supported for future use)
+- `apps/api/core/settings/models.py` and `apps/api/.env.example` (native
+  web-search helper max-step setting only; provider/model are tool arguments)
 - `apps/api/services/agents/runtime/execute_run.py` or the event translator
   it uses (builtin-call audit emission, decision 6)
 - `apps/api/services/agents/runtime/tools/schemas.py` (catalog entry gains
@@ -142,10 +145,10 @@ tool, rather than during integrations. After this plan, the pattern for
 
 - `WebFetch`, code execution, image generation, memory native tools —
   deferred (decision 4; memory is Phase 5 our-way).
-- Frontend — 027's contract makes these appear automatically; the only
-  follow-up is optional icon/copy polish.
-- Prompt-injection of the todo list into the system prompt (018's assembler
-  owns prompt blocks; see Maintenance notes).
+- Frontend — only configurable tools should appear in the agent form. TODO
+  tools are always-on runtime affordances, not form options.
+- Prompt-injection of the todo list into the system prompt beyond the
+  always-on planning guidance block.
 - A dedicated todos UI — the transcript's generic tool rendering is v1.
 - `defer_loading`, MCP (D7).
 
@@ -168,7 +171,7 @@ providers configured in `core/settings` support native search (from the
 capability's own provider table); the exact builtin tool call/result
 part/event class names and fields as they appear in `run_stream_events`; and
 whether 026's tool-execution hooks fire for builtin tools (expected: no —
-hence decision 6). Record findings in `native.py`'s header comment.
+hence decision 6). Record findings in `native/web_search.py`'s header comment.
 
 **Verify**: findings written down; the supported-provider set is explicit.
 
@@ -220,43 +223,32 @@ Import `planning` in `registry.py`'s assembly point.
 `uv run python -c "...print(sorted(RUNTIME_TOOL_CATALOG))"` → includes
 `read_todos`, `write_todos`.
 
-### Step 4: `web_search` capability entry + mounting
+### Step 4: `web_search` helper-model entry
 
-`runtime/tools/native.py`: register
+`runtime/tools/native/web_search.py`: register `web_search` as
 `@runtime_tool(name="web_search", provider="native", label="Web search",
-kind="capability", capability_factory=<WebSearch per Step 1>,
 effect="read", default_policy="auto", supports_approval=False,
-supported_model_providers=<Step 1 set>)`.
+takes_ctx=True, output_model=WebSearchOutput)`.
 
-`registry.py`: `build_runtime_native_capabilities(agent, resolved_model) ->
-list` — catalog entries with `kind == "capability"` selected by the agent's
-`tool_names`, filtered by `is_tool_allowed` AND
-`supported_model_providers` vs the resolved model's provider (skip + log,
-decision 4). `build_runtime_tools` must now skip capability entries (they
-are not `Tool`s).
+The tool resolves a helper model independently from the active agent:
+`model_provider` and optional `model` are tool arguments selected per call
+from the available native-search providers. When neither is supplied, the
+active agent model is used if its provider supports native search. The helper
+agent mounts `WebSearch(native=True, local=False)`, and the outer
+`web_search` function remains the audited runtime tool.
 
-`loop.py`: extend the `capabilities=` list with the result (existing
-`build_runtime_capabilities(agent)` + natives). Write-time validation
-needs no change — `web_search` is a normal catalog name; its
-`supports_approval=False` already restricts policies via 025's Step 3.
+`registry.py`: capability-kind entries still exist for future use, but
+`web_search` is mounted by `build_runtime_tools`, not
+`build_runtime_native_capabilities`.
 
 **Verify**: `uv run ruff check .` → exit 0.
 
 ### Step 5: Builtin-call audit
 
-Per Step 1's part shapes: in the event translation path of `execute_run` —
-`events.py::emit_agent_stream_event`, called from `execute_run.py:198`.
-Note: commit `6af36b5` rewrote this translator to be channel-aware
-(`text`/`thinking` channels, `PartDeltaEvent` filtered by
-`TextPartDelta`/`ThinkingPartDelta`); it still handles
-`FunctionToolCallEvent` and `PartStartEvent`/`PartEndEvent`, so add the
-builtin-part branch alongside the new channel logic, not the older
-structure. On a builtin tool call/result pair emit
-`record_tool_invocation_audit_event(tool_name="web_search",
-tool_provider="native", args digest from the call part's input, latency
-null, outcome/status from the result part)`. Guard so unknown future builtin
-names still audit under their raw name. If Step 1 showed 026's hooks DO
-fire for builtins, delete this step and say so in the completion note.
+The shipped `web_search` path audits through 026's function-tool dispatch
+hook. The event translation path still records digest-only audit rows for
+provider-native `NativeToolCallPart`/`NativeToolReturnPart` pairs so future
+direct capability entries do not become unaudited.
 
 **Verify**: `uv run ruff check .` → exit 0.
 
@@ -270,11 +262,11 @@ fire for builtins, delete this step and say so in the completion note.
   written for `write_todos` with `effect`-consistent outcome; envelope
   `side_effect_policy="deny"` blocks it (reuses 026's test seam).
 - `test_native_tools.py`: catalog lists `web_search` with `kind:
-  "capability"`, `supports_approval` false; mounting includes the capability
-  for a supported provider and skips+logs for an unsupported one (unit-test
-  `build_runtime_native_capabilities` directly with fake resolved models);
-  `build_runtime_tools` ignores capability entries; write-time validation
-  rejects `tool_policies: {"web_search": "approval"}`.
+  "function"`, `provider: "native"`, and `supports_approval` false;
+  mounting includes it as a function tool alongside the always-on todos;
+  helper-model resolution can select a provider different from the active
+  agent; write-time validation rejects
+  `tool_policies: {"web_search": "approval"}`.
 - Builtin audit: unit-test the translator function with synthetic parts per
   Step 1's recorded shapes (do not attempt a live provider call in tests).
 - Catalog route test: now returns 4+ entries including the new ones.
@@ -285,25 +277,43 @@ fire for builtins, delete this step and say so in the completion note.
 ## Test plan
 
 Covered by Step 6 (~14 tests). Manual (dev, requires a provider key with
-native search — likely Anthropic): enable `web_search` + `write_todos` on
-an agent via the UI (they appear automatically if 027 landed — that is
-027's acceptance test too); ask for a researched multi-step task; confirm
-the todo list renders as tool calls in chat and audit rows exist for both
-the todos writes and the native search.
+native search — likely Anthropic): enable `web_search` on an agent via the
+UI; ask for a researched multi-step task; confirm the always-on TODO tools
+render as tool calls in chat and audit rows exist for both the todo writes
+and the native search.
+
+## Completion notes
+
+Completed 2026-07-03. The manual provider-search pass was skipped because
+no search-capable provider key was available in this environment; native
+helper-model resolution, stream event translation for future direct native
+parts, and digest-only audit persistence are covered by tests. Because 018's prompt
+assembler already exists, the planning usage guidance is injected as a
+prompt block for every agent. Follow-up feedback removed the old demo
+`get_runtime_context`/`add_numbers` tools and made `read_todos`/`write_todos`
+hidden auto-mounted tools instead of agent-form options.
+
+Follow-up feedback also changed the native-tool pattern: `web_search` is no
+longer mounted as an active-model capability. It is an audited
+`provider="native"` function tool that runs a helper model with native web
+search enabled. Its `model_provider` and optional `model` tool arguments let
+that helper use a different provider/model than the active agent, matching
+the expected pattern for later native tools such as image creation.
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0
-- [ ] Migration applied; `uv run alembic check` clean; downgrade/upgrade
+- [x] `uv run ruff check .` exits 0
+- [x] Migration applied; `uv run alembic check` clean; downgrade/upgrade
       cycle tested once
-- [ ] `uv run pytest -q` exits 0
-- [ ] Catalog endpoint lists `write_todos`, `read_todos`, `web_search` with
-      correct `kind`/`effect`/policy capabilities
-- [ ] Probe findings recorded in `native.py` header
-- [ ] Manual pass done or explicitly called out as skipped (no search-capable
+- [x] `uv run pytest -q` exits 0
+- [x] Runtime catalog registers `write_todos`, `read_todos`, and
+      `web_search` with correct `kind`/`effect`/policy capabilities; the
+      public catalog exposes only configurable entries (`web_search`)
+- [x] Probe findings recorded in `native/web_search.py` header
+- [x] Manual pass done or explicitly called out as skipped (no search-capable
       key available)
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `git status` shows no modified files outside the in-scope list
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 
@@ -311,31 +321,28 @@ Stop and report back (do not improvise) if:
 
 - 025/026 are not DONE, or their delivered shapes differ from "Current
   state".
-- Step 1 finds `WebSearch` cannot be mounted per-agent alongside the
-  existing `Hooks` capability, or 2.1.0's builtin parts are not observable
-  in `run_stream_events` (decision 6 has no data path — the native entry
-  then ships unaudited or not at all; that is a product call).
-- The capability needs per-run construction but only per-agent mounting is
-  available (or vice versa) in a way that breaks `capability_factory`.
+- Step 1 finds `WebSearch` cannot be mounted inside the helper agent or
+  helper-model construction cannot use the explicit provider credential seam.
+- The helper-model pattern cannot preserve normal dispatch audit semantics
+  for the outer `web_search` call.
 - Autogenerate emits anything beyond the one table.
 - You are tempted to add a local search fallback dependency to make tests
   easier — decision 4 says no; test the mounting logic, not DuckDuckGo.
 
 ## Maintenance notes
 
-- **018 interaction**: when the skills/prompt assembler lands, add a small
-  "planning" instructions block injected only when `write_todos` is enabled
-  (usage norms live better in the assembler than in a bloated tool
-  description). Until then the description carries the contract.
-- The `kind="capability"` machinery is exactly what a future MCP entry (D7)
-  and 036's multimodal helpers will reuse — treat `native.py` as the
-  reference implementation.
+- **018 interaction**: the planning instructions block is injected for every
+  agent because TODO tools are always mounted; keep future planning guidance
+  in the assembler instead of bloating the tool description.
+- Direct `kind="capability"` machinery remains in the registry for future
+  provider-adaptive entries, but native tools that need an executor model
+  independent of the active agent should follow the `native/` package's
+  helper-model function-tool pattern.
 - `conversation_todos` retention rides conversation deletion (CASCADE);
   029's retention matrix should still list it explicitly.
-- If workspaces later want search domain allow/deny lists, that is
-  `capability_factory` gaining workspace config from deps — a 040-era
-  follow-up, do not pre-build.
-- Reviewers should scrutinize: XOR validation on the contract kinds, the
-  unsupported-provider skip (must log, never raise mid-run), replace-not-
-  merge todo semantics, and that `write_todos` audit rows carry the digest,
-  not todo content.
+- If workspaces later want search domain allow/deny lists, thread those into
+  the helper model's native `WebSearch` configuration from server-owned
+  context — a 040-era follow-up, do not pre-build.
+- Reviewers should scrutinize: helper-model resolution through the
+  `model_provider`/`model` tool arguments, replace-not-merge todo semantics,
+  and that tool audit rows carry digests, not todo/search content.

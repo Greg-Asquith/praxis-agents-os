@@ -30,7 +30,7 @@ from typing import Any
 
 from pydantic import ValidationError
 from pydantic_ai import ApprovalRequired, DeferredToolResults, ModelRetry, ToolDenied
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
 
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
@@ -259,6 +259,34 @@ async def record_denied_approval_audit_events(
         )
 
 
+async def record_native_tool_invocation_audit_event(
+    *,
+    deps: RuntimeDeps,
+    call_part: NativeToolCallPart | None,
+    return_part: NativeToolReturnPart,
+) -> None:
+    """Audit one provider-native tool invocation observed in the event stream."""
+    args = _tool_call_args_for_digest(getattr(call_part, "args", None))
+    args_sha256, args_bytes = digest_args(args)
+    status, outcome = _native_audit_status_and_outcome(return_part)
+    await record_tool_invocation_audit_event(
+        workspace_id=deps.workspace.id,
+        agent=deps.agent,
+        run=deps.run,
+        tool_name=return_part.tool_name,
+        tool_provider="native",
+        tool_call_id=return_part.tool_call_id,
+        status=status,
+        args=dict(args),
+        args_sha256=args_sha256,
+        args_bytes=args_bytes,
+        latency_ms=None,
+        outcome=outcome,
+        approval_ref=None,
+        error_code=_native_error_code(return_part),
+    )
+
+
 async def record_invocation(
     *,
     deps: RuntimeDeps,
@@ -302,6 +330,31 @@ def _tool_provider(
     if tool_name in DELEGATION_TOOL_NAMES:
         return "delegation"
     return "runtime"
+
+
+def _native_audit_status_and_outcome(
+    return_part: NativeToolReturnPart,
+) -> tuple[AuditStatus, ToolAuditOutcome]:
+    if return_part.outcome == "success":
+        return AuditStatus.SUCCESS, "completed"
+    if return_part.outcome == "denied":
+        return AuditStatus.DENIED, "denied_approval"
+    return AuditStatus.FAILURE, "failed"
+
+
+def _native_error_code(return_part: NativeToolReturnPart) -> str | None:
+    if return_part.outcome == "success":
+        return None
+    provider_details = return_part.provider_details or {}
+    error_code = provider_details.get("error_code")
+    if error_code is not None:
+        return str(error_code)
+    content = return_part.content
+    if isinstance(content, Mapping):
+        content_error_code = content.get("error_code") or content.get("code")
+        if content_error_code is not None:
+            return str(content_error_code)
+    return f"NativeTool{str(return_part.outcome).capitalize()}"
 
 
 def _tool_calls_by_id(messages: Sequence[ModelMessage]) -> dict[str, Any]:

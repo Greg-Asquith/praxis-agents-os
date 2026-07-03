@@ -10,15 +10,54 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from pydantic_ai import models as pydantic_ai_models
+from pydantic_ai import RunContext, models as pydantic_ai_models
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.tools.contract import TOOL_POLICY_APPROVAL
+from services.agents.runtime.tools.registry import runtime_tool
 from tests.support.database import make_async_test_database_url, require_test_database_url
 from tests.support.settings import configure_test_environment
 
 configure_test_environment()
 pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
+
+
+@runtime_tool(
+    name="test_add_numbers",
+    label="Test add numbers",
+    description="Add two integers in tests.",
+    timeout=5,
+    max_retries=1,
+    configurable=False,
+)
+def test_add_numbers(a: int, b: int) -> int:
+    """Test-only approval-capable arithmetic fixture."""
+    return a + b
+
+
+@runtime_tool(
+    name="test_runtime_context",
+    label="Test runtime context",
+    description="Read runtime identifiers in tests.",
+    takes_ctx=True,
+    timeout=5,
+    provider="test",
+    default_policy=TOOL_POLICY_APPROVAL,
+    configurable=False,
+)
+async def test_runtime_context(ctx: RunContext[RuntimeDeps]) -> dict[str, str | None]:
+    """Test-only context fixture."""
+    deps = ctx.deps
+    return {
+        "workspace_id": str(deps.run.workspace_id),
+        "conversation_id": str(deps.conversation.id),
+        "agent_id": str(deps.agent.id),
+        "run_id": str(deps.run.id),
+        "agent_name": deps.agent.name,
+        "agent_slug": deps.agent.slug,
+    }
 
 
 @pytest.fixture(scope="session")

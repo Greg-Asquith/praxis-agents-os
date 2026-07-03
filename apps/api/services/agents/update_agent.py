@@ -17,10 +17,10 @@ from services.agents.schemas import AgentRead, AgentUpdateRequest
 from services.agents.utils import (
     get_agent_for_workspace,
     is_agent_slug_integrity_error,
+    normalize_tool_configuration,
     require_agent_write_access,
     validate_agent_references,
     validate_model_configuration,
-    validate_tool_configuration,
 )
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -90,7 +90,7 @@ async def update_agent(
             for name, policy in candidate_tool_policies.items()
             if name in set(candidate_tool_names)
         }
-    candidate_tool_policies = validate_tool_configuration(
+    candidate_tool_names, candidate_tool_policies = normalize_tool_configuration(
         tool_names=candidate_tool_names,
         tool_policies=candidate_tool_policies,
     )

@@ -43,7 +43,7 @@ async def record_tool_invocation_audit_event(
     args: dict[str, Any],
     args_sha256: str,
     args_bytes: int,
-    latency_ms: int,
+    latency_ms: int | None,
     outcome: ToolAuditOutcome,
     approval_ref: str | None = None,
     error_code: str | None = None,
@@ -76,7 +76,6 @@ async def record_tool_invocation_audit_event(
                 requested_by_user_id=run.user_id,
                 details=json_safe_details(
                     {
-                        "args": args,
                         "args_sha256": args_sha256,
                         "args_bytes": args_bytes,
                         "latency_ms": latency_ms,

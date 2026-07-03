@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent import Agent
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 
 ToolPolicyValue = Literal["auto", "approval"]
 VALID_THINKING_VALUES = {"minimal", "low", "medium", "high", "xhigh"}
@@ -44,7 +45,15 @@ class AgentRead(BaseModel):
 
     @classmethod
     def from_agent(cls, agent: Agent) -> "AgentRead":
-        return cls.model_validate(agent)
+        schema = cls.model_validate(agent)
+        schema.tool_names = _configurable_tool_names(schema.tool_names)
+        if schema.tool_policies is not None:
+            schema.tool_policies = {
+                name: policy
+                for name, policy in schema.tool_policies.items()
+                if name in set(schema.tool_names)
+            } or None
+        return schema
 
 
 class AgentsListResponse(BaseModel):
@@ -195,6 +204,14 @@ def _normalize_text_list(value: list[str], *, field_name: str) -> list[str]:
             normalized.append(clean)
             seen.add(clean)
     return normalized
+
+
+def _configurable_tool_names(value: list[str]) -> list[str]:
+    return [
+        name
+        for name in value
+        if name in RUNTIME_TOOL_CATALOG and RUNTIME_TOOL_CATALOG[name].configurable
+    ]
 
 
 def _normalize_tool_policy_keys(

@@ -22,7 +22,10 @@ from services.agents.runtime.prompt import (
     runtime_prompt_blocks,
 )
 from services.agents.runtime.skills import build_skill_capabilities
-from services.agents.runtime.tools import build_runtime_tools
+from services.agents.runtime.tools import (
+    build_runtime_native_capabilities,
+    build_runtime_tools,
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,7 @@ def build_runtime_agent(
             tools=build_runtime_tools(agent, include_delegation=include_delegation),
             capabilities=[
                 *build_runtime_capabilities(agent),
+                *build_runtime_native_capabilities(agent, resolved_model),
                 *build_skill_capabilities(skills),
             ],
         ),

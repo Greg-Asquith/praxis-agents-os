@@ -37,7 +37,7 @@ async def _authenticated_workspace(
     return user, workspace, bearer_headers(session["session_token"])
 
 
-async def test_tool_catalog_route_returns_core_entries_for_workspace_member(
+async def test_tool_catalog_route_returns_configurable_entries_for_workspace_member(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
 ) -> None:
@@ -49,25 +49,18 @@ async def test_tool_catalog_route_returns_core_entries_for_workspace_member(
     body = response.json()
     assert body["tools"] == [
         {
-            "name": "add_numbers",
-            "provider": "core",
-            "label": "Add numbers",
-            "description": "Add two integers.",
+            "name": "web_search",
+            "provider": "native",
+            "label": "Web Search",
+            "description": (
+                "Search the web with a provider-native helper model. The helper model "
+                "provider and model can be selected per call from the available native "
+                "search providers: anthropic, google, openai."
+            ),
+            "kind": "function",
             "effect": "read",
             "default_policy": "auto",
-            "supported_policies": ["approval", "auto"],
-            "defer_loading": False,
-        },
-        {
-            "name": "get_runtime_context",
-            "provider": "core",
-            "label": "Runtime context",
-            "description": (
-                "Read the current Praxis workspace, conversation, agent, and run identifiers."
-            ),
-            "effect": "read",
-            "default_policy": "approval",
-            "supported_policies": ["approval", "auto"],
+            "supported_policies": ["auto"],
             "defer_loading": False,
         },
     ]

@@ -11,6 +11,8 @@ from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_WRITE,
+    TOOL_KIND_CAPABILITY,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
@@ -99,6 +101,35 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             effect="write",
             supports_approval=False,
         ),
+        RuntimeToolDefinition(
+            name="bad_capability_function",
+            function=_noop,
+            description="Capability cannot carry a function.",
+            kind=TOOL_KIND_CAPABILITY,
+            capability_factory=lambda: object(),
+        ),
+        RuntimeToolDefinition(
+            name="bad_capability_factory",
+            function=None,
+            description="Capability needs a factory.",
+            kind=TOOL_KIND_CAPABILITY,
+        ),
+        RuntimeToolDefinition(
+            name="bad_capability_write",
+            function=None,
+            description="Capability cannot be write effect.",
+            kind=TOOL_KIND_CAPABILITY,
+            effect=TOOL_EFFECT_WRITE,
+            capability_factory=lambda: object(),
+            supports_approval=False,
+        ),
+        RuntimeToolDefinition(
+            name="bad_capability_approval",
+            function=None,
+            description="Capability cannot offer approval.",
+            kind=TOOL_KIND_CAPABILITY,
+            capability_factory=lambda: object(),
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_invariants(
@@ -125,6 +156,27 @@ def test_allowed_policies_and_tool_build_reject_unsupported_policy() -> None:
     assert exc_info.value.status_code == 500
     assert exc_info.value.details["tool_name"] == "approval_only"
     assert exc_info.value.details["allowed_tool_policies"] == [TOOL_POLICY_APPROVAL]
+
+
+def test_capability_definition_cannot_mount_as_function_tool() -> None:
+    definition = RuntimeToolDefinition(
+        name="native_capability",
+        function=None,
+        description="Provider-native capability.",
+        kind=TOOL_KIND_CAPABILITY,
+        capability_factory=lambda: object(),
+        supports_approval=False,
+    )
+
+    validate_definition(definition)
+
+    with pytest.raises(ModelConfigurationError) as exc_info:
+        definition.to_pydantic_tool()
+
+    assert exc_info.value.details == {
+        "tool_name": "native_capability",
+        "tool_kind": TOOL_KIND_CAPABILITY,
+    }
 
 
 def test_validate_tool_configuration_rejects_unsupported_tool_policy(
@@ -156,35 +208,54 @@ def test_validate_tool_configuration_rejects_unsupported_tool_policy(
 
 def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     default_tools = build_runtime_tools(
-        _agent(tool_names=["get_runtime_context", "add_numbers"])
+        _agent(tool_names=["test_runtime_context", "test_add_numbers"])
     )
     approved_tools = build_runtime_tools(
         _agent(
-            tool_names=["get_runtime_context", "add_numbers"],
+            tool_names=["test_runtime_context", "test_add_numbers"],
             tool_policies={
-                "get_runtime_context": TOOL_POLICY_APPROVAL,
-                "add_numbers": TOOL_POLICY_APPROVAL,
+                "test_runtime_context": TOOL_POLICY_APPROVAL,
+                "test_add_numbers": TOOL_POLICY_APPROVAL,
             },
         )
     )
 
-    assert [tool.name for tool in default_tools] == ["get_runtime_context", "add_numbers"]
-    assert [tool.requires_approval for tool in default_tools] == [True, False]
-    assert [tool.timeout for tool in default_tools] == [5, 5]
-    assert [tool.max_retries for tool in default_tools] == [None, 1]
-    assert [tool.requires_approval for tool in approved_tools] == [True, True]
+    assert [tool.name for tool in default_tools] == [
+        "read_todos",
+        "write_todos",
+        "test_runtime_context",
+        "test_add_numbers",
+    ]
+    assert [tool.requires_approval for tool in default_tools] == [
+        False,
+        False,
+        True,
+        False,
+    ]
+    assert [tool.timeout for tool in default_tools] == [5, 5, 5, 5]
+    assert [tool.max_retries for tool in default_tools] == [None, None, None, 1]
+    assert [tool.requires_approval for tool in approved_tools] == [
+        False,
+        False,
+        True,
+        True,
+    ]
 
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def deny_add_numbers(definition: RuntimeToolDefinition, **_kwargs: object) -> bool:
-        return definition.name != "add_numbers"
+    def deny_test_add_numbers(definition: RuntimeToolDefinition, **_kwargs: object) -> bool:
+        return definition.name != "test_add_numbers"
 
-    monkeypatch.setattr(permissions, "is_tool_allowed", deny_add_numbers)
+    monkeypatch.setattr(permissions, "is_tool_allowed", deny_test_add_numbers)
 
-    tools = build_runtime_tools(_agent(tool_names=["get_runtime_context", "add_numbers"]))
+    tools = build_runtime_tools(_agent(tool_names=["test_runtime_context", "test_add_numbers"]))
     catalog = list_allowed_tool_definitions(workspace=object())
 
-    assert [tool.name for tool in tools] == ["get_runtime_context"]
-    assert "add_numbers" not in {definition.name for definition in catalog}
+    assert [tool.name for tool in tools] == [
+        "read_todos",
+        "write_todos",
+        "test_runtime_context",
+    ]
+    assert "test_add_numbers" not in {definition.name for definition in catalog}

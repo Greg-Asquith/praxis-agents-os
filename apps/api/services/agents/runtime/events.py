@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
@@ -44,6 +46,7 @@ class EventTranslationState:
 
     next_message_index: int = 0
     active_messages: dict[int, tuple[str, MessageChannel]] = field(default_factory=dict)
+    native_tool_calls: dict[str, NativeToolCallPart] = field(default_factory=dict)
 
     def start_message(self, part_index: int, run_id: str, channel: MessageChannel) -> str:
         self.next_message_index += 1
@@ -83,7 +86,31 @@ async def emit_agent_stream_event(
             await sink.emit(
                 EVENT_MESSAGE_DELTA,
                 {"message_id": message_id, "text": event.part.content},
-            )
+        )
+        return
+
+    if isinstance(event, PartStartEvent) and isinstance(event.part, NativeToolCallPart):
+        part = event.part
+        await sink.emit(
+            EVENT_TOOL_CALL,
+            {
+                "tool_call_id": part.tool_call_id,
+                "name": part.tool_name,
+                "args": to_jsonable_python(part.args),
+            },
+        )
+        return
+
+    if isinstance(event, PartStartEvent) and isinstance(event.part, NativeToolReturnPart):
+        part = event.part
+        await sink.emit(
+            EVENT_TOOL_RESULT,
+            {
+                "tool_call_id": part.tool_call_id,
+                "name": part.tool_name,
+                "result": to_jsonable_python(part.content),
+            },
+        )
         return
 
     if isinstance(event, PartDeltaEvent):

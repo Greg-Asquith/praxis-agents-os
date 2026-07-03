@@ -54,8 +54,8 @@ async def approval_context(db_session: AsyncSession) -> ApprovalStateContext:
         created_by=user.id,
         model_provider="openai",
         model="gpt-5.4-mini",
-        tool_names=["add_numbers"],
-        tool_policies={"add_numbers": "approval"},
+        tool_names=["test_add_numbers"],
+        tool_policies={"test_add_numbers": "approval"},
     )
     db_session.add(agent)
     await db_session.flush()
@@ -100,7 +100,7 @@ async def test_get_approval_state_returns_safe_pending_tool_details(
             run_id=approval_context.run_id,
             conversation_id=approval_context.conversation_id,
         ),
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
     )
     assert isinstance(result.output, DeferredToolRequests)
 
@@ -116,7 +116,7 @@ async def test_get_approval_state_returns_safe_pending_tool_details(
     assert len(response.approvals) == 1
     approval = response.approvals[0]
     assert approval.tool_call_id == result.output.approvals[0].tool_call_id
-    assert approval.name == "add_numbers"
+    assert approval.name == "test_add_numbers"
     assert approval.args == {"a": 0, "b": 0}
     assert "message_history" not in response.model_dump()
 

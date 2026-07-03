@@ -84,6 +84,14 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ),
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
+        model="claude-sonnet-5",
+        display_name="Claude Sonnet 5",
+        context_window=1_000_000,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_ANTHROPIC,
         model="claude-sonnet-4-6",
         display_name="Claude Sonnet 4.6",
         context_window=1_000_000,

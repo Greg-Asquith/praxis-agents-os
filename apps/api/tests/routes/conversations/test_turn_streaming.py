@@ -852,12 +852,12 @@ async def test_resume_run_streams_approved_tool_to_completion(
 ) -> None:
     monkeypatch.setattr(
         "services.agents.runtime.loop.build_model",
-        lambda _resolved_model: TestModel(),
+        lambda _resolved_model: TestModel(call_tools=["test_add_numbers"]),
     )
     async with committed_db_session_factory() as db:
         user, workspace, agent, conversation, headers = await _authenticated_context(db)
-        agent.tool_names = ["add_numbers"]
-        agent.tool_policies = {"add_numbers": "approval"}
+        agent.tool_names = ["test_add_numbers"]
+        agent.tool_policies = {"test_add_numbers": "approval"}
         run = await create_agent_run(
             db,
             conversation_id=conversation.id,
@@ -872,7 +872,7 @@ async def test_resume_run_streams_approved_tool_to_completion(
             run_id=run.id,
             user_prompt="Add two numbers",
             sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
-            model=TestModel(),
+            model=TestModel(call_tools=["test_add_numbers"]),
         )
         assert isinstance(suspended.output, DeferredToolRequests)
 

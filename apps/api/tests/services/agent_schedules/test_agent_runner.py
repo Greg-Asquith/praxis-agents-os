@@ -80,7 +80,7 @@ async def test_run_once_executes_due_once_schedule(
 ) -> None:
     schedule_id = await _create_due_schedule(committed_db_session_factory)
 
-    attempted = await run_once(owner_instance_id="test-worker", model=TestModel())
+    attempted = await run_once(owner_instance_id="test-worker", model=TestModel(call_tools=[]))
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
@@ -114,11 +114,14 @@ async def test_run_once_suspends_approval_required_schedule(
 ) -> None:
     schedule_id = await _create_due_schedule(
         committed_db_session_factory,
-        tool_names=["add_numbers"],
-        tool_policies={"add_numbers": "approval"},
+        tool_names=["test_add_numbers"],
+        tool_policies={"test_add_numbers": "approval"},
     )
 
-    attempted = await run_once(owner_instance_id="test-worker", model=TestModel())
+    attempted = await run_once(
+        owner_instance_id="test-worker",
+        model=TestModel(call_tools=["test_add_numbers"]),
+    )
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
@@ -145,11 +148,14 @@ async def test_resume_worker_finalizes_scheduled_approval_resume(
 ) -> None:
     schedule_id = await _create_due_schedule(
         committed_db_session_factory,
-        tool_names=["add_numbers"],
-        tool_policies={"add_numbers": "approval"},
+        tool_names=["test_add_numbers"],
+        tool_policies={"test_add_numbers": "approval"},
     )
 
-    attempted = await run_once(owner_instance_id="test-worker", model=TestModel())
+    attempted = await run_once(
+        owner_instance_id="test-worker",
+        model=TestModel(call_tools=["test_add_numbers"]),
+    )
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
@@ -177,7 +183,7 @@ async def test_resume_worker_finalizes_scheduled_approval_resume(
             approvals={tool_call_id: ToolApproved(override_args={"a": 2, "b": 3})}
         ),
         sink=NullSink(run_id=run_id, conversation_id=conversation_id),
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
     )
 
     async with committed_db_session_factory() as db:

@@ -98,6 +98,18 @@ def validate_tool_configuration(
     tool_names: list[str],
     tool_policies: dict[str, str] | None,
 ) -> dict[str, str] | None:
+    _tool_names, normalized_policies = normalize_tool_configuration(
+        tool_names=tool_names,
+        tool_policies=tool_policies,
+    )
+    return normalized_policies
+
+
+def normalize_tool_configuration(
+    *,
+    tool_names: list[str],
+    tool_policies: dict[str, str] | None,
+) -> tuple[list[str], dict[str, str] | None]:
     unknown_tools = sorted({name for name in tool_names if name not in RUNTIME_TOOL_CATALOG})
     if unknown_tools:
         raise AppValidationError(
@@ -105,15 +117,46 @@ def validate_tool_configuration(
             field="tool_names",
             details={
                 "unknown_tools": unknown_tools,
-                "available_tools": sorted(RUNTIME_TOOL_CATALOG),
+                "available_tools": _configurable_tool_names(),
             },
         )
 
+    configurable_tool_names = [
+        name for name in tool_names if RUNTIME_TOOL_CATALOG[name].configurable
+    ]
+    configurable_tool_name_set = set(configurable_tool_names)
+
     if tool_policies is None:
-        return None
+        return configurable_tool_names, None
+
+    unknown_policy_catalog_tools = sorted(
+        {name for name in tool_policies if name not in RUNTIME_TOOL_CATALOG}
+    )
+    if unknown_policy_catalog_tools:
+        raise AppValidationError(
+            "Tool policies reference unknown runtime tools",
+            field="tool_policies",
+            details={
+                "unknown_policy_tools": unknown_policy_catalog_tools,
+                "available_tools": _configurable_tool_names(),
+            },
+        )
+
+    configurable_tool_policies = {
+        name: policy
+        for name, policy in tool_policies.items()
+        if (
+            name in RUNTIME_TOOL_CATALOG
+            and RUNTIME_TOOL_CATALOG[name].configurable
+        )
+    }
 
     unknown_policy_tools = sorted(
-        {name for name in tool_policies if name not in set(tool_names)}
+        {
+            name
+            for name in configurable_tool_policies
+            if name not in configurable_tool_name_set
+        }
     )
     if unknown_policy_tools:
         raise AppValidationError(
@@ -123,7 +166,9 @@ def validate_tool_configuration(
         )
 
     invalid_policies = {
-        name: policy for name, policy in tool_policies.items() if policy not in VALID_TOOL_POLICIES
+        name: policy
+        for name, policy in configurable_tool_policies.items()
+        if policy not in VALID_TOOL_POLICIES
     }
     if invalid_policies:
         raise AppValidationError(
@@ -140,7 +185,7 @@ def validate_tool_configuration(
             "tool_policy": policy,
             "allowed_tool_policies": sorted(RUNTIME_TOOL_CATALOG[name].allowed_policies()),
         }
-        for name, policy in tool_policies.items()
+        for name, policy in configurable_tool_policies.items()
         if policy not in RUNTIME_TOOL_CATALOG[name].allowed_policies()
     }
     if unsupported_policies:
@@ -150,7 +195,15 @@ def validate_tool_configuration(
             details={"unsupported_tool_policies": unsupported_policies},
         )
 
-    return dict(tool_policies) or None
+    return configurable_tool_names, dict(configurable_tool_policies) or None
+
+
+def _configurable_tool_names() -> list[str]:
+    return sorted(
+        name
+        for name, definition in RUNTIME_TOOL_CATALOG.items()
+        if definition.configurable
+    )
 
 
 def normalize_model_provider(model_provider: str | None) -> str | None:

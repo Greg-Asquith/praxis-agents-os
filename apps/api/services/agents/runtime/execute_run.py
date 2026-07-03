@@ -8,7 +8,12 @@ from typing import Any
 from uuid import UUID
 
 from pydantic_ai import DeferredToolRequests, DeferredToolResults
-from pydantic_ai.messages import FunctionToolCallEvent, ModelMessage
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    ModelMessage,
+    NativeToolCallPart,
+    NativeToolReturnPart,
+)
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.usage import RunUsage
@@ -37,7 +42,10 @@ from services.agents.runtime.approval_events import (
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
-from services.agents.runtime.dispatch import record_denied_approval_audit_events
+from services.agents.runtime.dispatch import (
+    record_denied_approval_audit_events,
+    record_native_tool_invocation_audit_event,
+)
 from services.agents.runtime.envelope import build_run_envelope
 from services.agents.runtime.events import (
     EVENT_DONE,
@@ -212,6 +220,17 @@ async def execute_run(
                 ):
                     continue
                 part = getattr(event, "part", None)
+                if isinstance(part, NativeToolCallPart):
+                    state.native_tool_calls[part.tool_call_id] = part
+                elif isinstance(part, NativeToolReturnPart):
+                    await record_native_tool_invocation_audit_event(
+                        deps=deps,
+                        call_part=state.native_tool_calls.pop(
+                            part.tool_call_id,
+                            None,
+                        ),
+                        return_part=part,
+                    )
                 if (
                     isinstance(event, FunctionToolCallEvent)
                     and getattr(part, "tool_kind", None) == "capability-load"

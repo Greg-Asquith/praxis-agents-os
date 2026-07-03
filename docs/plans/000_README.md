@@ -49,7 +49,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | DONE |
 | 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | DONE |
 | 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | DONE |
-| 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | TODO |
+| 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | DONE |
 | 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
@@ -186,6 +186,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   The audit viewer displays tool/provider metadata; backend list filters for
   `tool_name`/`tool_provider` remain a follow-up because the current audit
   read API does not accept those query parameters.
+- `028` marked DONE 2026-07-03: the runtime registry now supports
+  `function` and provider-native helper entries; `write_todos` and
+  `read_todos` are hidden, always-on auto tools that persist a
+  conversation-scoped planning scratchpad; `web_search` is a normal
+  audited `provider="native"` function tool backed by a helper model with
+  native search enabled, and its `model_provider`/`model` tool arguments let
+  each call use a provider/model different from the active agent;
+  native and function tool invocations emit digest-only audit rows; planning
+  usage guidance is injected through the 018 prompt assembler for every
+  agent; the old demo tools were removed; and the catalog exposes `kind` for
+  configurable entries.
 - `023` decision worth knowing before executing: `security_events` has no
   workspace column, so the security surface is super-admin-only in v1;
   workspace admins get workspace-scoped visibility via audit events only.
@@ -201,9 +212,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `026` adds `tool_name`/`tool_provider` columns to `audit_events` (core
   migration); the `023` viewer renders them generically until `027`'s
   additive filter/columns step.
-- `028` and `018` interact: once the prompt assembler exists, the planning
-  tool's usage guidance moves from tool description into an assembler block
-  (see `028` maintenance notes).
+- `028` and `018` interact: the planning tool's usage guidance now lives in
+  an assembler block that is injected for every agent because TODO tools are
+  always mounted.
 - `029` is documentation-only but gates Gate G3: plans `037`, `043`, `048`,
   `050` must not be written before it is DONE.
 
@@ -214,10 +225,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 ### From the 2026-07-01 Pydantic AI integration audit
 
 - **Adopt `pydantic-ai-harness` / CodeMode now**: deferred, not planned. The
-  harness is not installed and the runtime tool catalog currently holds two
-  demo tools (`get_runtime_context`, `add_numbers`) — there is nothing for
-  CodeMode to collapse. Revisit when a real multi-tool catalog or MCP toolsets
-  land; per `docs/pydantic-ai/13-advanced-and-ecosystem.md` it must be
+  harness is not installed, the old demo tools have been removed, and the
+  configurable runtime catalog is still too small to justify a sandbox layer.
+  Revisit when a real multi-tool catalog or MCP toolsets land; per
+  `docs/pydantic-ai/13-advanced-and-ecosystem.md` it must be
   per-workspace opt-in behind approval. Caveat recorded for that future work:
   approval-required tools are **excluded** from the Monty sandbox, so in an
   approval-heavy workspace CodeMode's benefit shrinks. Harness v0.5.0 is

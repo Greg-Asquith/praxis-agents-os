@@ -40,6 +40,12 @@ class LLMSettingsMixin:
         default="gpt-5.4-nano",
         description="Model used to generate conversation titles.",
     )
+    NATIVE_WEB_SEARCH_MAX_STEPS: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum model requests for one native web-search helper run.",
+    )
 
     # Provider HTTP retry policy. Max attempts of 1 means one try and no retry.
     LLM_HTTP_RETRY_MAX_ATTEMPTS: int = Field(
@@ -92,8 +98,8 @@ class LLMSettingsMixin:
     def validate_llm_provider_credentials(self):
         """Require credentials for the active providers in production.
 
-        Active providers are those backing the default and conversation-naming
-        models. Local/development may run without keys; tests construct settings
+        Active providers are those backing the default model and conversation
+        naming. Local/development may run without keys; tests construct settings
         without them. Registry membership is validated at resolution time, not
         here, to keep settings free of service imports.
         """

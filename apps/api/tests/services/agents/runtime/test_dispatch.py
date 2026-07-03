@@ -142,7 +142,7 @@ def dispatch_test_tools():
         RUNTIME_TOOL_CATALOG.pop(name, None)
 
 
-async def test_tool_invocation_writes_readable_argument_audit_row(
+async def test_tool_invocation_writes_digest_only_audit_row(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     dispatch_test_tools,
 ) -> None:
@@ -184,13 +184,13 @@ async def test_tool_invocation_writes_readable_argument_audit_row(
         assert event.status == "success"
         assert event.summary.startswith(f"{event.actor_display} ran tool dispatch_secret")
         assert event.details["outcome"] == "completed"
-        assert event.details["args"] == {"value": marker}
+        assert "args" not in event.details
         assert event.details["args_sha256"] == expected_sha
         assert event.details["args_bytes"] == expected_bytes
         assert event.details["latency_ms"] >= 1
         assert event.details["run_id"] == str(context.run_id)
         assert event.details["agent_id"] == str(context.agent_id)
-        assert marker in json.dumps(event.details)
+        assert marker not in json.dumps(event.details)
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
@@ -470,7 +470,6 @@ async def test_denied_approval_records_audit_without_executing_tool(
         assert event.details["outcome"] == "denied_approval"
         assert event.details["approval_ref"] == suspended_state.pending_tool_call_ids[0]
         assert event.details["error_code"] == "ToolDenied"
-        assert event.details["args"] == {"value": "do not run"}
         expected_sha, expected_bytes = digest_args({"value": "do not run"})
         assert event.details["args_sha256"] == expected_sha
         assert event.details["args_bytes"] == expected_bytes

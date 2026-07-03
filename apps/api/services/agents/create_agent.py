@@ -13,10 +13,10 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.agents.schemas import AgentCreateRequest, AgentRead
 from services.agents.utils import (
     is_agent_slug_integrity_error,
+    normalize_tool_configuration,
     require_agent_write_access,
     validate_agent_references,
     validate_model_configuration,
-    validate_tool_configuration,
 )
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -34,7 +34,7 @@ async def create_agent(
 ) -> AgentRead:
     require_agent_write_access(membership)
 
-    tool_policies = validate_tool_configuration(
+    tool_names, tool_policies = normalize_tool_configuration(
         tool_names=payload.tool_names,
         tool_policies=payload.tool_policies,
     )
@@ -63,7 +63,7 @@ async def create_agent(
             instructions=payload.instructions,
             workspace_id=workspace.id,
             created_by=actor.id,
-            tool_names=payload.tool_names,
+            tool_names=tool_names,
             tool_policies=tool_policies,
             skill_ids=skill_ids,
             allowed_agent_ids=allowed_agent_ids,

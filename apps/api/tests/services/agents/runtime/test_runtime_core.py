@@ -410,7 +410,7 @@ async def test_execute_run_persists_messages_usage_and_events(
         run_id=runtime_context.run_id,
         user_prompt="Hello",
         sink=sink,
-        model=TestModel(),
+        model=TestModel(call_tools=[]),
     )
 
     assert result.output == "success (no tool calls)"
@@ -501,8 +501,8 @@ async def test_execute_run_suspends_when_tool_requires_approval(
     await _configure_agent_tools(
         db_session,
         agent_id=runtime_context.agent_id,
-        tool_names=["add_numbers"],
-        tool_policies={"add_numbers": "approval"},
+        tool_names=["test_add_numbers"],
+        tool_policies={"test_add_numbers": "approval"},
     )
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -515,7 +515,7 @@ async def test_execute_run_suspends_when_tool_requires_approval(
         run_id=runtime_context.run_id,
         user_prompt="Add two numbers",
         sink=sink,
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
         client_message_id="approval-client",
     )
 
@@ -559,8 +559,8 @@ async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
     await _configure_agent_tools(
         db_session,
         agent_id=runtime_context.agent_id,
-        tool_names=["add_numbers"],
-        tool_policies={"add_numbers": "approval"},
+        tool_names=["test_add_numbers"],
+        tool_policies={"test_add_numbers": "approval"},
     )
     suspended = await execute_run(
         db_session,
@@ -571,7 +571,7 @@ async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
             run_id=runtime_context.run_id,
             conversation_id=runtime_context.conversation_id,
         ),
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
     )
     assert isinstance(suspended.output, DeferredToolRequests)
 
@@ -590,7 +590,7 @@ async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
         run_id=runtime_context.run_id,
         user_prompt=None,
         sink=resume_sink,
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
         expected_status=RUN_STATUS_AWAITING_APPROVAL,
         message_history=suspended_state.message_history,
         deferred_tool_results=DeferredToolResults(
@@ -644,7 +644,7 @@ async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
     ]
     assert tool_call_events[0].data["args"] == {"a": 2, "b": 3}
     assert tool_result_events[0].data["tool_call_id"] == tool_call_id
-    assert tool_result_events[0].data["name"] == "add_numbers"
+    assert tool_result_events[0].data["name"] == "test_add_numbers"
     assert tool_result_events[0].data["result"] == 5
 
 
@@ -655,8 +655,8 @@ async def test_execute_run_resumes_denied_tool_with_typed_denial(
     await _configure_agent_tools(
         db_session,
         agent_id=runtime_context.agent_id,
-        tool_names=["add_numbers"],
-        tool_policies={"add_numbers": "approval"},
+        tool_names=["test_add_numbers"],
+        tool_policies={"test_add_numbers": "approval"},
     )
     suspended = await execute_run(
         db_session,
@@ -667,7 +667,7 @@ async def test_execute_run_resumes_denied_tool_with_typed_denial(
             run_id=runtime_context.run_id,
             conversation_id=runtime_context.conversation_id,
         ),
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
     )
     assert isinstance(suspended.output, DeferredToolRequests)
 
@@ -685,7 +685,7 @@ async def test_execute_run_resumes_denied_tool_with_typed_denial(
             run_id=runtime_context.run_id,
             conversation_id=runtime_context.conversation_id,
         ),
-        model=TestModel(),
+        model=TestModel(call_tools=["test_add_numbers"]),
         expected_status=RUN_STATUS_AWAITING_APPROVAL,
         message_history=suspended_state.message_history,
         deferred_tool_results=DeferredToolResults(
@@ -829,7 +829,7 @@ async def test_execute_run_total_token_limit_fails_cleanly(
             run_id=runtime_context.run_id,
             user_prompt="Hello",
             sink=sink,
-            model=TestModel(),
+            model=TestModel(call_tools=[]),
         )
     await db_session.rollback()
 
