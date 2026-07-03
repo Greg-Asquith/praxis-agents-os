@@ -94,6 +94,29 @@ def test_agent_run_routes_are_registered_under_api_v1(
     } <= paths
 
 
+def test_schedule_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = openapi_schema["paths"]
+
+    assert {
+        "/api/v1/schedules/",
+        "/api/v1/schedules/preview",
+        "/api/v1/schedules/{schedule_id}",
+        "/api/v1/schedules/{schedule_id}/pause",
+        "/api/v1/schedules/{schedule_id}/enable",
+        "/api/v1/schedules/{schedule_id}/run-now",
+        "/api/v1/schedules/{schedule_id}/runs",
+    } <= set(paths)
+    assert {"get", "post"} <= set(paths["/api/v1/schedules/"])
+    assert {"post"} == set(paths["/api/v1/schedules/preview"])
+    assert {"get", "patch", "delete"} <= set(paths["/api/v1/schedules/{schedule_id}"])
+    assert {"post"} == set(paths["/api/v1/schedules/{schedule_id}/pause"])
+    assert {"post"} == set(paths["/api/v1/schedules/{schedule_id}/enable"])
+    assert {"post"} == set(paths["/api/v1/schedules/{schedule_id}/run-now"])
+    assert {"get"} == set(paths["/api/v1/schedules/{schedule_id}/runs"])
+
+
 def test_storage_provider_routes_are_registered_under_api_v1(
     openapi_schema: dict[str, object],
 ) -> None:

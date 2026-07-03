@@ -130,7 +130,7 @@ Not a numbered plan; a checklist chore:
 
 | Plan | Scope | Priority |
 |------|-------|----------|
-| 021 | Schedule REST routes: CRUD, pause/enable, run-now, run history, awaiting-approval visibility. Backend worker already exists; this is the missing product surface. | P1 |
+| 021 | Schedule REST routes: CRUD, pause/enable, run-now, run history, awaiting-approval visibility. Backend worker already exists; this is the missing product surface. **DONE 2026-07-03.** | P1 |
 | 022 | Schedules management UI: list, editor (prompt/cron/timezone), run history with statuses, approval-resume visibility. Active-context selection is added later by 040. | P1 |
 | 023 | Audit & security log read API + viewer UI: workspace-scoped audit list with action/resource/status/actor/date filters, event detail drawer, security event list; owner/admin-only. Backend write/query services already exist. | P1 |
 | 024 | Workspace default & invite UX: persist active workspace to `users.default_workspace_id` on switch, accept pending invites after sign-in, copy-invite-URL/code buttons, personal-vs-team switcher behavior. | P2 |
@@ -233,7 +233,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 → 022 → 023 → 025 → 026 → 027 → 016 → 017 →
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 → 023 → 025 → 026 → 027 → 016 → 017 →
 018 → 028 → 019 → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.

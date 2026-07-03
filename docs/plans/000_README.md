@@ -42,7 +42,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016 (docs need 017) | TODO |
 | 019 | Build the skills management UI | P1 | L | 016, 017 | TODO |
 | 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | TODO |
-| 021 | Add the schedule REST routes | P1 | L | - | TODO |
+| 021 | Add the schedule REST routes | P1 | L | - | DONE |
 | 022 | Build the schedules management UI | P1 | L | 021 | TODO |
 | 023 | Audit & security log read API and viewer UI | P1 | L | - | TODO |
 | 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
@@ -116,6 +116,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   and `024` anywhere before Phase 4a. Grounding: all nine were planned
   against a fresh codebase exploration at `f83d210` — each plan's drift
   check + "Current state" excerpts are the contract.
+- `021` marked DONE 2026-07-03: schedule CRUD, pause/enable, run-now,
+  preview, run history, latest-run health, and schedule audit rows are now
+  exposed under `/api/v1/schedules`.
 - `022` hard-depends on `021` (it consumes the exact response shapes,
   including `health`/`latest_run` and run `agent_run_id` linkage).
 - `025` → `026` → `028` is a hard chain: `026` consumes the contract's

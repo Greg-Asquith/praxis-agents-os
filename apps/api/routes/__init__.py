@@ -10,6 +10,7 @@ from routes.agents import router as agents_router
 from routes.auth import router as auth_router
 from routes.conversations import router as conversations_router
 from routes.models import router as models_router
+from routes.schedules import router as schedules_router
 from routes.storage import router as storage_router
 from routes.users import router as users_router
 from routes.workspaces import router as workspaces_router
@@ -20,6 +21,7 @@ api_router.include_router(agents_router)
 api_router.include_router(auth_router)
 api_router.include_router(conversations_router)
 api_router.include_router(models_router)
+api_router.include_router(schedules_router)
 api_router.include_router(storage_router)
 api_router.include_router(users_router)
 api_router.include_router(workspaces_router)
