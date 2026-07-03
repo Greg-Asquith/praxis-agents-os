@@ -12,10 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
+from models.conversation import Conversation
 from services.agent_runs.await_approval import mark_run_awaiting_approval
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
+    RUN_TRIGGER_SCHEDULED,
     RunUsageSnapshot,
     is_terminal,
 )
@@ -61,6 +63,11 @@ async def persist_suspended_run(
         run_id=run.id,
         messages=terminal_result.new_messages(),
         client_message_id=client_message_id,
+    )
+    _mark_background_output_unread(
+        run,
+        conversation,
+        persisted_messages_count=len(persisted_messages),
     )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
     run.metadata_json = build_suspended_run_metadata(
@@ -108,6 +115,11 @@ async def persist_successful_run(
         client_message_id=client_message_id,
         tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
     )
+    _mark_background_output_unread(
+        run,
+        conversation,
+        persisted_messages_count=len(persisted_messages),
+    )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
     run.metadata_json = clear_suspended_run_metadata(run)
     await complete_agent_run(db, run)
@@ -153,3 +165,13 @@ def usage_snapshot(usage: Any) -> RunUsageSnapshot:
         tool_calls=getattr(usage, "tool_calls", None),
         raw_json=raw if isinstance(raw, dict) else {"usage": raw},
     )
+
+
+def _mark_background_output_unread(
+    run: AgentRun,
+    conversation: Conversation,
+    *,
+    persisted_messages_count: int,
+) -> None:
+    if run.trigger == RUN_TRIGGER_SCHEDULED and persisted_messages_count > 0:
+        conversation.unread = True
