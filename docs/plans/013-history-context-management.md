@@ -1,4 +1,4 @@
-# Plan 013: Bound model context with a ProcessHistory trimming capability
+# Plan 013: Bound model context with a cache-stable ProcessHistory trimming capability
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -6,8 +6,8 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
-> **Drift check (run first)**: `git diff --stat 1a51665..HEAD -- apps/api/services/agents/runtime apps/api/core/settings/agents.py apps/api/tests/services/agents/runtime`
-> If any in-scope file changed since this plan was written, compare the
+> **Drift check (run first)**: `git diff --stat 6f65cc7..HEAD -- apps/api/services/agents/runtime apps/api/services/agents/models/factory.py apps/api/core/settings/agents.py apps/api/tests/services/agents`
+> If any in-scope file changed since this plan was revised, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
 
@@ -15,13 +15,22 @@
 
 - **Priority**: P2
 - **Effort**: M
-- **Risk**: MED (a wrong trim can produce provider-rejected histories or lose context silently)
-- **Depends on**: **execute AFTER plan 018** (roadmap constraint, D2/README):
-  trimming must preserve `LoadCapabilityCallPart`/`LoadCapabilityReturnPart`
-  pairs or agents silently lose loaded skills on resume — see the
-  capability-load invariant below. Compatible with 011/012 (both DONE).
-- **Category**: tech-debt / correctness-at-scale
+- **Risk**: MED (a wrong trim can produce provider-rejected histories, lose
+  context silently, or silently destroy prompt-cache hit rates)
+- **Depends on**: plan 018 (DONE, verified 2026-07-03) — trimming must preserve
+  `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
+  lose loaded skills; see the capability-load invariant below.
+- **Category**: tech-debt / correctness-at-scale / cost
 - **Planned at**: commit `1a51665`, 2026-07-01
+- **Revised at**: commit `6f65cc7`, 2026-07-03 — after verifying `ProcessHistory`
+  semantics against installed `pydantic-ai==2.1.0` and researching provider
+  prompt-cache behavior. Three material changes: (1) the rolling per-turn
+  window was replaced with chunked watermark trimming so provider prefix
+  caches keep hitting, (2) the capability-load preservation rule was moved to
+  a provider-valid insertion point (the original rule produced assistant-first
+  histories some providers reject), (3) a provider-boundary caching step was
+  added for parity: OpenAI/Google cache prompt prefixes automatically, while
+  Anthropic requires explicit opt-in.
 
 ## Why this matters
 
@@ -30,73 +39,126 @@ admits this is a stopgap — `persistence.py:27-28`: "Pending: this intentionall
 returns the full stored history. Add trimming or summarization before treating
 long-running conversations as context-safe." Long conversations will eventually
 exceed provider context windows (hard failure) and, before that, cost linearly
-more per turn. The supported lever in Pydantic AI 2.x is the `ProcessHistory`
-capability: it runs before each model request, mutates only what the model
-sees, and leaves persisted rows untouched — exactly the split the repo's
-intent doc prescribes (`docs/pydantic-ai/06-messages-and-history.md`, "How
-Praxis should use this": "Use a `ProcessHistory` capability for context-window
-management … Persisted `ConversationMessage` history stays complete; the
-processor decides what the model sees per request.").
+more per turn.
+
+Cost has a second axis: **provider prompt caching**. All major providers cache
+by exact prompt prefix — cached input tokens cost roughly 10% of fresh ones,
+and agent workloads are overwhelmingly input-heavy. Two consequences shape this
+plan:
+
+1. **A rolling "keep last N turns" window is an anti-pattern.** Once a
+   conversation passes N, every request drops the oldest turn and shifts the
+   whole prefix, so every request is a full cache miss — exactly when
+   conversations are longest and most expensive. Trimming must instead be
+   **chunked**: append-only for many turns, then one large cut, so the prefix
+   stays byte-stable between cuts. This is provider-agnostic — it is what makes
+   OpenAI's and Google's *automatic* prefix caching hit, and it is the same
+   property Anthropic's explicit cache needs.
+2. **Anthropic caches nothing unless asked.** OpenAI and Google cache eligible
+   prefixes automatically; Anthropic requires explicit cache markers on the
+   request. For parity, this plan enables them at the provider boundary
+   (`models/factory.py`) — the one file that already branches per provider —
+   so no provider-specific knowledge leaks into the runtime or the trimmer.
+
+The supported trimming lever in Pydantic AI 2.x is the `ProcessHistory`
+capability, run before each model request. Its real semantics in 2.1.0 are
+stronger than "a view for the model" — see Current state — and the plan
+accounts for that.
 
 ## Current state
 
 - `apps/api/services/agents/runtime/persistence.py:20-45` —
   `load_message_history` returns the full validated history (docstring quoted
   above). Do NOT change what it returns; trimming happens at request time.
+  Each turn therefore re-derives the trim from the full stored history — which
+  is why the cut point must be a deterministic, chunked function of that
+  history (otherwise it slides every turn and defeats caching).
 
-- `apps/api/services/agents/runtime/capabilities.py` — the capability assembly
-  point; currently returns one `Hooks` capability with tool logging:
+- `apps/api/services/agents/runtime/capabilities.py:12-30` — the capability
+  assembly point; currently returns one `Hooks(id="praxis-runtime-hooks")`
+  capability whose `tool_execute` hook delegates to `dispatch_tool_execution`.
+  New runtime capabilities are appended to the returned list. The consuming
+  site is `loop.py:67-71`, which composes three sources:
 
   ```python
-  # capabilities.py:15-21
-  def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDeps]]:
-      """Return capabilities attached to every runtime agent. ..."""
-      hooks = Hooks(id="praxis-runtime-hooks")
+  capabilities=[
+      *build_runtime_capabilities(agent),
+      *build_runtime_native_capabilities(agent, resolved_model),
+      *build_skill_capabilities(skills),
+  ],
   ```
 
-  New runtime capabilities are appended to this list. The consuming site is
-  `loop.py:71` (`capabilities=build_runtime_capabilities(agent)` — moved from
-  line 46 by the delegation commit `f83d210`).
+- **`ProcessHistory` semantics, verified against installed
+  `pydantic-ai==2.1.0`** (`from pydantic_ai.capabilities import ProcessHistory`
+  works; it accepts a sync or async `(list[ModelMessage]) -> list[ModelMessage]`,
+  optionally taking a `RunContext`-annotated first parameter; the old
+  `Agent(history_processors=...)` kwarg is removed in 2.x):
+  - The processor runs before **every model request step**, and its output is
+    written back into the run's canonical history
+    (`_agent_graph.py:948`: `ctx.state.message_history[:] = messages`). So
+    `result.all_messages()` returns the **processed** list, and the next step's
+    framework state is derived from it. The repo digest's claim that processors
+    "mutate what the model sees, not what you persist"
+    (`docs/pydantic-ai/06-messages-and-history.md:215`) is inaccurate for
+    2.1.0 — correct it in plan 015.
+  - Praxis DB rows nevertheless stay full-fidelity because persistence appends
+    `terminal_result.new_messages()` only (`run_persistence.py:60-66,110-117`),
+    and `new_messages()` slices by the current run — trimmed *old* messages are
+    already stored from prior turns.
+  - **The approval-suspension snapshot is post-trim**: `run_persistence.py:73-78`
+    stores `terminal_result.all_messages()` into the suspended-run metadata, and
+    `resume_run_stream.py:88-97` replays that snapshot as `message_history`. So
+    a resumed run rehydrates the *trimmed* history; the trimmer must be
+    idempotent and the preserved-capability rule below must hold in that
+    snapshot.
+  - Framework validation requires the processed history to be non-empty and to
+    end with a `ModelRequest`.
 
-- Verified against installed `pydantic-ai==2.1.0`:
-  `from pydantic_ai.capabilities import ProcessHistory` works.
-  `ProcessHistory(processor)` accepts a sync or async function
-  `(list[ModelMessage]) -> list[ModelMessage]`, optionally taking `RunContext`
-  as first parameter. The old `Agent(history_processors=...)` kwarg is
-  **removed** in 2.x — do not use it.
+- **Capability-load state (plan 018 interaction).** `LoadCapabilityCallPart` /
+  `LoadCapabilityReturnPart` (importable from `pydantic_ai.messages`; typed
+  subclasses of `ToolCallPart`/`ToolReturnPart` with
+  `tool_kind == "capability-load"`) are how the framework knows which deferred
+  capabilities are loaded: it rescans `ctx.state.message_history` for the pairs
+  **before every request step** and re-seeds from raw `message_history` at run
+  start. Because the processor's output becomes that state, a trimmer that
+  drops the pairs un-loads the skill from the next step onward and in the
+  suspension snapshot. Turn-boundary trimming keeps pairs *within* a kept turn
+  but does not protect a kept turn that depends on a capability loaded in a
+  trimmed earlier turn — that cross-turn hazard is handled explicitly (Step 2
+  requirement 3). Note `apps/api` currently references the load tool only via
+  string checks (`execute_run.py:236`); this plan introduces the first typed
+  usage.
 
-- Message shapes (from `docs/pydantic-ai/06-messages-and-history.md`, verified
-  in the installed package): `ModelMessage = ModelRequest | ModelResponse`,
-  discriminated by `kind` (`'request'`/`'response'`). `ModelRequest.parts` may
-  contain `UserPromptPart` (`part_kind == 'user-prompt'`), `ToolReturnPart`
-  (`'tool-return'`), `RetryPromptPart` (`'retry-prompt'`), etc.
-  **Critical invariant**: every `ToolCallPart` in a `ModelResponse` must keep
-  its matching `ToolReturnPart`/`RetryPromptPart` in a later `ModelRequest`
-  (paired by `tool_call_id`) — "Dropping a `ToolCallPart` without its matching
-  return (or vice versa) via a processor produces an invalid history that some
-  providers reject" (06 doc, Gotchas).
+- **Message-shape invariants for a valid trim** (verified in the installed
+  package and provider mappings):
+  - Every `ToolCallPart` in a `ModelResponse` must keep its matching
+    `ToolReturnPart`/`RetryPromptPart` (paired by `tool_call_id`); orphans in
+    either direction are rejected by providers.
+  - **The trimmed history must start with a user-role message.** Some provider
+    APIs reject assistant-first message lists outright; pydantic-ai's mappings
+    do not guard this. Cut points must therefore land on a `ModelRequest` that
+    opens a user turn.
+  - A `ModelRequest` can carry **both** tool-return parts and a
+    `UserPromptPart` (pydantic-ai merges consecutive requests, tool returns
+    sorted first). Such a request is NOT a safe cut point — cutting there
+    orphans the preceding response's tool calls.
 
-- The runtime uses `instructions=` (not `system_prompt=`) — `loop.py:64`,
-  now assembled via `_runtime_instructions(agent, include_delegation=...)`
-  (which may append `DELEGATION_INSTRUCTIONS`) — so instructions are re-sent
-  on every request regardless of history content. No `ReinjectSystemPrompt`
-  is needed; trimming cannot lose the system prompt.
+- The runtime uses `instructions=` (`loop.py:60-63`), re-sent on every request
+  regardless of history content; trimming cannot lose the system prompt. The
+  instruction blocks are static strings (identity/planning/delegation) with no
+  timestamps or per-request values — already prefix-stable.
 
-- **Capability-load invariant (plan 018 interaction — the reason this plan
-  runs after 018).** Once 018 lands, loaded-skill state is reconstructed
-  from `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs in history
-  (both live in `pydantic_ai.messages` and subclass
-  `ToolCallPart`/`ToolReturnPart`). A trimmer that drops them silently
-  un-loads skills on resume. Turn-boundary trimming keeps pairs *within* a
-  kept turn, but does NOT protect a kept turn that depends on a capability
-  loaded in a trimmed *earlier* turn — that cross-turn hazard must be
-  handled explicitly (see Step 2 requirement 3).
+- **Cache observability already exists**: `run_persistence.py:162` maps
+  `usage.cache_read_tokens` into `input_tokens_cached` on the run row. That
+  column is how this plan's caching claims get validated in real traffic — no
+  new telemetry code is needed.
 
-- The approval resume path (`resume_run_stream.py` →
-  `execute_run(message_history=..., deferred_tool_results=...)`) replays a
-  rehydrated history that ends with pending tool calls. The processor runs on
-  that path too — the turn-boundary rule below must never separate those
-  trailing tool calls from their results.
+- `apps/api/services/agents/models/factory.py:33-60` — `build_model` sets
+  `model_settings = dict(spec.settings) or None` and branches per provider
+  (Anthropic / OpenAI Responses / Google / Azure). No caching configuration
+  exists anywhere today. Agent-configurable settings are validated elsewhere to
+  `thinking`/`temperature` only, so merged cache defaults cannot collide with
+  agent-provided keys.
 
 - Settings style: `apps/api/core/settings/agents.py` (`AgentRunSettingsMixin`,
   `Field(default=..., gt=0, description=...)`).
@@ -106,7 +168,7 @@ processor decides what the model sees per request.").
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
 | Lint | `cd apps/api && uv run ruff check .` | exit 0 |
-| Focused tests | `cd apps/api && uv run pytest tests/services/agents/runtime -q` | all pass |
+| Focused tests | `cd apps/api && uv run pytest tests/services/agents -q` | all pass |
 | Full API tests | `cd apps/api && uv run pytest -q` | all pass |
 
 ## Scope
@@ -114,27 +176,36 @@ processor decides what the model sees per request.").
 **In scope**:
 - `apps/api/services/agents/runtime/history.py` (create — the trimming processor)
 - `apps/api/services/agents/runtime/capabilities.py` (register `ProcessHistory`)
-- `apps/api/core/settings/agents.py` (the turn-budget setting)
+- `apps/api/services/agents/models/factory.py` (provider-native cache enablement)
+- `apps/api/core/settings/agents.py` (turn budgets + cache toggle)
+- `apps/api/core/settings/__init__.py` (cross-field validation only, if needed)
 - `apps/api/tests/services/agents/runtime/test_history_trimming.py` (create)
+- `apps/api/tests/services/agents/models/test_model_factory.py` (cache settings cases)
 - `docs/plans/000_README.md` (status row)
 
 **Out of scope**:
 - `persistence.py` — stored rows stay full-fidelity; do not trim at load or save.
-- Summarization of old turns with a cheaper agent — explicitly deferred (see
-  Maintenance notes); this plan ships count-based trimming only.
-- Token counting (`count_tokens_before_request` or tiktoken estimates) — v2 of
-  this feature; keep v1 deterministic and cheap.
-- `approval_state.py` snapshot contents.
+- Summarization/compaction of old turns — deferred to v2. When it lands it must
+  follow the same chunking rule: a compaction rewrites the whole prefix, so it
+  must be rare and large, never incremental per turn.
+- Token-aware budgeting — v2; the trigger becomes token-based (prior-run usage,
+  not a tokenizer dependency) but must keep the chunked deterministic cut.
+- Truncating/clearing large old tool outputs — v2 pressure valve; note it is a
+  mid-prefix edit, so it must batch with the same watermark event.
+- Per-conversation OpenAI cache routing keys — only matters at high
+  request-rate-per-prefix scale and needs a per-request model-settings seam
+  that does not exist; record in maintenance notes, do not build.
+- Per-agent context policies; `approval_state.py` snapshot format.
 
 ## Git workflow
 
 - Branch: `advisor/013-history-context-management`
-- Commit style: `API - History Context Trimming`
+- Commit style: `API - History Trimming & Prompt Caching`
 - Do NOT push or open a PR unless the operator instructed it.
 
 ## Steps
 
-### Step 1: Add the setting
+### Step 1: Add the settings
 
 In `apps/api/core/settings/agents.py`, add to `AgentRunSettingsMixin`:
 
@@ -142,43 +213,79 @@ In `apps/api/core/settings/agents.py`, add to `AgentRunSettingsMixin`:
 AGENT_HISTORY_MAX_TURNS: int | None = Field(
     default=40,
     gt=0,
-    description="Maximum prior user turns sent to the model per request; None sends full history.",
+    description="Prior-user-turn count that triggers a history trim; None sends full history.",
+)
+AGENT_HISTORY_KEEP_TURNS: int = Field(
+    default=20,
+    gt=0,
+    description="Prior user turns retained after a trim; must be below AGENT_HISTORY_MAX_TURNS.",
+)
+AGENT_PROMPT_CACHE_ENABLED: bool = Field(
+    default=True,
+    description="Enable provider-native prompt caching where the provider needs explicit opt-in.",
 )
 ```
 
-**Verify**: `cd apps/api && uv run ruff check core/settings/agents.py` → exit 0
+If `AGENT_HISTORY_MAX_TURNS` is set and `AGENT_HISTORY_KEEP_TURNS >= AGENT_HISTORY_MAX_TURNS`,
+reject at settings validation (the `model_validator` in
+`core/settings/__init__.py` is the existing seam for cross-field checks).
+
+**Verify**: `cd apps/api && uv run ruff check core/settings` → exit 0
 
 ### Step 2: Implement the trimming processor
 
 Create `apps/api/services/agents/runtime/history.py`. Requirements:
 
-1. A pure function `trim_history(messages: list[ModelMessage], *, max_turns: int) -> list[ModelMessage]`:
+1. A pure function
+   `trim_history(messages: list[ModelMessage], *, max_turns: int, keep_turns: int) -> list[ModelMessage]`:
    - Define a **turn boundary** as a `ModelRequest` whose parts include a
-     `UserPromptPart` (`part_kind == 'user-prompt'`, check via
-     `isinstance(part, UserPromptPart)` — the repo convention is isinstance
-     over discriminator strings).
-   - Walk boundaries from the end; keep everything from the `max_turns`-th
-     boundary (counting backward) onward. Cutting only at user-turn boundaries
-     guarantees tool-call/return pairs are never split (a tool chain never
-     spans a user turn).
-   - If there are `<= max_turns` boundaries, or no boundary exists before the
-     cut point, return the input list unchanged.
-   - Never trim to an empty list; the resumed-approval history (which may have
-     trailing tool calls after the last user turn) must always retain the
-     final user turn onward intact — the boundary rule above already
-     guarantees this, add a test for it rather than special-case code.
+     `UserPromptPart` **and no `ToolReturnPart` or `RetryPromptPart`** (check
+     via `isinstance`, the repo convention). The tool-part exclusion matters:
+     pydantic-ai merges consecutive requests into `[tool returns..., user
+     prompt]` shapes, and cutting at one orphans the preceding response's tool
+     calls. Cutting only at clean boundaries guarantees tool pairs are never
+     split and the trimmed history always starts with a user-turn request
+     (providers reject assistant-first histories).
+   - **Chunked watermark cut** — with `T` = number of boundaries and
+     `B = max_turns - keep_turns`: if `T <= max_turns`, return the input list
+     unchanged (identity, same object). Otherwise drop the oldest
+     `((T - keep_turns) // B) * B` boundaries and keep everything from the
+     next boundary onward. The cut index is a step function of `T`: it moves
+     only once per `B` new turns, so the prompt prefix is byte-stable for `B`
+     consecutive turns between cuts (this is the entire caching story — see
+     Why this matters). Worked example (`max=40`, `keep=20`, `B=20`):
+
+     | T (boundaries) | dropped | kept |
+     |---|---|---|
+     | 40 | 0 | 40 |
+     | 41 | 20 | 21 |
+     | 59 | 20 | 39 |
+     | 60 | 40 | 20 |
+     | 79 | 40 | 39 |
+     | 80 | 60 | 20 |
+
+   - The function must be **idempotent** (`trim(trim(h)) == trim(h)`): the
+     approval-suspension snapshot stores the already-trimmed history and the
+     processor re-runs on it at resume and on every step within a run.
+   - Never trim to an empty list; a resumed-approval history ending in trailing
+     tool calls after the last boundary keeps that tail intact by construction
+     — test it rather than special-casing.
 2. A processor factory `history_trimmer()` returning the function wired to
-   `settings.AGENT_HISTORY_MAX_TURNS` (no-op passthrough when the setting is
-   `None`). Read the setting at call time, not import time, so tests can
-   patch it.
-3. **Preserve capability loads across the cut (018 invariant).** Before
-   discarding trimmed turns, scan them for
-   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs
-   (`pydantic_ai.messages`; identifiable via `tool_kind ==
-   "capability-load"`) and re-prepend each surviving pair (call + return,
-   in order) ahead of the kept turns, so capabilities loaded in trimmed
-   turns remain loaded for the model. Add a test asserting a
-   `LoadCapability*` pair from a trimmed turn survives trimming.
+   `settings.AGENT_HISTORY_MAX_TURNS` / `AGENT_HISTORY_KEEP_TURNS` (no-op
+   passthrough when max is `None`). Read settings at call time, not import
+   time, so tests can patch them.
+3. **Preserve capability loads across the cut (018 invariant).** Scan the
+   dropped region for `LoadCapabilityCallPart`/`LoadCapabilityReturnPart`
+   pairs (`pydantic_ai.messages`). Skip pairs whose capability id is loaded
+   again inside the kept region (dedupe). Batch the surviving call parts into
+   one synthetic `ModelResponse` and the matching return parts into one
+   synthetic `ModelRequest`, and insert that pair **immediately after the
+   first kept boundary request** — NOT before it. Placement rationale, both
+   sides load-bearing:
+   - before the first kept request the history becomes assistant-first, which
+     providers reject;
+   - the synthetic messages carry no run id, so they sit outside
+     `new_messages()` and are never re-persisted as new rows.
 
 Match the module docstring/comment style of neighbors (single terse lines; see
 `events.py`, `persistence.py`).
@@ -190,57 +297,100 @@ Match the module docstring/comment style of neighbors (single terse lines; see
 In `apps/api/services/agents/runtime/capabilities.py`, import `ProcessHistory`
 from `pydantic_ai.capabilities` and `history_trimmer` from
 `services.agents.runtime.history`, and return
-`[hooks, ProcessHistory(history_trimmer())]` (order: hooks first, matching the
-current list; `ProcessHistory` position does not affect the hooks).
+`[hooks, ProcessHistory(history_trimmer())]` (hooks first, matching the current
+list; `Hooks` has no `before_model_request` handler, so relative order does not
+affect it).
 
 **Verify**: `cd apps/api && uv run pytest tests/services/agents/runtime -q` → all existing tests pass
 
-### Step 4: Tests
+### Step 4: Enable provider-native prompt caching at the provider boundary
+
+In `apps/api/services/agents/models/factory.py`, when
+`settings.AGENT_PROMPT_CACHE_ENABLED` is true and the provider is Anthropic,
+merge cache defaults under the agent-provided settings (agent keys win):
+
+```python
+{"anthropic_cache": True, "anthropic_cache_instructions": True, "anthropic_cache_tool_definitions": True}
+```
+
+These are plain keys in the settings dict already passed to the model — no new
+imports or types. They place stable cache breakpoints on the tool definitions
+and static instructions plus an automatic breakpoint on the latest message;
+the library enforces the provider's breakpoint limit. Default TTL (5 minutes)
+is deliberate — do not add a TTL knob yet.
+
+No changes for OpenAI, Google, or Azure: their prefix caching is automatic and
+needs only the prefix stability Step 2 provides. Keep provider knowledge inside
+this file; the runtime and trimmer stay provider-agnostic.
+
+**Verify**: `cd apps/api && uv run pytest tests/services/agents/models -q` → all pass
+
+### Step 5: Tests
 
 Create `apps/api/tests/services/agents/runtime/test_history_trimming.py`
 (async marker + structure modeled on
-`apps/api/tests/services/agents/runtime/test_pydantic_ai_spike.py`):
+`apps/api/tests/services/agents/runtime/test_pydantic_ai_spike.py`), and extend
+`apps/api/tests/services/agents/models/test_model_factory.py`:
 
-1. **Unit — boundary math**: build a synthetic history of N user turns
-   (ModelRequest with `UserPromptPart` + ModelResponse pairs, including one
-   turn with a `ToolCallPart`/`ToolReturnPart` chain); assert
-   `trim_history(..., max_turns=2)` keeps exactly the last 2 turns and the tool
-   chain inside a kept turn is complete (every `tool_call_id` in kept responses
-   has its return part present).
-2. **Unit — under budget**: `len(boundaries) <= max_turns` returns the list
-   unchanged (identity, same objects).
-3. **Unit — resume shape**: a history ending in a `ModelResponse` with a
-   trailing `ToolCallPart` after the last user turn (the suspended-approval
-   shape) keeps that tail intact under any `max_turns >= 1`.
-4. **Integration — what the model sees**: use
-   `pydantic_ai.models.function.FunctionModel` with a capture function (pattern
-   in `docs/pydantic-ai/06-messages-and-history.md:190-205`): build an `Agent`
-   with `capabilities=[ProcessHistory(history_trimmer())]`, patch
-   `AGENT_HISTORY_MAX_TURNS=1`, run with a long `message_history`, and assert
-   the captured request contains only the final prior turn plus the new prompt.
-5. **Integration — disabled**: with the setting patched to `None`, the captured
-   messages equal the full input history plus the new prompt.
-6. **Unit — capability-load survival**: a history where turn 1 contains a
-   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pair and
-   `max_turns=1` keeps the pair (re-prepended) alongside the final turn.
+1. **Unit — chunk math**: synthetic history of 41 user turns (one containing a
+   `ToolCallPart`/`ToolReturnPart` chain); `max_turns=40, keep_turns=20` keeps
+   exactly the last 21 turns and every kept `tool_call_id` has its return part.
+2. **Unit — cut-point stability**: for T = 41…59 the first kept turn is the
+   *same* turn (identity of the cut, not just the count); it moves at T = 60.
+   This is the regression test for the caching design — a per-turn slide here
+   is a silent cost bug even though all shape invariants still pass.
+3. **Unit — identity under budget**: `T <= max_turns` returns the input list
+   unchanged (same object).
+4. **Unit — idempotency**: `trim(trim(h)) == trim(h)` for an over-budget history.
+5. **Unit — merged-request boundary**: a `ModelRequest` containing
+   `[ToolReturnPart, UserPromptPart]` is not used as a cut point.
+6. **Unit — resume shape**: a history ending in a `ModelResponse` with trailing
+   `ToolCallPart`s after the last boundary (suspended-approval shape) keeps
+   that tail intact.
+7. **Unit — user-first invariant**: for every trimmed output, the first message
+   is a `ModelRequest` with a `UserPromptPart` and no tool parts — including
+   when capability pairs are preserved.
+8. **Unit — capability-load survival**: a pair loaded in a dropped turn is
+   re-inserted after the first kept boundary request; a pair whose capability
+   is re-loaded inside the kept region is not duplicated.
+9. **Integration — what the model sees**: `pydantic_ai.models.function.FunctionModel`
+   with a capture function (pattern in
+   `docs/pydantic-ai/06-messages-and-history.md:190-205`): agent with
+   `capabilities=[ProcessHistory(history_trimmer())]`, settings patched to
+   `max_turns=2, keep_turns=1`, long `message_history`; assert the captured
+   request contains only the expected tail plus the new prompt.
+10. **Integration — disabled**: with `AGENT_HISTORY_MAX_TURNS=None`, captured
+    messages equal the full input history plus the new prompt.
+11. **Integration — persistence purity**: after a trimmed `FunctionModel` run,
+    `result.new_messages()` contains only current-run messages (no preserved
+    capability pairs, no prior-turn messages) — guards against
+    double-persisting old rows, since `ProcessHistory` output replaces
+    `all_messages()`.
+12. **Factory — cache settings**: Anthropic model receives the three cache keys
+    when enabled, none when disabled; agent-provided settings survive the
+    merge and win on collision; OpenAI/Google/Azure settings are untouched
+    either way.
 
-**Verify**: `cd apps/api && uv run pytest tests/services/agents/runtime/test_history_trimming.py -q` → all pass
+**Verify**: `cd apps/api && uv run pytest tests/services/agents -q` → all pass
 
-### Step 5: Full check
+### Step 6: Full check
 
 **Verify**: `cd apps/api && uv run ruff check . && uv run pytest -q` → exit 0, all pass
 
 ## Test plan
 
-See Step 4 — the tool-pairing invariant (cases 1 and 3) is the regression this
-plan must never allow; the FunctionModel capture (case 4) proves the capability
-is actually wired into the runtime agent, not just unit-correct.
+See Step 5. Three regressions this plan must never allow: split tool pairs
+(cases 1, 5, 6), a sliding cut point (case 2 — the cost regression), and
+polluted `new_messages()` (case 11 — the double-persistence regression). The
+FunctionModel capture (case 9) proves the capability is actually wired into the
+runtime agent, not just unit-correct.
 
 ## Done criteria
 
 - [ ] `cd apps/api && uv run ruff check .` exits 0
-- [ ] `cd apps/api && uv run pytest -q` exits 0; the 5 new tests exist and pass
+- [ ] `cd apps/api && uv run pytest -q` exits 0; the new tests exist and pass
 - [ ] `grep -n "ProcessHistory" apps/api/services/agents/runtime/capabilities.py` shows the registration
+- [ ] `grep -n "anthropic_cache" apps/api/services/agents/models/factory.py` shows the gated merge
 - [ ] `load_message_history` in `persistence.py` is unmodified (`git diff --stat` shows no change to that file)
 - [ ] No files outside the in-scope list are modified (`git status`)
 - [ ] `docs/plans/000_README.md` status row updated
@@ -249,13 +399,16 @@ is actually wired into the runtime agent, not just unit-correct.
 
 Stop and report back if:
 
-- Plan 018 is not DONE (this plan must trim histories that already carry
-  capability-load parts, with the preservation rule tested — not land first
-  and hope).
-- `ProcessHistory` import fails or rejects a plain callable (package drift).
+- The drift check shows in-scope changes whose live code contradicts the
+  "Current state" excerpts.
+- `ProcessHistory` import fails, rejects a plain callable, or the installed
+  Anthropic model settings reject the three cache keys (package drift).
 - The FunctionModel capture shows the processor NOT running on the
   `run_stream_events` path (capability registered but never invoked) — that
   invalidates the approach; report before working around it.
+- Case 11 fails — `new_messages()` containing trimmed-away or synthetic
+  messages means old rows would be re-persisted; report the observed slice
+  rather than filtering in persistence code.
 - Existing approval resume tests
   (`test_execute_run_resumes_approved_tool_and_clears_approval_state`) fail
   after registration — the trim is interacting with rehydrated histories in an
@@ -263,17 +416,34 @@ Stop and report back if:
 
 ## Maintenance notes
 
-- v2 of this feature is token-aware budgeting and/or summarizing old turns with
-  a cheaper agent (`docs/pydantic-ai/06-messages-and-history.md:171-176` has
-  the pattern). The `history.py` seam added here is where that lands; the
-  setting then becomes a token budget rather than a turn count.
+- **Validating the cost claim in production**: `agent_runs.input_tokens_cached`
+  (populated from `usage.cache_read_tokens` at `run_persistence.py:162`) is the
+  metric. Healthy long conversations should show high cached-token ratios that
+  dip once per `B` turns (the chunk cut) — a ratio near zero on long
+  conversations means the prefix is unstable and the trimming design is being
+  defeated somewhere.
+- Prefix stability has two standing obligations outside this plan: instruction
+  assembly must stay free of per-request values (timestamps, run ids), and
+  `build_runtime_tools` must keep deterministic tool ordering. Reviewers should
+  treat a violation of either as a caching regression even though nothing
+  functionally breaks.
+- v2 of this feature is token-aware triggering (from the prior run's persisted
+  usage — not a tokenizer dependency) and/or summarizing trimmed turns with a
+  cheaper agent (`docs/pydantic-ai/06-messages-and-history.md:171-176` has the
+  pattern). Both must keep the chunked deterministic cut: a token trigger that
+  re-cuts every turn, or a per-turn incremental summarizer, reintroduces the
+  rolling-window cost bug. `history.py` is the seam.
+- Clearing/truncating large old tool outputs is the cheapest v2 pressure valve
+  (keeps the tool call, drops the bulky return content) but is a mid-prefix
+  edit — batch it into the same watermark event as the turn cut.
+- A per-conversation OpenAI cache routing key (`openai_prompt_cache_key` in
+  run-level model settings) can improve hit rates under high parallel load;
+  it needs a per-request model-settings seam in `execute_run`. Not worth
+  building until traffic justifies it.
 - If per-agent context policies land on the Agent row later,
   `build_runtime_capabilities(_agent)` already receives the agent — thread the
   override through there.
-- Reviewers should scrutinize the turn-boundary definition against real
-  multi-tool histories (especially denied-tool `retry-prompt` shapes) before
-  merge.
-- This plan honors plan 018's maintenance note: history trimming MUST
-  preserve `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs
-  (Step 2 requirement 3). If 018 has not landed when this executes, STOP —
-  the ordering is a roadmap constraint, not a suggestion.
+- `docs/pydantic-ai/06-messages-and-history.md:215` ("Processors mutate what
+  the model sees, not what you persist") is wrong for pydantic-ai 2.1.0 —
+  processed output replaces `all_messages()`; Praxis stays full-fidelity only
+  because persistence appends `new_messages()`. Fix the digest in plan 015.

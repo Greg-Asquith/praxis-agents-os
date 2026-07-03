@@ -34,14 +34,14 @@ integrations, files, knowledge base, memory, artifacts).
 | 010 | Retry transient provider HTTP failures at the transport layer | P1 | M | - | DONE |
 | 011 | Cap per-run token spend with UsageLimits token limits | P2 | S | - | DONE |
 | 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | DONE |
-| 013 | Bound model context with a ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | TODO |
+| 013 | Bound model context with a cache-stable ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | TODO |
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
 | 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
 | 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | DONE |
 | 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016, 017 (for document reading) | DONE |
 | 019 | Build the skills management UI | P1 | L | 016, 017 | DONE |
-| 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | TODO |
+| 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | DONE |
 | 021 | Add the schedule REST routes | P1 | L | - | DONE |
 | 022 | Build the schedules management UI | P1 | L | 021 | DONE |
 | 023 | Audit & security log read API and viewer UI | P1 | L | - | DONE |
@@ -126,6 +126,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   management; the agent form replaces the old read-only skills placeholder
   with active-skill assignment, sends `skill_ids` on create/update, and the
   Skills nav item is live. `pnpm check` passed from `apps/web`.
+- `020` marked DONE 2026-07-03: chat now renders `load_capability` as a
+  compact "Activated skill" row for live and persisted turns without exposing
+  loaded prompt instructions. `read_skill_document` gets a dedicated row that
+  renders returned markdown in a bounded panel, and the runtime document
+  resolver accepts either the semantic document name or the original filename
+  to avoid filename-first retries. `pnpm check` passed from `apps/web`;
+  `uv run ruff check .` and `uv run pytest tests/services/agents/runtime -q`
+  passed from `apps/api`.
 - `013` and `018` interact: history trimming MUST preserve
   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
   lose loaded skills on resume. Whichever plan lands second must honor the

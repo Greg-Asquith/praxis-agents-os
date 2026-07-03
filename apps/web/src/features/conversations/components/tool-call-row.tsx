@@ -4,8 +4,8 @@ import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
 } from "@/features/conversations/components/approval-decision-block"
-import { DelegationToolRow } from "@/features/conversations/components/delegation-tool-row"
 import { JsonBlock, TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -36,16 +36,14 @@ export function ToolCallRow({
   defaultOpen = false,
 }: ToolCallRowProps) {
   const toolLabelFor = useToolLabels()
-
-  if (activity.delegate) {
-    return (
-      <DelegationToolRow
-        activity={activity}
-        {...(approvalDecision ? { approvalDecision } : {})}
-        compact={compact}
-        defaultOpen={defaultOpen}
-      />
-    )
+  const customRow = renderCustomToolCallRow({
+    activity,
+    ...(approvalDecision ? { approvalDecision } : {}),
+    compact,
+    defaultOpen,
+  })
+  if (customRow) {
+    return customRow
   }
 
   const title = toolLabelFor(activity.name)

@@ -9,6 +9,7 @@ type ToolActivityRowHeaderProps = {
   expandable: boolean
   icon: ReactNode
   label: ReactNode
+  reserveChevronSpace?: boolean
   suffix: ReactNode
   supportLabel: string | null
 }
@@ -25,17 +26,22 @@ export function ToolActivityRowHeader({
   expandable,
   icon,
   label,
+  reserveChevronSpace = true,
   suffix,
   supportLabel,
 }: ToolActivityRowHeaderProps) {
+  const shouldRenderChevron = expandable || reserveChevronSpace
+
   return (
     <>
-      <ChevronRightIcon
-        className={cn(
-          "text-muted-foreground size-3.5 shrink-0 transition-transform group-open/tool:rotate-90",
-          !expandable && "invisible"
-        )}
-      />
+      {shouldRenderChevron ? (
+        <ChevronRightIcon
+          className={cn(
+            "text-muted-foreground size-3.5 shrink-0 transition-transform group-open/tool:rotate-90",
+            !expandable && "invisible"
+          )}
+        />
+      ) : null}
       {icon}
       <span className="min-w-0 truncate">
         <span className="text-foreground font-medium">{label}</span>

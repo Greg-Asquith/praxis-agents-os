@@ -26,10 +26,14 @@
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: docs/plans/complete/018-runtime-skill-disclosure.md (activations must
-  exist to render); docs/plans/019-skills-management-ui.md (skill name
+  exist to render); docs/plans/complete/019-skills-management-ui.md (skill name
   resolution — soft dependency, a fallback is specified)
 - **Category**: direction (feature completeness)
 - **Planned at**: commit `ccb721b`, 2026-07-01
+- **Completed at**: 2026-07-03
+- **Verification**: `pnpm check` from `apps/web`; `uv run ruff check .` and
+  `uv run pytest tests/services/agents/runtime -q` from `apps/api`
+- **Status**: DONE
 
 ## Why this matters
 
@@ -64,9 +68,10 @@ format (probed against the backend's pinned `pydantic-ai==2.1.0`):
   `{part_kind: "tool-return", tool_kind: "capability-load", tool_name: "load_capability", content: ...}`.
 - The capability id format is `skill:{skill.id}` (defined in plan 018,
   `apps/api/services/agents/runtime/skills.py::skill_capability_id`).
-- The document-reading tool from plan 018 (`read_skill_document`) is an
-  ordinary function tool and renders fine through the existing tool row — no
-  work needed for it here.
+- The document-reading tool from plan 018 (`read_skill_document`) started as
+  an ordinary function tool. During execution, operator feedback expanded the
+  UI treatment so successful reads render the markdown document body in a
+  bounded panel instead of dumping a raw tool result or hiding the content.
 
 Frontend pieces:
 
@@ -149,13 +154,24 @@ Frontend pieces:
 - `apps/web/src/features/conversations/message-parts/parse.ts` (discriminate
   capability-load parts)
 - `apps/web/src/features/conversations/components/skill-activation-row.tsx` (create)
+- `apps/web/src/features/conversations/components/skill-document-read-row.tsx` (create,
+  added by operator feedback during execution)
 - `apps/web/src/features/conversations/components/tool-call-row.tsx` (the
   routing branch — mirror the existing `DelegationToolRow` branch at
-  l.38-45; regular tools including `read_skill_document` keep their
-  existing rendering)
+  l.38-45; regular tools keep their existing rendering except the
+  operator-requested `read_skill_document` presentation)
 - `apps/web/src/features/conversations/components/message-list.tsx` (live-stream mapping)
 - `apps/web/src/features/conversations/skill-activation.ts` (create — small
   pure helpers: capability-id parsing, display-name resolution types)
+- `apps/web/src/features/conversations/skill-document-read.ts` (create — small
+  pure helpers for `read_skill_document` args, added by operator feedback
+  during execution)
+- `apps/web/src/features/skills/api/list-skills.ts` (export existing
+  `skillsQueryOptions` so chat can resolve skill labels without suspense)
+- `apps/api/services/agents/runtime/skills.py` and
+  `apps/api/tests/services/agents/runtime/test_runtime_skills.py` (accept
+  document filenames as well as semantic document names for
+  `read_skill_document`, added by operator feedback during execution)
 
 **Out of scope** (do NOT touch):
 
@@ -260,6 +276,10 @@ const isSkillActivation =
   delegation branch).
 - `isSkillActivation` with a null skill id → fall through to the normal
   rendering (unknown capability kind; honest fallback).
+- Operator feedback added a second branch for `read_skill_document`: render a
+  compact document-read row, strip the internal `<skill-document>` wrapper,
+  and show the markdown content in a bounded panel. Activation rows still hide
+  loaded skill instructions.
 - Dedup: **persisted history is already collapsed** — `pairToolResults` +
   `consumedResultKeys` (`parse.ts:41, 101-108`) merge call+result into a
   single `kind: "call"` activity upgraded to `completed`, so no manual
@@ -297,19 +317,37 @@ trivially reviewable (id parsing is the only logic that could silently break —
 double-check the `skill:` prefix constant against
 `apps/api/services/agents/runtime/skills.py` after plan 018 lands).
 
+## Completion notes
+
+Completed 2026-07-03. Skill activations now render as compact non-expandable
+rows using `human_name ?? name ?? shortened id`, and successful
+`load_capability` results no longer expose loaded prompt instructions.
+Operator feedback during execution added a matching treatment for
+`read_skill_document`: the row removes noisy suffix IDs/status text, keeps
+failure state visible through the status icon, and renders successful document
+content as Markdown inside a bounded scroll panel after stripping the internal
+provenance wrapper. Follow-up feedback also updated the backend resolver so
+`read_skill_document` accepts either the semantic document name or the
+original filename, avoiding failed first attempts when the model chooses the
+visible filename from the skill's document list.
+
 ## Done criteria
 
 ALL must hold (run from `apps/web`):
 
-- [ ] `pnpm check` exits 0
-- [ ] `grep -rn "capability-load" src/features/conversations/` matches in
+- [x] `pnpm check` exits 0
+- [x] `uv run ruff check .` exits 0
+- [x] `uv run pytest tests/services/agents/runtime -q` exits 0
+- [x] `grep -rn "capability-load" src/features/conversations/` matches in
       `message-parts/parse.ts`, `message-list.tsx`, and `tool-call-row.tsx`
       (or the row component), per Steps 2–4
-- [ ] `grep -n "skill.activated" src/` returns no matches (no new SSE event
+- [x] `grep -n "skill.activated" src/` returns no matches (no new SSE event
       was introduced)
-- [ ] `git diff --name-only` shows only in-scope files (leave any unrelated
-      pre-existing working-tree changes untouched)
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `git diff --name-only` shows only in-scope files plus the documented
+      operator-requested `read_skill_document` row/resolver and existing
+      skills query export (leave any unrelated pre-existing working-tree
+      changes untouched)
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 

@@ -178,12 +178,15 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     if (partKind && TOOL_CALL_PART_KINDS.has(partKind)) {
       const name = stringValue(part["tool_name"]) ?? "tool"
       const args = normalizeToolArgs(part["args"])
+      // Preserve capability-load tool kinds so activation rows can hide loaded instructions.
+      const toolKind = stringValue(part["tool_kind"])
       const activity: ToolActivity = {
         id: stringValue(part["tool_call_id"]) ?? partId,
         kind: "call",
         status: "running",
         name,
         args,
+        ...(toolKind ? { toolKind } : {}),
       }
       const delegate = delegationDetailsForToolActivity(name, args)
       if (delegate) {
@@ -198,6 +201,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const toolCallId = stringValue(part["tool_call_id"]) ?? partId
       const approvalMetadata = approvalMetadataForTool(message.metadata, toolCallId)
       const name = stringValue(part["tool_name"]) ?? "tool"
+      const toolKind = stringValue(part["tool_kind"])
       const activity: ToolActivity = {
         id: toolCallId,
         kind: "result",
@@ -205,6 +209,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
         name,
         result: part["content"],
         outcome,
+        ...(toolKind ? { toolKind } : {}),
       }
       const delegate = delegationDetailsForToolActivity(name, undefined, part["content"])
       if (delegate) {

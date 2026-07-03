@@ -32,6 +32,7 @@ export type ToolActivity = {
   delegate?: DelegationToolActivity
   result?: unknown
   outcome?: string | null
+  toolKind?: string
 }
 
 type UnsupportedMessagePart = {

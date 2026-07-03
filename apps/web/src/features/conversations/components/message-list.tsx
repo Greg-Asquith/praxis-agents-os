@@ -21,6 +21,7 @@ import type {
   ChatMessageDraft,
   ToolCallState,
 } from "@/features/conversations/stream/reducer"
+import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skill-activation"
 import {
   parseConversationMessages,
   delegationDetailsForToolActivity,
@@ -175,6 +176,7 @@ function buildLiveToolActivities(
       name: toolCall.name,
       args,
       result: toolCall.result,
+      ...(toolCall.name === LOAD_CAPABILITY_TOOL_NAME ? { toolKind: "capability-load" } : {}),
     }
     const delegate = delegationDetailsForToolActivity(toolCall.name, args, toolCall.result)
     if (delegate) {
