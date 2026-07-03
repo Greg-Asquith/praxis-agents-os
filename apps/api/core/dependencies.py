@@ -152,6 +152,11 @@ async def get_current_user(user: OptionalUserDep) -> User:
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 
+def is_super_admin_email(email: str | None) -> bool:
+    """Return whether an email is listed as a super admin."""
+    return (email or "").lower() in settings.super_admin_emails_list
+
+
 def _enforce_internal_token_workspace(user: User, workspace: Workspace) -> None:
     internal_workspace_id = getattr(user, _INTERNAL_TOKEN_WORKSPACE_ATTR, None)
     if internal_workspace_id is not None and workspace.id != internal_workspace_id:
@@ -224,7 +229,7 @@ async def require_super_admin(user: CurrentUserDep) -> User:
 
     Returns the authenticated `User` when authorized; raises `AuthorizationError` otherwise.
     """
-    if (user.email or "").lower() not in settings.super_admin_emails_list:
+    if not is_super_admin_email(user.email):
         raise AuthorizationError(
             "Requires super admin role",
             details={

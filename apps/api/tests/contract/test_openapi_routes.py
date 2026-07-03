@@ -68,6 +68,23 @@ def test_agent_routes_are_registered_under_api_v1(
     assert {"get", "patch", "delete"} <= set(openapi_schema["paths"]["/api/v1/agents/{agent_id}"])
 
 
+def test_audit_event_routes_are_registered_under_api_v1(
+    openapi_schema: dict[str, object],
+) -> None:
+    paths = openapi_schema["paths"]
+
+    assert {
+        "/api/v1/audit-events/",
+        "/api/v1/audit-events/{event_id}",
+        "/api/v1/security-events/",
+        "/api/v1/security-events/{event_id}",
+    } <= set(paths)
+    assert {"get"} == set(paths["/api/v1/audit-events/"])
+    assert {"get"} == set(paths["/api/v1/audit-events/{event_id}"])
+    assert {"get"} == set(paths["/api/v1/security-events/"])
+    assert {"get"} == set(paths["/api/v1/security-events/{event_id}"])
+
+
 def test_conversation_routes_are_registered_under_api_v1(
     openapi_schema: dict[str, object],
 ) -> None:

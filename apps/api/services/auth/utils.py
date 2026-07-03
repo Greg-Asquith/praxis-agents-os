@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
 from core.database import get_async_db_session_factory
+from core.dependencies import is_super_admin_email
 from core.rate_limiting import get_client_ip
 from core.settings import settings
 from models.user import User
@@ -45,7 +46,7 @@ async def build_auth_user(db: AsyncSession, user: User) -> AuthUser:
     """Return a public auth user after refreshing server-managed columns."""
     await db.flush()
     await db.refresh(user, attribute_names=_AUTH_USER_REFRESH_FIELDS)
-    return AuthUser.from_user(user)
+    return AuthUser.from_user(user, is_super_admin=is_super_admin_email(user.email))
 
 
 def set_auth_cookies(response: Response, *, session_token: str, expires_at: datetime) -> None:

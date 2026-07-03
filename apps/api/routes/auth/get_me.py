@@ -4,12 +4,13 @@
 
 from fastapi import APIRouter
 
-from core.dependencies import CurrentUserDep
+from core.dependencies import AsyncDbSessionDep, CurrentUserDep
 from services.auth.schemas import AuthUser
+from services.auth.utils import build_auth_user
 
 router = APIRouter()
 
 
 @router.get("/me")
-async def get_me(user: CurrentUserDep) -> AuthUser:
-    return AuthUser.from_user(user)
+async def get_me(db: AsyncDbSessionDep, user: CurrentUserDep) -> AuthUser:
+    return await build_auth_user(db, user)

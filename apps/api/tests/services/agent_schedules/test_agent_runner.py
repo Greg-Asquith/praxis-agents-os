@@ -96,6 +96,9 @@ async def test_run_once_executes_due_once_schedule(
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "completed"
+        conversation = await db.get(Conversation, schedule_run.conversation_id)
+        assert conversation is not None
+        assert conversation.unread is True
         messages = (
             await db.scalars(
                 select(ConversationMessage)
@@ -132,6 +135,9 @@ async def test_run_once_suspends_approval_required_schedule(
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "awaiting_approval"
+        conversation = await db.get(Conversation, schedule_run.conversation_id)
+        assert conversation is not None
+        assert conversation.unread is True
 
 
 async def test_resume_worker_finalizes_scheduled_approval_resume(

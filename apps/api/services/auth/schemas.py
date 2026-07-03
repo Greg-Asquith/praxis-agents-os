@@ -19,6 +19,7 @@ class AuthUser(BaseModel):
     display_name: str | None = None
     avatar_url: str | None = None
     is_active: bool
+    is_super_admin: bool = False
     default_workspace_id: UUID | None = None
     totp_enabled: bool
     created_at: datetime
@@ -27,8 +28,21 @@ class AuthUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_user(cls, user: User) -> "AuthUser":
-        return cls.model_validate(user)
+    def from_user(cls, user: User, *, is_super_admin: bool = False) -> "AuthUser":
+        return cls.model_validate(
+            {
+                "id": user.id,
+                "email": user.email,
+                "display_name": user.display_name,
+                "avatar_url": user.avatar_url,
+                "is_active": user.is_active,
+                "is_super_admin": is_super_admin,
+                "default_workspace_id": user.default_workspace_id,
+                "totp_enabled": user.totp_enabled,
+                "created_at": user.created_at,
+                "updated_at": user.updated_at,
+            }
+        )
 
 
 class AuthProvider(BaseModel):
