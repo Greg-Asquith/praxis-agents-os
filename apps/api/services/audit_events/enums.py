@@ -33,6 +33,8 @@ class AuditResourceType(StrEnum):
     INVITATION = "invitation"
     NOTIFICATION = "notification"
     AGENT = "agent"
+    AGENT_RUN = "agent_run"
+    TOOL_CALL = "tool_call"
     AGENT_SCHEDULE = "agent_schedule"
     AGENT_SCHEDULE_RUN = "agent_schedule_run"
 
@@ -50,5 +52,6 @@ class AuditStatus(StrEnum):
     """Outcome of the action."""
 
     SUCCESS = "success"
+    PENDING = "pending"
     FAILURE = "failure"
     DENIED = "denied"

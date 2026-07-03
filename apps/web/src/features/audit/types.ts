@@ -116,6 +116,8 @@ export type AuditEvent = {
   resource_id: string | null
   status: string
   summary: string
+  tool_name: string | null
+  tool_provider: string | null
   actor_type: string
   actor_id: string | null
   actor_user_id: string | null

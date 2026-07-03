@@ -5,7 +5,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Request
 from fastapi.responses import StreamingResponse
 
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
@@ -21,6 +21,7 @@ async def create_turn(
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
     conversation_id: Annotated[UUID, Path()],
+    request: Request,
     payload: ConversationTurnCreateRequest,
 ) -> StreamingResponse:
     workspace, _membership = workspace_context
@@ -30,4 +31,5 @@ async def create_turn(
         workspace=workspace,
         conversation_id=conversation_id,
         payload=payload,
+        request=request,
     )

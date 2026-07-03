@@ -2,14 +2,11 @@
 
 """Assemble Pydantic AI capabilities for one runtime agent."""
 
-import logging
-
 from pydantic_ai.capabilities import AgentCapability, Hooks
 
 from models.agent import Agent
 from services.agents.runtime.context import RuntimeDeps
-
-logger = logging.getLogger(__name__)
+from services.agents.runtime.dispatch import dispatch_tool_execution
 
 
 def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDeps]]:
@@ -20,30 +17,14 @@ def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDep
     """
     hooks = Hooks(id="praxis-runtime-hooks")
 
-    @hooks.on.before_tool_execute
-    async def log_tool_start(ctx, *, call, tool_def, args):
-        logger.info(
-            "Agent runtime tool execution starting",
-            extra={
-                "run_id": str(ctx.deps.run.id),
-                "conversation_id": str(ctx.deps.conversation.id),
-                "agent_id": str(ctx.deps.agent.id),
-                "tool_name": call.tool_name,
-            },
+    @hooks.on.tool_execute
+    async def dispatch_tool(ctx, *, call, tool_def, args, handler):
+        return await dispatch_tool_execution(
+            ctx,
+            call=call,
+            tool_def=tool_def,
+            args=args,
+            handler=handler,
         )
-        return args
-
-    @hooks.on.after_tool_execute
-    async def log_tool_done(ctx, *, call, tool_def, args, result):
-        logger.info(
-            "Agent runtime tool execution completed",
-            extra={
-                "run_id": str(ctx.deps.run.id),
-                "conversation_id": str(ctx.deps.conversation.id),
-                "agent_id": str(ctx.deps.agent.id),
-                "tool_name": call.tool_name,
-            },
-        )
-        return result
 
     return [hooks]

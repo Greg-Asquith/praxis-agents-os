@@ -4,6 +4,7 @@
 
 from uuid import UUID
 
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
 from pydantic_core import to_jsonable_python
@@ -33,6 +34,7 @@ from services.agents.runtime.events import (
 from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.worker import run_resume_worker
+from services.audit_events.utils import request_audit_context
 
 
 async def resume_agent_run_stream(
@@ -42,6 +44,7 @@ async def resume_agent_run_stream(
     workspace: Workspace,
     run_id: UUID,
     payload: AgentRunResumeRequest,
+    request: Request | None = None,
 ) -> StreamingResponse:
     """Validate human approval decisions and stream the resumed run."""
     run = await db.scalar(
@@ -72,6 +75,12 @@ async def resume_agent_run_stream(
         suspended_state=suspended_state,
         decisions=payload.decisions,
     )
+    if request is not None:
+        run.metadata_json = {
+            **(run.metadata_json or {}),
+            "audit_context": request_audit_context(request),
+        }
+        await db.commit()
 
     sink = StreamSink(run_id=run.id, conversation_id=run.conversation_id)
     await sink.emit(EVENT_RUN_STATUS, {"status": run.status})

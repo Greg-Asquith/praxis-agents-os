@@ -94,10 +94,10 @@ export function AuditEventsTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex max-w-64 flex-col gap-1">
-                    <span>{titleCaseToken(event.resource_type, event.resource_type)}</span>
-                    {event.resource_id ? (
+                    <span>{resourceLabel(event)}</span>
+                    {resourceMeta(event) ? (
                       <span className="text-muted-foreground truncate text-xs">
-                        {event.resource_id}
+                        {resourceMeta(event)}
                       </span>
                     ) : null}
                   </div>
@@ -146,7 +146,7 @@ function AuditEventMobileRow({
             {titleCaseToken(event.action, event.action)}
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Resource">
-            {titleCaseToken(event.resource_type, event.resource_type)}
+            {resourceLabel(event)}
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Actor">
             {event.actor_display ?? titleCaseToken(event.actor_type, "Actor")}
@@ -174,4 +174,15 @@ function StatusBadge({ status }: { status: string }) {
       {titleCaseToken(status, status)}
     </Badge>
   )
+}
+
+function resourceLabel(event: AuditEvent) {
+  return titleCaseToken(event.resource_type, event.resource_type)
+}
+
+function resourceMeta(event: AuditEvent) {
+  if (event.resource_type === "tool_call") {
+    return event.tool_name ?? event.resource_id
+  }
+  return event.resource_id
 }

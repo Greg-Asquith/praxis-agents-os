@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -36,9 +37,11 @@ from services.agent_runs.schemas import (
 )
 from services.agents.runtime.delegation import (
     DELEGATE_NOT_ALLOWED_ERROR_CODE,
+    delegate_to_agent,
     get_visible_delegate_agent,
     list_visible_delegate_agents,
 )
+from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.events import EVENT_TOOL_APPROVAL_REQUIRED
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
@@ -137,6 +140,25 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
         "list_delegate_agents",
         "delegate_to_agent",
     ]
+
+
+async def test_delegate_to_agent_enforces_envelope_depth_cap() -> None:
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            envelope=RunEnvelope(principal="delegated", max_delegation_depth=1),
+            delegation_depth=1,
+        ),
+        tool_call_approved=False,
+    )
+
+    result = await delegate_to_agent(
+        ctx,
+        agent_id=uuid4(),
+        task="Try to delegate again.",
+    )
+
+    assert result.status == "failed"
+    assert result.error == "Delegation depth limit reached."
 
 
 async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(

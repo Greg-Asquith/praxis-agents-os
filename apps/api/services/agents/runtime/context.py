@@ -11,6 +11,7 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
+from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.sinks import EventSink
 
 
@@ -25,4 +26,5 @@ class RuntimeDeps:
     agent: Agent
     run: AgentRun
     sink: EventSink
+    envelope: RunEnvelope
     delegation_depth: int = 0

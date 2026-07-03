@@ -11,7 +11,6 @@ from uuid import UUID
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.rate_limiting import get_client_ip
 from models.audit_event import AuditEvent
 from services.audit_events.enums import (
     AuditAction,
@@ -19,6 +18,7 @@ from services.audit_events.enums import (
     AuditResourceType,
     AuditStatus,
 )
+from services.audit_events.utils import request_audit_context
 from utils.json_safe import json_safe_details
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ async def _record_operation_audit_event(
     write failure can never roll back the work being recorded.
     """
 
-    request_context = _request_context(request)
+    request_context = request_audit_context(request)
     event = AuditEvent(
         workspace_id=_uuid_or_none(workspace_id),
         occurred_at=occurred_at or datetime.now(UTC),
@@ -92,25 +92,6 @@ async def safe_record_operation_audit_event(db: AsyncSession, **kwargs: Any) -> 
             await _record_operation_audit_event(db, **kwargs)
     except Exception:
         logger.error("Failed to record audit event; primary operation preserved", exc_info=True)
-
-
-def _request_context(request: Request | None) -> dict[str, str | None]:
-    if request is None:
-        return {"request_id": None, "ip_address": None, "user_agent": None}
-
-    audit_context = getattr(request.state, "audit_context", None)
-    if isinstance(audit_context, dict):
-        return {
-            "request_id": audit_context.get("request_id"),
-            "ip_address": audit_context.get("ip_address"),
-            "user_agent": audit_context.get("user_agent"),
-        }
-
-    return {
-        "request_id": request.scope.get("request_id") or request.headers.get("x-request-id"),
-        "ip_address": get_client_ip(request),
-        "user_agent": request.headers.get("user-agent"),
-    }
 
 
 def _summary(

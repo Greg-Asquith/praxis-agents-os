@@ -262,7 +262,13 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert created_run is not None
     assert created_run.agent_id == agent.id
     assert created_run.status == "pending"
-    assert created_run.metadata_json == {"client_message_id": "first-message"}
+    assert created_run.metadata_json is not None
+    assert created_run.metadata_json["client_message_id"] == "first-message"
+    assert created_run.metadata_json["audit_context"]["ip_address"] == "127.0.0.1"
+    assert created_run.metadata_json["audit_context"]["user_agent"].startswith(
+        "python-httpx/"
+    )
+    assert created_run.metadata_json["audit_context"]["request_id"]
 
 
 async def test_create_conversation_rejects_inactive_agent_without_creating_run(

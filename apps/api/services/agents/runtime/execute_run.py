@@ -37,6 +37,8 @@ from services.agents.runtime.approval_events import (
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
+from services.agents.runtime.dispatch import record_denied_approval_audit_events
+from services.agents.runtime.envelope import build_run_envelope
 from services.agents.runtime.events import (
     EVENT_DONE,
     EVENT_ERROR,
@@ -164,8 +166,15 @@ async def execute_run(
             agent=agent,
             run=run,
             sink=event_sink,
+            envelope=build_run_envelope(run),
             delegation_depth=run.delegation_depth or 0,
         )
+        if deferred_tool_results is not None:
+            await record_denied_approval_audit_events(
+                deps=deps,
+                message_history=history,
+                deferred_tool_results=deferred_tool_results,
+            )
         state = EventTranslationState()
         terminal_result = None
         deferred_tool_call_ids = (

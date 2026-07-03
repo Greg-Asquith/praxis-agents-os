@@ -27,6 +27,8 @@ class AuditEvent(Base, UUIDMixin, CreatedAtMixin):
     resource_id = Column(String(255), nullable=True)
     status = Column(String(32), nullable=False, default="success", server_default=text("'success'"))
     summary = Column(Text, nullable=False)
+    tool_name = Column(String(100), nullable=True, index=True)
+    tool_provider = Column(String(50), nullable=True)
 
     actor_type = Column(String(50), nullable=False)
     actor_id = Column(String(255), nullable=True)
@@ -52,6 +54,12 @@ class AuditEvent(Base, UUIDMixin, CreatedAtMixin):
     __table_args__ = (
         Index("ix_audit_events_occurred_at", "occurred_at"),
         Index("ix_audit_events_workspace_occurred", "workspace_id", "occurred_at"),
+        Index(
+            "ix_audit_events_workspace_tool_occurred",
+            "workspace_id",
+            "tool_name",
+            "occurred_at",
+        ),
         Index("ix_audit_events_actor_occurred", "actor_user_id", "occurred_at"),
         Index(
             "ix_audit_events_resource_occurred",

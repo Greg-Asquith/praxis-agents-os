@@ -47,7 +47,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 023 | Audit & security log read API and viewer UI | P1 | L | - | DONE |
 | 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
 | 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | DONE |
-| 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | TODO |
+| 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | DONE |
 | 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | TODO |
 | 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | TODO |
 | 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | TODO |
@@ -148,6 +148,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   registry; write-time validation rejects unsupported tool policies; and
   `/api/v1/tools/catalog` exposes workspace-visible tool entries through
   the `is_tool_allowed` seam. No migration was required.
+- `026` marked DONE 2026-07-03: runtime tool execution now runs through
+  `services/agents/runtime/dispatch.py`; every executed runtime/delegation
+  tool writes a committed digest-only `agent_run` audit row with
+  `tool_name`/`tool_provider`, output-model mismatches raise model-visible
+  retries with mutation warnings for write tools, run envelopes make side-
+  effect grants explicit, delegated depth is capped, and denied approvals are
+  audited from the resume path because pydantic-ai skips execution hooks for
+  denials. Core migration `core_0007` adds the tool columns and workspace/tool
+  index.
 - `025` → `026` → `028` is a hard chain: `026` consumes the contract's
   `provider`/`effect`/`output_model`; `028` amends the contract with
   capability-kind entries and relies on `026`'s audit writer + envelopes.

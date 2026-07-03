@@ -20,6 +20,8 @@ class AuditEventRead(BaseModel):
     resource_id: str | None
     status: str
     summary: str
+    tool_name: str | None
+    tool_provider: str | None
     actor_type: str
     actor_id: str | None
     actor_user_id: UUID | None
@@ -45,6 +47,8 @@ class AuditEventRead(BaseModel):
                 "resource_id": event.resource_id,
                 "status": event.status,
                 "summary": event.summary,
+                "tool_name": event.tool_name,
+                "tool_provider": event.tool_provider,
                 "actor_type": event.actor_type,
                 "actor_id": event.actor_id,
                 "actor_user_id": event.actor_user_id,

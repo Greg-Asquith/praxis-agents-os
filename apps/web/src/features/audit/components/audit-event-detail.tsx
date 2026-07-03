@@ -53,15 +53,16 @@ export function AuditEventDetail({
 }
 
 function AuditEventFields({ event }: { event: AuditEvent }) {
+  const args = event.details["args"]
+
   return (
     <div className="flex flex-col gap-4">
       <dl className="grid gap-3 md:grid-cols-2">
         <DetailField label="Action" value={titleCaseToken(event.action, event.action)} />
         <DetailField label="Status" value={titleCaseToken(event.status, event.status)} />
-        <DetailField
-          label="Resource"
-          value={`${event.resource_type}${event.resource_id ? ` ${event.resource_id}` : ""}`}
-        />
+        <DetailField label="Resource" value={resourceValue(event)} />
+        {event.tool_name ? <DetailField label="Tool" value={event.tool_name} /> : null}
+        {event.tool_provider ? <DetailField label="Provider" value={event.tool_provider} /> : null}
         <DetailField label="Actor" value={event.actor_display ?? event.actor_type} />
         <DetailField label="Actor user ID" value={event.actor_user_id ?? "None"} />
         <DetailField label="Requested by" value={event.requested_by_user_id ?? "None"} />
@@ -76,6 +77,7 @@ function AuditEventFields({ event }: { event: AuditEvent }) {
           {event.summary}
         </p>
       </div>
+      {args === undefined ? null : <JsonBlock label="Arguments" value={args} />}
       <JsonBlock label="Details" value={event.details} />
     </div>
   )
@@ -88,4 +90,12 @@ function DetailField({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 truncate text-sm">{value}</dd>
     </div>
   )
+}
+
+function resourceValue(event: AuditEvent) {
+  const label = titleCaseToken(event.resource_type, event.resource_type)
+  if (event.resource_type === "tool_call" && event.tool_name) {
+    return `${label} ${event.tool_name}`
+  }
+  return `${label}${event.resource_id ? ` ${event.resource_id}` : ""}`
 }

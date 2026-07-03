@@ -56,6 +56,14 @@ async def delegate_to_agent(
             error="Delegate task must not be blank.",
         )
 
+    if ctx.deps.envelope.max_delegation_depth <= ctx.deps.delegation_depth:
+        return DelegateRunResult(
+            status="failed",
+            agent_id=agent_id,
+            agent_name="Unknown agent",
+            error="Delegation depth limit reached.",
+        )
+
     if ctx.tool_call_approved:
         resumed_result = await resume_approved_delegate_run(
             ctx,
@@ -120,6 +128,9 @@ async def delegate_to_agent(
                 "parent_run_id": str(ctx.deps.run.id),
                 "caller_agent_id": str(ctx.deps.agent.id),
                 "target_agent_id": str(target.id),
+                "audit_context": (ctx.deps.run.metadata_json or {}).get(
+                    "audit_context"
+                ),
             },
         )
         await session.commit()

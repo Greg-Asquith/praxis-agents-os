@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +35,10 @@ from services.conversations.naming import (
 )
 from services.conversations.prune_failed import prune_failed_empty_conversation_for_run
 from services.conversations.schemas import ConversationCreateRequest, ConversationRead
-from services.conversations.utils import get_assignable_agent_for_workspace
+from services.conversations.utils import (
+    build_interactive_run_metadata,
+    get_assignable_agent_for_workspace,
+)
 
 _drain_sse_sink = runtime_streaming.drain_sse_sink
 logger = logging.getLogger(__name__)
@@ -49,6 +53,7 @@ async def create_conversation_stream(
     actor: User,
     workspace: Workspace,
     payload: ConversationCreateRequest,
+    request: Request | None = None,
 ) -> StreamingResponse:
     """Create a conversation, create its first run, and return an SSE response."""
     agent = await get_assignable_agent_for_workspace(
@@ -87,9 +92,10 @@ async def create_conversation_stream(
         workspace_id=workspace.id,
         user_id=actor.id,
         trigger=RUN_TRIGGER_INTERACTIVE,
-        metadata={"client_message_id": payload.client_message_id}
-        if payload.client_message_id
-        else None,
+        metadata=build_interactive_run_metadata(
+            client_message_id=payload.client_message_id,
+            request=request,
+        ),
     )
     await db.commit()
 

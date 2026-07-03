@@ -16,15 +16,19 @@ from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.capabilities import build_runtime_capabilities
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.delegation.tool_names import (
+    DELEGATE_TO_AGENT_TOOL_NAME,
+    LIST_DELEGATE_AGENTS_TOOL_NAME,
+)
 from services.agents.runtime.tools import build_runtime_tools
 
-DELEGATION_INSTRUCTIONS = """\
+DELEGATION_INSTRUCTIONS = f"""\
 You may delegate clearly bounded subtasks to other agents only when a listed
 delegate is better suited than handling the work yourself.
 
 Delegation rules:
-- Call list_delegate_agents before delegate_to_agent.
-- Use delegate_to_agent only with an id returned by list_delegate_agents.
+- Call {LIST_DELEGATE_AGENTS_TOOL_NAME} before {DELEGATE_TO_AGENT_TOOL_NAME}.
+- Use {DELEGATE_TO_AGENT_TOOL_NAME} only with an id returned by {LIST_DELEGATE_AGENTS_TOOL_NAME}.
 - Give the delegate complete task instructions and relevant context.
 - Treat the delegate result as supporting evidence; you remain responsible for
   the final answer to the user.

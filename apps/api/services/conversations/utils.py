@@ -2,8 +2,10 @@
 
 """Helpers specific to the conversations service."""
 
+from typing import Any
 from uuid import UUID
 
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,21 @@ from models.conversation import Conversation, ConversationMessage
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import TERMINAL_RUN_STATUSES
+from services.audit_events.utils import request_audit_context
+
+
+def build_interactive_run_metadata(
+    *,
+    client_message_id: str | None,
+    request: Request | None,
+) -> dict[str, Any] | None:
+    """Build metadata persisted with an interactive agent run."""
+    metadata: dict[str, Any] = {}
+    if client_message_id:
+        metadata["client_message_id"] = client_message_id
+    if request is not None:
+        metadata["audit_context"] = request_audit_context(request)
+    return metadata or None
 
 
 async def get_conversation_for_actor(

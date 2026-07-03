@@ -4,6 +4,7 @@
 
 from uuid import UUID
 
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,7 @@ from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.worker import run_turn_worker
 from services.conversations.schemas import ConversationTurnCreateRequest
 from services.conversations.utils import (
+    build_interactive_run_metadata,
     get_active_run_for_conversation,
     get_conversation_for_actor,
     get_message_by_client_message_id,
@@ -40,6 +42,7 @@ async def create_conversation_turn_stream(
     workspace: Workspace,
     conversation_id: UUID,
     payload: ConversationTurnCreateRequest,
+    request: Request | None = None,
 ) -> StreamingResponse:
     """Create a durable run and return an SSE response for its live events."""
     conversation = await get_conversation_for_actor(
@@ -100,9 +103,10 @@ async def create_conversation_turn_stream(
         workspace_id=workspace.id,
         user_id=actor.id,
         trigger=RUN_TRIGGER_INTERACTIVE,
-        metadata={"client_message_id": payload.client_message_id}
-        if payload.client_message_id
-        else None,
+        metadata=build_interactive_run_metadata(
+            client_message_id=payload.client_message_id,
+            request=request,
+        ),
     )
     await db.commit()
 

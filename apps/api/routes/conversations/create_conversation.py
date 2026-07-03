@@ -2,7 +2,7 @@
 
 """Route for creating a conversation and streaming its first turn."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
@@ -17,6 +17,7 @@ async def create_conversation(
     db: AsyncDbSessionDep,
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
+    request: Request,
     payload: ConversationCreateRequest,
 ) -> StreamingResponse:
     workspace, _membership = workspace_context
@@ -25,4 +26,5 @@ async def create_conversation(
         actor=actor,
         workspace=workspace,
         payload=payload,
+        request=request,
     )

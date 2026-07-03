@@ -56,6 +56,9 @@ incremental work over filling gaps with speculative abstractions.
   records, scheduling, migrations, approvals, and provider boundaries.
 - Do not commit secrets, generated caches, local virtualenvs, local databases, or
   build outputs.
+- Do not reference numbered plan docs from implementation code, comments, or
+  docstrings. Plans guide the work; code should describe runtime behavior and
+  durable design decisions without citing plan numbers or roadmap files.
 
 ## Backend Standards
 
