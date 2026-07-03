@@ -206,10 +206,12 @@ original remains available for download and future sandbox processing.
 - `skill_doc_prefix(workspace_id, skill_id, document_name) -> str` returning
   `workspaces/{workspace_id}/skills/{skill_id}/docs/{document_name}` (the
   model-docstring path convention).
-- `original_ref(...)` / `markdown_ref(...)` building **PRIVATE**-bucket refs via
-  `make_storage_object_ref(StorageBucket.PRIVATE, f"{prefix}/original{ext}")`
-  and `.../converted.md`, where `ext` is derived from the validated filename
-  via `services/storage/paths.py` helpers.
+- `original_ref(...)` / `markdown_ref_for_original(...)` building
+  **PRIVATE**-bucket refs under an upload-scoped directory:
+  `.../uploads/{upload_id}/original/{safe_filename}` and
+  `.../uploads/{upload_id}/converted.md`. The upload id keeps unconfirmed
+  replacements from overwriting the currently referenced objects, and the
+  filename segment preserves the original download name after sanitization.
 - `convert_document_to_markdown(data: bytes, *, content_type: str, filename: str) -> str`:
   - `text/plain` and `text/markdown`: decode UTF-8 (`errors="replace"`) and
     return as-is — no conversion.
@@ -259,14 +261,14 @@ helper.
      bucket-agnostic — read it first; otherwise write a private-bucket
      equivalent in the skills documents `utils.py`).
   3. `data = await provider.get_object(ref)`; run
-     `convert_document_to_markdown`; on success `put_object` the markdown to
-     `markdown_ref` with `content_type="text/markdown"`; on conversion failure
-     record `status="failed"` with the error message and no markdown key.
+     `convert_document_to_markdown`; on success `put_object` the markdown beside
+     the uploaded original with `content_type="text/markdown"`; on conversion
+     failure record `status="failed"` with the error message and no markdown key.
   4. Update the manifest. **JSONB mutation gotcha**: SQLAlchemy does not track
      in-place dict mutation. Always reassign:
      `skill.documentation_refs = {**(skill.documentation_refs or {}), name: entry.model_dump(mode="json")}`.
   5. Best-effort delete any previously-stored objects for a replaced document
-     whose keys changed (extension change) — model on
+     whose manifest keys changed — model on
      `best_effort_delete_public_object` in `services/assets/utils.py`.
   6. Audit `AuditAction.UPDATE` / `AuditResourceType.SKILL` with
      `details={"document": name, "action": "upload", "status": entry.status}`.
@@ -278,7 +280,7 @@ helper.
 - `list_documents.py` — parse the manifest into `SkillDocumentsListResponse`
   (tolerate legacy/malformed entries by skipping them with a log warning).
 - `get_document_markdown.py` — 404 if the name is missing or `status !=
-  "ready"`; `provider.get_object(markdown_ref)` → decode → return
+  "ready"`; `provider.get_object(entry.markdown)` → decode → return
   `SkillDocumentMarkdownResponse`. Map `StorageNotFoundError` to a 404
   `NotFoundError` (manifest/storage drift).
 - `create_document_download.py` — return
@@ -375,7 +377,7 @@ Stop and report back (do not improvise) if:
 
 - **Reuse contract (roadmap requirement — Phase 3 / plan 033).**
   `convert_document_to_markdown` / `_convert_sync` and the
-  `original_ref`/`markdown_ref` helpers must be structured as a standalone,
+  `original_ref`/`markdown_ref_for_original` helpers must be structured as a standalone,
   storage-ref-agnostic conversion module so plan 033 (background
   extraction→markdown jobs over Files) can call the same code path. Do not
   couple conversion to the skills manifest: keep the manifest-write in the

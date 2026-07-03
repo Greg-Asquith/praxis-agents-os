@@ -38,8 +38,8 @@ integrations, files, knowledge base, memory, artifacts).
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
 | 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
-| 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | TODO |
-| 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016 (docs need 017) | TODO |
+| 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | DONE |
+| 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016, 017 (for document reading) | TODO |
 | 019 | Build the skills management UI | P1 | L | 016, 017 | TODO |
 | 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | TODO |
 | 021 | Add the schedule REST routes | P1 | L | - | DONE |
@@ -108,6 +108,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   delete, and create/update/delete audit events with `resource_type="skill"`.
   The pre-existing agent-run resume import cycle was fixed so the required
   agents regression suite collects cleanly.
+- `017` marked DONE 2026-07-03: `/api/v1/skills/{skill_id}/documents` now
+  supports private signed uploads, confirm-time storage metadata validation,
+  in-request MarkItDown conversion to markdown, markdown reads, signed
+  original downloads, document deletion, and skill audit updates. The
+  conversion/storage helpers live under `services/skills/documents/` so plan
+  `033` can reuse the extraction-to-markdown path instead of adding a second
+  converter.
 - `013` and `018` interact: history trimming MUST preserve
   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
   lose loaded skills on resume. Whichever plan lands second must honor the

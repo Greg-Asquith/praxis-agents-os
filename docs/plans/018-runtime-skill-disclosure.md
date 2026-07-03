@@ -18,7 +18,7 @@
 - **Risk**: MED
 - **Depends on**: docs/plans/complete/016-skills-backend-crud.md (skill rows must be
   creatable); document reading additionally needs
-  docs/plans/017-skill-documents-pipeline.md
+  docs/plans/complete/017-skill-documents-pipeline.md
 - **Category**: direction (feature foundation)
 - **Planned at**: commit `ccb721b`, 2026-07-01
 

@@ -52,6 +52,18 @@ class FilesSettingsMixin:
         le=104857600,
         description="Max document file size (50MB)",
     )
+    MAX_SKILL_DOCUMENTS_PER_SKILL: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Max documents per skill",
+    )
+    MAX_SKILL_DOC_MARKDOWN_BYTES: int = Field(
+        default=2097152,
+        ge=65536,
+        le=10485760,
+        description="Max size of converted skill-document markdown (2MB)",
+    )
     MAX_FILE_SIZE_AGENT_FILE: int = Field(
         default=104857600,
         ge=1048576,

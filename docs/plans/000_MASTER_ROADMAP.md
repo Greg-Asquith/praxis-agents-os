@@ -110,9 +110,9 @@ Not a numbered plan; a checklist chore:
 
 - Mark 009 DONE in the README (delegation landed at `f83d210`; verify the
   approval-resume path for delegated runs while confirming).
-- Verify/refresh statuses of 010–020 (verified 2026-07-03: 010, 011, and 012
-  are DONE; 013–020 remain TODO; only the `skills` table and
-  delegation pre-exist).
+- Verify/refresh statuses of 010–020 (verified 2026-07-03: 010, 011, 012,
+  016, and 017 are DONE; 013–015 and 018–020 remain TODO; skills CRUD and the
+  skill document pipeline now exist).
 - Point the README at this document as the ordering authority.
 
 ### Lane R — Runtime Hardening (existing plans, interleave early)
@@ -146,14 +146,14 @@ Not a numbered plan; a checklist chore:
 
 ### Phase 2 — Skills (existing plans 016–020; gate G2)
 
-Run as written: 016 (DONE 2026-07-03) → 017 → 018 → 019 → 020. Two roadmap-level additions:
+Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 → 019 → 020. Two roadmap-level additions:
 
 - 018 must deliver the **system-prompt assembly design** (ordered, budgeted
   blocks with an extension point) that 034/040/049 later plug into — not
   just skill disclosure.
-- 017's document pipeline should anticipate Phase 3's file processing
-  (shared extraction/markdown machinery); do not build a second converter
-  in 033.
+- 017's document pipeline anticipates Phase 3's file processing with shared
+  extraction/markdown helpers under `services/skills/documents/`; 033 must
+  reuse that machinery rather than build a second converter.
 
 ### Cross-cutting design note (gate G3)
 
@@ -233,7 +233,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 →
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 → 028 → 019 → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.

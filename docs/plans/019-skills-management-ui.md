@@ -21,7 +21,7 @@
 - **Effort**: L
 - **Risk**: LOW
 - **Depends on**: docs/plans/complete/016-skills-backend-crud.md,
-  docs/plans/017-skill-documents-pipeline.md (documents section only — the
+  docs/plans/complete/017-skill-documents-pipeline.md (documents section only — the
   CRUD screens work with 016 alone)
 - **Category**: direction (feature foundation)
 - **Planned at**: commit `ccb721b`, 2026-07-01
