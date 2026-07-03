@@ -4,7 +4,6 @@ import { Link } from "@tanstack/react-router"
 import { ExternalLinkIcon } from "lucide-react"
 
 import { buttonVariants } from "@/components/ui/button"
-import { runtimeToolLabel } from "@/features/agents/runtime-tools"
 import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
@@ -24,6 +23,7 @@ import {
 } from "@/features/conversations/components/tool-activity-status-values"
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import { useToolLabels } from "@/features/tools/use-tool-labels"
 import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -40,6 +40,7 @@ export function DelegationToolRow({
   compact,
   defaultOpen,
 }: DelegationToolRowProps) {
+  const toolLabelFor = useToolLabels()
   const delegate = activity.delegate
   if (!delegate) {
     return null
@@ -47,7 +48,7 @@ export function DelegationToolRow({
 
   const targetLabel = delegate.agentName ?? "Delegate agent"
   const supportLabel = supportIdentifier(delegate.agentId)
-  const toolLabel = runtimeToolLabel(activity.name) ?? activity.name
+  const toolLabel = toolLabelFor(activity.name)
   const expandable =
     Boolean(approvalDecision) ||
     (activity.args !== undefined && activity.args !== null) ||

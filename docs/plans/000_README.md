@@ -48,7 +48,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
 | 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | DONE |
 | 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | DONE |
-| 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | TODO |
+| 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | DONE |
 | 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | TODO |
 | 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | TODO |
 
@@ -160,9 +160,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `025` → `026` → `028` is a hard chain: `026` consumes the contract's
   `provider`/`effect`/`output_model`; `028` amends the contract with
   capability-kind entries and relies on `026`'s audit writer + envelopes.
-- `027` hard-depends on `025` (catalog endpoint); its audit-viewer step is
-  conditional on `023` + `026` having landed, otherwise recorded as a
-  follow-up.
+- `027` marked DONE 2026-07-03: the agent form now consumes
+  `/api/v1/tools/catalog`, renders a searchable/provider-filtered grouped
+  tool selector that preserves unavailable saved tools, and chat/audit
+  surfaces resolve tool labels through the shared non-suspense catalog hook.
+  The audit viewer displays tool/provider metadata; backend list filters for
+  `tool_name`/`tool_provider` remain a follow-up because the current audit
+  read API does not accept those query parameters.
 - `023` decision worth knowing before executing: `security_events` has no
   workspace column, so the security surface is super-admin-only in v1;
   workspace admins get workspace-scoped visibility via audit events only.

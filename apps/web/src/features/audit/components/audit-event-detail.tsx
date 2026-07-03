@@ -10,6 +10,7 @@ import {
 import { JsonBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import { useAuditEventQuery } from "@/features/audit/api/get-audit-event"
 import type { AuditEvent } from "@/features/audit/types"
+import { useToolLabels } from "@/features/tools/use-tool-labels"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime, titleCaseToken } from "@/lib/format"
 
@@ -22,6 +23,7 @@ export function AuditEventDetail({
 }) {
   const eventQuery = useAuditEventQuery(eventId)
   const event = eventQuery.data ?? null
+  const toolLabelFor = useToolLabels()
 
   return (
     <Dialog
@@ -41,7 +43,7 @@ export function AuditEventDetail({
         </DialogHeader>
 
         {event ? (
-          <AuditEventFields event={event} />
+          <AuditEventFields event={event} toolLabelFor={toolLabelFor} />
         ) : (
           <p className="text-muted-foreground text-sm">
             {eventQuery.isError ? getErrorMessage(eventQuery.error) : "Loading event details."}
@@ -52,7 +54,13 @@ export function AuditEventDetail({
   )
 }
 
-function AuditEventFields({ event }: { event: AuditEvent }) {
+function AuditEventFields({
+  event,
+  toolLabelFor,
+}: {
+  event: AuditEvent
+  toolLabelFor: (toolName: string) => string
+}) {
   const args = event.details["args"]
 
   return (
@@ -60,9 +68,16 @@ function AuditEventFields({ event }: { event: AuditEvent }) {
       <dl className="grid gap-3 md:grid-cols-2">
         <DetailField label="Action" value={titleCaseToken(event.action, event.action)} />
         <DetailField label="Status" value={titleCaseToken(event.status, event.status)} />
-        <DetailField label="Resource" value={resourceValue(event)} />
-        {event.tool_name ? <DetailField label="Tool" value={event.tool_name} /> : null}
-        {event.tool_provider ? <DetailField label="Provider" value={event.tool_provider} /> : null}
+        <DetailField label="Resource" value={resourceValue(event, toolLabelFor)} />
+        {event.tool_name ? (
+          <DetailField label="Tool" value={toolLabelFor(event.tool_name)} />
+        ) : null}
+        {event.tool_provider ? (
+          <DetailField
+            label="Provider"
+            value={titleCaseToken(event.tool_provider, event.tool_provider)}
+          />
+        ) : null}
         <DetailField label="Actor" value={event.actor_display ?? event.actor_type} />
         <DetailField label="Actor user ID" value={event.actor_user_id ?? "None"} />
         <DetailField label="Requested by" value={event.requested_by_user_id ?? "None"} />
@@ -92,10 +107,10 @@ function DetailField({ label, value }: { label: string; value: string }) {
   )
 }
 
-function resourceValue(event: AuditEvent) {
+function resourceValue(event: AuditEvent, toolLabelFor: (toolName: string) => string) {
   const label = titleCaseToken(event.resource_type, event.resource_type)
   if (event.resource_type === "tool_call" && event.tool_name) {
-    return `${label} ${event.tool_name}`
+    return `${label} ${toolLabelFor(event.tool_name)}`
   }
   return `${label}${event.resource_id ? ` ${event.resource_id}` : ""}`
 }

@@ -250,15 +250,23 @@ against a dev API:
 
 ## Done criteria
 
-- [ ] `pnpm lint` exits 0
-- [ ] `pnpm build` exits 0
-- [ ] `grep -rn "RUNTIME_TOOL_OPTIONS\|RuntimeToolName" apps/web/src` returns
+- [x] `pnpm lint` exits 0
+- [x] `pnpm build` exits 0
+- [x] `grep -rn "RUNTIME_TOOL_OPTIONS\|RuntimeToolName" apps/web/src` returns
       nothing
-- [ ] `grep -rn "Keep this list aligned" apps/web/src` returns nothing (the
+- [x] `grep -rn "Keep this list aligned" apps/web/src` returns nothing (the
       sync comment is dead)
 - [ ] Manual matrix above completed (call out any step you could not run)
 - [ ] No modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `docs/plans/000_README.md` status row updated
+
+Completion notes:
+
+- `pnpm check` passed from `apps/web`.
+- The manual browser/API matrix was not run in this environment; no dev API/DB
+  was running for payload inspection or the hand-set unavailable-tool scenario.
+- Unrelated schedule/API changes were already present in the working tree and
+  were left untouched.
 
 ## STOP conditions
 

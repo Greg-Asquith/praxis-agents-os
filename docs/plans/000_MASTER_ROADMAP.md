@@ -141,7 +141,7 @@ Not a numbered plan; a checklist chore:
 |------|-------|
 | 025 | `ToolDefinition` contract + decorator registry + import-time uniqueness/invariant checks; migrate the two catalog tools; write-time validation of `Agent.tool_names`/`tool_policies`; registry read API. **DONE 2026-07-03.** (Donor A1.) |
 | 026 | Dispatch choke point: wrapper around tool execution writing an audit row per invocation (`tool_name`/`tool_provider` audit columns), mutation tracker, output-contract validation, capability envelopes for non-interactive runs (schedules **and** delegated sub-agents). **DONE 2026-07-03.** (Donor A2, extended to delegation.) |
-| 027 | Frontend tool catalog in the agent form, driven by the registry API — replaces the hardcoded list; includes the remaining agent-form tidy-up from NOTES. (Donor A3.) |
+| 027 | Frontend tool catalog in the agent form, driven by the registry API — replaces the hardcoded list; includes the remaining agent-form tidy-up from NOTES. **DONE 2026-07-03; the selector is searchable, provider-filtered, and preserves unavailable saved tools.** (Donor A3.) |
 | 028 | First registry-native tools: agent planning/TODO tool (own build, donor-informed) + pydantic-ai native/builtin tool exposure (e.g. web search) as registry entries with normal policy/audit treatment. Small; proves the registry with real entries beyond demos. |
 
 ### Phase 2 — Skills (existing plans 016–020; gate G2)
@@ -233,7 +233,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 → 016 → 017 →
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 → 017 →
 018 → 028 → 019 → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.

@@ -1,6 +1,5 @@
 // apps/web/src/features/conversations/components/tool-call-row.tsx
 
-import { runtimeToolLabel } from "@/features/agents/runtime-tools"
 import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
@@ -21,6 +20,7 @@ import {
 } from "@/features/conversations/components/tool-activity-status-values"
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import { useToolLabels } from "@/features/tools/use-tool-labels"
 
 type ToolCallRowProps = {
   approvalDecision?: ToolApprovalDecisionControls
@@ -35,6 +35,8 @@ export function ToolCallRow({
   compact = false,
   defaultOpen = false,
 }: ToolCallRowProps) {
+  const toolLabelFor = useToolLabels()
+
   if (activity.delegate) {
     return (
       <DelegationToolRow
@@ -46,9 +48,8 @@ export function ToolCallRow({
     )
   }
 
-  const toolLabel = runtimeToolLabel(activity.name)
-  const title = toolLabel ?? "Tool call"
-  const supportLabel = toolLabel ? null : supportIdentifier(activity.name)
+  const title = toolLabelFor(activity.name)
+  const supportLabel = title === activity.name ? supportIdentifier(activity.name) : null
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
   const decisionLabel = decisionForActivity(activity)

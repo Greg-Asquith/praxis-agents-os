@@ -1,6 +1,5 @@
 // apps/web/src/features/schedules/components/schedule-cron-model.ts
 
-import { formatCronExpression } from "@/features/schedules/format"
 import { DEFAULT_CRON_EXPRESSION } from "@/features/schedules/components/schedule-form-model"
 
 export type AdvancedCronValues = {
@@ -91,17 +90,6 @@ export function deriveCronPreset(expression: string) {
   }
 
   return expression.trim() ? "custom" : DEFAULT_CRON_EXPRESSION
-}
-
-export function cronPresetLabel(value: string, expression: string) {
-  if (value === "advanced") {
-    return "Custom days and time"
-  }
-  if (value === "custom") {
-    return formatCronExpression(expression)
-  }
-
-  return CRON_PRESETS.find((preset) => preset.value === value)?.label ?? formatCronExpression(value)
 }
 
 export function parseAdvancedCronExpression(expression: string): AdvancedCronValues | null {

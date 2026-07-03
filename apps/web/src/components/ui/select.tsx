@@ -8,7 +8,56 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+// Base UI's closed trigger renders the raw value unless Root receives `items`; derive them from the SelectItem children so SelectValue shows readable labels.
+function Select<Value, Multiple extends boolean | undefined = false>(
+  props: SelectPrimitive.Root.Props<Value, Multiple>
+) {
+  return <SelectPrimitive.Root {...props} items={props.items ?? deriveItems(props.children)} />
+}
+
+type DerivedSelectItem = { label: React.ReactNode; value: unknown }
+type SelectItemLikeProps = {
+  children?: React.ReactNode
+  label?: React.ReactNode
+  value?: unknown
+}
+
+function deriveItems(children: React.ReactNode): DerivedSelectItem[] | undefined {
+  const items: DerivedSelectItem[] = []
+  collectSelectItems(children, items)
+  return items.length > 0 ? items : undefined
+}
+
+function isReactNodeArray(node: React.ReactNode): node is React.ReactNode[] {
+  return Array.isArray(node)
+}
+
+function collectSelectItems(node: React.ReactNode, items: DerivedSelectItem[]) {
+  if (isReactNodeArray(node)) {
+    for (const child of node) {
+      collectSelectItems(child, items)
+    }
+    return
+  }
+
+  if (!React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return
+  }
+
+  if (node.type === SelectItem) {
+    const itemProps = node.props as SelectItemLikeProps
+    items.push({
+      label: itemProps.label ?? itemProps.children,
+      value: itemProps.value ?? null,
+    })
+    return
+  }
+
+  const { children: nested } = node.props
+  if (nested != null) {
+    collectSelectItems(nested, items)
+  }
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

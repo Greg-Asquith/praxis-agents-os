@@ -13,10 +13,12 @@ export type AuditResourceType =
   | "invitation"
   | "notification"
   | "agent"
+  | "agent_run"
+  | "tool_call"
   | "agent_schedule"
   | "agent_schedule_run"
 
-export type AuditStatus = "success" | "failure" | "denied"
+export type AuditStatus = "success" | "pending" | "failure" | "denied"
 
 // Mirrors apps/api/services/security/enums.py.
 export type SecurityEventType =
@@ -67,12 +69,15 @@ export const AUDIT_RESOURCE_TYPES = [
   "invitation",
   "notification",
   "agent",
+  "agent_run",
+  "tool_call",
   "agent_schedule",
   "agent_schedule_run",
 ] as const satisfies readonly AuditResourceType[]
 
 export const AUDIT_STATUSES = [
   "success",
+  "pending",
   "failure",
   "denied",
 ] as const satisfies readonly AuditStatus[]

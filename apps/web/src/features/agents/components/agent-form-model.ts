@@ -1,11 +1,7 @@
 // apps/web/src/features/agents/components/agent-form-model.ts
 
 import { modelDisplayName } from "@/features/agents/components/agent-model-label"
-import {
-  RUNTIME_TOOL_OPTIONS,
-  type RuntimeToolMode,
-  type RuntimeToolName,
-} from "@/features/agents/runtime-tools"
+import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type {
   Agent,
   AgentCreateRequest,
@@ -13,6 +9,7 @@ import type {
   ToolPolicyValue,
 } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
+import type { ToolCatalogEntry } from "@/features/tools/types"
 
 const DEFAULT_MODEL_SELECTION = "Default"
 export const NO_AGENT_SELECTION = "None"
@@ -76,7 +73,7 @@ export type AgentFormState = {
   name: string
   slug: string
   thinking: ThinkingSelection
-  toolModes: Record<RuntimeToolName, RuntimeToolMode>
+  toolModes: Record<string, RuntimeToolMode>
 }
 
 export type AgentFormValidationEntry = {
@@ -103,7 +100,10 @@ type ModelSelection = {
   model_provider: string | null
 }
 
-export function initialAgentFormState(agent: Agent | null): AgentFormState {
+export function initialAgentFormState(
+  agent: Agent | null,
+  toolCatalog: ToolCatalogEntry[]
+): AgentFormState {
   return {
     allowedAgentIds: agent?.allowed_agent_ids ?? [],
     azureDeployment: agent?.azure_deployment ?? "",
@@ -117,7 +117,7 @@ export function initialAgentFormState(agent: Agent | null): AgentFormState {
     name: agent?.name ?? "",
     slug: agent?.slug ?? "",
     thinking: thinkingSelectionFromSettings(agent?.model_settings ?? null),
-    toolModes: initialToolModes(agent),
+    toolModes: initialToolModes(toolCatalog, agent),
   }
 }
 
@@ -292,20 +292,30 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
   )
 }
 
-function initialToolModes(agent: Agent | null): Record<RuntimeToolName, RuntimeToolMode> {
-  const toolNames = new Set(agent?.tool_names ?? [])
+function initialToolModes(
+  catalog: ToolCatalogEntry[],
+  agent: Agent | null
+): Record<string, RuntimeToolMode> {
+  const toolNames = agent?.tool_names ?? []
   const policies = agent?.tool_policies ?? {}
-  return RUNTIME_TOOL_OPTIONS.reduce<Record<RuntimeToolName, RuntimeToolMode>>(
-    (toolModes, tool) => {
-      const savedPolicy = policies[tool.name]
-      toolModes[tool.name] = toolNames.has(tool.name) ? (savedPolicy ?? "auto") : "off"
-      return toolModes
-    },
-    {
-      add_numbers: "off",
-      get_runtime_context: "off",
+  const catalogByName = new Map(catalog.map((tool) => [tool.name, tool]))
+  const toolModes: Record<string, RuntimeToolMode> = {}
+
+  for (const toolName of toolNames) {
+    if (Object.hasOwn(toolModes, toolName)) {
+      continue
     }
-  )
+    const defaultPolicy = catalogByName.get(toolName)?.default_policy ?? "auto"
+    toolModes[toolName] = policies[toolName] ?? defaultPolicy
+  }
+
+  for (const tool of catalog) {
+    if (!Object.hasOwn(toolModes, tool.name)) {
+      toolModes[tool.name] = "off"
+    }
+  }
+
+  return toolModes
 }
 
 function stringArraysEqual(left: string[], right: string[]) {
@@ -317,10 +327,16 @@ function stringArraysEqual(left: string[], right: string[]) {
 }
 
 function toolModesEqual(
-  left: Record<RuntimeToolName, RuntimeToolMode>,
-  right: Record<RuntimeToolName, RuntimeToolMode>
+  left: Record<string, RuntimeToolMode>,
+  right: Record<string, RuntimeToolMode>
 ) {
-  return RUNTIME_TOOL_OPTIONS.every((tool) => left[tool.name] === right[tool.name])
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  for (const key of keys) {
+    if (left[key] !== right[key]) {
+      return false
+    }
+  }
+  return true
 }
 
 function modelSelectionFromAgent(agent: Agent | null) {
@@ -356,14 +372,13 @@ function buildToolPayload(toolModes: AgentFormState["toolModes"]) {
   const toolNames: string[] = []
   const toolPolicies: Record<string, ToolPolicyValue> = {}
 
-  for (const tool of RUNTIME_TOOL_OPTIONS) {
-    const mode = toolModes[tool.name]
+  for (const [toolName, mode] of Object.entries(toolModes)) {
     if (mode === "off") {
       continue
     }
 
-    toolNames.push(tool.name)
-    toolPolicies[tool.name] = mode
+    toolNames.push(toolName)
+    toolPolicies[toolName] = mode
   }
 
   return {

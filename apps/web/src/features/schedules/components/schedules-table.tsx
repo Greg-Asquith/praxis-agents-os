@@ -21,7 +21,11 @@ import {
 } from "@/components/ui/table"
 import type { Agent } from "@/features/agents/types"
 import { ScheduleStatusBadges } from "@/features/schedules/components/schedule-status-badges"
-import { formatScheduleCadence, scheduleTitle } from "@/features/schedules/format"
+import {
+  formatScheduleCadence,
+  formatScheduleNextRun,
+  scheduleTitle,
+} from "@/features/schedules/format"
 import type { AgentSchedule } from "@/features/schedules/types"
 import { formatDateTime } from "@/lib/format"
 
@@ -99,7 +103,7 @@ export function SchedulesTable({
                 <TableCell>
                   <ScheduleStatusBadges schedule={schedule} />
                 </TableCell>
-                <TableCell>{formatDateTime(schedule.next_run_at)}</TableCell>
+                <TableCell>{formatScheduleNextRun(schedule)}</TableCell>
                 <TableCell>{formatLatestRun(schedule)}</TableCell>
                 <TableCell className="text-right">
                   <Button
@@ -150,7 +154,7 @@ function ScheduleMobileRow({
             </div>
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Next run">
-            {formatDateTime(schedule.next_run_at)}
+            {formatScheduleNextRun(schedule)}
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Last run">{formatLatestRun(schedule)}</ResponsiveListMeta>
         </dl>

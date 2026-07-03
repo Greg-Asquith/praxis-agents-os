@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { AuditEvent } from "@/features/audit/types"
+import { useToolLabels } from "@/features/tools/use-tool-labels"
 import { formatDateTime, titleCaseToken, truncateForPreview } from "@/lib/format"
 
 export function AuditEventsTable({
@@ -39,6 +40,8 @@ export function AuditEventsTable({
   onSelectEvent: (eventId: string) => void
   total: number
 }) {
+  const toolLabelFor = useToolLabels()
+
   if (events.length === 0) {
     return (
       <EmptyState
@@ -54,7 +57,12 @@ export function AuditEventsTable({
     <div className="flex flex-col gap-3">
       <ResponsiveList>
         {events.map((event) => (
-          <AuditEventMobileRow key={event.id} event={event} onSelectEvent={onSelectEvent} />
+          <AuditEventMobileRow
+            key={event.id}
+            event={event}
+            onSelectEvent={onSelectEvent}
+            toolLabelFor={toolLabelFor}
+          />
         ))}
       </ResponsiveList>
 
@@ -65,6 +73,8 @@ export function AuditEventsTable({
               <TableHead>Occurred</TableHead>
               <TableHead>Action</TableHead>
               <TableHead>Resource</TableHead>
+              <TableHead>Tool</TableHead>
+              <TableHead>Provider</TableHead>
               <TableHead>Actor</TableHead>
               <TableHead>Summary</TableHead>
             </TableRow>
@@ -94,13 +104,27 @@ export function AuditEventsTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex max-w-64 flex-col gap-1">
-                    <span>{resourceLabel(event)}</span>
+                    <span>{resourceLabel(event, toolLabelFor)}</span>
                     {resourceMeta(event) ? (
                       <span className="text-muted-foreground truncate text-xs">
                         {resourceMeta(event)}
                       </span>
                     ) : null}
                   </div>
+                </TableCell>
+                <TableCell>
+                  {event.tool_name ? (
+                    <span className="block max-w-48 truncate">{toolLabelFor(event.tool_name)}</span>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {event.tool_provider ? (
+                    titleCaseToken(event.tool_provider, event.tool_provider)
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {event.actor_display ?? titleCaseToken(event.actor_type, "Actor")}
@@ -124,9 +148,11 @@ export function AuditEventsTable({
 function AuditEventMobileRow({
   event,
   onSelectEvent,
+  toolLabelFor,
 }: {
   event: AuditEvent
   onSelectEvent: (eventId: string) => void
+  toolLabelFor: (toolName: string) => string
 }) {
   return (
     <ResponsiveListItem>
@@ -146,8 +172,16 @@ function AuditEventMobileRow({
             {titleCaseToken(event.action, event.action)}
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Resource">
-            {resourceLabel(event)}
+            {resourceLabel(event, toolLabelFor)}
           </ResponsiveListMeta>
+          {event.tool_name ? (
+            <ResponsiveListMeta label="Tool">{toolLabelFor(event.tool_name)}</ResponsiveListMeta>
+          ) : null}
+          {event.tool_provider ? (
+            <ResponsiveListMeta label="Provider">
+              {titleCaseToken(event.tool_provider, event.tool_provider)}
+            </ResponsiveListMeta>
+          ) : null}
           <ResponsiveListMeta label="Actor">
             {event.actor_display ?? titleCaseToken(event.actor_type, "Actor")}
           </ResponsiveListMeta>
@@ -176,7 +210,12 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function resourceLabel(event: AuditEvent) {
+function resourceLabel(event: AuditEvent, toolLabelFor: (toolName: string) => string) {
+  if (event.resource_type === "tool_call" && event.tool_name) {
+    return `${titleCaseToken(event.resource_type, event.resource_type)} ${toolLabelFor(
+      event.tool_name
+    )}`
+  }
   return titleCaseToken(event.resource_type, event.resource_type)
 }
 

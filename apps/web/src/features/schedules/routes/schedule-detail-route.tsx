@@ -36,7 +36,11 @@ import { useUpdateScheduleMutation } from "@/features/schedules/api/update-sched
 import { ScheduleForm } from "@/features/schedules/components/schedule-form"
 import { ScheduleRunHistory } from "@/features/schedules/components/schedule-run-history"
 import { ScheduleStatusBadges } from "@/features/schedules/components/schedule-status-badges"
-import { formatScheduleCadence, scheduleTitle } from "@/features/schedules/format"
+import {
+  formatScheduleCadence,
+  formatScheduleNextRun,
+  scheduleTitle,
+} from "@/features/schedules/format"
 import type { ScheduleUpdateRequest } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
@@ -188,7 +192,7 @@ export function ScheduleDetailRoute() {
           title="Cadence"
         />
         <MetricCard
-          description={formatDateTime(schedule.next_run_at)}
+          description={formatScheduleNextRun(schedule)}
           icon={<RotateCcwIcon className="size-4" />}
           title="Next run"
         />

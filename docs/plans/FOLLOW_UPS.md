@@ -21,3 +21,20 @@ in production.
   - Document the required IAM role alongside the bucket/CORS/CDN infra docs.
   - Optionally add a live smoke test (skipped unless GCS credentials are set)
     that exercises signed URL generation.
+
+## 2. Tool audit list filters
+
+- **Source**: Plan 027 (registry-driven tool catalog in the agent form).
+- **Where**: `apps/api/routes/audit_events/list.py`,
+  `apps/web/src/features/audit/`.
+- **Problem**: Plan 027 could display tool labels and providers from
+  `audit_events.tool_name` / `audit_events.tool_provider`, but the existing
+  audit list route does not accept `tool_name` or `tool_provider` query
+  parameters. Adding frontend filters before the backend supports them would
+  create a misleading no-op control.
+- **Action before first large integration-tool rollout**:
+  - Add typed backend filters for `tool_name` and `tool_provider` to the audit
+    list service and route.
+  - Expose matching controls in the audit viewer filter bar.
+  - Cover the route/service filters with the same workspace-scope expectations
+    as the existing audit filters.

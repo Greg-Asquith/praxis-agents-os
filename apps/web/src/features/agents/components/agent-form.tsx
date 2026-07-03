@@ -16,9 +16,10 @@ import { AgentFormShell } from "@/features/agents/components/agent-form-shell"
 import { AgentProfileSection } from "@/features/agents/components/agent-profile-section"
 import { AgentRuntimeSection } from "@/features/agents/components/agent-runtime-section"
 import { AgentStateSection } from "@/features/agents/components/agent-state-section"
-import type { RuntimeToolMode, RuntimeToolName } from "@/features/agents/runtime-tools"
+import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { Agent, AgentCreateRequest, AgentUpdateRequest } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
+import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
 
 type AgentFormProps =
@@ -45,7 +46,11 @@ type AgentFormProps =
 
 export function AgentForm(props: AgentFormProps) {
   const agent = props.mode === "edit" ? props.agent : null
-  const initialState = useMemo(() => initialAgentFormState(agent), [agent])
+  const { data: toolCatalog } = useToolCatalogQuery()
+  const initialState = useMemo(
+    () => initialAgentFormState(agent, toolCatalog.tools),
+    [agent, toolCatalog.tools]
+  )
   const [state, setState] = useState<AgentFormState>(() => initialState)
   const [formError, setFormError] = useState<string | null>(null)
   const [showValidation, setShowValidation] = useState(false)
@@ -69,7 +74,7 @@ export function AgentForm(props: AgentFormProps) {
     setState((current) => ({ ...current, [field]: value }))
   }
 
-  function setToolMode(toolName: RuntimeToolName, mode: RuntimeToolMode) {
+  function setToolMode(toolName: string, mode: RuntimeToolMode) {
     if (props.mode === "edit") {
       props.onChange?.()
     }
@@ -128,16 +133,14 @@ export function AgentForm(props: AgentFormProps) {
         isSubmitting={props.isSubmitting}
         mode={props.mode}
         pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
-        submitLabel={props.mode === "create" ? "Create agent" : "Save changes"}
+        submitLabel={props.mode === "create" ? "Create Agent" : "Save Changes"}
         validationEntries={validationEntries}
       >
         <AgentProfileSection
           fieldErrors={{
             instructions: fieldErrors["agent-instructions"],
             name: fieldErrors["agent-name"],
-            slug: fieldErrors["agent-slug"],
           }}
-          mode={props.mode}
           setField={setField}
           state={state}
         />
@@ -151,6 +154,7 @@ export function AgentForm(props: AgentFormProps) {
           setField={setField}
           setToolMode={setToolMode}
           state={state}
+          toolCatalog={toolCatalog.tools}
         />
         <AgentDelegationSection
           agents={props.agents}

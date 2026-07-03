@@ -50,7 +50,6 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
   const promptText = prompt.trim()
   const effectiveSelectedAgentId = selectedAgentId ?? activeAgents[0]?.id ?? ""
-  const selectedAgent = activeAgents.find((agent) => agent.id === effectiveSelectedAgentId) ?? null
   const isCreateWithoutAgent = props.mode === "create" && activeAgents.length === 0
   const isCurrentStreamBlocking =
     props.mode === "create"
@@ -132,14 +131,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
               value={effectiveSelectedAgentId}
             >
               <SelectTrigger id="conversation-agent" size="sm" className="w-full">
-                <SelectValue placeholder="Select an agent">
-                  {selectedAgent
-                    ? agentSelectLabel(
-                        selectedAgent,
-                        formatAgentModel(selectedAgent, props.modelCatalog)
-                      )
-                    : null}
-                </SelectValue>
+                <SelectValue placeholder="Select an agent" />
               </SelectTrigger>
               <SelectContent align="start">
                 <SelectGroup>
@@ -148,14 +140,18 @@ export function ConversationComposer(props: ConversationComposerProps) {
                       No active agents
                     </SelectItem>
                   ) : (
-                    activeAgents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        <AgentSelectItem
-                          agent={agent}
-                          secondary={formatAgentModel(agent, props.modelCatalog)}
-                        />
-                      </SelectItem>
-                    ))
+                    activeAgents.map((agent) => {
+                      const secondary = formatAgentModel(agent, props.modelCatalog)
+                      return (
+                        <SelectItem
+                          key={agent.id}
+                          label={agentSelectLabel(agent, secondary)}
+                          value={agent.id}
+                        >
+                          <AgentSelectItem agent={agent} secondary={secondary} />
+                        </SelectItem>
+                      )
+                    })
                   )}
                 </SelectGroup>
               </SelectContent>

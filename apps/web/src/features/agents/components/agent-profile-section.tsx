@@ -11,12 +11,10 @@ import { AgentFormSection } from "@/features/agents/components/agent-form-sectio
 
 export function AgentProfileSection({
   fieldErrors,
-  mode,
   setField,
   state,
 }: {
-  fieldErrors: Record<"instructions" | "name" | "slug", string | undefined>
-  mode: "create" | "edit"
+  fieldErrors: Record<"instructions" | "name", string | undefined>
   setField: AgentFormFieldSetter
   state: AgentFormState
 }) {
@@ -41,21 +39,6 @@ export function AgentProfileSection({
               value={state.name}
             />
             <FieldError>{fieldErrors.name}</FieldError>
-          </Field>
-          <Field data-invalid={fieldErrors.slug ? true : undefined}>
-            <FieldLabel htmlFor="agent-slug">Slug</FieldLabel>
-            <Input
-              aria-invalid={fieldErrors.slug ? true : undefined}
-              className="scroll-mt-20"
-              id="agent-slug"
-              onChange={(event) => {
-                setField("slug", event.currentTarget.value)
-              }}
-              placeholder={mode === "create" ? "Generated from name" : undefined}
-              required={mode === "edit"}
-              value={state.slug}
-            />
-            <FieldError>{fieldErrors.slug}</FieldError>
           </Field>
         </div>
 

@@ -240,7 +240,7 @@ function FilterSelect({
         }}
       >
         <SelectTrigger aria-label={label} className="w-full">
-          <SelectValue>{value ? titleCaseToken(value, value) : placeholder}</SelectValue>
+          <SelectValue />
         </SelectTrigger>
         <SelectContent align="start">
           <SelectGroup>
@@ -277,11 +277,7 @@ function ActorSelect({
         }}
       >
         <SelectTrigger aria-label="Actor" className="w-full">
-          <SelectValue>
-            {value
-              ? memberDisplayName(memberships.find((membership) => membership.user_id === value))
-              : "All actors"}
-          </SelectValue>
+          <SelectValue />
         </SelectTrigger>
         <SelectContent align="start">
           <SelectGroup>

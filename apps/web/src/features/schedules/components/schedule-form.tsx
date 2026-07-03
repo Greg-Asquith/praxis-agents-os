@@ -166,10 +166,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
                 className="w-full"
                 id="schedule-agent"
               >
-                <SelectValue placeholder="Select an agent">
-                  {selectedAgent ? agentSelectLabel(selectedAgent) : null}
-                  {!selectedAgent && props.mode === "edit" ? "Assigned agent unavailable" : null}
-                </SelectValue>
+                <SelectValue placeholder="Select an agent" />
               </SelectTrigger>
               <SelectContent align="start">
                 <SelectGroup>
@@ -180,7 +177,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
                     </SelectItem>
                   ) : (
                     props.agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
+                      <SelectItem key={agent.id} label={agentSelectLabel(agent)} value={agent.id}>
                         <AgentSelectItem agent={agent} />
                       </SelectItem>
                     ))
@@ -250,7 +247,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
 
       <SchedulePreviewPanel state={state} />
 
-      <div className="bg-background/95 sticky bottom-0 z-10 -mx-4 border-t px-4 py-3 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur md:-mx-6 md:px-6">
+      <div className="bg-background/95 sticky -bottom-6 z-10 -mx-4 border-t px-4 py-3 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur md:-mx-6 md:px-6">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted-foreground text-sm">
             {props.mode === "edit"
@@ -282,7 +279,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
               ) : (
                 <>
                   <CheckIcon data-icon="inline-start" />
-                  {props.mode === "create" ? "Create schedule" : "Save changes"}
+                  {props.mode === "create" ? "Create Schedule" : "Save Changes"}
                 </>
               )}
             </Button>

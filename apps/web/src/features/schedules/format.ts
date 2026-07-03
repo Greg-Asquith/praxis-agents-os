@@ -35,6 +35,14 @@ export function formatScheduleCadence(schedule: AgentSchedule) {
     : "Once"
 }
 
+export function formatScheduleNextRun(schedule: AgentSchedule) {
+  if (!schedule.is_active) {
+    return "Paused"
+  }
+
+  return formatDateTime(schedule.next_run_at)
+}
+
 export function formatDateTimeInTimeZone(value: string | null | undefined, timezone: string) {
   if (!value) {
     return "Never"

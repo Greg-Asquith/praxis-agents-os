@@ -15,7 +15,6 @@ import { ScheduleCronAdvancedBuilder } from "@/features/schedules/components/sch
 import {
   buildAdvancedCron,
   CRON_PRESETS,
-  cronPresetLabel,
   DEFAULT_ADVANCED_CRON,
   deriveCronPreset,
   parseAdvancedCronExpression,
@@ -33,7 +32,6 @@ export function ScheduleCronFields({
   setField: ScheduleFormFieldSetter
 }) {
   const selectedPreset = deriveCronPreset(cronExpression)
-  const selectedPresetLabel = cronPresetLabel(selectedPreset, cronExpression)
   const advancedValues = parseAdvancedCronExpression(cronExpression) ?? DEFAULT_ADVANCED_CRON
   const showAdvancedBuilder = selectedPreset === "advanced"
 
@@ -70,13 +68,13 @@ export function ScheduleCronFields({
             className="w-full"
             id="schedule-cron-preset"
           >
-            <SelectValue>{selectedPresetLabel}</SelectValue>
+            <SelectValue />
           </SelectTrigger>
           <SelectContent align="start">
             <SelectGroup>
               <SelectLabel>Common patterns</SelectLabel>
               {CRON_PRESETS.map((preset) => (
-                <SelectItem key={preset.value} value={preset.value}>
+                <SelectItem key={preset.value} label={preset.label} value={preset.value}>
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{preset.label}</span>
                     <span className="text-muted-foreground truncate text-xs">
@@ -85,7 +83,7 @@ export function ScheduleCronFields({
                   </span>
                 </SelectItem>
               ))}
-              <SelectItem value="advanced">
+              <SelectItem label="Custom days and time" value="advanced">
                 <span className="flex min-w-0 flex-col">
                   <span>Custom days and time</span>
                   <span className="text-muted-foreground truncate text-xs">
@@ -94,7 +92,7 @@ export function ScheduleCronFields({
                 </span>
               </SelectItem>
               {selectedPreset === "custom" ? (
-                <SelectItem value="custom">
+                <SelectItem label={formatCronExpression(cronExpression)} value="custom">
                   <span className="flex min-w-0 flex-col">
                     <span>Saved custom schedule</span>
                     <span className="text-muted-foreground truncate text-xs">
