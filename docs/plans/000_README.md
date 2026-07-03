@@ -46,7 +46,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 022 | Build the schedules management UI | P1 | L | 021 | DONE |
 | 023 | Audit & security log read API and viewer UI | P1 | L | - | DONE |
 | 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
-| 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | TODO |
+| 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | DONE |
 | 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | TODO |
 | 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | TODO |
 | 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | TODO |
@@ -142,6 +142,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `WebSearch` imports from `pydantic_ai.capabilities`, not top-level.
 - `022` hard-depends on `021` (it consumes the exact response shapes,
   including `health`/`latest_run` and run `agent_run_id` linkage).
+- `025` marked DONE 2026-07-03: `RuntimeToolDefinition` now carries
+  provider, label, effect, supported-policy, deferred-loading, and
+  `output_model` metadata; the core tools register through the decorator
+  registry; write-time validation rejects unsupported tool policies; and
+  `/api/v1/tools/catalog` exposes workspace-visible tool entries through
+  the `is_tool_allowed` seam. No migration was required.
 - `025` → `026` → `028` is a hard chain: `026` consumes the contract's
   `provider`/`effect`/`output_model`; `028` amends the contract with
   capability-kind entries and relies on `026`'s audit writer + envelopes.

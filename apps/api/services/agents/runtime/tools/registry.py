@@ -1,56 +1,75 @@
-# apps/api/service/agents/runtime/tools/registry.py
+# apps/api/services/agents/runtime/tools/registry.py
 
 """Python-owned catalog of built-in runtime tools."""
 
+import logging
+from collections.abc import Callable
 from typing import Any
 
-from pydantic_ai import RunContext
+from pydantic import BaseModel
 
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
-from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_READ,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
+    ToolEffect,
     ToolPolicy,
+    validate_definition,
 )
 
+logger = logging.getLogger(__name__)
 
-async def get_runtime_context(ctx: RunContext[RuntimeDeps]) -> dict[str, str | None]:
-    """Return the current Praxis runtime context for this turn."""
-    deps = ctx.deps
-    return {
-        "workspace_id": str(deps.run.workspace_id),
-        "conversation_id": str(deps.conversation.id),
-        "agent_id": str(deps.agent.id),
-        "run_id": str(deps.run.id),
-        "agent_name": deps.agent.name,
-        "agent_slug": deps.agent.slug,
-    }
+RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {}
 
 
-def add_numbers(a: int, b: int) -> int:
-    """Add two integers and return the result."""
-    return a + b
+def runtime_tool(
+    *,
+    name: str,
+    description: str,
+    provider: str = "core",
+    label: str | None = None,
+    effect: ToolEffect = TOOL_EFFECT_READ,
+    default_policy: ToolPolicy = TOOL_POLICY_AUTO,
+    supports_auto: bool = True,
+    supports_approval: bool = True,
+    takes_ctx: bool = False,
+    timeout: float | None = None,
+    max_retries: int | None = None,
+    args_validator: Callable[..., Any] | None = None,
+    defer_loading: bool = False,
+    output_model: type[BaseModel] | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Register a Python function as a runtime tool."""
 
+    def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
+        definition = RuntimeToolDefinition(
+            name=name,
+            function=function,
+            description=description,
+            provider=provider,
+            label=label or _derive_label(name),
+            effect=effect,
+            takes_ctx=takes_ctx,
+            default_policy=default_policy,
+            supports_auto=supports_auto,
+            supports_approval=supports_approval,
+            timeout=timeout,
+            max_retries=max_retries,
+            args_validator=args_validator,
+            defer_loading=defer_loading,
+            output_model=output_model,
+        )
+        validate_definition(definition)
+        if definition.name in RUNTIME_TOOL_CATALOG:
+            raise RuntimeError(f"Duplicate runtime tool name: {definition.name}")
+        RUNTIME_TOOL_CATALOG[definition.name] = definition
+        return function
 
-RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {
-    "get_runtime_context": RuntimeToolDefinition(
-        name="get_runtime_context",
-        function=get_runtime_context,
-        description="Read the current Praxis workspace, conversation, agent, and run identifiers.",
-        takes_ctx=True,
-        timeout=5,
-    ),
-    "add_numbers": RuntimeToolDefinition(
-        name="add_numbers",
-        function=add_numbers,
-        description="Add two integers.",
-        timeout=5,
-        max_retries=1,
-    ),
-}
+    return decorator
 
 
 def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
@@ -70,6 +89,13 @@ def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
                     "available_tools": sorted(RUNTIME_TOOL_CATALOG),
                 },
             )
+        if not permissions.is_tool_allowed(definition, workspace=None, agent=agent):
+            logger.info(
+                "Skipping disallowed runtime tool %s for agent %s",
+                definition.name,
+                agent.id,
+            )
+            continue
         tools.append(
             definition.to_pydantic_tool(
                 policy=policies.get(name, definition.default_policy),
@@ -82,6 +108,22 @@ def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
         tools.extend(build_delegation_tools())
 
     return tools
+
+
+def list_allowed_tool_definitions(
+    *,
+    workspace: object | None,
+    agent: Agent | None = None,
+) -> list[RuntimeToolDefinition]:
+    """Return registry entries visible in the supplied workspace context."""
+    return sorted(
+        (
+            definition
+            for definition in RUNTIME_TOOL_CATALOG.values()
+            if permissions.is_tool_allowed(definition, workspace=workspace, agent=agent)
+        ),
+        key=lambda definition: (definition.provider, definition.name),
+    )
 
 
 def _normalize_tool_names(raw: Any) -> list[str]:
@@ -126,3 +168,11 @@ def _normalize_tool_policies(raw: Any) -> dict[str, ToolPolicy]:
             )
         policies[name.strip()] = policy
     return policies
+
+
+def _derive_label(name: str) -> str:
+    return name.replace("_", " ").capitalize()
+
+
+# Import provider modules for registration side effects.
+from services.agents.runtime.tools import core as _core  # noqa: E402, F401

@@ -14,6 +14,7 @@ from routes.models import router as models_router
 from routes.schedules import router as schedules_router
 from routes.security_events import router as security_events_router
 from routes.storage import router as storage_router
+from routes.tools import router as tools_router
 from routes.users import router as users_router
 from routes.workspaces import router as workspaces_router
 
@@ -27,6 +28,7 @@ api_router.include_router(models_router)
 api_router.include_router(schedules_router)
 api_router.include_router(security_events_router)
 api_router.include_router(storage_router)
+api_router.include_router(tools_router)
 api_router.include_router(users_router)
 api_router.include_router(workspaces_router)
 

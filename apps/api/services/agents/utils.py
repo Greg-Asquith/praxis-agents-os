@@ -135,6 +135,21 @@ def validate_tool_configuration(
             },
         )
 
+    unsupported_policies = {
+        name: {
+            "tool_policy": policy,
+            "allowed_tool_policies": sorted(RUNTIME_TOOL_CATALOG[name].allowed_policies()),
+        }
+        for name, policy in tool_policies.items()
+        if policy not in RUNTIME_TOOL_CATALOG[name].allowed_policies()
+    }
+    if unsupported_policies:
+        raise AppValidationError(
+            "Tool policies include unsupported values for enabled tools",
+            field="tool_policies",
+            details={"unsupported_tool_policies": unsupported_policies},
+        )
+
     return dict(tool_policies) or None
 
 
