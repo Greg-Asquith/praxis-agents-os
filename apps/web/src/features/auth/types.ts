@@ -6,6 +6,7 @@ export type AuthUser = {
   display_name: string | null
   avatar_url: string | null
   is_active: boolean
+  is_super_admin: boolean
   default_workspace_id: string | null
   totp_enabled: boolean
   created_at: string

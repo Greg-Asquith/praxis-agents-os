@@ -39,7 +39,7 @@ export function InvitationsTable() {
   const hasInvitations = data.invitations.length > 0
 
   return (
-    <Card>
+    <Card className="border-0 bg-transparent shadow-none ring-0">
       <CardHeader>
         <CardTitle>Invitations</CardTitle>
         <CardDescription>Pending invitations for {workspace.name}.</CardDescription>

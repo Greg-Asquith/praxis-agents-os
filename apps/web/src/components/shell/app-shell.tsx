@@ -43,7 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SidebarHeader />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-          <PrimaryNavigation pathname={pathname} />
+          <PrimaryNavigation pathname={pathname} workspaceRole={workspace.current_user_role} />
           <Separator />
           <SidebarConversations
             conversations={conversationsData.conversations}

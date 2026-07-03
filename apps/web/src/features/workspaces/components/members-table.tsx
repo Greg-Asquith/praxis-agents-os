@@ -31,7 +31,7 @@ export function MembersTable() {
   const hasMembers = data.memberships.length > 0
 
   return (
-    <Card>
+    <Card className="border-0 bg-transparent shadow-none ring-0">
       <CardHeader>
         <CardTitle>Members</CardTitle>
         <CardDescription>People who can access {workspace.name}.</CardDescription>

@@ -15,15 +15,17 @@ type NavigationItem =
       to: string
       icon: LucideIcon
       disabled: false
+      managerOnly?: boolean
     }
   | {
       label: string
       to: null
       icon: LucideIcon
       disabled: true
+      managerOnly?: boolean
     }
 
-export const mainNavigation: NavigationItem[] = [
+const mainNavigation: NavigationItem[] = [
   {
     label: "Home",
     to: "/",
@@ -55,3 +57,11 @@ export const mainNavigation: NavigationItem[] = [
     disabled: false,
   },
 ] as const
+
+export function navigationItemsForRole(role: string | null | undefined) {
+  return mainNavigation.filter((item) => !item.managerOnly || isWorkspaceManagerRole(role))
+}
+
+function isWorkspaceManagerRole(role: string | null | undefined) {
+  return role === "owner" || role === "admin"
+}

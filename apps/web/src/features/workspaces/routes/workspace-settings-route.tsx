@@ -1,6 +1,7 @@
 // apps/web/src/features/workspaces/routes/workspace-settings-route.tsx
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AuditSettingsPanel } from "@/features/audit/components/audit-settings-panel"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { InvitationsTable } from "@/features/workspaces/components/invitations-table"
 import { MembersTable } from "@/features/workspaces/components/members-table"
@@ -9,6 +10,8 @@ import { WorkspaceRoleBadge } from "@/features/workspaces/components/workspace-r
 
 export function WorkspaceSettingsRoute() {
   const { workspace } = useActiveWorkspace()
+  const canViewAudit =
+    workspace.current_user_role === "owner" || workspace.current_user_role === "admin"
 
   return (
     <div className="flex flex-col gap-6">
@@ -24,6 +27,7 @@ export function WorkspaceSettingsRoute() {
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="invitations">Invitations</TabsTrigger>
+          {canViewAudit ? <TabsTrigger value="audit">Audit Log</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="details">
           <WorkspaceSettingsForm />
@@ -34,6 +38,11 @@ export function WorkspaceSettingsRoute() {
         <TabsContent value="invitations">
           <InvitationsTable />
         </TabsContent>
+        {canViewAudit ? (
+          <TabsContent value="audit">
+            <AuditSettingsPanel />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   )

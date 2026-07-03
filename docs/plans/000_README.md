@@ -44,7 +44,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | TODO |
 | 021 | Add the schedule REST routes | P1 | L | - | DONE |
 | 022 | Build the schedules management UI | P1 | L | 021 | DONE |
-| 023 | Audit & security log read API and viewer UI | P1 | L | - | TODO |
+| 023 | Audit & security log read API and viewer UI | P1 | L | - | DONE |
 | 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
 | 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | TODO |
 | 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | TODO |
@@ -151,6 +151,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `023` decision worth knowing before executing: `security_events` has no
   workspace column, so the security surface is super-admin-only in v1;
   workspace admins get workspace-scoped visibility via audit events only.
+- `023` marked DONE 2026-07-03: `/api/v1/audit-events` exposes
+  workspace-scoped owner/admin audit list/detail filters; `/api/v1/security-events`
+  exposes global super-admin-only security list/detail filters; `/auth/me`
+  now returns `is_super_admin`. The web viewer lives as an **Audit log** tab
+  inside Workspace Settings (not as a standalone sidebar route), with a
+  nested Security events tab for super admins.
 - `026` and `014` share the dispatch seam: `014` (OTel) must wrap `026`'s
   `dispatch.py`, not add a second interception layer. If `014` lands first,
   it should leave a named hook point; whichever lands second rebases.

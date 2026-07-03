@@ -21,6 +21,10 @@
 - **Category**: operational surfaces (roadmap `000_MASTER_ROADMAP.md` Lane O;
   **hard requirement of Gate G1**)
 - **Planned at**: commit `f83d210`, 2026-07-02
+- **Completed**: 2026-07-03. Product placement was adjusted during execution:
+  the viewer lives as the **Audit log** tab inside Workspace Settings rather
+  than as a standalone `/audit` sidebar surface. Security events remain
+  super-admin-only inside a nested tab.
 
 ## Decisions taken
 

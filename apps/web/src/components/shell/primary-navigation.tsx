@@ -2,13 +2,19 @@
 
 import { Link } from "@tanstack/react-router"
 
-import { mainNavigation } from "@/config/navigation"
+import { navigationItemsForRole } from "@/config/navigation"
 import { cn } from "@/lib/utils"
 
-export function PrimaryNavigation({ pathname }: { pathname: string }) {
+export function PrimaryNavigation({
+  pathname,
+  workspaceRole,
+}: {
+  pathname: string
+  workspaceRole: string | null
+}) {
   return (
     <nav className="flex shrink-0 flex-col gap-1" aria-label="Primary">
-      {mainNavigation.map((item) => {
+      {navigationItemsForRole(workspaceRole).map((item) => {
         const Icon = item.icon
 
         if (item.disabled) {

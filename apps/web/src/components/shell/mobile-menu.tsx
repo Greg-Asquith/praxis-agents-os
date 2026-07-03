@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { mainNavigation } from "@/config/navigation"
+import { navigationItemsForRole } from "@/config/navigation"
 import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
 import type { Workspace } from "@/features/workspaces/types"
 
@@ -45,7 +45,7 @@ export function MobileMenu({
         <DropdownMenuContent align="start" className="w-64">
           <DropdownMenuGroup>
             <DropdownMenuLabel>Navigate</DropdownMenuLabel>
-            {mainNavigation.map((item) => {
+            {navigationItemsForRole(workspace.current_user_role).map((item) => {
               const Icon = item.icon
 
               if (item.disabled) {
