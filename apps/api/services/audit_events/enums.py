@@ -37,6 +37,7 @@ class AuditResourceType(StrEnum):
     TOOL_CALL = "tool_call"
     AGENT_SCHEDULE = "agent_schedule"
     AGENT_SCHEDULE_RUN = "agent_schedule_run"
+    SKILL = "skill"
 
 
 class AuditActorType(StrEnum):

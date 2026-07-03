@@ -55,10 +55,11 @@ Already in place and load-bearing for this work:
   `BaseModel`, append-only audit events (`AuditResourceType` needs new
   entries per feature), middleware ordering in `main.py`, workspace-scoped
   everything, two Alembic branches (`core@head`, `app@head`).
-- **Pending overlap**: skills plans 016–020 (TODO) — skills are instruction
-  packages, deliberately orthogonal to tool grants (a donor decision worth
-  keeping). Plan 017's document pipeline shares machinery with file
-  processing here; sequence accordingly.
+- **Pending overlap**: skills plans 016–020 — 016 is DONE; 017–020 remain the
+  instruction-package pipeline/UI/runtime disclosure work. Skills are
+  deliberately orthogonal to tool grants (a donor decision worth keeping).
+  Plan 017's document pipeline shares machinery with file processing here;
+  sequence accordingly.
 
 **Schema decision (recommendation): everything in this roadmap is platform
 infrastructure, not product domain — it goes in `core` (public schema),

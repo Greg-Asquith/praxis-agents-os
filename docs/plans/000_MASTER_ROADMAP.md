@@ -146,7 +146,7 @@ Not a numbered plan; a checklist chore:
 
 ### Phase 2 — Skills (existing plans 016–020; gate G2)
 
-Run as written: 016 → 017 → 018 → 019 → 020. Two roadmap-level additions:
+Run as written: 016 (DONE 2026-07-03) → 017 → 018 → 019 → 020. Two roadmap-level additions:
 
 - 018 must deliver the **system-prompt assembly design** (ordered, budgeted
   blocks with an extension point) that 034/040/049 later plug into — not
@@ -233,7 +233,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 → 017 →
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 →
 018 → 028 → 019 → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.

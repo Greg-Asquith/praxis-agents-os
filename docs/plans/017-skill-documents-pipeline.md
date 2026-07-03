@@ -16,7 +16,7 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: docs/plans/016-skills-backend-crud.md
+- **Depends on**: docs/plans/complete/016-skills-backend-crud.md
 - **Category**: direction (feature foundation)
 - **Planned at**: commit `ccb721b`, 2026-07-01
 
@@ -366,7 +366,8 @@ Stop and report back (do not improvise) if:
 - `services/assets/tokens.py` hard-codes public-bucket or avatar/icon
   assumptions that cannot carry a private-bucket skill-document grant without
   modifying avatar/icon behavior — report; do not refactor the assets package.
-- Plan 016 has not landed (no `services/skills/` package).
+- The landed plan-016 `services/skills/` package is missing or no longer exposes
+  `get_skill_for_workspace` / `require_skill_write_access`.
 - Converting a legitimate small PDF takes >30s in tests (thread-pool conversion
   is the wrong architecture sooner than expected).
 

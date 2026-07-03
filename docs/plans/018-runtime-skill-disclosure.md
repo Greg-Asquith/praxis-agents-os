@@ -16,7 +16,7 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: docs/plans/016-skills-backend-crud.md (skill rows must be
+- **Depends on**: docs/plans/complete/016-skills-backend-crud.md (skill rows must be
   creatable); document reading additionally needs
   docs/plans/017-skill-documents-pipeline.md
 - **Category**: direction (feature foundation)

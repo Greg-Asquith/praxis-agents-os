@@ -33,7 +33,6 @@ from services.agents.runtime.events import (
 )
 from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
-from services.agents.runtime.worker import run_resume_worker
 from services.audit_events.utils import request_audit_context
 
 
@@ -84,6 +83,8 @@ async def resume_agent_run_stream(
 
     sink = StreamSink(run_id=run.id, conversation_id=run.conversation_id)
     await sink.emit(EVENT_RUN_STATUS, {"status": run.status})
+    from services.agents.runtime.worker import run_resume_worker
+
     run_task_registry.spawn(
         run.id,
         run_resume_worker(

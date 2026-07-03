@@ -37,7 +37,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 013 | Bound model context with a ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | TODO |
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
-| 016 | Add the skills CRUD service and routes | P1 | M | - | TODO |
+| 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
 | 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | TODO |
 | 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016 (docs need 017) | TODO |
 | 019 | Build the skills management UI | P1 | L | 016, 017 | TODO |
@@ -102,6 +102,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   Recommended order: `016` → `017` → `018` → `019` → `020`. `018`'s deferred-
   capability mechanics were probed against the installed pydantic-ai 2.1.0
   (event/part shapes are recorded in the plan, not guessed).
+- `016` marked DONE 2026-07-03: `/api/v1/skills` now exposes workspace-scoped
+  create/list/get/update/delete routes, editor-gated write access, duplicate
+  name conflicts, metadata aliasing, read-only `documentation_refs`, soft
+  delete, and create/update/delete audit events with `resource_type="skill"`.
+  The pre-existing agent-run resume import cycle was fixed so the required
+  agents regression suite collects cleanly.
 - `013` and `018` interact: history trimming MUST preserve
   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
   lose loaded skills on resume. Whichever plan lands second must honor the

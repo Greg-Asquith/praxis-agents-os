@@ -20,7 +20,7 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: LOW
-- **Depends on**: docs/plans/016-skills-backend-crud.md,
+- **Depends on**: docs/plans/complete/016-skills-backend-crud.md,
   docs/plans/017-skill-documents-pipeline.md (documents section only — the
   CRUD screens work with 016 alone)
 - **Category**: direction (feature foundation)
