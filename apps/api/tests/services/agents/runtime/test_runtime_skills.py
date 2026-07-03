@@ -210,6 +210,33 @@ async def test_read_skill_document_returns_markdown_with_provenance(
     assert content.endswith("</skill-document>")
 
 
+async def test_read_skill_document_accepts_original_filename(
+    local_storage_settings: None,
+) -> None:
+    skill = _documented_skill()
+    entry = skill.documentation_refs["quick_start"]
+    assert isinstance(entry, dict)
+    markdown_key = entry["markdown"]
+    assert isinstance(markdown_key, str)
+
+    provider = get_storage_provider()
+    await provider.put_object(
+        make_storage_object_ref(StorageBucket.PRIVATE, markdown_key),
+        b"# Quick start\nFilename lookup works.",
+        content_type="text/markdown",
+    )
+
+    tool = _read_skill_document_tool(skill)
+    ctx = RunContext(deps=object(), model=TestModel(), usage=RunUsage())
+    ctx.loaded_capability_ids.add(skill_capability_id(skill))
+
+    content = await tool.function(ctx, skill=skill.name, document="Guide.md")
+
+    assert content.startswith("<skill-document skill='research' document='quick_start'>")
+    assert "# Quick start\nFilename lookup works." in content
+    assert content.endswith("</skill-document>")
+
+
 async def test_load_agent_skills_skips_malformed_and_unavailable_ids(
     db_session: AsyncSession,
 ) -> None:

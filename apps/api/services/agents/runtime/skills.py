@@ -16,7 +16,6 @@ from models.skills import Skill
 from services.agents.runtime.context import RuntimeDeps
 from services.skills.documents.domain import SkillDocumentEntry
 from services.skills.documents.utils import (
-    entry_from_manifest,
     parse_manifest_entry,
     private_ref_from_key,
 )
@@ -104,7 +103,7 @@ def _loaded_instructions(skill: Skill) -> str:
         "",
         (
             f"Read these with {READ_SKILL_DOCUMENT_TOOL_NAME}"
-            f'(skill="{skill.name}", document="<name>"):'
+            f'(skill="{skill.name}", document="<name-or-filename>"):'
         ),
     ]
     lines.extend(f"- {name}: {entry.filename}" for name, entry in ready_documents)
@@ -147,17 +146,7 @@ def _build_read_skill_document_tool(
                 "before reading its documents."
             )
 
-        entry = entry_from_manifest(
-            matched.documentation_refs,
-            document,
-            skill_id=matched.id,
-        )
-        ready_names = [name for name, _entry in _ready_document_entries(matched)]
-        if entry is None or entry.status != "ready" or not entry.markdown:
-            valid_documents = ", ".join(ready_names) or "none"
-            raise ModelRetry(
-                f"Unknown or unavailable document. Ready documents: {valid_documents}."
-            )
+        document_name, entry = _resolve_ready_document(matched, document)
 
         provider = get_storage_provider()
         try:
@@ -167,7 +156,7 @@ def _build_read_skill_document_tool(
 
         content = data.decode("utf-8", errors="replace")
         return (
-            f"<skill-document skill={skill!r} document={document!r}>\n"
+            f"<skill-document skill={skill!r} document={document_name!r}>\n"
             f"{content}\n"
             "</skill-document>"
         )
@@ -178,6 +167,47 @@ def _build_read_skill_document_tool(
         name=READ_SKILL_DOCUMENT_TOOL_NAME,
         description="Read one of a loaded skill's reference documents as markdown.",
     )
+
+
+def _resolve_ready_document(skill: Skill, document: str) -> tuple[str, SkillDocumentEntry]:
+    requested = document.strip()
+    ready_entries = _ready_document_entries(skill)
+
+    for name, entry in ready_entries:
+        if name == requested:
+            return name, entry
+
+    filename_matches = [
+        (name, entry) for name, entry in ready_entries if entry.filename == requested
+    ]
+    if not filename_matches:
+        filename_matches = [
+            (name, entry)
+            for name, entry in ready_entries
+            if entry.filename.casefold() == requested.casefold()
+        ]
+
+    if len(filename_matches) == 1:
+        return filename_matches[0]
+
+    if len(filename_matches) > 1:
+        matching_names = ", ".join(name for name, _entry in filename_matches)
+        raise ModelRetry(
+            "Document filename is ambiguous. Use one of these document names: "
+            f"{matching_names}."
+        )
+
+    valid_documents = ", ".join(_ready_document_labels(ready_entries)) or "none"
+    raise ModelRetry(
+        "Unknown or unavailable document. Ready documents by name or filename: "
+        f"{valid_documents}."
+    )
+
+
+def _ready_document_labels(
+    ready_entries: Sequence[tuple[str, SkillDocumentEntry]],
+) -> list[str]:
+    return [f"{name} ({entry.filename})" for name, entry in ready_entries]
 
 
 def _capability_id_from_args(args: object) -> str | None:
