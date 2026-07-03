@@ -88,16 +88,29 @@ export function AssistantLiveActivityRow({
         <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
       ))}
       {messages.length > 0 ? (
-        messages.map((message) => (
-          <div key={message.id}>
-            <MessageMarkdown content={message.text || "Working..."} />
-            <span className="sr-only">{message.id}</span>
-          </div>
-        ))
+        messages.map((message) => <LiveMessageDraft key={message.id} message={message} />)
       ) : (
         <p className="text-muted-foreground text-sm">Working...</p>
       )}
     </AssistantMessageShell>
+  )
+}
+
+function LiveMessageDraft({ message }: { message: ChatMessageDraft }) {
+  if (message.channel === "thinking") {
+    const content = message.text
+      ? [message.text]
+      : message.status === "streaming"
+        ? ["Working..."]
+        : []
+    return <ThinkingBlock content={content} idPrefix={`${message.id}:thinking`} />
+  }
+
+  return (
+    <div>
+      <MessageMarkdown content={message.text || "Working..."} />
+      <span className="sr-only">{message.id}</span>
+    </div>
   )
 }
 
@@ -127,6 +140,14 @@ function ThinkingParts({ message }: { message: ParsedConversationMessage }) {
     return null
   }
 
+  return <ThinkingBlock content={message.thinking} idPrefix={`${message.id}:thinking`} />
+}
+
+function ThinkingBlock({ content, idPrefix }: { content: string[]; idPrefix: string }) {
+  if (content.length === 0) {
+    return null
+  }
+
   return (
     <details className="group/thinking min-w-0">
       <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium">
@@ -134,8 +155,8 @@ function ThinkingParts({ message }: { message: ParsedConversationMessage }) {
         Thought
       </summary>
       <div className="text-muted-foreground border-border/70 mt-2 ml-1.5 border-l pl-3 text-sm italic">
-        {message.thinking.map((thought, index) => (
-          <MessageMarkdown key={`${message.id}:thinking:${String(index)}`} content={thought} />
+        {content.map((thought, index) => (
+          <MessageMarkdown key={`${idPrefix}:${String(index)}`} content={thought} />
         ))}
       </div>
     </details>

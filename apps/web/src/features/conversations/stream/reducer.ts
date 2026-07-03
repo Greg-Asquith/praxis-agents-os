@@ -5,11 +5,16 @@ import type {
   Conversation,
   PendingDelegatedApproval,
 } from "@/features/conversations/types"
-import type { StreamError, StreamEvent } from "@/features/conversations/stream/protocol"
+import type {
+  MessageChannel,
+  StreamError,
+  StreamEvent,
+} from "@/features/conversations/stream/protocol"
 
 type AgentStreamStatus = "idle" | AgentRunStatus
 
 export type ChatMessageDraft = {
+  channel: MessageChannel
   id: string
   role: "assistant"
   text: string
@@ -131,7 +136,8 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
         messages: upsertMessageStart(
           nextState.messages,
           streamEvent.data.message_id,
-          streamEvent.data.role
+          streamEvent.data.role,
+          streamEvent.data.channel
         ),
       }
     case "message.delta":
@@ -223,9 +229,11 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
 function upsertMessageStart(
   messages: ChatMessageDraft[],
   messageId: string,
-  role: "assistant"
+  role: "assistant",
+  channel: MessageChannel = "text"
 ): ChatMessageDraft[] {
   const nextMessage: ChatMessageDraft = {
+    channel,
     id: messageId,
     role,
     status: "streaming",
@@ -249,6 +257,7 @@ function appendMessageDelta(
     return [
       ...messages,
       {
+        channel: "text",
         id: messageId,
         role: "assistant" as const,
         status: "streaming" as const,

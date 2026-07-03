@@ -24,8 +24,12 @@ from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelRequest,
     ModelResponse,
+    PartDeltaEvent,
+    PartEndEvent,
     PartStartEvent,
     TextPart,
+    ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
     ToolReturnPart,
 )
@@ -128,7 +132,99 @@ async def test_event_translation_emits_text_from_part_start() -> None:
     )
 
     assert [event.event for event in sink.events] == [EVENT_MESSAGE_START, EVENT_MESSAGE_DELTA]
+    assert sink.events[0].data["channel"] == "text"
     assert sink.events[1].data["text"] == "hello"
+
+
+async def test_event_translation_emits_thinking_from_part_start_and_delta() -> None:
+    """Thinking parts stream over the message channel without leaking signatures."""
+    run_id = uuid4()
+    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
+    state = EventTranslationState()
+
+    await emit_agent_stream_event(
+        sink,
+        PartStartEvent(index=0, part=ThinkingPart(content="Let me think")),
+        run_id=str(run_id),
+        state=state,
+    )
+
+    assert [event.event for event in sink.events] == [EVENT_MESSAGE_START, EVENT_MESSAGE_DELTA]
+    message_id = sink.events[0].data["message_id"]
+    assert sink.events[0].data["channel"] == "thinking"
+    assert sink.events[1].data == {
+        "run_id": str(run_id),
+        "conversation_id": str(sink.conversation_id),
+        "seq": 2,
+        "message_id": message_id,
+        "text": "Let me think",
+    }
+
+    await emit_agent_stream_event(
+        sink,
+        PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta=" more")),
+        run_id=str(run_id),
+        state=state,
+    )
+    assert sink.events[-1].event == EVENT_MESSAGE_DELTA
+    assert sink.events[-1].data["message_id"] == message_id
+    assert sink.events[-1].data["text"] == " more"
+
+    event_count = len(sink.events)
+    await emit_agent_stream_event(
+        sink,
+        PartDeltaEvent(
+            index=0,
+            delta=ThinkingPartDelta(content_delta=None, signature_delta="signature"),
+        ),
+        run_id=str(run_id),
+        state=state,
+    )
+    assert len(sink.events) == event_count
+
+
+async def test_event_translation_keeps_interleaved_thinking_and_text_ids_distinct() -> None:
+    """Open thinking and text parts can overlap without colliding ids."""
+    run_id = uuid4()
+    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
+    state = EventTranslationState()
+    thinking_part = ThinkingPart(content="Plan")
+    text_part = TextPart(content="Answer")
+
+    await emit_agent_stream_event(
+        sink,
+        PartStartEvent(index=0, part=thinking_part),
+        run_id=str(run_id),
+        state=state,
+    )
+    await emit_agent_stream_event(
+        sink,
+        PartStartEvent(index=1, part=text_part),
+        run_id=str(run_id),
+        state=state,
+    )
+    await emit_agent_stream_event(
+        sink,
+        PartEndEvent(index=0, part=thinking_part),
+        run_id=str(run_id),
+        state=state,
+    )
+    await emit_agent_stream_event(
+        sink,
+        PartEndEvent(index=1, part=text_part),
+        run_id=str(run_id),
+        state=state,
+    )
+
+    start_events = [event for event in sink.events if event.event == EVENT_MESSAGE_START]
+    end_events = [event for event in sink.events if event.event == EVENT_MESSAGE_END]
+
+    assert [event.data["channel"] for event in start_events] == ["thinking", "text"]
+    assert start_events[0].data["message_id"] != start_events[1].data["message_id"]
+    assert [event.data["message_id"] for event in end_events] == [
+        start_events[0].data["message_id"],
+        start_events[1].data["message_id"],
+    ]
 
 
 async def test_deferred_resume_filter_only_suppresses_deferred_tool_ids() -> None:

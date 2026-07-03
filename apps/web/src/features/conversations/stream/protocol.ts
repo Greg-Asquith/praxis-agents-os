@@ -33,6 +33,8 @@ type StreamEnvelope = {
   seq: number
 }
 
+export type MessageChannel = "text" | "thinking"
+
 export type StreamError = {
   code: string
   message: string
@@ -53,7 +55,11 @@ export type StreamEvent =
     }
   | {
       event: "message.start"
-      data: StreamEnvelope & { message_id: string; role: "assistant" }
+      data: StreamEnvelope & {
+        message_id: string
+        role: "assistant"
+        channel?: MessageChannel
+      }
     }
   | {
       event: "message.delta"

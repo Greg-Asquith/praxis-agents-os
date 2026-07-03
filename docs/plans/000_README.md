@@ -33,7 +33,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 009 | Implement agent delegation runtime | P1 | L | 006, 007, 008 | DONE |
 | 010 | Retry transient provider HTTP failures at the transport layer | P1 | M | - | DONE |
 | 011 | Cap per-run token spend with UsageLimits token limits | P2 | S | - | TODO |
-| 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | TODO |
+| 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | DONE |
 | 013 | Bound model context with a ProcessHistory trimming capability | P2 | M | - | TODO |
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
@@ -82,10 +82,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   in the UI.
 - Schedule CRUD and the schedule management UI are covered by `021`/`022`
   (added 2026-07-02); the earlier note that they were uncovered is resolved.
-- `010` is DONE. `011`–`015` are independent of each other and of `009`; any
-  order works. Suggested order: `012` next (user-visible gap), then `011`,
-  `013`, `014`, `015`. Note `013` and `009` both touch
+- `010` and `012` are DONE. `011` and `013`–`015` are independent of `009`;
+  suggested remaining order is `011`, then `014`, `015`, with `013` after
+  `018` per the master roadmap's history-trimming constraint. Note `013` and
+  `009` both touch
   `runtime/capabilities.py`-adjacent code — rebase whichever lands second.
+- `012` marked DONE 2026-07-03: live `ThinkingPart` content now streams over
+  the existing message SSE contract with optional `message.start.channel`, and
+  the web chat renders live thinking drafts with the existing collapsed
+  "Thought" presentation.
 - `010` is transport-level retry (within one model request) and does NOT
   conflict with the earlier rejection of schedule-level run retries below —
   runs still fail terminally once the transport gives up.
