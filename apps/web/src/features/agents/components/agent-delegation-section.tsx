@@ -18,6 +18,7 @@ import {
   type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
 import { AgentFormSection } from "@/features/agents/components/agent-form-section"
+import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
 
 export function AgentDelegationSection({
@@ -100,10 +101,7 @@ export function AgentDelegationSection({
                   </SelectItem>
                   {availableDelegateAgents.map((candidate) => (
                     <SelectItem key={candidate.id} value={candidate.id}>
-                      <span className="flex min-w-0 flex-col">
-                        <span>{candidate.name}</span>
-                        <span className="text-muted-foreground text-xs">{candidate.slug}</span>
-                      </span>
+                      <AgentSelectItem agent={candidate} secondary={candidate.slug} />
                     </SelectItem>
                   ))}
                 </SelectGroup>

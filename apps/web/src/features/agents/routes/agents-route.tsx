@@ -5,6 +5,7 @@ import { BotIcon, PlusIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { MetricCard } from "@/components/ui/metric-card"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { countActiveAgents } from "@/features/agents/agent-metrics"
 import { AgentsTable } from "@/features/agents/components/agents-table"
@@ -33,25 +34,18 @@ export function AgentsRoute() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BotIcon className="size-4" />
-              Total agents
-            </CardTitle>
-            <CardDescription>
-              {agentsData.total} {pluralize(agentsData.total, "agent")} in this workspace
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Active</CardTitle>
-            <CardDescription>
-              {activeAgents} {pluralize(activeAgents, "agent")} available for runs
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <MetricCard
+          description={`${String(agentsData.total)} ${pluralize(
+            agentsData.total,
+            "agent"
+          )} in this workspace`}
+          icon={<BotIcon className="size-4" />}
+          title="Total agents"
+        />
+        <MetricCard
+          description={`${String(activeAgents)} ${pluralize(activeAgents, "agent")} available for runs`}
+          title="Active"
+        />
       </div>
 
       <Card>

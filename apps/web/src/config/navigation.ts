@@ -2,6 +2,7 @@
 
 import {
   BotIcon,
+  CalendarClockIcon,
   LayoutDashboardIcon,
   type LucideIcon,
   SettingsIcon,
@@ -33,6 +34,12 @@ export const mainNavigation: NavigationItem[] = [
     label: "Agents",
     to: "/agents",
     icon: BotIcon,
+    disabled: false,
+  },
+  {
+    label: "Schedules",
+    to: "/schedules",
+    icon: CalendarClockIcon,
     disabled: false,
   },
   {

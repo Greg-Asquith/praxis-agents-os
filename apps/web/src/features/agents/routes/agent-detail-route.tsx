@@ -1,6 +1,6 @@
 // apps/web/src/features/agents/routes/agent-detail-route.tsx
 
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import {
   ArrowLeftIcon,
@@ -14,7 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { MetricCard } from "@/components/ui/metric-card"
 import { useDeleteAgentMutation } from "@/features/agents/api/delete-agent"
 import { useAgentQuery } from "@/features/agents/api/get-agent"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
@@ -135,45 +135,25 @@ export function AgentDetailRoute() {
         </Alert>
       )}
 
-      <AgentForm
-        key={`${agent.id}:${agent.updated_at}`}
-        agent={agent}
-        agents={agentsData.agents}
-        cancelLabel="Back to agents"
-        cancelTo="/agents"
-        isSubmitting={updateAgentMutation.isPending}
-        mode="edit"
-        modelCatalog={modelCatalog}
-        onChange={() => {
-          if (saved) {
-            setSaved(false)
-          }
-        }}
-        onSubmit={handleUpdateAgent}
-      />
+      <div className="mx-auto w-full max-w-5xl">
+        <AgentForm
+          key={`${agent.id}:${agent.updated_at}`}
+          agent={agent}
+          agents={agentsData.agents}
+          cancelLabel="Back to agents"
+          cancelTo="/agents"
+          isSubmitting={updateAgentMutation.isPending}
+          mode="edit"
+          modelCatalog={modelCatalog}
+          onChange={() => {
+            if (saved) {
+              setSaved(false)
+            }
+          }}
+          onSubmit={handleUpdateAgent}
+        />
+      </div>
     </div>
-  )
-}
-
-function MetricCard({
-  description,
-  icon,
-  title,
-}: {
-  description: string
-  icon: ReactNode
-  title: string
-}) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {icon}
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-    </Card>
   )
 }
 

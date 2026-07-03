@@ -7,10 +7,14 @@ import { ChevronRightIcon } from "lucide-react"
 import { getAgent } from "@/features/agents/api/get-agent"
 import { agentsQueryKeys } from "@/features/agents/api/list-agents"
 import type { Conversation } from "@/features/conversations/types"
+import { getSchedule } from "@/features/schedules/api/get-schedule"
+import { schedulesQueryKeys } from "@/features/schedules/api/list-schedules"
+import { scheduleTitle } from "@/features/schedules/format"
 import { titleFromSegment } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-type BreadcrumbRoute = "/" | "/agents" | "/conversations" | "/workspaces" | "/workspace-settings"
+type BreadcrumbRoute =
+  "/" | "/agents" | "/conversations" | "/schedules" | "/workspaces" | "/workspace-settings"
 
 type BreadcrumbItem = {
   key: string
@@ -24,12 +28,18 @@ type AppBreadcrumbsProps = {
 }
 
 const DISABLED_AGENT_BREADCRUMB_QUERY_KEY = ["agents", "breadcrumb", "disabled"] as const
+const DISABLED_SCHEDULE_BREADCRUMB_QUERY_KEY = ["schedules", "breadcrumb", "disabled"] as const
 
 export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps) {
   const agentId = getEntityId(pathname, "agents")
   const agentQuery = useQuery({
     ...agentBreadcrumbQueryOptions(agentId),
     enabled: agentId !== null,
+  })
+  const scheduleId = getEntityId(pathname, "schedules")
+  const scheduleQuery = useQuery({
+    ...scheduleBreadcrumbQueryOptions(scheduleId),
+    enabled: scheduleId !== null,
   })
 
   const conversationId = getEntityId(pathname, "conversations")
@@ -40,6 +50,7 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
     agentName: agentQuery.data?.name ?? null,
     conversationTitle: conversation ? (conversation.title ?? "Untitled conversation") : null,
     pathname,
+    scheduleName: scheduleQuery.data ? scheduleTitle(scheduleQuery.data) : null,
   })
   const currentLabel = breadcrumbs.at(-1)?.label ?? "Home"
 
@@ -90,10 +101,12 @@ function getBreadcrumbs({
   agentName,
   conversationTitle,
   pathname,
+  scheduleName,
 }: {
   agentName: string | null
   conversationTitle: string | null
   pathname: string
+  scheduleName: string | null
 }): BreadcrumbItem[] {
   const segments = getPathSegments(pathname)
   const [section, detail] = segments
@@ -134,6 +147,22 @@ function getBreadcrumbs({
       : [{ key: "conversations", label: "Conversations" }]
   }
 
+  if (section === "schedules") {
+    if (detail === "new") {
+      return [
+        { key: "schedules", label: "Schedules", to: "/schedules" },
+        { key: "schedules-new", label: "New Schedule" },
+      ]
+    }
+
+    return detail
+      ? [
+          { key: "schedules", label: "Schedules", to: "/schedules" },
+          { key: "schedules-detail", label: scheduleName ?? "Schedule" },
+        ]
+      : [{ key: "schedules", label: "Schedules" }]
+  }
+
   if (section === "workspaces") {
     return [{ key: "workspaces", label: "Workspaces" }]
   }
@@ -160,7 +189,17 @@ function agentBreadcrumbQueryOptions(agentId: string | null) {
   })
 }
 
-function getEntityId(pathname: string, section: "agents" | "conversations") {
+function scheduleBreadcrumbQueryOptions(scheduleId: string | null) {
+  return queryOptions({
+    queryFn: () => getSchedule(scheduleId ?? ""),
+    queryKey: scheduleId
+      ? schedulesQueryKeys.detail(scheduleId)
+      : DISABLED_SCHEDULE_BREADCRUMB_QUERY_KEY,
+    staleTime: 15_000,
+  })
+}
+
+function getEntityId(pathname: string, section: "agents" | "conversations" | "schedules") {
   const segments = getPathSegments(pathname)
   if (segments[0] !== section || !segments[1] || segments[1] === "new") {
     return null

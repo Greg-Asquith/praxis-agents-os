@@ -156,6 +156,33 @@ const agentDetailRoute = createRoute({
   ),
 })
 
+const schedulesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/schedules",
+  component: lazyRouteComponent(
+    () => import("@/features/schedules/routes/schedules-route"),
+    "SchedulesRoute"
+  ),
+})
+
+const newScheduleRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/schedules/new",
+  component: lazyRouteComponent(
+    () => import("@/features/schedules/routes/new-schedule-route"),
+    "NewScheduleRoute"
+  ),
+})
+
+const scheduleDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/schedules/$scheduleId",
+  component: lazyRouteComponent(
+    () => import("@/features/schedules/routes/schedule-detail-route"),
+    "ScheduleDetailRoute"
+  ),
+})
+
 const workspaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspace-settings",
@@ -192,6 +219,9 @@ const routeTree = rootRoute.addChildren([
     agentsRoute,
     newAgentRoute,
     agentDetailRoute,
+    schedulesRoute,
+    newScheduleRoute,
+    scheduleDetailRoute,
     workspacesRoute,
     workspaceSettingsRoute,
     profileRoute,

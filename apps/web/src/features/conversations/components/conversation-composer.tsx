@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { formatAgentModel } from "@/features/agents/components/agent-model-label"
+import { agentSelectLabel } from "@/features/agents/components/agent-select-format"
+import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
@@ -131,7 +133,12 @@ export function ConversationComposer(props: ConversationComposerProps) {
             >
               <SelectTrigger id="conversation-agent" size="sm" className="w-full">
                 <SelectValue placeholder="Select an agent">
-                  {selectedAgent ? agentSelectLabel(selectedAgent, props.modelCatalog) : null}
+                  {selectedAgent
+                    ? agentSelectLabel(
+                        selectedAgent,
+                        formatAgentModel(selectedAgent, props.modelCatalog)
+                      )
+                    : null}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent align="start">
@@ -143,12 +150,10 @@ export function ConversationComposer(props: ConversationComposerProps) {
                   ) : (
                     activeAgents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
-                        <span className="flex min-w-0 flex-col">
-                          <span>{agent.name}</span>
-                          <span className="text-muted-foreground text-xs">
-                            {formatAgentModel(agent, props.modelCatalog)}
-                          </span>
-                        </span>
+                        <AgentSelectItem
+                          agent={agent}
+                          secondary={formatAgentModel(agent, props.modelCatalog)}
+                        />
                       </SelectItem>
                     ))
                   )}
@@ -204,8 +209,4 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
 function createClientMessageId() {
   return globalThis.crypto.randomUUID()
-}
-
-function agentSelectLabel(agent: Agent, modelCatalog: ModelCatalogResponse) {
-  return `${agent.name} · ${formatAgentModel(agent, modelCatalog)}`
 }

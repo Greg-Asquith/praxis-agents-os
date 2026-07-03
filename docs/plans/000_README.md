@@ -34,7 +34,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 010 | Retry transient provider HTTP failures at the transport layer | P1 | M | - | DONE |
 | 011 | Cap per-run token spend with UsageLimits token limits | P2 | S | - | DONE |
 | 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | DONE |
-| 013 | Bound model context with a ProcessHistory trimming capability | P2 | M | - | TODO |
+| 013 | Bound model context with a ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | TODO |
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
 | 016 | Add the skills CRUD service and routes | P1 | M | - | TODO |
@@ -43,7 +43,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 019 | Build the skills management UI | P1 | L | 016, 017 | TODO |
 | 020 | Surface skill activation in the chat UI | P2 | M | 018 (soft: 019) | TODO |
 | 021 | Add the schedule REST routes | P1 | L | - | DONE |
-| 022 | Build the schedules management UI | P1 | L | 021 | TODO |
+| 022 | Build the schedules management UI | P1 | L | 021 | DONE |
 | 023 | Audit & security log read API and viewer UI | P1 | L | - | TODO |
 | 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
 | 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | TODO |
@@ -119,6 +119,27 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `021` marked DONE 2026-07-03: schedule CRUD, pause/enable, run-now,
   preview, run history, latest-run health, and schedule audit rows are now
   exposed under `/api/v1/schedules`.
+- `022` marked DONE 2026-07-03: the web app now exposes schedule list,
+  create/edit/detail routes, schedule actions, run history with conversation
+  links for approval, and a donor-informed timing selector with natural
+  language cron summaries. `cronstrue` is now a web dependency for schedule
+  display text. `pnpm check` passed from `apps/web`.
+- **2026-07-03 re-verification pass (at `9208c47`)**: all pending plans
+  (013–020, 022–029) were verified against HEAD by parallel codebase audits
+  and re-anchored where commits `288dba4`–`9208c47` had moved their targets.
+  Substantive amendments: `018` gained Step 6 (the Gate G2 system-prompt
+  assembler `runtime/prompt.py` the roadmap requires — 034/040/049 plug into
+  it) and requoted the post-delegation `build_runtime_agent`; `013` now
+  hard-depends on `018` and carries the `LoadCapability*` preservation
+  requirement in its own body (Step 2.3); `017` gained the reuse-by-033
+  conversion-module contract; `020` was re-anchored to the `message-parts/`
+  package and the `DelegationToolRow`-style branch introduced by `603fff7`;
+  `014` now records the 026 dispatch-seam coordination; `022` documents the
+  pre-existing untracked `features/schedules/{types.ts,api/}` as its Step 1
+  starting point; `027` adds `delegation-tool-row.tsx` as a second
+  `runtimeToolLabel` consumer. pydantic-ai 2.1.0 facts in 018/025/026/028
+  (Capability/Hooks/WebSearch/ProcessHistory APIs) were re-probed and hold;
+  `WebSearch` imports from `pydantic_ai.capabilities`, not top-level.
 - `022` hard-depends on `021` (it consumes the exact response shapes,
   including `health`/`latest_run` and run `agent_run_id` linkage).
 - `025` → `026` → `028` is a hard chain: `026` consumes the contract's
