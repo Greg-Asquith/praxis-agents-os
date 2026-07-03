@@ -38,6 +38,7 @@ from services.agents.models.domain import (
 )
 from services.agents.models.registry import get_model
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.tools import TOOL_POLICY_APPROVAL
 from services.agents.runtime.tools.registry import runtime_tool
 
 NativeWebSearchProvider = Literal["anthropic", "google", "openai"]
@@ -81,7 +82,9 @@ class WebSearchOutput(BaseModel):
         "provider and model can be selected per call from the available native "
         "search providers: anthropic, google, openai."
     ),
-    supports_approval=False,
+    supports_approval=True,
+    supports_auto=True,
+    default_policy=TOOL_POLICY_APPROVAL,
     takes_ctx=True,
     timeout=60,
     output_model=WebSearchOutput,
