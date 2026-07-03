@@ -18,6 +18,7 @@ from pydantic_ai import (
     DeferredToolResults,
     ToolApproved,
     ToolDenied,
+    UsageLimitExceeded,
 )
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
@@ -74,6 +75,7 @@ from services.agents.runtime.events import (
     emit_agent_stream_event,
 )
 from services.agents.runtime.execute_run import execute_run
+from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.worker import run_turn_worker
 from tests.factories import build_user, build_workspace
@@ -390,6 +392,13 @@ async def test_execute_run_persists_messages_usage_and_events(
     db_session: AsyncSession,
     runtime_context: RuntimeContext,
 ) -> None:
+    agent = await db_session.get(Agent, runtime_context.agent_id)
+    assert agent is not None
+    assert build_runtime_agent(
+        agent,
+        model=TestModel(),
+    ).usage_limits.total_tokens_limit is None
+
     sink = CollectingSink(
         run_id=runtime_context.run_id,
         conversation_id=runtime_context.conversation_id,
@@ -799,6 +808,39 @@ async def test_execute_run_commits_failed_status_before_reraising(
 
     event_names = [event.event for event in sink.events]
     assert event_names == [EVENT_RUN_STATUS, EVENT_RUN_STATUS, EVENT_ERROR, EVENT_DONE]
+    assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
+
+
+async def test_execute_run_total_token_limit_fails_cleanly(
+    db_session: AsyncSession,
+    runtime_context: RuntimeContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 1)
+    sink = CollectingSink(
+        run_id=runtime_context.run_id,
+        conversation_id=runtime_context.conversation_id,
+    )
+
+    with pytest.raises(UsageLimitExceeded):
+        await execute_run(
+            db_session,
+            conversation_id=runtime_context.conversation_id,
+            run_id=runtime_context.run_id,
+            user_prompt="Hello",
+            sink=sink,
+            model=TestModel(),
+        )
+    await db_session.rollback()
+
+    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
+    assert stored_run is not None
+    assert stored_run.status == RUN_STATUS_FAILED
+    assert stored_run.error_code == "UsageLimitExceeded"
+
+    event_names = [event.event for event in sink.events]
+    assert event_names[-2:] == [EVENT_ERROR, EVENT_DONE]
+    assert sink.events[-2].data["code"] == "UsageLimitExceeded"
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 

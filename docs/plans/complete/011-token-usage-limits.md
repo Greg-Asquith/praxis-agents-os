@@ -19,6 +19,7 @@
 - **Depends on**: none
 - **Category**: tech-debt / cost-protection
 - **Planned at**: commit `1a51665`, 2026-07-01
+- **Completed at**: 2026-07-03
 
 ## Why this matters
 

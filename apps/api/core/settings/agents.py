@@ -66,3 +66,8 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Grace period before an unleased pending run is considered abandoned.",
     )
+    AGENT_RUN_TOTAL_TOKENS_LIMIT: int | None = Field(
+        default=None,
+        gt=0,
+        description="Maximum total (input+output) tokens per agent run; None disables the cap.",
+    )

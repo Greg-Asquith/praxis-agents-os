@@ -110,8 +110,8 @@ Not a numbered plan; a checklist chore:
 
 - Mark 009 DONE in the README (delegation landed at `f83d210`; verify the
   approval-resume path for delegated runs while confirming).
-- Verify/refresh statuses of 010–020 (verified 2026-07-03: 010 and 012
-  are DONE; 011 and 013–020 remain TODO; only the `skills` table and
+- Verify/refresh statuses of 010–020 (verified 2026-07-03: 010, 011, and 012
+  are DONE; 013–020 remain TODO; only the `skills` table and
   delegation pre-exist).
 - Point the README at this document as the ordering authority.
 
@@ -121,7 +121,7 @@ Not a numbered plan; a checklist chore:
 |------|-------|----------|------|
 | 010 | Provider transport retries | P1 | DONE 2026-07-02 |
 | 012 | Stream thinking live over SSE | P1 | DONE 2026-07-03 |
-| 011 | Per-run token caps (UsageLimits) | P2 | Now — cost safety before embedding spend |
+| 011 | Per-run token caps (UsageLimits) | P2 | DONE 2026-07-03 |
 | 014 | OTel instrumentation (config-gated) | P2 | Before Phase 4a (Gate G1) |
 | 013 | History trimming (ProcessHistory) | P2 | **After 018** — must preserve capability-load pairs |
 | 015 | pydantic-ai docs digest refresh | P3 | Filler, any time |
@@ -233,7 +233,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 → 021 → 022 → 023 → 025 → 026 → 027 → 016 → 017 →
+`0 → 012 (DONE) → 011 (DONE) → 021 → 022 → 023 → 025 → 026 → 027 → 016 → 017 →
 018 → 028 → 019 → 020 → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.

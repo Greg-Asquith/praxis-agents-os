@@ -10,6 +10,7 @@ from pydantic_ai import Agent as PydanticAgent, DeferredToolRequests
 from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
+from core.settings import settings
 from models.agent import Agent
 from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import ResolvedModel
@@ -70,7 +71,10 @@ def build_runtime_agent(
             capabilities=build_runtime_capabilities(agent),
         ),
         resolved_model=resolved_model,
-        usage_limits=UsageLimits(request_limit=resolved_model.max_steps),
+        usage_limits=UsageLimits(
+            request_limit=resolved_model.max_steps,
+            total_tokens_limit=settings.AGENT_RUN_TOTAL_TOKENS_LIMIT,
+        ),
     )
 
 
