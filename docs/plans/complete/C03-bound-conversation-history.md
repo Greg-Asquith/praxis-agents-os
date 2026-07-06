@@ -1,4 +1,4 @@
-# Plan 003: Bound conversation history reads and paginate the messages API
+# Plan C03: Bound conversation history reads and paginate the messages API
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -19,6 +19,7 @@
 - **Depends on**: none (001 recommended first for the test gate)
 - **Category**: perf
 - **Planned at**: commit `a0eea1c`, 2026-07-06
+- **Status**: DONE, 2026-07-06
 
 ## Why this matters
 

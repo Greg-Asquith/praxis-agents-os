@@ -9,12 +9,14 @@ from typing import Any
 from uuid import UUID
 
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from models.conversation import Conversation, ConversationMessage
 
 PYDANTIC_AI_MESSAGE_SOURCE = "pydantic_ai"
+_CAPABILITY_LOAD_TOOL_KIND = "capability-load"
 
 
 async def load_message_history(
@@ -22,11 +24,27 @@ async def load_message_history(
     *,
     conversation_id: UUID,
 ) -> list[ModelMessage]:
-    """Load persisted Pydantic AI history for a conversation.
+    """Load persisted Pydantic AI history for a conversation."""
+    if settings.AGENT_HISTORY_MAX_TURNS is None:
+        return await _load_full_message_history(db, conversation_id=conversation_id)
 
-    Pending: this intentionally returns the full stored history. Add trimming or
-    summarization before treating long-running conversations as context-safe.
-    """
+    rows = await _load_windowed_message_rows(
+        db,
+        conversation_id=conversation_id,
+        limit=settings.AGENT_HISTORY_DB_MAX_MESSAGES,
+    )
+    stored = [row.parts for row in rows]
+    if not stored:
+        return []
+    return list(ModelMessagesTypeAdapter.validate_python(stored))
+
+
+async def _load_full_message_history(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+) -> list[ModelMessage]:
+    """Load all persisted Pydantic AI history for a conversation."""
     rows = await db.scalars(
         select(ConversationMessage)
         .where(
@@ -43,6 +61,78 @@ async def load_message_history(
     if not stored:
         return []
     return list(ModelMessagesTypeAdapter.validate_python(stored))
+
+
+async def _load_windowed_message_rows(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    limit: int,
+) -> list[ConversationMessage]:
+    base_filters = _pydantic_message_filters(conversation_id)
+    window_ids = (
+        select(ConversationMessage.id)
+        .where(*base_filters)
+        .order_by(ConversationMessage.sequence.desc())
+        .limit(limit)
+        .subquery()
+    )
+    window_rows = (
+        await db.scalars(
+            select(ConversationMessage)
+            .join(window_ids, ConversationMessage.id == window_ids.c.id)
+            .order_by(ConversationMessage.sequence)
+        )
+    ).all()
+    if len(window_rows) < limit:
+        return list(window_rows)
+
+    lowest_window_sequence = window_rows[0].sequence
+    backfill_rows = (
+        await db.scalars(
+            select(ConversationMessage)
+            .where(
+                *base_filters,
+                ConversationMessage.sequence < lowest_window_sequence,
+                _capability_load_filter(),
+            )
+            .order_by(ConversationMessage.sequence)
+        )
+    ).all()
+    return [*backfill_rows, *window_rows]
+
+
+def _pydantic_message_filters(conversation_id: UUID):
+    return (
+        ConversationMessage.conversation_id == conversation_id,
+        ConversationMessage.deleted == False,  # noqa: E712
+        ConversationMessage.metadata_json["source"].astext == PYDANTIC_AI_MESSAGE_SOURCE,
+    )
+
+
+def _capability_load_filter():
+    return or_(
+        ConversationMessage.parts.op("@>")(
+            {
+                "parts": [
+                    {
+                        "part_kind": "tool-call",
+                        "tool_kind": _CAPABILITY_LOAD_TOOL_KIND,
+                    }
+                ]
+            }
+        ),
+        ConversationMessage.parts.op("@>")(
+            {
+                "parts": [
+                    {
+                        "part_kind": "tool-return",
+                        "tool_kind": _CAPABILITY_LOAD_TOOL_KIND,
+                    }
+                ]
+            }
+        ),
+    )
 
 
 async def persist_new_messages(

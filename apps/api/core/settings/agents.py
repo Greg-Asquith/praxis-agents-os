@@ -81,6 +81,12 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Prior user turns retained after a trim; must be below AGENT_HISTORY_MAX_TURNS.",
     )
+    AGENT_HISTORY_DB_MAX_MESSAGES: int = Field(
+        default=500,
+        ge=50,
+        le=5000,
+        description="Max persisted messages loaded per turn before trimming.",
+    )
     AGENT_PROMPT_CACHE_ENABLED: bool = Field(
         default=True,
         description="Enable provider-native prompt caching where the provider needs explicit opt-in.",

@@ -52,6 +52,7 @@ export type ConversationMessage = {
 export type ConversationMessagesResponse = {
   messages: ConversationMessage[]
   total: number
+  has_more?: boolean
 }
 
 export type AgentRun = {

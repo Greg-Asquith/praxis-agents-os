@@ -28,7 +28,7 @@ Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
 source files keep their local 001-005 names until completion, while the main
 task list tracks them with `C` prefixes to avoid colliding with roadmap plans
-001-005. C01 and C02 were executed 2026-07-06 and moved to
+001-005. C01, C02, and C03 were executed 2026-07-06 and moved to
 `plans/complete/`.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -72,7 +72,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 033 | Background file processing — extraction to markdown via jobs | P1 | M | 030, 031, 032 | DONE |
 | C01 | Stand up CI and complete the local quality gate | P1 | M | - | DONE |
 | C02 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | C01 done; before 034-036 | DONE |
-| C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018, C01 done | TODO |
+| C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018, C01 done | DONE |
 | C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | TODO |
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | TODO |
 | 035 | Files UI | P1 | L | 032, C02 | TODO |
@@ -344,12 +344,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   registry/converter probes, the MarkItDown call-site grep, the route registry
   check for thirteen effective `/files` entries, and
   `DATABASE_URL=... uv run python -m workers.job_runner --once` passed.
-- Cleanup plans `C03`-`C05` live under `plans/improvements/` and are tracked
+- Cleanup plans `C04`-`C05` live under `plans/improvements/` and are tracked
   here with `C` identifiers because their source files are locally numbered
-  `002`-`005`, which collide with existing roadmap plan numbers. Completed
-  cleanup plans move to `plans/complete/`; C01 and C02 now live at
+  `004`-`005`, which collide with existing roadmap plan numbers. Completed
+  cleanup plans move to `plans/complete/`; C01, C02, and C03 now live at
   `plans/complete/C01-ci-and-complete-quality-gate.md` and
-  `plans/complete/C02-files-vertical-hardening.md`.
+  `plans/complete/C02-files-vertical-hardening.md`, and
+  `plans/complete/C03-bound-conversation-history.md`.
 - `C01` marked DONE 2026-07-06: `.github/workflows/ci.yml` now runs API and
   web gates, `make check` includes backend format and tests, pytest asyncio
   auto mode is enabled with no collection-count change, and Vitest covers the
@@ -364,10 +365,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `uv run ruff format --check .`,
   `TEST_DATABASE_URL=... uv run pytest tests/services/files tests/routes/files tests/services/storage -q`,
   and full `TEST_DATABASE_URL=... uv run pytest` passed from `apps/api`.
-- `C03` is valid only now that `013` and `018` are DONE: its bounded DB read
-  must still feed the existing `ProcessHistory` trimmer enough capability-load
-  rows to preserve skill activation pairs. It should run before long-lived
-  conversations and schedules become heavier through integrations and memory.
+- `C03` marked DONE 2026-07-06: runtime history reads now window persisted
+  Pydantic AI rows through `AGENT_HISTORY_DB_MAX_MESSAGES` when trimming is
+  enabled, backfilling earlier `load_capability` call/return rows so
+  `ProcessHistory` can preserve loaded-skill state. `GET
+  /api/v1/conversations/{id}/messages` now returns the latest page by default,
+  supports `limit` and `before_sequence`, includes `has_more`, and keeps
+  `total` as the full non-deleted message count. `uv run ruff check .`,
+  `TEST_DATABASE_URL=... uv run pytest tests/services/agents/runtime
+  tests/services/conversations tests/routes/conversations -q`, and
+  `pnpm check` passed.
 - `C04` rides the `030` jobs harness and should run early as security/perf
   hardening for auth-facing rate limits: bounded endpoint keys, retention
   sweep, and regression tests. It does not change rate-limit policy.

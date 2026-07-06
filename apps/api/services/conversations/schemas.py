@@ -123,6 +123,7 @@ class ConversationMessageRead(BaseModel):
 class ConversationMessagesResponse(BaseModel):
     messages: list[ConversationMessageRead]
     total: int
+    has_more: bool = False
 
 
 class AgentRunRead(BaseModel):
