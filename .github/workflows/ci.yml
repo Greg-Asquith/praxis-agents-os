@@ -35,15 +35,17 @@ jobs:
       SECURE_COOKIES: "false"
       SUPER_ADMIN_EMAILS: admin@example.com
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run alembic upgrade heads
-      - run: uv run alembic check
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked alembic upgrade heads
+      - run: uv run --locked alembic check
       - run: |
-          uv run python - <<'PY'
+          uv run --locked python - <<'PY'
           import asyncio
 
           import asyncpg
@@ -63,7 +65,7 @@ jobs:
 
           asyncio.run(main())
           PY
-      - run: uv run pytest
+      - run: uv run --locked pytest
 
   web:
     runs-on: ubuntu-latest
@@ -71,9 +73,11 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 24
           cache: pnpm
