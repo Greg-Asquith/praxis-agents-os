@@ -117,7 +117,7 @@ class FileDownloadRequest(BaseModel):
     """Signed download request for a file revision."""
 
     revision_id: UUID | None = None
-    force_download: bool = False
+    force_download: bool = True
 
 
 class FileRead(BaseModel):

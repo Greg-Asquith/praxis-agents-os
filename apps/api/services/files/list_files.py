@@ -40,9 +40,10 @@ async def list_files(
         stmt = stmt.where(File.category == normalized_category)
         count_stmt = count_stmt.where(File.category == normalized_category)
     if search:
-        pattern = f"%{search.strip()}%"
-        stmt = stmt.where(File.name.ilike(pattern))
-        count_stmt = count_stmt.where(File.name.ilike(pattern))
+        escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        stmt = stmt.where(File.name.ilike(pattern, escape="\\"))
+        count_stmt = count_stmt.where(File.name.ilike(pattern, escape="\\"))
 
     files = (
         await db.scalars(

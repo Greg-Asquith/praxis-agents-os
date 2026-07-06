@@ -16,7 +16,7 @@ avoid colliding with roadmap plan numbers.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001 | Stand up CI and complete the local quality gate | P1 | M | — | DONE |
-| 002 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | 001 done | TODO |
+| 002 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | 001 done | DONE |
 | 003 | Bound conversation history reads and paginate the messages API | P1 | M | 001 done | TODO |
 | 004 | Rate limiter — bounded key cardinality, retention sweep, and tests | P1 | M | 001 done | TODO |
 | 005 | Close the small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | — | TODO |
@@ -28,10 +28,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **001 first**: DONE 2026-07-06 and moved to
   `../complete/C01-ci-and-complete-quality-gate.md`. It adds the CI +
   complete `make check` gate that verifies every other plan's work.
-- **002 before the files vertical is committed** (or immediately after): it
-  fixes bugs in the uncommitted upload/confirm/list/download services. Roadmap
-  plans 033–036 (`docs/plans/`) build directly on these services — 002 must
-  land before them.
+- **002 files hardening**: DONE 2026-07-06 and moved to
+  `../complete/C02-files-vertical-hardening.md`. It fixes upload/confirm
+  races, escaped file search, streaming file hashes, safer download defaults,
+  and file download audit rows before roadmap plans 034–036 build on the
+  files vertical.
 - **003 and roadmap plan 013**: the DB window in 003 must always load a
   superset of what the `ProcessHistory` trimmer keeps, and must preserve
   capability-load pairs (see the 013/018 interaction note in
@@ -41,7 +42,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   harness (already DONE); nothing blocks it.
 - **005 Step 1 (license)** is a maintainer decision; the step is written to
   BLOCK rather than let an executor pick a license.
-- 002, 003, 004 touch disjoint files and can run in parallel worktrees.
+- 003 and 004 touch disjoint files and can run in parallel worktrees.
 
 ## Findings considered and deferred/rejected
 

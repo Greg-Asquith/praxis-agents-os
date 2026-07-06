@@ -202,6 +202,43 @@ class AzureBlobStorageProvider:
                 original_error=exc,
             ) from exc
 
+    async def stream_object(self, ref: StorageObjectRef):
+        blob = self._container(ref.bucket).get_blob_client(ref.key)
+        try:
+            exists = await asyncio.to_thread(blob.exists)
+            if not exists:
+                raise StorageNotFoundError(
+                    "Storage object not found",
+                    provider_key=self.provider_key,
+                    operation="stream_object",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                )
+            download = await asyncio.to_thread(blob.download_blob)
+            chunks = getattr(download, "chunks", None)
+            if not callable(chunks):
+                yield await asyncio.to_thread(download.readall)
+                return
+
+            iterator = chunks()
+            while True:
+                chunk = await asyncio.to_thread(_next_or_none, iterator)
+                if chunk is None:
+                    break
+                if chunk:
+                    yield chunk
+        except StorageNotFoundError:
+            raise
+        except Exception as exc:
+            raise StorageError(
+                "Failed to stream Azure Blob object",
+                provider_key=self.provider_key,
+                operation="stream_object",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
+
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:
         blob = self._container(ref.bucket).get_blob_client(ref.key)
         try:
@@ -495,3 +532,7 @@ def _get_property(value: Any, *names: str) -> Any:
         if hasattr(value, name):
             return getattr(value, name)
     return None
+
+
+def _next_or_none(iterator):
+    return next(iterator, None)

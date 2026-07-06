@@ -21,6 +21,7 @@ from services.storage.errors import (
     StorageProviderUnavailableError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
     require_content_type as _require_content_type,
@@ -145,6 +146,44 @@ class GcsStorageProvider:
                 "Failed to download GCS object",
                 provider_key=self.provider_key,
                 operation="get_object",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
+
+    async def stream_object(self, ref: StorageObjectRef):
+        blob = self._bucket(ref.bucket).blob(ref.key)
+        try:
+            exists = await asyncio.to_thread(blob.exists)
+            if not exists:
+                raise StorageNotFoundError(
+                    "Storage object not found",
+                    provider_key=self.provider_key,
+                    operation="stream_object",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                )
+            open_blob = getattr(blob, "open", None)
+            if not callable(open_blob):
+                yield await self.get_object(ref)
+                return
+
+            stream = await asyncio.to_thread(open_blob, "rb")
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(stream.read, STORAGE_STREAM_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                await asyncio.to_thread(stream.close)
+        except StorageNotFoundError:
+            raise
+        except Exception as exc:
+            raise StorageError(
+                "Failed to stream GCS object",
+                provider_key=self.provider_key,
+                operation="stream_object",
                 bucket=ref.bucket.value,
                 object_key=ref.key,
                 original_error=exc,

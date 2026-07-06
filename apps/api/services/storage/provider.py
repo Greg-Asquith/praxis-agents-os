@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import timedelta
 from typing import Protocol, runtime_checkable
 
 from services.storage.domain import SignedDownload, SignedUpload, StorageObjectRef, StoredObject
+
+STORAGE_STREAM_CHUNK_SIZE = 1024 * 1024
 
 
 @runtime_checkable
@@ -30,6 +33,10 @@ class StorageProvider(Protocol):
 
     async def get_object(self, ref: StorageObjectRef) -> bytes:
         """Return object bytes."""
+        ...
+
+    def stream_object(self, ref: StorageObjectRef) -> AsyncIterator[bytes]:
+        """Yield object bytes in chunks without buffering the whole object."""
         ...
 
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:

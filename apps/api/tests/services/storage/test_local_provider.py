@@ -10,9 +10,10 @@ import pytest
 
 from core.settings import settings
 from services.storage.domain import StorageBucket, make_storage_object_ref
-from services.storage.errors import StorageValidationError
+from services.storage.errors import StorageNotFoundError, StorageValidationError
 from services.storage.factory import get_storage_provider
 from services.storage.paths import validate_object_key
+from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers.local import LocalStorageProvider
 from tests.support.storage import reset_storage_provider_cache
 
@@ -53,6 +54,24 @@ async def test_local_provider_put_get_stat_and_delete_object(tmp_path) -> None:
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
+
+
+async def test_local_provider_stream_object_chunks_and_maps_missing(tmp_path) -> None:
+    provider = _provider(tmp_path)
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, "workspaces/ws_1/files/large.bin")
+    data = b"a" * (STORAGE_STREAM_CHUNK_SIZE + 17)
+    await provider.put_object(ref, data, content_type="application/octet-stream")
+
+    chunks = [chunk async for chunk in provider.stream_object(ref)]
+
+    assert b"".join(chunks) == data
+    assert len(chunks) > 1
+
+    missing_ref = make_storage_object_ref(
+        StorageBucket.PRIVATE, "workspaces/ws_1/files/missing.bin"
+    )
+    with pytest.raises(StorageNotFoundError):
+        _missing = [chunk async for chunk in provider.stream_object(missing_ref)]
 
 
 async def test_local_provider_builds_public_url(tmp_path) -> None:

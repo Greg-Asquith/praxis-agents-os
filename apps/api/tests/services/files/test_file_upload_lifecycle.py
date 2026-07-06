@@ -18,6 +18,7 @@ from models.workspace import WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.files import (
     confirm_file_upload,
+    create_file_download,
     create_file_upload,
     delete_file,
     edit_file,
@@ -29,6 +30,7 @@ from services.files import (
 from services.files.contract import contract_for_content_type
 from services.files.domain import (
     FileConfirmRequest,
+    FileDownloadRequest,
     FileEditRequest,
     FileRestoreRequest,
     FileUploadRequest,
@@ -207,6 +209,46 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
         )
 
 
+async def test_create_file_upload_replace_intent_skips_cross_file_dedup(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, membership = await _workspace_context(db_session)
+    target_file, _target_revision = await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="target.txt",
+        content=b"target",
+    )
+    duplicate_file, _duplicate_revision = await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="duplicate.txt",
+        content=b"duplicate",
+    )
+
+    result = await create_file_upload(
+        db_session,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        payload=FileUploadRequest(
+            filename="target.txt",
+            content_type="text/plain",
+            size_bytes=len(b"duplicate"),
+            content_hash=duplicate_file.content_hash,
+            file_id=target_file.id,
+        ),
+    )
+
+    assert result.deduplicated is False
+    assert result.file is None
+    assert result.grant is not None
+    assert result.grant.file_id == target_file.id
+
+
 async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
     db_session: AsyncSession,
     local_storage_settings: None,
@@ -383,7 +425,10 @@ async def test_confirm_preserves_extension_alias_and_rejects_deleted_replace(
         file_id=confirmed.id,
     )
 
-    with pytest.raises(AppValidationError):
+    file_count_before = await db_session.scalar(select(func.count()).select_from(File))
+    revision_count_before = await db_session.scalar(select(func.count()).select_from(FileRevision))
+
+    with pytest.raises(ConflictError):
         await confirm_file_upload(
             db_session,
             request=build_test_request(path="/api/v1/files/uploads/confirm"),
@@ -392,6 +437,11 @@ async def test_confirm_preserves_extension_alias_and_rejects_deleted_replace(
             membership=membership,
             payload=FileConfirmRequest(upload_token=replace_grant.grant.upload_token),
         )
+    assert await db_session.scalar(select(func.count()).select_from(File)) == file_count_before
+    assert (
+        await db_session.scalar(select(func.count()).select_from(FileRevision))
+        == revision_count_before
+    )
 
 
 async def test_confirm_rejects_bad_stored_metadata_and_wrong_actor_token(
@@ -511,6 +561,85 @@ async def test_edit_and_restore_are_append_only_and_conflict_on_stale_revision(
     assert restore_revision.restored_from_revision_id == original.id
     assert restore_revision.object_key == original.object_key
     assert restored.content_hash == original.content_hash
+
+
+async def test_list_files_escapes_search_wildcards(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, _membership = await _workspace_context(db_session)
+    await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="a%b.txt",
+        content=b"percent",
+    )
+    await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="axb.txt",
+        content=b"letter-x",
+    )
+    await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="a_b.txt",
+        content=b"underscore",
+    )
+    await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="acb.txt",
+        content=b"letter-c",
+    )
+
+    percent_result = await list_files(db_session, workspace=workspace, search="a%b")
+    underscore_result = await list_files(db_session, workspace=workspace, search="a_b")
+
+    assert [file.name for file in percent_result.files] == ["a%b.txt"]
+    assert [file.name for file in underscore_result.files] == ["a_b.txt"]
+
+
+async def test_create_file_download_records_read_audit_and_defaults_attachment(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, _membership = await _workspace_context(db_session)
+    file, revision = await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="download.txt",
+        content=b"download",
+    )
+
+    grant = await create_file_download(
+        db_session,
+        request=build_test_request(path=f"/api/v1/files/{file.id}/download", method="POST"),
+        actor=actor,
+        workspace=workspace,
+        file_id=file.id,
+        payload=FileDownloadRequest(),
+    )
+
+    assert "download=1" in grant.download.url
+    assert grant.download.headers == {"content-disposition": 'attachment; filename="download.txt"'}
+    audit_event = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == AuditAction.READ.value,
+            AuditEvent.resource_type == AuditResourceType.FILE.value,
+            AuditEvent.resource_id == str(file.id),
+        )
+    )
+    assert audit_event is not None
+    assert audit_event.details == {
+        "filename": "download.txt",
+        "revision_id": str(revision.id),
+    }
 
 
 async def test_edit_and_restore_reject_invalid_file_states(

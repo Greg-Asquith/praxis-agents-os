@@ -1,4 +1,4 @@
-# Plan 002: Harden the files vertical (bugs, streaming hash, download audit)
+# Plan C02: Harden the files vertical (bugs, streaming hash, download audit)
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -22,6 +22,7 @@
 - **Depends on**: none (001 recommended first so `make check` covers this work)
 - **Category**: bug / security / perf
 - **Planned at**: commit `a0eea1c` + uncommitted files vertical, 2026-07-06
+- **Status**: DONE, 2026-07-06
 
 ## Why this matters
 

@@ -4,6 +4,7 @@
 
 import hashlib
 import logging
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from sqlalchemy import select
@@ -107,6 +108,14 @@ async def get_file_for_workspace(
 def sha256_hex(data: bytes) -> str:
     """Return a lowercase sha256 hex digest for bytes."""
     return hashlib.sha256(data).hexdigest()
+
+
+async def sha256_hex_stream(chunks: AsyncIterator[bytes]) -> str:
+    """Return a lowercase sha256 hex digest for an async byte stream."""
+    hasher = hashlib.sha256()
+    async for chunk in chunks:
+        hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def private_ref_from_key(object_key: str):

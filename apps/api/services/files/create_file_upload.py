@@ -66,7 +66,7 @@ async def create_file_upload(
                 field="content_type",
             )
 
-    if payload.content_hash and not payload.allow_duplicate_content:
+    if payload.file_id is None and payload.content_hash and not payload.allow_duplicate_content:
         dedup_file = await _find_file_by_current_hash(
             db,
             workspace=workspace,

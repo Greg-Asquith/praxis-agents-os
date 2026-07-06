@@ -27,6 +27,7 @@ from services.storage.errors import (
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 
 
 class LocalStorageProvider:
@@ -127,6 +128,27 @@ class LocalStorageProvider:
                 object_key=ref.key,
             )
         return await asyncio.to_thread(path.read_bytes)
+
+    async def stream_object(self, ref: StorageObjectRef):
+        path = self.filesystem_path(ref)
+        if not await asyncio.to_thread(path.is_file):
+            raise StorageNotFoundError(
+                "Storage object not found",
+                provider_key=self.provider_key,
+                operation="stream_object",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+            )
+
+        stream = await asyncio.to_thread(path.open, "rb")
+        try:
+            while True:
+                chunk = await asyncio.to_thread(stream.read, STORAGE_STREAM_CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            await asyncio.to_thread(stream.close)
 
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:
         path = self.filesystem_path(ref)

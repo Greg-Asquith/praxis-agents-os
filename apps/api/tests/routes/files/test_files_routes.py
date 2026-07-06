@@ -6,11 +6,14 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
 from core.settings import settings
+from models.audit_event import AuditEvent
 from models.workspace import WorkspaceRole
+from services.audit_events import AuditAction, AuditResourceType
 from tests.factories import build_user, build_workspace, build_workspace_membership
 from tests.support.auth import bearer_headers
 from tests.support.storage import reset_storage_provider_cache
@@ -110,11 +113,21 @@ async def test_file_routes_upload_list_download_edit_conflict_and_delete(
         json={},
     )
     assert download_response.status_code == 200
+    assert "download=1" in download_response.json()["download"]["url"]
     object_response = await db_async_client.get(
         _relative_url(download_response.json()["download"]["url"])
     )
     assert object_response.status_code == 200
     assert object_response.content == b"hello"
+    assert object_response.headers["content-disposition"] == 'attachment; filename="notes.txt"'
+    read_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == AuditAction.READ.value,
+            AuditEvent.resource_type == AuditResourceType.FILE.value,
+            AuditEvent.resource_id == str(confirmed["id"]),
+        )
+    )
+    assert read_audit is not None
 
     conflict_response = await db_async_client.put(
         f"/api/v1/files/{confirmed['id']}/content",

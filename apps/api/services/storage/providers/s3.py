@@ -21,6 +21,7 @@ from services.storage.errors import (
     StorageProviderUnavailableError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
     require_content_type as _require_content_type,
@@ -178,6 +179,63 @@ class S3StorageProvider:
                 object_key=ref.key,
                 original_error=exc,
             ) from exc
+
+    async def stream_object(self, ref: StorageObjectRef):
+        try:
+            response = await asyncio.to_thread(
+                self.client.get_object,
+                Bucket=self._bucket_name(ref.bucket),
+                Key=ref.key,
+            )
+            body = response["Body"]
+        except Exception as exc:
+            if _is_not_found_error(exc):
+                raise StorageNotFoundError(
+                    "Storage object not found",
+                    provider_key=self.provider_key,
+                    operation="stream_object",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                ) from exc
+            raise StorageError(
+                "Failed to stream S3 object",
+                provider_key=self.provider_key,
+                operation="stream_object",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
+
+        try:
+            iter_chunks = getattr(body, "iter_chunks", None)
+            if callable(iter_chunks):
+                iterator = iter_chunks(chunk_size=STORAGE_STREAM_CHUNK_SIZE)
+                while True:
+                    chunk = await asyncio.to_thread(_next_or_none, iterator)
+                    if chunk is None:
+                        break
+                    if chunk:
+                        yield chunk
+                return
+
+            while True:
+                chunk = await asyncio.to_thread(body.read, STORAGE_STREAM_CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+        except Exception as exc:
+            raise StorageError(
+                "Failed to stream S3 object",
+                provider_key=self.provider_key,
+                operation="stream_object",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
 
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:
         try:
@@ -390,3 +448,7 @@ def _is_not_found_error(exc: Exception) -> bool:
         code = response.get("Error", {}).get("Code")
         return str(code) in {"404", "NoSuchKey", "NoSuchBucket", "NotFound"}
     return getattr(exc, "status_code", None) == 404
+
+
+def _next_or_none(iterator):
+    return next(iterator, None)

@@ -9,7 +9,7 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
+from core.exceptions.general import AppValidationError, ConflictError
 from models.files import File, FileRevision, FileUpload
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
@@ -26,7 +26,7 @@ from services.files.utils import (
     get_file_for_workspace,
     require_file_write_access,
     set_processing_state_for_revision,
-    sha256_hex,
+    sha256_hex_stream,
 )
 from services.storage.domain import StorageBucket
 from services.storage.factory import get_storage_provider
@@ -83,8 +83,7 @@ async def confirm_file_upload(
         max_size_bytes=token_payload.max_size_bytes,
         asset_label="workspace file",
     )
-    data = await provider.get_object(ref)
-    content_hash = sha256_hex(data)
+    content_hash = await sha256_hex_stream(provider.stream_object(ref))
     uploaded_extension = PurePosixPath(file_upload.filename).suffix.lower()
     if not uploaded_extension:
         raise AppValidationError("Uploaded file has no extension", field="upload_token")
@@ -103,9 +102,10 @@ async def confirm_file_upload(
     )
     is_new_file = existing_file is None
     if existing_file is not None and existing_file.deleted:
-        raise AppValidationError(
-            "Cannot confirm an upload for a deleted file",
-            field="upload_token",
+        raise ConflictError(
+            "File was deleted while the upload was in progress",
+            conflicting_resource="file",
+            details={"file_id": str(existing_file.id)},
         )
     if is_new_file:
         file = File(
