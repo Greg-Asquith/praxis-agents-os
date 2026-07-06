@@ -38,7 +38,11 @@ from services.agents.models.domain import (
 )
 from services.agents.models.registry import get_model
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools import TOOL_POLICY_APPROVAL
+from services.agents.runtime.tools import (
+    TOOL_POLICY_APPROVAL,
+    ToolFieldPresentation,
+    ToolPresentation,
+)
 from services.agents.runtime.tools.registry import runtime_tool
 from utils.validation import normalize_optional_text
 
@@ -89,6 +93,19 @@ class WebSearchOutput(BaseModel):
     takes_ctx=True,
     timeout=60,
     output_model=WebSearchOutput,
+    presentation=ToolPresentation(
+        icon="globe",
+        running_label="Searching the Web for {query}",
+        completed_label="Searched the Web for {query}",
+        failed_label="Couldn't Search the Web",
+        approval_title="Search the Web",
+        approval_prompt="The agent wants to search the web for {query}.",
+        arg_fields=(
+            ToolFieldPresentation(key="query", label="Search"),
+            ToolFieldPresentation(key="model_provider", label="Search provider"),
+        ),
+        result_fields=(ToolFieldPresentation(key="answer", label="Answer", format="markdown"),),
+    ),
 )
 async def web_search(
     ctx: RunContext[RuntimeDeps],

@@ -12,6 +12,8 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_APPROVAL,
+    ToolFieldPresentation,
+    ToolPresentation,
 )
 from services.agents.runtime.tools.files.utils import conversation_scope
 from services.agents.runtime.tools.registry import runtime_tool
@@ -40,6 +42,21 @@ class PromoteScratchOutput(BaseModel):
     output_model=PromoteScratchOutput,
     configurable=False,
     auto_mount=True,
+    presentation=ToolPresentation(
+        icon="file-plus",
+        running_label="Saving the Draft {scratch_name} as a File",
+        completed_label="Saved {name} to Your Files",
+        failed_label="Couldn't Save the Draft as a File",
+        approval_title="Save a Draft to your Files",
+        approval_prompt=(
+            "The agent wants to save the draft {scratch_name} as a permanent file "
+            "in your workspace."
+        ),
+        arg_fields=(
+            ToolFieldPresentation(key="scratch_name", label="Draft"),
+            ToolFieldPresentation(key="file_name", label="Save as"),
+        ),
+    ),
 )
 async def promote_scratch(
     ctx: RunContext[RuntimeDeps],

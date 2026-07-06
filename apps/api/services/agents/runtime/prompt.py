@@ -17,24 +17,21 @@ from services.agents.runtime.load_context import AvailableFile
 logger = logging.getLogger(__name__)
 
 DELEGATION_INSTRUCTIONS = f"""\
-You may delegate clearly bounded subtasks to other agents only when a listed
-delegate is better suited than handling the work yourself.
+You may delegate clearly bounded subtasks to other agents only when a listed delegate is better suited than handling the work yourself.
 
 Delegation rules:
 - Call {LIST_DELEGATE_AGENTS_TOOL_NAME} before {DELEGATE_TO_AGENT_TOOL_NAME}.
 - Use {DELEGATE_TO_AGENT_TOOL_NAME} only with an id returned by {LIST_DELEGATE_AGENTS_TOOL_NAME}.
 - Give the delegate complete task instructions and relevant context.
-- Treat the delegate result as supporting evidence; you remain responsible for
-  the final answer to the user.
-- If a delegated run needs approval, tell the user what is pending instead of
-  retrying the same delegation.
+- Treat the delegate result as supporting evidence; you remain responsible for the final answer to the user.
+- If a delegated run needs approval, tell the user what is pending instead of retrying the same delegation.
 """
 
 PLANNING_TOOL_NAME = "write_todos"
 PLANNING_INSTRUCTIONS = """\
-Use the conversation todo list for multi-step work. Keep it current by replacing
-the list as priorities change, maintain exactly one in_progress item while
-actively working, and clear the list when the task is complete.
+- Use the conversation todo list for multi-step work. Keep it current by replacing the list as priorities change and maintain exactly one in_progress item while actively working.
+- The list is shown to the user as their view of progress: when work finishes, mark every item completed and leave the list in place.
+- Only pass an empty list when the plan itself no longer applies.
 """
 
 

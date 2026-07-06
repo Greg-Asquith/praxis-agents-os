@@ -76,3 +76,37 @@ async def test_tool_catalog_route_requires_authentication(
 
     assert response.status_code == 401
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_tool_presentations_route_returns_every_registry_tool(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+
+    response = await db_async_client.get("/api/v1/tools/presentations", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    names = [tool["name"] for tool in body["tools"]]
+    assert names == sorted(names)
+    assert "web_search" in names
+    assert "write_file" in names  # non-configurable tools are included
+    write_file_entry = next(tool for tool in body["tools"] if tool["name"] == "write_file")
+    assert write_file_entry["label"] == "Write file"
+    assert write_file_entry["effect"] == "write"
+    assert write_file_entry["ui"]["icon"] == "file-plus"
+    assert write_file_entry["ui"]["running_label"] == "Writing {name}"
+    assert write_file_entry["ui"]["approval_prompt"]
+    assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {"name", "content"}
+    read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
+    assert read_todos_entry["ui"]["icon"] == "list-todo"
+
+
+async def test_tool_presentations_route_requires_authentication(
+    db_async_client: AsyncClient,
+) -> None:
+    response = await db_async_client.get("/api/v1/tools/presentations")
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/problem+json")

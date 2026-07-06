@@ -12,6 +12,7 @@ from pydantic_ai.messages import (
     BinaryContent,
     ModelMessagesTypeAdapter,
     ModelResponse,
+    TextPart,
     ToolCallPart,
 )
 from pydantic_ai.models.function import FunctionModel
@@ -122,9 +123,10 @@ async def test_stages_write_file_approval_content_without_persisting_body(
     assert isinstance(approval.args, dict)
     assert "content" not in approval.args
     assert WRITE_FILE_CONTENT_REF_ARG in approval.args
-    assert "sensitive draft body" not in ModelMessagesTypeAdapter.dump_json(
-        staged.all_messages
-    ).decode()
+    assert (
+        "sensitive draft body"
+        not in ModelMessagesTypeAdapter.dump_json(staged.all_messages).decode()
+    )
     display_args = tool_args_for_display(
         tool_name="write_file",
         args=approval.args,
@@ -478,10 +480,14 @@ def _run_context(
             sink=CollectingSink(run_id=context.run.id, conversation_id=context.conversation.id),
             envelope=RunEnvelope(principal="interactive"),
         ),
-        model=FunctionModel(model_name="runtime-file-tool-test"),
+        model=FunctionModel(_unused_model_function, model_name="runtime-file-tool-test"),
         usage=RunUsage(),
         tool_call_approved=approved,
     )
+
+
+def _unused_model_function(_messages, _info) -> ModelResponse:
+    return ModelResponse(parts=[TextPart(content="unused")])
 
 
 async def _persist_image_file(

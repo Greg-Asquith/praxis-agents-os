@@ -49,8 +49,7 @@ async def stage_write_file_approval_content(
     """Stage durable write_file content and redact deferred approval args."""
     staged_args_by_call_id: dict[str, dict[str, Any]] = {}
     metadata = {
-        call_id: dict(value)
-        for call_id, value in (deferred_tool_requests.metadata or {}).items()
+        call_id: dict(value) for call_id, value in (deferred_tool_requests.metadata or {}).items()
     }
 
     provider = get_storage_provider()

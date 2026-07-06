@@ -19,6 +19,8 @@ from services.agents.runtime.staged_tool_content import (
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_AUTO,
+    ToolFieldPresentation,
+    ToolPresentation,
 )
 from services.agents.runtime.tools.files.utils import conversation_scope
 from services.agents.runtime.tools.registry import runtime_tool
@@ -51,6 +53,18 @@ class WriteFileOutput(BaseModel):
     output_model=WriteFileOutput,
     configurable=False,
     auto_mount=True,
+    presentation=ToolPresentation(
+        icon="file-plus",
+        running_label="Writing {name}",
+        completed_label="Wrote {name}",
+        failed_label="Couldn't Write {name}",
+        approval_title="Save a File",
+        approval_prompt="The agent wants to save {name} to your workspace files.",
+        arg_fields=(
+            ToolFieldPresentation(key="name", label="File name"),
+            ToolFieldPresentation(key="content", label="Content", format="multiline"),
+        ),
+    ),
 )
 async def write_file(
     ctx: RunContext[RuntimeDeps],

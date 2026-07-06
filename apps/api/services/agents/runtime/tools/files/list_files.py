@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_EFFECT_READ
+from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, ToolPresentation
 from services.agents.runtime.tools.files.utils import conversation_scope
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import list_files as list_workspace_files
@@ -49,6 +49,12 @@ class ListFilesOutput(BaseModel):
     output_model=ListFilesOutput,
     configurable=False,
     auto_mount=True,
+    presentation=ToolPresentation(
+        icon="files",
+        running_label="Looking Through Files",
+        completed_label="Looked Through Files",
+        failed_label="Couldn't List Files",
+    ),
 )
 async def list_files(
     ctx: RunContext[RuntimeDeps],

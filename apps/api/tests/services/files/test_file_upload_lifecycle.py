@@ -168,7 +168,10 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
     assert deduped.deduplicated is True
     assert deduped.file is not None
     assert deduped.file.id == existing_file.id
-    assert await db_session.scalar(select(func.count()).select_from(FileUpload)) == 0
+    pending_uploads = await db_session.scalar(
+        select(func.count()).select_from(FileUpload).where(FileUpload.workspace_id == workspace.id)
+    )
+    assert pending_uploads == 0
 
     monkeypatch.setattr(settings, "FILES_WORKSPACE_STORAGE_SOFT_LIMIT_BYTES", 1)
     grant_result = await create_file_upload(

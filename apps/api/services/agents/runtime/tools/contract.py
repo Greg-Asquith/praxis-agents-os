@@ -16,6 +16,7 @@ from services.agents.runtime.context import RuntimeDeps
 ToolPolicy = Literal["auto", "approval"]
 ToolEffect = Literal["read", "write"]
 ToolKind = Literal["function", "capability"]
+ToolFieldFormat = Literal["text", "multiline", "markdown", "bytes", "datetime", "boolean"]
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
 TOOL_POLICY_APPROVAL: ToolPolicy = "approval"
@@ -28,6 +29,49 @@ TOOL_KIND_CAPABILITY: ToolKind = "capability"
 VALID_TOOL_KINDS = frozenset({TOOL_KIND_FUNCTION, TOOL_KIND_CAPABILITY})
 _TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
+VALID_TOOL_FIELD_FORMATS = frozenset(
+    {"text", "multiline", "markdown", "bytes", "datetime", "boolean"}
+)
+# Semantic icon tokens the web client maps to concrete icons.
+VALID_TOOL_ICONS = frozenset(
+    {
+        "tool",
+        "file",
+        "file-plus",
+        "files",
+        "search",
+        "globe",
+        "list-todo",
+        "sparkles",
+        "bot",
+        "image",
+        "book",
+        "link",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ToolFieldPresentation:
+    """One argument or result key rendered as a labelled field in the web client."""
+
+    key: str
+    label: str
+    format: ToolFieldFormat = "text"
+
+
+@dataclass(frozen=True)
+class ToolPresentation:
+    """Declarative display config for one tool; `{key}` templates resolve client-side."""
+
+    icon: str = "tool"
+    running_label: str = ""
+    completed_label: str = ""
+    failed_label: str = ""
+    approval_title: str = ""
+    approval_prompt: str = ""
+    arg_fields: tuple[ToolFieldPresentation, ...] = ()
+    result_fields: tuple[ToolFieldPresentation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -55,6 +99,7 @@ class RuntimeToolDefinition:
     supported_model_providers: frozenset[str] | None = None
     configurable: bool = True
     auto_mount: bool = False
+    presentation: ToolPresentation = ToolPresentation()
 
     def allowed_policies(self) -> frozenset[ToolPolicy]:
         """Return the policies this tool can run under."""
@@ -124,6 +169,7 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
                 raise RuntimeError(
                     "Runtime tool supported model providers must be lowercase tokens"
                 )
+    _validate_presentation(definition.presentation)
 
     if definition.kind == TOOL_KIND_FUNCTION:
         if definition.function is None:
@@ -165,3 +211,19 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         and not definition.auto_mount
     ):
         raise RuntimeError("Write runtime tools must support approval policy")
+
+
+def _validate_presentation(presentation: ToolPresentation) -> None:
+    if presentation.icon not in VALID_TOOL_ICONS:
+        raise RuntimeError(
+            f"Runtime tool presentation icon must be one of the known tokens, got {presentation.icon!r}"
+        )
+    for field in (*presentation.arg_fields, *presentation.result_fields):
+        if not field.key.strip():
+            raise RuntimeError("Runtime tool presentation field keys must not be blank")
+        if not field.label.strip():
+            raise RuntimeError("Runtime tool presentation field labels must not be blank")
+        if field.format not in VALID_TOOL_FIELD_FORMATS:
+            raise RuntimeError(
+                f"Runtime tool presentation field format must be one of the known formats, got {field.format!r}"
+            )

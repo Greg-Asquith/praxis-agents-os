@@ -11,7 +11,7 @@ from pydantic_ai.messages import BinaryContent
 
 from core.exceptions.general import AppValidationError
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_EFFECT_READ
+from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, ToolPresentation
 from services.agents.runtime.tools.files.utils import (
     agent_model_supports_vision,
     content_limit,
@@ -38,6 +38,12 @@ from services.storage.factory import get_storage_provider
     timeout=30.0,
     configurable=False,
     auto_mount=True,
+    presentation=ToolPresentation(
+        icon="file",
+        running_label="Reading File",
+        completed_label="Read File",
+        failed_label="Couldn't Read File",
+    ),
 )
 async def read_file(
     ctx: RunContext[RuntimeDeps],

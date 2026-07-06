@@ -12,7 +12,7 @@ from sqlalchemy.sql import func
 
 from models.conversation_todos import ConversationTodoList
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE, ToolPresentation
 from services.agents.runtime.tools.registry import runtime_tool
 
 TodoStatus = Literal["pending", "in_progress", "completed"]
@@ -32,7 +32,8 @@ class TodoItemInput(BaseModel):
     label="Write todo list",
     description=(
         "Replace the whole conversation todo list. Keep exactly one item in_progress "
-        "while working; pass an empty list only to clear the list."
+        "while working and keep finished items in the list marked completed; pass an "
+        "empty list only when the plan no longer applies."
     ),
     effect=TOOL_EFFECT_WRITE,
     supports_approval=False,
@@ -40,6 +41,12 @@ class TodoItemInput(BaseModel):
     timeout=5,
     configurable=False,
     auto_mount=True,
+    presentation=ToolPresentation(
+        icon="list-todo",
+        running_label="Updating the Plan",
+        completed_label="Updated the Plan",
+        failed_label="Couldn't Update the Plan",
+    ),
 )
 async def write_todos(
     ctx: RunContext[RuntimeDeps],
@@ -88,6 +95,12 @@ async def write_todos(
     timeout=5,
     configurable=False,
     auto_mount=True,
+    presentation=ToolPresentation(
+        icon="list-todo",
+        running_label="Checking the Plan",
+        completed_label="Checked the Plan",
+        failed_label="Couldn't Read the Plan",
+    ),
 )
 async def read_todos(ctx: RunContext[RuntimeDeps]) -> dict[str, object]:
     """Return the current conversation todo list, or an empty list."""

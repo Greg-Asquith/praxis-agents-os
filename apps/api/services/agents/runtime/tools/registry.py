@@ -22,6 +22,7 @@ from services.agents.runtime.tools.contract import (
     ToolEffect,
     ToolKind,
     ToolPolicy,
+    ToolPresentation,
     validate_definition,
 )
 
@@ -51,6 +52,7 @@ def runtime_tool(
     supported_model_providers: Iterable[str] | None = None,
     configurable: bool = True,
     auto_mount: bool = False,
+    presentation: ToolPresentation | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a Python function as a runtime tool."""
 
@@ -79,6 +81,7 @@ def runtime_tool(
             supported_model_providers=normalized_supported_providers,
             configurable=configurable,
             auto_mount=auto_mount,
+            presentation=presentation or ToolPresentation(),
         )
         validate_definition(definition)
         if definition.name in RUNTIME_TOOL_CATALOG:
@@ -199,6 +202,11 @@ def list_allowed_tool_definitions(
         ),
         key=lambda definition: (definition.provider, definition.name),
     )
+
+
+def list_tool_presentations() -> list[RuntimeToolDefinition]:
+    """Return every registry entry for display metadata, regardless of configurability."""
+    return sorted(RUNTIME_TOOL_CATALOG.values(), key=lambda definition: definition.name)
 
 
 def _normalize_tool_names(raw: Any) -> list[str]:

@@ -11,8 +11,10 @@ from services.agents.runtime.tools.contract import (
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
     ToolEffect,
+    ToolFieldPresentation,
     ToolKind,
     ToolPolicy,
+    ToolPresentation,
     validate_definition,
 )
 from services.agents.runtime.tools.registry import (
@@ -20,6 +22,7 @@ from services.agents.runtime.tools.registry import (
     build_runtime_native_capabilities,
     build_runtime_tools,
     list_allowed_tool_definitions,
+    list_tool_presentations,
     runtime_tool,
 )
 
@@ -33,11 +36,14 @@ __all__ = [
     "TOOL_POLICY_AUTO",
     "RuntimeToolDefinition",
     "ToolEffect",
+    "ToolFieldPresentation",
     "ToolKind",
     "ToolPolicy",
+    "ToolPresentation",
     "build_runtime_native_capabilities",
     "build_runtime_tools",
     "list_allowed_tool_definitions",
+    "list_tool_presentations",
     "runtime_tool",
     "validate_definition",
 ]
