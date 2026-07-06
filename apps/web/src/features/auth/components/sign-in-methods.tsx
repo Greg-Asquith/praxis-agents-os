@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query"
 import { CheckIcon, KeyRoundIcon } from "lucide-react"
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,11 +30,15 @@ export function SignInMethods() {
   const unlinkMutation = useUnlinkOauthMutation()
   const [error, setError] = useState<string | null>(null)
   const [pendingProvider, setPendingProvider] = useState<string | null>(null)
+  const [disconnectProvider, setDisconnectProvider] = useState<string | null>(null)
 
   const linkedProviders = new Set(data.identities.map((identity) => identity.provider))
   const connectable = (providersQuery.data?.providers ?? []).filter(
     (provider) => !linkedProviders.has(provider.name)
   )
+  const disconnectProviderLabel = disconnectProvider
+    ? providerLabel(disconnectProvider)
+    : "this provider"
 
   function handleConnect(provider: string) {
     setError(null)
@@ -52,13 +57,20 @@ export function SignInMethods() {
 
   function handleDisconnect(provider: string) {
     setError(null)
-    if (!window.confirm(`Disconnect ${providerLabel(provider)} from your account?`)) {
+    setDisconnectProvider(provider)
+  }
+
+  function confirmDisconnect() {
+    if (!disconnectProvider) {
       return
     }
-    setPendingProvider(provider)
-    unlinkMutation.mutate(provider, {
+
+    setError(null)
+    setPendingProvider(disconnectProvider)
+    unlinkMutation.mutate(disconnectProvider, {
       onSettled: () => {
         setPendingProvider(null)
+        setDisconnectProvider(null)
       },
       onError: (mutationError) => {
         setError(getErrorMessage(mutationError))
@@ -148,6 +160,20 @@ export function SignInMethods() {
           </div>
         )}
       </CardContent>
+      <ConfirmDialog
+        confirmLabel={`Disconnect ${disconnectProviderLabel}`}
+        confirmPendingLabel="Disconnecting"
+        description={`You will no longer be able to sign in with ${disconnectProviderLabel}.`}
+        isPending={unlinkMutation.isPending}
+        onConfirm={confirmDisconnect}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDisconnectProvider(null)
+          }
+        }}
+        open={disconnectProvider !== null}
+        title="Disconnect Sign-in Method?"
+      />
     </Card>
   )
 }

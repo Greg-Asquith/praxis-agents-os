@@ -3,6 +3,7 @@
 import {
   BotIcon,
   CalendarClockIcon,
+  FilesIcon,
   LayoutDashboardIcon,
   type LucideIcon,
   SettingsIcon,
@@ -43,6 +44,12 @@ const mainNavigation: NavigationItem[] = [
     label: "Skills",
     to: "/skills",
     icon: SparklesIcon,
+    disabled: false,
+  },
+  {
+    label: "Files",
+    to: "/files",
+    icon: FilesIcon,
     disabled: false,
   },
   {

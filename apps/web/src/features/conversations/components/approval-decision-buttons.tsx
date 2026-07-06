@@ -33,7 +33,7 @@ export function ApprovalDecisionButtons({
         variant={decision === "approved" ? "default" : "outline"}
       >
         <CheckIcon data-icon="inline-start" />
-        Approve
+        Allow
       </Button>
       <Button
         aria-pressed={decision === "denied"}

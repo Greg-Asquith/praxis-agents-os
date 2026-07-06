@@ -185,8 +185,9 @@ All anchors verified at `0cbbb39`.
   internal-write precedent: `write_todos` registers `effect=TOOL_EFFECT_WRITE,
   supports_approval=False, auto_mount=True` (29-43), caps input via
   `ModelRetry` (49-50), upserts via `insert(...).on_conflict_do_update`
-  (54-74). File tools are **configurable** (not auto-mounted) — agents opt
-  in via `tool_names`.
+  (54-74). File tools follow the same always-on hidden-tool model:
+  `configurable=False`, `auto_mount=True`, with their own default approval
+  policy preserved at mount time.
 - `apps/api/services/agents/runtime/tools/native/web_search.py` — the
   configurable-tool precedent with probe-findings docstring (5-19),
   `output_model=WebSearchOutput` (90), and catalog interplay (39,
@@ -451,7 +452,8 @@ Create `services/agents/runtime/tools/files/`, registered from
 Use one file per tool plus a shared `utils.py`; the package `__init__.py`
 imports/re-exports the tools and records the probe findings above. All four:
 `provider="core"`, `takes_ctx=True`, sensible `timeout` (10–30 s; url mode
-and image reads touch storage). Scoping
+and image reads touch storage), `configurable=False`, `auto_mount=True`.
+Scoping
 law for every query: `workspace_id == ctx.deps.workspace.id` — a file id
 from another workspace is a model-visible "not found" `ModelRetry`, never
 an exception leak.

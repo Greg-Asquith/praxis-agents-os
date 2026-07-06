@@ -20,7 +20,7 @@ async function listToolCatalog() {
   return apiRequest<ToolCatalogResponse>("/tools/catalog")
 }
 
-export function toolCatalogQueryOptions() {
+function toolCatalogQueryOptions() {
   return queryOptions({
     queryKey: toolsQueryKeys.catalog(),
     queryFn: listToolCatalog,

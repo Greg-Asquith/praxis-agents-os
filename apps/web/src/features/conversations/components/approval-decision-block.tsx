@@ -22,14 +22,18 @@ export function ApprovalDecisionBlock({
   activity,
   controls,
   label,
+  prompt,
 }: {
   activity: ToolActivity
   controls: ToolApprovalDecisionControls
   label: string
+  prompt?: string
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-muted-foreground mb-2 text-xs font-medium">Decision</p>
+    <div className="border-border/70 bg-muted/20 min-w-0 rounded-md border px-3 py-3">
+      <p className="text-foreground mb-3 text-sm">
+        {prompt ?? `The agent is asking to use ${label}.`}
+      </p>
       <div className="flex min-w-0 flex-col gap-3">
         <ApprovalDecisionButtons
           decision={controls.decision.decision}
@@ -67,11 +71,6 @@ export function ApprovalDecisionBlock({
             }}
             value={controls.decision.message}
           />
-        ) : null}
-        {controls.decision.decision === "pending" ? (
-          <p className="text-muted-foreground bg-muted/30 rounded-md px-3 py-2 text-xs">
-            Choose approve or deny for this request.
-          </p>
         ) : null}
       </div>
     </div>

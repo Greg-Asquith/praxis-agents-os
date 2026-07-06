@@ -14,6 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { MetricCard } from "@/components/ui/metric-card"
 import { useDeleteAgentMutation } from "@/features/agents/api/delete-agent"
 import { useAgentQuery } from "@/features/agents/api/get-agent"
@@ -37,6 +38,7 @@ export function AgentDetailRoute() {
   const updateAgentMutation = useUpdateAgentMutation()
   const deleteAgentMutation = useDeleteAgentMutation()
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [saved, setSaved] = useState(false)
 
   async function handleUpdateAgent(payload: AgentUpdateRequest) {
@@ -50,15 +52,12 @@ export function AgentDetailRoute() {
     setDeleteError(null)
     setSaved(false)
 
-    if (!window.confirm(`Delete ${agent.name}?`)) {
-      return
-    }
-
     try {
       await deleteAgentMutation.mutateAsync(agent.id)
       await navigate({ to: "/agents" })
     } catch (mutationError) {
       setDeleteError(getErrorMessage(mutationError))
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -84,13 +83,24 @@ export function AgentDetailRoute() {
         <Button
           disabled={deleteAgentMutation.isPending}
           onClick={() => {
-            void handleDeleteAgent()
+            setDeleteDialogOpen(true)
           }}
           variant="destructive"
         >
           <Trash2Icon data-icon="inline-start" />
           {deleteAgentMutation.isPending ? "Deleting" : "Delete agent"}
         </Button>
+        <ConfirmDialog
+          confirmIcon={<Trash2Icon data-icon="inline-start" />}
+          confirmLabel="Delete Agent"
+          confirmPendingLabel="Deleting"
+          description={`This removes ${agent.name} from the workspace. Existing conversations remain in their history.`}
+          isPending={deleteAgentMutation.isPending}
+          onConfirm={handleDeleteAgent}
+          onOpenChange={setDeleteDialogOpen}
+          open={deleteDialogOpen}
+          title="Delete Agent?"
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

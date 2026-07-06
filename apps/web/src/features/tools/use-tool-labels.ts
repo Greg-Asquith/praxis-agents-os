@@ -1,15 +1,11 @@
 // apps/web/src/features/tools/use-tool-labels.ts
 
-import { useCallback, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useCallback } from "react"
 
-import { toolCatalogQueryOptions } from "@/features/tools/api/list-tool-catalog"
+import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 
 export function useToolLabels() {
-  const { data } = useQuery(toolCatalogQueryOptions())
-  const labels = useMemo(() => {
-    return new Map((data?.tools ?? []).map((tool) => [tool.name, tool.label]))
-  }, [data])
+  const presentationFor = useToolPresentations()
 
-  return useCallback((name: string) => labels.get(name) ?? name, [labels])
+  return useCallback((name: string) => presentationFor(name)?.label ?? name, [presentationFor])
 }

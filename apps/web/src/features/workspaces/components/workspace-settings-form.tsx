@@ -3,6 +3,7 @@
 import { useState, type SyntheticEvent } from "react"
 import { Trash2Icon } from "lucide-react"
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -41,6 +42,8 @@ export function WorkspaceSettingsForm() {
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const iconFile = iconSelection?.workspaceId === workspace.id ? iconSelection.file : null
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const nextWorkspace = workspaces.find((item) => item.id !== workspace.id) ?? null
 
   const canManage =
     workspace.current_user_role === "owner" || workspace.current_user_role === "admin"
@@ -50,6 +53,16 @@ export function WorkspaceSettingsForm() {
     createIconUploadMutation.isPending ||
     confirmIconUploadMutation.isPending ||
     deleteIconMutation.isPending
+
+  function handleDeleteRequest() {
+    setError(null)
+    if (!nextWorkspace) {
+      setError("Create another workspace before deleting this one.")
+      return
+    }
+
+    setDeleteDialogOpen(true)
+  }
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -89,22 +102,20 @@ export function WorkspaceSettingsForm() {
   }
 
   function handleDelete() {
-    const nextWorkspace = workspaces.find((item) => item.id !== workspace.id)
     if (!nextWorkspace) {
       setError("Create another workspace before deleting this one.")
-      return
-    }
-
-    if (!window.confirm(`Delete ${workspace.name}?`)) {
+      setDeleteDialogOpen(false)
       return
     }
 
     deleteWorkspaceMutation.mutate(workspace.id, {
       onSuccess: () => {
+        setDeleteDialogOpen(false)
         setWorkspaceBySlug(nextWorkspace.slug)
       },
       onError: (mutationError) => {
         setError(getErrorMessage(mutationError))
+        setDeleteDialogOpen(false)
       },
     })
   }
@@ -197,7 +208,7 @@ export function WorkspaceSettingsForm() {
           {canDelete && (
             <Button
               disabled={deleteWorkspaceMutation.isPending || isSaving}
-              onClick={handleDelete}
+              onClick={handleDeleteRequest}
               type="button"
               variant="destructive"
             >
@@ -207,6 +218,21 @@ export function WorkspaceSettingsForm() {
           )}
         </CardFooter>
       </form>
+      <ConfirmDialog
+        confirmIcon={<Trash2Icon data-icon="inline-start" />}
+        confirmLabel="Delete workspace"
+        confirmPendingLabel="Deleting"
+        description={
+          nextWorkspace
+            ? `This removes ${workspace.name}. You will switch to ${nextWorkspace.name} afterward.`
+            : "Create another workspace before deleting this one."
+        }
+        isPending={deleteWorkspaceMutation.isPending}
+        onConfirm={handleDelete}
+        onOpenChange={setDeleteDialogOpen}
+        open={deleteDialogOpen}
+        title="Delete workspace?"
+      />
     </Card>
   )
 }

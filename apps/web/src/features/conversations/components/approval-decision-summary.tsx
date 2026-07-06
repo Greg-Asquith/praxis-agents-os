@@ -8,10 +8,10 @@ export function ApprovalDecisionSummaryPanel({ summary }: { summary: ApprovalDec
       <p className="font-medium">{formatDecisionSummary(summary)}</p>
       {!summary.allDecided ? (
         <p className="text-muted-foreground mt-1">
-          Choose a decision for every request before submitting.
+          Choose Allow or Deny for every request before continuing.
         </p>
       ) : (
-        <p className="text-muted-foreground mt-1">All requests have an explicit decision.</p>
+        <p className="text-muted-foreground mt-1">Every request has a decision.</p>
       )}
     </div>
   )
@@ -27,9 +27,9 @@ function formatDecisionSummary({
   pending: number
 }) {
   return [
-    `${String(pending)} ${pluralize("approval", pending)} pending`,
-    `${String(approved)} approved`,
-    `${String(denied)} denied`,
+    `${String(pending)} ${pluralize("request", pending)} waiting`,
+    `${String(approved)} allowed`,
+    `${String(denied)} not allowed`,
   ].join(" · ")
 }
 

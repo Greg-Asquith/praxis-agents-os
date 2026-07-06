@@ -32,7 +32,7 @@ export function toolActivityVerb(activity: ToolActivity) {
 }
 
 export function toolStatusSuffix(activity: ToolActivity) {
-  return TOOL_SUFFIXES[activity.status] ?? null
+  return TOOL_SUFFIXES[activity.status] ?? decisionSuffix(activity) ?? null
 }
 
 export function delegationActivityVerb(status: DelegationStatus) {
@@ -41,4 +41,14 @@ export function delegationActivityVerb(status: DelegationStatus) {
 
 export function delegationStatusSuffix(status: DelegationStatus) {
   return DELEGATION_SUFFIXES[status] ?? null
+}
+
+function decisionSuffix(activity: ToolActivity) {
+  if (activity.decision === "approved") {
+    return "· allowed"
+  }
+  if (activity.decision === "denied") {
+    return "· denied"
+  }
+  return null
 }

@@ -3,6 +3,7 @@
 import { useState, type SyntheticEvent } from "react"
 import { DownloadIcon, FileTextIcon, PlusIcon, Trash2Icon, UploadIcon } from "lucide-react"
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -48,6 +49,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
   const [fileInputKey, setFileInputKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [documentToDelete, setDocumentToDelete] = useState<SkillDocument | null>(null)
   const isUploading = createUploadMutation.isPending || confirmUploadMutation.isPending
 
   async function handleUpload(event: SyntheticEvent<HTMLFormElement>) {
@@ -105,19 +107,27 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
     }
   }
 
-  async function handleDelete(document: SkillDocument) {
+  function handleDelete(document: SkillDocument) {
     setError(null)
     setMessage(null)
+    setDocumentToDelete(document)
+  }
 
-    if (!window.confirm(`Delete ${document.name}?`)) {
+  async function confirmDeleteDocument() {
+    if (!documentToDelete) {
       return
     }
 
     try {
-      await deleteDocumentMutation.mutateAsync({ documentName: document.name, skillId })
-      setMessage(`${document.name} deleted.`)
+      await deleteDocumentMutation.mutateAsync({
+        documentName: documentToDelete.name,
+        skillId,
+      })
+      setMessage(`${documentToDelete.name} deleted.`)
+      setDocumentToDelete(null)
     } catch (deleteError) {
       setError(getErrorMessage(deleteError))
+      setDocumentToDelete(null)
     }
   }
 
@@ -203,13 +213,32 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
             documents={data.documents}
             isDeleting={deleteDocumentMutation.isPending}
             onDelete={(document) => {
-              void handleDelete(document)
+              handleDelete(document)
             }}
             onDownload={(document) => {
               void handleDownload(document)
             }}
           />
         )}
+        <ConfirmDialog
+          confirmIcon={<Trash2Icon data-icon="inline-start" />}
+          confirmLabel="Delete document"
+          confirmPendingLabel="Deleting"
+          description={
+            documentToDelete
+              ? `This removes ${documentToDelete.name} from the skill reference documents.`
+              : "This removes the selected reference document."
+          }
+          isPending={deleteDocumentMutation.isPending}
+          onConfirm={confirmDeleteDocument}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDocumentToDelete(null)
+            }
+          }}
+          open={documentToDelete !== null}
+          title="Delete document?"
+        />
       </div>
     </SkillFormSection>
   )

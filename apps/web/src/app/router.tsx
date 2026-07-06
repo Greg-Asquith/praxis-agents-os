@@ -183,6 +183,14 @@ const skillDetailRoute = createRoute({
   ),
 })
 
+const filesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/files",
+  validateSearch: (search): { fileId?: string } =>
+    typeof search["fileId"] === "string" ? { fileId: search["fileId"] } : {},
+  component: lazyRouteComponent(() => import("@/features/files/routes/files-route"), "FilesRoute"),
+})
+
 const schedulesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules",
@@ -249,6 +257,7 @@ const routeTree = rootRoute.addChildren([
     skillsRoute,
     newSkillRoute,
     skillDetailRoute,
+    filesRoute,
     schedulesRoute,
     newScheduleRoute,
     scheduleDetailRoute,

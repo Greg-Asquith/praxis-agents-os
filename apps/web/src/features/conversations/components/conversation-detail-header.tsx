@@ -58,7 +58,7 @@ export function ConversationDetailHeader({
           )}
         </div>
         <div className="text-muted-foreground shrink-0 text-left text-xs md:text-right">
-          <p>Last activity</p>
+          <p>Last Updated</p>
           <p className="text-foreground">
             {formatDateTime(conversation.last_message_at ?? conversation.updated_at)}
           </p>

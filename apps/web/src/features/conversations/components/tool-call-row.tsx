@@ -4,8 +4,13 @@ import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
 } from "@/features/conversations/components/approval-decision-block"
-import { JsonBlock, TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import {
+  TechnicalDetails,
+  ToolFieldList,
+} from "@/features/conversations/components/tool-friendly-blocks"
+import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -20,7 +25,16 @@ import {
 } from "@/features/conversations/components/tool-activity-status-values"
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import { useToolLabels } from "@/features/tools/use-tool-labels"
+import { normalizeToolArgs } from "@/features/conversations/message-parts"
+import {
+  autoUiFields,
+  friendlyResultText,
+  resolveUiFields,
+  toolUiApprovalPrompt,
+  toolUiStatusLabel,
+} from "@/features/conversations/tool-ui"
+import type { ToolUi } from "@/features/tools/types"
+import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 
 type ToolCallRowProps = {
   approvalDecision?: ToolApprovalDecisionControls
@@ -35,7 +49,7 @@ export function ToolCallRow({
   compact = false,
   defaultOpen = false,
 }: ToolCallRowProps) {
-  const toolLabelFor = useToolLabels()
+  const presentationFor = useToolPresentations()
   const customRow = renderCustomToolCallRow({
     activity,
     ...(approvalDecision ? { approvalDecision } : {}),
@@ -46,21 +60,36 @@ export function ToolCallRow({
     return customRow
   }
 
-  const title = toolLabelFor(activity.name)
-  const supportLabel = title === activity.name ? supportIdentifier(activity.name) : null
+  const entry = presentationFor(activity.name)
+  const ui = entry?.ui ?? null
+  const title = entry?.label ?? activity.name
+  const supportLabel = entry ? null : supportIdentifier(activity.name)
+  const normalizedArgs = normalizeToolArgs(activity.args)
+
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
-  const decisionLabel = decisionForActivity(activity)
-  const expandable =
-    hasArgs || hasResult || decisionLabel !== null || approvalDecision !== undefined
+  const expandable = hasArgs || hasResult || approvalDecision !== undefined
+
+  const argFields = ui?.arg_fields.length
+    ? resolveUiFields(ui.arg_fields, activity.args)
+    : autoUiFields(activity.args)
+  const resultFields = ui?.result_fields.length
+    ? resolveUiFields(ui.result_fields, activity.result)
+    : []
+  const resultText = resultFields.length === 0 ? friendlyResultText(activity.result) : null
+  const approvalPrompt = ui
+    ? (toolUiApprovalPrompt(ui, activity) ?? fallbackApprovalPrompt(title))
+    : fallbackApprovalPrompt(title)
+
   const header = (
     <ToolActivityRowHeader
       expandable={expandable}
       icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
       label={
-        <>
-          {toolActivityVerb(activity)} {title}
-        </>
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <ToolUiIcon token={ui?.icon ?? null} />
+          <span className="min-w-0 truncate">{headlineForActivity(activity, title, ui)}</span>
+        </span>
       }
       suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
       supportLabel={supportLabel}
@@ -74,29 +103,30 @@ export function ToolCallRow({
       expandable={expandable}
       header={header}
     >
-      {hasArgs && <JsonBlock label="Input" value={activity.args} />}
+      <ToolFieldList fields={argFields} />
       {approvalDecision ? (
-        <ApprovalDecisionBlock activity={activity} controls={approvalDecision} label={title} />
-      ) : decisionLabel ? (
-        <TextBlock label="Decision" value={decisionLabel} />
+        <ApprovalDecisionBlock
+          activity={activity}
+          controls={approvalDecision}
+          label={title}
+          prompt={approvalPrompt}
+        />
       ) : null}
-      {hasResult && <JsonBlock label="Output" value={activity.result} />}
+      <ToolFieldList fields={resultFields} />
+      {resultText ? <TextBlock label="Result" value={resultText} /> : null}
+      <TechnicalDetails args={normalizedArgs} result={activity.result} />
     </ToolActivityRowShell>
   )
 }
 
-function decisionForActivity(activity: ToolActivity) {
-  if (activity.decision === "approved") {
-    return "Approved"
+function headlineForActivity(activity: ToolActivity, title: string, ui: ToolUi | null) {
+  if (activity.status === "awaiting_approval" && ui?.approval_title) {
+    return `Permission needed: ${ui.approval_title}`
   }
-  if (activity.decision === "denied") {
-    return "Denied"
-  }
-  if (activity.status === "awaiting_approval") {
-    return "Waiting for approval"
-  }
-  if (activity.status === "denied") {
-    return "Denied"
-  }
-  return null
+  const uiLabel = ui ? toolUiStatusLabel(ui, activity) : null
+  return uiLabel ?? `${toolActivityVerb(activity)} ${title}`
+}
+
+function fallbackApprovalPrompt(title: string) {
+  return `The agent is asking to use ${title}.`
 }

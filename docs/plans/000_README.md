@@ -25,7 +25,7 @@ the contract. Plan 033 was executed 2026-07-06 as the background file
 processing slice.
 
 Plan 034 was executed 2026-07-06 as the agent file tools and scratch-space
-runtime slice.
+runtime slice. Plan 035 was executed 2026-07-06 as the files UI slice.
 
 Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
@@ -78,7 +78,7 @@ integrations, files, knowledge base, memory, artifacts).
 | C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018, C01 done | DONE |
 | C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | DONE |
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | DONE |
-| 035 | Files UI | P1 | L | 032, C02 | TODO |
+| 035 | Files UI | P1 | L | 032, C02 | DONE |
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | TODO |
 | C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | TODO |
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | TODO |
@@ -407,10 +407,19 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   review reconciled all docs against the landed 030/031/032
   implementations (jobs API, `models/files.py` vocabulary, kind names);
   run each plan's drift check before executing.
-- `034` mounts its file tools through the `026` dispatch and the `018`
-  assembler (`<available_files>` block); scratch lifecycle (7 d rolling
+- `034` mounts its file tools as always-on hidden runtime tools through the
+  `026` dispatch and the `018` assembler (`<available_files>` block);
+  scratch lifecycle (7 d rolling
   TTL, purge on expiry, delete after promotion) implements
   `governance.md` §3.
+- `035` marked DONE 2026-07-06: the web app now exposes `/files` with a
+  workspace file table, upload flow, URL-driven detail dialog, immutable
+  revision list/content/diff/restore controls, signed open/download
+  actions fetched on click, and visible chat rows for `list_files`,
+  durable/scratch `write_file`, `promote_scratch`, and all landed
+  `read_file` result modes. `pnpm check`
+  passed from `apps/web`; full API-backed manual upload/restore/chat
+  exercise still depends on a running local API with seeded file activity.
 - `036` passes chat attachments to the model via pydantic-ai 2.1.0
   multimodal input (probed classes recorded in the plan), gated by the
   031 file contract; it adds no new SSE event names.

@@ -386,10 +386,10 @@ with the grant's `max_size_bytes` message.
    `promote_scratch` results render the summary line ("Wrote file" /
    "Promoted scratch to file") + a `FileCard`; `write_file` scratch
    results render a compact text row (name + bytes + expiry — no card,
-   nothing durable to open); `read_file`/`list_files` keep the generic
-   tool row (their results are model-facing text) **except** url-mode
-   `read_file` results, which get a `FileCard` so the human can open the
-   same link.
+   nothing durable to open); `list_files` renders a visible file/scratch
+   summary with `FileCard`s for durable files; `read_file` renders visible
+   rows for content reads, scratch reads, processing guidance, image reads,
+   and url-mode links so the human can inspect what the agent accessed.
 
 **Verify**: in a dev conversation with a 034-enabled agent: a durable
 `write_file` (post-approval) renders a card whose Open works; a scratch

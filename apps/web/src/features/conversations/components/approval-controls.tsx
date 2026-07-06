@@ -149,8 +149,8 @@ function submitButtonLabel({
   isSubmitting: boolean
 }) {
   if (isSubmitting) {
-    return "Submitting decisions"
+    return "Submitting Decisions"
   }
 
-  return allDecided ? "Submit decisions" : "Choose decisions"
+  return allDecided ? "Submit Decisions" : "Choose Decisions"
 }

@@ -7,6 +7,7 @@ import { ArrowLeftIcon, ClockIcon, FileTextIcon, SparklesIcon, Trash2Icon } from
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { MetricCard } from "@/components/ui/metric-card"
 import { useDeleteSkillMutation } from "@/features/skills/api/delete-skill"
 import { useSkillQuery } from "@/features/skills/api/get-skill"
@@ -26,6 +27,7 @@ export function SkillDetailRoute() {
   const updateSkillMutation = useUpdateSkillMutation()
   const deleteSkillMutation = useDeleteSkillMutation()
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [saved, setSaved] = useState(false)
   const documentCount = Object.keys(skill.documentation_refs).length
 
@@ -40,15 +42,12 @@ export function SkillDetailRoute() {
     setDeleteError(null)
     setSaved(false)
 
-    if (!window.confirm(`Delete ${skill.name}?`)) {
-      return
-    }
-
     try {
       await deleteSkillMutation.mutateAsync(skill.id)
       await navigate({ to: "/skills" })
     } catch (mutationError) {
       setDeleteError(getErrorMessage(mutationError))
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -76,13 +75,24 @@ export function SkillDetailRoute() {
         <Button
           disabled={deleteSkillMutation.isPending}
           onClick={() => {
-            void handleDeleteSkill()
+            setDeleteDialogOpen(true)
           }}
           variant="destructive"
         >
           <Trash2Icon data-icon="inline-start" />
           {deleteSkillMutation.isPending ? "Deleting" : "Delete skill"}
         </Button>
+        <ConfirmDialog
+          confirmIcon={<Trash2Icon data-icon="inline-start" />}
+          confirmLabel="Delete skill"
+          confirmPendingLabel="Deleting"
+          description={`This removes ${skill.name} and its uploaded reference documents from the workspace.`}
+          isPending={deleteSkillMutation.isPending}
+          onConfirm={handleDeleteSkill}
+          onOpenChange={setDeleteDialogOpen}
+          open={deleteDialogOpen}
+          title="Delete skill?"
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
