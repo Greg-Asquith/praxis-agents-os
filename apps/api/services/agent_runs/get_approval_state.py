@@ -23,6 +23,7 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
 )
 from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agents.runtime.staged_tool_content import tool_args_for_display
 from utils.metadata import metadata_str
 
 
@@ -71,7 +72,13 @@ async def get_agent_run_approval_state(
                 PendingToolApprovalRead(
                     tool_call_id=approval.tool_call_id,
                     name=approval.tool_name,
-                    args=to_jsonable_python(approval.args),
+                    args=to_jsonable_python(
+                        tool_args_for_display(
+                            tool_name=approval.tool_name,
+                            args=approval.args,
+                            metadata=metadata,
+                        )
+                    ),
                 )
             )
             continue
@@ -91,7 +98,15 @@ async def get_agent_run_approval_state(
             PendingToolApprovalRead(
                 tool_call_id=child_approval.tool_call_id,
                 name=child_approval.tool_name,
-                args=to_jsonable_python(child_approval.args),
+                args=to_jsonable_python(
+                    tool_args_for_display(
+                        tool_name=child_approval.tool_name,
+                        args=child_approval.args,
+                        metadata=child_state.deferred_tool_requests.metadata.get(
+                            child_approval.tool_call_id
+                        ),
+                    )
+                ),
                 delegation=delegation,
             )
             for child_approval in child_state.deferred_tool_requests.approvals

@@ -23,6 +23,7 @@ module rather than adding another interception layer.
 
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from time import monotonic
@@ -34,6 +35,11 @@ from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolRet
 
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
+from services.agents.runtime.staged_tool_content import (
+    WRITE_FILE_CONTENT_REF_ARG,
+    WRITE_FILE_TOOL_NAME,
+    delete_staged_write_content,
+)
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
     RuntimeToolDefinition,
@@ -53,6 +59,7 @@ MUTATION_OUTPUT_WARNING = (
 )
 READ_OUTPUT_WARNING = "Tool output did not match the declared schema."
 ENVELOPE_DENIAL_MESSAGE = "Tool execution denied by this run's side-effect policy."
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -253,6 +260,32 @@ async def record_denied_approval_audit_events(
             outcome="denied_approval",
             approval_ref=tool_call_id,
             error_code="ToolDenied",
+        )
+        await _cleanup_denied_staged_content(deps=deps, tool_name=tool_name, args=args)
+
+
+async def _cleanup_denied_staged_content(
+    *,
+    deps: RuntimeDeps,
+    tool_name: str,
+    args: Mapping[str, Any],
+) -> None:
+    if tool_name != WRITE_FILE_TOOL_NAME:
+        return
+    content_ref = args.get(WRITE_FILE_CONTENT_REF_ARG)
+    if not isinstance(content_ref, str):
+        return
+    try:
+        await delete_staged_write_content(
+            workspace_id=deps.workspace.id,
+            run_id=deps.run.id,
+            content_ref=content_ref,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to delete staged write_file content for denied approval",
+            extra={"run_id": str(deps.run.id), "tool_name": tool_name},
+            exc_info=True,
         )
 
 

@@ -15,6 +15,7 @@ from services.files.list_files import list_files
 from services.files.purge_file import purge_file
 from services.files.restore_file_revision import restore_file_revision
 from services.files.update_file import update_file
+from services.files.write_agent_file import write_agent_file
 
 __all__ = [
     "confirm_file_upload",
@@ -30,4 +31,5 @@ __all__ = [
     "purge_file",
     "restore_file_revision",
     "update_file",
+    "write_agent_file",
 ]

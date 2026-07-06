@@ -56,10 +56,12 @@ point, per-agent `tool_policies`); this section is the policy law:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
-  scratch, memory notes) default `auto`. [default — confirm at review]
+  scratch, memory notes) default `auto`. [implemented: plan 028 for
+  todos; implemented: plan 034 for scratch; memory notes pending]
 - `effect="write"` tools with **external side effects** (integration
   writes, durable file writes via promote, artifact creation, KB writes
-  from conversations) default `approval`. [default — confirm at review]
+  from conversations) default `approval`. [implemented: plan 034 for
+  durable file writes/promote; integrations, artifacts, and KB pending]
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. [default — confirm at review]
@@ -82,7 +84,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Resource | Soft delete | Hard delete after | Storage cascade | Audit survives | Export |
 |---|---|---|---|---|---|
 | Files/FileRevisions (031/032) | ✓ [implemented: plan 031 schema + plan 032 lifecycle] | 30 d [implemented: plan 032] | tombstone blob; sweeper deletes both [implemented: plan 032] | ✓ [implemented: plan 032 mutation audit] | ✓ (single-file signed downloads shipped in 032; signed URL batch unplanned) [default — confirm at review] |
-| Scratch (034) | TTL expiry | 7 d rolling TTL; purge content on expiry; delete after promotion | n/a (DB text) | rows summarized | — |
+| Scratch (034) | TTL expiry [implemented: plan 034] | 7 d rolling TTL; purge content on expiry; delete after promotion [implemented: plan 034] | n/a (DB text) [implemented: plan 034] | rows summarized [implemented: plan 034] | — |
 | Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
 | KB documents/chunks/embeddings (044) | ✓ | 30 d after doc hard-delete; chunks/vectors cascade immediately with doc | n/a | ✓ | ✓ (markdown) |
 | Memories (048) | supersession, never hard | archive at `expires_at`; hard-delete only by user action | n/a | ✓ | ✓ |

@@ -284,8 +284,8 @@ All anchors verified at `0cbbb39`.
   `purge_expired_scratch.py`, `utils.py`
 - `apps/api/services/jobs/handlers/sweep_expired_scratch.py` (create) +
   the jobs handlers assembly point import (per 030's Step 3 comment)
-- `apps/api/services/agents/runtime/tools/files.py` (create — the four
-  tool registrations) + the registration import in
+- `apps/api/services/agents/runtime/tools/files/` (create package —
+  `__init__.py`, one file per tool, and shared `utils.py`) + the registration import in
   `runtime/tools/registry.py:254-258`
 - `apps/api/services/agents/runtime/prompt.py` (extend —
   `available_files` block), `runtime/loop.py` (thread the parameter),
@@ -446,11 +446,12 @@ exits 0 with the sweep enqueued.
 
 ### Step 5: The four runtime tools
 
-Create `services/agents/runtime/tools/files.py`, registered from
+Create `services/agents/runtime/tools/files/`, registered from
 `registry.py`'s assembly point (append to the import block at 254-258).
-All four: `provider="core"`, `takes_ctx=True`, sensible `timeout` (10–30 s;
-url mode and image reads touch storage), and a module docstring recording
-the probe findings above (the `web_search.py:5-19` convention). Scoping
+Use one file per tool plus a shared `utils.py`; the package `__init__.py`
+imports/re-exports the tools and records the probe findings above. All four:
+`provider="core"`, `takes_ctx=True`, sensible `timeout` (10–30 s; url mode
+and image reads touch storage). Scoping
 law for every query: `workspace_id == ctx.deps.workspace.id` — a file id
 from another workspace is a model-visible "not found" `ModelRetry`, never
 an exception leak.
@@ -614,7 +615,7 @@ byte-identical system prompt**.
 - [ ] `docs/architecture/governance.md`: §2 cells for internal-write auto +
       external-write approval, and the §3 Scratch row, moved to
       `[implemented: plan 034]` (the §Consumed By table already names 034)
-- [ ] Probe-findings docstring present in `runtime/tools/files.py`
+- [ ] Probe-findings docstring present in `runtime/tools/files/__init__.py`
 - [ ] `docs/plans/000_README.md` status row updated (add the 034 row if
       absent)
 
@@ -641,7 +642,7 @@ Stop and report back (do not improvise) if:
   (decision 2's foundation) — the dynamic-approval design needs
   rethinking, not patching.
 - A `scratch_entries` table, `services/scratch/`, or
-  `runtime/tools/files.py` already exists.
+  `runtime/tools/files/` already exists.
 - Existing `tests/services/agents/runtime` tests fail before your changes.
 
 ## Maintenance notes

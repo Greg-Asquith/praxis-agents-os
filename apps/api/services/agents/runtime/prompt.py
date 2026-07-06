@@ -6,11 +6,13 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from core.settings import settings
 from models.agent import Agent
 from services.agents.runtime.delegation.tool_names import (
     DELEGATE_TO_AGENT_TOOL_NAME,
     LIST_DELEGATE_AGENTS_TOOL_NAME,
 )
+from services.agents.runtime.load_context import AvailableFile
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,14 @@ class PromptBlock:
     budget: int | None = None
 
 
-def runtime_prompt_blocks(agent: Agent, *, include_delegation: bool) -> list[PromptBlock]:
+def runtime_prompt_blocks(
+    agent: Agent,
+    *,
+    include_delegation: bool,
+    available_files: Sequence[AvailableFile] = (),
+) -> list[PromptBlock]:
     """Return the canonical ordered prompt blocks for one runtime agent."""
+    tool_names = set(agent.tool_names or [])
     return [
         PromptBlock("identity", agent.instructions),
         PromptBlock(
@@ -56,6 +64,15 @@ def runtime_prompt_blocks(agent: Agent, *, include_delegation: bool) -> list[Pro
         PromptBlock(
             "delegation",
             DELEGATION_INSTRUCTIONS if include_delegation else "",
+        ),
+        PromptBlock(
+            "available_files",
+            _render_available_files(
+                available_files,
+                can_read_files="read_file" in tool_names,
+                can_list_files="list_files" in tool_names,
+            ),
+            budget=settings.AVAILABLE_FILES_PROMPT_BUDGET,
         ),
     ]
 
@@ -81,3 +98,29 @@ def _render_block(block: PromptBlock) -> str:
         )
         return f"{content[: block.budget]}\n[truncated]"
     return content
+
+
+def _render_available_files(
+    files: Sequence[AvailableFile],
+    *,
+    can_read_files: bool,
+    can_list_files: bool,
+) -> str:
+    if not files or not can_read_files:
+        return ""
+    instruction = "These workspace files are attached to this conversation. Use read_file with the id to read one."
+    if can_list_files:
+        instruction += " Use list_files to see everything available."
+    lines = [
+        "<available_files>",
+        instruction,
+    ]
+    lines.extend(
+        (
+            f"- {file.id} - {file.name} "
+            f"({file.category}, {file.media_type}, {file.size_bytes} bytes, {file.processing_status})"
+        )
+        for file in files
+    )
+    lines.append("</available_files>")
+    return "\n".join(lines)

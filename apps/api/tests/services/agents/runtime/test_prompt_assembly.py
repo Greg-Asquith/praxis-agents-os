@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from models.agent import Agent
 from services.agents.runtime import prompt as prompt_module
+from services.agents.runtime.load_context import AvailableFile
 from services.agents.runtime.loop import _runtime_instructions
 from services.agents.runtime.prompt import (
     DELEGATION_INSTRUCTIONS,
@@ -62,6 +63,54 @@ def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
         _runtime_instructions(agent, include_delegation=False)
         == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS}"
     )
+
+
+def test_runtime_instructions_includes_available_files_block() -> None:
+    agent = _agent(instructions="Reply plainly.", tool_names=["read_file", "list_files"])
+    file_id = uuid4()
+
+    prompt = _runtime_instructions(
+        agent,
+        include_delegation=False,
+        available_files=[
+            AvailableFile(
+                id=file_id,
+                name="brief.md",
+                category="editable_text",
+                media_type="text/markdown",
+                size_bytes=42,
+                processing_status="ready",
+            )
+        ],
+    )
+
+    assert "<available_files>" in prompt
+    assert str(file_id) in prompt
+    assert "brief.md" in prompt
+    assert "Use read_file with the id to read one" in prompt
+
+
+def test_runtime_instructions_omits_available_files_without_read_tool() -> None:
+    agent = _agent(instructions="Reply plainly.", tool_names=[])
+    file_id = uuid4()
+
+    prompt = _runtime_instructions(
+        agent,
+        include_delegation=False,
+        available_files=[
+            AvailableFile(
+                id=file_id,
+                name="brief.md",
+                category="editable_text",
+                media_type="text/markdown",
+                size_bytes=42,
+                processing_status="ready",
+            )
+        ],
+    )
+
+    assert "<available_files>" not in prompt
+    assert str(file_id) not in prompt
 
 
 def _agent(*, instructions: str, tool_names: list[str] | None = None) -> Agent:

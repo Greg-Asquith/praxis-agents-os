@@ -57,6 +57,7 @@ from services.agents.runtime.events import (
 from services.agents.runtime.load_context import (
     load_actor_context,
     load_agent_skills,
+    load_available_files,
     load_run_context,
 )
 from services.agents.runtime.loop import build_runtime_agent
@@ -111,6 +112,7 @@ async def execute_run(
         lock_run=True,
     )
     skills = await load_agent_skills(db, agent)
+    available_files = await load_available_files(db, conversation)
     event_sink = sink or NullSink(run_id=run.id, conversation_id=conversation.id)
     started = False
 
@@ -163,6 +165,7 @@ async def execute_run(
             enable_delegation=enable_delegation,
             force_delegation_tools=force_delegation_tools,
             skills=skills,
+            available_files=available_files,
         )
         if run.model_name is None:
             run.model_name = runtime_agent.resolved_model.qualified_id
@@ -250,7 +253,11 @@ async def execute_run(
             )
 
         if isinstance(terminal_result.output, DeferredToolRequests):
-            suspended_run, new_message_count = await persist_suspended_run(
+            (
+                suspended_run,
+                new_message_count,
+                deferred_tool_requests,
+            ) = await persist_suspended_run(
                 db,
                 conversation_id=conversation.id,
                 run_id=run.id,
@@ -258,7 +265,7 @@ async def execute_run(
                 deferred_tool_requests=terminal_result.output,
                 client_message_id=client_message_id,
             )
-            await emit_approval_required_events(event_sink, terminal_result.output)
+            await emit_approval_required_events(event_sink, deferred_tool_requests)
             await event_sink.emit(
                 EVENT_RUN_STATUS,
                 {"status": RUN_STATUS_AWAITING_APPROVAL},
@@ -266,7 +273,7 @@ async def execute_run(
             await event_sink.emit(EVENT_DONE, {"status": RUN_STATUS_AWAITING_APPROVAL})
             return ExecuteRunResult(
                 run=suspended_run,
-                output=terminal_result.output,
+                output=deferred_tool_requests,
                 new_message_count=new_message_count,
             )
 

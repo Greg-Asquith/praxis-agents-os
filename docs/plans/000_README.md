@@ -24,6 +24,9 @@ implementations — each plan's drift check + "Current state" excerpts are
 the contract. Plan 033 was executed 2026-07-06 as the background file
 processing slice.
 
+Plan 034 was executed 2026-07-06 as the agent file tools and scratch-space
+runtime slice.
+
 Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
 source files keep their local 001-005 names until completion, while the main
@@ -74,7 +77,7 @@ integrations, files, knowledge base, memory, artifacts).
 | C02 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | C01 done; before 034-036 | DONE |
 | C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018, C01 done | DONE |
 | C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | DONE |
-| 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | TODO |
+| 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | DONE |
 | 035 | Files UI | P1 | L | 032, C02 | TODO |
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | TODO |
 | C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | TODO |

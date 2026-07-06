@@ -29,6 +29,7 @@ from services.agents.runtime.approval_state import (
 )
 from services.agents.runtime.load_context import load_run_context
 from services.agents.runtime.persistence import persist_new_messages
+from services.agents.runtime.staged_tool_content import stage_write_file_approval_content
 
 
 async def persist_suspended_run(
@@ -39,7 +40,7 @@ async def persist_suspended_run(
     terminal_result: Any,
     deferred_tool_requests: DeferredToolRequests,
     client_message_id: str | None,
-) -> tuple[AgentRun, int]:
+) -> tuple[AgentRun, int, DeferredToolRequests]:
     """Store messages and suspend a running run for human tool approval."""
     run, conversation, _agent = await load_run_context(
         db,
@@ -49,7 +50,7 @@ async def persist_suspended_run(
     )
     if is_terminal(run.status):
         await db.commit()
-        return run, 0
+        return run, 0, deferred_tool_requests
     if run.status != RUN_STATUS_RUNNING:
         raise ConflictError(
             "Agent run is no longer running",
@@ -57,11 +58,19 @@ async def persist_suspended_run(
             details={"run_id": str(run.id), "run_status": run.status},
         )
 
+    staged = await stage_write_file_approval_content(
+        workspace_id=run.workspace_id,
+        run_id=run.id,
+        new_messages=terminal_result.new_messages(),
+        all_messages=terminal_result.all_messages(),
+        deferred_tool_requests=deferred_tool_requests,
+    )
+
     persisted_messages = await persist_new_messages(
         db,
         conversation=conversation,
         run_id=run.id,
-        messages=terminal_result.new_messages(),
+        messages=staged.new_messages,
         client_message_id=client_message_id,
     )
     _mark_background_output_unread(
@@ -73,12 +82,12 @@ async def persist_suspended_run(
     run.metadata_json = build_suspended_run_metadata(
         run=run,
         conversation=conversation,
-        message_history=terminal_result.all_messages(),
-        deferred_tool_requests=deferred_tool_requests,
+        message_history=staged.all_messages,
+        deferred_tool_requests=staged.deferred_tool_requests,
     )
     await mark_run_awaiting_approval(db, run)
     await db.commit()
-    return run, len(persisted_messages)
+    return run, len(persisted_messages), staged.deferred_tool_requests
 
 
 async def persist_successful_run(

@@ -17,6 +17,7 @@ from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.capabilities import build_runtime_capabilities
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.load_context import AvailableFile
 from services.agents.runtime.prompt import (
     build_system_prompt,
     runtime_prompt_blocks,
@@ -45,6 +46,7 @@ def build_runtime_agent(
     enable_delegation: bool = True,
     force_delegation_tools: bool = False,
     skills: Sequence[Skill] = (),
+    available_files: Sequence[AvailableFile] = (),
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
     resolved_model = resolve_agent_model(agent)
@@ -58,6 +60,7 @@ def build_runtime_agent(
             instructions=_runtime_instructions(
                 agent,
                 include_delegation=include_delegation,
+                available_files=available_files,
             ),
             deps_type=RuntimeDeps,
             output_type=[str, DeferredToolRequests],
@@ -82,5 +85,16 @@ def _agent_name(agent: Agent) -> str:
     return f"praxis_agent_{safe_slug or 'unnamed'}"
 
 
-def _runtime_instructions(agent: Agent, *, include_delegation: bool) -> str:
-    return build_system_prompt(runtime_prompt_blocks(agent, include_delegation=include_delegation))
+def _runtime_instructions(
+    agent: Agent,
+    *,
+    include_delegation: bool,
+    available_files: Sequence[AvailableFile] = (),
+) -> str:
+    return build_system_prompt(
+        runtime_prompt_blocks(
+            agent,
+            include_delegation=include_delegation,
+            available_files=available_files,
+        )
+    )

@@ -18,6 +18,7 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND_KEY,
     DELEGATED_APPROVAL_PENDING_APPROVALS_KEY,
 )
+from services.agents.runtime.staged_tool_content import tool_args_for_display
 
 
 def raise_delegate_approval_required(
@@ -46,7 +47,13 @@ def pending_approval_descriptors(requests: DeferredToolRequests) -> list[dict[st
         {
             "tool_call_id": approval.tool_call_id,
             "name": approval.tool_name,
-            "args": to_jsonable_python(approval.args),
+            "args": to_jsonable_python(
+                tool_args_for_display(
+                    tool_name=approval.tool_name,
+                    args=approval.args,
+                    metadata=requests.metadata.get(approval.tool_call_id),
+                )
+            ),
         }
         for approval in requests.approvals
     ]

@@ -251,6 +251,7 @@ def _derive_label(name: str) -> str:
 
 # Import provider modules for registration side effects.
 from services.agents.runtime.tools import (
+    files as _files,  # noqa: F401
     native as _native,  # noqa: F401
     planning as _planning,  # noqa: F401
 )

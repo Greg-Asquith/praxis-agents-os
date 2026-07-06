@@ -3,20 +3,35 @@
 """Load database rows needed to execute an agent run."""
 
 import logging
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError, NotFoundError
+from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
+from models.files import File, FileReference
 from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AvailableFile:
+    """Conversation-attached file metadata safe for prompt injection."""
+
+    id: UUID
+    name: str
+    category: str
+    media_type: str
+    size_bytes: int
+    processing_status: str
 
 
 async def load_run_context(
@@ -126,6 +141,43 @@ async def load_agent_skills(db: AsyncSession, agent: Agent) -> list[Skill]:
         )
 
     return [rows_by_id[skill_id] for skill_id in unique_skill_ids if skill_id in rows_by_id]
+
+
+async def load_available_files(
+    db: AsyncSession,
+    conversation: Conversation,
+) -> list[AvailableFile]:
+    """Load files attached to a conversation for the runtime prompt block."""
+    rows = (
+        (
+            await db.execute(
+                select(File)
+                .join(FileReference, FileReference.file_id == File.id)
+                .where(
+                    FileReference.workspace_id == conversation.workspace_id,
+                    FileReference.target_type == "conversation",
+                    FileReference.target_id == conversation.id,
+                    File.workspace_id == conversation.workspace_id,
+                    File.deleted == False,  # noqa: E712
+                )
+                .order_by(FileReference.created_at.desc(), File.id.desc())
+                .limit(settings.AVAILABLE_FILES_MAX_LISTED)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        AvailableFile(
+            id=file.id,
+            name=file.name,
+            category=file.category,
+            media_type=file.content_type,
+            size_bytes=file.size_bytes,
+            processing_status=file.processing_status,
+        )
+        for file in rows
+    ]
 
 
 async def load_actor_context(

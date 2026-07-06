@@ -24,6 +24,7 @@ from core.settings.jobs import JobsSettingsMixin
 from core.settings.models import LLMSettingsMixin
 from core.settings.providers import ProviderSettingsMixin
 from core.settings.rate_limit import RateLimitSettingsMixin
+from core.settings.scratch import ScratchSettingsMixin
 from core.settings.security import SecuritySettingsMixin
 from core.settings.urls import UrlSettingsMixin
 
@@ -44,6 +45,7 @@ class Settings(
     ProviderSettingsMixin,
     RateLimitSettingsMixin,
     SecuritySettingsMixin,
+    ScratchSettingsMixin,
     UrlSettingsMixin,
 ):
     """

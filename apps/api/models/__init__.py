@@ -20,6 +20,7 @@ from models.files import File, FileReference, FileRevision, FileUpload  # noqa: 
 from models.jobs import Job  # noqa: F401
 from models.notification import Notification  # noqa: F401
 from models.rate_limiting import RateLimitAttempt  # noqa: F401
+from models.scratch import ScratchEntry  # noqa: F401
 from models.security import SecurityEvent  # noqa: F401
 from models.session import Session  # noqa: F401
 from models.skills import Skill  # noqa: F401

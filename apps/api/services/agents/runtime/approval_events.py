@@ -33,6 +33,7 @@ from services.agents.runtime.events import (
     EVENT_TOOL_RESULT,
 )
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.staged_tool_content import tool_args_for_display
 
 
 def is_deferred_tool_resume_event(
@@ -52,8 +53,9 @@ async def emit_approval_required_events(
 ) -> None:
     """Emit pending tool approvals to the client."""
     for approval in deferred_tool_requests.approvals:
+        metadata = deferred_tool_requests.metadata.get(approval.tool_call_id)
         delegated_approvals = _delegated_pending_approvals(
-            deferred_tool_requests.metadata.get(approval.tool_call_id),
+            metadata,
             parent_tool_call_id=approval.tool_call_id,
         )
         if delegated_approvals is not None:
@@ -66,7 +68,13 @@ async def emit_approval_required_events(
             {
                 "tool_call_id": approval.tool_call_id,
                 "name": approval.tool_name,
-                "args": to_jsonable_python(approval.args),
+                "args": to_jsonable_python(
+                    tool_args_for_display(
+                        tool_name=approval.tool_name,
+                        args=approval.args,
+                        metadata=metadata,
+                    )
+                ),
             },
         )
 
@@ -101,7 +109,15 @@ def _delegated_pending_approvals(
             {
                 "tool_call_id": tool_call_id,
                 "name": name,
-                "args": pending_approval.get("args"),
+                "args": tool_args_for_display(
+                    tool_name=name,
+                    args=pending_approval.get("args"),
+                    metadata=(
+                        pending_approval.get("metadata")
+                        if isinstance(pending_approval.get("metadata"), dict)
+                        else None
+                    ),
+                ),
                 "delegation": delegation,
             }
         )
@@ -162,10 +178,13 @@ async def emit_deferred_tool_resume_events(
                         "tool_call_id": tool_call_id,
                         "name": call.tool_name,
                         "args": to_jsonable_python(
-                            _effective_tool_args(
-                                tool_call_id=tool_call_id,
-                                original_args=call.args,
-                                deferred_tool_results=deferred_tool_results,
+                            tool_args_for_display(
+                                tool_name=call.tool_name,
+                                args=_effective_tool_args(
+                                    tool_call_id=tool_call_id,
+                                    original_args=call.args,
+                                    deferred_tool_results=deferred_tool_results,
+                                ),
                             )
                         ),
                     },
@@ -214,11 +233,23 @@ def build_deferred_tool_result_metadata(
         }
 
         if call is not None:
-            result_metadata["original_args"] = to_jsonable_python(call.args)
+            result_metadata["original_args"] = to_jsonable_python(
+                tool_args_for_display(tool_name=call.tool_name, args=call.args)
+            )
         if call is not None or override_args is not None:
-            result_metadata["effective_args"] = to_jsonable_python(effective_args)
+            result_metadata["effective_args"] = to_jsonable_python(
+                tool_args_for_display(
+                    tool_name=call.tool_name if call is not None else "",
+                    args=effective_args,
+                )
+            )
         if isinstance(approval_result, ToolApproved) and override_args is not None:
-            result_metadata["override_args"] = to_jsonable_python(override_args)
+            result_metadata["override_args"] = to_jsonable_python(
+                tool_args_for_display(
+                    tool_name=call.tool_name if call is not None else "",
+                    args=override_args,
+                )
+            )
         if isinstance(approval_result, ToolDenied):
             result_metadata["message"] = approval_result.message
 
