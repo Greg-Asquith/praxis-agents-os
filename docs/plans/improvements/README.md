@@ -18,7 +18,7 @@ avoid colliding with roadmap plan numbers.
 | 001 | Stand up CI and complete the local quality gate | P1 | M | — | DONE |
 | 002 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | 001 done | DONE |
 | 003 | Bound conversation history reads and paginate the messages API | P1 | M | 001 done | DONE |
-| 004 | Rate limiter — bounded key cardinality, retention sweep, and tests | P1 | M | 001 done | TODO |
+| 004 | Rate limiter — bounded key cardinality, retention sweep, and tests | P1 | M | 001 done | DONE |
 | 005 | Close the small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
@@ -39,8 +39,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   preserve capability-load pairs (see the 013/018 interaction note in
   `docs/plans/000_README.md`). Whoever changes history settings later must
   re-check.
-- **004 and roadmap plan 030**: the retention sweep rides the generic jobs
-  harness (already DONE); nothing blocks it.
+- **004 and roadmap plan 030**: DONE 2026-07-06 and moved to
+  `../complete/C04-rate-limiter-hardening.md`. Rate-limit buckets now
+  normalize UUID/numeric path segments for storage only, expired attempts are
+  swept by the generic jobs harness, and focused service/middleware/jobs tests
+  cover the behavior.
 - **005 Step 1 (license)** is a maintainer decision; the step is written to
   BLOCK rather than let an executor pick a license.
 - 003 and 004 touch disjoint files and can run in parallel worktrees.

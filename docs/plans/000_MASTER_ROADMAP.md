@@ -22,7 +22,7 @@ covering Phases 3–6 end to end, consistency-reviewed against the landed
 030–033 substrate). Cleanup plans C01-C05 were integrated 2026-07-06 from
 `plans/improvements/`; their source files keep local numbers 001-005 until
 completion, while the master roadmap tracks them with `C` prefixes so they do
-not collide with existing roadmap plans. C01, C02, and C03 were completed
+not collide with existing roadmap plans. C01, C02, C03, and C04 were completed
 2026-07-06 and moved to `plans/complete/`. Every reserved number now has a
 written plan.
 
@@ -198,8 +198,8 @@ non-colliding roadmap aliases used in `docs/plans/000_README.md`.
 |------|-------|----------|------|
 | C01 | Stand up CI and complete the local quality gate: CI workflow, backend format/test coverage in `make check`, pytest asyncio auto mode, and Vitest coverage for the conversation stream parser/reducer. **DONE 2026-07-06.** | P1 | Complete. |
 | C02 | Harden the files vertical: upload/confirm race fixes, escaped file search, streaming hash primitive, safer download default, and download audit. **DONE 2026-07-06.** | P1 | Complete. |
-| C03 | Bound conversation history reads and paginate the messages API while preserving capability-load pairs for the 013/018 history and skill-disclosure contract. **DONE 2026-07-06.** | P1 | Complete; C04 is next before remaining files work. |
-| C04 | Rate limiter hardening: bounded endpoint keys, retention sweep on the 030 jobs harness, and rate-limit regression tests without changing policy. | P1 | After 030; early security/perf cleanup before provider/integration scale-up. |
+| C03 | Bound conversation history reads and paginate the messages API while preserving capability-load pairs for the 013/018 history and skill-disclosure contract. **DONE 2026-07-06.** | P1 | Complete. |
+| C04 | Rate limiter hardening: bounded endpoint keys, retention sweep on the 030 jobs harness, and rate-limit regression tests without changing policy. **DONE 2026-07-06.** | P1 | Complete; remaining files work resumes with 034. |
 | C05 | Small production-readiness gaps: maintainer-chosen license, settings-gated `/api/metrics`, filtered 403 response bodies, and README corrections. | P2 | Before public-production polish for Phase 4+; license step blocks on maintainer choice. |
 
 Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
@@ -272,7 +272,7 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 → 034 → 035 → 036 → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
+C03 (DONE) → C04 (DONE) → 034 → 035 → 036 → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
 049 → 050 → 051` — with 015 and the polish lane as filler.
 
 With parallel capacity: one stream takes Lane O while another runs Phase 1

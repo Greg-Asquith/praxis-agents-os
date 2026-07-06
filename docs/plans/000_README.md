@@ -28,7 +28,7 @@ Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
 source files keep their local 001-005 names until completion, while the main
 task list tracks them with `C` prefixes to avoid colliding with roadmap plans
-001-005. C01, C02, and C03 were executed 2026-07-06 and moved to
+001-005. C01, C02, C03, and C04 were executed 2026-07-06 and moved to
 `plans/complete/`.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -73,7 +73,7 @@ integrations, files, knowledge base, memory, artifacts).
 | C01 | Stand up CI and complete the local quality gate | P1 | M | - | DONE |
 | C02 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | C01 done; before 034-036 | DONE |
 | C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018, C01 done | DONE |
-| C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | TODO |
+| C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | DONE |
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | TODO |
 | 035 | Files UI | P1 | L | 032, C02 | TODO |
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | TODO |
@@ -347,10 +347,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - Cleanup plans `C04`-`C05` live under `plans/improvements/` and are tracked
   here with `C` identifiers because their source files are locally numbered
   `004`-`005`, which collide with existing roadmap plan numbers. Completed
-  cleanup plans move to `plans/complete/`; C01, C02, and C03 now live at
+  cleanup plans move to `plans/complete/`; C01, C02, C03, and C04 now live at
   `plans/complete/C01-ci-and-complete-quality-gate.md` and
   `plans/complete/C02-files-vertical-hardening.md`, and
-  `plans/complete/C03-bound-conversation-history.md`.
+  `plans/complete/C03-bound-conversation-history.md`, and
+  `plans/complete/C04-rate-limiter-hardening.md`.
 - `C01` marked DONE 2026-07-06: `.github/workflows/ci.yml` now runs API and
   web gates, `make check` includes backend format and tests, pytest asyncio
   auto mode is enabled with no collection-count change, and Vitest covers the
@@ -375,9 +376,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `TEST_DATABASE_URL=... uv run pytest tests/services/agents/runtime
   tests/services/conversations tests/routes/conversations -q`, and
   `pnpm check` passed.
-- `C04` rides the `030` jobs harness and should run early as security/perf
-  hardening for auth-facing rate limits: bounded endpoint keys, retention
-  sweep, and regression tests. It does not change rate-limit policy.
+- `C04` marked DONE 2026-07-06: auth-facing rate-limit policy is unchanged,
+  but stored bucket keys now collapse UUID and numeric path segments to keep
+  row cardinality bounded; `rate_limits.sweep_attempts` deletes expired
+  attempt rows on the generic jobs harness; and focused service, middleware,
+  and jobs regression tests cover counters, window rollover, invalid IPs,
+  disabled limiting, fail-closed auth behavior, blocked responses, and sweep
+  rescheduling. `uv run ruff check .`,
+  `TEST_DATABASE_URL=... uv run pytest tests/services/rate_limiting tests/middleware tests/services/jobs -q`,
+  and `DATABASE_URL=... uv run python -m workers.job_runner --once` passed
+  from `apps/api`.
 - `C05` is P2 production-readiness work. The license step is a maintainer
   decision and should block that step rather than let an executor choose a
   license. Its metrics route must stay independent of `014` OTel, and its 403

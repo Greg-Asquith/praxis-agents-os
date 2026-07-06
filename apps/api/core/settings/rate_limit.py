@@ -32,6 +32,11 @@ class RateLimitSettingsMixin:
         le=10,
         description="Maximum password reset attempts per day per IP",
     )
+    RATE_LIMIT_RETENTION_SECONDS: int = Field(
+        default=172800,
+        ge=86400,
+        description="Age after which rate-limit attempt rows are deleted (min: the longest window, 1 day)",
+    )
     TRUSTED_PROXY_CIDRS: str = Field(
         default="127.0.0.1/32,::1/128",
         description="Comma-separated CIDR ranges for trusted reverse proxies/load balancers that are allowed to supply X-Forwarded-For/X-Real-IP",

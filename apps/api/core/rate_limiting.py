@@ -11,6 +11,7 @@ Provides:
 
 import logging
 import math
+import re
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from ipaddress import ip_address, ip_network
@@ -268,6 +269,21 @@ class RateLimiter:
 # Global rate limiter instance
 rate_limiter = RateLimiter()
 
+_UUID_SEGMENT = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+_NUMERIC_SEGMENT = re.compile(r"^\d+$")
+
+
+def normalize_endpoint(path: str) -> str:
+    """Collapse path-parameter segments so rate-limit buckets stay bounded."""
+    segments = [
+        "{id}" if _UUID_SEGMENT.match(segment) or _NUMERIC_SEGMENT.match(segment) else segment
+        for segment in path.split("/")
+    ]
+    return "/".join(segments)
+
 
 @lru_cache(maxsize=32)
 def _parse_trusted_proxy_networks(cidr_config: str) -> tuple:
@@ -427,7 +443,7 @@ def require_rate_limit(
 
     async def dependency(request: Request):
         client_ip = get_client_ip(request)
-        endpoint = request.url.path
+        endpoint = normalize_endpoint(request.url.path)
 
         result = await rate_limiter.check_rate_limit(
             ip=client_ip,

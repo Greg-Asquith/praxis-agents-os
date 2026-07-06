@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.database import get_async_db_session_factory
-from core.rate_limiting import get_client_ip, rate_limiter
+from core.rate_limiting import get_client_ip, normalize_endpoint, rate_limiter
 from services.security import SecurityEventType, safe_record_security_event
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Get client IP
         client_ip = get_client_ip(request)
         endpoint = request.url.path
+        rate_limit_endpoint = normalize_endpoint(endpoint)
         method = request.method
 
         # Determine rate limit type based on endpoint
@@ -61,7 +62,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         async def _check_with_db(db):
             result_local = await rate_limiter.check_rate_limit(
                 ip=client_ip,
-                endpoint=endpoint,
+                endpoint=rate_limit_endpoint,
                 limit_type=limit_type,
                 db=db,
             )

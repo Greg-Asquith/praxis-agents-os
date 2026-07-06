@@ -318,8 +318,8 @@ Stop and report back (do not improvise) if:
 
 ## Maintenance notes
 
-- When plan 004 (rate limiter) and plan 002 (files vertical) land, their new
-  tests run under this gate automatically — no CI change needed.
+- Plan C04 (rate limiter) and C02 (files vertical) have landed; their tests
+  run under this gate automatically, with no CI change needed.
 - Follow-up (deferred): remove now-redundant `pytestmark = pytest.mark.asyncio`
   lines; adopt a Python type checker (pyright/mypy) as a ratcheted CI step;
   extend CI with image build/push once a deploy target is decided (see plan
