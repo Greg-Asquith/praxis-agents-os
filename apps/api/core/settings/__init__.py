@@ -69,6 +69,14 @@ class Settings(
                 "AGENT_RUN_LEASE_TTL_SECONDS"
             )
 
+        if (
+            self.AGENT_HISTORY_MAX_TURNS is not None
+            and self.AGENT_HISTORY_KEEP_TURNS >= self.AGENT_HISTORY_MAX_TURNS
+        ):
+            raise ValueError(
+                "AGENT_HISTORY_KEEP_TURNS must be less than AGENT_HISTORY_MAX_TURNS"
+            )
+
         if self.STORAGE_PROVIDER == "azure_blob":
             required_fields = {
                 "AZURE_STORAGE_ACCOUNT_NAME": self.AZURE_STORAGE_ACCOUNT_NAME,

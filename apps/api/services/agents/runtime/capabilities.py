@@ -2,11 +2,12 @@
 
 """Assemble Pydantic AI capabilities for one runtime agent."""
 
-from pydantic_ai.capabilities import AgentCapability, Hooks
+from pydantic_ai.capabilities import AgentCapability, Hooks, ProcessHistory
 
 from models.agent import Agent
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import dispatch_tool_execution
+from services.agents.runtime.history import history_trimmer
 
 
 def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDeps]]:
@@ -27,4 +28,4 @@ def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDep
             handler=handler,
         )
 
-    return [hooks]
+    return [hooks, ProcessHistory(history_trimmer())]

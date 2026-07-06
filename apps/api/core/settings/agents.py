@@ -71,3 +71,17 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum total (input+output) tokens per agent run; None disables the cap.",
     )
+    AGENT_HISTORY_MAX_TURNS: int | None = Field(
+        default=40,
+        gt=0,
+        description="Prior-user-turn count that triggers a history trim; None sends full history.",
+    )
+    AGENT_HISTORY_KEEP_TURNS: int = Field(
+        default=20,
+        gt=0,
+        description="Prior user turns retained after a trim; must be below AGENT_HISTORY_MAX_TURNS.",
+    )
+    AGENT_PROMPT_CACHE_ENABLED: bool = Field(
+        default=True,
+        description="Enable provider-native prompt caching where the provider needs explicit opt-in.",
+    )

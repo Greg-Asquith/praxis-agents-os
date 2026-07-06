@@ -15,7 +15,7 @@
 
 - **Priority**: P2
 - **Effort**: M
-- **Risk**: MED (a wrong trim can produce provider-rejected histories, lose
+- **Risk**: HIGH (a wrong trim can produce provider-rejected histories, lose
   context silently, or silently destroy prompt-cache hit rates)
 - **Depends on**: plan 018 (DONE, verified 2026-07-03) — trimming must preserve
   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
@@ -151,7 +151,11 @@ accounts for that.
 - **Cache observability already exists**: `run_persistence.py:162` maps
   `usage.cache_read_tokens` into `input_tokens_cached` on the run row. That
   column is how this plan's caching claims get validated in real traffic — no
-  new telemetry code is needed.
+  new hot column is needed for this plan. Pydantic AI's `RunUsage` also exposes
+  `cache_write_tokens`; keep the existing raw `usage_json` preservation intact
+  and test that cache-write/creation tokens are not dropped, since they explain
+  whether Anthropic cache markers are creating cache entries or only reading
+  existing ones.
 
 - `apps/api/services/agents/models/factory.py:33-60` — `build_model` sets
   `model_settings = dict(spec.settings) or None` and branches per provider
@@ -181,7 +185,9 @@ accounts for that.
 - `apps/api/core/settings/__init__.py` (cross-field validation only, if needed)
 - `apps/api/tests/services/agents/runtime/test_history_trimming.py` (create)
 - `apps/api/tests/services/agents/models/test_model_factory.py` (cache settings cases)
+- `apps/api/tests/services/agents/runtime/test_run_persistence.py` (cache-write usage snapshot case)
 - `docs/plans/000_README.md` (status row)
+- `docs/plans/000_MASTER_ROADMAP.md` (Lane R / suggested-order status)
 
 **Out of scope**:
 - `persistence.py` — stored rows stay full-fidelity; do not trim at load or save.
@@ -238,6 +244,11 @@ Create `apps/api/services/agents/runtime/history.py`. Requirements:
 
 1. A pure function
    `trim_history(messages: list[ModelMessage], *, max_turns: int, keep_turns: int) -> list[ModelMessage]`:
+   - Treat messages from the currently executing run as the untrimmed tail
+     when Pydantic AI has already stamped the last request with the current
+     `run_id`; trim only the prior-history prefix and append the current-run
+     tail unchanged. This keeps synthetic preserved capability-load pairs out
+     of `result.new_messages()` without changing persistence.
    - Define a **turn boundary** as a `ModelRequest` whose parts include a
      `UserPromptPart` **and no `ToolReturnPart` or `RetryPromptPart`** (check
      via `isinstance`, the repo convention). The tool-part exclusion matters:
@@ -370,6 +381,16 @@ Create `apps/api/tests/services/agents/runtime/test_history_trimming.py`
     when enabled, none when disabled; agent-provided settings survive the
     merge and win on collision; OpenAI/Google/Azure settings are untouched
     either way.
+13. **Usage accounting — cache creation visibility**: `usage_snapshot` preserves
+    `cache_write_tokens` in `usage_json` while continuing to map
+    `cache_read_tokens` to `input_tokens_cached`. Do not add a cache-write hot
+    column in this plan; this is a regression guard for future billing/reporting.
+14. **Stable-prefix guard**: add a focused deterministic-prefix test for the
+    cache-sensitive inputs outside the trimmer: runtime instruction assembly
+    returns the same string for the same agent/delegation inputs, and
+    `build_runtime_tools` returns tools in deterministic order for the same
+    configured agent. If this ever fails without a functional regression,
+    reviewers should treat it as a prompt-cache cost regression.
 
 **Verify**: `cd apps/api && uv run pytest tests/services/agents -q` → all pass
 
@@ -426,7 +447,10 @@ Stop and report back if:
   assembly must stay free of per-request values (timestamps, run ids), and
   `build_runtime_tools` must keep deterministic tool ordering. Reviewers should
   treat a violation of either as a caching regression even though nothing
-  functionally breaks.
+  functionally breaks. If production cached-token ratios are unexpectedly low,
+  add a donor-app-style debug diagnostic that logs stable hashes of the system
+  prompt and provider-visible tool definitions; do not log raw prompts, tool
+  schemas, credentials, or user content.
 - v2 of this feature is token-aware triggering (from the prior run's persisted
   usage — not a tokenizer dependency) and/or summarizing trimmed turns with a
   cheaper agent (`docs/pydantic-ai/06-messages-and-history.md:171-176` has the

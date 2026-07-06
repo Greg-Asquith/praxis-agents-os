@@ -32,7 +32,7 @@ from services.agents.models.utils import provider_api_key, retrying_http_client
 
 def build_model(spec: ResolvedModel) -> Model:
     """Build a ready-to-run Pydantic AI model for the resolved spec."""
-    model_settings = dict(spec.settings) or None
+    model_settings = _model_settings_for(spec)
 
     if spec.provider == PROVIDER_ANTHROPIC:
         provider = AnthropicProvider(
@@ -78,6 +78,18 @@ def _google_provider() -> GoogleProvider:
     # Vertex uses google-genai's transport rather than the shared httpx client.
     client = Client(vertexai=True, project=project, location=settings.GOOGLE_VERTEX_LOCATION)
     return GoogleProvider(client=client)
+
+
+def _model_settings_for(spec: ResolvedModel):
+    model_settings = dict(spec.settings)
+    if spec.provider == PROVIDER_ANTHROPIC and settings.AGENT_PROMPT_CACHE_ENABLED:
+        model_settings = {
+            "anthropic_cache": True,
+            "anthropic_cache_instructions": True,
+            "anthropic_cache_tool_definitions": True,
+            **model_settings,
+        }
+    return model_settings or None
 
 
 def _build_azure_model(spec: ResolvedModel, model_settings) -> Model:

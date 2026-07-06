@@ -34,7 +34,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 010 | Retry transient provider HTTP failures at the transport layer | P1 | M | - | DONE |
 | 011 | Cap per-run token spend with UsageLimits token limits | P2 | S | - | DONE |
 | 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | DONE |
-| 013 | Bound model context with a cache-stable ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | TODO |
+| 013 | Bound model context with a cache-stable ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | DONE |
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
 | 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
@@ -50,7 +50,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | DONE |
 | 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | DONE |
 | 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | DONE |
-| 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | TODO |
+| 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -85,9 +85,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `010`, `011`, and `012` are DONE. `011` marked DONE 2026-07-03: runtime
   `UsageLimits` now includes an optional settings-level total token cap and
   failed capped runs persist with `UsageLimitExceeded`.
-- `013`–`015` are independent of `009`; suggested remaining order is `014`,
-  then `015`, with `013` after `018` per the master roadmap's history-trimming
-  constraint. Note `013` and `009` both touch
+- `013` is DONE. `014` and `015` remain independent of `009`; suggested
+  remaining order is `014`, then `015`. Note `013` and `009` both touch
   `runtime/capabilities.py`-adjacent code — rebase whichever lands second.
 - `012` marked DONE 2026-07-03: live `ThinkingPart` content now streams over
   the existing message SSE contract with optional `message.start.channel`, and
@@ -138,6 +137,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `LoadCapabilityCallPart`/`LoadCapabilityReturnPart` pairs or agents silently
   lose loaded skills on resume. Whichever plan lands second must honor the
   maintenance note in `018`.
+- `013` marked DONE 2026-07-06: runtime agents now register a settings-backed
+  `ProcessHistory` capability that trims persisted prior history at chunked
+  user-turn watermarks, preserves valid tool call/return history shapes,
+  replays dropped capability-load pairs outside the current run's
+  `new_messages()` slice, and enables Anthropic prompt-cache defaults at the
+  provider boundary. `AGENT_HISTORY_MAX_TURNS`,
+  `AGENT_HISTORY_KEEP_TURNS`, and `AGENT_PROMPT_CACHE_ENABLED` are now
+  settings. `uv run ruff check .` and `uv run pytest -q` passed from
+  `apps/api`.
 - `009` and `018` interact: when delegation lands, sub-agents should reuse
   `runtime/skills.py` for their own `skill_ids`.
 - `021`–`029` were added 2026-07-02 from `000_MASTER_ROADMAP.md`: Lane O

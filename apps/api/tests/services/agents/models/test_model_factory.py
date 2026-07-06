@@ -52,11 +52,81 @@ def test_build_anthropic_model(monkeypatch):
     assert model.provider.client._client is retrying_http_client()
 
 
+def test_build_anthropic_model_enables_prompt_cache(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
+    monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)
+
+    model = build_model(_spec("anthropic", "claude-sonnet-4-6"))
+
+    assert model.settings == {
+        "anthropic_cache": True,
+        "anthropic_cache_instructions": True,
+        "anthropic_cache_tool_definitions": True,
+    }
+
+
+def test_build_anthropic_model_respects_agent_cache_settings(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
+    monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)
+
+    model = build_model(
+        _spec(
+            "anthropic",
+            "claude-sonnet-4-6",
+            settings={
+                "anthropic_cache": "1h",
+                "anthropic_cache_instructions": False,
+                "temperature": 0.2,
+            },
+        )
+    )
+
+    assert model.settings == {
+        "anthropic_cache": "1h",
+        "anthropic_cache_instructions": False,
+        "anthropic_cache_tool_definitions": True,
+        "temperature": 0.2,
+    }
+
+
+def test_build_anthropic_model_skips_prompt_cache_when_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
+    monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", False)
+
+    model = build_model(_spec("anthropic", "claude-sonnet-4-6"))
+
+    assert model.settings is None
+
+
 def test_build_openai_model(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
     model = build_model(_spec("openai", "gpt-5.4-mini", settings={"temperature": 0.5}))
     assert isinstance(model, OpenAIResponsesModel)
     assert model.provider.client._client is retrying_http_client()
+
+
+def test_prompt_cache_defaults_are_anthropic_only(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("g-test"))
+    monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", SecretStr("az-test"))
+    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", "https://example.openai.azure.com")
+
+    models = [
+        build_model(_spec("openai", "gpt-5.4-mini", settings={"temperature": 0.5})),
+        build_model(_spec("google", "gemini-3.5-flash", settings={"temperature": 0.5})),
+        build_model(
+            _spec(
+                "azure",
+                "gpt-5.4-mini",
+                settings={"temperature": 0.5},
+                azure_deployment="my-deployment",
+            )
+        ),
+    ]
+
+    assert [model.settings for model in models] == [{"temperature": 0.5}] * 3
 
 
 def test_build_google_model_gemini_api(monkeypatch):

@@ -52,7 +52,7 @@ product interview on 2026-07-02.
 | # | Decision | Outcome | Binds at |
 |---|----------|---------|----------|
 | D1 | Operational surfaces vs donor phases | **Parallel lane.** Registry work starts immediately; schedules UI, audit/security viewer, workspace/invite UX run alongside and must complete before integrations ship side-effect tools (Gate G1). | 021–024 / Gate G1 |
-| D2 | Runtime hardening plans 010–015 | **Split by leverage.** 010/012/011 land now; 014 (OTel) gates Phase C; 013 lands after 018 (they interact — see README dependency notes); 015 is filler. | Lane R |
+| D2 | Runtime hardening plans 010–015 | **Split by leverage.** 010/012/011 landed first; 013 landed after 018 to preserve capability-load pairs; 014 (OTel) gates Phase C; 015 is filler. | Lane R |
 | D3 | Multi-connection per provider | **Full multi-connection in v1.** Multiple simultaneous connections per provider per owner from the first integrations release: no one-active-per-provider uniqueness constraint, a required user-set label per connection, active-context resolution across N connections, and connection pickers in the v1 UI. Resolves the NOTES-vs-donor conflict in favor of the agency use case; adds scope to 037/040/042. | 037/040/042 |
 | D4 | First integration providers | **Gmail (user OAuth) + Google Ads (workspace OAuth + MCC→account discovery) + Airtable (api-key + secret reference).** Google Ads over GA4: richer resource hierarchy and closer to the agency product. Its write operations spend real money — they default to `approval` in tool policy and are the first hard test of Gate G1. | 041 |
 | D5 | Schema branch | All roadmap tables go in **`core`** (platform infrastructure); `app` stays reserved for verticals. (From donor roadmap §2, confirmed.) | all migrations |
@@ -82,7 +82,8 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   assembler rather than accreting.
 - **G3 (governance before new resource types)**: 029 (governance &
   lifecycle design note) complete before 037 (integrations), 043 (KB),
-  048 (memory), 050 (artifacts).
+  048 (memory), 050 (artifacts). Design note exists:
+  `docs/architecture/governance.md` (029 DONE 2026-07-06).
 - **G4 (no tuning without evals)**: the retrieval/memory eval harness
   (inside 045) exists before any search or memory-write-policy tuning.
 
@@ -110,10 +111,10 @@ Not a numbered plan; a checklist chore:
 
 - Mark 009 DONE in the README (delegation landed at `f83d210`; verify the
   approval-resume path for delegated runs while confirming).
-- Verify/refresh statuses of 010–020 (verified 2026-07-03: 013–015 remain
-  TODO. 010, 011, 012, 016, 017, 018, 019, and 020 are DONE; skills CRUD,
+- Verify/refresh statuses of 010–020 (verified 2026-07-06: 014–015 remain
+  TODO. 010, 011, 012, 013, 016, 017, 018, 019, and 020 are DONE; skills CRUD,
   the skill document pipeline, runtime skill disclosure, the management UI,
-  and skill activation chat treatment now exist).
+  skill activation chat treatment, and cache-stable history trimming now exist).
 - Point the README at this document as the ordering authority.
 
 ### Lane R — Runtime Hardening (existing plans, interleave early)
@@ -124,7 +125,7 @@ Not a numbered plan; a checklist chore:
 | 012 | Stream thinking live over SSE | P1 | DONE 2026-07-03 |
 | 011 | Per-run token caps (UsageLimits) | P2 | DONE 2026-07-03 |
 | 014 | OTel instrumentation (config-gated) | P2 | Before Phase 4a (Gate G1) |
-| 013 | History trimming (ProcessHistory) | P2 | **After 018** — must preserve capability-load pairs |
+| 013 | History trimming (ProcessHistory) | P2 | DONE 2026-07-06 |
 | 015 | pydantic-ai docs digest refresh | P3 | Filler, any time |
 
 ### Lane O — Operational Surfaces (parallel with Phases 1–2, gate G1)
@@ -161,7 +162,7 @@ Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
 
 | Plan | Scope |
 |------|-------|
-| 029 | **Governance & lifecycle design note** (a design doc plan, little code): role matrix for files/integrations/credentials/memories/artifacts/schedules and default approval requirements per tool effect; retention & deletion policy per resource (soft vs hard delete, storage cascade, audit survival, export path); quota model (storage, upload, embedding/job budgets, artifact share rate limits) with admin-visible usage counters; secret-manager operating model (mandatory provider in prod, env-var provider for dev, rotation, who may enter keys, references-only API); notification policy for job/discovery/schedule failures. Each downstream plan implements its slice and cites this note. |
+| 029 | **Governance & lifecycle design note** (a design doc plan, little code): role matrix for files/integrations/credentials/memories/artifacts/schedules and default approval requirements per tool effect; retention & deletion policy per resource (soft vs hard delete, storage cascade, audit survival, export path); quota model (storage, upload, embedding/job budgets, artifact share rate limits) with admin-visible usage counters; secret-manager operating model (mandatory provider in prod, env-var provider for dev, rotation, who may enter keys, references-only API); notification policy for job/discovery/schedule failures. Each downstream plan implements its slice and cites this note. **DONE 2026-07-06.** |
 
 ### Phase 3 — Files & Jobs (shared substrate; donor Phase B)
 
@@ -236,7 +237,7 @@ management (043–049).
 If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 → 029 → 030 → 031 → 032 → 033 → 034 → 035 →
+018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 → 031 → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.
 
