@@ -76,7 +76,7 @@ api-dev: local-env ## Run the FastAPI development server on http://localhost:800
 
 .PHONY: worker-dev
 worker-dev: local-env ## Run the scheduled agent runner
-	cd $(API_DIR) && uv run python -m workers.agent_runner
+	cd $(API_DIR) && uv run python -m workers.main
 
 .PHONY: web-dev
 web-dev: local-env ## Run the Vite development server on http://localhost:3000

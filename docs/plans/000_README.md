@@ -13,8 +13,9 @@ findings by leverage were planned by default.
 document — it unifies `DONOR_PORT_ROADMAP.md`,
 `docs/legacy/ROADMAP_QUESTIONS_GAPS.md`, and the raw `docs/legacy/NOTES.md`
 into one phased roadmap and reserves plan numbers 021–051. Plans 021–029
-were written 2026-07-02 (Lane O, Phase 1, and the Gate G3 note); 030–051
-remain reserved and are written on demand as their phases approach.
+were written 2026-07-02 (Lane O, Phase 1, and the Gate G3 note). Plan 030
+was executed 2026-07-06 as the first Phase 3 substrate item; later plans
+remain written on demand as their phases approach.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -51,6 +52,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | DONE |
 | 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | DONE |
 | 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | DONE |
+| 030 | Generic jobs table and SKIP-LOCKED worker harness | P1 | M | - | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -238,6 +240,19 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   always mounted.
 - `029` is documentation-only but gates Gate G3: plans `037`, `043`, `048`,
   `050` must not be written before it is DONE.
+- `030` marked DONE 2026-07-06: the API now has a core `jobs` table,
+  registered async job handlers, workspace-scoped in-flight dedup by
+  kind/subject/hash,
+  SKIP-LOCKED claiming, stale lease reclaim, retry/finalization helpers,
+  final-failure notifications to job initiators, a built-in
+  `jobs.sweep_terminal` retention kind, and a generic job worker loop
+  supervised beside the existing schedule runner through `workers.main`.
+  `docker-compose.yml` and `make worker-dev` still run one worker process.
+  `uv run ruff check .`, `DATABASE_URL=... uv run alembic check`, the
+  `core_0009` downgrade/upgrade round trip,
+  `TEST_DATABASE_URL=... uv run pytest tests/services/jobs tests/services/agent_schedules -q`,
+  `uv run python -m workers.job_runner --once`, and
+  `uv run python -m workers.agent_runner --once` passed.
 
 ## Findings Considered And Rejected
 

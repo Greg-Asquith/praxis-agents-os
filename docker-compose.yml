@@ -60,7 +60,7 @@ services:
       dockerfile: Dockerfile
       target: dev
     container_name: worker
-    command: ["python", "-m", "workers.agent_runner"]
+    command: ["python", "-m", "workers.main"]
     volumes:
       - ./apps/api:/app
       - ./.local/storage:/app/.local/storage
