@@ -198,7 +198,10 @@ async def test_azure_blob_signed_urls_bind_upload_headers_and_disposition() -> N
     assert _fake_generate_blob_sas.calls[0]["content_type"] == "text/plain"
     assert _fake_generate_blob_sas.calls[0]["permission"].kwargs == {"create": True, "write": True}
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
-    assert _fake_generate_blob_sas.calls[1]["content_disposition"] == 'attachment; filename="output.txt"'
+    assert (
+        _fake_generate_blob_sas.calls[1]["content_disposition"]
+        == 'attachment; filename="output.txt"'
+    )
     assert _fake_generate_blob_sas.calls[1]["permission"].kwargs == {"read": True}
     assert service_client.delegation_key_calls == 1
 

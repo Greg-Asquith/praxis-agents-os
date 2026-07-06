@@ -349,9 +349,7 @@ async def _delete_committed_native_context(
     context: NativeRuntimeContext,
 ) -> None:
     async with session_factory() as db:
-        await db.execute(
-            delete(AuditEvent).where(AuditEvent.workspace_id == context.workspace_id)
-        )
+        await db.execute(delete(AuditEvent).where(AuditEvent.workspace_id == context.workspace_id))
         await db.execute(
             delete(ConversationMessage).where(
                 ConversationMessage.conversation_id == context.conversation_id
@@ -360,9 +358,7 @@ async def _delete_committed_native_context(
         await db.execute(
             delete(AgentRun).where(AgentRun.conversation_id == context.conversation_id)
         )
-        await db.execute(
-            delete(Conversation).where(Conversation.id == context.conversation_id)
-        )
+        await db.execute(delete(Conversation).where(Conversation.id == context.conversation_id))
         await db.execute(delete(Agent).where(Agent.id == context.agent_id))
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))

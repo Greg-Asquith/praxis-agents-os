@@ -39,7 +39,9 @@ class File(BaseModel):
 
     __tablename__ = "files"
 
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+    )
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(32), nullable=False)
@@ -142,7 +144,9 @@ class FileReference(Base, UUIDMixin, CreatedAtMixin):
         ForeignKey("files.id", ondelete="CASCADE"),
         nullable=False,
     )
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+    )
     target_type = Column(String(32), nullable=False)
     target_id = Column(UUID(as_uuid=True), nullable=False)
     file_revision_id = Column(
@@ -172,7 +176,9 @@ class FileUpload(Base, UUIDMixin, CreatedAtMixin):
 
     __tablename__ = "file_uploads"
 
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+    )
     file_id = Column(
         UUID(as_uuid=True),
         nullable=False,

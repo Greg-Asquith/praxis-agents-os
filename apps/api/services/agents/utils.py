@@ -145,18 +145,11 @@ def normalize_tool_configuration(
     configurable_tool_policies = {
         name: policy
         for name, policy in tool_policies.items()
-        if (
-            name in RUNTIME_TOOL_CATALOG
-            and RUNTIME_TOOL_CATALOG[name].configurable
-        )
+        if (name in RUNTIME_TOOL_CATALOG and RUNTIME_TOOL_CATALOG[name].configurable)
     }
 
     unknown_policy_tools = sorted(
-        {
-            name
-            for name in configurable_tool_policies
-            if name not in configurable_tool_name_set
-        }
+        {name for name in configurable_tool_policies if name not in configurable_tool_name_set}
     )
     if unknown_policy_tools:
         raise AppValidationError(
@@ -200,9 +193,7 @@ def normalize_tool_configuration(
 
 def _configurable_tool_names() -> list[str]:
     return sorted(
-        name
-        for name, definition in RUNTIME_TOOL_CATALOG.items()
-        if definition.configurable
+        name for name, definition in RUNTIME_TOOL_CATALOG.items() if definition.configurable
     )
 
 
@@ -224,9 +215,7 @@ def validate_model_configuration(
 ) -> str | None:
     normalized_model_provider = normalize_model_provider(model_provider)
     provider = (
-        normalized_model_provider
-        or normalize_model_provider(settings.DEFAULT_MODEL_PROVIDER)
-        or ""
+        normalized_model_provider or normalize_model_provider(settings.DEFAULT_MODEL_PROVIDER) or ""
     )
     selected_model = (model or settings.DEFAULT_MODEL or "").strip()
 

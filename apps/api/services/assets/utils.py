@@ -58,7 +58,9 @@ def validate_upload_metadata(
     if normalized_content_type not in allowed_content_types:
         raise AppValidationError(f"Unsupported {asset_label} file type", field="content_type")
     if size_bytes > max_size_bytes:
-        raise AppValidationError(f"{asset_label.capitalize()} file is too large", field="size_bytes")
+        raise AppValidationError(
+            f"{asset_label.capitalize()} file is too large", field="size_bytes"
+        )
     if extension_for_content_type(normalized_content_type) is None:
         raise AppValidationError(f"Unsupported {asset_label} file type", field="content_type")
     if not filename.strip():
@@ -100,8 +102,13 @@ def validate_stored_object(
         raise AppValidationError(f"Uploaded {asset_label} was not found", field="upload_token")
 
     stored_content_type = normalize_content_type(stored.content_type or "")
-    if stored_content_type != expected_content_type or stored_content_type not in allowed_content_types:
-        raise AppValidationError(f"Uploaded {asset_label} has an invalid file type", field="content_type")
+    if (
+        stored_content_type != expected_content_type
+        or stored_content_type not in allowed_content_types
+    ):
+        raise AppValidationError(
+            f"Uploaded {asset_label} has an invalid file type", field="content_type"
+        )
     if stored.size_bytes > max_size_bytes:
         raise AppValidationError(f"Uploaded {asset_label} is too large", field="size_bytes")
     return stored

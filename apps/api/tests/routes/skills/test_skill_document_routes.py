@@ -213,16 +213,20 @@ async def test_skill_document_upload_confirm_read_download_and_delete(
     assert empty_list_response.json()["total"] == 0
 
     audit_events = (
-        await db_session.execute(
-            select(AuditEvent)
-            .where(
-                AuditEvent.action == AuditAction.UPDATE.value,
-                AuditEvent.resource_type == AuditResourceType.SKILL.value,
-                AuditEvent.resource_id == str(skill.id),
+        (
+            await db_session.execute(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.action == AuditAction.UPDATE.value,
+                    AuditEvent.resource_type == AuditResourceType.SKILL.value,
+                    AuditEvent.resource_id == str(skill.id),
+                )
+                .order_by(AuditEvent.created_at)
             )
-            .order_by(AuditEvent.created_at)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [event.details["action"] for event in audit_events] == ["upload", "delete"]
 
 

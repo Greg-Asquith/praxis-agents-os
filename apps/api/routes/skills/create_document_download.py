@@ -20,7 +20,9 @@ async def create_skill_document_download(
     db: AsyncDbSessionDep,
     workspace_context: CurrentWorkspaceDep,
     skill_id: Annotated[UUID, Path()],
-    document_name: Annotated[str, Path(min_length=1, max_length=64, pattern=SKILL_DOC_NAME_PATTERN)],
+    document_name: Annotated[
+        str, Path(min_length=1, max_length=64, pattern=SKILL_DOC_NAME_PATTERN)
+    ],
 ) -> SignedDownload:
     workspace, _membership = workspace_context
     return await download_service(

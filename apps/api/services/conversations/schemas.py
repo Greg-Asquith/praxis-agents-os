@@ -15,6 +15,7 @@ from utils.validation import normalize_optional_text
 
 ConversationSource = Literal["direct", "scheduled", "delegated"]
 
+
 class ConversationCreateRequest(BaseModel):
     agent_id: UUID
     user_prompt: str = Field(min_length=1, max_length=20000)

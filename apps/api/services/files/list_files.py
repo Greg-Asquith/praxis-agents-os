@@ -24,9 +24,13 @@ async def list_files(
 ) -> FileListResponse:
     """List non-deleted files in a workspace."""
     stmt = select(File).where(File.workspace_id == workspace.id, File.deleted.is_(False))
-    count_stmt = select(func.count()).select_from(File).where(
-        File.workspace_id == workspace.id,
-        File.deleted.is_(False),
+    count_stmt = (
+        select(func.count())
+        .select_from(File)
+        .where(
+            File.workspace_id == workspace.id,
+            File.deleted.is_(False),
+        )
     )
     if category is not None:
         try:

@@ -110,7 +110,9 @@ async def test_file_routes_upload_list_download_edit_conflict_and_delete(
         json={},
     )
     assert download_response.status_code == 200
-    object_response = await db_async_client.get(_relative_url(download_response.json()["download"]["url"]))
+    object_response = await db_async_client.get(
+        _relative_url(download_response.json()["download"]["url"])
+    )
     assert object_response.status_code == 200
     assert object_response.content == b"hello"
 

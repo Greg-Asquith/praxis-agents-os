@@ -69,16 +69,22 @@ class S3StorageProvider:
             "S3_PRIVATE_ASSETS_BUCKET",
             provider_key=self.provider_key,
         )
-        self.region_name = _require_setting(region_name, "AWS_REGION", provider_key=self.provider_key)
+        self.region_name = _require_setting(
+            region_name, "AWS_REGION", provider_key=self.provider_key
+        )
         self.public_assets_base_url = _require_setting(
             public_assets_base_url,
             "PUBLIC_ASSETS_BASE_URL",
             provider_key=self.provider_key,
         ).rstrip("/")
         self.public_cache_control = public_cache_control
-        self.client = client if client is not None else self._create_client(
-            access_key_id=access_key_id,
-            secret_access_key=secret_access_key,
+        self.client = (
+            client
+            if client is not None
+            else self._create_client(
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+            )
         )
 
     @classmethod
@@ -231,7 +237,9 @@ class S3StorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
-        normalized_content_type = _require_content_type(content_type, provider_key=self.provider_key, ref=ref)
+        normalized_content_type = _require_content_type(
+            content_type, provider_key=self.provider_key, ref=ref
+        )
         expires_at = datetime.now(UTC) + expires_in
         try:
             url = await asyncio.to_thread(
@@ -331,7 +339,9 @@ class S3StorageProvider:
         self._raise_no_local_signature("require_valid_download_signature")
 
     def _bucket_name(self, bucket: StorageBucket) -> str:
-        return self.public_bucket_name if bucket == StorageBucket.PUBLIC else self.private_bucket_name
+        return (
+            self.public_bucket_name if bucket == StorageBucket.PUBLIC else self.private_bucket_name
+        )
 
     def _create_client(self, *, access_key_id: str | None, secret_access_key: str | None):
         if boto3 is None:

@@ -60,9 +60,7 @@ async def get_agent_run_approval_state(
     approvals: list[PendingToolApprovalRead] = []
     delegations: list[PendingDelegatedApprovalRead] = []
     for approval in suspended_state.deferred_tool_requests.approvals:
-        metadata = suspended_state.deferred_tool_requests.metadata.get(
-            approval.tool_call_id
-        )
+        metadata = suspended_state.deferred_tool_requests.metadata.get(approval.tool_call_id)
         child_run = await load_delegated_child_run_for_approval(
             db,
             parent_run=run,
@@ -82,9 +80,7 @@ async def get_agent_run_approval_state(
         delegation = PendingDelegatedApprovalRead(
             parent_tool_call_id=approval.tool_call_id,
             child_agent_id=child_run.agent_id,
-            child_agent_name=metadata_str(
-                metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
-            )
+            child_agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
             or "Delegate agent",
             child_conversation_id=child_run.conversation_id,
             child_run_id=child_run.id,

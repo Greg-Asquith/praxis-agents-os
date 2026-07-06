@@ -196,9 +196,7 @@ def _native_model_spec(*, provider: str, model: str) -> ResolvedModel:
             f"{normalized_provider} model catalog or omit model."
         ) from exc
     if info.deprecated:
-        raise ModelRetry(
-            f"Model '{normalized_provider}:{normalized_model}' is deprecated."
-        )
+        raise ModelRetry(f"Model '{normalized_provider}:{normalized_model}' is deprecated.")
 
     return ResolvedModel(
         provider=normalized_provider,

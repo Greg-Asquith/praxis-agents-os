@@ -72,6 +72,4 @@ def test_skill_read_validates_metadata_from_orm_attribute() -> None:
 
     assert read_model.metadata_json == {"accent": "green"}
     assert read_model.model_dump(by_alias=True)["metadata"] == {"accent": "green"}
-    assert read_model.documentation_refs == {
-        "quick-start": {"markdown": "QUICKSTART.md"}
-    }
+    assert read_model.documentation_refs == {"quick-start": {"markdown": "QUICKSTART.md"}}

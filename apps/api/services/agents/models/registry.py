@@ -131,9 +131,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ),
 )
 
-_INDEX: dict[tuple[str, str], ModelInfo] = {
-    (info.provider, info.model): info for info in _CATALOG
-}
+_INDEX: dict[tuple[str, str], ModelInfo] = {(info.provider, info.model): info for info in _CATALOG}
 
 
 def find_model(provider: str, model: str) -> ModelInfo | None:

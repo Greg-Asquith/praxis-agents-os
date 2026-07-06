@@ -377,9 +377,7 @@ def _documented_skill() -> Skill:
 def _read_skill_document_tool(skill: Skill):
     capabilities = build_skill_capabilities([skill])
     capability = next(
-        capability
-        for capability in capabilities
-        if capability.id == SKILL_DOCUMENTS_CAPABILITY_ID
+        capability for capability in capabilities if capability.id == SKILL_DOCUMENTS_CAPABILITY_ID
     )
     return capability.tools[0]
 

@@ -96,16 +96,22 @@ class AzureBlobStorageProvider:
             "AZURE_STORAGE_PRIVATE_CONTAINER",
             provider_key=self.provider_key,
         )
-        self.account_url = (account_url or f"https://{self.account_name}.blob.core.windows.net").rstrip("/")
+        self.account_url = (
+            account_url or f"https://{self.account_name}.blob.core.windows.net"
+        ).rstrip("/")
         self.managed_identity_client_id = (managed_identity_client_id or "").strip()
-        self.public_assets_base_url = public_assets_base_url.rstrip("/") if public_assets_base_url else None
+        self.public_assets_base_url = (
+            public_assets_base_url.rstrip("/") if public_assets_base_url else None
+        )
         self.public_cache_control = public_cache_control
         self.credential = credential if credential is not None else self._create_credential()
         self.service_client = (
             service_client if service_client is not None else self._create_service_client()
         )
         self.public_container = self.service_client.get_container_client(self.public_container_name)
-        self.private_container = self.service_client.get_container_client(self.private_container_name)
+        self.private_container = self.service_client.get_container_client(
+            self.private_container_name
+        )
         self.content_settings_cls = content_settings_cls or self._require_content_settings_cls()
         self.sas_permissions_cls = sas_permissions_cls or self._require_sas_permissions_cls()
         self.generate_sas_func = generate_sas_func or self._require_generate_sas_func()
@@ -249,7 +255,9 @@ class AzureBlobStorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
-        normalized_content_type = _require_content_type(content_type, provider_key=self.provider_key, ref=ref)
+        normalized_content_type = _require_content_type(
+            content_type, provider_key=self.provider_key, ref=ref
+        )
         expires_at = datetime.now(UTC) + expires_in
         url = await self._create_signed_blob_url(
             ref=ref,

@@ -47,6 +47,4 @@ def register_approval_notification_handlers(
     action_registry: NotificationActionRegistry = registry,
 ) -> None:
     """Register notification handlers owned by this module."""
-    action_registry.register(
-        "agent_approval", "review", handle_review_approval, terminal=False
-    )
+    action_registry.register("agent_approval", "review", handle_review_approval, terminal=False)

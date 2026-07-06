@@ -71,9 +71,7 @@ def _validate_actions(notification_type: str, actions: list[dict[str, Any]]) -> 
     """Reject any advertised action whose key has no registered handler."""
     for action in actions:
         if not isinstance(action, dict):
-            raise AppValidationError(
-                "Each notification action must be an object", field="actions"
-            )
+            raise AppValidationError("Each notification action must be an object", field="actions")
         action_key = str(action.get("key") or "").strip()
         if not action_key:
             raise AppValidationError(

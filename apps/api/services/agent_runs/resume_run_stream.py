@@ -133,9 +133,7 @@ async def _build_deferred_tool_results(
     delegated_child_states: dict[str, tuple[dict[str, object], SuspendedRunState]] = {}
 
     for approval in suspended_state.deferred_tool_requests.approvals:
-        metadata = suspended_state.deferred_tool_requests.metadata.get(
-            approval.tool_call_id
-        )
+        metadata = suspended_state.deferred_tool_requests.metadata.get(approval.tool_call_id)
         child_run = await load_delegated_child_run_for_approval(
             db,
             parent_run=run,
@@ -179,18 +177,14 @@ async def _build_deferred_tool_results(
     ) in delegated_child_states.items():
         child_results = DeferredToolResults(
             approvals={
-                child_tool_call_id: _approval_result_for_decision(
-                    by_id[child_tool_call_id]
-                )
+                child_tool_call_id: _approval_result_for_decision(by_id[child_tool_call_id])
                 for child_tool_call_id in child_state.pending_tool_call_ids
             }
         )
         approvals[parent_tool_call_id] = ToolApproved()
         metadata_by_parent_tool_call_id[parent_tool_call_id] = {
             **parent_metadata,
-            DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY: to_jsonable_python(
-                child_results
-            ),
+            DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY: to_jsonable_python(child_results),
         }
 
     return DeferredToolResults(

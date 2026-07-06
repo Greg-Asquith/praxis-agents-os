@@ -53,7 +53,9 @@ class LocalStorageProvider:
         self.app_base_url = app_base_url.rstrip("/")
         self.api_prefix = api_prefix.rstrip("/")
         self.secret_key = secret_key
-        self.public_assets_base_url = public_assets_base_url.rstrip("/") if public_assets_base_url else None
+        self.public_assets_base_url = (
+            public_assets_base_url.rstrip("/") if public_assets_base_url else None
+        )
         self.public_cache_control = public_cache_control
         self.public_root.mkdir(parents=True, exist_ok=True)
         self.private_root.mkdir(parents=True, exist_ok=True)
@@ -133,9 +135,13 @@ class LocalStorageProvider:
 
         stat = await asyncio.to_thread(path.stat)
         metadata = await self._read_metadata(ref)
-        app_metadata = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}
+        app_metadata = (
+            metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}
+        )
         etag = _optional_str(metadata.get("etag")) or _stat_fingerprint(stat)
-        updated_at = _parse_datetime(metadata.get("updated_at")) or datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+        updated_at = _parse_datetime(metadata.get("updated_at")) or datetime.fromtimestamp(
+            stat.st_mtime, tz=UTC
+        )
         return StoredObject(
             ref=ref,
             size_bytes=stat.st_size,

@@ -115,7 +115,12 @@ async def test_confirm_ingestible_upload_sets_pending_and_enqueues_ids_only(
         payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
     )
     assert double_confirmed.current_revision_id == confirmed.current_revision_id
-    assert await db_session.scalar(select(func.count()).select_from(Job).where(Job.kind == "files.extract")) == 1
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Job).where(Job.kind == "files.extract")
+        )
+        == 1
+    )
 
 
 async def test_non_ingestible_confirm_and_text_edit_do_not_enqueue(
@@ -149,7 +154,12 @@ async def test_non_ingestible_confirm_and_text_edit_do_not_enqueue(
         payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
     )
     assert confirmed.processing_status == "ready"
-    assert await db_session.scalar(select(func.count()).select_from(Job).where(Job.kind == "files.extract")) == 0
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Job).where(Job.kind == "files.extract")
+        )
+        == 0
+    )
 
     edited = await edit_file(
         db_session,
@@ -165,7 +175,12 @@ async def test_non_ingestible_confirm_and_text_edit_do_not_enqueue(
     )
 
     assert edited.processing_status == "ready"
-    assert await db_session.scalar(select(func.count()).select_from(Job).where(Job.kind == "files.extract")) == 0
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Job).where(Job.kind == "files.extract")
+        )
+        == 0
+    )
 
 
 async def test_restore_ingestible_revision_enqueues_extraction(
@@ -218,7 +233,9 @@ async def test_restore_ingestible_revision_enqueues_extraction(
 
     assert restored.processing_status == "pending"
     job = await db_session.scalar(
-        select(Job).where(Job.kind == "files.extract", Job.subject_id == restored.current_revision_id)
+        select(Job).where(
+            Job.kind == "files.extract", Job.subject_id == restored.current_revision_id
+        )
     )
     assert job is not None
 

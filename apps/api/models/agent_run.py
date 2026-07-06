@@ -56,9 +56,7 @@ class AgentRun(BaseModel):
 
     # How the run was triggered; status tracks its lifecycle.
     trigger = Column(String(32), nullable=False)
-    status = Column(
-        String(32), nullable=False, default="pending", server_default=text("'pending'")
-    )
+    status = Column(String(32), nullable=False, default="pending", server_default=text("'pending'"))
 
     # Resolved model identifier used for the run, for audit.
     model_name = Column(String(128), nullable=True)

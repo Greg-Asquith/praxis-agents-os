@@ -69,14 +69,16 @@ class LLMSettingsMixin:
     ANTHROPIC_API_KEY: SecretStr | None = Field(default=None, description="Anthropic API key.")
     OPENAI_API_KEY: SecretStr | None = Field(default=None, description="OpenAI API key.")
     GOOGLE_API_KEY: SecretStr | None = Field(
-        default=None, description="Google AI (Gemini Developer API) key. Unused when GOOGLE_VERTEX_AI."
+        default=None,
+        description="Google AI (Gemini Developer API) key. Unused when GOOGLE_VERTEX_AI.",
     )
 
     # Google Cloud / Vertex AI. When enabled, Google models route through Vertex
     # using Application Default Credentials (no API key); project falls back to
     # the infra GCP_PROJECT_ID when GOOGLE_VERTEX_PROJECT is unset.
     GOOGLE_VERTEX_AI: bool = Field(
-        default=False, description="Route Google models through Vertex AI instead of the Gemini API."
+        default=False,
+        description="Route Google models through Vertex AI instead of the Gemini API.",
     )
     GOOGLE_VERTEX_PROJECT: str | None = Field(
         default=None, description="GCP project for Vertex AI. Falls back to GCP_PROJECT_ID."
@@ -86,7 +88,9 @@ class LLMSettingsMixin:
     )
 
     # Azure OpenAI (deployment-based; uses the agent's azure_deployment at resolution).
-    AZURE_OPENAI_API_KEY: SecretStr | None = Field(default=None, description="Azure OpenAI API key.")
+    AZURE_OPENAI_API_KEY: SecretStr | None = Field(
+        default=None, description="Azure OpenAI API key."
+    )
     AZURE_OPENAI_ENDPOINT: str | None = Field(
         default=None, description="Azure OpenAI endpoint, e.g. https://<resource>.openai.azure.com."
     )
@@ -121,7 +125,10 @@ class LLMSettingsMixin:
             if getattr(self, attr) is None:
                 missing.append(attr)
 
-        if self.DEFAULT_MODEL_PROVIDER == "azure" and not (self.AZURE_OPENAI_ENDPOINT or "").strip():
+        if (
+            self.DEFAULT_MODEL_PROVIDER == "azure"
+            and not (self.AZURE_OPENAI_ENDPOINT or "").strip()
+        ):
             missing.append("AZURE_OPENAI_ENDPOINT")
 
         if missing:

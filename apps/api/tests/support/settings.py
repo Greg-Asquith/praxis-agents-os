@@ -12,7 +12,9 @@ def configure_test_environment() -> None:
     test_database_url = os.getenv("TEST_DATABASE_URL")
     if test_database_url:
         if test_database_url.startswith("postgresql://"):
-            test_database_url = test_database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            test_database_url = test_database_url.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
         os.environ.setdefault("DATABASE_URL", test_database_url)
 
     os.environ.setdefault("ENVIRONMENT", "local")

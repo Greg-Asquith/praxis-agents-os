@@ -67,17 +67,14 @@ class Settings(
 
         if self.AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS >= self.AGENT_RUN_LEASE_TTL_SECONDS:
             raise ValueError(
-                "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS must be less than "
-                "AGENT_RUN_LEASE_TTL_SECONDS"
+                "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS must be less than AGENT_RUN_LEASE_TTL_SECONDS"
             )
 
         if (
             self.AGENT_HISTORY_MAX_TURNS is not None
             and self.AGENT_HISTORY_KEEP_TURNS >= self.AGENT_HISTORY_MAX_TURNS
         ):
-            raise ValueError(
-                "AGENT_HISTORY_KEEP_TURNS must be less than AGENT_HISTORY_MAX_TURNS"
-            )
+            raise ValueError("AGENT_HISTORY_KEEP_TURNS must be less than AGENT_HISTORY_MAX_TURNS")
 
         if self.STORAGE_PROVIDER == "azure_blob":
             required_fields = {

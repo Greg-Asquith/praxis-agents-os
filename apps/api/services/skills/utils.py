@@ -55,10 +55,7 @@ def require_skill_write_access(membership: WorkspaceMembership) -> None:
 
 def classify_skill_integrity_error(exc: IntegrityError) -> ConflictError | None:
     constraint_names = _integrity_constraint_names(exc)
-    if (
-        SKILL_NAME_UNIQUE_CONSTRAINT in constraint_names
-        or SKILL_NAME_UNIQUE_CONSTRAINT in str(exc)
-    ):
+    if SKILL_NAME_UNIQUE_CONSTRAINT in constraint_names or SKILL_NAME_UNIQUE_CONSTRAINT in str(exc):
         return ConflictError(
             "A skill with this name already exists in the workspace",
             conflicting_resource="skill",

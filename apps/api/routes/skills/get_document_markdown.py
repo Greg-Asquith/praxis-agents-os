@@ -22,7 +22,9 @@ async def get_skill_document_markdown(
     db: AsyncDbSessionDep,
     workspace_context: CurrentWorkspaceDep,
     skill_id: Annotated[UUID, Path()],
-    document_name: Annotated[str, Path(min_length=1, max_length=64, pattern=SKILL_DOC_NAME_PATTERN)],
+    document_name: Annotated[
+        str, Path(min_length=1, max_length=64, pattern=SKILL_DOC_NAME_PATTERN)
+    ],
 ) -> SkillDocumentMarkdownResponse:
     workspace, _membership = workspace_context
     return await get_markdown_service(

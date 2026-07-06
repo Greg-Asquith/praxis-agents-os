@@ -47,9 +47,8 @@ def sanitize_error_message(message: str | None) -> str | None:
 def is_jobs_in_flight_integrity_error(exc: IntegrityError) -> bool:
     """Return whether an integrity error came from the in-flight dedup index."""
     constraint_names = _integrity_constraint_names(exc)
-    return (
-        JOBS_IN_FLIGHT_UNIQUE_INDEX in constraint_names
-        or JOBS_IN_FLIGHT_UNIQUE_INDEX in str(exc)
+    return JOBS_IN_FLIGHT_UNIQUE_INDEX in constraint_names or JOBS_IN_FLIGHT_UNIQUE_INDEX in str(
+        exc
     )
 
 

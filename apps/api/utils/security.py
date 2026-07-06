@@ -157,6 +157,7 @@ def decrypt_data(encrypted_data: str) -> str:
         details={"error_type": type(last_error).__name__ if last_error else None},
     )
 
+
 # =============================================================================
 # Password Hashing
 # =============================================================================

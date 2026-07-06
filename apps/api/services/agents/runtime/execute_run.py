@@ -193,9 +193,7 @@ async def execute_run(
         state = EventTranslationState()
         terminal_result = None
         deferred_tool_call_ids = (
-            set(deferred_tool_results.approvals)
-            if deferred_tool_results is not None
-            else set()
+            set(deferred_tool_results.approvals) if deferred_tool_results is not None else set()
         )
 
         async with runtime_agent.agent.run_stream_events(
@@ -211,12 +209,9 @@ async def execute_run(
                 if isinstance(event, AgentRunResultEvent):
                     terminal_result = event.result
                     continue
-                if (
-                    deferred_tool_results is not None
-                    and is_deferred_tool_resume_event(
-                        event,
-                        deferred_tool_call_ids=deferred_tool_call_ids,
-                    )
+                if deferred_tool_results is not None and is_deferred_tool_resume_event(
+                    event,
+                    deferred_tool_call_ids=deferred_tool_call_ids,
                 ):
                     continue
                 part = getattr(event, "part", None)

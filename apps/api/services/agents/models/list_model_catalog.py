@@ -40,9 +40,7 @@ def list_model_catalog() -> ModelCatalogResponse:
     configured_providers = {
         provider for provider in _PROVIDER_ORDER if _provider_is_configured(provider)
     }
-    available_models = [
-        model for model in list_models() if model.provider in configured_providers
-    ]
+    available_models = [model for model in list_models() if model.provider in configured_providers]
     available_ids = {model.qualified_id for model in available_models}
 
     return ModelCatalogResponse(

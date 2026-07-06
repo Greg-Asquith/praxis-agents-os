@@ -29,7 +29,11 @@ async def start_oauth_link(
             event_type=SecurityEventType.AUTH_OAUTH_FAILED,
             request=request,
             user_email=user.email,
-            details={"provider": provider_name, "intent": "link", "reason": "provider_not_configured"},
+            details={
+                "provider": provider_name,
+                "intent": "link",
+                "reason": "provider_not_configured",
+            },
             committed=True,
         )
         raise NotFoundError("OAuth provider is not configured", resource_type="oauth_provider")

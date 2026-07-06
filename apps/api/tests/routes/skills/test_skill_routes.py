@@ -114,10 +114,7 @@ async def test_create_skill_duplicate_name_returns_conflict(
 
     assert response.status_code == 409
     assert response.headers["content-type"].startswith("application/problem+json")
-    assert (
-        response.json()["detail"]
-        == "A skill with this name already exists in the workspace"
-    )
+    assert response.json()["detail"] == "A skill with this name already exists in the workspace"
 
 
 @pytest.mark.parametrize("name", ["Bad Name", "-leading", "a" * 65])

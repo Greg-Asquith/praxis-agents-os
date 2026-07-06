@@ -25,7 +25,9 @@ async def delete_skill_document(
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
     skill_id: Annotated[UUID, Path()],
-    document_name: Annotated[str, Path(min_length=1, max_length=64, pattern=SKILL_DOC_NAME_PATTERN)],
+    document_name: Annotated[
+        str, Path(min_length=1, max_length=64, pattern=SKILL_DOC_NAME_PATTERN)
+    ],
 ) -> None:
     workspace, membership = workspace_context
     await delete_document_service(

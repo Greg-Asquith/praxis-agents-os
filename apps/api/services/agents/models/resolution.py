@@ -43,7 +43,11 @@ def resolve_agent_model(agent) -> ResolvedModel:
 
     # Azure is deployment-based: the deployment name is customer-defined and not
     # part of the Python catalog, so membership is not validated for it.
-    default_settings = {} if provider == PROVIDER_AZURE else dict(_require_active(provider, model).default_settings)
+    default_settings = (
+        {}
+        if provider == PROVIDER_AZURE
+        else dict(_require_active(provider, model).default_settings)
+    )
 
     merged: dict[str, Any] = {**default_settings, **(agent.model_settings or {})}
     _apply_openai_reasoning_summary(provider, merged)

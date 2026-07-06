@@ -28,7 +28,9 @@ async def test_retryable_failure_requeues_with_backoff(
     db_session.add(job)
     await db_session.flush()
 
-    terminal = await finalize_job_failure(db_session, job, code="boom", message=" exploded ", now=now)
+    terminal = await finalize_job_failure(
+        db_session, job, code="boom", message=" exploded ", now=now
+    )
 
     assert terminal is False
     assert job.status == JOB_STATUS_PENDING

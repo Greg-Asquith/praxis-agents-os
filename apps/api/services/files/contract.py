@@ -150,6 +150,7 @@ FILE_CONTRACT: tuple[FileContractEntry, ...] = (
 
 _CONTRACT_BY_CONTENT_TYPE = {entry.content_type: entry for entry in FILE_CONTRACT}
 
+
 def _validate_contract() -> None:
     seen_extensions: dict[str, str] = {}
     for entry in FILE_CONTRACT:

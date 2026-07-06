@@ -19,7 +19,9 @@ def validate_object_key(object_key: str) -> str:
     rules.
     """
     if not isinstance(object_key, str):
-        raise StorageValidationError("Storage object key must be a string", operation="validate_key")
+        raise StorageValidationError(
+            "Storage object key must be a string", operation="validate_key"
+        )
 
     if object_key != object_key.strip():
         raise StorageValidationError(
@@ -87,7 +89,7 @@ def build_content_disposition(filename: str | None) -> str | None:
     except UnicodeEncodeError:
         ascii_fallback = sanitized.encode("ascii", "replace").decode("ascii").replace("?", "_")
         encoded = quote(sanitized, safe="")
-        return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded}'
+        return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 def safe_filename(filename: str, *, fallback: str = "file") -> str:

@@ -57,7 +57,9 @@ async def _seed_audit_event(
         workspace_id=workspace.id if workspace else None,
         occurred_at=occurred_at or datetime.now(UTC),
         action=action.value,
-        resource_type=resource_type.value if isinstance(resource_type, AuditResourceType) else resource_type,
+        resource_type=resource_type.value
+        if isinstance(resource_type, AuditResourceType)
+        else resource_type,
         resource_id=resource_id or str(uuid4()),
         status=status.value,
         summary=f"{action.value} audit event",

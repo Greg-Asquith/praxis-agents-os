@@ -86,7 +86,7 @@ async def emit_agent_stream_event(
             await sink.emit(
                 EVENT_MESSAGE_DELTA,
                 {"message_id": message_id, "text": event.part.content},
-        )
+            )
         return
 
     if isinstance(event, PartStartEvent) and isinstance(event.part, NativeToolCallPart):

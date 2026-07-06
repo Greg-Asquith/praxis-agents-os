@@ -31,9 +31,7 @@ async def unlink_oauth_provider(
     records = list(result.scalars().all())
     to_remove = [record for record in records if record.provider == provider_name]
     if not to_remove:
-        raise NotFoundError(
-            "No linked account for this provider", resource_type="user_auth"
-        )
+        raise NotFoundError("No linked account for this provider", resource_type="user_auth")
 
     remaining_oauth = sum(1 for record in records if record.provider != provider_name)
     remaining_methods = remaining_oauth + (1 if user.has_password else 0)

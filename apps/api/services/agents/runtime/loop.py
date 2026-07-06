@@ -49,9 +49,7 @@ def build_runtime_agent(
     """Build a Pydantic AI agent for one Praxis agent configuration."""
     resolved_model = resolve_agent_model(agent)
     runtime_model = model or build_model(resolved_model)
-    include_delegation = enable_delegation and (
-        bool(delegate_agents) or force_delegation_tools
-    )
+    include_delegation = enable_delegation and (bool(delegate_agents) or force_delegation_tools)
 
     return RuntimeAgent(
         agent=PydanticAgent(
@@ -85,6 +83,4 @@ def _agent_name(agent: Agent) -> str:
 
 
 def _runtime_instructions(agent: Agent, *, include_delegation: bool) -> str:
-    return build_system_prompt(
-        runtime_prompt_blocks(agent, include_delegation=include_delegation)
-    )
+    return build_system_prompt(runtime_prompt_blocks(agent, include_delegation=include_delegation))

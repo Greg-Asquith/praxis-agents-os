@@ -62,16 +62,12 @@ async def resume_approved_delegate_run(
         return None
 
     child_run_id = metadata_uuid(metadata.get(DELEGATED_APPROVAL_CHILD_RUN_ID_KEY))
-    child_deferred_results_raw = metadata.get(
-        DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY
-    )
+    child_deferred_results_raw = metadata.get(DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY)
     if child_run_id is None or child_deferred_results_raw is None:
         return DelegateRunResult(
             status="failed",
             agent_id=agent_id,
-            agent_name=metadata_str(
-                metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
-            )
+            agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
             or "Unknown agent",
             error="Delegated approval metadata is incomplete.",
         )
@@ -84,9 +80,7 @@ async def resume_approved_delegate_run(
         return DelegateRunResult(
             status="failed",
             agent_id=agent_id,
-            agent_name=metadata_str(
-                metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
-            )
+            agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
             or "Unknown agent",
             error=safe_error(exc),
         )
@@ -135,9 +129,7 @@ async def resume_approved_delegate_run(
                 session,
                 child_run=child_run,
                 conversation_id=child_conversation.id,
-                agent_name=metadata_str(
-                    metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
-                )
+                agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
                 or "Unknown agent",
             )
 
@@ -191,9 +183,7 @@ async def resume_approved_delegate_run(
         return DelegateRunResult(
             status="failed",
             agent_id=agent_id,
-            agent_name=metadata_str(
-                metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
-            )
+            agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
             or "Unknown agent",
             run_id=child_run_id,
             conversation_id=metadata_uuid(

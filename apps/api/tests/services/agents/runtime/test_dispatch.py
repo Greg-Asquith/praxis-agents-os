@@ -435,9 +435,9 @@ async def test_denied_approval_records_audit_without_executing_tool(
 
         suspended_state = load_suspended_run_state(suspended.run)
         deferred_tool_results = DeferredToolResults()
-        deferred_tool_results.approvals[
-            suspended_state.pending_tool_call_ids[0]
-        ] = ToolDenied("Denied in test")
+        deferred_tool_results.approvals[suspended_state.pending_tool_call_ids[0]] = ToolDenied(
+            "Denied in test"
+        )
 
         async with committed_db_session_factory() as db:
             resumed = await execute_run(
@@ -568,7 +568,9 @@ async def _delete_committed_runtime_context(
                 ConversationMessage.conversation_id == context.conversation_id
             )
         )
-        await db.execute(delete(AgentRun).where(AgentRun.conversation_id == context.conversation_id))
+        await db.execute(
+            delete(AgentRun).where(AgentRun.conversation_id == context.conversation_id)
+        )
         await db.execute(delete(Conversation).where(Conversation.id == context.conversation_id))
         await db.execute(delete(Agent).where(Agent.id == context.agent_id))
         await db.execute(
@@ -578,9 +580,7 @@ async def _delete_committed_runtime_context(
         )
         await db.execute(delete(Session).where(Session.user_id == context.user_id))
         await db.execute(
-            update(User)
-            .where(User.id == context.user_id)
-            .values(default_workspace_id=None)
+            update(User).where(User.id == context.user_id).values(default_workspace_id=None)
         )
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))

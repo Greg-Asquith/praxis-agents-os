@@ -37,7 +37,9 @@ async def update_user(
             user.is_active = payload.is_active
             changed_fields.append("is_active")
             if payload.is_active is False:
-                revoked_sessions = await session_manager.revoke_user_sessions(db, user_id=str(user.id))
+                revoked_sessions = await session_manager.revoke_user_sessions(
+                    db, user_id=str(user.id)
+                )
 
     if changed_fields:
         await db.flush()

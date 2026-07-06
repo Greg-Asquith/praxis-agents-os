@@ -43,9 +43,7 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     # Routes that need larger payloads (values in bytes).
     # Base64 payloads are ~33% larger than raw bytes, so include headroom.
     ROUTE_LIMITS: ClassVar[dict[str, int]] = {
-        "/api/v1/example": _base64_request_limit(
-            settings.MAX_FILE_SIZE_IMAGE
-        ),
+        "/api/v1/example": _base64_request_limit(settings.MAX_FILE_SIZE_IMAGE),
         f"{settings.API_V1_PREFIX}/storage/upload": max(
             settings.MAX_FILE_SIZE_AGENT_FILE,
             settings.MAX_FILE_SIZE_DOCUMENT,

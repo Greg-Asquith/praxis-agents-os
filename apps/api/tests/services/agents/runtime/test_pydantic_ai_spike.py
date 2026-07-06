@@ -187,9 +187,7 @@ async def test_deferred_results_resume_denied_path() -> None:
     suspended = await agent.run("delete the widget")
     tool_call_id = suspended.output.approvals[0].tool_call_id
 
-    results = DeferredToolResults(
-        approvals={tool_call_id: ToolDenied("Denied by policy")}
-    )
+    results = DeferredToolResults(approvals={tool_call_id: ToolDenied("Denied by policy")})
     resumed = await agent.run(
         message_history=suspended.all_messages(),
         deferred_tool_results=results,

@@ -39,10 +39,7 @@ async def update_skill(
     changed_fields: list[str] = []
 
     for required_field in ("name", "description", "instructions"):
-        if (
-            required_field in payload.model_fields_set
-            and getattr(payload, required_field) is None
-        ):
+        if required_field in payload.model_fields_set and getattr(payload, required_field) is None:
             raise AppValidationError(
                 f"{required_field} cannot be null",
                 field=required_field,

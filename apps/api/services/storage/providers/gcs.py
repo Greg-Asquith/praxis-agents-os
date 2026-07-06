@@ -67,7 +67,9 @@ class GcsStorageProvider:
             "GCS_PRIVATE_ASSETS_BUCKET",
             provider_key=self.provider_key,
         )
-        self.public_assets_base_url = public_assets_base_url.rstrip("/") if public_assets_base_url else None
+        self.public_assets_base_url = (
+            public_assets_base_url.rstrip("/") if public_assets_base_url else None
+        )
         self.public_cache_control = public_cache_control
         self.client = client if client is not None else self._create_client(project_id=project_id)
         self.public_bucket = self.client.bucket(self.public_bucket_name)
@@ -200,7 +202,9 @@ class GcsStorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
-        normalized_content_type = _require_content_type(content_type, provider_key=self.provider_key, ref=ref)
+        normalized_content_type = _require_content_type(
+            content_type, provider_key=self.provider_key, ref=ref
+        )
         expires_at = datetime.now(UTC) + expires_in
         blob = self._bucket(ref.bucket).blob(ref.key)
         try:
@@ -272,7 +276,9 @@ class GcsStorageProvider:
             return None
         if self.public_assets_base_url:
             return f"{self.public_assets_base_url}/{quote_object_key(ref.key)}"
-        return f"https://storage.googleapis.com/{self.public_bucket_name}/{quote_object_key(ref.key)}"
+        return (
+            f"https://storage.googleapis.com/{self.public_bucket_name}/{quote_object_key(ref.key)}"
+        )
 
     def require_valid_upload_signature(
         self,

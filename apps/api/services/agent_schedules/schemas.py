@@ -102,9 +102,7 @@ class AgentScheduleRead(BaseModel):
                 "updated_at": schedule.updated_at,
                 "health": schedule_health_from_run(latest_run),
                 "latest_run": (
-                    AgentScheduleRunRead.from_run(latest_run)
-                    if latest_run is not None
-                    else None
+                    AgentScheduleRunRead.from_run(latest_run) if latest_run is not None else None
                 ),
             }
         )

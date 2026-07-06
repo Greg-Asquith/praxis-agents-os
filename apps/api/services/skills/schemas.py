@@ -66,9 +66,7 @@ class SkillCreateRequest(BaseModel):
         if not normalized:
             raise ValueError("must not be blank")
         if not _SKILL_NAME_RE.fullmatch(normalized):
-            raise ValueError(
-                f"name must match lowercase kebab-case pattern {SKILL_NAME_PATTERN}"
-            )
+            raise ValueError(f"name must match lowercase kebab-case pattern {SKILL_NAME_PATTERN}")
         return normalized
 
     @field_validator("description", "instructions")
@@ -105,9 +103,7 @@ class SkillUpdateRequest(BaseModel):
         if not normalized:
             raise ValueError("must not be blank")
         if not _SKILL_NAME_RE.fullmatch(normalized):
-            raise ValueError(
-                f"name must match lowercase kebab-case pattern {SKILL_NAME_PATTERN}"
-            )
+            raise ValueError(f"name must match lowercase kebab-case pattern {SKILL_NAME_PATTERN}")
         return normalized
 
     @field_validator("description", "instructions")

@@ -78,9 +78,7 @@ async def test_extraction_final_failure_notifies_only_after_attempts_exhaust(
         job = await db.get(Job, job_id)
         assert job is not None
         assert job.status == JOB_STATUS_FAILED
-        notes = (
-            await db.scalars(select(Notification).where(Notification.source == "jobs"))
-        ).all()
+        notes = (await db.scalars(select(Notification).where(Notification.source == "jobs"))).all()
         assert len(notes) == 1
         assert notes[0].recipient_user_id == user.id
         file = await db.get(File, file.id)

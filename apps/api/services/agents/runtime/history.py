@@ -30,9 +30,7 @@ def trim_history(
 
     prior_messages, current_run_messages = _split_current_run_tail(messages)
     boundary_indexes = [
-        index
-        for index, message in enumerate(prior_messages)
-        if _is_clean_user_boundary(message)
+        index for index, message in enumerate(prior_messages) if _is_clean_user_boundary(message)
     ]
     if len(boundary_indexes) <= max_turns:
         return messages
@@ -106,8 +104,7 @@ def _split_current_run_tail(
 
 def _loaded_capability_ids(messages: Sequence[ModelMessage]) -> set[str]:
     return {
-        capability_id
-        for capability_id, _call, _return in _iter_capability_load_pairs(messages)
+        capability_id for capability_id, _call, _return in _iter_capability_load_pairs(messages)
     }
 
 

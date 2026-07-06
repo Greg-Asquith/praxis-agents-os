@@ -65,9 +65,7 @@ def build_system_prompt(blocks: Sequence[PromptBlock]) -> str:
     rendered_blocks = [_render_block(block) for block in blocks if block.content]
     if len(rendered_blocks) <= 1:
         return rendered_blocks[0] if rendered_blocks else ""
-    return "\n\n".join(
-        [*(block.rstrip() for block in rendered_blocks[:-1]), rendered_blocks[-1]]
-    )
+    return "\n\n".join([*(block.rstrip() for block in rendered_blocks[:-1]), rendered_blocks[-1]])
 
 
 def _render_block(block: PromptBlock) -> str:

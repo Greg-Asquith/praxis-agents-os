@@ -95,10 +95,7 @@ def check_envelope(
     """Return a model-visible denial message when the run envelope blocks a tool."""
     if definition is None:
         return None
-    if (
-        definition.effect == TOOL_EFFECT_WRITE
-        and deps.envelope.side_effect_policy == "deny"
-    ):
+    if definition.effect == TOOL_EFFECT_WRITE and deps.envelope.side_effect_policy == "deny":
         return ENVELOPE_DENIAL_MESSAGE
     return None
 

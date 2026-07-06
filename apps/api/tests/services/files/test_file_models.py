@@ -190,8 +190,12 @@ async def test_file_upload_duplicate_object_key_is_rejected(db_session: AsyncSes
     object_key = f"workspaces/{workspace.id}/files/{uuid4()}/{uuid4()}.pdf"
     db_session.add_all(
         [
-            build_file_upload(workspace=workspace, object_key=object_key, created_by_user_id=user.id),
-            build_file_upload(workspace=workspace, object_key=object_key, created_by_user_id=user.id),
+            build_file_upload(
+                workspace=workspace, object_key=object_key, created_by_user_id=user.id
+            ),
+            build_file_upload(
+                workspace=workspace, object_key=object_key, created_by_user_id=user.id
+            ),
         ]
     )
 
@@ -217,6 +221,12 @@ async def test_file_hard_delete_cascades_revisions_and_references(
     await db_session.delete(file)
     await db_session.flush()
 
-    assert await db_session.scalar(select(FileRevision.id).where(FileRevision.id == revision_id)) is None
-    assert await db_session.scalar(select(FileReference.id).where(FileReference.id == reference_id)) is None
+    assert (
+        await db_session.scalar(select(FileRevision.id).where(FileRevision.id == revision_id))
+        is None
+    )
+    assert (
+        await db_session.scalar(select(FileReference.id).where(FileReference.id == reference_id))
+        is None
+    )
     assert await db_session.scalar(select(FileUpload).where(FileUpload.file_id == file_id)) is None

@@ -37,10 +37,7 @@ def revision_object_key(
     extension: str,
 ) -> str:
     """Build the private object key for a file revision."""
-    key = (
-        f"workspaces/{workspace_id}/files/{file_id}/"
-        f"{revision_id}{normalize_extension(extension)}"
-    )
+    key = f"workspaces/{workspace_id}/files/{file_id}/{revision_id}{normalize_extension(extension)}"
     make_storage_object_ref(StorageBucket.PRIVATE, key)
     return key
 

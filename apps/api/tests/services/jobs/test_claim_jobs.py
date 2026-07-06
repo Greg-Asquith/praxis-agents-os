@@ -160,8 +160,7 @@ async def test_claim_jobs_limits_pending_claims_per_workspace(
     db_session.add_all([busy_workspace, other_workspace])
     await db_session.flush()
     busy_pending = [
-        build_job(workspace_id=busy_workspace.id, payload={"busy": index})
-        for index in range(5)
+        build_job(workspace_id=busy_workspace.id, payload={"busy": index}) for index in range(5)
     ]
     other_pending = build_job(workspace_id=other_workspace.id, payload={"other": True})
     db_session.add_all([*busy_pending, other_pending])
@@ -194,8 +193,7 @@ async def test_claim_jobs_only_uses_remaining_workspace_slots(
         for index in range(2)
     ]
     pending_jobs = [
-        build_job(workspace_id=workspace.id, payload={"pending": index})
-        for index in range(4)
+        build_job(workspace_id=workspace.id, payload={"pending": index}) for index in range(4)
     ]
     db_session.add_all([*running_jobs, *pending_jobs])
     await db_session.flush()

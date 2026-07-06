@@ -99,9 +99,15 @@ async def _prepared_schedule_context(db: AsyncSession, *, schedule_type: str = "
 
 
 async def test_completed_generic_run_retires_once_schedule(db_session: AsyncSession) -> None:
-    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session)
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session)
     await start_agent_run(db_session, run)
     await complete_agent_run(db_session, run)
 
@@ -120,9 +126,15 @@ async def test_completed_generic_run_retires_once_schedule(db_session: AsyncSess
 async def test_awaiting_schedule_run_with_completed_generic_run_retires_once_schedule(
     db_session: AsyncSession,
 ) -> None:
-    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session)
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session)
     schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
     await start_agent_run(db_session, run)
     await complete_agent_run(db_session, run)
@@ -140,9 +152,15 @@ async def test_awaiting_schedule_run_with_completed_generic_run_retires_once_sch
 
 
 async def test_awaiting_approval_does_not_advance_schedule(db_session: AsyncSession) -> None:
-    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session, schedule_type="interval")
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session, schedule_type="interval")
     original_next_run_at = schedule.next_run_at
     await start_agent_run(db_session, run)
     await mark_run_awaiting_approval(db_session, run)
@@ -161,9 +179,15 @@ async def test_awaiting_approval_does_not_advance_schedule(db_session: AsyncSess
 async def test_awaiting_schedule_run_with_awaiting_generic_run_stays_paused(
     db_session: AsyncSession,
 ) -> None:
-    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session, schedule_type="interval")
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session, schedule_type="interval")
     original_next_run_at = schedule.next_run_at
     schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
     await start_agent_run(db_session, run)
@@ -181,9 +205,15 @@ async def test_awaiting_schedule_run_with_awaiting_generic_run_stays_paused(
 
 
 async def test_failed_generic_run_terminally_fails_schedule(db_session: AsyncSession) -> None:
-    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session)
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session)
     await start_agent_run(db_session, run)
     await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
 
@@ -202,9 +232,15 @@ async def test_failed_generic_run_terminally_fails_schedule(db_session: AsyncSes
 async def test_awaiting_schedule_run_with_failed_generic_run_terminally_fails_schedule(
     db_session: AsyncSession,
 ) -> None:
-    _user, _workspace, _agent, schedule, _conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session)
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session)
     schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
     await start_agent_run(db_session, run)
     await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
@@ -224,9 +260,15 @@ async def test_awaiting_schedule_run_with_failed_generic_run_terminally_fails_sc
 async def test_failed_empty_scheduled_conversation_is_pruned(
     db_session: AsyncSession,
 ) -> None:
-    _user, _workspace, _agent, _schedule, conversation, schedule_run, run = (
-        await _prepared_schedule_context(db_session)
-    )
+    (
+        _user,
+        _workspace,
+        _agent,
+        _schedule,
+        conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session)
     await start_agent_run(db_session, run)
     await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
 

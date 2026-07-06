@@ -85,10 +85,7 @@ async def test_write_todos_rejects_caps_and_bad_status(
 ) -> None:
     cap_context = await _create_committed_planning_context(committed_db_session_factory)
     status_context = await _create_committed_planning_context(committed_db_session_factory)
-    too_many = [
-        {"content": f"Item {index}", "status": "pending"}
-        for index in range(51)
-    ]
+    too_many = [{"content": f"Item {index}", "status": "pending"} for index in range(51)]
     cap_messages: list[ModelMessage] = []
     status_messages: list[ModelMessage] = []
 
@@ -415,9 +412,7 @@ async def _delete_committed_planning_context(
     delete_shared: bool = True,
 ) -> None:
     async with session_factory() as db:
-        await db.execute(
-            delete(AuditEvent).where(AuditEvent.workspace_id == context.workspace_id)
-        )
+        await db.execute(delete(AuditEvent).where(AuditEvent.workspace_id == context.workspace_id))
         await db.execute(
             delete(ConversationTodoList).where(
                 ConversationTodoList.conversation_id == context.conversation_id
@@ -431,13 +426,9 @@ async def _delete_committed_planning_context(
         await db.execute(
             delete(AgentRun).where(AgentRun.conversation_id == context.conversation_id)
         )
-        await db.execute(
-            delete(Conversation).where(Conversation.id == context.conversation_id)
-        )
+        await db.execute(delete(Conversation).where(Conversation.id == context.conversation_id))
         if delete_shared:
             await db.execute(delete(Agent).where(Agent.id == context.agent_id))
             await db.execute(delete(User).where(User.id == context.user_id))
-            await db.execute(
-                delete(Workspace).where(Workspace.id == context.workspace_id)
-            )
+            await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))
         await db.commit()

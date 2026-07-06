@@ -20,9 +20,10 @@ background file processing slice; 034–051 written 2026-07-06 in a full
 planning pass after 029 executed — see `docs/architecture/governance.md` —
 covering Phases 3–6 end to end, consistency-reviewed against the landed
 030–033 substrate). Cleanup plans C01-C05 were integrated 2026-07-06 from
-`plans/improvements/`; their source files keep local numbers 001-005, but the
-master roadmap tracks them with `C` prefixes so they do not collide with
-existing roadmap plans. Every reserved number now has a written plan.
+`plans/improvements/`; their source files keep local numbers 001-005 until
+completion, while the master roadmap tracks them with `C` prefixes so they do
+not collide with existing roadmap plans. C01 was completed 2026-07-06 and
+moved to `plans/complete/`. Every reserved number now has a written plan.
 
 ---
 
@@ -188,12 +189,13 @@ Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
 ### Lane C — Cleanup & Quality Hardening (plans/improvements)
 
 These tasks were added after 033 and are now part of the main execution order.
-They keep their source plans in `plans/improvements/`; `C` identifiers are the
+Pending cleanup plans keep their source plans in `plans/improvements/`;
+completed cleanup plans move to `plans/complete/`. `C` identifiers are the
 non-colliding roadmap aliases used in `docs/plans/000_README.md`.
 
 | Plan | Scope | Priority | When |
 |------|-------|----------|------|
-| C01 | Stand up CI and complete the local quality gate: CI workflow, backend format/test coverage in `make check`, pytest asyncio auto mode, and Vitest coverage for the conversation stream parser/reducer. | P1 | Next, before relying on the remaining cleanup and feature work gates. |
+| C01 | Stand up CI and complete the local quality gate: CI workflow, backend format/test coverage in `make check`, pytest asyncio auto mode, and Vitest coverage for the conversation stream parser/reducer. **DONE 2026-07-06.** | P1 | Complete; C02 is next before remaining files work. |
 | C02 | Harden the files vertical: upload/confirm race fixes, escaped file search, streaming hash primitive, safer download default, and download audit. | P1 | Before 034, 035, or 036 build on the files vertical. |
 | C03 | Bound conversation history reads and paginate the messages API while preserving capability-load pairs for the 013/018 history and skill-disclosure contract. | P1 | After 013/018; early, before long-lived scheduled/integration conversations grow. |
 | C04 | Rate limiter hardening: bounded endpoint keys, retention sweep on the 030 jobs harness, and rate-limit regression tests without changing policy. | P1 | After 030; early security/perf cleanup before provider/integration scale-up. |
@@ -268,7 +270,7 @@ management (043–049).
 If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 → C02 →
+018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 →
 C03 → C04 → 034 → 035 → 036 → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
 049 → 050 → 051` — with 015 and the polish lane as filler.
 

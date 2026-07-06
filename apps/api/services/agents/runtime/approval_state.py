@@ -108,9 +108,7 @@ def load_suspended_run_state(run: AgentRun) -> SuspendedRunState:
         )
 
     try:
-        message_history = list(
-            ModelMessagesTypeAdapter.validate_python(raw["message_history"])
-        )
+        message_history = list(ModelMessagesTypeAdapter.validate_python(raw["message_history"]))
         deferred_tool_requests = _DEFERRED_REQUESTS_ADAPTER.validate_python(
             raw["deferred_tool_requests"]
         )

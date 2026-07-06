@@ -109,13 +109,9 @@ class RuntimeToolDefinition:
 def validate_definition(definition: RuntimeToolDefinition) -> None:
     """Validate import-time invariants for one runtime tool definition."""
     if not _TOOL_NAME_PATTERN.fullmatch(definition.name):
-        raise RuntimeError(
-            "Runtime tool name must be non-blank snake_case starting with a letter"
-        )
+        raise RuntimeError("Runtime tool name must be non-blank snake_case starting with a letter")
     if not _TOOL_PROVIDER_PATTERN.fullmatch(definition.provider):
-        raise RuntimeError(
-            "Runtime tool provider must be a lowercase token starting with a letter"
-        )
+        raise RuntimeError("Runtime tool provider must be a lowercase token starting with a letter")
     if not definition.description.strip():
         raise RuntimeError("Runtime tool description must not be blank")
     if definition.kind not in VALID_TOOL_KINDS:

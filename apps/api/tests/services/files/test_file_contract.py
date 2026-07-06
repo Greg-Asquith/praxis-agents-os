@@ -50,7 +50,9 @@ def test_max_size_bytes_resolves_settings_keys() -> None:
 
 def test_ingestible_is_true_only_for_document_types() -> None:
     ingestible_types = {
-        entry.content_type for entry in FILE_CONTRACT if entry.category == FileCategory.INGESTIBLE_DOCUMENT
+        entry.content_type
+        for entry in FILE_CONTRACT
+        if entry.category == FileCategory.INGESTIBLE_DOCUMENT
     }
 
     for entry in FILE_CONTRACT:
@@ -59,7 +61,9 @@ def test_ingestible_is_true_only_for_document_types() -> None:
 
 def test_editable_is_true_only_for_text_types() -> None:
     editable_types = {
-        entry.content_type for entry in FILE_CONTRACT if entry.category == FileCategory.EDITABLE_TEXT
+        entry.content_type
+        for entry in FILE_CONTRACT
+        if entry.category == FileCategory.EDITABLE_TEXT
     }
 
     for entry in FILE_CONTRACT:

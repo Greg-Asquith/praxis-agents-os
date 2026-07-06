@@ -284,9 +284,7 @@ async def test_invalid_transition_from_pending_raises(
         await complete_agent_run(db_session, run)
 
 
-async def test_terminal_status_is_final(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
+async def test_terminal_status_is_final(db_session: AsyncSession, run_context: RunContext) -> None:
     run = await _create(db_session, run_context)
     await start_agent_run(db_session, run)
     await complete_agent_run(db_session, run)

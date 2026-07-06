@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _OAUTH_STATE_TTL = timedelta(minutes=10)
 
+
 async def upsert_oauth_user(
     db: AsyncSession,
     *,
@@ -133,6 +134,7 @@ async def upsert_oauth_user(
         request=request,
     )
     return user
+
 
 def create_oauth_state(
     *,
@@ -245,7 +247,9 @@ def resolve_provider_redirect_uri(provider_name: str, supplied_redirect_uri: str
         "microsoft": settings.MICROSOFT_OAUTH_REDIRECT_URI,
     }.get(provider_name)
     if not configured:
-        raise OAuthConfigurationError("OAuth provider redirect URI is not configured", provider_name)
+        raise OAuthConfigurationError(
+            "OAuth provider redirect URI is not configured", provider_name
+        )
 
     configured = configured.rstrip("/")
     if supplied_redirect_uri and supplied_redirect_uri.rstrip("/") != configured:

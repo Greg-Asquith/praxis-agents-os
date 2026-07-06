@@ -56,9 +56,7 @@ def runtime_tool(
 
     def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
         normalized_supported_providers = (
-            frozenset(supported_model_providers)
-            if supported_model_providers is not None
-            else None
+            frozenset(supported_model_providers) if supported_model_providers is not None else None
         )
         definition = RuntimeToolDefinition(
             name=name,

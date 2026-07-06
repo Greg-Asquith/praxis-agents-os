@@ -26,8 +26,9 @@ processing slice.
 
 Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
-source files keep their local 001-005 names, but the main task list tracks
-them with `C` prefixes to avoid colliding with roadmap plans 001-005.
+source files keep their local 001-005 names until completion, while the main
+task list tracks them with `C` prefixes to avoid colliding with roadmap plans
+001-005. C01 was executed 2026-07-06 and moved to `plans/complete/`.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -68,10 +69,10 @@ integrations, files, knowledge base, memory, artifacts).
 | 031 | File, FileRevision, and FileReference models + the file contract | P1 | M | - | DONE |
 | 032 | File upload, edit, restore, and deletion services + routes | P1 | L | 031, 030 | DONE |
 | 033 | Background file processing — extraction to markdown via jobs | P1 | M | 030, 031, 032 | DONE |
-| C01 | Stand up CI and complete the local quality gate | P1 | M | - | TODO |
-| C02 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | C01 recommended; before 034-036 | TODO |
-| C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018 done; C01 recommended | TODO |
-| C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030; C01 recommended | TODO |
+| C01 | Stand up CI and complete the local quality gate | P1 | M | - | DONE |
+| C02 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | C01 done; before 034-036 | TODO |
+| C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018, C01 done | TODO |
+| C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | TODO |
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | TODO |
 | 035 | Files UI | P1 | L | 032, C02 | TODO |
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | TODO |
@@ -342,16 +343,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   registry/converter probes, the MarkItDown call-site grep, the route registry
   check for thirteen effective `/files` entries, and
   `DATABASE_URL=... uv run python -m workers.job_runner --once` passed.
-- Cleanup plans `C01`-`C05` live under `plans/improvements/` and are tracked
+- Cleanup plans `C02`-`C05` live under `plans/improvements/` and are tracked
   here with `C` identifiers because their source files are locally numbered
-  `001`-`005`, which collide with existing roadmap plan numbers. When executing
-  one, read the source plan fully and update both this table and
-  `plans/improvements/README.md`.
-- `C01` should be the next cleanup item: it adds CI, completes the local
-  `make check` gate, turns on pytest asyncio auto mode, and adds web stream
-  tests. It does not hard-block every future feature plan, but running
-  `C02`-`C04` or the remaining 034-051 work before C01 lands forfeits the gate
-  those tasks are meant to use.
+  `002`-`005`, which collide with existing roadmap plan numbers. Completed
+  cleanup plans move to `plans/complete/`; C01 now lives at
+  `plans/complete/C01-ci-and-complete-quality-gate.md`.
+- `C01` marked DONE 2026-07-06: `.github/workflows/ci.yml` now runs API and
+  web gates, `make check` includes backend format and tests, pytest asyncio
+  auto mode is enabled with no collection-count change, and Vitest covers the
+  conversation stream parser/reducer. `make check`, DB-backed `uv run pytest`,
+  and `pnpm check` passed locally.
 - `C02` must land before `034`, `035`, or `036` build further on the files
   vertical. It fixes confirm/upload races, file-search wildcard behavior,
   file download auditing, and the storage streaming primitive used by later

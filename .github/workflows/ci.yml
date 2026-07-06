@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: praxis
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/praxis
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/praxis_test
+      ENVIRONMENT: local
+      STORAGE_PROVIDER: local_fs
+      EMAIL_PROVIDER: console
+      SECRET_KEY: not-a-secret-ci-secret-key-change-me
+      ENCRYPTION_KEY: bm90LWEtc2VjcmV0LWxvY2FsLWNpLWtleS0wMDAwMDA=
+      SECURE_COOKIES: "false"
+      SUPER_ADMIN_EMAILS: admin@example.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run alembic upgrade heads
+      - run: uv run alembic check
+      - run: |
+          uv run python - <<'PY'
+          import asyncio
+
+          import asyncpg
+
+
+          async def main() -> None:
+              conn = await asyncpg.connect(
+                  "postgresql://postgres:postgres@localhost:5432/postgres"
+              )
+              exists = await conn.fetchval(
+                  "SELECT 1 FROM pg_database WHERE datname = $1", "praxis_test"
+              )
+              if not exists:
+                  await conn.execute("CREATE DATABASE praxis_test")
+              await conn.close()
+
+
+          asyncio.run(main())
+          PY
+      - run: uv run pytest
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check

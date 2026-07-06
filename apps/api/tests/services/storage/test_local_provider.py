@@ -64,7 +64,9 @@ async def test_local_provider_builds_public_url(tmp_path) -> None:
     assert stored.public_url == "http://testserver/api/v1/storage/public/users/u_1/avatar/me.png"
     assert stored.cache_control == "public, max-age=60"
     assert not (tmp_path / "public" / "users" / "u_1" / "avatar" / "me.png.metadata.json").exists()
-    assert (tmp_path / ".metadata" / "public" / "users" / "u_1" / "avatar" / "me.png.metadata.json").is_file()
+    assert (
+        tmp_path / ".metadata" / "public" / "users" / "u_1" / "avatar" / "me.png.metadata.json"
+    ).is_file()
 
 
 async def test_local_provider_stat_without_metadata_does_not_read_object_bytes(

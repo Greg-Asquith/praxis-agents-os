@@ -183,7 +183,9 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
     )
     assert grant_result.grant is not None
     assert grant_result.grant.over_soft_limit is True
-    upload = await db_session.scalar(select(FileUpload).where(FileUpload.file_id == grant_result.grant.file_id))
+    upload = await db_session.scalar(
+        select(FileUpload).where(FileUpload.file_id == grant_result.grant.file_id)
+    )
     assert upload is not None
     assert upload.object_key.endswith(".txt")
 
@@ -258,7 +260,9 @@ async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
     assert double_confirmed.current_revision_id == confirmed.current_revision_id
     assert (
         await db_session.scalar(
-            select(func.count()).select_from(FileRevision).where(FileRevision.file_id == confirmed.id)
+            select(func.count())
+            .select_from(FileRevision)
+            .where(FileRevision.file_id == confirmed.id)
         )
         == 1
     )
@@ -709,7 +713,9 @@ async def test_sweep_deleted_files_purges_expired_rows_and_abandoned_uploads(
 
     provider = get_storage_provider()
     upload_ref_key = revision_object_key(workspace.id, uuid4(), uuid4(), ".txt")
-    await provider.put_object(private_ref_from_key(upload_ref_key), b"stale", content_type="text/plain")
+    await provider.put_object(
+        private_ref_from_key(upload_ref_key), b"stale", content_type="text/plain"
+    )
     upload = FileUpload(
         workspace_id=workspace.id,
         file_id=uuid4(),
@@ -768,7 +774,9 @@ async def test_sweep_deleted_files_purges_expired_rows_and_abandoned_uploads(
     assert await db_session.get(File, file.id) is None
     assert await provider.stat_object(private_ref_from_key(revision.object_key)) is None
     assert await db_session.get(File, retained_file.id) is not None
-    assert await provider.stat_object(private_ref_from_key(retained_revision.object_key)) is not None
+    assert (
+        await provider.stat_object(private_ref_from_key(retained_revision.object_key)) is not None
+    )
     assert await db_session.get(FileUpload, upload.id) is None
     assert await provider.stat_object(private_ref_from_key(upload_ref_key)) is None
     assert await db_session.get(FileUpload, consumed_upload.id) is not None

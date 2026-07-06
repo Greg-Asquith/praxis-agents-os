@@ -45,9 +45,7 @@ async def convert_document_to_markdown(
         try:
             markdown = await asyncio.to_thread(_convert_sync, data, extension)
         except Exception as exc:
-            raise DocumentConversionError(
-                "Document could not be converted to markdown"
-            ) from exc
+            raise DocumentConversionError("Document could not be converted to markdown") from exc
 
     return truncate_markdown(markdown, max_bytes=max_bytes)
 

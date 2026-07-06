@@ -23,7 +23,9 @@ class Job(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "jobs"
 
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True)
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True
+    )
     kind = Column(String(64), nullable=False)
     subject_type = Column(String(64), nullable=True)
     subject_id = Column(UUID(as_uuid=True), nullable=True)

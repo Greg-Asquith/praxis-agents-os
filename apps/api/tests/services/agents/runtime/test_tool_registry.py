@@ -70,9 +70,7 @@ def test_runtime_tool_decorator_registers_definition_with_derived_label(
     assert definition.provider == "core"
     assert definition.label == "Test echo value"
     assert definition.effect == "read"
-    assert definition.allowed_policies() == frozenset(
-        {TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL}
-    )
+    assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
 
 
 def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> None:

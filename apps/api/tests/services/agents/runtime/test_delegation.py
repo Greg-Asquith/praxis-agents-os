@@ -255,9 +255,7 @@ async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
             assert child_conversation is not None
             assert child_conversation.source == "delegated"
             assert child_conversation.active_agent_id == runtime_context.child_agent_id
-            assert child_conversation.metadata_json["parent_run_id"] == str(
-                runtime_context.run_id
-            )
+            assert child_conversation.metadata_json["parent_run_id"] == str(runtime_context.run_id)
 
             parent_messages = (
                 await db.scalars(
@@ -332,7 +330,9 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
     ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
         tool_names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in tool_names:
-            if "test_add_numbers" in tool_names and not _has_tool_return(messages, "test_add_numbers"):
+            if "test_add_numbers" in tool_names and not _has_tool_return(
+                messages, "test_add_numbers"
+            ):
                 yield {
                     0: DeltaToolCall(
                         name="test_add_numbers",
@@ -438,18 +438,13 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                 (
                     approval.tool_call_id,
                     approval.name,
-                    json.loads(approval.args)
-                    if isinstance(approval.args, str)
-                    else approval.args,
+                    json.loads(approval.args) if isinstance(approval.args, str) else approval.args,
                 )
                 for approval in approval_state.approvals
             ] == [("child-add", "test_add_numbers", {"a": 2, "b": 3})]
             assert approval_state.approvals[0].delegation is not None
             assert approval_state.approvals[0].delegation.child_run_id == child_run.id
-            assert (
-                approval_state.approvals[0].delegation.parent_tool_call_id
-                == "delegate-child"
-            )
+            assert approval_state.approvals[0].delegation.parent_tool_call_id == "delegate-child"
 
             response = await resume_agent_run_stream(
                 db,
@@ -518,7 +513,9 @@ async def test_delegated_child_approval_resume_rechecks_allowlist(
 
         tool_names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in tool_names:
-            if "test_add_numbers" in tool_names and not _has_tool_return(messages, "test_add_numbers"):
+            if "test_add_numbers" in tool_names and not _has_tool_return(
+                messages, "test_add_numbers"
+            ):
                 yield {
                     0: DeltaToolCall(
                         name="test_add_numbers",
@@ -720,7 +717,9 @@ async def _delete_committed_delegation_context(
             )
         )
         await db.execute(delete(AgentRun).where(AgentRun.workspace_id == context.workspace_id))
-        await db.execute(delete(Conversation).where(Conversation.workspace_id == context.workspace_id))
+        await db.execute(
+            delete(Conversation).where(Conversation.workspace_id == context.workspace_id)
+        )
         await db.execute(delete(Agent).where(Agent.workspace_id == context.workspace_id))
         await db.execute(
             delete(WorkspaceMembership).where(
@@ -729,9 +728,7 @@ async def _delete_committed_delegation_context(
         )
         await db.execute(delete(Session).where(Session.user_id == context.user_id))
         await db.execute(
-            update(User)
-            .where(User.id == context.user_id)
-            .values(default_workspace_id=None)
+            update(User).where(User.id == context.user_id).values(default_workspace_id=None)
         )
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))

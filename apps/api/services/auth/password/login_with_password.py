@@ -58,8 +58,11 @@ async def login_with_password(
         )
         raise AuthenticationError("Account is temporarily locked")
 
-    if not user.is_active or user.deleted or not user.has_password or not user.verify_password(
-        payload.password
+    if (
+        not user.is_active
+        or user.deleted
+        or not user.has_password
+        or not user.verify_password(payload.password)
     ):
         await record_failed_login_attempt(
             user_id=user.id,

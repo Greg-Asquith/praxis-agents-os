@@ -48,5 +48,7 @@ async def get_user_session_by_id(
     )
     session = result.scalar_one_or_none()
     if session is None:
-        raise NotFoundError("Session not found", resource_type="session", resource_id=str(session_id))
+        raise NotFoundError(
+            "Session not found", resource_type="session", resource_id=str(session_id)
+        )
     return session

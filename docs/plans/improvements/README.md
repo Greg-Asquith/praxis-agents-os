@@ -8,24 +8,26 @@ authoritative ordering for feature plans 001–051 and is not superseded here.
 
 Each executor: read the plan fully before starting, honor its STOP
 conditions, run every verification command, and update your row when done.
+Completed improvement plans are moved to `../complete/` with their `C` alias to
+avoid colliding with roadmap plan numbers.
 
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Stand up CI and complete the local quality gate | P1 | M | — | TODO |
-| 002 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | — (001 recommended first) | TODO |
-| 003 | Bound conversation history reads and paginate the messages API | P1 | M | — (001 recommended first) | TODO |
-| 004 | Rate limiter — bounded key cardinality, retention sweep, and tests | P1 | M | — (001 recommended first) | TODO |
+| 001 | Stand up CI and complete the local quality gate | P1 | M | — | DONE |
+| 002 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | 001 done | TODO |
+| 003 | Bound conversation history reads and paginate the messages API | P1 | M | 001 done | TODO |
+| 004 | Rate limiter — bounded key cardinality, retention sweep, and tests | P1 | M | 001 done | TODO |
 | 005 | Close the small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Dependency notes
 
-- **001 first**: it adds the CI + complete `make check` gate that verifies
-  every other plan's work. 002–005 do not hard-depend on it, but landing them
-  before the gate exists forfeits the point.
+- **001 first**: DONE 2026-07-06 and moved to
+  `../complete/C01-ci-and-complete-quality-gate.md`. It adds the CI +
+  complete `make check` gate that verifies every other plan's work.
 - **002 before the files vertical is committed** (or immediately after): it
   fixes bugs in the uncommitted upload/confirm/list/download services. Roadmap
   plans 033–036 (`docs/plans/`) build directly on these services — 002 must

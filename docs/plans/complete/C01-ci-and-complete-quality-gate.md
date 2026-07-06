@@ -1,4 +1,4 @@
-# Plan 001: Stand up CI and complete the local quality gate
+# Plan C01: Stand up CI and complete the local quality gate
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -19,6 +19,7 @@
 - **Depends on**: none
 - **Category**: dx
 - **Planned at**: commit `a0eea1c`, 2026-07-06
+- **Status**: DONE, 2026-07-06
 
 ## Why this matters
 
@@ -293,13 +294,13 @@ order → all exit 0.
 
 ## Done criteria
 
-- [ ] `make check` exits 0 and its recipe includes `api-test` and `api-format-check`
-- [ ] `apps/api/pyproject.toml` contains `asyncio_mode = "auto"`
-- [ ] `cd apps/web && pnpm test` exits 0 with new stream tests
-- [ ] `cd apps/web && pnpm check` exits 0 (test step included in the chain)
-- [ ] `.github/workflows/ci.yml` exists; every command in it has been run successfully (locally or in Actions)
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `plans/improvements/README.md` status row updated
+- [x] `make check` exits 0 and its recipe includes `api-test` and `api-format-check`
+- [x] `apps/api/pyproject.toml` contains `asyncio_mode = "auto"`
+- [x] `cd apps/web && pnpm test` exits 0 with new stream tests
+- [x] `cd apps/web && pnpm check` exits 0 (test step included in the chain)
+- [x] `.github/workflows/ci.yml` exists; every command in it has been run successfully locally
+- [x] `git status` shows no modified files outside the in-scope list except the Step 2 required Ruff formatting-only API pass
+- [x] `plans/improvements/README.md` status row updated
 
 ## STOP conditions
 

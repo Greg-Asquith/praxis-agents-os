@@ -326,11 +326,7 @@ async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> No
             ),
         ],
         deferred_tool_results=DeferredToolResults(
-            approvals={
-                deferred_tool_call_id: ToolApproved(
-                    override_args={"value": 10}
-                )
-            }
+            approvals={deferred_tool_call_id: ToolApproved(override_args={"value": 10})}
         ),
     )
 
@@ -394,10 +390,13 @@ async def test_execute_run_persists_messages_usage_and_events(
 ) -> None:
     agent = await db_session.get(Agent, runtime_context.agent_id)
     assert agent is not None
-    assert build_runtime_agent(
-        agent,
-        model=TestModel(),
-    ).usage_limits.total_tokens_limit is None
+    assert (
+        build_runtime_agent(
+            agent,
+            model=TestModel(),
+        ).usage_limits.total_tokens_limit
+        is None
+    )
 
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -530,9 +529,7 @@ async def test_execute_run_suspends_when_tool_requires_approval(
     assert APPROVAL_STATE_METADATA_KEY in (stored_run.metadata_json or {})
 
     suspended_state = load_suspended_run_state(stored_run)
-    assert suspended_state.pending_tool_call_ids == [
-        result.output.approvals[0].tool_call_id
-    ]
+    assert suspended_state.pending_tool_call_ids == [result.output.approvals[0].tool_call_id]
 
     messages = (
         await db_session.scalars(
@@ -636,12 +633,8 @@ async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
     resume_event_names = [event.event for event in resume_sink.events]
     assert EVENT_TOOL_CALL in resume_event_names
     assert EVENT_TOOL_RESULT in resume_event_names
-    tool_result_events = [
-        event for event in resume_sink.events if event.event == EVENT_TOOL_RESULT
-    ]
-    tool_call_events = [
-        event for event in resume_sink.events if event.event == EVENT_TOOL_CALL
-    ]
+    tool_result_events = [event for event in resume_sink.events if event.event == EVENT_TOOL_RESULT]
+    tool_call_events = [event for event in resume_sink.events if event.event == EVENT_TOOL_CALL]
     assert tool_call_events[0].data["args"] == {"a": 2, "b": 3}
     assert tool_result_events[0].data["tool_call_id"] == tool_call_id
     assert tool_result_events[0].data["name"] == "test_add_numbers"
@@ -992,7 +985,9 @@ async def _delete_committed_runtime_context(
                 ConversationMessage.conversation_id == context.conversation_id
             )
         )
-        await db.execute(delete(AgentRun).where(AgentRun.conversation_id == context.conversation_id))
+        await db.execute(
+            delete(AgentRun).where(AgentRun.conversation_id == context.conversation_id)
+        )
         await db.execute(delete(Conversation).where(Conversation.id == context.conversation_id))
         await db.execute(delete(Agent).where(Agent.id == context.agent_id))
         await db.execute(
@@ -1002,9 +997,7 @@ async def _delete_committed_runtime_context(
         )
         await db.execute(delete(Session).where(Session.user_id == context.user_id))
         await db.execute(
-            update(User)
-            .where(User.id == context.user_id)
-            .values(default_workspace_id=None)
+            update(User).where(User.id == context.user_id).values(default_workspace_id=None)
         )
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))

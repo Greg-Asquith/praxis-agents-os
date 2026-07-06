@@ -22,12 +22,16 @@ def _agent(provider, model, **kw):
 
 
 def test_openai_thinking_requests_reasoning_summary():
-    resolved = resolve_agent_model(_agent("openai", "gpt-5.4-mini", model_settings={"thinking": "high"}))
+    resolved = resolve_agent_model(
+        _agent("openai", "gpt-5.4-mini", model_settings={"thinking": "high"})
+    )
     assert resolved.settings["openai_reasoning_summary"] == "auto"
 
 
 def test_openai_without_thinking_leaves_summary_unset():
-    resolved = resolve_agent_model(_agent("openai", "gpt-5.4-mini", model_settings={"temperature": 0.4}))
+    resolved = resolve_agent_model(
+        _agent("openai", "gpt-5.4-mini", model_settings={"temperature": 0.4})
+    )
     assert "openai_reasoning_summary" not in resolved.settings
 
 

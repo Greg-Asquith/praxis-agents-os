@@ -8,9 +8,7 @@ from models.agent_run import AgentRun
 from services.agent_runs.domain import RunUsageSnapshot
 
 
-async def record_run_usage(
-    db: AsyncSession, run: AgentRun, usage: RunUsageSnapshot
-) -> AgentRun:
+async def record_run_usage(db: AsyncSession, run: AgentRun, usage: RunUsageSnapshot) -> AgentRun:
     """Persist usage totals (hot columns) plus the full RunUsage on usage_json."""
     run.input_tokens = usage.input_tokens
     run.input_tokens_cached = usage.input_tokens_cached

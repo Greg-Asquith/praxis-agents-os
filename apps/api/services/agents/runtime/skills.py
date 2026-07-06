@@ -193,14 +193,12 @@ def _resolve_ready_document(skill: Skill, document: str) -> tuple[str, SkillDocu
     if len(filename_matches) > 1:
         matching_names = ", ".join(name for name, _entry in filename_matches)
         raise ModelRetry(
-            "Document filename is ambiguous. Use one of these document names: "
-            f"{matching_names}."
+            f"Document filename is ambiguous. Use one of these document names: {matching_names}."
         )
 
     valid_documents = ", ".join(_ready_document_labels(ready_entries)) or "none"
     raise ModelRetry(
-        "Unknown or unavailable document. Ready documents by name or filename: "
-        f"{valid_documents}."
+        f"Unknown or unavailable document. Ready documents by name or filename: {valid_documents}."
     )
 
 
