@@ -70,13 +70,13 @@ class FilesSettingsMixin:
         le=524288000,
         description="Max agent-created file size (100MB)",
     )
-    MAX_FILE_SIZE_AI_IMAGE: int = Field(
+    MAX_FILE_SIZE_IMAGE: int = Field(
         default=10485760,
         ge=1048576,
         le=104857600,
         description="Max AI generated image file size (10MB)",
     )
-    MAX_FILE_SIZE_AI_VIDEO: int = Field(
+    MAX_FILE_SIZE_VIDEO: int = Field(
         default=104857600,
         ge=1048576,
         le=524288000,

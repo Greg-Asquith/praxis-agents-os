@@ -126,3 +126,6 @@ log/
 ########################################
 docs/*
 !docs/plans/
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/governance.md

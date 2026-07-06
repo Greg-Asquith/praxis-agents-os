@@ -14,8 +14,9 @@ document — it unifies `DONOR_PORT_ROADMAP.md`,
 `docs/legacy/ROADMAP_QUESTIONS_GAPS.md`, and the raw `docs/legacy/NOTES.md`
 into one phased roadmap and reserves plan numbers 021–051. Plans 021–029
 were written 2026-07-02 (Lane O, Phase 1, and the Gate G3 note). Plan 030
-was executed 2026-07-06 as the first Phase 3 substrate item; later plans
-remain written on demand as their phases approach.
+was executed 2026-07-06 as the first Phase 3 substrate item; 031 was
+executed 2026-07-06 as the file schema/contract substrate. Later plan
+docs are tracked below as they are written.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -53,6 +54,25 @@ integrations, files, knowledge base, memory, artifacts).
 | 028 | First registry tools: TODO planning + native web search | P2 | M | 025, 026 | DONE |
 | 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | DONE |
 | 030 | Generic jobs table and SKIP-LOCKED worker harness | P1 | M | - | DONE |
+| 031 | File, FileRevision, and FileReference models + the file contract | P1 | M | - | DONE |
+| 032 | File upload, edit, restore, and deletion services + routes | P1 | L | 031, 030 | TODO |
+| 033 | Background file processing — extraction to markdown via jobs | P1 | M | 030, 031, 032 | TODO |
+| 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032 | TODO |
+| 035 | Files UI | P1 | L | 032 | TODO |
+| 036 | Multimodal chat input over Files | P1 | L | 031, 032 | TODO |
+| 037 | Integration core models, credential service, and secret references | P1 | L | 029 | TODO |
+| 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
+| 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
+| 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |
+| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040 | TODO |
+| 043 | Embeddings provider service | P1 | M | - | TODO |
+| 044 | KB models and ingestion pipeline | P1 | L | 030, 031, 043 | TODO |
+| 045 | Hybrid search engine, KB routes, and the Gate G4 eval harness | P1 | L | 044 | TODO |
+| 046 | KB agent tools, write-policy choke point, and document sources | P1 | L | 044, 045 | TODO |
+| 047 | Knowledge base UI | P1 | M | 044, 045, 046 | TODO |
+| 048 | Agent memory model, write service, and registry memory tools | P1 | L | 043, 045, 046 | TODO |
+| 049 | Core-memory prompt injection, memory routes, and memory UI | P1 | L | 048 | TODO |
+| 050 | Artifacts model, registry tools, and CSP-locked serving | P2 | L | 031, 032, 034 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -253,6 +273,31 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `TEST_DATABASE_URL=... uv run pytest tests/services/jobs tests/services/agent_schedules -q`,
   `uv run python -m workers.job_runner --once`, and
   `uv run python -m workers.agent_runner --once` passed.
+- `031` marked DONE 2026-07-06: the API now has core `files`,
+  `file_revisions`, `file_references`, and `file_uploads` tables;
+  `FileRevision` rows enforce exactly-one actor provenance and ORM-path
+  immutability with a set-once markdown backfill exception; the strict
+  file contract lives in `services/files/contract.py` with editable text,
+  ingestible documents, images, and mp4/mov video; image/video size limit
+  settings were normalized to `MAX_FILE_SIZE_IMAGE` and
+  `MAX_FILE_SIZE_VIDEO`; and provider-neutral file revision key builders
+  live in `services/files/utils.py`. No routes,
+  file lifecycle services, jobs, or frontend surfaces were added. `uv run
+  ruff check .`, Alembic upgrade/check plus a `core_0010` downgrade/upgrade
+  round trip on a fresh temporary Postgres database, `TEST_DATABASE_URL=...
+  uv run pytest tests/services/files -q`, `uv run pytest
+  tests/services/files/test_file_contract.py -q`, and
+  `TEST_DATABASE_URL=... uv run pytest tests/services/skills
+  tests/services/assets -q` passed. The local default dev database had a
+  pre-existing stale `core_0009` jobs index from earlier work, so migration
+  parity was verified against a fresh temp database instead of mutating local
+  data.
+- KB plans 044–047 should stay **Praxis-owned and OKF-compatible**:
+  Praxis owns storage, indexing, permissions, jobs, audit, retention, and
+  agent/runtime behavior; Open Knowledge Format informs markdown/frontmatter
+  shape, stable concept identifiers, and import/export compatibility.
+  Google Knowledge Catalog is a potential future integration/source/sink,
+  not a required runtime substrate.
 
 ## Findings Considered And Rejected
 

@@ -53,10 +53,10 @@
 3. **Lease pattern with explicit expiry**, mirroring the schedule runner:
    `locked_by`/`locked_at`/`lock_expires_at`, matching
    `AgentScheduleRun.claim_token/claimed_at/claim_expires_at`
-   (`models/agent.py:194-196`). Stale reclaim flips
-   `running AND lock_expires_at < now()` back to `pending` (attempts
-   already consumed at claim, so a crash loop still exhausts
-   `max_attempts`).
+   (`models/agent.py:194-196`). Stale reclaim treats an expired lease as
+   a failed attempt: attempts were already consumed at claim, so reclaim
+   uses the same finalization path as handler failures, either backing off
+   to `pending` or marking `failed` when `max_attempts` is exhausted.
 4. **Handler registration is a decorator with import-time uniqueness**,
    exactly the plan 025 tool-registry shape: `@job_handler(kind=...)` into
    a module-level dict; a duplicate kind raises `RuntimeError` at import
@@ -64,10 +64,12 @@
    `(db, job)`, run inside their own session, and are wrapped in
    `asyncio.wait_for` with a per-kind timeout override.
 5. **In-flight dedup only, via a partial unique expression index** on
-   `(kind, coalesce(subject_type,''), coalesce(subject_id::text,''),
-   content_hash) WHERE status IN ('pending','running')`. Enqueue catches
-   the unique violation and returns the existing row. Terminal rows never
-   block re-enqueue — re-running a failed extraction is a feature.
+   `(coalesce(workspace_id::text,''), kind, coalesce(subject_type,''),
+   coalesce(subject_id::text,''), content_hash) WHERE status IN
+   ('pending','running')`. Workspace jobs dedup only inside their tenant;
+   system jobs with `workspace_id IS NULL` dedup globally. Enqueue catches
+   only this unique violation and returns the existing row. Terminal rows
+   never block re-enqueue — re-running a failed extraction is a feature.
    `content_hash` defaults to sha256 of the canonical JSON payload,
    caller-overridable.
 6. **The retention sweeper lives here** — recording plan 029's maintenance
@@ -264,7 +266,8 @@ Create `models/jobs.py` with `Job(Base, UUIDMixin, TimestampMixin)`
 - `run_after` DateTime(tz) not null, server_default `now()` (scheduling +
   backoff target)
 - `attempts` Integer not null server_default `0`; `max_attempts` Integer
-  not null server_default `5`; CHECK `attempts >= 0`
+  not null server_default `5`; CHECK `attempts >= 0` and
+  `max_attempts > 0`
 - `locked_by` String(255) nullable; `locked_at`, `lock_expires_at`
   DateTime(tz) nullable (decision 3)
 - `initiated_by_user_id` UUID FK `users.id`, nullable (decision 8 target)
@@ -283,7 +286,13 @@ Indexes (mirror the `AgentScheduleRun` style, `models/agent.py:230-248`):
 
 ```sql
 CREATE UNIQUE INDEX uq_jobs_in_flight ON jobs
-  (kind, coalesce(subject_type, ''), coalesce(subject_id::text, ''), content_hash)
+  (
+    coalesce(workspace_id::text, ''),
+    kind,
+    coalesce(subject_type, ''),
+    coalesce(subject_id::text, ''),
+    content_hash
+  )
   WHERE status IN ('pending', 'running');
 ```
 
@@ -360,11 +369,13 @@ across service packages).
   claiming, call `count_in_flight_jobs` and log a warning per workspace
   over `JOBS_WORKSPACE_CONCURRENCY_LIMIT` (decision 7 — observe, don't
   enforce).
-- `reclaim_stale_jobs.py` — `UPDATE jobs SET status='pending',
-  locked_by=NULL, locked_at=NULL, lock_expires_at=NULL WHERE
-  status='running' AND lock_expires_at < now()`; returns count; called at
-  the top of each polling pass (the `reconcile_schedule_run_execution`
-  slot in the loop shape).
+- `reclaim_stale_jobs.py` — select expired `running` jobs with
+  `lock_expires_at < now()` under `FOR UPDATE SKIP LOCKED`, then route
+  each through `finalize_job_failure(code="lease_expired")`. Retryable
+  rows return to `pending` with backoff and cleared locks; exhausted rows
+  become terminal `failed` rows and follow the final-failure notification
+  policy. Returns count; called at the top of each polling pass (the
+  `reconcile_schedule_run_execution` slot in the loop shape).
 - `finalize_job.py` — `finalize_job_success` (status `succeeded`,
   `finished_at`, clear lock/error columns) and `finalize_job_failure`:
   if `attempts >= max_attempts` → `failed`, `finished_at`, and — only
@@ -459,7 +470,9 @@ logs one pass (sweep enqueued + executed);
 - `test_finalize_and_reclaim.py`: failure below `max_attempts` → pending
   with backoff `run_after`; final failure → `failed` + notification row
   for the initiator, none without an initiator; success clears lock and
-  errors; expired lease reclaimed to pending, unexpired left alone.
+  errors; expired lease records `lease_expired` and either backs off to
+  pending or fails terminally when attempts are exhausted, unexpired left
+  alone.
 - `test_sweep_terminal_jobs.py`: old terminal rows deleted, fresh
   terminal and in-flight rows kept; handler re-enqueues itself;
   `ensure_sweep_job` is idempotent.
@@ -548,5 +561,5 @@ Stop and report back (do not improvise) if:
 - Reviewers should scrutinize: the coalesce dedup index (NULL subjects
   must dedup), SAVEPOINT handling in `enqueue_job` (dedup must not poison
   the caller's transaction), reclaim-vs-attempts interaction (claim
-  increments, reclaim does not), and that `workers/main.py` exits
-  non-zero when either loop dies.
+  increments, reclaim finalizes a failure without incrementing again), and
+  that `workers/main.py` exits non-zero when either loop dies.

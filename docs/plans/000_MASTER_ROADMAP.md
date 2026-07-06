@@ -11,10 +11,11 @@ the questions/gaps doc holds the full open-question inventory.
 
 Each numbered item below becomes one implementation plan under `docs/plans/`
 (existing template: Status block, STOP conditions, follow-ups), added to the
-README table as it is written. Numbers 010–030 are written plan docs
+README table as it is written. Numbers 010–031 are written plan docs
 (021–029 added 2026-07-02: Lane O, Phase 1, Gate G3 note; 030 completed
-2026-07-06 as the first Phase 3 substrate item); 031–051 are reserved here
-and written on demand as their phases approach.
+2026-07-06 as the first Phase 3 substrate item; 031 completed 2026-07-06
+as the file schema/contract substrate); 032–051 are reserved here and
+written on demand as their phases approach.
 
 ---
 
@@ -60,6 +61,7 @@ product interview on 2026-07-02.
 | D6 | Skills before memory/KB injection | Confirmed: 018 must land before 046/048 so system-prompt assembly is designed once. | Gate G2 |
 | D7 | MCP client support | Deferred until the native registry is stable and the catalog is big enough to need `defer_loading`. Not in any phase below. | — |
 | D8 | Client-side password hashing | Rejected (no threat model it addresses; passwords already hashed at rest, TLS in transit). Closes the NOTES item. | — |
+| D9 | OKF and Google Knowledge Catalog posture | **Own the KB; use OKF for compatibility.** Praxis owns storage, indexing, permissions, jobs, audit, retention, and agent behavior. Open Knowledge Format informs markdown/frontmatter structure, stable concept identifiers, and import/export. Google Knowledge Catalog may become an optional integration/source/sink later, not the runtime substrate. | 044–047 |
 
 Per-subsystem open decisions that do *not* change ordering (embedding
 default, contextual-annotation default, scratch TTL, memory approval
@@ -170,7 +172,7 @@ Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
 | Plan | Scope |
 |------|-------|
 | 030 | Generic `jobs` table + SKIP-LOCKED worker harness (workspace-scoped kind × subject × content_hash, priority, bounded retries, stale reclaim, partial-unique in-flight dedup). **DONE 2026-07-06.** (Donor B1.) |
-| 031 | `File` / immutable `FileRevision` / non-copying `FileReference` models + migrations, immutability enforcement, exactly-one-actor provenance, file-contract policy table. (Donor B2.) |
+| 031 | `File` / immutable `FileRevision` / non-copying `FileReference` models + migrations, immutability enforcement, exactly-one-actor provenance, file-contract policy table. **DONE 2026-07-06.** (Donor B2.) |
 | 032 | Upload/confirm/edit/restore/delete services + routes: two-phase signed upload, content-hash dedup, optimistic concurrency, symmetric deletion + sweepers per 029 retention. (Donor B3.) |
 | 033 | Background file processing (extraction → markdown) via jobs; status lifecycle; reuse 017's conversion machinery. (Donor B4.) |
 | 034 | Agent file tools (`list_files`/`read_file`/`write_file`/`promote_scratch`) + scratch model (TTL, size cap, approval-gated promote) + `<available_files>` prompt block via the 018 assembler. (Donor B5.) |
@@ -193,7 +195,7 @@ Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
 | Plan | Scope |
 |------|-------|
 | 043 | Embeddings provider service (ABC + OpenAI default + local option; model+dims recorded per collection). (Donor D1.) |
-| 044 | `kb_documents`/`kb_chunks` models + migrations (halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). (Donor D2.) |
+| 044 | OKF-compatible, Praxis-owned `kb_documents`/`kb_chunks` models + migrations (stable concept identifiers/frontmatter metadata, halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). Google Knowledge Catalog remains an optional integration target, not a dependency. (Donor D2 + D9.) |
 | 045 | Hybrid search engine (RRF merge, pending-embedding lexical fallback, SQL filters, reranker interface) + search/read routes + **the eval harness**: seed docs with expected citations, hybrid-search assertions, fallback tests, prompt-injection fixture documents. (Donor D3 + gaps-doc eval requirement; Gate G4.) |
 | 046 | Agent tools (`search_knowledge`, `read_document`) with retrieved content framed as untrusted data in tool results; write-policy choke point (provenance, private-never-shared rule, secret blocking); document sources (upload via Files, URL, manual). **Gate G2 applies.** (Donor D4.) |
 | 047 | KB UI: documents table, ingestion status, search. (Donor D5.) |
@@ -238,7 +240,7 @@ management (043–049).
 If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 → 032 → 033 → 034 → 035 →
+018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.
 
