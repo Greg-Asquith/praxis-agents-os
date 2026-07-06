@@ -66,7 +66,7 @@ def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
 
 
 def test_runtime_instructions_includes_available_files_block() -> None:
-    agent = _agent(instructions="Reply plainly.", tool_names=["read_file", "list_files"])
+    agent = _agent(instructions="Reply plainly.", tool_names=[])
     file_id = uuid4()
 
     prompt = _runtime_instructions(
@@ -90,27 +90,16 @@ def test_runtime_instructions_includes_available_files_block() -> None:
     assert "Use read_file with the id to read one" in prompt
 
 
-def test_runtime_instructions_omits_available_files_without_read_tool() -> None:
+def test_runtime_instructions_omits_available_files_when_none_are_attached() -> None:
     agent = _agent(instructions="Reply plainly.", tool_names=[])
-    file_id = uuid4()
 
     prompt = _runtime_instructions(
         agent,
         include_delegation=False,
-        available_files=[
-            AvailableFile(
-                id=file_id,
-                name="brief.md",
-                category="editable_text",
-                media_type="text/markdown",
-                size_bytes=42,
-                processing_status="ready",
-            )
-        ],
+        available_files=[],
     )
 
     assert "<available_files>" not in prompt
-    assert str(file_id) not in prompt
 
 
 def _agent(*, instructions: str, tool_names: list[str] | None = None) -> Agent:

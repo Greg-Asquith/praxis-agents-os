@@ -219,20 +219,41 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     )
 
     assert [tool.name for tool in default_tools] == [
+        "list_files",
+        "promote_scratch",
+        "read_file",
         "read_todos",
+        "write_file",
         "write_todos",
         "test_runtime_context",
         "test_add_numbers",
     ]
     assert [tool.requires_approval for tool in default_tools] == [
         False,
+        True,
+        False,
+        False,
+        False,
         False,
         True,
         False,
     ]
-    assert [tool.timeout for tool in default_tools] == [5, 5, 5, 5]
-    assert [tool.max_retries for tool in default_tools] == [None, None, None, 1]
+    assert [tool.timeout for tool in default_tools] == [10.0, 30.0, 30.0, 5, 30.0, 5, 5, 5]
+    assert [tool.max_retries for tool in default_tools] == [
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        1,
+    ]
     assert [tool.requires_approval for tool in approved_tools] == [
+        False,
+        True,
+        False,
+        False,
         False,
         False,
         True,
@@ -252,7 +273,11 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
     catalog = list_allowed_tool_definitions(workspace=object())
 
     assert [tool.name for tool in tools] == [
+        "list_files",
+        "promote_scratch",
+        "read_file",
         "read_todos",
+        "write_file",
         "write_todos",
         "test_runtime_context",
     ]

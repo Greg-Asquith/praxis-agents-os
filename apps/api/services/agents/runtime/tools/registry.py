@@ -131,7 +131,7 @@ def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
             continue
         tools.append(
             definition.to_pydantic_tool(
-                policy=TOOL_POLICY_AUTO
+                policy=definition.default_policy
                 if definition.auto_mount
                 else policies.get(name, definition.default_policy),
             )

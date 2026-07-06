@@ -89,6 +89,9 @@ async def test_file_tool_catalog_policies() -> None:
     assert RUNTIME_TOOL_CATALOG["write_file"].effect == TOOL_EFFECT_WRITE
     assert RUNTIME_TOOL_CATALOG["write_file"].default_policy == TOOL_POLICY_AUTO
     assert RUNTIME_TOOL_CATALOG["promote_scratch"].default_policy == TOOL_POLICY_APPROVAL
+    for tool_name in ("list_files", "read_file", "write_file", "promote_scratch"):
+        assert RUNTIME_TOOL_CATALOG[tool_name].configurable is False
+        assert RUNTIME_TOOL_CATALOG[tool_name].auto_mount is True
 
 
 async def test_stages_write_file_approval_content_without_persisting_body(
@@ -427,7 +430,7 @@ async def _runtime_file_context(db: AsyncSession) -> RuntimeFileTestContext:
         created_by=user.id,
         model_provider="openai",
         model="gpt-5.4-mini",
-        tool_names=["list_files", "read_file", "write_file", "promote_scratch"],
+        tool_names=[],
     )
     db.add(agent)
     await db.flush()

@@ -38,6 +38,8 @@ class PromoteScratchOutput(BaseModel):
     takes_ctx=True,
     timeout=30.0,
     output_model=PromoteScratchOutput,
+    configurable=False,
+    auto_mount=True,
 )
 async def promote_scratch(
     ctx: RunContext[RuntimeDeps],

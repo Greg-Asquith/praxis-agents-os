@@ -36,6 +36,8 @@ from services.storage.factory import get_storage_provider
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     timeout=30.0,
+    configurable=False,
+    auto_mount=True,
 )
 async def read_file(
     ctx: RunContext[RuntimeDeps],

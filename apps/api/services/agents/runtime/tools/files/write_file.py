@@ -49,6 +49,8 @@ class WriteFileOutput(BaseModel):
     takes_ctx=True,
     timeout=30.0,
     output_model=WriteFileOutput,
+    configurable=False,
+    auto_mount=True,
 )
 async def write_file(
     ctx: RunContext[RuntimeDeps],

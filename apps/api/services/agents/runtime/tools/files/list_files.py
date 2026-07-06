@@ -47,6 +47,8 @@ class ListFilesOutput(BaseModel):
     takes_ctx=True,
     timeout=10.0,
     output_model=ListFilesOutput,
+    configurable=False,
+    auto_mount=True,
 )
 async def list_files(
     ctx: RunContext[RuntimeDeps],

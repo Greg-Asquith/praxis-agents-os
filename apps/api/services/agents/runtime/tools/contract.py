@@ -32,7 +32,7 @@ _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 @dataclass(frozen=True)
 class RuntimeToolDefinition:
-    """One Python-owned tool available for agent configuration."""
+    """One Python-owned runtime tool entry."""
 
     name: str
     function: Callable[..., Any] | None
@@ -157,13 +157,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool must support at least one policy")
     if definition.default_policy not in allowed_policies:
         raise RuntimeError("Runtime tool default policy must be supported by the tool")
-    if definition.auto_mount:
-        if definition.configurable:
-            raise RuntimeError("Auto-mounted runtime tools cannot be configurable")
-        if definition.default_policy != TOOL_POLICY_AUTO:
-            raise RuntimeError("Auto-mounted runtime tools must default to auto")
-        if not definition.supports_auto or definition.supports_approval:
-            raise RuntimeError("Auto-mounted runtime tools must support only auto policy")
+    if definition.auto_mount and definition.configurable:
+        raise RuntimeError("Auto-mounted runtime tools cannot be configurable")
     if (
         definition.effect == TOOL_EFFECT_WRITE
         and not definition.supports_approval

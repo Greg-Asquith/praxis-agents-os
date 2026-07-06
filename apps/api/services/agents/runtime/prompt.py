@@ -54,7 +54,6 @@ def runtime_prompt_blocks(
     available_files: Sequence[AvailableFile] = (),
 ) -> list[PromptBlock]:
     """Return the canonical ordered prompt blocks for one runtime agent."""
-    tool_names = set(agent.tool_names or [])
     return [
         PromptBlock("identity", agent.instructions),
         PromptBlock(
@@ -67,11 +66,7 @@ def runtime_prompt_blocks(
         ),
         PromptBlock(
             "available_files",
-            _render_available_files(
-                available_files,
-                can_read_files="read_file" in tool_names,
-                can_list_files="list_files" in tool_names,
-            ),
+            _render_available_files(available_files),
             budget=settings.AVAILABLE_FILES_PROMPT_BUDGET,
         ),
     ]
@@ -100,17 +95,11 @@ def _render_block(block: PromptBlock) -> str:
     return content
 
 
-def _render_available_files(
-    files: Sequence[AvailableFile],
-    *,
-    can_read_files: bool,
-    can_list_files: bool,
-) -> str:
-    if not files or not can_read_files:
+def _render_available_files(files: Sequence[AvailableFile]) -> str:
+    if not files:
         return ""
     instruction = "These workspace files are attached to this conversation. Use read_file with the id to read one."
-    if can_list_files:
-        instruction += " Use list_files to see everything available."
+    instruction += " Use list_files to see everything available."
     lines = [
         "<available_files>",
         instruction,
