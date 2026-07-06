@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from utils.validation import normalize_optional_text
 
 ConversationSource = Literal["direct", "scheduled", "delegated"]
 
@@ -30,10 +31,7 @@ class ConversationCreateRequest(BaseModel):
     @field_validator("client_message_id")
     @classmethod
     def normalize_client_message_id(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
 
 class ConversationTurnCreateRequest(BaseModel):
@@ -51,10 +49,7 @@ class ConversationTurnCreateRequest(BaseModel):
     @field_validator("client_message_id")
     @classmethod
     def normalize_client_message_id(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
 
 class ConversationRead(BaseModel):

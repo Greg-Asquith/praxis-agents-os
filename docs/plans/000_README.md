@@ -15,8 +15,13 @@ document — it unifies `DONOR_PORT_ROADMAP.md`,
 into one phased roadmap and reserves plan numbers 021–051. Plans 021–029
 were written 2026-07-02 (Lane O, Phase 1, and the Gate G3 note). Plan 030
 was executed 2026-07-06 as the first Phase 3 substrate item; 031 was
-executed 2026-07-06 as the file schema/contract substrate. Later plan
-docs are tracked below as they are written.
+executed 2026-07-06 as the file schema/contract substrate; 032 was
+executed 2026-07-06 as the file upload/lifecycle route slice. Plans
+033–051 were written 2026-07-06 in a full planning pass (029 executed the
+same day, opening Gate G3), grounded at anchors `0cbbb39`/`a0eea1c` and
+cross-reviewed for contract consistency against the landed 030–032
+implementations — each plan's drift check + "Current state" excerpts are
+the contract.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -55,7 +60,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 029 | Governance & lifecycle design note (Gate G3) | P1 | M | - | DONE |
 | 030 | Generic jobs table and SKIP-LOCKED worker harness | P1 | M | - | DONE |
 | 031 | File, FileRevision, and FileReference models + the file contract | P1 | M | - | DONE |
-| 032 | File upload, edit, restore, and deletion services + routes | P1 | L | 031, 030 | TODO |
+| 032 | File upload, edit, restore, and deletion services + routes | P1 | L | 031, 030 | DONE |
 | 033 | Background file processing — extraction to markdown via jobs | P1 | M | 030, 031, 032 | TODO |
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032 | TODO |
 | 035 | Files UI | P1 | L | 032 | TODO |
@@ -64,7 +69,8 @@ integrations, files, knowledge base, memory, artifacts).
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |
-| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040 | TODO |
+| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014 (Gate G1) | TODO |
+| 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | TODO |
 | 043 | Embeddings provider service | P1 | M | - | TODO |
 | 044 | KB models and ingestion pipeline | P1 | L | 030, 031, 043 | TODO |
 | 045 | Hybrid search engine, KB routes, and the Gate G4 eval harness | P1 | L | 044 | TODO |
@@ -73,6 +79,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 048 | Agent memory model, write service, and registry memory tools | P1 | L | 043, 045, 046 | TODO |
 | 049 | Core-memory prompt injection, memory routes, and memory UI | P1 | L | 048 | TODO |
 | 050 | Artifacts model, registry tools, and CSP-locked serving | P2 | L | 031, 032, 034 | TODO |
+| 051 | Chat artifact cards, versions UI, and share links | P2 | L | 050, 030 (soft: 035) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -292,12 +299,78 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   pre-existing stale `core_0009` jobs index from earlier work, so migration
   parity was verified against a fresh temp database instead of mutating local
   data.
+- `032` marked DONE 2026-07-06: `/api/v1/files` now exposes upload grant,
+  confirm, list, usage, detail, rename/description, soft-delete, purge,
+  edit, restore, revisions, and signed-download routes. File uploads reuse
+  the asset token seam with `AssetKind.WORKSPACE_FILE`; confirm verifies
+  provider metadata and computes the stored sha256 from bytes; edit/restore
+  append immutable revisions with optimistic 409 conflicts; delete keeps
+  blobs during retention; purge and the new `files.sweep_deleted` job delete
+  distinct revision/markdown objects plus abandoned uploads. Mutations audit
+  as `resource_type="file"`, file write access is EDITOR, purge is MANAGER,
+  and `/files/usage` reports the 10 GiB soft-limit counter without hard
+  enforcement. `uv run ruff check .`, `DATABASE_URL=... uv run alembic check`,
+  `TEST_DATABASE_URL=... uv run pytest tests/services/files tests/routes/files -q`,
+  `TEST_DATABASE_URL=... uv run pytest tests/services/skills tests/services/assets tests/services/jobs -q`,
+  `DATABASE_URL=... uv run python -m workers.job_runner --once`, and the
+  route registry check for the twelve effective `/files` entries passed.
 - KB plans 044–047 should stay **Praxis-owned and OKF-compatible**:
   Praxis owns storage, indexing, permissions, jobs, audit, retention, and
   agent/runtime behavior; Open Knowledge Format informs markdown/frontmatter
   shape, stable concept identifiers, and import/export compatibility.
   Google Knowledge Catalog is a potential future integration/source/sink,
   not a required runtime substrate.
+- `033`–`051` were written 2026-07-06 in one planning pass after `029`
+  executed (Gate G3): Phase 3 surfaces (033–036), Phase 4a (037–042),
+  Phase 4b (043–047), memory (048–049), artifacts (050–051). Most anchor
+  at `0cbbb39`; 042/051 anchor at `a0eea1c`. A cross-plan consistency
+  review reconciled all docs against the landed 030/031/032
+  implementations (jobs API, `models/files.py` vocabulary, kind names);
+  run each plan's drift check before executing.
+- `034` mounts its file tools through the `026` dispatch and the `018`
+  assembler (`<available_files>` block); scratch lifecycle (7 d rolling
+  TTL, purge on expiry, delete after promotion) implements
+  `governance.md` §3.
+- `036` passes chat attachments to the model via pydantic-ai 2.1.0
+  multimodal input (probed classes recorded in the plan), gated by the
+  031 file contract; it adds no new SSE event names.
+- `037 → 038 → 039 → 040 → 041` is a hard chain. `040` must land before
+  `041` registers any integration tool: it changes `RuntimeDeps` and
+  `build_runtime_tools` and adds the context prompt block. Context is
+  always server-resolved — tool schemas never take account/connection
+  parameters.
+- `040` reuses the existing `AgentSchedule.active_context` JSONB column
+  (no schedule migration) and unhides it in the `021` routes and `022`
+  form; one pinned schedule route test flips.
+- `041` has a hard Gate G1 pre-flight: it STOPs unless `014` (OTel) is
+  DONE — schedule `014` before `041`. The registry name pattern forbids
+  dots, so provider tools are snake_case (`gmail_search_messages`, …).
+  Google Ads spend ops are `approval` with `supports_auto=False`,
+  enforced by the existing `025` write-time and runtime layers.
+- `042` is frontend-only and sliceable: provider catalog / connections /
+  resources need only `038`/`039`; the context-group editor and
+  chat-header picker need `040`'s routes.
+- `045` owns the Gate G4 eval harness (seeded citations, lexical
+  fallback, prompt-injection fixtures — `046`'s untrusted-framing tests
+  reuse them) and records the hybrid-engine decision `048` consumes:
+  shared `services/retrieval/` parts + the written RRF SQL shape, not a
+  parameterized multi-table engine.
+- `GET /api/v1/kb/documents` (list) is owned by `046` (assigned at the
+  2026-07-06 reconciliation; `045` deliberately ships only search +
+  get-document); `047` consumes it.
+- `048`/`049`: memory rides `043` embeddings and `045`'s engine parts;
+  provenance is backend-minted from `RuntimeDeps` (the model never
+  supplies it); memory-note tools default `auto` per `governance.md` §2,
+  with the Gate G4 memory eval tests required before any write-policy
+  tuning.
+- `050` versions artifacts as `031` `FileRevision`s (agent provenance via
+  `created_by_agent_id`; no new revision kind) and ships the CSP-locked
+  serving pipeline `051` reuses (`connect-src 'none'`, opaque-origin
+  sandbox, no cookies on the artifact origin).
+- `051` is the platform's first anonymous-access surface: hashed 256-bit
+  share tokens, version-pinned, 7 d default expiry, 10/hour/workspace
+  creation limit, `artifacts.sweep_expired_shares` on the `030` harness —
+  and its plan mandates a security-auditor review before merge.
 
 ## Findings Considered And Rejected
 

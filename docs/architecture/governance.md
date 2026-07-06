@@ -33,8 +33,8 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Create/edit agents, skills *(enforced today: EDITOR)* | — | ✓ | ✓ | ✓ |
 | Create schedules *(enforced today: 021, `agent_schedules/authorisation.py`)* | — | ✓ | ✓ | ✓ |
 | Mutate others' schedules *(enforced today: 021 owner-or-admin)* | — | — | ✓ | ✓ |
-| Upload/edit/delete files (031–032) | — | ✓ | ✓ | ✓ |
-| Hard-delete / purge files (032) | — | — | ✓ | ✓ |
+| Upload/edit/delete files (031–032) *(enforced today: 032, `services/files` access gates)* | — | ✓ | ✓ | ✓ |
+| Hard-delete / purge files (032) *(enforced today: 032, `require_file_purge_access`)* | — | — | ✓ | ✓ |
 | Connect/revoke own user-scoped integrations (037–038) | — | ✓ | ✓ | ✓ |
 | Connect/revoke workspace-scoped integrations (037–038) | — | — | ✓ | ✓ |
 | Select integration resources / edit context groups (039–040) | — | ✓ | ✓ | ✓ |
@@ -81,7 +81,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 
 | Resource | Soft delete | Hard delete after | Storage cascade | Audit survives | Export |
 |---|---|---|---|---|---|
-| Files/FileRevisions (031/032) | ✓ [implemented: plan 031 schema + provenance/immutability invariants; lifecycle behavior: plan 032] | 30 d | tombstone blob; sweeper deletes both | ✓ | ✓ (signed URL batch) |
+| Files/FileRevisions (031/032) | ✓ [implemented: plan 031 schema + plan 032 lifecycle] | 30 d [implemented: plan 032] | tombstone blob; sweeper deletes both [implemented: plan 032] | ✓ [implemented: plan 032 mutation audit] | ✓ (single-file signed downloads shipped in 032; signed URL batch unplanned) [default — confirm at review] |
 | Scratch (034) | TTL expiry | 7 d rolling TTL; purge content on expiry; delete after promotion | n/a (DB text) | rows summarized | — |
 | Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
 | KB documents/chunks/embeddings (044) | ✓ | 30 d after doc hard-delete; chunks/vectors cascade immediately with doc | n/a | ✓ | ✓ (markdown) |
@@ -101,7 +101,7 @@ enforcement second**. Each counter names the plan that adds it. All values
 
 | Quota | Default | Counter added by |
 |---|---|---|
-| Per-workspace storage | 10 GB | 032 |
+| Per-workspace storage | 10 GB | 032 [implemented: counter + soft flag, no hard enforcement] |
 | Upload size | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (50 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB) *(enforced today; image/video keys normalized by 031 from AI-specific names for shared file use)* | — |
 | Embedding budget | 2 M tokens/month/workspace | 043 |
 | Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings [implemented: plan 030 counter] | 030 (counter implemented), 033 (first enforcement seam) |

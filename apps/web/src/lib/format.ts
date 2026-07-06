@@ -78,6 +78,11 @@ export function normalize(target: string | null) {
   return normalized || null
 }
 
+export function normalizeOptionalText(value: string | null | undefined) {
+  const normalized = value?.trim() ?? ""
+  return normalized || null
+}
+
 export function truncateForPreview(value: string | null, limit: number) {
   if (value === null || value.length <= limit) {
     return value

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_schedules.runs import schedule_health_from_run
+from utils.validation import normalize_optional_text
 
 
 class AgentScheduleRunRead(BaseModel):
@@ -142,12 +143,7 @@ class AgentScheduleCreateRequest(BaseModel):
     @field_validator("cron_expression", "timezone")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
 
 
 class AgentScheduleUpdateRequest(BaseModel):
@@ -170,12 +166,7 @@ class AgentScheduleUpdateRequest(BaseModel):
     @field_validator("cron_expression", "timezone")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
 
 
 class SchedulePreviewRequest(BaseModel):
@@ -194,12 +185,7 @@ class SchedulePreviewRequest(BaseModel):
     @field_validator("cron_expression", "timezone")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
 
 
 class SchedulePreviewResponse(BaseModel):

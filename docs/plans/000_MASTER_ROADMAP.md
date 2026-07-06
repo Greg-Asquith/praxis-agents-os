@@ -11,11 +11,14 @@ the questions/gaps doc holds the full open-question inventory.
 
 Each numbered item below becomes one implementation plan under `docs/plans/`
 (existing template: Status block, STOP conditions, follow-ups), added to the
-README table as it is written. Numbers 010–031 are written plan docs
+README table as it is written. Numbers 010–051 are all written plan docs
 (021–029 added 2026-07-02: Lane O, Phase 1, Gate G3 note; 030 completed
 2026-07-06 as the first Phase 3 substrate item; 031 completed 2026-07-06
-as the file schema/contract substrate); 032–051 are reserved here and
-written on demand as their phases approach.
+as the file schema/contract substrate; 032 completed 2026-07-06 as the
+file upload/lifecycle route slice; 033–051 written 2026-07-06 in a full
+planning pass after 029 executed — see `docs/architecture/governance.md` —
+covering Phases 3–6 end to end, consistency-reviewed against the landed
+030–032 substrate). Every reserved number now has a written plan.
 
 ---
 
@@ -173,7 +176,7 @@ Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
 |------|-------|
 | 030 | Generic `jobs` table + SKIP-LOCKED worker harness (workspace-scoped kind × subject × content_hash, priority, bounded retries, stale reclaim, partial-unique in-flight dedup). **DONE 2026-07-06.** (Donor B1.) |
 | 031 | `File` / immutable `FileRevision` / non-copying `FileReference` models + migrations, immutability enforcement, exactly-one-actor provenance, file-contract policy table. **DONE 2026-07-06.** (Donor B2.) |
-| 032 | Upload/confirm/edit/restore/delete services + routes: two-phase signed upload, content-hash dedup, optimistic concurrency, symmetric deletion + sweepers per 029 retention. (Donor B3.) |
+| 032 | Upload/confirm/edit/restore/delete services + routes: two-phase signed upload, content-hash dedup, optimistic concurrency, symmetric deletion + sweepers per 029 retention. **DONE 2026-07-06.** (Donor B3.) |
 | 033 | Background file processing (extraction → markdown) via jobs; status lifecycle; reuse 017's conversion machinery. (Donor B4.) |
 | 034 | Agent file tools (`list_files`/`read_file`/`write_file`/`promote_scratch`) + scratch model (TTL, size cap, approval-gated promote) + `<available_files>` prompt block via the 018 assembler. (Donor B5.) |
 | 035 | Files UI: files page, detail sheet with revisions/diff, chat file cards with signed-URL open/download. (Donor B6.) |
@@ -240,7 +243,7 @@ management (043–049).
 If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 → 033 → 034 → 035 →
+018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 → 034 → 035 →
 036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
 and the polish lane as filler.
 

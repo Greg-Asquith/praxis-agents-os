@@ -25,6 +25,7 @@ from models.jobs import Job
 from services.jobs.claim_jobs import claim_jobs
 from services.jobs.domain import JOB_STATUS_RUNNING
 from services.jobs.finalize_job import finalize_job_failure, finalize_job_success
+from services.jobs.handlers.sweep_deleted_files import ensure_files_sweep_job
 from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import get_job_handler
@@ -44,6 +45,7 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
         if reclaimed_count:
             logger.info("Reclaimed stale generic jobs", extra={"count": reclaimed_count})
         await ensure_sweep_job(db)
+        await ensure_files_sweep_job(db)
         claimed_jobs = await claim_jobs(
             db,
             owner_instance_id=owner_id,

@@ -10,6 +10,7 @@ from routes.agents import router as agents_router
 from routes.audit_events import router as audit_events_router
 from routes.auth import router as auth_router
 from routes.conversations import router as conversations_router
+from routes.files import router as files_router
 from routes.models import router as models_router
 from routes.schedules import router as schedules_router
 from routes.security_events import router as security_events_router
@@ -25,6 +26,7 @@ api_router.include_router(agents_router)
 api_router.include_router(audit_events_router)
 api_router.include_router(auth_router)
 api_router.include_router(conversations_router)
+api_router.include_router(files_router)
 api_router.include_router(models_router)
 api_router.include_router(schedules_router)
 api_router.include_router(security_events_router)

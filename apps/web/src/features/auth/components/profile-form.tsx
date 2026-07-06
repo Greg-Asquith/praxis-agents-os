@@ -26,7 +26,7 @@ import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useUpdateCurrentUserMutation } from "@/features/auth/api/update-current-user"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
-import { initials } from "@/lib/format"
+import { initials, normalizeOptionalText } from "@/lib/format"
 import { formString } from "@/lib/forms"
 import { appConfig } from "@/config/app"
 
@@ -54,7 +54,7 @@ export function ProfileForm() {
 
     try {
       await updateMutation.mutateAsync({
-        display_name: formString(formData, "display_name").trim() || null,
+        display_name: normalizeOptionalText(formString(formData, "display_name")),
       })
 
       if (avatarFile) {

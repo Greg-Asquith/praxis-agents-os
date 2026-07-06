@@ -18,6 +18,7 @@ class AssetKind(StrEnum):
     USER_AVATAR = "user_avatar"
     WORKSPACE_ICON = "workspace_icon"
     SKILL_DOCUMENT = "skill_document"
+    WORKSPACE_FILE = "workspace_file"
 
 
 class AssetUploadRequest(BaseModel):

@@ -2,4 +2,7 @@
 
 """Built-in generic job handlers."""
 
-from services.jobs.handlers import sweep_terminal_jobs  # noqa: F401
+from services.jobs.handlers import (
+    sweep_deleted_files,  # noqa: F401
+    sweep_terminal_jobs,  # noqa: F401
+)

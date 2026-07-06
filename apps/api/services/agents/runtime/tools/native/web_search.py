@@ -40,6 +40,7 @@ from services.agents.models.registry import get_model
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import TOOL_POLICY_APPROVAL
 from services.agents.runtime.tools.registry import runtime_tool
+from utils.validation import normalize_optional_text
 
 NativeWebSearchProvider = Literal["anthropic", "google", "openai"]
 
@@ -219,7 +220,4 @@ def _default_model_for_provider(provider: str) -> str:
 
 
 def _clean_optional(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip()
-    return normalized or None
+    return normalize_optional_text(value)

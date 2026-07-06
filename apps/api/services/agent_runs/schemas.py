@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from utils.validation import normalize_optional_text
+
 ResumeDecision = Literal["approved", "denied"]
 
 
@@ -27,10 +29,7 @@ class AgentRunResumeDecision(BaseModel):
     @field_validator("message")
     @classmethod
     def normalize_message(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
     @model_validator(mode="after")
     def validate_override_args(self) -> "AgentRunResumeDecision":

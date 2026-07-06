@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.user import User
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
-from utils.validation import normalize_email
+from utils.validation import normalize_email, normalize_optional_text
 
 
 class WorkspaceRead(BaseModel):
@@ -54,10 +54,7 @@ class WorkspaceCreateRequest(BaseModel):
     @field_validator("name", "slug")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
 
 class WorkspaceUpdateRequest(BaseModel):
@@ -67,10 +64,7 @@ class WorkspaceUpdateRequest(BaseModel):
     @field_validator("name", "slug")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
 
 class WorkspaceMembershipRead(BaseModel):

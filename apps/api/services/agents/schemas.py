@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent import Agent
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from utils.validation import normalize_optional_text
 
 ToolPolicyValue = Literal["auto", "approval"]
 VALID_THINKING_VALUES = {"minimal", "low", "medium", "high", "xhigh"}
@@ -100,12 +101,7 @@ class AgentCreateRequest(BaseModel):
     )
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
 
     @field_validator("tool_names")
     @classmethod
@@ -165,12 +161,7 @@ class AgentUpdateRequest(BaseModel):
     )
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
 
     @field_validator("tool_names")
     @classmethod

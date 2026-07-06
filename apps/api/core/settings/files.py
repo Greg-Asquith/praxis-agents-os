@@ -82,6 +82,34 @@ class FilesSettingsMixin:
         le=524288000,
         description="Max AI generated video file size (100MB)",
     )
+    FILES_WORKSPACE_STORAGE_SOFT_LIMIT_BYTES: int = Field(
+        default=10737418240,
+        ge=1048576,
+        description="Soft per-workspace storage limit for workspace files.",
+    )
+    FILES_UPLOAD_EXPIRY_HOURS: int = Field(
+        default=24,
+        ge=1,
+        le=168,
+        description="Hours before an unconfirmed workspace file upload expires.",
+    )
+    FILES_DELETED_RETENTION_DAYS: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        description="Days to retain soft-deleted workspace files before hard deletion.",
+    )
+    FILES_SWEEP_INTERVAL_SECONDS: int = Field(
+        default=3600,
+        ge=60,
+        description="Seconds between workspace file retention sweeps.",
+    )
+    FILES_MAX_TEXT_EDIT_BYTES: int = Field(
+        default=2097152,
+        ge=1024,
+        le=10485760,
+        description="Maximum UTF-8 byte size for text file edits submitted in JSON.",
+    )
 
     # File Types
     ALLOWED_IMAGE_TYPES: str = Field(

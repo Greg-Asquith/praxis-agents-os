@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
+import { normalizeOptionalText } from "@/lib/format"
 
 export type LocalApprovalDecision =
   | { decision: "pending"; message: ""; overrideArgs: "" }
@@ -55,7 +56,7 @@ export function buildResumeDecisions(
     if (effectiveDecision.decision === "denied") {
       payload.push({
         decision: "denied",
-        message: effectiveDecision.message.trim() || null,
+        message: normalizeOptionalText(effectiveDecision.message),
         tool_call_id: approval.tool_call_id,
       })
       continue

@@ -9,6 +9,14 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def normalize_optional_text(value: str | None) -> str | None:
+    """Trim optional text fields and collapse blank values to None."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def validate_email(email: str) -> None:
     if "@" not in email or email.startswith("@") or email.endswith("@"):
         raise AppValidationError("Invalid email address", field="email")

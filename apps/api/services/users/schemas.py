@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.user import User
-from utils.validation import normalize_email
+from utils.validation import normalize_email, normalize_optional_text
 
 
 class UserRead(BaseModel):
@@ -52,10 +52,7 @@ class UserCreateRequest(BaseModel):
     @field_validator("display_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
 
 class UserUpdateRequest(BaseModel):
@@ -65,10 +62,7 @@ class UserUpdateRequest(BaseModel):
     @field_validator("display_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return normalize_optional_text(value)
 
 
 class UserPasswordSetRequest(BaseModel):

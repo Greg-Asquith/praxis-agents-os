@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.skills import Skill
+from utils.validation import normalize_optional_text
 
 SKILL_NAME_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 _SKILL_NAME_RE = re.compile(SKILL_NAME_PATTERN)
@@ -81,12 +82,7 @@ class SkillCreateRequest(BaseModel):
     @field_validator("human_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
 
 
 class SkillUpdateRequest(BaseModel):
@@ -127,9 +123,4 @@ class SkillUpdateRequest(BaseModel):
     @field_validator("human_name")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            return None
-        return normalized
+        return normalize_optional_text(value)
