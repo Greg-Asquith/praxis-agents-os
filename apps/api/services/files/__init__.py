@@ -8,6 +8,7 @@ from services.files.create_file_upload import create_file_upload
 from services.files.delete_file import delete_file
 from services.files.edit_file import edit_file
 from services.files.get_file import get_file
+from services.files.get_file_revision_content import get_file_revision_content
 from services.files.get_files_processing_summary import get_files_processing_summary
 from services.files.get_files_usage import get_files_usage
 from services.files.list_file_revisions import list_file_revisions
@@ -24,6 +25,7 @@ __all__ = [
     "delete_file",
     "edit_file",
     "get_file",
+    "get_file_revision_content",
     "get_files_processing_summary",
     "get_files_usage",
     "list_file_revisions",

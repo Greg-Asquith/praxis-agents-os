@@ -63,6 +63,7 @@ async def _upload_and_confirm_file(
     *,
     headers: dict[str, str],
     filename: str = "notes.txt",
+    content_type: str = "text/plain",
     content: bytes = b"hello",
 ) -> dict[str, object]:
     upload_response = await client.post(
@@ -70,7 +71,7 @@ async def _upload_and_confirm_file(
         headers=headers,
         json={
             "filename": filename,
-            "content_type": "text/plain",
+            "content_type": content_type,
             "size_bytes": len(content),
         },
     )
@@ -89,6 +90,91 @@ async def _upload_and_confirm_file(
     )
     assert confirm_response.status_code == 200
     return confirm_response.json()
+
+
+async def test_file_routes_read_revision_content_for_editable_revisions(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+    confirmed = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        content=b"first",
+    )
+    original_revision_id = str(confirmed["current_revision_id"])
+
+    original_response = await db_async_client.get(
+        f"/api/v1/files/{confirmed['id']}/revisions/{original_revision_id}/content",
+        headers=headers,
+    )
+    assert original_response.status_code == 200
+    original_content = original_response.json()
+    assert original_content["content"] == "first"
+    assert original_content["revision_id"] == original_revision_id
+    assert original_content["content_type"] == "text/plain"
+
+    read_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == AuditAction.READ.value,
+            AuditEvent.resource_type == AuditResourceType.FILE.value,
+            AuditEvent.resource_id == str(confirmed["id"]),
+        )
+    )
+    assert read_audit is not None
+    assert read_audit.details["revision_id"] == original_revision_id
+    assert read_audit.details["source"] == "content"
+
+    edit_response = await db_async_client.put(
+        f"/api/v1/files/{confirmed['id']}/content",
+        headers=headers,
+        json={
+            "content": "second",
+            "expected_current_revision_id": original_revision_id,
+        },
+    )
+    assert edit_response.status_code == 200
+    edited_revision_id = edit_response.json()["current_revision_id"]
+
+    reread_original_response = await db_async_client.get(
+        f"/api/v1/files/{confirmed['id']}/revisions/{original_revision_id}/content",
+        headers=headers,
+    )
+    assert reread_original_response.status_code == 200
+    assert reread_original_response.json()["content"] == "first"
+
+    edited_response = await db_async_client.get(
+        f"/api/v1/files/{confirmed['id']}/revisions/{edited_revision_id}/content",
+        headers=headers,
+    )
+    assert edited_response.status_code == 200
+    assert edited_response.json()["content"] == "second"
+
+
+async def test_file_routes_reject_revision_content_for_non_editable_revisions(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+    confirmed = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        filename="report.pdf",
+        content_type="application/pdf",
+        content=b"%PDF",
+    )
+
+    response = await db_async_client.get(
+        f"/api/v1/files/{confirmed['id']}/revisions/{confirmed['current_revision_id']}/content",
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["field"] == "revision_id"
+    assert response.json()["content_type"] == "application/pdf"
 
 
 async def test_file_routes_upload_list_download_edit_conflict_and_delete(

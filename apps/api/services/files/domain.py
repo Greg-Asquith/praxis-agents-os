@@ -156,6 +156,18 @@ class FileRevisionRead(BaseModel):
     created_at: datetime
 
 
+class FileRevisionContentRead(BaseModel):
+    """Text content for an immutable editable file revision."""
+
+    file_id: UUID
+    revision_id: UUID
+    revision_number: int
+    content_type: str
+    size_bytes: int
+    content_hash: str
+    content: str
+
+
 class FileListResponse(BaseModel):
     """List response for workspace files."""
 
