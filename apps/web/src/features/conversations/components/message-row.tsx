@@ -82,13 +82,17 @@ export function AssistantLiveActivityRow({
   messages: ChatMessageDraft[]
   toolActivities: ToolActivity[]
 }) {
+  const thinkingContent = liveThinkingContent(messages)
+  const textMessages = messages.filter((message) => message.channel !== "thinking")
+
   return (
     <AssistantMessageShell createdAt={null} label={assistantLabel} streaming={isStreaming}>
       {toolActivities.map((activity) => (
         <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
       ))}
+      <ThinkingBlock content={thinkingContent} idPrefix="live-assistant-turn:thinking" />
       {messages.length > 0 ? (
-        messages.map((message) => <LiveMessageDraft key={message.id} message={message} />)
+        textMessages.map((message) => <LiveMessageDraft key={message.id} message={message} />)
       ) : (
         <p className="text-muted-foreground text-sm">Working...</p>
       )}
@@ -96,21 +100,58 @@ export function AssistantLiveActivityRow({
   )
 }
 
-function LiveMessageDraft({ message }: { message: ChatMessageDraft }) {
-  if (message.channel === "thinking") {
-    const content = message.text
-      ? [message.text]
-      : message.status === "streaming"
-        ? ["Working..."]
-        : []
-    return <ThinkingBlock content={content} idPrefix={`${message.id}:thinking`} />
-  }
+export function AssistantTurnRow({
+  assistantLabel = "Agent",
+  createdAt,
+  messages,
+  toolActivities,
+}: {
+  assistantLabel?: string
+  createdAt: string
+  messages: ParsedConversationMessage[]
+  toolActivities: ToolActivity[]
+}) {
+  const thinkingContent = persistedThinkingContent(messages)
 
+  return (
+    <AssistantMessageShell createdAt={createdAt} label={assistantLabel}>
+      {toolActivities.map((activity, index) => (
+        <ToolCallRow key={`${activity.id}:${activity.kind}:${String(index)}`} activity={activity} />
+      ))}
+      <ThinkingBlock
+        content={thinkingContent}
+        idPrefix={`assistant-turn:${messages[0]?.id ?? "unknown"}:thinking`}
+      />
+      {messages.map((message) => (
+        <PersistedAssistantTurnMessage key={message.id} message={message} />
+      ))}
+    </AssistantMessageShell>
+  )
+}
+
+function LiveMessageDraft({ message }: { message: ChatMessageDraft }) {
   return (
     <div>
       <MessageMarkdown content={message.text || "Working..."} />
       <span className="sr-only">{message.id}</span>
     </div>
+  )
+}
+
+function PersistedAssistantTurnMessage({ message }: { message: ParsedConversationMessage }) {
+  if (!hasPersistedTurnContent(message)) {
+    return null
+  }
+
+  if (message.role === "tool") {
+    return <ToolMessageContent message={message} />
+  }
+
+  return (
+    <>
+      <MessageTextParts message={message} />
+      <UnsupportedPartRows message={message} />
+    </>
   )
 }
 
@@ -177,6 +218,14 @@ function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
   return (
     <div className="flex w-full flex-col gap-2 px-1">
       <MessageToolActivities message={message} />
+      <ToolMessageContent message={message} />
+    </div>
+  )
+}
+
+function ToolMessageContent({ message }: { message: ParsedConversationMessage }) {
+  return (
+    <>
       {message.text.map((text, index) => (
         <div
           key={`${message.id}:tool-text:${String(index)}`}
@@ -186,7 +235,7 @@ function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
         </div>
       ))}
       <UnsupportedPartRows message={message} />
-    </div>
+    </>
   )
 }
 
@@ -199,4 +248,19 @@ function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage
       <MessageContentParts message={message} />
     </div>
   )
+}
+
+function hasPersistedTurnContent(message: ParsedConversationMessage) {
+  return message.text.length > 0 || message.unsupportedParts.length > 0
+}
+
+function liveThinkingContent(messages: ChatMessageDraft[]) {
+  return messages
+    .filter((message) => message.channel === "thinking")
+    .map((message) => message.text || (message.status === "streaming" ? "Working..." : ""))
+    .filter((content) => content.length > 0)
+}
+
+function persistedThinkingContent(messages: ParsedConversationMessage[]) {
+  return messages.flatMap((message) => message.thinking)
 }

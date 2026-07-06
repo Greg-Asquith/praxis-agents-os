@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ApprovalControls } from "@/features/conversations/components/approval-controls"
 import {
   AssistantLiveActivityRow,
+  AssistantTurnRow,
   MessageRow,
 } from "@/features/conversations/components/message-row"
 import type {
@@ -23,12 +24,14 @@ import type {
 } from "@/features/conversations/stream/reducer"
 import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skill-activation"
 import {
+  groupConversationRenderItems,
   parseConversationMessages,
   delegationDetailsForToolActivity,
   delegationDetailsForPendingApproval,
   mergeDelegationDetails,
   normalizeToolArgs,
   pendingMessagesForConversation,
+  type ConversationRenderItem,
   type PendingUserMessage,
   type ToolActivity,
 } from "@/features/conversations/message-parts"
@@ -76,6 +79,7 @@ export function MessageList({
     () => parseConversationMessages(messages, activeRun?.status, pendingDelegations),
     [messages, activeRun?.status, pendingDelegations]
   )
+  const renderItems = useMemo(() => groupConversationRenderItems(parsedMessages), [parsedMessages])
   const visiblePendingUserMessages = pendingMessagesForConversation(
     pendingUserMessages,
     conversationId,
@@ -122,8 +126,8 @@ export function MessageList({
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      {parsedMessages.map((message) => (
-        <MessageRow key={message.id} assistantLabel={assistantLabel} message={message} />
+      {renderItems.map((item) => (
+        <TranscriptRenderItem key={item.id} assistantLabel={assistantLabel} item={item} />
       ))}
 
       {visiblePendingUserMessages.map((message) => (
@@ -161,6 +165,27 @@ export function MessageList({
       )}
     </div>
   )
+}
+
+function TranscriptRenderItem({
+  assistantLabel,
+  item,
+}: {
+  assistantLabel: string
+  item: ConversationRenderItem
+}) {
+  if (item.kind === "assistant-turn") {
+    return (
+      <AssistantTurnRow
+        assistantLabel={assistantLabel}
+        createdAt={item.createdAt}
+        messages={item.messages}
+        toolActivities={item.toolActivities}
+      />
+    )
+  }
+
+  return <MessageRow assistantLabel={assistantLabel} message={item.message} />
 }
 
 function buildLiveToolActivities(

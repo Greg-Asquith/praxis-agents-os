@@ -9,12 +9,14 @@ export {
   pendingMessagesForConversation,
   persistedClientMessageIds,
 } from "@/features/conversations/message-parts/pending-messages"
+export { groupConversationRenderItems } from "@/features/conversations/message-parts/group-render-items"
 export { parseConversationMessages } from "@/features/conversations/message-parts/parse"
 export {
   isRunStatusPolling,
   normalizeToolArgs,
   safeJsonPreview,
 } from "@/features/conversations/message-parts/utils"
+export type { ConversationRenderItem } from "@/features/conversations/message-parts/group-render-items"
 export type {
   DelegationToolActivity,
   ParsedConversationMessage,

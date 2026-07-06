@@ -117,6 +117,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     id: message.id,
     role: normalizeRole(message.role),
     sequence: message.sequence,
+    agentRunId: message.metadata ? (stringValue(message.metadata["agent_run_id"]) ?? null) : null,
     clientMessageId: message.client_message_id,
     createdAt: message.created_at,
     text: [],

@@ -49,7 +49,7 @@ export function SkillDocumentReadRow({
   return (
     <ToolActivityRowShell
       compact={compact}
-      defaultOpen={defaultOpen || hasResultContent}
+      defaultOpen={defaultOpen}
       expandable={hasResultContent}
       header={header}
     >

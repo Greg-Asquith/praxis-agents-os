@@ -45,6 +45,7 @@ export type ParsedConversationMessage = {
   id: string
   role: ParsedMessageRole
   sequence: number
+  agentRunId: string | null
   clientMessageId: string | null
   createdAt: string
   text: string[]
