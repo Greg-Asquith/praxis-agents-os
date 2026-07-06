@@ -104,7 +104,7 @@ enforcement second**. Each counter names the plan that adds it. All values
 | Per-workspace storage | 10 GB | 032 [implemented: counter + soft flag, no hard enforcement] |
 | Upload size | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (50 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB) *(enforced today; image/video keys normalized by 031 from AI-specific names for shared file use)* | — |
 | Embedding budget | 2 M tokens/month/workspace | 043 |
-| Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings [implemented: plan 030 counter] | 030 (counter implemented), 033 (first enforcement seam) |
+| Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings [implemented: plan 030 counter + warning, plan 033 claim-seam enforcement and files surface] | 030 (counter implemented), 033 (first enforcement seam) |
 | Per-run token/step caps | plan 011 `UsageLimits` + `max_steps` *(enforced today)* | — |
 | Artifact-share creation | 10/hour/workspace | 051 |
 | Integration API retries | `Retry-After`-aware, bounded attempts | 037 |

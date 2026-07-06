@@ -146,6 +146,36 @@ def distinct_object_keys(revisions: list[FileRevision]) -> set[str]:
     return keys
 
 
+async def set_processing_state_for_revision(
+    db: AsyncSession,
+    *,
+    file: File,
+    revision: FileRevision,
+    initiated_by_user_id: UUID | None,
+) -> None:
+    """Set file processing state and enqueue extraction for ingestible revisions."""
+    from services.files.contract import is_ingestible
+    from services.jobs.enqueue_job import enqueue_job
+
+    file.processing_error = None
+    file.processing_attempts = 0
+    if not is_ingestible(revision.content_type):
+        file.processing_status = "ready"
+        return
+
+    file.processing_status = "pending"
+    await enqueue_job(
+        db,
+        kind="files.extract",
+        workspace_id=file.workspace_id,
+        subject_type="file_revision",
+        subject_id=revision.id,
+        payload={"file_id": str(file.id), "revision_id": str(revision.id)},
+        content_hash=revision.content_hash,
+        initiated_by_user_id=initiated_by_user_id,
+    )
+
+
 def file_to_read(file: File) -> FileRead:
     """Serialize a file model for API responses."""
     if file.current_revision_id is None:

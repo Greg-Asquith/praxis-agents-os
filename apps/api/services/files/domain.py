@@ -183,3 +183,13 @@ class FilesUsageResponse(BaseModel):
     used_bytes: int
     soft_limit_bytes: int
     over_soft_limit: bool
+
+
+class FilesProcessingSummary(BaseModel):
+    """Workspace file processing status counts."""
+
+    pending: int
+    processing: int
+    ready: int
+    error: int
+    in_flight_jobs: int

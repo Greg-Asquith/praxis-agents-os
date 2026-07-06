@@ -21,7 +21,13 @@ executed 2026-07-06 as the file upload/lifecycle route slice. Plans
 same day, opening Gate G3), grounded at anchors `0cbbb39`/`a0eea1c` and
 cross-reviewed for contract consistency against the landed 030–032
 implementations — each plan's drift check + "Current state" excerpts are
-the contract.
+the contract. Plan 033 was executed 2026-07-06 as the background file
+processing slice.
+
+Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
+this authoritative ordering without renumbering existing product plans; their
+source files keep their local 001-005 names, but the main task list tracks
+them with `C` prefixes to avoid colliding with roadmap plans 001-005.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -61,10 +67,15 @@ integrations, files, knowledge base, memory, artifacts).
 | 030 | Generic jobs table and SKIP-LOCKED worker harness | P1 | M | - | DONE |
 | 031 | File, FileRevision, and FileReference models + the file contract | P1 | M | - | DONE |
 | 032 | File upload, edit, restore, and deletion services + routes | P1 | L | 031, 030 | DONE |
-| 033 | Background file processing — extraction to markdown via jobs | P1 | M | 030, 031, 032 | TODO |
-| 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032 | TODO |
-| 035 | Files UI | P1 | L | 032 | TODO |
-| 036 | Multimodal chat input over Files | P1 | L | 031, 032 | TODO |
+| 033 | Background file processing — extraction to markdown via jobs | P1 | M | 030, 031, 032 | DONE |
+| C01 | Stand up CI and complete the local quality gate | P1 | M | - | TODO |
+| C02 | Harden the files vertical (bugs, streaming hash, download audit) | P1 | M | C01 recommended; before 034-036 | TODO |
+| C03 | Bound conversation history reads and paginate the messages API | P1 | M | 013, 018 done; C01 recommended | TODO |
+| C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030; C01 recommended | TODO |
+| 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | TODO |
+| 035 | Files UI | P1 | L | 032, C02 | TODO |
+| 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | TODO |
+| C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | TODO |
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | TODO |
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
@@ -314,6 +325,49 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `TEST_DATABASE_URL=... uv run pytest tests/services/skills tests/services/assets tests/services/jobs -q`,
   `DATABASE_URL=... uv run python -m workers.job_runner --once`, and the
   route registry check for the twelve effective `/files` entries passed.
+- `033` marked DONE 2026-07-06: skill document conversion now uses the shared
+  `utils/document_markdown.py` helper, while skill behavior stays pinned by
+  the unchanged skills suite. Ingestible file confirm/restore operations set
+  `processing_status="pending"` and enqueue `files.extract` jobs with
+  ids-only payloads; the handler extracts revision markdown, backfills the
+  immutable revision once, preserves stale-current-revision status, copies
+  restored markdown pointers, and reports retryable errors on the current file.
+  `/api/v1/files/processing` exposes per-status counts plus in-flight jobs, and
+  the jobs claim query now skips pending workspace jobs when that workspace is
+  already at the configured running-job cap while leaving system jobs exempt.
+  `docs/architecture/governance.md` §4 records the claim-seam enforcement.
+  `uv run ruff check .`, `uv run pytest tests/services/skills -q`,
+  `DATABASE_URL=... uv run alembic check`,
+  `TEST_DATABASE_URL=... uv run pytest tests/services/files tests/services/jobs -q`,
+  registry/converter probes, the MarkItDown call-site grep, the route registry
+  check for thirteen effective `/files` entries, and
+  `DATABASE_URL=... uv run python -m workers.job_runner --once` passed.
+- Cleanup plans `C01`-`C05` live under `plans/improvements/` and are tracked
+  here with `C` identifiers because their source files are locally numbered
+  `001`-`005`, which collide with existing roadmap plan numbers. When executing
+  one, read the source plan fully and update both this table and
+  `plans/improvements/README.md`.
+- `C01` should be the next cleanup item: it adds CI, completes the local
+  `make check` gate, turns on pytest asyncio auto mode, and adds web stream
+  tests. It does not hard-block every future feature plan, but running
+  `C02`-`C04` or the remaining 034-051 work before C01 lands forfeits the gate
+  those tasks are meant to use.
+- `C02` must land before `034`, `035`, or `036` build further on the files
+  vertical. It fixes confirm/upload races, file-search wildcard behavior,
+  file download auditing, and the storage streaming primitive used by later
+  file and artifact work.
+- `C03` is valid only now that `013` and `018` are DONE: its bounded DB read
+  must still feed the existing `ProcessHistory` trimmer enough capability-load
+  rows to preserve skill activation pairs. It should run before long-lived
+  conversations and schedules become heavier through integrations and memory.
+- `C04` rides the `030` jobs harness and should run early as security/perf
+  hardening for auth-facing rate limits: bounded endpoint keys, retention
+  sweep, and regression tests. It does not change rate-limit policy.
+- `C05` is P2 production-readiness work. The license step is a maintainer
+  decision and should block that step rather than let an executor choose a
+  license. Its metrics route must stay independent of `014` OTel, and its 403
+  body filtering belongs at the exception choke point rather than at each
+  `AuthorizationError` raise site.
 - KB plans 044–047 should stay **Praxis-owned and OKF-compatible**:
   Praxis owns storage, indexing, permissions, jobs, audit, retention, and
   agent/runtime behavior; Open Knowledge Format informs markdown/frontmatter

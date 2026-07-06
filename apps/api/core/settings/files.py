@@ -64,6 +64,12 @@ class FilesSettingsMixin:
         le=10485760,
         description="Max size of converted skill-document markdown (2MB)",
     )
+    FILES_MAX_MARKDOWN_BYTES: int = Field(
+        default=2097152,
+        ge=65536,
+        le=10485760,
+        description="Max size of converted workspace-file markdown (2MB)",
+    )
     MAX_FILE_SIZE_AGENT_FILE: int = Field(
         default=104857600,
         ge=1048576,

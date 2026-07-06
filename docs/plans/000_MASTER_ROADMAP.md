@@ -15,10 +15,14 @@ README table as it is written. Numbers 010–051 are all written plan docs
 (021–029 added 2026-07-02: Lane O, Phase 1, Gate G3 note; 030 completed
 2026-07-06 as the first Phase 3 substrate item; 031 completed 2026-07-06
 as the file schema/contract substrate; 032 completed 2026-07-06 as the
-file upload/lifecycle route slice; 033–051 written 2026-07-06 in a full
+file upload/lifecycle route slice; 033 completed 2026-07-06 as the
+background file processing slice; 034–051 written 2026-07-06 in a full
 planning pass after 029 executed — see `docs/architecture/governance.md` —
 covering Phases 3–6 end to end, consistency-reviewed against the landed
-030–032 substrate). Every reserved number now has a written plan.
+030–033 substrate). Cleanup plans C01-C05 were integrated 2026-07-06 from
+`plans/improvements/`; their source files keep local numbers 001-005, but the
+master roadmap tracks them with `C` prefixes so they do not collide with
+existing roadmap plans. Every reserved number now has a written plan.
 
 ---
 
@@ -109,7 +113,9 @@ codebase by the gaps review):
 ```
 
 Phases 4a and 4b run in parallel after Phase 3. Lanes R and O interleave
-with Phases 1–3 as capacity allows. UI plans trail their backend slice.
+with Phases 1–3 as capacity allows. Lane C runs after the completed 033
+substrate and before the remaining files work it protects, with C05 before
+Phase 4+ production polish. UI plans trail their backend slice.
 
 ### Phase 0 — Baseline (P0, do first, small)
 
@@ -177,7 +183,26 @@ Run as written: 016 (DONE 2026-07-03) → 017 (DONE 2026-07-03) → 018 (DONE
 | 030 | Generic `jobs` table + SKIP-LOCKED worker harness (workspace-scoped kind × subject × content_hash, priority, bounded retries, stale reclaim, partial-unique in-flight dedup). **DONE 2026-07-06.** (Donor B1.) |
 | 031 | `File` / immutable `FileRevision` / non-copying `FileReference` models + migrations, immutability enforcement, exactly-one-actor provenance, file-contract policy table. **DONE 2026-07-06.** (Donor B2.) |
 | 032 | Upload/confirm/edit/restore/delete services + routes: two-phase signed upload, content-hash dedup, optimistic concurrency, symmetric deletion + sweepers per 029 retention. **DONE 2026-07-06.** (Donor B3.) |
-| 033 | Background file processing (extraction → markdown) via jobs; status lifecycle; reuse 017's conversion machinery. (Donor B4.) |
+| 033 | Background file processing (extraction → markdown) via jobs; status lifecycle; reuse 017's conversion machinery. **DONE 2026-07-06.** (Donor B4.) |
+
+### Lane C — Cleanup & Quality Hardening (plans/improvements)
+
+These tasks were added after 033 and are now part of the main execution order.
+They keep their source plans in `plans/improvements/`; `C` identifiers are the
+non-colliding roadmap aliases used in `docs/plans/000_README.md`.
+
+| Plan | Scope | Priority | When |
+|------|-------|----------|------|
+| C01 | Stand up CI and complete the local quality gate: CI workflow, backend format/test coverage in `make check`, pytest asyncio auto mode, and Vitest coverage for the conversation stream parser/reducer. | P1 | Next, before relying on the remaining cleanup and feature work gates. |
+| C02 | Harden the files vertical: upload/confirm race fixes, escaped file search, streaming hash primitive, safer download default, and download audit. | P1 | Before 034, 035, or 036 build on the files vertical. |
+| C03 | Bound conversation history reads and paginate the messages API while preserving capability-load pairs for the 013/018 history and skill-disclosure contract. | P1 | After 013/018; early, before long-lived scheduled/integration conversations grow. |
+| C04 | Rate limiter hardening: bounded endpoint keys, retention sweep on the 030 jobs harness, and rate-limit regression tests without changing policy. | P1 | After 030; early security/perf cleanup before provider/integration scale-up. |
+| C05 | Small production-readiness gaps: maintainer-chosen license, settings-gated `/api/metrics`, filtered 403 response bodies, and README corrections. | P2 | Before public-production polish for Phase 4+; license step blocks on maintainer choice. |
+
+Remaining Phase 3 work resumes after the file-hardening cleanup that gates it:
+
+| Plan | Scope |
+|------|-------|
 | 034 | Agent file tools (`list_files`/`read_file`/`write_file`/`promote_scratch`) + scratch model (TTL, size cap, approval-gated promote) + `<available_files>` prompt block via the 018 assembler. (Donor B5.) |
 | 035 | Files UI: files page, detail sheet with revisions/diff, chat file cards with signed-URL open/download. (Donor B6.) |
 | 036 | Multimodal input: chat attachments ride Files; images/documents passed to the model via pydantic-ai multimodal input, gated by the file-contract policy. (From NOTES; new — not in donor roadmap.) |
@@ -243,9 +268,9 @@ management (043–049).
 If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 → 034 → 035 →
-036 → 024 → 014 → {037–042 ∥ 043–047} → 048 → 049 → 050 → 051` — with 015
-and the polish lane as filler.
+018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 → C02 →
+C03 → C04 → 034 → 035 → 036 → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
+049 → 050 → 051` — with 015 and the polish lane as filler.
 
 With parallel capacity: one stream takes Lane O while another runs Phase 1
 → 2; Phases 4a/4b split naturally across streams after Phase 3.

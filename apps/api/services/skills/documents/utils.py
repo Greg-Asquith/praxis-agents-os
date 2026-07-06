@@ -2,12 +2,9 @@
 
 """Helpers for skill document storage, conversion, and manifest parsing."""
 
-import asyncio
-import io
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -24,17 +21,33 @@ from services.storage.domain import StorageBucket, StorageObjectRef, make_storag
 from services.storage.factory import get_storage_provider
 from services.storage.paths import safe_filename, validate_object_key
 from services.storage.provider import StorageProvider
+from utils.document_markdown import (
+    TRUNCATION_MARKER,
+    DocumentConversionError,
+    convert_document_to_markdown as convert_document_to_markdown_shared,
+    document_extension,
+    truncate_markdown,
+)
 
 logger = logging.getLogger(__name__)
 
-TRUNCATION_MARKER = "\n\n[Truncated: document exceeds the converted size limit.]"
-_TEXT_CONTENT_TYPES = frozenset({"text/plain", "text/markdown"})
-_CONTENT_TYPE_EXTENSIONS = {
-    "application/pdf": ".pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-    "text/plain": ".txt",
-    "text/markdown": ".md",
-}
+__all__ = [
+    "TRUNCATION_MARKER",
+    "allowed_document_content_types",
+    "best_effort_delete_private_object",
+    "convert_document_to_markdown",
+    "document_extension",
+    "entry_from_manifest",
+    "manifest_now",
+    "markdown_ref_for_original",
+    "original_ref",
+    "parse_manifest_entry",
+    "parse_skill_doc_key",
+    "private_ref_from_key",
+    "skill_doc_prefix",
+    "truncate_markdown",
+    "validate_document_upload",
+]
 
 
 @dataclass(frozen=True)
@@ -56,16 +69,6 @@ def allowed_document_content_types() -> set[str]:
 def skill_doc_prefix(workspace_id: UUID, skill_id: UUID, document_name: str) -> str:
     """Return the storage prefix for one skill document."""
     return validate_object_key(f"workspaces/{workspace_id}/skills/{skill_id}/docs/{document_name}")
-
-
-def document_extension(filename: str, *, content_type: str | None = None) -> str:
-    """Return a safe lower-case document extension."""
-    suffix = PurePosixPath(safe_filename(filename)).suffix.lower()
-    if suffix:
-        return suffix
-    if content_type:
-        return _CONTENT_TYPE_EXTENSIONS.get(normalize_content_type(content_type), "")
-    return ""
 
 
 def original_ref(
@@ -138,46 +141,15 @@ async def convert_document_to_markdown(
     filename: str,
 ) -> str:
     """Convert uploaded document bytes into markdown, enforcing the configured cap."""
-    normalized_content_type = normalize_content_type(content_type)
-    if normalized_content_type in _TEXT_CONTENT_TYPES:
-        markdown = data.decode("utf-8", errors="replace")
-    else:
-        extension = document_extension(filename, content_type=normalized_content_type)
-        try:
-            markdown = await asyncio.to_thread(_convert_sync, data, extension)
-        except Exception as exc:
-            raise SkillDocumentConversionError("Document could not be converted to markdown") from exc
-
-    return truncate_markdown(markdown, max_bytes=settings.MAX_SKILL_DOC_MARKDOWN_BYTES)
-
-
-def _convert_sync(data: bytes, extension: str) -> str:
-    from markitdown import MarkItDown
-
-    result = MarkItDown().convert_stream(io.BytesIO(data), file_extension=extension or None)
-    text = getattr(result, "text_content", None)
-    if text is None:
-        text = getattr(result, "markdown", None)
-    if not isinstance(text, str):
-        raise SkillDocumentConversionError("Markdown converter returned no text content")
-    return text
-
-
-def truncate_markdown(markdown: str, *, max_bytes: int) -> str:
-    """Truncate markdown at a UTF-8 character boundary when it exceeds max_bytes."""
-    encoded = markdown.encode("utf-8")
-    if len(encoded) <= max_bytes:
-        return markdown
-
-    marker_bytes = TRUNCATION_MARKER.encode("utf-8")
-    allowed_content_bytes = max(0, max_bytes - len(marker_bytes))
-    truncated = encoded[:allowed_content_bytes]
-    while truncated:
-        try:
-            return truncated.decode("utf-8") + TRUNCATION_MARKER
-        except UnicodeDecodeError:
-            truncated = truncated[:-1]
-    return TRUNCATION_MARKER
+    try:
+        return await convert_document_to_markdown_shared(
+            data,
+            content_type=content_type,
+            filename=filename,
+            max_bytes=settings.MAX_SKILL_DOC_MARKDOWN_BYTES,
+        )
+    except DocumentConversionError as exc:
+        raise SkillDocumentConversionError(exc.message) from exc
 
 
 def validate_document_upload(

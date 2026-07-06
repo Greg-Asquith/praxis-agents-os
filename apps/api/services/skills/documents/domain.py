@@ -8,18 +8,19 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from utils.document_markdown import DocumentConversionError
+
 SKILL_DOC_NAME_PATTERN = r"^[a-z0-9]+(_[a-z0-9]+)*$"
 _SKILL_DOC_NAME_RE = re.compile(SKILL_DOC_NAME_PATTERN)
 
 SkillDocumentStatus = Literal["ready", "failed"]
 
 
-class SkillDocumentConversionError(Exception):
+class SkillDocumentConversionError(DocumentConversionError):
     """Raised when a skill document cannot be converted to markdown."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
-        self.message = message
 
 
 class SkillDocumentEntry(BaseModel):
@@ -98,4 +99,3 @@ class SkillDocumentMarkdownResponse(BaseModel):
     name: str
     content: str
     truncated: bool = False
-

@@ -627,8 +627,6 @@ async def test_delete_purge_and_usage_handle_retained_and_shared_blobs(
             expected_current_revision_id=edited.current_revision_id,
         ),
     )
-    usage_before_delete = await get_files_usage(db_session, workspace=workspace)
-    assert usage_before_delete.used_bytes == len(b"first") + len(b"second")
     markdown_key = revision_object_key(workspace.id, file.id, uuid4(), ".md")
     await get_storage_provider().put_object(
         private_ref_from_key(markdown_key),
@@ -638,6 +636,8 @@ async def test_delete_purge_and_usage_handle_retained_and_shared_blobs(
     original.markdown_object_key = markdown_key
     original.markdown_size_bytes = len(b"markdown")
     await db_session.flush()
+    usage_before_delete = await get_files_usage(db_session, workspace=workspace)
+    assert usage_before_delete.used_bytes == len(b"first") + len(b"second") + len(b"markdown")
 
     await delete_file(
         db_session,

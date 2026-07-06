@@ -25,6 +25,7 @@ from services.files.utils import (
     file_to_read,
     get_file_for_workspace,
     require_file_write_access,
+    set_processing_state_for_revision,
     sha256_hex,
 )
 from services.storage.domain import StorageBucket
@@ -159,8 +160,12 @@ async def confirm_file_upload(
     file.extension = revision.extension
     file.size_bytes = revision.size_bytes
     file.content_hash = revision.content_hash
-    file.processing_status = "ready"
-    file.processing_error = None
+    await set_processing_state_for_revision(
+        db,
+        file=file,
+        revision=revision,
+        initiated_by_user_id=actor.id,
+    )
     file_upload.consumed_at = datetime.now(UTC)
     await db.flush()
 

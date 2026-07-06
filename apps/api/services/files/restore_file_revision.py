@@ -15,7 +15,12 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.domain import FileRead, FileRestoreRequest
-from services.files.utils import file_to_read, get_file_for_workspace, require_file_write_access
+from services.files.utils import (
+    file_to_read,
+    get_file_for_workspace,
+    require_file_write_access,
+    set_processing_state_for_revision,
+)
 
 
 async def restore_file_revision(
@@ -82,8 +87,12 @@ async def restore_file_revision(
     file.extension = revision.extension
     file.size_bytes = revision.size_bytes
     file.content_hash = revision.content_hash
-    file.processing_status = "ready"
-    file.processing_error = None
+    await set_processing_state_for_revision(
+        db,
+        file=file,
+        revision=revision,
+        initiated_by_user_id=actor.id,
+    )
     await db.flush()
 
     await record_workspace_audit_event(

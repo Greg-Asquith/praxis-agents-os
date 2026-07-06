@@ -10,6 +10,7 @@ from routes.files.create_file_upload import router as create_file_upload_router
 from routes.files.delete_file import router as delete_file_router
 from routes.files.edit_file import router as edit_file_router
 from routes.files.get_file import router as get_file_router
+from routes.files.get_files_processing import router as get_files_processing_router
 from routes.files.get_files_usage import router as get_files_usage_router
 from routes.files.list_file_revisions import router as list_file_revisions_router
 from routes.files.list_files import router as list_files_router
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 router.include_router(create_file_upload_router)
 router.include_router(confirm_file_upload_router)
 router.include_router(list_files_router)
+router.include_router(get_files_processing_router)
 router.include_router(get_files_usage_router)
 router.include_router(get_file_router)
 router.include_router(update_file_router)
