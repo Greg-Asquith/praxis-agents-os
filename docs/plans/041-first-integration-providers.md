@@ -7,13 +7,15 @@
 > in `docs/plans/000_README.md`.
 >
 > **Gate G1 pre-flight (HARD — run before Step 1)**: per
-> `docs/plans/000_MASTER_ROADMAP.md` §3, plans 021–023 AND 014 (OTel) must
-> be DONE before this plan ships agent-callable integration tools. At
-> `0cbbb39`, 021–023 are DONE but **014 is TODO**
-> (`docs/plans/000_README.md` status table). If 014 is still TODO at
-> execution time, **STOP and report — do not proceed, do not ship the
-> tools disabled as a workaround.** This plan's Google Ads mutations spend
-> real money; the roadmap requires tracing before they exist.
+> `docs/plans/000_MASTER_ROADMAP.md` §3, plans 021–023, 014 (OTel), and
+> the G1-extension plans 053–054 must be DONE before this plan ships
+> agent-callable integration tools. As of 2026-07-07, 021–023 and 014 are
+> DONE, while 053–054 remain TODO (`docs/plans/000_README.md` status
+> table). If any required row is not DONE at execution time, **STOP and
+> report — do not proceed, do not ship the tools disabled as a
+> workaround.** This plan's Google Ads mutations spend real money; the
+> roadmap requires tracing, cancellation, and run-envelope enforcement before
+> they exist.
 >
 > **Sibling-plan pre-flight**: verify the implemented 037/038/039/040 code
 > matches the dictated contract in "Current state" (manifest shape,
@@ -561,7 +563,7 @@ HTTP is mocked — zero live calls in CI**.
 
 ## Done criteria
 
-- [ ] Gate G1 pre-flight passed and the five status rows are quoted in
+- [ ] Gate G1 pre-flight passed and the required status rows are quoted in
       the completion report
 - [ ] `uv run ruff check .` exits 0; no new migrations exist
 - [ ] Registry smoke lists exactly the 10 decision-1 tools with the
@@ -584,9 +586,9 @@ HTTP is mocked — zero live calls in CI**.
 
 Stop and report back (do not improvise) if:
 
-- **Gate G1 fails**: 014 is TODO (or 021–023 regressed) at execution
-  time. Do not ship the tools "temporarily disabled" — that is the
-  improvisation this gate exists to prevent.
+- **Gate G1 fails**: 014, 053, or 054 is not DONE (or 021–023 regressed)
+  at execution time. Do not ship the tools "temporarily disabled" — that is
+  the improvisation this gate exists to prevent.
 - 037/038/039/040 are unimplemented or deviate from the dictated
   contract: no `IntegrationToolBinding`, different fan-out signature or
   result shape, manifest without `provider_keys`/`resource_types`, no
