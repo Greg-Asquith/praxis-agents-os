@@ -22,6 +22,34 @@
 > excerpts against the live code before proceeding; on a mismatch, treat
 > it as a STOP condition.
 
+> **Amendment (2026-07-07, plan 061 — provider packaging)**: this plan
+> additionally lands the frontend packaging seams from
+> `docs/architecture/integration-packaging.md` §5 (the note wins on
+> structure):
+>
+> 1. New `src/integrations/` namespace: `contract.ts` (the
+>    `IntegrationUiModule` type + type-only re-exports of `ToolActivity`,
+>    `ToolRowPresenter`/`ToolRowPresenterProps`, `ToolUi`) and
+>    `registry.ts` (static `providerKey → () => import(...)` map — one
+>    code-split chunk per provider, loaded only when the server catalog
+>    reports the provider or its tools render in a conversation).
+> 2. `renderCustomToolCallRow` and the tool-ui icon resolver consult
+>    loaded integration modules after the core presenters; the
+>    server-declared default row renders until a module resolves
+>    (progressive enhancement — a provider chunk can never block chat).
+> 3. New dependency-cruiser rules per note §5.5 (`src/integrations` may
+>    import only `components/ui`, `lib`, and its own `contract`; features/
+>    routes/app reach `src/integrations` only via `registry`/`contract`)
+>    and knip entries for `src/integrations/*/index.ts`.
+> 4. v1 ships **no** per-provider custom tool rows (note principle 2 —
+>    041's presentations must suffice; that is the deliberate test of
+>    default-first). Provider-specific connect help, if needed, ships as
+>    an `IntegrationUiModule.ConnectHelp` component, not feature code.
+> 5. The generic integrations feature (provider cards, connections,
+>    resources, context picker) stays in `src/features/integrations/` as
+>    planned — it is engine UI driven by the server catalog, not
+>    provider-specific code.
+
 ## Status
 
 - **Priority**: P1

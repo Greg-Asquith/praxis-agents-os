@@ -22,6 +22,15 @@
 > treating the diff as drift. Any OTHER in-scope change since `0cbbb39` is a
 > STOP-grade mismatch.
 
+> **Amendment (2026-07-07, plan 061 — provider packaging)**: per
+> `docs/architecture/integration-packaging.md`, the fake provider lives at
+> `apps/api/integrations/fake/` (not
+> `services/integrations/providers/fake.py`), and the discovery job
+> resolves each provider's `discover_resources` function through the
+> loaded `IntegrationProviderPlugin` (037 amendment) rather than importing
+> a provider module directly — the harness must not import `integrations.*`
+> (note §4.6).
+
 ## Status
 
 - **Priority**: P1

@@ -19,6 +19,37 @@
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
 
+> **Amendment (2026-07-07, plan 061 — provider packaging)**: this plan now
+> also lands the packaging seams from
+> `docs/architecture/integration-packaging.md` (the note wins over this
+> plan where they diverge):
+>
+> 1. Engine scope gains `services/integrations/plugin.py`
+>    (`IntegrationProviderPlugin`: manifest + `discover_resources` +
+>    `tool_definitions`) and `services/integrations/loader.py`
+>    (imports `integrations.{key}` for each entry in the new
+>    `INTEGRATIONS_ENABLED_PROVIDERS: list[str] = []` setting, validates
+>    the note's §4.3 invariants, fail-fast at boot, registers manifests
+>    and tools into the existing singular registries).
+> 2. `services/integrations/manifest.py` becomes contract + registration
+>    only — **no hardcoded provider entries**. Decision 6's four entries
+>    become packages under `apps/api/integrations/`: `fake/` (full, the
+>    contract fake from decision 7 — `providers/fake.py` is superseded by
+>    `integrations/fake/`), and `gmail/`, `google_ads/`, `airtable/` as
+>    manifest-data-only packages (empty `tool_definitions`; 041 fills
+>    them). The settings validator rejects `"fake"` in the enabled list
+>    outside `ENVIRONMENT=local` (replaces
+>    `INTEGRATIONS_FAKE_PROVIDER_ENABLED` — drop that setting).
+> 3. The manifest smoke command becomes loader-driven and runs with all
+>    four packages enabled locally; with the default empty list it prints
+>    `[]` — both expectations get tests.
+> 4. `build_runtime_tools` goes lenient on catalog-absent saved tool
+>    names per the note §4.7 (skip + log + run metadata, not
+>    `ModelConfigurationError`); write-time validation stays strict.
+> 5. Import laws per note §4.6, pinned by a new AST-walking test
+>    `tests/integrations/test_import_laws.py`; provider-package tests
+>    live under `tests/integrations/<key>/`.
+
 ## Status
 
 - **Priority**: P1

@@ -30,6 +30,32 @@
 > specifies, compare against "Current state" before proceeding; on a
 > mismatch, treat it as a STOP condition.
 
+> **Amendment (2026-07-07, plan 061 — provider packaging)**: provider code
+> lands as self-contained packages per
+> `docs/architecture/integration-packaging.md` (the note wins on
+> structure; this plan still owns all product scope and policy):
+>
+> 1. Each provider is `apps/api/integrations/<key>/` — `__init__.py`
+>    (exports `PROVIDER: IntegrationProviderPlugin`), `manifest.py`,
+>    `client.py`, `discover_resources.py`, `operations/` (one op per
+>    file), `tools.py` — **replacing** the in-scope paths
+>    `services/integrations/providers/<key>/` and
+>    `services/agents/runtime/tools/integrations/*.py`. 037's amendment
+>    already created the three packages manifest-data-only; this plan
+>    fills them.
+> 2. Registration is via the 037 loader + `INTEGRATIONS_ENABLED_PROVIDERS`
+>    — do NOT edit the `registry.py` side-effect import block.
+> 3. Every tool definition must carry a complete `ToolPresentation`
+>    (loader-enforced, note §4.3) — the default web row is the only UI
+>    these tools get in v1 (note principle 2).
+> 4. Provider tests live under `apps/api/tests/integrations/<key>/`;
+>    the note §4.6 import laws apply (no `services/`→`integrations`
+>    imports outside the loader, no provider→provider imports) and are
+>    pinned by `tests/integrations/test_import_laws.py`.
+> 5. Per-account audit (decision 8) stays centralized in
+>    `services/audit_events/integration_events.py`; provider packages
+>    call it, never write audit rows their own way.
+
 ## Status
 
 - **Priority**: P1
