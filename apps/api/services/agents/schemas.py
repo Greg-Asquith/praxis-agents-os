@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent import Agent
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
 ToolPolicyValue = Literal["auto", "approval"]
@@ -57,11 +58,8 @@ class AgentRead(BaseModel):
         return schema
 
 
-class AgentsListResponse(BaseModel):
+class AgentsListResponse(OffsetPage):
     agents: list[AgentRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class AgentCreateRequest(BaseModel):

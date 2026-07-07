@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.user import User
+from utils.pagination import OffsetPage
 from utils.validation import normalize_email, normalize_optional_text
 
 
@@ -31,11 +32,8 @@ class UserRead(BaseModel):
         return cls.model_validate(user)
 
 
-class UsersListResponse(BaseModel):
+class UsersListResponse(OffsetPage):
     users: list[UserRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class UserCreateRequest(BaseModel):

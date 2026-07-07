@@ -16,9 +16,9 @@ from services.audit_events.get_event import get_audit_event_for_workspace
 from services.audit_events.list_events import list_audit_events_for_workspace
 from services.audit_events.operations import safe_record_operation_audit_event
 from services.audit_events.queries import (
-    count_audit_events,
     get_audit_event,
     list_audit_events,
+    list_audit_events_page,
 )
 from services.audit_events.tool_events import record_tool_invocation_audit_event
 from services.audit_events.user_events import record_user_audit_event
@@ -29,11 +29,11 @@ __all__ = [
     "AuditActorType",
     "AuditResourceType",
     "AuditStatus",
-    "count_audit_events",
     "get_audit_event",
     "get_audit_event_for_workspace",
     "list_audit_events",
     "list_audit_events_for_workspace",
+    "list_audit_events_page",
     "record_tool_invocation_audit_event",
     "record_user_audit_event",
     "record_workspace_audit_event",

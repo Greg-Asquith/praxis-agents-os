@@ -75,6 +75,8 @@ Plan 062 was executed 2026-07-07 as the trustworthy local gate and DX slice.
 Plan 063 was executed 2026-07-07 as the behavioral test safety-net slice.
 Plan 064 was executed 2026-07-07 as the web feature scaffolding
 consolidation slice.
+Plan 065 was executed 2026-07-07 as the API service scaffolding
+consolidation slice.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -152,7 +154,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 062 | Trustworthy local gate & DX hardening (make api-test DB, CI uv cache, worker reload, AGENTS.md fixes) | P1 | S | - | DONE |
 | 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | DONE |
 | 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | DONE |
-| 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | TODO |
+| 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | DONE |
 | 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
@@ -641,7 +643,18 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   verification depends on it. `063` before `064` is a completed hard edge: the form
   models and formatters `064` consolidates get their behavioral tests in
   `063`, and `064` must keep those assertions unchanged. `065` is
-  independent of the web plans. `066` must land before `053`/`054`/`056`
+  independent of the web plans.
+- `065` marked DONE 2026-07-07: offset-list services now share
+  `utils.pagination.paginate()` plus `OffsetPage`; cursor-based
+  conversation messages and total-only files stay as documented exceptions.
+  Avatar/icon storage lifecycle now runs through `AssetSpec`-driven helpers
+  while route-facing operation signatures and auth checks stay in their
+  existing files. Notifications now follow one service operation per file
+  with package-level re-exports; `services/notifications/service.py` was
+  removed. `uv run ruff check .`, `uv run ruff format --check .`, focused
+  route/workspace/assets/notification suites, contract tests, and the full
+  DB-backed API suite passed.
+- `066` must land before `053`/`054`/`056`
   (all three edit `execute_run.py`; the decomposition gives each a named
   seam and characterization coverage). `063` also records a maintainer
   decision: the internal `user_session_token` acceptance path in

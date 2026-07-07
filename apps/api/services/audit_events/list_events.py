@@ -11,10 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from models.workspace import Workspace
 from services.audit_events.enums import AuditAction, AuditResourceType, AuditStatus
-from services.audit_events.queries import (
-    count_audit_events,
-    list_audit_events as query_audit_events,
-)
+from services.audit_events.queries import list_audit_events_page
 from services.audit_events.schemas import AuditEventRead, AuditEventsListResponse
 
 
@@ -41,7 +38,7 @@ async def list_audit_events_for_workspace(
     )
     parsed_status = _parse_enum(status, AuditStatus, field="status")
 
-    events = await query_audit_events(
+    events, total = await list_audit_events_page(
         db,
         workspace_id=workspace.id,
         resource_type=parsed_resource_type,
@@ -53,17 +50,6 @@ async def list_audit_events_for_workspace(
         occurred_before=occurred_before,
         limit=limit,
         offset=offset,
-    )
-    total = await count_audit_events(
-        db,
-        workspace_id=workspace.id,
-        resource_type=parsed_resource_type,
-        resource_id=resource_id,
-        actor_user_id=actor_user_id,
-        action=parsed_action,
-        status=parsed_status,
-        occurred_after=occurred_after,
-        occurred_before=occurred_before,
     )
 
     return AuditEventsListResponse(

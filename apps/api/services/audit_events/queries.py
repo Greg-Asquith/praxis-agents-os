@@ -5,11 +5,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_event import AuditEvent
 from services.audit_events.enums import AuditAction, AuditResourceType, AuditStatus
+from utils.pagination import paginate
 
 
 def _filtered_select(
@@ -59,6 +60,37 @@ async def list_audit_events(
     offset: int = 0,
 ) -> list[AuditEvent]:
     """Return audit events newest-first, narrowed by the given filters."""
+    events, _total = await list_audit_events_page(
+        db,
+        workspace_id=workspace_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        status=status,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+        limit=limit,
+        offset=offset,
+    )
+    return events
+
+
+async def list_audit_events_page(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID | str | None = None,
+    resource_type: AuditResourceType | None = None,
+    resource_id: str | None = None,
+    actor_user_id: UUID | str | None = None,
+    action: AuditAction | None = None,
+    status: AuditStatus | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[AuditEvent], int]:
+    """Return audit events and the total count for the same filters."""
     stmt = _filtered_select(
         select(AuditEvent),
         workspace_id=workspace_id,
@@ -70,37 +102,7 @@ async def list_audit_events(
         occurred_after=occurred_after,
         occurred_before=occurred_before,
     )
-    stmt = stmt.order_by(AuditEvent.occurred_at.desc()).limit(limit).offset(offset)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
-
-
-async def count_audit_events(
-    db: AsyncSession,
-    *,
-    workspace_id: UUID | str | None = None,
-    resource_type: AuditResourceType | None = None,
-    resource_id: str | None = None,
-    actor_user_id: UUID | str | None = None,
-    action: AuditAction | None = None,
-    status: AuditStatus | None = None,
-    occurred_after: datetime | None = None,
-    occurred_before: datetime | None = None,
-) -> int:
-    """Count audit events matching the given filters (for pagination)."""
-    stmt = _filtered_select(
-        select(func.count(AuditEvent.id)),
-        workspace_id=workspace_id,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        actor_user_id=actor_user_id,
-        action=action,
-        status=status,
-        occurred_after=occurred_after,
-        occurred_before=occurred_before,
-    )
-    result = await db.execute(stmt)
-    return int(result.scalar_one() or 0)
+    return await paginate(db, stmt, AuditEvent.occurred_at.desc(), limit=limit, offset=offset)
 
 
 async def get_audit_event(

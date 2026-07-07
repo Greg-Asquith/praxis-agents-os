@@ -14,6 +14,7 @@ from services.workspaces.schemas import (
     WorkspaceInvitationsListResponse,
 )
 from services.workspaces.utils import MANAGER_ROLES, require_workspace_role
+from utils.pagination import paginate
 
 
 async def list_invitations(
@@ -41,14 +42,16 @@ async def list_invitations(
     if not include_expired:
         stmt = stmt.where(WorkspaceInvitation.expires_at > func.now())
 
-    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
-    result = await db.execute(
-        stmt.order_by(WorkspaceInvitation.created_at.desc()).limit(limit).offset(offset)
+    invitations, total = await paginate(
+        db,
+        stmt,
+        WorkspaceInvitation.created_at.desc(),
+        limit=limit,
+        offset=offset,
     )
     return WorkspaceInvitationsListResponse(
         invitations=[
-            WorkspaceInvitationRead.from_invitation(invitation)
-            for invitation in result.scalars().all()
+            WorkspaceInvitationRead.from_invitation(invitation) for invitation in invitations
         ],
         total=total or 0,
         limit=limit,

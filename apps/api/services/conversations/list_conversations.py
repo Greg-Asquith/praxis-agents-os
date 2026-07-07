@@ -16,6 +16,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
 )
 from services.conversations.schemas import ConversationRead, ConversationsListResponse
+from utils.pagination import paginate
 
 ACTIVE_RUN_STATUSES = frozenset(
     {RUN_STATUS_PENDING, RUN_STATUS_RUNNING, RUN_STATUS_AWAITING_APPROVAL}
@@ -36,7 +37,6 @@ async def list_conversations(
         Conversation.deleted == False,  # noqa: E712
         Conversation.source != CONVERSATION_SOURCE_DELEGATED,
     )
-    total = await db.scalar(select(func.count()).select_from(Conversation).where(*filters))
     active_runs = (
         select(
             AgentRun.id.label("active_run_id"),
@@ -79,16 +79,15 @@ async def list_conversations(
         )
         .where(*filters)
     )
-    rows = (
-        await db.execute(
-            stmt.order_by(
-                desc(func.coalesce(Conversation.last_message_at, Conversation.created_at)),
-                Conversation.created_at.desc(),
-            )
-            .limit(limit)
-            .offset(offset)
-        )
-    ).all()
+    rows, total = await paginate(
+        db,
+        stmt,
+        desc(func.coalesce(Conversation.last_message_at, Conversation.created_at)),
+        Conversation.created_at.desc(),
+        limit=limit,
+        offset=offset,
+        scalars=False,
+    )
     return ConversationsListResponse(
         conversations=[
             ConversationRead.from_projection(

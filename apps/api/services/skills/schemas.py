@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.skills import Skill
+from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
 SKILL_NAME_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
@@ -41,11 +42,8 @@ class SkillRead(BaseModel):
         return cls.model_validate(skill)
 
 
-class SkillsListResponse(BaseModel):
+class SkillsListResponse(OffsetPage):
     skills: list[SkillRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class SkillCreateRequest(BaseModel):

@@ -4,7 +4,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,7 @@ from services.workspaces.schemas import (
     WorkspaceMembershipsListResponse,
 )
 from services.workspaces.utils import READ_ROLES, require_workspace_role
+from utils.pagination import paginate
 
 
 async def list_memberships(
@@ -39,14 +40,16 @@ async def list_memberships(
             WorkspaceMembership.deleted.is_(False),
         )
     )
-    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
-    result = await db.execute(
-        stmt.order_by(WorkspaceMembership.created_at.asc()).limit(limit).offset(offset)
+    memberships, total = await paginate(
+        db,
+        stmt,
+        WorkspaceMembership.created_at.asc(),
+        limit=limit,
+        offset=offset,
     )
     return WorkspaceMembershipsListResponse(
         memberships=[
-            WorkspaceMembershipRead.from_membership(membership)
-            for membership in result.scalars().all()
+            WorkspaceMembershipRead.from_membership(membership) for membership in memberships
         ],
         total=total or 0,
         limit=limit,

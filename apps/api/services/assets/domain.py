@@ -2,6 +2,8 @@
 
 """Pydantic contracts for user and workspace asset uploads."""
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
@@ -19,6 +21,20 @@ class AssetKind(StrEnum):
     WORKSPACE_ICON = "workspace_icon"
     SKILL_DOCUMENT = "skill_document"
     WORKSPACE_FILE = "workspace_file"
+
+
+@dataclass(frozen=True)
+class AssetSpec:
+    """Configuration for one managed public asset lifecycle."""
+
+    kind: AssetKind
+    asset_label: str
+    max_size_setting: str
+    allowed_content_types: Callable[[], set[str]]
+    ref_template: str
+    url_attr: str
+    object_key_attr: str
+    audit_fields: tuple[str, str]
 
 
 class AssetUploadRequest(BaseModel):

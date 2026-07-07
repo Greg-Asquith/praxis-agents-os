@@ -2,11 +2,12 @@
 
 """List users for super-admin user management."""
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
 from services.users.schemas import UserRead, UsersListResponse
+from utils.pagination import paginate
 
 
 async def list_users(
@@ -24,10 +25,9 @@ async def list_users(
         pattern = f"%{q.strip()}%"
         stmt = stmt.where(or_(User.email.ilike(pattern), User.display_name.ilike(pattern)))
 
-    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
-    result = await db.execute(stmt.order_by(User.created_at.desc()).limit(limit).offset(offset))
+    users, total = await paginate(db, stmt, User.created_at.desc(), limit=limit, offset=offset)
     return UsersListResponse(
-        users=[UserRead.from_user(user) for user in result.scalars().all()],
+        users=[UserRead.from_user(user) for user in users],
         total=total or 0,
         limit=limit,
         offset=offset,

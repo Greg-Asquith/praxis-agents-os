@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_schedules.runs import schedule_health_from_run
+from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
 
@@ -108,18 +109,12 @@ class AgentScheduleRead(BaseModel):
         )
 
 
-class AgentSchedulesListResponse(BaseModel):
+class AgentSchedulesListResponse(OffsetPage):
     items: list[AgentScheduleRead]
-    total: int
-    limit: int
-    offset: int
 
 
-class AgentScheduleRunsListResponse(BaseModel):
+class AgentScheduleRunsListResponse(OffsetPage):
     items: list[AgentScheduleRunRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class AgentScheduleCreateRequest(BaseModel):

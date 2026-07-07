@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
 ConversationSource = Literal["direct", "scheduled", "delegated"]
@@ -180,8 +181,5 @@ class ConversationActiveRunResponse(BaseModel):
     active_run: AgentRunRead | None
 
 
-class ConversationsListResponse(BaseModel):
+class ConversationsListResponse(OffsetPage):
     conversations: list[ConversationRead]
-    total: int
-    limit: int
-    offset: int

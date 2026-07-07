@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from models.audit_event import AuditEvent
+from utils.pagination import OffsetPage
 
 
 class AuditEventRead(BaseModel):
@@ -63,8 +64,5 @@ class AuditEventRead(BaseModel):
         )
 
 
-class AuditEventsListResponse(BaseModel):
+class AuditEventsListResponse(OffsetPage):
     events: list[AuditEventRead]
-    total: int
-    limit: int
-    offset: int

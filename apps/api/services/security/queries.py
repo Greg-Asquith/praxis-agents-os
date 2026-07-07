@@ -5,11 +5,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.security import SecurityEvent
 from services.security.enums import SecurityEventType
+from utils.pagination import paginate
 
 
 def _filtered_select(
@@ -51,6 +52,33 @@ async def list_security_events(
     offset: int = 0,
 ) -> list[SecurityEvent]:
     """Return security events newest-first, narrowed by the given filters."""
+    events, _total = await list_security_events_page(
+        db,
+        event_type=event_type,
+        ip_address=ip_address,
+        user_email=user_email,
+        endpoint=endpoint,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+        limit=limit,
+        offset=offset,
+    )
+    return events
+
+
+async def list_security_events_page(
+    db: AsyncSession,
+    *,
+    event_type: SecurityEventType | None = None,
+    ip_address: str | None = None,
+    user_email: str | None = None,
+    endpoint: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[SecurityEvent], int]:
+    """Return security events and the total count for the same filters."""
     stmt = _filtered_select(
         select(SecurityEvent),
         event_type=event_type,
@@ -60,33 +88,7 @@ async def list_security_events(
         occurred_after=occurred_after,
         occurred_before=occurred_before,
     )
-    stmt = stmt.order_by(SecurityEvent.occurred_at.desc()).limit(limit).offset(offset)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
-
-
-async def count_security_events(
-    db: AsyncSession,
-    *,
-    event_type: SecurityEventType | None = None,
-    ip_address: str | None = None,
-    user_email: str | None = None,
-    endpoint: str | None = None,
-    occurred_after: datetime | None = None,
-    occurred_before: datetime | None = None,
-) -> int:
-    """Count security events matching the given filters (for pagination)."""
-    stmt = _filtered_select(
-        select(func.count(SecurityEvent.id)),
-        event_type=event_type,
-        ip_address=ip_address,
-        user_email=user_email,
-        endpoint=endpoint,
-        occurred_after=occurred_after,
-        occurred_before=occurred_before,
-    )
-    result = await db.execute(stmt)
-    return int(result.scalar_one() or 0)
+    return await paginate(db, stmt, SecurityEvent.occurred_at.desc(), limit=limit, offset=offset)
 
 
 async def get_security_event(

@@ -2,12 +2,13 @@
 
 """List skills visible in a workspace."""
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.skills import Skill
 from models.workspace import Workspace
 from services.skills.schemas import SkillRead, SkillsListResponse
+from utils.pagination import paginate
 
 
 async def list_skills(
@@ -25,16 +26,13 @@ async def list_skills(
     if not include_inactive:
         filters.append(Skill.is_active.is_(True))
 
-    total = await db.scalar(select(func.count()).select_from(Skill).where(*filters))
-    skills = (
-        await db.scalars(
-            select(Skill)
-            .where(*filters)
-            .order_by(Skill.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-    ).all()
+    skills, total = await paginate(
+        db,
+        select(Skill).where(*filters),
+        Skill.created_at.desc(),
+        limit=limit,
+        offset=offset,
+    )
 
     return SkillsListResponse(
         skills=[SkillRead.from_skill(skill) for skill in skills],

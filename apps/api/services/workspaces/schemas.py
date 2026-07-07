@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.user import User
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
+from utils.pagination import OffsetPage
 from utils.validation import normalize_email, normalize_optional_text
 
 
@@ -40,11 +41,8 @@ class WorkspaceRead(BaseModel):
         return data
 
 
-class WorkspacesListResponse(BaseModel):
+class WorkspacesListResponse(OffsetPage):
     workspaces: list[WorkspaceRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -91,11 +89,8 @@ class WorkspaceMembershipRead(BaseModel):
         return data
 
 
-class WorkspaceMembershipsListResponse(BaseModel):
+class WorkspaceMembershipsListResponse(OffsetPage):
     memberships: list[WorkspaceMembershipRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class WorkspaceMembershipCreateRequest(BaseModel):
@@ -127,11 +122,8 @@ class WorkspaceInvitationRead(BaseModel):
         return cls.model_validate(invitation)
 
 
-class WorkspaceInvitationsListResponse(BaseModel):
+class WorkspaceInvitationsListResponse(OffsetPage):
     invitations: list[WorkspaceInvitationRead]
-    total: int
-    limit: int
-    offset: int
 
 
 class WorkspaceInvitationCreateRequest(BaseModel):

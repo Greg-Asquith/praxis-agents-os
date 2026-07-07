@@ -9,10 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from services.security.enums import SecurityEventType
-from services.security.queries import (
-    count_security_events,
-    list_security_events as query_security_events,
-)
+from services.security.queries import list_security_events_page
 from services.security.schemas import SecurityEventRead, SecurityEventsListResponse
 
 
@@ -31,7 +28,7 @@ async def list_security_events_for_super_admin(
     """Return a paginated security-event envelope for super-admin views."""
     parsed_event_type = _parse_enum(event_type, SecurityEventType, field="event_type")
 
-    events = await query_security_events(
+    events, total = await list_security_events_page(
         db,
         event_type=parsed_event_type,
         ip_address=ip_address,
@@ -41,15 +38,6 @@ async def list_security_events_for_super_admin(
         occurred_before=occurred_before,
         limit=limit,
         offset=offset,
-    )
-    total = await count_security_events(
-        db,
-        event_type=parsed_event_type,
-        ip_address=ip_address,
-        user_email=user_email,
-        endpoint=endpoint,
-        occurred_after=occurred_after,
-        occurred_before=occurred_before,
     )
 
     return SecurityEventsListResponse(

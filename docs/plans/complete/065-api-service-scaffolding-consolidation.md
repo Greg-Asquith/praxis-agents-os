@@ -1,3 +1,5 @@
+<!-- docs/plans/complete/065-api-service-scaffolding-consolidation.md -->
+
 # Plan 065: Consolidate the API's duplicated pagination, asset-lifecycle, and notifications scaffolding
 
 > **Executor instructions**: Follow this plan step by step. Run every
@@ -24,6 +26,7 @@
 - **Depends on**: 062 (soft — for `make api-test`; env var works too)
 - **Category**: tech-debt
 - **Planned at**: commit `d326b68`, 2026-07-07
+- **Completed at**: 2026-07-07
 
 ## Why this matters
 

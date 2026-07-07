@@ -15,7 +15,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
-from services.notifications.service import mark_invitation_notifications_actioned
+from services.notifications import mark_invitation_notifications_actioned
 from services.security import SecurityEventType
 from services.workspaces.schemas import (
     WorkspaceInvitationAcceptResponse,

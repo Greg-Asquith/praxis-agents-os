@@ -4,13 +4,14 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import AgentSchedule
 from models.workspace import Workspace
 from services.agent_schedules.runs import get_latest_runs_by_schedule_ids
 from services.agent_schedules.schemas import AgentScheduleRead, AgentSchedulesListResponse
+from utils.pagination import paginate
 
 
 async def list_schedules(
@@ -31,16 +32,13 @@ async def list_schedules(
     if agent_id is not None:
         filters.append(AgentSchedule.agent_id == agent_id)
 
-    total = await db.scalar(select(func.count()).select_from(AgentSchedule).where(*filters))
-    schedules = (
-        await db.scalars(
-            select(AgentSchedule)
-            .where(*filters)
-            .order_by(AgentSchedule.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-    ).all()
+    schedules, total = await paginate(
+        db,
+        select(AgentSchedule).where(*filters),
+        AgentSchedule.created_at.desc(),
+        limit=limit,
+        offset=offset,
+    )
     latest_runs = await get_latest_runs_by_schedule_ids(
         db,
         [schedule.id for schedule in schedules],

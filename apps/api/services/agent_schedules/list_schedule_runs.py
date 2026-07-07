@@ -4,7 +4,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
@@ -26,6 +26,7 @@ from services.agent_schedules.schemas import (
     AgentScheduleRunsListResponse,
 )
 from services.agent_schedules.utils import get_schedule_for_workspace
+from utils.pagination import paginate
 
 VALID_SCHEDULE_RUN_STATUSES = frozenset(
     {
@@ -66,16 +67,14 @@ async def list_schedule_runs(
             )
         filters.append(AgentScheduleRun.status == status)
 
-    total = await db.scalar(select(func.count()).select_from(AgentScheduleRun).where(*filters))
-    runs = (
-        await db.scalars(
-            select(AgentScheduleRun)
-            .where(*filters)
-            .order_by(AgentScheduleRun.scheduled_for.desc(), AgentScheduleRun.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-    ).all()
+    runs, total = await paginate(
+        db,
+        select(AgentScheduleRun).where(*filters),
+        AgentScheduleRun.scheduled_for.desc(),
+        AgentScheduleRun.created_at.desc(),
+        limit=limit,
+        offset=offset,
+    )
 
     return AgentScheduleRunsListResponse(
         items=[AgentScheduleRunRead.from_run(run) for run in runs],

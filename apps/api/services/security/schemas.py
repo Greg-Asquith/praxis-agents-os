@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from models.security import SecurityEvent
+from utils.pagination import OffsetPage
 
 
 class SecurityEventRead(BaseModel):
@@ -43,8 +44,5 @@ class SecurityEventRead(BaseModel):
         )
 
 
-class SecurityEventsListResponse(BaseModel):
+class SecurityEventsListResponse(OffsetPage):
     events: list[SecurityEventRead]
-    total: int
-    limit: int
-    offset: int

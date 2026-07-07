@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.jobs import Job
 from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING, JOB_STATUS_SUCCEEDED
 from services.jobs.utils import retry_backoff, sanitize_error_message
-from services.notifications.service import create_notification
+from services.notifications import create_notification
 
 
 async def finalize_job_success(

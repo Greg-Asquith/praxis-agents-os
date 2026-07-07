@@ -14,18 +14,18 @@ from services.security.events import (
 from services.security.get_event import get_security_event_for_super_admin
 from services.security.list_events import list_security_events_for_super_admin
 from services.security.queries import (
-    count_security_events,
     get_security_event,
     list_security_events,
+    list_security_events_page,
 )
 
 __all__ = [
     "SecurityEventType",
-    "count_security_events",
     "get_security_event",
     "get_security_event_for_super_admin",
     "list_security_events",
     "list_security_events_for_super_admin",
+    "list_security_events_page",
     "safe_record_security_event",
     "safe_record_security_event_committed",
 ]
