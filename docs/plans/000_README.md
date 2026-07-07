@@ -54,6 +54,24 @@ and executed 2026-07-07 as a design-note plan: it produced
 Phase 4a builds provider code as self-contained, individually-enableable
 packages from day one.
 
+Plan 014 was executed 2026-07-07 as the config-gated agent tracing slice:
+Pydantic AI agents are globally instrumented through Logfire/OTel when
+`AGENT_TRACING_ENABLED` is set, content capture is off by default and
+production-guarded, and both API and worker startup share the same idempotent
+setup path.
+
+Plans 062–066 (quality consolidation) were written 2026-07-07 from a
+code-quality/maintainability audit at `d326b68` (four parallel audits —
+backend debt, web debt, test coverage, DX — with every planned finding
+re-verified against the code). Theme: the per-feature scaffolding both apps
+copy-paste (query keys, form plumbing, pagination, asset lifecycle) is
+drifting, and the local `make check` silently skips DB-backed tests. They
+are sequenced immediately after 014 and before Lane H so later work lands
+on a trustworthy gate, a behavioral test net, and a decomposed
+`execute_run` (which 053/054/056 all edit). Findings audited but
+deliberately not planned are recorded in the rejected/deferred section
+below.
+
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -74,7 +92,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 011 | Cap per-run token spend with UsageLimits token limits | P2 | S | - | DONE |
 | 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | DONE |
 | 013 | Bound model context with a cache-stable ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | DONE |
-| 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | TODO |
+| 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | DONE |
 | 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
 | 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
 | 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | DONE |
@@ -127,6 +145,11 @@ integrations, files, knowledge base, memory, artifacts).
 | 059 | Sandboxed code execution — provider-native run_code | P2 | L | 025, 026, 028, 031-034 (soft: 036, 054, 055; after 050/051) | TODO |
 | 060 | Durable run event log and live stream replay | P3 | L | 030 (soft: 053, 056; last in Lane H) | TODO |
 | 061 | Integration provider packaging architecture (design note, D10) | P1 | S | 029; binds before 037 executes | DONE |
+| 062 | Trustworthy local gate & DX hardening (make api-test DB, CI uv cache, worker reload, AGENTS.md fixes) | P1 | S | - | TODO |
+| 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | TODO |
+| 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | TODO |
+| 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | TODO |
+| 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -161,8 +184,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `010`, `011`, and `012` are DONE. `011` marked DONE 2026-07-03: runtime
   `UsageLimits` now includes an optional settings-level total token cap and
   failed capped runs persist with `UsageLimitExceeded`.
-- `013` is DONE. `014` and `015` remain independent of `009`; suggested
-  remaining order is `014`, then `015`. Note `013` and `009` both touch
+- `013` and `014` are DONE. `015` remains independent of `009` and is filler.
+  Note `013` and `009` both touch
   `runtime/capabilities.py`-adjacent code — rebase whichever lands second.
 - `012` marked DONE 2026-07-03: live `ThinkingPart` content now streams over
   the existing message SSE contract with optional `message.start.channel`, and
@@ -311,9 +334,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   invite role selection plus copy-code/copy-link controls, and exposes
   `/invitations/accept?token=...`. Workspace Settings now hides
   manager-only Invitations/Audit tabs for roles that cannot access them.
-- `026` and `014` share the dispatch seam: `014` (OTel) must wrap `026`'s
-  `dispatch.py`, not add a second interception layer. If `014` lands first,
-  it should leave a named hook point; whichever lands second rebases.
+- `014` marked DONE 2026-07-07: `core.observability.setup_agent_tracing`
+  configures Logfire with `send_to_logfire="if-token-present"` and globally
+  instruments Pydantic AI via `Agent.instrument_all(InstrumentationSettings(...))`
+  when `AGENT_TRACING_ENABLED=true`. Span content and binary capture stay off
+  by default; content capture is rejected in production unless
+  `AGENT_TRACING_ALLOW_CONTENT_IN_PRODUCTION=true`. The API lifespan and
+  scheduled-run worker both call the same idempotent setup path. Future
+  dispatch-specific span attributes should wrap `dispatch.py`, not add a
+  second interception layer.
 - `026` adds `tool_name`/`tool_provider` columns to `audit_events` (core
   migration); the `023` viewer renders them generically until `027`'s
   additive filter/columns step.
@@ -494,11 +523,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `040` reuses the existing `AgentSchedule.active_context` JSONB column
   (no schedule migration) and unhides it in the `021` routes and `022`
   form; one pinned schedule route test flips.
-- `041` has a hard Gate G1 pre-flight: it STOPs unless `014` (OTel) is
-  DONE — schedule `014` before `041`. The registry name pattern forbids
-  dots, so provider tools are snake_case (`gmail_search_messages`, …).
-  Google Ads spend ops are `approval` with `supports_auto=False`,
-  enforced by the existing `025` write-time and runtime layers.
+- `041` has a hard Gate G1 pre-flight now satisfied by `014` (OTel) being
+  DONE; `053` and `054` still bind before `041` under the G1 extension. The
+  registry name pattern forbids dots, so provider tools are snake_case
+  (`gmail_search_messages`, …). Google Ads spend ops are `approval` with
+  `supports_auto=False`, enforced by the existing `025` write-time and
+  runtime layers.
 - `042` is frontend-only and sliceable: provider catalog / connections /
   resources need only `038`/`039`; the context-group editor and
   chat-header picker need `040`'s routes.
@@ -575,6 +605,20 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   under `tests/scenarios/` as part of their done criteria (Gate G5
   discipline; `055` maintenance notes).
 
+- `062`–`066` ordering rationale: `062` first because it makes the local
+  gate honest (today `make check` runs pytest without `TEST_DATABASE_URL`,
+  silently skipping ~57 of 84 test modules) — every later plan's
+  verification depends on it. `063` before `064` is a hard edge: the form
+  models and formatters `064` consolidates get their behavioral tests in
+  `063`, and `064` must keep those assertions unchanged. `065` is
+  independent of the web plans. `066` must land before `053`/`054`/`056`
+  (all three edit `execute_run.py`; the decomposition gives each a named
+  seam and characterization coverage). `063` also records a maintainer
+  decision: the internal `user_session_token` acceptance path in
+  `core/dependencies.py` has no minting code anywhere in the repo — keep it
+  (for the planned schedules HTTP surface) or remove it; the new tests pin
+  behavior either way.
+
 ## Findings Considered And Rejected
 
 - Retrying failed provider/runtime executions in the first worker slice: rejected for now because `agent_schedule_runs.agent_run_id` is currently one-to-one with a generic `AgentRun`, and terminal `AgentRun` rows cannot be restarted. This plan retries claim/setup failures before a generic run starts, and marks actual runtime failures terminal so users can inspect and re-enable deliberately.
@@ -633,3 +677,50 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **Skill import/export as SKILL.md bundles**: not planned yet, but the name /
   description / instructions field rules in plan 016 deliberately match the
   open standard so a future importer/exporter is mechanical.
+
+### From the 2026-07-07 code-quality audit (plans 062–066)
+
+Rejected (do not re-audit):
+
+- **Splitting `services/agents/runtime/dispatch.py` / moving
+  `OutputContractError` to `core/exceptions`**: rejected on inspection. The
+  module is a cohesive choke point whose docstring pins the "wrap this
+  module, don't add layers" contract that 014 (OTel) honors and 054
+  (envelopes) extends; `OutputContractError` is an internal signal converted
+  to a model-visible `ModelRetry` inside the module, not an HTTP-facing
+  domain error, so RFC 7807 routing does not apply.
+- **Backend test quality concerns (mock-heavy / assert-nothing)**: audited
+  and found healthy — the suite is integration-style against real rolled-back
+  Postgres transactions with real RBAC matrices; no action.
+- **`message-parts/parse.ts` and `conversations/file-tools.ts` as god
+  modules**: large but cohesive single-responsibility parsers; no split.
+
+Deferred with a revisit trigger (audited, real, not top-5 leverage):
+
+- **Storage-provider error-wrap base**: the four providers
+  (`s3/gcs/azure_blob/local`) share a lockstep try/except → `StorageError` →
+  `StoredObject` template plus verbatim-duplicated small helpers. Revisit
+  when a provider change next forces a four-file edit; 065 deliberately
+  excluded it (MED risk, four SDK exception surfaces).
+- **Route-registration lockstep** (`app/router.tsx` + `config/navigation.ts`
+  + breadcrumb unions require coordinated edits per new route) and the
+  **shared `<DataTable>` responsive shell** (five near-identical table
+  components): revisit when the next 2–3 features land and the copy count
+  grows.
+- **`ConversationComposer` split** (479 lines mixing uploads, drag-drop,
+  optimistic rollback): extract `useAttachmentUploads`/`useComposerDragDrop`
+  hooks when the composer next changes materially.
+- **Backend↔frontend contract-drift guard**: hand-written `types.ts` files
+  were field-by-field verified in sync at `d326b68` for
+  workspaces/agents/conversations/files; no drift alarm exists. Revisit if a
+  schema change ships a stale client type.
+- **Migration data-transform/downgrade tests** for the repair migrations
+  (`core/0006` rename, `core/0011` jobs-constraint repair): CI covers
+  forward-apply on empty schemas only.
+- **`services/agents/utils.py` regroup** (access/validation/normalization/
+  integrity-introspection behind one 359-line high-fan-in module, one of 22
+  service `utils.py` files): split by concern when next touched.
+- **Pre-commit hooks**: maintainer-preference workflow change; revisit if
+  formatting-only CI failures recur.
+- **`files` list envelope alignment** (returns `total` only, no
+  `limit`/`offset`): an API change; fold into the next files API rev.

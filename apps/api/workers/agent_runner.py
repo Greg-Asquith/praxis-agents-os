@@ -22,6 +22,7 @@ from core.database import (
 )
 from core.exceptions.general import ConflictError
 from core.logging import setup_logging
+from core.observability import setup_agent_tracing
 from core.settings import settings
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_runs.domain import RUN_STATUS_PENDING
@@ -45,6 +46,7 @@ from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
 from services.agents.runtime.sinks import NullSink
 
 setup_logging()
+setup_agent_tracing()
 logger = logging.getLogger(__name__)
 
 

@@ -179,7 +179,9 @@ async def test_patch_auth_me_persists_default_workspace_and_records_audit(
     user.default_workspace_id = first_workspace.id
     user_id = user.id
     second_workspace_id = second_workspace.id
-    db_session.add_all([user, first_workspace, second_workspace, first_membership, second_membership])
+    db_session.add_all(
+        [user, first_workspace, second_workspace, first_membership, second_membership]
+    )
     await db_session.flush()
     session = await session_manager.create_session(db_session, str(user.id))
     await db_session.commit()

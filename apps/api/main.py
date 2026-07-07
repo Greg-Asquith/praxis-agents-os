@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.database import check_database_connection, close_db_connections
 from core.exceptions.exception_handlers import register_exception_handlers
 from core.logging import setup_logging
+from core.observability import setup_agent_tracing
 from core.settings import settings
 from middleware import (
     AuditContextMiddleware,
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     logger.info("Starting FastAPI application...")
+    setup_agent_tracing()
     register_notification_action_handlers()
     logger.info("Notification action handlers registered")
 

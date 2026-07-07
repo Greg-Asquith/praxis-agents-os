@@ -34,6 +34,15 @@ Gate G5. Plan 061 (integration provider packaging, decision D10) was
 written and executed 2026-07-07 as a design-note plan in the 029 mold —
 it produced `docs/architecture/integration-packaging.md` and amended
 037/039/041/042 before any Phase 4a code exists.
+Plan 014 was completed 2026-07-07: agent-run tracing is config-gated,
+content capture is off by default and production-guarded, and API/worker
+startup share one idempotent Logfire/OTel setup path.
+Plans 062–066 (Lane Q, quality consolidation — added 2026-07-07 by a
+code-quality/maintainability audit grounded at `d326b68`) run between 014
+and Lane H: they make the local gate honest, add the behavioral test net,
+consolidate the copy-pasted per-feature scaffolding on both sides, and
+decompose `execute_run` before 053/054/056 edit it. Lane Q is defined in
+§4 below.
 
 ---
 
@@ -72,7 +81,7 @@ product interview on 2026-07-02.
 | # | Decision | Outcome | Binds at |
 |---|----------|---------|----------|
 | D1 | Operational surfaces vs donor phases | **Parallel lane.** Registry work starts immediately; schedules UI, audit/security viewer, workspace/invite UX run alongside and must complete before integrations ship side-effect tools (Gate G1). | 021–024 / Gate G1 |
-| D2 | Runtime hardening plans 010–015 | **Split by leverage.** 010/012/011 landed first; 013 landed after 018 to preserve capability-load pairs; 014 (OTel) gates Phase C; 015 is filler. | Lane R |
+| D2 | Runtime hardening plans 010–015 | **Split by leverage.** 010/012/011 landed first; 013 landed after 018 to preserve capability-load pairs; 014 (OTel) completed 2026-07-07 and gates Phase C; 015 is filler. | Lane R |
 | D3 | Multi-connection per provider | **Full multi-connection in v1.** Multiple simultaneous connections per provider per owner from the first integrations release: no one-active-per-provider uniqueness constraint, a required user-set label per connection, active-context resolution across N connections, and connection pickers in the v1 UI. Resolves the NOTES-vs-donor conflict in favor of the agency use case; adds scope to 037/040/042. | 037/040/042 |
 | D4 | First integration providers | **Gmail (user OAuth) + Google Ads (workspace OAuth + MCC→account discovery) + Airtable (api-key + secret reference).** Google Ads over GA4: richer resource hierarchy and closer to the agency product. Its write operations spend real money — they default to `approval` in tool policy and are the first hard test of Gate G1. | 041 |
 | D5 | Schema branch | All roadmap tables go in **`core`** (platform infrastructure); `app` stays reserved for verticals. (From donor roadmap §2, confirmed.) | all migrations |
@@ -146,8 +155,8 @@ Not a numbered plan; a checklist chore:
 
 - Mark 009 DONE in the README (delegation landed at `f83d210`; verify the
   approval-resume path for delegated runs while confirming).
-- Verify/refresh statuses of 010–020 (verified 2026-07-06: 014–015 remain
-  TODO. 010, 011, 012, 013, 016, 017, 018, 019, and 020 are DONE; skills CRUD,
+- Verify/refresh statuses of 010–020 (verified 2026-07-07: 015 remains
+  TODO. 010, 011, 012, 013, 014, 016, 017, 018, 019, and 020 are DONE; skills CRUD,
   the skill document pipeline, runtime skill disclosure, the management UI,
   skill activation chat treatment, and cache-stable history trimming now exist).
 - Point the README at this document as the ordering authority.
@@ -159,7 +168,7 @@ Not a numbered plan; a checklist chore:
 | 010 | Provider transport retries | P1 | DONE 2026-07-02 |
 | 012 | Stream thinking live over SSE | P1 | DONE 2026-07-03 |
 | 011 | Per-run token caps (UsageLimits) | P2 | DONE 2026-07-03 |
-| 014 | OTel instrumentation (config-gated) | P2 | Before Phase 4a (Gate G1) |
+| 014 | OTel instrumentation (config-gated). **DONE 2026-07-07.** | P2 | Complete. |
 | 013 | History trimming (ProcessHistory) | P2 | DONE 2026-07-06 |
 | 015 | pydantic-ai docs digest refresh | P3 | Filler, any time |
 
@@ -301,6 +310,27 @@ jobs; the Phase 4a×4b intersection), and workspace-level LLM token
 budgets (governance §4 counters exist on `agent_runs` hot columns; only
 the quota surface is missing).
 
+### Lane Q — Quality Consolidation (added 2026-07-07; plans 062–066)
+
+A code-quality/maintainability audit at `d326b68` (four parallel audits:
+backend debt, web debt, test coverage, DX; every planned finding re-verified
+against the code). The unifying finding: both apps are built as N parallel
+vertical features whose shared plumbing was copy-pasted per feature and is
+drifting — and the local gate gives false greens (`make check` runs pytest
+without `TEST_DATABASE_URL`, silently skipping ~57 of 84 test modules).
+Lane Q runs before Lane H because 053/054/056 all edit `execute_run.py`
+and every plan's verification depends on a trustworthy gate. Findings
+audited but not planned are recorded in the README's rejected/deferred
+section — check there before re-proposing.
+
+| Plan | Scope | Priority | When |
+|------|-------|----------|------|
+| 062 | Trustworthy local gate & DX: `make api-test` provisions the test DB, CI uv caching, worker watch-reload, root `.editorconfig`, correct the two stale AGENTS.md claims (frontend tests exist; asyncio auto mode). | P1 | First — everything downstream verifies through it. |
+| 063 | Behavioral test safety net: Vitest coverage for the message-parts parser, agent/schedule form models (incl. the DST-sensitive timezone round-trip), approval decisions, shared formatters; backend tests pinning the internal-token workspace-confinement branches in `core/dependencies.py` (no code mints those tokens today — keep-vs-remove is a recorded maintainer decision). | P1 | Before 064. |
+| 064 | Web scaffolding consolidation: one workspace-scoped query-key factory (kills 8 copies of the `__no_workspace__` tenant-scoping sentinel), consistent mutation invalidation, shared `FormValidationEntry`/`buildFieldErrors` in `lib/forms.ts`, one home for date/time formatting, `window.alert` → `Alert`. | P1 | After 063 (hard). |
+| 065 | API scaffolding consolidation: `paginate()` + `OffsetPage` envelope (kills 8 hand-rolled count/window recipes; cursor-based messages list stays the documented exception), `AssetSpec` collapsing the avatar/icon twin files, notifications split to one-op-per-file. | P1 | Any time after 062; parallel with 063/064. |
+| 066 | Decompose the ~286-line `execute_run` into named phase helpers behind new characterization tests (pre-start failure ordering, precondition trio, attachment prompt promotion, sink close). Dispatch split explicitly rejected — `dispatch.py` stays the single wrap-here choke point. | P1 | Before 053/054/056. |
+
 ### Rolling polish lane (P3, unnumbered)
 
 Batched into small tickets whenever convenient; never blocks a phase:
@@ -328,9 +358,15 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 → 053 → 054 → C05 → {037–042 ∥ 043–047 ∥ 055} → 056 → 048 →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 → 063 → {064 ∥ 065} → 066 → 053 → 054 → C05 → {037–042 ∥ 043–047 ∥ 055} → 056 → 048 →
 049 → 057 → 050 → 051 → 059 → 060` — with 015, 052, 058, and the polish
 lane as filler.
+
+Lane Q placement rationale: 062 first because every later plan verifies
+through the gate it fixes; 063 must precede 064 (its tests are the
+refactor's safety net); 064/065 are independent and can interleave; 066
+must precede 053/054/056 because all three edit `execute_run.py` and the
+decomposition hands each a named seam.
 
 Lane H placement rationale: 053/054 sit between 014 and Phase 4a because
 the G1 extension binds them before 041; 055 runs parallel with Phase 4

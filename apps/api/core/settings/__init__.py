@@ -22,6 +22,7 @@ from core.settings.files import FilesSettingsMixin
 from core.settings.gcp import GcpSettingsMixin
 from core.settings.jobs import JobsSettingsMixin
 from core.settings.models import LLMSettingsMixin
+from core.settings.observability import ObservabilitySettingsMixin
 from core.settings.providers import ProviderSettingsMixin
 from core.settings.rate_limit import RateLimitSettingsMixin
 from core.settings.scratch import ScratchSettingsMixin
@@ -42,6 +43,7 @@ class Settings(
     GcpSettingsMixin,
     JobsSettingsMixin,
     LLMSettingsMixin,
+    ObservabilitySettingsMixin,
     ProviderSettingsMixin,
     RateLimitSettingsMixin,
     SecuritySettingsMixin,
