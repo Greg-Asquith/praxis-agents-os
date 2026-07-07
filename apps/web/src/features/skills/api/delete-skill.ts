@@ -17,7 +17,7 @@ export function useDeleteSkillMutation() {
   return useMutation({
     mutationFn: deleteSkill,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.workspace() })
     },
   })
 }

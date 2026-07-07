@@ -24,7 +24,7 @@ export function useUpdateAgentMutation() {
   return useMutation({
     mutationFn: updateAgent,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: agentsQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: agentsQueryKeys.workspace() })
     },
   })
 }

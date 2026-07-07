@@ -17,7 +17,7 @@ export function useDeleteAgentMutation() {
   return useMutation({
     mutationFn: deleteAgent,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: agentsQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: agentsQueryKeys.workspace() })
     },
   })
 }

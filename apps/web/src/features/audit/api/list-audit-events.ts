@@ -3,7 +3,7 @@
 import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query"
 
 import type { AuditEventsListResponse } from "@/features/audit/types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
 export type ListAuditEventsParams = {
@@ -18,18 +18,7 @@ export type ListAuditEventsParams = {
   status?: string | undefined
 }
 
-export const auditEventsQueryKeys = {
-  all: ["audit-events"] as const,
-  workspace: () => [...auditEventsQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  details: () => [...auditEventsQueryKeys.workspace(), "detail"] as const,
-  detail: (eventId: string) => [...auditEventsQueryKeys.details(), eventId] as const,
-  lists: () => [...auditEventsQueryKeys.workspace(), "list"] as const,
-  list: (params: ListAuditEventsParams = {}) => [...auditEventsQueryKeys.lists(), params] as const,
-}
-
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
-}
+export const auditEventsQueryKeys = createWorkspaceScopedQueryKeys("audit-events")
 
 async function listAuditEvents({
   action,

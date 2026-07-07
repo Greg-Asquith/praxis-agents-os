@@ -9,20 +9,21 @@ import {
 } from "@tanstack/react-query"
 
 import type { Conversation, ConversationsListResponse } from "@/features/conversations/types"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
 
 type ListConversationsParams = {
   limit?: number
   offset?: number
 }
 
+const baseConversationsQueryKeys = createWorkspaceScopedQueryKeys("conversations")
+
 export const conversationsQueryKeys = {
-  all: ["conversations"] as const,
-  workspace: () => [...conversationsQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  lists: () => [...conversationsQueryKeys.workspace(), "list"] as const,
-  list: (params: ListConversationsParams = {}) =>
-    [...conversationsQueryKeys.lists(), params] as const,
+  all: baseConversationsQueryKeys.all,
+  workspace: baseConversationsQueryKeys.workspace,
+  lists: baseConversationsQueryKeys.lists,
+  list: (params: ListConversationsParams = {}) => baseConversationsQueryKeys.list(params),
   detail: (conversationId: string) =>
     [...conversationsQueryKeys.workspace(), conversationId, "detail"] as const,
   messages: (conversationId: string) =>
@@ -31,10 +32,6 @@ export const conversationsQueryKeys = {
     [...conversationsQueryKeys.workspace(), conversationId, "active-run"] as const,
   approvalState: (runId: string) =>
     [...conversationsQueryKeys.workspace(), "agent-run", runId, "approval-state"] as const,
-}
-
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
 }
 
 async function listConversations({ limit = 100, offset = 0 }: ListConversationsParams = {}) {

@@ -53,7 +53,7 @@ follow-up, not made here.
 - Test runner: Vitest 4 (`apps/web/package.json` → `"test": "vitest run"`,
   part of `pnpm check`). Config: `apps/web/vitest.config.ts`, which includes
   `tests/**/*.test.ts`.
-- Pattern exemplar: `apps/web/src/features/conversations/stream/reducer.test.ts`
+- Pattern exemplar: `apps/web/tests/features/conversations/stream/reducer.test.ts`
   — plain `describe`/`it`/`expect` from `vitest`, literal fixture objects for
   API types, no DOM/react testing library (do not add one):
 

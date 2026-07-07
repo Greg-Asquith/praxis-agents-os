@@ -10,6 +10,7 @@ import type {
 } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import type { ToolCatalogEntry } from "@/features/tools/types"
+import type { FormValidationEntry } from "@/lib/forms"
 
 const DEFAULT_MODEL_SELECTION = "Default"
 export const NO_AGENT_SELECTION = "None"
@@ -77,11 +78,7 @@ export type AgentFormState = {
   toolModes: Record<string, RuntimeToolMode>
 }
 
-export type AgentFormValidationEntry = {
-  fieldId: string
-  label: string
-  message: string
-}
+export type AgentFormValidationEntry = FormValidationEntry
 
 export type AgentFormFieldSetter = <K extends keyof AgentFormState>(
   field: K,

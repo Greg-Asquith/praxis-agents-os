@@ -17,12 +17,8 @@ export function useRunScheduleNowMutation() {
 
   return useMutation({
     mutationFn: runScheduleNow,
-    onSuccess: async (_schedule, scheduleId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.lists() }),
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.detail(scheduleId) }),
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.runs(scheduleId) }),
-      ])
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.workspace() })
     },
   })
 }

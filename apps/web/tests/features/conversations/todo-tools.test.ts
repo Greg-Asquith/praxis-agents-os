@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/todo-tools.test.ts
+// apps/web/tests/features/conversations/todo-tools.test.ts
 
 import { describe, expect, it } from "vitest"
 

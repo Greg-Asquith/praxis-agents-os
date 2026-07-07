@@ -3,7 +3,7 @@
 import cronstrue from "cronstrue"
 
 import type { AgentSchedule } from "@/features/schedules/types"
-import { formatDateTime, pluralize } from "@/lib/format"
+import { formatDateTime, formatDateTimeInTimeZone, pluralize } from "@/lib/format"
 
 export function scheduleTitle(schedule: AgentSchedule) {
   if (schedule.schedule_type === "cron") {
@@ -41,22 +41,6 @@ export function formatScheduleNextRun(schedule: AgentSchedule) {
   }
 
   return formatDateTime(schedule.next_run_at)
-}
-
-export function formatDateTimeInTimeZone(value: string | null | undefined, timezone: string) {
-  if (!value) {
-    return "Never"
-  }
-
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: timezone,
-    }).format(new Date(value))
-  } catch {
-    return formatDateTime(value)
-  }
 }
 
 export function formatCronExpression(cron: string | null | undefined) {

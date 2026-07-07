@@ -1,9 +1,10 @@
 // apps/web/src/features/skills/routes/new-skill-route.tsx
 
 import { Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeftIcon } from "lucide-react"
+import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react"
 import { useState } from "react"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { useCreateSkillMutation } from "@/features/skills/api/create-skill"
 import {
@@ -22,6 +23,10 @@ export function NewSkillRoute() {
   const createDocumentUploadMutation = useCreateSkillDocumentUploadMutation()
   const confirmDocumentUploadMutation = useConfirmSkillDocumentUploadMutation()
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false)
+  const [postCreateWarning, setPostCreateWarning] = useState<{
+    message: string
+    skillId: string
+  } | null>(null)
   const isSubmitting =
     createSkillMutation.isPending ||
     createDocumentUploadMutation.isPending ||
@@ -32,17 +37,26 @@ export function NewSkillRoute() {
     payload: SkillCreateRequest,
     documents: PendingSkillDocumentUpload[]
   ) {
+    setPostCreateWarning(null)
     const skill = await createSkillMutation.mutateAsync(payload)
+    let warningMessage: string | null = null
+
     if (documents.length > 0) {
       try {
         const failedConversions = await uploadPendingDocuments(skill.id, documents)
         if (failedConversions.length > 0) {
-          window.alert(`Skill created, but conversion failed for: ${failedConversions.join(", ")}`)
+          warningMessage = `Skill created, but conversion failed for: ${failedConversions.join(", ")}`
         }
       } catch (uploadError) {
-        window.alert(`Skill created, but document upload failed: ${getErrorMessage(uploadError)}`)
+        warningMessage = `Skill created, but document upload failed: ${getErrorMessage(uploadError)}`
       }
     }
+
+    if (warningMessage) {
+      setPostCreateWarning({ message: warningMessage, skillId: skill.id })
+      return
+    }
+
     await navigate({ to: "/skills/$skillId", params: { skillId: skill.id } })
   }
 
@@ -93,12 +107,34 @@ export function NewSkillRoute() {
         </div>
       </div>
 
-      <SkillForm
-        cancelLabel="Cancel"
-        isSubmitting={isSubmitting}
-        mode="create"
-        onSubmit={handleCreateSkill}
-      />
+      {postCreateWarning ? (
+        <Alert>
+          <AlertTitle>Skill created</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3">
+            <span>{postCreateWarning.message}</span>
+            <Button
+              className="w-fit"
+              onClick={() => {
+                void navigate({
+                  to: "/skills/$skillId",
+                  params: { skillId: postCreateWarning.skillId },
+                })
+              }}
+              type="button"
+            >
+              <ArrowRightIcon data-icon="inline-start" />
+              Continue to skill
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <SkillForm
+          cancelLabel="Cancel"
+          isSubmitting={isSubmitting}
+          mode="create"
+          onSubmit={handleCreateSkill}
+        />
+      )}
     </div>
   )
 }

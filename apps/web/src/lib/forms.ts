@@ -10,3 +10,16 @@ export function formNumber(formData: FormData, name: string, fallback: number) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
 }
+
+export type FormValidationEntry = {
+  fieldId: string
+  label: string
+  message: string
+}
+
+export function buildFieldErrors(entries: readonly FormValidationEntry[]) {
+  return entries.reduce<Record<string, string>>((errors, entry) => {
+    errors[entry.fieldId] = entry.message
+    return errors
+  }, {})
+}

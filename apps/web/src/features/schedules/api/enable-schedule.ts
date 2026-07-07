@@ -17,11 +17,8 @@ export function useEnableScheduleMutation() {
 
   return useMutation({
     mutationFn: enableSchedule,
-    onSuccess: async (_schedule, scheduleId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.lists() }),
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.detail(scheduleId) }),
-      ])
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.workspace() })
     },
   })
 }

@@ -3,7 +3,7 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { SkillsListResponse } from "@/features/skills/types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
 type ListSkillsParams = {
@@ -12,18 +12,11 @@ type ListSkillsParams = {
   offset?: number
 }
 
-export const skillsQueryKeys = {
-  all: ["skills"] as const,
-  workspace: () => [...skillsQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  details: () => [...skillsQueryKeys.workspace(), "detail"] as const,
-  detail: (skillId: string) => [...skillsQueryKeys.details(), skillId] as const,
-  documents: (skillId: string) => [...skillsQueryKeys.detail(skillId), "documents"] as const,
-  lists: () => [...skillsQueryKeys.workspace(), "list"] as const,
-  list: (params: ListSkillsParams = {}) => [...skillsQueryKeys.lists(), params] as const,
-}
+const baseSkillsQueryKeys = createWorkspaceScopedQueryKeys("skills")
 
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
+export const skillsQueryKeys = {
+  ...baseSkillsQueryKeys,
+  documents: (skillId: string) => [...baseSkillsQueryKeys.detail(skillId), "documents"] as const,
 }
 
 async function listSkills({

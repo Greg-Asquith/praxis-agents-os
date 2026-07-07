@@ -3,7 +3,7 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { FileContractCategory, FileListResponse, FileProcessingStatus } from "../types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
 export type ListFilesParams = {
@@ -13,23 +13,16 @@ export type ListFilesParams = {
   search?: string
 }
 
+const baseFilesQueryKeys = createWorkspaceScopedQueryKeys("files")
+
 export const filesQueryKeys = {
-  all: ["files"] as const,
-  workspace: () => [...filesQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  details: () => [...filesQueryKeys.workspace(), "detail"] as const,
-  detail: (fileId: string) => [...filesQueryKeys.details(), fileId] as const,
+  ...baseFilesQueryKeys,
   preview: (fileId: string) => [...filesQueryKeys.detail(fileId), "preview"] as const,
-  lists: () => [...filesQueryKeys.workspace(), "list"] as const,
-  list: (params: ListFilesParams = {}) => [...filesQueryKeys.lists(), params] as const,
   revisionContents: (fileId: string) =>
     [...filesQueryKeys.detail(fileId), "revision-content"] as const,
   revisionContent: (fileId: string, revisionId: string) =>
     [...filesQueryKeys.revisionContents(fileId), revisionId] as const,
   revisions: (fileId: string) => [...filesQueryKeys.detail(fileId), "revisions"] as const,
-}
-
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
 }
 
 async function listFiles({ category, limit = 100, offset = 0, search }: ListFilesParams = {}) {

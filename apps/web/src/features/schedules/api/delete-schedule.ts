@@ -16,11 +16,8 @@ export function useDeleteScheduleMutation() {
 
   return useMutation({
     mutationFn: deleteSchedule,
-    onSuccess: async (_result, scheduleId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.lists() }),
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.detail(scheduleId) }),
-      ])
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.workspace() })
     },
   })
 }

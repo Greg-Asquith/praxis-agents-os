@@ -3,7 +3,7 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { SchedulesListResponse } from "@/features/schedules/types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
 type ListSchedulesParams = {
@@ -13,20 +13,13 @@ type ListSchedulesParams = {
   offset?: number
 }
 
-export const schedulesQueryKeys = {
-  all: ["schedules"] as const,
-  workspace: () => [...schedulesQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  details: () => [...schedulesQueryKeys.workspace(), "detail"] as const,
-  detail: (scheduleId: string) => [...schedulesQueryKeys.details(), scheduleId] as const,
-  lists: () => [...schedulesQueryKeys.workspace(), "list"] as const,
-  list: (params: ListSchedulesParams = {}) => [...schedulesQueryKeys.lists(), params] as const,
-  runs: (scheduleId: string) => [...schedulesQueryKeys.detail(scheduleId), "runs"] as const,
-  runsList: (scheduleId: string, params: object = {}) =>
-    [...schedulesQueryKeys.runs(scheduleId), params] as const,
-}
+const baseSchedulesQueryKeys = createWorkspaceScopedQueryKeys("schedules")
 
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
+export const schedulesQueryKeys = {
+  ...baseSchedulesQueryKeys,
+  runs: (scheduleId: string) => [...baseSchedulesQueryKeys.detail(scheduleId), "runs"] as const,
+  runsList: (scheduleId: string, params: object = {}) =>
+    [...baseSchedulesQueryKeys.detail(scheduleId), "runs", params] as const,
 }
 
 async function listSchedules({

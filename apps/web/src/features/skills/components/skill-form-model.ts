@@ -2,6 +2,7 @@
 
 import { humanNameFromIdentifier, skillIdentifierFromName } from "@/features/skills/format"
 import type { Skill, SkillCreateRequest, SkillUpdateRequest } from "@/features/skills/types"
+import type { FormValidationEntry } from "@/lib/forms"
 
 export type SkillFormState = {
   description: string
@@ -11,11 +12,7 @@ export type SkillFormState = {
   name: string
 }
 
-export type SkillFormValidationEntry = {
-  fieldId: string
-  label: string
-  message: string
-}
+export type SkillFormValidationEntry = FormValidationEntry
 
 export function initialSkillFormState(skill: Skill | null): SkillFormState {
   return {

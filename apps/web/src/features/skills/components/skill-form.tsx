@@ -23,11 +23,11 @@ import {
   isSkillFormDirty,
   validateSkillFormState,
   type SkillFormState,
-  type SkillFormValidationEntry,
 } from "@/features/skills/components/skill-form-model"
 import { SkillFormSection } from "@/features/skills/components/skill-form-section"
 import type { Skill, SkillCreateRequest, SkillUpdateRequest } from "@/features/skills/types"
 import { getErrorMessage } from "@/lib/api/errors"
+import { buildFieldErrors } from "@/lib/forms"
 
 const DOCUMENT_NAME_PATTERN = /^[a-z0-9]+(_[a-z0-9]+)*$/
 
@@ -320,13 +320,6 @@ export function SkillForm(props: SkillFormProps) {
       </div>
     </div>
   )
-}
-
-function buildFieldErrors(entries: SkillFormValidationEntry[]) {
-  return entries.reduce<Record<string, string>>((errors, entry) => {
-    errors[entry.fieldId] = entry.message
-    return errors
-  }, {})
 }
 
 function PendingSkillDocumentsSection({

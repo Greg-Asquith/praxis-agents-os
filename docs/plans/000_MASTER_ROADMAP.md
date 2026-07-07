@@ -44,6 +44,7 @@ consolidate the copy-pasted per-feature scaffolding on both sides, and
 decompose `execute_run` before 053/054/056 edit it. Lane Q is defined in
 §4 below. Plan 062 was completed 2026-07-07 and moved to
 `docs/plans/complete/`. Plan 063 was completed 2026-07-07 and moved to
+`docs/plans/complete/`. Plan 064 was completed 2026-07-07 and moved to
 `docs/plans/complete/`.
 
 ---
@@ -329,7 +330,7 @@ section — check there before re-proposing.
 |------|-------|----------|------|
 | 062 | Trustworthy local gate & DX: `make api-test` provisions the test DB, CI uv caching, worker watch-reload, root `.editorconfig`, correct the two stale AGENTS.md claims (frontend tests exist; asyncio auto mode). **DONE 2026-07-07.** | P1 | Complete. |
 | 063 | Behavioral test safety net: Vitest coverage for the message-parts parser, agent/schedule form models (incl. the DST-sensitive timezone round-trip), approval decisions, shared formatters; backend tests pinning the internal-token workspace-confinement branches in `core/dependencies.py` (no code mints those tokens today — keep-vs-remove is a recorded maintainer decision). **DONE 2026-07-07.** | P1 | Complete. |
-| 064 | Web scaffolding consolidation: one workspace-scoped query-key factory (kills 8 copies of the `__no_workspace__` tenant-scoping sentinel), consistent mutation invalidation, shared `FormValidationEntry`/`buildFieldErrors` in `lib/forms.ts`, one home for date/time formatting, `window.alert` → `Alert`. | P1 | After 063 (hard). |
+| 064 | Web scaffolding consolidation: one workspace-scoped query-key factory (kills 8 copies of the `__no_workspace__` tenant-scoping sentinel), consistent mutation invalidation, shared `FormValidationEntry`/`buildFieldErrors` in `lib/forms.ts`, one home for date/time formatting, `window.alert` → `Alert`. **DONE 2026-07-07.** | P1 | Complete. |
 | 065 | API scaffolding consolidation: `paginate()` + `OffsetPage` envelope (kills 8 hand-rolled count/window recipes; cursor-based messages list stays the documented exception), `AssetSpec` collapsing the avatar/icon twin files, notifications split to one-op-per-file. | P1 | Any time after 062; parallel with 063/064. |
 | 066 | Decompose the ~286-line `execute_run` into named phase helpers behind new characterization tests (pre-start failure ordering, precondition trio, attachment prompt promotion, sink close). Dispatch split explicitly rejected — `dispatch.py` stays the single wrap-here choke point. | P1 | Before 053/054/056. |
 
@@ -360,7 +361,7 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → {064 ∥ 065} → 066 → 053 → 054 → C05 → {037–042 ∥ 043–047 ∥ 055} → 056 → 048 →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 → 066 → 053 → 054 → C05 → {037–042 ∥ 043–047 ∥ 055} → 056 → 048 →
 049 → 057 → 050 → 051 → 059 → 060` — with 015, 052, 058, and the polish
 lane as filler.
 

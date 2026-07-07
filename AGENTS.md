@@ -229,11 +229,12 @@ is a single-page app with no server runtime.
 ### Checks
 
 Vitest is installed for focused frontend unit tests. `pnpm test` runs inside
-`pnpm check` and CI, with tests colocated next to their modules (for example
-`src/features/conversations/stream/reducer.test.ts`); the rest of the gate is
-static analysis: typecheck, eslint (zero warnings), prettier, knip dead-code
-detection, dependency-cruiser, and the build. Run `pnpm check` (or the relevant
-subset) before finishing frontend work.
+`pnpm check` and CI, with tests kept under `apps/web/tests/` using paths that
+mirror the source module under test. Do not add colocated frontend tests under
+`apps/web/src/`. The rest of the gate is static analysis: typecheck, eslint
+(zero warnings), prettier, knip dead-code detection, dependency-cruiser, and
+the build. Run `pnpm check` (or the relevant subset) before finishing frontend
+work.
 
 ```bash
 cd apps/web

@@ -24,7 +24,7 @@ export function useUpdateSkillMutation() {
   return useMutation({
     mutationFn: updateSkill,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.workspace() })
     },
   })
 }

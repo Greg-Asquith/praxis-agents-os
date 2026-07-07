@@ -40,10 +40,10 @@ import {
 import { useDeleteFileMutation } from "@/features/files/api/delete-file"
 import { FileStatusBadge } from "@/features/files/components/file-status-badge"
 import { openWorkspaceFile } from "@/features/files/file-actions"
-import { fileCategoryLabel, relativeDateTime } from "@/features/files/format"
+import { fileCategoryLabel } from "@/features/files/format"
 import type { FileContractCategory, WorkspaceFile } from "@/features/files/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatBytes } from "@/lib/format"
+import { formatBytes, relativeDateTime } from "@/lib/format"
 
 export function FilesTable({
   files,

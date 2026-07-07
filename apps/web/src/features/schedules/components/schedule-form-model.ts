@@ -7,6 +7,7 @@ import type {
   ScheduleType,
   ScheduleUpdateRequest,
 } from "@/features/schedules/types"
+import type { FormValidationEntry } from "@/lib/forms"
 
 export const DEFAULT_CRON_EXPRESSION = "0 9 * * 1-5"
 const DATE_TIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
@@ -34,11 +35,7 @@ export type ScheduleFormState = {
   timezone: string
 }
 
-export type ScheduleFormValidationEntry = {
-  fieldId: string
-  label: string
-  message: string
-}
+export type ScheduleFormValidationEntry = FormValidationEntry
 
 export type ScheduleFormFieldSetter = <K extends keyof ScheduleFormState>(
   field: K,

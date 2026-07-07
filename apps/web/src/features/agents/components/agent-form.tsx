@@ -9,7 +9,6 @@ import {
   isAgentFormDirty,
   validateAgentFormState,
   type AgentFormState,
-  type AgentFormValidationEntry,
 } from "@/features/agents/components/agent-form-model"
 import { AgentDelegationSection } from "@/features/agents/components/agent-delegation-section"
 import { AgentFormShell } from "@/features/agents/components/agent-form-shell"
@@ -22,6 +21,7 @@ import type { ModelCatalogResponse } from "@/features/models/types"
 import { useSkillsQuery } from "@/features/skills/api/list-skills"
 import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
+import { buildFieldErrors } from "@/lib/forms"
 
 type AgentFormProps =
   | {
@@ -174,11 +174,4 @@ export function AgentForm(props: AgentFormProps) {
       </AgentFormShell>
     </form>
   )
-}
-
-function buildFieldErrors(entries: AgentFormValidationEntry[]) {
-  return entries.reduce<Record<string, string>>((errors, entry) => {
-    errors[entry.fieldId] = entry.message
-    return errors
-  }, {})
 }

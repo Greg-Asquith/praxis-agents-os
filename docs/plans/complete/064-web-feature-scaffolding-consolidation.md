@@ -20,6 +20,7 @@
 - **Depends on**: 063 (hard — the form-model and formatter tests are the safety net)
 - **Category**: tech-debt
 - **Planned at**: commit `d326b68`, 2026-07-07
+- **Completed at**: 2026-07-07
 
 ## Why this matters
 
@@ -285,7 +286,7 @@ identical.
 
 - Plan 063's suites are the regression net: `pnpm test` must stay green with
   **assertion changes = 0** (import-path changes allowed).
-- Add one new test file `apps/web/src/features/workspaces/query-keys.test.ts`:
+- Add one new test file `apps/web/tests/features/workspaces/query-keys.test.ts`:
   the factory's output for a fixed root equals the previous literal key shapes
   (`["agents"]`, `["agents", "<scope>", "list", {…}]` …), and the sentinel is
   returned when no workspace slug is set. Model after `reducer.test.ts`.

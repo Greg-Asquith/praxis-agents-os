@@ -26,7 +26,6 @@ import {
   isScheduleFormDirty,
   validateScheduleFormState,
   type ScheduleFormState,
-  type ScheduleFormValidationEntry,
 } from "@/features/schedules/components/schedule-form-model"
 import { ScheduleFormSection } from "@/features/schedules/components/schedule-form-section"
 import { SchedulePreviewPanel } from "@/features/schedules/components/schedule-preview-panel"
@@ -37,6 +36,7 @@ import type {
   ScheduleUpdateRequest,
 } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
+import { buildFieldErrors } from "@/lib/forms"
 
 type ScheduleFormProps =
   | {
@@ -288,11 +288,4 @@ export function ScheduleForm(props: ScheduleFormProps) {
       </div>
     </form>
   )
-}
-
-function buildFieldErrors(entries: ScheduleFormValidationEntry[]) {
-  return entries.reduce<Record<string, string>>((errors, entry) => {
-    errors[entry.fieldId] = entry.message
-    return errors
-  }, {})
 }

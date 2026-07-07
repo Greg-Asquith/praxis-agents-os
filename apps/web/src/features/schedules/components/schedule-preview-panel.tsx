@@ -10,8 +10,8 @@ import {
   buildSchedulePreviewPayload,
   type ScheduleFormState,
 } from "@/features/schedules/components/schedule-form-model"
-import { formatDateTimeInTimeZone } from "@/features/schedules/format"
 import { getErrorMessage } from "@/lib/api/errors"
+import { formatDateTimeInTimeZone } from "@/lib/format"
 
 export function SchedulePreviewPanel({ state }: { state: ScheduleFormState }) {
   const previewPayload = useMemo(() => buildSchedulePreviewPayload(state), [state])

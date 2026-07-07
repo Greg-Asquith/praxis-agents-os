@@ -3,17 +3,14 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { ToolCatalogResponse } from "@/features/tools/types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
-const toolsQueryKeys = {
-  all: ["tools"] as const,
-  workspace: () => [...toolsQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  catalog: () => [...toolsQueryKeys.workspace(), "catalog"] as const,
-}
+const baseToolsQueryKeys = createWorkspaceScopedQueryKeys("tools")
 
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
+const toolsQueryKeys = {
+  ...baseToolsQueryKeys,
+  catalog: () => [...baseToolsQueryKeys.workspace(), "catalog"] as const,
 }
 
 async function listToolCatalog() {

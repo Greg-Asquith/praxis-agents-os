@@ -73,6 +73,8 @@ deliberately not planned are recorded in the rejected/deferred section
 below.
 Plan 062 was executed 2026-07-07 as the trustworthy local gate and DX slice.
 Plan 063 was executed 2026-07-07 as the behavioral test safety-net slice.
+Plan 064 was executed 2026-07-07 as the web feature scaffolding
+consolidation slice.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -149,7 +151,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 061 | Integration provider packaging architecture (design note, D10) | P1 | S | 029; binds before 037 executes | DONE |
 | 062 | Trustworthy local gate & DX hardening (make api-test DB, CI uv cache, worker reload, AGENTS.md fixes) | P1 | S | - | DONE |
 | 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | DONE |
-| 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | TODO |
+| 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | DONE |
 | 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | TODO |
 | 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | TODO |
 
@@ -477,6 +479,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `TEST_DATABASE_URL=... uv run pytest tests/routes/auth -q`,
   `TEST_DATABASE_URL=... uv run pytest tests/routes/auth tests/middleware -q`,
   `uv run ruff check .`, and `uv run ruff format --check .` passed.
+- `064` marked DONE 2026-07-07: workspace-scoped web query keys now share one
+  `features/workspaces/query-keys.ts` factory with the
+  `__no_workspace__` sentinel defined once; agent/skill/schedule update-style
+  mutations invalidate the active workspace prefix instead of cross-workspace
+  roots; the three entity forms share `FormValidationEntry` and
+  `buildFieldErrors` from `lib/forms.ts`; relative and timezone-aware date
+  helpers live in `lib/format.ts`; and skill creation warnings now render as
+  an inline `Alert` before navigating. `pnpm check` passed from `apps/web`.
 - `C05` is P2 production-readiness work. The license step is a maintainer
   decision and should block that step rather than let an executor choose a
   license. Its metrics route must stay independent of `014` OTel, and its 403

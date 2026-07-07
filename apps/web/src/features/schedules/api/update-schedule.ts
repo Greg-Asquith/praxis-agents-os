@@ -23,11 +23,8 @@ export function useUpdateScheduleMutation() {
 
   return useMutation({
     mutationFn: updateSchedule,
-    onSuccess: async (_schedule, input) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.lists() }),
-        queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.detail(input.scheduleId) }),
-      ])
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: schedulesQueryKeys.workspace() })
     },
   })
 }

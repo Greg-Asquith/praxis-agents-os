@@ -3,17 +3,14 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import type { ToolPresentationsResponse } from "@/features/tools/types"
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
-const toolPresentationsQueryKeys = {
-  all: ["tools"] as const,
-  workspace: () => [...toolPresentationsQueryKeys.all, activeWorkspaceQueryScope()] as const,
-  presentations: () => [...toolPresentationsQueryKeys.workspace(), "presentations"] as const,
-}
+const baseToolPresentationsQueryKeys = createWorkspaceScopedQueryKeys("tools")
 
-function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
+const toolPresentationsQueryKeys = {
+  ...baseToolPresentationsQueryKeys,
+  presentations: () => [...baseToolPresentationsQueryKeys.workspace(), "presentations"] as const,
 }
 
 async function listToolPresentations() {
