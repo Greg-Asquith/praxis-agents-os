@@ -15,7 +15,7 @@
 > Governance defaults below are cited as "plan 029 Step N defaults" from
 > `docs/plans/029-governance-lifecycle-design-note.md`.
 >
-> **Drift check (run first)**: `git diff --stat 9208c47..HEAD -- apps/api/workers/ apps/api/models/ apps/api/core/settings/ apps/api/services/agent_schedules/runs.py apps/api/services/notifications/ docker-compose.yml makefile/local.mk`
+> **Drift check (run first)**: `git diff --stat 9208c47..HEAD -- apps/api/workers/ apps/api/models/ apps/api/core/settings/ apps/api/services/agent_schedules/runs.py apps/api/services/notifications/ docker-compose.yml makefiles/local.mk`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -40,7 +40,7 @@
    `agent_runner.run_forever` and `job_runner.run_forever` as sibling
    asyncio tasks under one shutdown event. `docker-compose.yml` defines
    exactly one `worker` service (line 57) and `make dev` starts exactly one
-   worker (`makefile/local.mk:77-79`) — a second service doubles the ops
+   worker (`makefiles/local.mk:77-79`) — a second service doubles the ops
    surface for zero isolation benefit at this scale. `agent_runner.py`
    itself is untouched; its `--once` CLI stays for tests.
 2. **Jobs rows are not soft-deleted.** `Job` uses `Base + UUIDMixin +
@@ -158,7 +158,7 @@ closest machinery is schedule-specific:
   `core/settings/__init__.py` (imports lines 13–27, class bases 32–45).
 - Wiring: `docker-compose.yml:57-76` `worker` service, command
   `["python", "-m", "workers.agent_runner"]` (line 63);
-  `makefile/local.mk:77-79` `worker-dev` runs
+  `makefiles/local.mk:77-79` `worker-dev` runs
   `uv run python -m workers.agent_runner`.
 - `apps/api/services/notifications/service.py:105-158`
   `create_notification(db, *, notification_type, title, ..., recipient_user_id, workspace_id, source, ...)` —
@@ -196,7 +196,7 @@ closest machinery is schedule-specific:
   `handlers/sweep_terminal_jobs.py`
 - `apps/api/workers/job_runner.py`, `apps/api/workers/main.py` (create)
 - `docker-compose.yml` (worker command → `workers.main`),
-  `makefile/local.mk` (`worker-dev` → `workers.main`)
+  `makefiles/local.mk` (`worker-dev` → `workers.main`)
 - `apps/api/tests/services/jobs/` (create), `tests/factories/` (job
   factory helper)
 
@@ -441,7 +441,7 @@ unexpectedly, set the shutdown event, drain the other within
 `close_db_connections()` in `finally`.
 
 Update `docker-compose.yml:63` command to
-`["python", "-m", "workers.main"]` and `makefile/local.mk:79` to
+`["python", "-m", "workers.main"]` and `makefiles/local.mk:79` to
 `uv run python -m workers.main`.
 
 **Verify**: `uv run python -m workers.job_runner --once` → exits 0 and
@@ -504,7 +504,7 @@ initiator** (029 Step 7).
 - [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/jobs tests/services/agent_schedules -q` exits 0
 - [ ] `uv run python -m workers.job_runner --once` and
       `uv run python -m workers.agent_runner --once` both exit 0
-- [ ] `docker-compose.yml` + `makefile/local.mk` run `workers.main`;
+- [ ] `docker-compose.yml` + `makefiles/local.mk` run `workers.main`;
       `make dev` starts one worker process running both loops
 - [ ] No routes package added; `count_in_flight_jobs` docstring names 033
       as the surface owner

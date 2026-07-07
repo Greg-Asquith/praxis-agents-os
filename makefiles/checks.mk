@@ -7,8 +7,8 @@ api-format-check: ## Check backend formatting
 	cd $(API_DIR) && uv run ruff format --check .
 
 .PHONY: api-test
-api-test: ## Run backend tests
-	cd $(API_DIR) && uv run pytest
+api-test: test-db ## Run backend tests against the local test database
+	cd $(API_DIR) && TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/praxis_test uv run pytest
 
 .PHONY: api-migrations-check
 api-migrations-check: local-env ## Check Alembic migration drift

@@ -85,7 +85,7 @@ steers contributors away from the now-working `make dev` flow.
   `apps/web/Dockerfile` uses `node:24-slim` and `@types/node` is `^24`;
   lines 17 and 221 still say the Docker setup "is still being normalized …
   prefer the manual backend and frontend commands", contradicting the
-  current Compose-based `make dev` flow (`GNUmakefile` + `makefile/local.mk`).
+  current Compose-based `make dev` flow (`Makefile` + `makefiles/local.mk`).
 - Settings conventions: per-concern mixins under `apps/api/core/settings/`
   (e.g. `rate_limit.py`, `security.py`); the `model_validator` in
   `core/settings/__init__.py` rejects unsafe production combinations — read
@@ -224,7 +224,7 @@ In `README.md` only:
 3. Lines 17 and 221: rewrite the two "Docker setup is still being
    normalized… prefer the manual commands" passages to reflect reality:
    `make bootstrap` + `make dev` is the supported local flow (Compose runs
-   Postgres; see `makefile/local.mk`), with the manual per-app commands as
+   Postgres; see `makefiles/local.mk`), with the manual per-app commands as
    the alternative. Keep the edits surgical — do not restructure the README.
 4. If Step 1 ran: update the license note; if Step 1 was skipped/BLOCKED,
    leave the license note in place.

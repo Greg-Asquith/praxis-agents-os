@@ -6,7 +6,7 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `plans/improvements/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat a0eea1c..HEAD -- makefile/checks.mk apps/api/pyproject.toml apps/web/package.json .github`
+> **Drift check (run first)**: `git diff --stat a0eea1c..HEAD -- makefiles/checks.mk apps/api/pyproject.toml apps/web/package.json .github`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -38,7 +38,7 @@ this gate protects all of them.
 ## Current state
 
 - No `.github/` directory exists in the repo root.
-- `makefile/checks.mk` (entire file):
+- `makefiles/checks.mk` (entire file):
 
   ```makefile
   .PHONY: api-lint
@@ -62,7 +62,7 @@ this gate protects all of them.
   ```
 
   Note `api-test` exists but is not part of `check`. Variables come from
-  `makefile/config.mk`: `API_DIR := apps/api`, `WEB_DIR := apps/web`,
+  `makefiles/config.mk`: `API_DIR := apps/api`, `WEB_DIR := apps/web`,
   `API_ENV := set -a; . ./.env; set +a;`.
 
 - `apps/api/pyproject.toml` has **no** `[tool.pytest.ini_options]` section.
@@ -107,7 +107,7 @@ this gate protects all of them.
 
 **In scope** (the only files you should create or modify):
 - `.github/workflows/ci.yml` (create)
-- `makefile/checks.mk`
+- `makefiles/checks.mk`
 - `apps/api/pyproject.toml` (pytest config section only)
 - `apps/api/tests/**` (only if enabling `asyncio_mode = "auto"` surfaces
   previously-skipped tests that need trivial fixes; see STOP conditions)
@@ -151,7 +151,7 @@ Then run the DB-backed suite if a local Postgres is available:
 
 ### Step 2: Complete `make check`
 
-Edit `makefile/checks.mk`:
+Edit `makefiles/checks.mk`:
 
 1. Add a format-check target:
 

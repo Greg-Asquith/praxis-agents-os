@@ -66,6 +66,12 @@ db-wait: ## Wait for local Postgres to accept connections
 	printf '\nPostgres did not become ready in time\n'; \
 	exit 1
 
+.PHONY: test-db
+test-db: db-up db-wait ## Ensure the praxis_test database exists
+	@$(COMPOSE) exec -T postgres psql -U postgres -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = 'praxis_test'" | grep -q 1 || \
+		$(COMPOSE) exec -T postgres createdb -U postgres praxis_test
+
 .PHONY: migrate
 migrate: local-env ## Apply all Alembic migrations
 	cd $(API_DIR) && $(API_ENV) uv run alembic upgrade heads
@@ -75,8 +81,8 @@ api-dev: local-env ## Run the FastAPI development server on http://localhost:800
 	cd $(API_DIR) && uv run uvicorn main:app --reload --host 127.0.0.1 --port $(API_PORT)
 
 .PHONY: worker-dev
-worker-dev: local-env ## Run the scheduled agent runner
-	cd $(API_DIR) && uv run python -m workers.main
+worker-dev: local-env ## Run the scheduled agent runner with auto-reload
+	cd $(API_DIR) && uv run watchfiles "python -m workers.main" workers services models core utils
 
 .PHONY: web-dev
 web-dev: local-env ## Run the Vite development server on http://localhost:3000

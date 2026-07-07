@@ -68,8 +68,8 @@ Install these before running the apps locally:
 
 ## Local Make Targets
 
-The root `GNUmakefile` wraps the common local development flow and includes
-sectioned targets from `makefile/`.
+The root `Makefile` wraps the common local development flow and includes
+sectioned targets from `makefiles/`.
 
 Create missing local env files and install dependencies:
 

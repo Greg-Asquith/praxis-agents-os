@@ -7,7 +7,7 @@
 > in `docs/plans/000_README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat c2f08cc..HEAD -- apps/api/services/agents/runtime/ apps/api/tests/ apps/api/pyproject.toml makefile/`
+> `git diff --stat c2f08cc..HEAD -- apps/api/services/agents/runtime/ apps/api/tests/ apps/api/pyproject.toml makefiles/`
 > Compare the "Current state" excerpts against live code; treat a mismatch
 > in the sink/test-support seams or the pydantic-ai/pydantic-evals versions
 > as a STOP condition.
@@ -162,7 +162,7 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
   a run.
 - **Trimming**: pure `trim_history` (`history.py:21-60`) — directly
   assertable; end-to-end shape via scenario turns.
-- **Make targets**: root `GNUmakefile` + `makefile/` sections; `make
+- **Make targets**: root `Makefile` + `makefiles/` sections; `make
   check` runs the main gates (C01). No `evals` target exists.
 - **No eval/scenario directory exists**: `ls apps/api` shows no `evals/`;
   `tests/` has contract/routes/services/integration/middleware/factories/
@@ -192,7 +192,7 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
 - `apps/api/evals/` (create, decision 4): `datasets/`, `evaluators.py`,
   `run.py`, `README.md` (how to run, how to add a case, what never goes
   in CI)
-- `makefile/` — `make evals` target
+- `makefiles/` — `make evals` target
 - `apps/api/pyproject.toml` — only if evals collection needs an explicit
   exclusion; **no new dependencies**
 - Roadmap/README wiring for Gate G5 (owned by the 053–060 integration

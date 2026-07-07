@@ -189,7 +189,7 @@ services:
 - Local Make targets currently run only API and web dev servers:
 
 ```make
-# makefile/local.mk:32
+# makefiles/local.mk:32
 dev: local-env ## Start Postgres, migrate, then run API and web dev servers
 	@$(MAKE) db-up
 	@$(MAKE) db-wait
@@ -235,8 +235,8 @@ the same way before running the smoke command.
 - `apps/api/core/settings/agents.py`
 - `apps/api/.env.example`
 - `docker-compose.yml`
-- `makefile/local.mk`
-- `makefile/deployment.mk`
+- `makefiles/local.mk`
+- `makefiles/deployment.mk`
 - Focused tests under `apps/api/tests/services/agent_schedules/`
 - Focused tests under `apps/api/tests/services/conversations/`
 - Existing runtime/conversation tests only where needed to cover pruning integration
@@ -288,7 +288,7 @@ Create `apps/api/workers/__init__.py` with a short package docstring. Create
 The worker entrypoint should only orchestrate sessions, polling, and shutdown.
 Domain work belongs in `services/agent_schedules/*`.
 
-Add `worker-dev` in `makefile/local.mk`:
+Add `worker-dev` in `makefiles/local.mk`:
 
 ```make
 .PHONY: worker-dev
@@ -307,7 +307,7 @@ Do not expose ports. Use command:
 command: ["python", "-m", "workers.agent_runner"]
 ```
 
-Update `makefile/deployment.mk` so `compose-up`, `compose-up-detached`, and
+Update `makefiles/deployment.mk` so `compose-up`, `compose-up-detached`, and
 `compose-logs` include `worker`.
 
 **Verify**:
@@ -690,7 +690,7 @@ All must hold:
 
 - [ ] `apps/api/workers/agent_runner.py` exists and supports `--once`.
 - [ ] `docker compose config --services` lists `worker`.
-- [ ] `makefile/local.mk` has a `worker-dev` target and local `dev` starts it.
+- [ ] `makefiles/local.mk` has a `worker-dev` target and local `dev` starts it.
 - [ ] Scheduled due rows are claimed via `claim_due_schedule_runs`, not via an
       HTTP call.
 - [ ] Scheduled runs call the existing `execute_run` function with `NullSink`.

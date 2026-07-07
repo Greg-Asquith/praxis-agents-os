@@ -20,7 +20,7 @@ and aligned with the product direction.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router + TanStack
   Query). It talks to the API over REST and consumes agent turns over SSE.
 - `docker-compose.yml` defines local Postgres (pgvector image), the API, the
-  worker, and the web app. The root `GNUmakefile` wraps the local dev flow
+  worker, and the web app. The root `Makefile` wraps the local dev flow
   (`make bootstrap`, `make dev`, `make check`).
 - `docs/plans/` holds the numbered implementation plans and the master roadmap.
 
@@ -128,12 +128,14 @@ in `apps/api/ruff.toml`.
   services, integration, middleware, factories, and support. Do not add random
   root-level `test_*.py` files. Test key behavior and high-risk flows rather
   than creating one test file per route or service operation by default.
-- There is no pytest config file and no `asyncio_mode`; async test modules must
-  set `pytestmark = pytest.mark.asyncio` or they will not run.
+- Pytest is configured in `apps/api/pyproject.toml` with
+  `asyncio_mode = "auto"`, so async test functions run without per-module
+  markers.
 - Database-backed tests run against a real Postgres and skip cleanly unless
-  `TEST_DATABASE_URL` is set. Use the fixtures in `conftest.py` and the helpers
-  in `tests/factories/` and `tests/support/` instead of hand-rolling setup.
-  Live LLM calls are blocked in tests.
+  `TEST_DATABASE_URL` is set; `make api-test` provisions the local test database
+  and sets that variable automatically. Use the fixtures in `conftest.py` and
+  the helpers in `tests/factories/` and `tests/support/` instead of hand-rolling
+  setup. Live LLM calls are blocked in tests.
 
 Useful backend commands:
 
@@ -226,10 +228,12 @@ is a single-page app with no server runtime.
 
 ### Checks
 
-There is no frontend test framework; the quality gate is static. `pnpm check`
-runs typecheck, eslint (zero warnings), prettier, knip dead-code detection,
-dependency-cruiser, and the build — run it (or the relevant subset) before
-finishing frontend work.
+Vitest is installed for focused frontend unit tests. `pnpm test` runs inside
+`pnpm check` and CI, with tests colocated next to their modules (for example
+`src/features/conversations/stream/reducer.test.ts`); the rest of the gate is
+static analysis: typecheck, eslint (zero warnings), prettier, knip dead-code
+detection, dependency-cruiser, and the build. Run `pnpm check` (or the relevant
+subset) before finishing frontend work.
 
 ```bash
 cd apps/web
@@ -240,7 +244,7 @@ pnpm dev
 
 ## Local Development
 
-The root `GNUmakefile` (with sections in `makefile/`) wraps the local flow:
+The root `Makefile` (with sections in `makefiles/`) wraps the local flow:
 `make bootstrap` creates missing `.local/` env files and installs dependencies,
 `make dev` starts Postgres, migrates, and runs the API, worker, and web dev
 servers, and `make check` runs the main backend and frontend gates.

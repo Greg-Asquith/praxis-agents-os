@@ -7,7 +7,7 @@
 > in `docs/plans/000_README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat d326b68..HEAD -- makefile/ .github/workflows/ci.yml AGENTS.md apps/api/tests/support/database.py`
+> `git diff --stat d326b68..HEAD -- makefiles/ .github/workflows/ci.yml AGENTS.md apps/api/tests/support/database.py`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -35,7 +35,7 @@ small fixes with outsized daily payoff.
 
 ## Current state
 
-- `makefile/checks.mk:9-11` — the test target sets no database URL:
+- `makefiles/checks.mk:9-11` — the test target sets no database URL:
 
   ```make
   .PHONY: api-test
@@ -58,10 +58,10 @@ small fixes with outsized daily payoff.
   and creates the `praxis_test` database with an inline asyncpg script before
   running `uv run --locked pytest`. Local Postgres (docker-compose service
   `postgres`, image `pgvector/pgvector:pg17`) uses user/password/db
-  `postgres`/`postgres`/`postgres` on `localhost:5432`; `makefile/local.mk`
+  `postgres`/`postgres`/`postgres` on `localhost:5432`; `makefiles/local.mk`
   already has `db-up` and `db-wait` targets that start it and wait for
   readiness, and `$(COMPOSE)` is the compose wrapper variable used throughout
-  `makefile/`.
+  `makefiles/`.
 - `.github/workflows/ci.yml:39-42` (api job) — uv is set up without caching,
   while the web job caches pnpm:
 
@@ -71,7 +71,7 @@ small fixes with outsized daily payoff.
       python-version: "3.12"
   ```
 
-- `makefile/local.mk:77-79` — the worker dev target has no reload, unlike
+- `makefiles/local.mk:77-79` — the worker dev target has no reload, unlike
   `api-dev` which passes `--reload` to uvicorn:
 
   ```make
@@ -105,8 +105,8 @@ small fixes with outsized daily payoff.
 
 **In scope** (the only files you should modify):
 
-- `makefile/checks.mk`
-- `makefile/local.mk` (worker-dev target, new test-db target if placed here)
+- `makefiles/checks.mk`
+- `makefiles/local.mk` (worker-dev target, new test-db target if placed here)
 - `.github/workflows/ci.yml` (uv cache lines only)
 - `.editorconfig` (create)
 - `AGENTS.md` (the two stale claims only)
@@ -131,7 +131,7 @@ small fixes with outsized daily payoff.
 
 ### Step 1: Provision the test database in the make flow
 
-In `makefile/local.mk`, add a target that ensures Postgres is up and the
+In `makefiles/local.mk`, add a target that ensures Postgres is up and the
 `praxis_test` database exists (idempotent):
 
 ```make
@@ -142,7 +142,7 @@ test-db: db-up db-wait ## Ensure the praxis_test database exists
 		$(COMPOSE) exec -T postgres createdb -U postgres praxis_test
 ```
 
-In `makefile/checks.mk`, make `api-test` depend on it and export the URL:
+In `makefiles/checks.mk`, make `api-test` depend on it and export the URL:
 
 ```make
 .PHONY: api-test
@@ -194,7 +194,7 @@ indent_size = 4
 indent_style = space
 indent_size = 2
 
-[*.{mk,makefile,Makefile,GNUmakefile}]
+[{Makefile,makefile,*.mk,*.makefile}]
 indent_style = tab
 
 [*.md]
@@ -212,7 +212,7 @@ uvicorn's standard extras): `cd apps/api && uv run python -c "import watchfiles"
 If it fails, add `watchfiles` to the dev dependency group in
 `apps/api/pyproject.toml` and run `uv sync`.
 
-Then change `worker-dev` in `makefile/local.mk`:
+Then change `worker-dev` in `makefiles/local.mk`:
 
 ```make
 .PHONY: worker-dev

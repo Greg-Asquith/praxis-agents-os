@@ -71,6 +71,7 @@ on a trustworthy gate, a behavioral test net, and a decomposed
 `execute_run` (which 053/054/056 all edit). Findings audited but
 deliberately not planned are recorded in the rejected/deferred section
 below.
+Plan 062 was executed 2026-07-07 as the trustworthy local gate and DX slice.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -145,7 +146,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 059 | Sandboxed code execution — provider-native run_code | P2 | L | 025, 026, 028, 031-034 (soft: 036, 054, 055; after 050/051) | TODO |
 | 060 | Durable run event log and live stream replay | P3 | L | 030 (soft: 053, 056; last in Lane H) | TODO |
 | 061 | Integration provider packaging architecture (design note, D10) | P1 | S | 029; binds before 037 executes | DONE |
-| 062 | Trustworthy local gate & DX hardening (make api-test DB, CI uv cache, worker reload, AGENTS.md fixes) | P1 | S | - | TODO |
+| 062 | Trustworthy local gate & DX hardening (make api-test DB, CI uv cache, worker reload, AGENTS.md fixes) | P1 | S | - | DONE |
 | 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | TODO |
 | 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | TODO |
 | 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | TODO |
@@ -457,6 +458,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `TEST_DATABASE_URL=... uv run pytest tests/services/rate_limiting tests/middleware tests/services/jobs -q`,
   and `DATABASE_URL=... uv run python -m workers.job_runner --once` passed
   from `apps/api`.
+- `062` marked DONE 2026-07-07: `make api-test` now starts local Postgres,
+  ensures `praxis_test` exists, and runs pytest with `TEST_DATABASE_URL` so the
+  DB-backed suite no longer silently skips; CI caches uv from
+  `apps/api/uv.lock`; `worker-dev` runs under `watchfiles`; the root
+  `.editorconfig` exists; and AGENTS.md now reflects pytest asyncio auto mode
+  plus the Vitest-backed frontend gate. `make api-test` passed with 494 tests
+  and no `Set TEST_DATABASE_URL` skips.
 - `C05` is P2 production-readiness work. The license step is a maintainer
   decision and should block that step rather than let an executor choose a
   license. Its metrics route must stay independent of `014` OTel, and its 403

@@ -39,6 +39,8 @@ jobs:
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
       - run: uv sync --locked
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
