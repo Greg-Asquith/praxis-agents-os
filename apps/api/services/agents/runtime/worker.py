@@ -10,7 +10,7 @@ from contextlib import suppress
 from uuid import UUID
 
 from pydantic_ai import DeferredToolResults
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, UserContent
 from pydantic_ai.models import Model
 from sqlalchemy import select
 
@@ -34,7 +34,8 @@ async def run_turn_worker(
     *,
     run_id: UUID,
     conversation_id: UUID,
-    user_prompt: str,
+    user_prompt: str | Sequence[UserContent],
+    attachment_file_ids: Sequence[UUID] = (),
     sink: EventSink,
     client_message_id: str | None = None,
     model: Model | None = None,
@@ -62,6 +63,7 @@ async def run_turn_worker(
             conversation_id=conversation_id,
             run_id=run_id,
             user_prompt=user_prompt,
+            attachment_file_ids=attachment_file_ids,
             sink=sink,
             model=model,
             client_message_id=client_message_id,

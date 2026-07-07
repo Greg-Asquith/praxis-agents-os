@@ -10,7 +10,7 @@ type ConfirmFileUploadInput = {
   uploadToken: string
 }
 
-async function confirmFileUpload({ uploadToken }: ConfirmFileUploadInput) {
+export async function confirmFileUpload({ uploadToken }: ConfirmFileUploadInput) {
   return apiRequest<WorkspaceFile>("/files/uploads/confirm", {
     body: { upload_token: uploadToken },
     method: "POST",

@@ -88,6 +88,18 @@ class FilesSettingsMixin:
         le=524288000,
         description="Max AI generated video file size (100MB)",
     )
+    MAX_CHAT_ATTACHMENTS: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Max file attachments per chat message",
+    )
+    MAX_MULTIMODAL_DOCUMENT_BYTES: int = Field(
+        default=20971520,
+        ge=1048576,
+        le=33554432,
+        description="Max document size passed to the model as multimodal input (20MB)",
+    )
     FILES_WORKSPACE_STORAGE_SOFT_LIMIT_BYTES: int = Field(
         default=10737418240,
         ge=1048576,

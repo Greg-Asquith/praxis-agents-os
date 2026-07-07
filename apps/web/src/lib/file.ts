@@ -3,7 +3,7 @@
 const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
   csv: "text/csv",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  html: "application/html",
+  html: "text/html",
   jpeg: "image/jpeg",
   jpg: "image/jpeg",
   json: "application/json",

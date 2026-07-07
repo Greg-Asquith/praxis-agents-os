@@ -189,6 +189,13 @@ class FileDownloadGrant(BaseModel):
     expires_at: datetime
 
 
+class FilePreviewGrant(BaseModel):
+    """Signed inline preview grant for a workspace file object."""
+
+    preview: SignedDownload
+    expires_at: datetime
+
+
 class FilesUsageResponse(BaseModel):
     """Workspace file storage usage counter."""
 

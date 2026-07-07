@@ -24,7 +24,8 @@ covering Phases 3–6 end to end, consistency-reviewed against the landed
 completion, while the master roadmap tracks them with `C` prefixes so they do
 not collide with existing roadmap plans. C01, C02, C03, and C04 were completed
 2026-07-06 and moved to `plans/complete/`. Plan 035 was completed
-2026-07-06 and moved to `plans/complete/`. Every reserved number now has a
+2026-07-06 and moved to `plans/complete/`; Plan 036 was completed
+2026-07-07 and moved to `plans/complete/`. Every reserved number now has a
 written plan.
 
 ---
@@ -209,7 +210,7 @@ Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
 |------|-------|
 | 034 | Agent file tools (`list_files`/`read_file`/`write_file`/`promote_scratch`) + scratch model (TTL, size cap, approval-gated promote) + `<available_files>` prompt block via the 018 assembler. **DONE 2026-07-06.** (Donor B5.) |
 | 035 | Files UI: files page, detail sheet with revisions/diff, chat file cards with signed-URL open/download. **DONE 2026-07-06.** (Donor B6.) |
-| 036 | Multimodal input: chat attachments ride Files; images/documents passed to the model via pydantic-ai multimodal input, gated by the file-contract policy. (From NOTES; new — not in donor roadmap.) |
+| 036 | Multimodal input: chat attachments ride Files; images/documents passed to the model via pydantic-ai multimodal input, gated by the file-contract policy. **DONE 2026-07-07.** (From NOTES; new — not in donor roadmap.) |
 
 ### Phase 4a — Integrations (donor Phase C; gates G1, G3; parallel with 4b)
 
@@ -273,7 +274,7 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
 049 → 050 → 051` — with 015 and the polish lane as filler.
 
 With parallel capacity: one stream takes Lane O while another runs Phase 1

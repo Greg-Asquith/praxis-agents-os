@@ -8,7 +8,9 @@ import {
   AssistantMessageShell,
   UserMessageShell,
 } from "@/features/conversations/components/message-shell"
+import { MessageAttachmentCard } from "@/features/conversations/components/message-attachment-card"
 import { UnsupportedPartRows } from "@/features/conversations/components/unsupported-part-rows"
+import type { MessageAttachment } from "@/features/conversations/attachments"
 import type {
   ParsedConversationMessage,
   PendingUserMessage,
@@ -40,6 +42,7 @@ export function MessageRow({
     return (
       <UserMessageShell createdAt={pendingMessage.createdAt} pending>
         <MessageMarkdown content={pendingMessage.text} />
+        <AttachmentCards attachments={pendingMessage.attachments ?? []} />
       </UserMessageShell>
     )
   }
@@ -48,6 +51,7 @@ export function MessageRow({
     return (
       <UserMessageShell createdAt={message.createdAt}>
         <MessageTextParts message={message} />
+        <AttachmentCards attachments={message.attachments} />
       </UserMessageShell>
     )
   }
@@ -150,6 +154,7 @@ function PersistedAssistantTurnMessage({ message }: { message: ParsedConversatio
   return (
     <>
       <MessageTextParts message={message} />
+      <AttachmentCards attachments={message.attachments} />
       <UnsupportedPartRows message={message} />
     </>
   )
@@ -160,6 +165,7 @@ function MessageContentParts({ message }: { message: ParsedConversationMessage }
     <>
       <ThinkingParts message={message} />
       <MessageTextParts message={message} />
+      <AttachmentCards attachments={message.attachments} />
       <MessageToolActivities message={message} />
       <UnsupportedPartRows message={message} />
     </>
@@ -173,6 +179,23 @@ function MessageTextParts({ message }: { message: ParsedConversationMessage }) {
         <MessageMarkdown key={`${message.id}:text:${String(index)}`} content={text} />
       ))}
     </>
+  )
+}
+
+function AttachmentCards({ attachments }: { attachments: MessageAttachment[] }) {
+  if (attachments.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {attachments.map((attachment, index) => (
+        <MessageAttachmentCard
+          key={`${attachment.fileId}:${String(index)}`}
+          attachment={attachment}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -251,7 +274,9 @@ function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage
 }
 
 function hasPersistedTurnContent(message: ParsedConversationMessage) {
-  return message.text.length > 0 || message.unsupportedParts.length > 0
+  return (
+    message.text.length > 0 || message.attachments.length > 0 || message.unsupportedParts.length > 0
+  )
 }
 
 function liveThinkingContent(messages: ChatMessageDraft[]) {

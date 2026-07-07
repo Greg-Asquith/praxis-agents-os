@@ -27,9 +27,11 @@ from services.conversations.schemas import ConversationTurnCreateRequest
 from services.conversations.utils import (
     build_interactive_run_metadata,
     get_active_run_for_conversation,
+    get_assignable_agent_for_workspace,
     get_conversation_for_actor,
     get_message_by_client_message_id,
 )
+from services.files import create_conversation_file_references, resolve_chat_attachments
 
 SSE_KEEPALIVE_FRAME = runtime_streaming.SSE_KEEPALIVE_FRAME
 _drain_sse_sink = runtime_streaming.drain_sse_sink
@@ -96,6 +98,28 @@ async def create_conversation_turn_stream(
                 },
             )
 
+    attachment_file_ids: list[UUID] = []
+    if payload.attachments:
+        agent = await get_assignable_agent_for_workspace(
+            db,
+            workspace=workspace,
+            agent_id=conversation.active_agent_id,
+        )
+        files = await resolve_chat_attachments(
+            db,
+            workspace_id=workspace.id,
+            agent=agent,
+            file_ids=payload.attachments,
+        )
+        attachment_file_ids = [file.id for file in files]
+        await create_conversation_file_references(
+            db,
+            workspace_id=workspace.id,
+            conversation_id=conversation.id,
+            file_ids=attachment_file_ids,
+            created_by_user_id=actor.id,
+        )
+
     run = await create_agent_run(
         db,
         conversation_id=conversation.id,
@@ -106,6 +130,7 @@ async def create_conversation_turn_stream(
         metadata=build_interactive_run_metadata(
             client_message_id=payload.client_message_id,
             request=request,
+            attachment_file_ids=attachment_file_ids,
         ),
     )
     await db.commit()
@@ -118,6 +143,7 @@ async def create_conversation_turn_stream(
             run_id=run.id,
             conversation_id=conversation.id,
             user_prompt=payload.user_prompt,
+            attachment_file_ids=attachment_file_ids,
             sink=sink,
             client_message_id=payload.client_message_id,
         ),

@@ -43,7 +43,7 @@ def test_build_system_prompt_truncates_budgeted_blocks(monkeypatch) -> None:
     assert "Runtime prompt block exceeded its soft budget" in logs
 
 
-def test_runtime_instructions_match_previous_concatenation() -> None:
+def test_runtime_instructions_match_canonical_spacing() -> None:
     agent = _agent(instructions="Reply plainly.")
 
     assert (

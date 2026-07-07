@@ -19,6 +19,7 @@ from services.audit_events import AuditAction, AuditResourceType
 from services.files import (
     confirm_file_upload,
     create_file_download,
+    create_file_preview,
     create_file_upload,
     delete_file,
     edit_file,
@@ -643,6 +644,55 @@ async def test_create_file_download_records_read_audit_and_defaults_attachment(
         "filename": "download.txt",
         "revision_id": str(revision.id),
     }
+
+
+async def test_create_file_preview_is_image_only_and_does_not_record_read_audit(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, _membership = await _workspace_context(db_session)
+    image_file, _image_revision = await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="screen.png",
+        content_type="image/png",
+        content=b"png",
+    )
+
+    grant = await create_file_preview(
+        db_session,
+        workspace=workspace,
+        file_id=image_file.id,
+    )
+
+    assert "download=1" not in grant.preview.url
+    assert grant.preview.headers == {}
+    read_audit_count = await db_session.scalar(
+        select(func.count())
+        .select_from(AuditEvent)
+        .where(
+            AuditEvent.action == AuditAction.READ.value,
+            AuditEvent.resource_type == AuditResourceType.FILE.value,
+            AuditEvent.resource_id == str(image_file.id),
+        )
+    )
+    assert read_audit_count == 0
+
+    text_file, _text_revision = await _persist_file(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        filename="notes.txt",
+        content_type="text/plain",
+        content=b"notes",
+    )
+    with pytest.raises(AppValidationError, match="Only image files can be previewed"):
+        await create_file_preview(
+            db_session,
+            workspace=workspace,
+            file_id=text_file.id,
+        )
 
 
 async def test_edit_and_restore_reject_invalid_file_states(

@@ -68,7 +68,7 @@ FILE_CONTRACT: tuple[FileContractEntry, ...] = (
     ),
     FileContractEntry(
         category=FileCategory.EDITABLE_TEXT,
-        content_type="application/html",
+        content_type="text/html",
         extensions=(".html",),
         max_size_setting="MAX_FILE_SIZE_DOCUMENT",
         editable=True,

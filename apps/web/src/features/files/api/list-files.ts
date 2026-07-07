@@ -18,6 +18,7 @@ export const filesQueryKeys = {
   workspace: () => [...filesQueryKeys.all, activeWorkspaceQueryScope()] as const,
   details: () => [...filesQueryKeys.workspace(), "detail"] as const,
   detail: (fileId: string) => [...filesQueryKeys.details(), fileId] as const,
+  preview: (fileId: string) => [...filesQueryKeys.detail(fileId), "preview"] as const,
   lists: () => [...filesQueryKeys.workspace(), "list"] as const,
   list: (params: ListFilesParams = {}) => [...filesQueryKeys.lists(), params] as const,
   revisionContents: (fileId: string) =>

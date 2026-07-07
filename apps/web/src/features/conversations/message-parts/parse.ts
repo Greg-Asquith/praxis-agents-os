@@ -3,10 +3,16 @@
 import type {
   ParsedConversationMessage,
   ParsedMessageRole,
+  ParsedAttachment,
   ToolActivity,
   ToolActivityStatus,
   ToolApprovalDecision,
 } from "@/features/conversations/message-parts/types"
+import {
+  attachmentFromBinaryUserContentPart,
+  isBinaryUserContentPart,
+  isBinaryUserContentLike,
+} from "@/features/conversations/attachments"
 import {
   delegationDetailsForPendingApproval,
   delegationDetailsForToolActivity,
@@ -122,6 +128,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     createdAt: message.created_at,
     text: [],
     thinking: [],
+    attachments: [],
     toolActivities: [],
     unsupportedParts: [],
   }
@@ -145,10 +152,17 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     const partId = `${message.id}:${String(index)}`
 
     if (partKind === "user-prompt") {
-      const text = extractContentText(part["content"])
-      if (text) {
-        parsed.text.push(text)
-      } else {
+      const content = parseUserPromptContent(part["content"], partId)
+      if (content.text) {
+        parsed.text.push(content.text)
+      }
+      parsed.attachments.push(...content.attachments)
+      parsed.unsupportedParts.push(...content.unsupportedParts)
+      if (
+        !content.text &&
+        content.attachments.length === 0 &&
+        content.unsupportedParts.length === 0
+      ) {
         parsed.unsupportedParts.push({
           id: partId,
           label: "User prompt",
@@ -267,6 +281,7 @@ function hasRenderableMessageContent(message: ParsedConversationMessage) {
   return (
     message.text.length > 0 ||
     message.thinking.length > 0 ||
+    message.attachments.length > 0 ||
     message.toolActivities.length > 0 ||
     message.unsupportedParts.length > 0
   )
@@ -281,28 +296,71 @@ function getMessageParts(value: Record<string, unknown>): Record<string, unknown
   return parts.filter(isRecord)
 }
 
-function extractContentText(value: unknown): string | null {
+function parseUserPromptContent(
+  value: unknown,
+  partId: string
+): {
+  attachments: ParsedAttachment[]
+  text: string | null
+  unsupportedParts: ParsedConversationMessage["unsupportedParts"]
+} {
   if (typeof value === "string") {
-    return value
+    return { attachments: [], text: value, unsupportedParts: [] }
   }
 
   if (!Array.isArray(value)) {
-    return null
+    return { attachments: [], text: null, unsupportedParts: [] }
   }
 
-  const segments = value
-    .map((item) => {
-      if (typeof item === "string") {
-        return item
-      }
-      if (!isRecord(item)) {
-        return null
-      }
-      return stringValue(item["text"]) ?? stringValue(item["content"])
-    })
-    .filter((item): item is string => typeof item === "string" && item.length > 0)
+  const textSegments: string[] = []
+  const attachments: ParsedAttachment[] = []
+  const unsupportedParts: ParsedConversationMessage["unsupportedParts"] = []
 
-  return segments.length > 0 ? segments.join("\n") : null
+  value.forEach((item, index) => {
+    if (typeof item === "string") {
+      textSegments.push(item)
+      return
+    }
+
+    if (isBinaryUserContentPart(item)) {
+      const binaryAttachment = attachmentFromBinaryUserContentPart(item)
+      if (binaryAttachment) {
+        attachments.push(binaryAttachment)
+      }
+      return
+    }
+
+    if (isBinaryUserContentLike(item)) {
+      unsupportedParts.push({
+        id: `${partId}:content:${String(index)}`,
+        label: "Attachment",
+        preview: "Binary attachment is missing a file reference.",
+      })
+      return
+    }
+
+    if (!isRecord(item)) {
+      return
+    }
+
+    const text = stringValue(item["text"]) ?? stringValue(item["content"])
+    if (text) {
+      textSegments.push(text)
+      return
+    }
+
+    unsupportedParts.push({
+      id: `${partId}:content:${String(index)}`,
+      label: "User prompt item",
+      preview: safeJsonPreview(item),
+    })
+  })
+
+  return {
+    attachments,
+    text: textSegments.length > 0 ? textSegments.join("\n") : null,
+    unsupportedParts,
+  }
 }
 
 function extractFallbackText(value: unknown): string | null {

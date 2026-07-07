@@ -4,7 +4,7 @@
 
 import asyncio
 import importlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -102,11 +102,13 @@ async def test_create_turn_stream_returns_ordered_sse_events(
         run_id: UUID,
         conversation_id: UUID,
         user_prompt: str,
+        attachment_file_ids: Sequence[UUID] = (),
         sink: EventSink,
         client_message_id: str | None = None,
         model=None,
     ) -> None:
         assert user_prompt == "Hello"
+        assert list(attachment_file_ids) == []
         assert client_message_id == "client-1"
         await sink.emit(EVENT_RUN_STATUS, {"status": "running"})
         await sink.emit(EVENT_DONE, {"status": "completed"})
@@ -190,11 +192,13 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         run_id: UUID,
         conversation_id: UUID,
         user_prompt: str,
+        attachment_file_ids: Sequence[UUID] = (),
         sink: EventSink,
         client_message_id: str | None = None,
         model=None,
     ) -> None:
         assert user_prompt == "Plan the launch"
+        assert list(attachment_file_ids) == []
         assert client_message_id == "first-message"
         await sink.emit(EVENT_RUN_STATUS, {"status": "running"})
         await sink.emit(EVENT_DONE, {"status": "completed"})

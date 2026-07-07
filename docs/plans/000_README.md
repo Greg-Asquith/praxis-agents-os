@@ -25,7 +25,8 @@ the contract. Plan 033 was executed 2026-07-06 as the background file
 processing slice.
 
 Plan 034 was executed 2026-07-06 as the agent file tools and scratch-space
-runtime slice. Plan 035 was executed 2026-07-06 as the files UI slice.
+runtime slice. Plan 035 was executed 2026-07-06 as the files UI slice. Plan
+036 was executed 2026-07-07 as the multimodal chat-input slice over Files.
 
 Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
@@ -79,7 +80,7 @@ integrations, files, knowledge base, memory, artifacts).
 | C04 | Rate limiter bounded key cardinality, retention sweep, and tests | P1 | M | 030, C01 done | DONE |
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | DONE |
 | 035 | Files UI | P1 | L | 032, C02 | DONE |
-| 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | TODO |
+| 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | DONE |
 | C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | TODO |
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | TODO |
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
@@ -96,6 +97,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 049 | Core-memory prompt injection, memory routes, and memory UI | P1 | L | 048 | TODO |
 | 050 | Artifacts model, registry tools, and CSP-locked serving | P2 | L | 031, 032, 034 | TODO |
 | 051 | Chat artifact cards, versions UI, and share links | P2 | L | 050, 030 (soft: 035) | TODO |
+| 052 | Action-driven homepage redesign | P2 | M | - | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -420,9 +422,19 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `read_file` result modes. `pnpm check`
   passed from `apps/web`; full API-backed manual upload/restore/chat
   exercise still depends on a running local API with seeded file activity.
-- `036` passes chat attachments to the model via pydantic-ai 2.1.0
-  multimodal input (probed classes recorded in the plan), gated by the
-  031 file contract; it adds no new SSE event names.
+- `036` marked DONE 2026-07-07: chat create/turn payloads now accept
+  deduped file attachment ids, validate them through the 031 file contract
+  plus model vision support and size/count caps, create idempotent
+  conversation `FileReference` rows, record attachment ids in run metadata,
+  and assemble `BinaryContent` user-prompt parts in the worker before
+  pydantic-ai execution. The web composer uploads through the Files API,
+  sends attachment ids, renders pending/persisted attachment cards without
+  exposing base64 data, uses a non-audited image-preview grant for inline
+  thumbnails while keeping explicit Open/Download on the audited download
+  route, and adds no new SSE event names. `pnpm check`,
+  `uv run ruff check .`, `DATABASE_URL=... uv run alembic check`,
+  DB-backed multimodal/conversation/files tests, and the non-DB fallback
+  focused backend suite passed.
 - `037 → 038 → 039 → 040 → 041` is a hard chain. `040` must land before
   `041` registers any integration tool: it changes `RuntimeDeps` and
   `build_runtime_tools` and adds the context prompt block. Context is
@@ -460,6 +472,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   share tokens, version-pinned, 7 d default expiry, 10/hour/workspace
   creation limit, `artifacts.sweep_expired_shares` on the `030` harness —
   and its plan mandates a security-auditor review before merge.
+- `052` was added 2026-07-07 by a directed product pass (first plan number
+  past the roadmap's reserved 021–051 range; Lane O in spirit). It rebuilds
+  the homepage as an action inbox — pending approvals with tool names via a
+  new `GET /api/v1/agent-runs/pending-approvals` read endpoint, failing
+  schedules, unread results, and an agent launcher — and removes the stat
+  tiles and nav-duplicate cards. No hard dependencies; everything it
+  consumes (007/008 approvals, 021/022 schedule health, 019 agents UI) has
+  landed. It can run any time and does not conflict with pending plans
+  037–051.
 
 ## Findings Considered And Rejected
 

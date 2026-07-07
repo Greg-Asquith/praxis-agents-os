@@ -102,3 +102,8 @@ export type FileDownloadGrant = {
   download: SignedDownload
   expires_at: string
 }
+
+export type FilePreviewGrant = {
+  preview: SignedDownload
+  expires_at: string
+}

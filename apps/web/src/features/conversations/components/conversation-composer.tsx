@@ -1,7 +1,15 @@
 // apps/web/src/features/conversations/components/conversation-composer.tsx
 
-import { useState, type KeyboardEvent, type SyntheticEvent } from "react"
-import { SendIcon } from "lucide-react"
+import {
+  useId,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type SyntheticEvent,
+} from "react"
+import { useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { Loader2Icon, PaperclipIcon, SendIcon, UploadCloudIcon, XIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -19,10 +27,28 @@ import { formatAgentModel } from "@/features/agents/components/agent-model-label
 import { agentSelectLabel } from "@/features/agents/components/agent-select-format"
 import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
+import {
+  chatAttachmentAcceptValue,
+  MAX_CHAT_ATTACHMENTS,
+  uploadChatAttachment,
+  type MessageAttachment,
+} from "@/features/conversations/attachments"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
+import { filesQueryKeys } from "@/features/files/api/list-files"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { getErrorMessage } from "@/lib/api/errors"
+import { formatBytes } from "@/lib/format"
+import { cn } from "@/lib/utils"
+
+type ComposerAttachment = {
+  localId: string
+  fileId: string | null
+  mediaType: string
+  name: string
+  sizeBytes: number
+  status: "uploading" | "ready"
+}
 
 type ConversationComposerProps =
   | {
@@ -41,11 +67,17 @@ type ConversationComposerProps =
     }
 
 export function ConversationComposer(props: ConversationComposerProps) {
+  const queryClient = useQueryClient()
+  const attachmentInputId = useId()
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
+  const dragDepthRef = useRef(0)
   const { addPendingUserMessage, removePendingUserMessage, stream } = useConversationWorkspace()
   const activeAgents =
     props.mode === "create" ? props.agents.filter((agent) => agent.is_active) : []
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [prompt, setPrompt] = useState("")
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const promptText = prompt.trim()
@@ -55,12 +87,17 @@ export function ConversationComposer(props: ConversationComposerProps) {
     props.mode === "create"
       ? stream.isStreaming
       : stream.isStreaming && stream.conversationId === props.conversationId
-  const disabledReason =
+  const hasUploadingAttachments = attachments.some(
+    (attachment) => attachment.status === "uploading"
+  )
+  const inputDisabledReason =
     props.disabledReason ??
     (isCreateWithoutAgent ? "No active agents are available." : null) ??
     (isCurrentStreamBlocking ? "The current turn is still running." : null)
+  const sendDisabledReason =
+    inputDisabledReason ?? (hasUploadingAttachments ? "Files are still uploading." : null)
   const isDisabled =
-    Boolean(disabledReason) ||
+    Boolean(sendDisabledReason) ||
     isCurrentStreamBlocking ||
     !promptText ||
     (props.mode === "create" && !effectiveSelectedAgentId)
@@ -76,7 +113,17 @@ export function ConversationComposer(props: ConversationComposerProps) {
     }
 
     const clientMessageId = createClientMessageId()
+    const sentAttachments = attachments
+    const readyAttachments = sentAttachments
+      .filter((attachment) => attachment.status === "ready" && attachment.fileId)
+      .map((attachment) => ({
+        fileId: attachment.fileId ?? "",
+        mediaType: attachment.mediaType,
+        name: attachment.name,
+        sizeBytes: attachment.sizeBytes,
+      }))
     const pendingMessage: PendingUserMessage = {
+      attachments: readyAttachments,
       clientMessageId,
       conversationId: props.mode === "turn" ? props.conversationId : stream.conversationId,
       createdAt: new Date().toISOString(),
@@ -85,12 +132,14 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
     setError(null)
     setPrompt("")
+    setAttachments([])
     addPendingUserMessage(pendingMessage)
 
     try {
       if (props.mode === "create") {
         await stream.sendFirstMessage({
           agent_id: effectiveSelectedAgentId,
+          attachments: readyAttachments.map((attachment) => attachment.fileId),
           client_message_id: clientMessageId,
           user_prompt: promptText,
         })
@@ -98,6 +147,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
         await stream.sendTurn({
           conversationId: props.conversationId,
           payload: {
+            attachments: readyAttachments.map((attachment) => attachment.fileId),
             client_message_id: clientMessageId,
             user_prompt: promptText,
           },
@@ -106,7 +156,58 @@ export function ConversationComposer(props: ConversationComposerProps) {
     } catch (submitError) {
       removePendingUserMessage(clientMessageId)
       setPrompt(promptText)
+      setAttachments(sentAttachments)
       setError(getErrorMessage(submitError))
+    }
+  }
+
+  function handleAttachmentFiles(files: FileList | File[] | null) {
+    if (!files || files.length === 0) {
+      return
+    }
+
+    const selectedFiles = Array.from(files)
+    if (attachments.length + selectedFiles.length > MAX_CHAT_ATTACHMENTS) {
+      setError(`Attach up to ${String(MAX_CHAT_ATTACHMENTS)} files per message.`)
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = ""
+      }
+      return
+    }
+
+    setError(null)
+    selectedFiles.forEach((file) => {
+      void uploadAttachment(file)
+    })
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = ""
+    }
+  }
+
+  async function uploadAttachment(file: File) {
+    const localId = createClientMessageId()
+    const initialAttachment: ComposerAttachment = {
+      fileId: null,
+      localId,
+      mediaType: file.type || "application/octet-stream",
+      name: file.name,
+      sizeBytes: file.size,
+      status: "uploading",
+    }
+    setAttachments((current) => [...current, initialAttachment])
+    try {
+      const uploaded = await uploadChatAttachment(file)
+      setAttachments((current) =>
+        current.map((attachment) =>
+          attachment.localId === localId
+            ? composerAttachmentFromUploaded(localId, uploaded)
+            : attachment
+        )
+      )
+      void invalidateUploadedFileQueries(queryClient, uploaded.fileId)
+    } catch (uploadError) {
+      setAttachments((current) => current.filter((attachment) => attachment.localId !== localId))
+      setError(getErrorMessage(uploadError))
     }
   }
 
@@ -115,6 +216,53 @@ export function ConversationComposer(props: ConversationComposerProps) {
       event.preventDefault()
       event.currentTarget.form?.requestSubmit()
     }
+  }
+
+  function handlePromptDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (inputDisabledReason || !isFileDrag(event)) {
+      return
+    }
+
+    event.preventDefault()
+    dragDepthRef.current += 1
+    setIsDraggingFiles(true)
+  }
+
+  function handlePromptDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!isDraggingFiles && !isFileDrag(event)) {
+      return
+    }
+
+    event.preventDefault()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) {
+      setIsDraggingFiles(false)
+    }
+  }
+
+  function handlePromptDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = inputDisabledReason ? "none" : "copy"
+  }
+
+  function handlePromptDrop(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) {
+      return
+    }
+
+    event.preventDefault()
+    dragDepthRef.current = 0
+    setIsDraggingFiles(false)
+
+    if (inputDisabledReason) {
+      return
+    }
+
+    handleAttachmentFiles(event.dataTransfer.files)
   }
 
   return (
@@ -166,43 +314,166 @@ export function ConversationComposer(props: ConversationComposerProps) {
           </Alert>
         )}
 
-        <Field data-disabled={Boolean(disabledReason)}>
+        {attachments.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <AttachmentChip
+                attachment={attachment}
+                key={attachment.localId}
+                onRemove={() => {
+                  setAttachments((current) =>
+                    current.filter((item) => item.localId !== attachment.localId)
+                  )
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        <Field data-disabled={Boolean(inputDisabledReason)}>
           <FieldLabel className="sr-only" htmlFor="conversation-prompt">
             {props.mode === "create" ? "First message" : "Message"}
           </FieldLabel>
-          <Textarea
-            id="conversation-prompt"
-            aria-label={props.mode === "create" ? "First message" : "Message"}
-            className="max-h-52 min-h-12 resize-y"
-            disabled={Boolean(disabledReason)}
-            onChange={(event) => {
-              setPrompt(event.currentTarget.value)
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              disabledReason ??
-              (props.mode === "create"
-                ? "Start with a focused prompt for the selected agent."
-                : "Send a follow-up prompt.")
-            }
-            value={prompt}
-          />
+          <div
+            className={cn(
+              "relative rounded-lg transition-shadow",
+              isDraggingFiles && "ring-ring/40 ring-3"
+            )}
+            onDragEnter={handlePromptDragEnter}
+            onDragLeave={handlePromptDragLeave}
+            onDragOver={handlePromptDragOver}
+            onDrop={handlePromptDrop}
+          >
+            <Textarea
+              id="conversation-prompt"
+              aria-label={props.mode === "create" ? "First message" : "Message"}
+              className={cn(
+                "max-h-52 min-h-12 resize-y",
+                isDraggingFiles && "border-ring bg-muted/30"
+              )}
+              disabled={Boolean(inputDisabledReason)}
+              onChange={(event) => {
+                setPrompt(event.currentTarget.value)
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                inputDisabledReason ??
+                (props.mode === "create"
+                  ? "Start with a focused prompt for the selected agent."
+                  : "Send a follow-up prompt.")
+              }
+              value={prompt}
+            />
+            {isDraggingFiles ? (
+              <div
+                aria-hidden="true"
+                className="border-ring/70 bg-background/80 text-foreground pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border border-dashed backdrop-blur-[1px]"
+              >
+                <div className="bg-background flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium shadow-sm">
+                  <UploadCloudIcon className="text-muted-foreground size-4" />
+                  Drop files to attach
+                </div>
+              </div>
+            ) : null}
+          </div>
         </Field>
 
         <div className="flex min-w-0 items-center justify-between gap-3">
           <FieldDescription className="truncate text-xs">
-            {disabledReason ?? "Enter sends, Shift+Enter adds a line."}
+            {sendDisabledReason ?? "Enter sends, Shift+Enter adds a line."}
           </FieldDescription>
-          <Button disabled={isDisabled} type="submit">
-            <SendIcon data-icon="inline-start" />
-            Send
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <input
+              accept={chatAttachmentAcceptValue()}
+              aria-label="Attach files"
+              className="sr-only"
+              id={attachmentInputId}
+              multiple
+              onChange={(event) => {
+                handleAttachmentFiles(event.currentTarget.files)
+              }}
+              ref={attachmentInputRef}
+              type="file"
+            />
+            <Button
+              aria-label="Attach files"
+              disabled={Boolean(inputDisabledReason) || attachments.length >= MAX_CHAT_ATTACHMENTS}
+              onClick={() => {
+                attachmentInputRef.current?.click()
+              }}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <PaperclipIcon />
+            </Button>
+            <Button disabled={isDisabled} type="submit">
+              <SendIcon data-icon="inline-start" />
+              Send
+            </Button>
+          </div>
         </div>
       </FieldGroup>
     </form>
   )
 }
 
+function isFileDrag(event: DragEvent<HTMLElement>) {
+  return Array.from(event.dataTransfer.types).includes("Files")
+}
+
 function createClientMessageId() {
   return globalThis.crypto.randomUUID()
+}
+
+function composerAttachmentFromUploaded(
+  localId: string,
+  attachment: MessageAttachment
+): ComposerAttachment {
+  return {
+    fileId: attachment.fileId,
+    localId,
+    mediaType: attachment.mediaType,
+    name: attachment.name ?? attachment.mediaType,
+    sizeBytes: attachment.sizeBytes ?? 0,
+    status: "ready",
+  }
+}
+
+async function invalidateUploadedFileQueries(queryClient: QueryClient, fileId: string) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }),
+    queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(fileId) }),
+    queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisions(fileId) }),
+  ])
+}
+
+function AttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: ComposerAttachment
+  onRemove: () => void
+}) {
+  return (
+    <div className="bg-muted/50 flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-xs">
+      {attachment.status === "uploading" ? (
+        <Loader2Icon className="text-muted-foreground size-3.5 animate-spin" />
+      ) : (
+        <PaperclipIcon className="text-muted-foreground size-3.5" />
+      )}
+      <span className="min-w-0 truncate font-medium">{attachment.name}</span>
+      <span className="text-muted-foreground shrink-0">{formatBytes(attachment.sizeBytes)}</span>
+      <Button
+        aria-label={`Remove ${attachment.name}`}
+        disabled={attachment.status === "uploading"}
+        onClick={onRemove}
+        size="icon-sm"
+        type="button"
+        variant="ghost"
+      >
+        <XIcon />
+      </Button>
+    </div>
+  )
 }

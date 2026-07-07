@@ -104,9 +104,9 @@ def _render_available_files(files: Sequence[AvailableFile]) -> str:
     lines.extend(
         (
             f"- {file.id} - {file.name} "
-            f"({file.category}, {file.media_type}, {file.size_bytes} bytes, {file.processing_status})"
+            f"({file.category}, {file.media_type}, {file.size_bytes} bytes, {file.processing_status}) \n "
         )
         for file in files
     )
     lines.append("</available_files>")
-    return "\n".join(lines)
+    return " \n ".join(lines)

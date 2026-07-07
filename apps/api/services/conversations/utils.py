@@ -2,6 +2,7 @@
 
 """Helpers specific to the conversations service."""
 
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -23,11 +24,14 @@ def build_interactive_run_metadata(
     *,
     client_message_id: str | None,
     request: Request | None,
+    attachment_file_ids: Sequence[UUID] = (),
 ) -> dict[str, Any] | None:
     """Build metadata persisted with an interactive agent run."""
     metadata: dict[str, Any] = {}
     if client_message_id:
         metadata["client_message_id"] = client_message_id
+    if attachment_file_ids:
+        metadata["attachment_file_ids"] = [str(file_id) for file_id in attachment_file_ids]
     if request is not None:
         metadata["audit_context"] = request_audit_context(request)
     return metadata or None

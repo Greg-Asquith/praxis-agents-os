@@ -1,6 +1,9 @@
 // apps/web/src/features/conversations/message-parts/types.ts
 
+import type { MessageAttachment } from "@/features/conversations/attachments"
+
 export type ParsedMessageRole = "user" | "assistant" | "tool" | "system" | "unknown"
+export type ParsedAttachment = MessageAttachment
 
 type ToolActivityKind = "call" | "result" | "approval" | "retry" | "unknown"
 
@@ -50,6 +53,7 @@ export type ParsedConversationMessage = {
   createdAt: string
   text: string[]
   thinking: string[]
+  attachments: MessageAttachment[]
   toolActivities: ToolActivity[]
   unsupportedParts: UnsupportedMessagePart[]
 }
@@ -58,5 +62,6 @@ export type PendingUserMessage = {
   clientMessageId: string
   conversationId: string | null
   text: string
+  attachments?: MessageAttachment[]
   createdAt: string
 }

@@ -4,7 +4,7 @@
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
@@ -39,6 +39,7 @@ from services.conversations.utils import (
     build_interactive_run_metadata,
     get_assignable_agent_for_workspace,
 )
+from services.files import create_conversation_file_references, resolve_chat_attachments
 
 _drain_sse_sink = runtime_streaming.drain_sse_sink
 logger = logging.getLogger(__name__)
@@ -63,6 +64,13 @@ async def create_conversation_stream(
     )
     agent_id = agent.id
     agent_slug = agent.slug
+    files = await resolve_chat_attachments(
+        db,
+        workspace_id=workspace.id,
+        agent=agent,
+        file_ids=payload.attachments,
+    )
+    attachment_file_ids = [file.id for file in files]
     # Close the read-only validation transaction before the external naming call.
     await db.commit()
 
@@ -84,6 +92,13 @@ async def create_conversation_stream(
     )
     db.add(conversation)
     await db.flush()
+    await create_conversation_file_references(
+        db,
+        workspace_id=workspace.id,
+        conversation_id=conversation.id,
+        file_ids=attachment_file_ids,
+        created_by_user_id=actor.id,
+    )
 
     run = await create_agent_run(
         db,
@@ -95,6 +110,7 @@ async def create_conversation_stream(
         metadata=build_interactive_run_metadata(
             client_message_id=payload.client_message_id,
             request=request,
+            attachment_file_ids=attachment_file_ids,
         ),
     )
     await db.commit()
@@ -119,6 +135,7 @@ async def create_conversation_stream(
             conversation_id=conversation.id,
             actor_id=actor.id,
             user_prompt=payload.user_prompt,
+            attachment_file_ids=attachment_file_ids,
             fallback_title=title.title,
             sink=sink,
             client_message_id=payload.client_message_id,
@@ -143,6 +160,7 @@ async def _run_initial_conversation_worker(
     conversation_id: UUID,
     actor_id: UUID,
     user_prompt: str,
+    attachment_file_ids: Sequence[UUID],
     fallback_title: str,
     sink: StreamSink,
     client_message_id: str | None,
@@ -165,6 +183,7 @@ async def _run_initial_conversation_worker(
         run_id=run_id,
         conversation_id=conversation_id,
         user_prompt=user_prompt,
+        attachment_file_ids=attachment_file_ids,
         sink=title_update_sink,
         client_message_id=client_message_id,
     )

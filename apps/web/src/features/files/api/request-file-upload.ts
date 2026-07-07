@@ -6,7 +6,7 @@ import { filesQueryKeys } from "./list-files"
 import type { FileUploadRequest, FileUploadResult } from "../types"
 import { apiRequest } from "@/lib/api/client"
 
-async function requestFileUpload(payload: FileUploadRequest) {
+export async function requestFileUpload(payload: FileUploadRequest) {
   return apiRequest<FileUploadResult>("/files/uploads", {
     body: payload,
     method: "POST",

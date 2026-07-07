@@ -88,7 +88,7 @@
    - Contract category `editable-text`: attached as
      `BinaryContent(media_type="text/plain" | actual text type)` — the
      text types are all in the probed document set, so no special path.
-     Plan 031's file contract also accepts `application/html`; this plan
+     Plan 031's file contract also accepts `text/html`; this plan
      must either map that stored MIME to the provider-supported HTML media
      type or reject it at the model-capability gate rather than weakening
      the shared file contract.
@@ -228,7 +228,7 @@ from pydantic_ai.messages import (
   `DocumentMediaType` = `application/pdf, text/plain, text/csv,
   docx-openxml, xlsx-openxml, text/html, text/markdown,
   application/msword, application/vnd.ms-excel`. Plan 031 stores HTML as
-  `application/html`; 036 owns any pass-through mapping because model
+  `text/html`; 036 owns any pass-through mapping because model
   support is provider-specific and the file contract is shared.
 - Round-trip: `ModelMessagesTypeAdapter.dump_json([ModelRequest(parts=
   [UserPromptPart(content=["look", BinaryContent(data=b"\x89PNG",

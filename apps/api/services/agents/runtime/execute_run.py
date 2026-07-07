@@ -13,6 +13,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     NativeToolCallPart,
     NativeToolReturnPart,
+    UserContent,
 )
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
@@ -69,6 +70,7 @@ from services.agents.runtime.run_persistence import (
 )
 from services.agents.runtime.sinks import EventSink, NullSink
 from services.agents.runtime.skills import record_skill_activation
+from services.files import build_attachment_user_content, resolve_chat_attachments
 
 
 @dataclass(frozen=True)
@@ -85,7 +87,8 @@ async def execute_run(
     *,
     conversation_id: UUID,
     run_id: UUID,
-    user_prompt: str | None,
+    user_prompt: str | Sequence[UserContent] | None,
+    attachment_file_ids: Sequence[UUID] = (),
     sink: EventSink | None = None,
     model: Model | None = None,
     client_message_id: str | None = None,
@@ -150,6 +153,21 @@ async def execute_run(
         await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_RUNNING})
 
         user, workspace = await load_actor_context(db, run)
+        if attachment_file_ids:
+            attachment_files = await resolve_chat_attachments(
+                db,
+                workspace_id=workspace.id,
+                agent=agent,
+                file_ids=attachment_file_ids,
+            )
+            attachment_contents = await build_attachment_user_content(
+                db,
+                files=attachment_files,
+            )
+            if isinstance(user_prompt, str):
+                user_prompt = [user_prompt, *attachment_contents]
+            elif user_prompt is not None:
+                user_prompt = [*user_prompt, *attachment_contents]
         enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
         delegate_agents = (
             await list_visible_delegate_agents(db, caller=agent, workspace=workspace)

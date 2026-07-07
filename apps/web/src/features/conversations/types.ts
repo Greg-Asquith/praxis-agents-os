@@ -84,11 +84,13 @@ export type ConversationCreateRequest = {
   agent_id: string
   user_prompt: string
   client_message_id?: string | null
+  attachments?: string[]
 }
 
 export type ConversationTurnCreateRequest = {
   user_prompt: string
   client_message_id?: string | null
+  attachments?: string[]
 }
 
 export type AgentRunResumeDecision = {

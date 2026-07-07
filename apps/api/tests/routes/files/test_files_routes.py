@@ -177,6 +177,51 @@ async def test_file_routes_reject_revision_content_for_non_editable_revisions(
     assert response.json()["content_type"] == "application/pdf"
 
 
+async def test_file_preview_route_returns_inline_image_url_without_read_audit(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+    confirmed = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        filename="screen.png",
+        content_type="image/png",
+        content=b"png",
+    )
+
+    preview_response = await db_async_client.post(
+        f"/api/v1/files/{confirmed['id']}/preview",
+        headers=headers,
+    )
+
+    assert preview_response.status_code == 200
+    assert "download=1" not in preview_response.json()["preview"]["url"]
+    object_response = await db_async_client.get(
+        _relative_url(preview_response.json()["preview"]["url"])
+    )
+    assert object_response.status_code == 200
+    assert object_response.content == b"png"
+    read_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == AuditAction.READ.value,
+            AuditEvent.resource_type == AuditResourceType.FILE.value,
+            AuditEvent.resource_id == str(confirmed["id"]),
+        )
+    )
+    assert read_audit is None
+
+    text_file = await _upload_and_confirm_file(db_async_client, headers=headers)
+    text_preview_response = await db_async_client.post(
+        f"/api/v1/files/{text_file['id']}/preview",
+        headers=headers,
+    )
+    assert text_preview_response.status_code == 400
+    assert text_preview_response.headers["content-type"].startswith("application/problem+json")
+    assert text_preview_response.json()["field"] == "file_id"
+
+
 async def test_file_routes_upload_list_download_edit_conflict_and_delete(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

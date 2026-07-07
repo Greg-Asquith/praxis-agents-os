@@ -20,6 +20,7 @@ class ConversationCreateRequest(BaseModel):
     agent_id: UUID
     user_prompt: str = Field(min_length=1, max_length=20000)
     client_message_id: str | None = Field(default=None, max_length=128)
+    attachments: list[UUID] = Field(default_factory=list)
 
     @field_validator("user_prompt")
     @classmethod
@@ -33,11 +34,17 @@ class ConversationCreateRequest(BaseModel):
     @classmethod
     def normalize_client_message_id(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
+
+    @field_validator("attachments")
+    @classmethod
+    def dedupe_attachments(cls, value: list[UUID]) -> list[UUID]:
+        return _dedupe_attachment_ids(value)
 
 
 class ConversationTurnCreateRequest(BaseModel):
     user_prompt: str = Field(min_length=1, max_length=20000)
     client_message_id: str | None = Field(default=None, max_length=128)
+    attachments: list[UUID] = Field(default_factory=list)
 
     @field_validator("user_prompt")
     @classmethod
@@ -51,6 +58,22 @@ class ConversationTurnCreateRequest(BaseModel):
     @classmethod
     def normalize_client_message_id(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
+
+    @field_validator("attachments")
+    @classmethod
+    def dedupe_attachments(cls, value: list[UUID]) -> list[UUID]:
+        return _dedupe_attachment_ids(value)
+
+
+def _dedupe_attachment_ids(value: list[UUID]) -> list[UUID]:
+    seen: set[UUID] = set()
+    deduped: list[UUID] = []
+    for attachment_id in value:
+        if attachment_id in seen:
+            continue
+        seen.add(attachment_id)
+        deduped.append(attachment_id)
+    return deduped
 
 
 class ConversationRead(BaseModel):

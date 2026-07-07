@@ -285,7 +285,7 @@ The catalog (one entry per MIME type — strict pairs, decision 5):
 | editable_text | `text/markdown` | `.md`, `.markdown`, `.mdx` | `MAX_FILE_SIZE_DOCUMENT` | ✓ | — |
 | editable_text | `text/csv` | `.csv` | `MAX_FILE_SIZE_DOCUMENT` | ✓ | — |
 | editable_text | `application/json` | `.json` | `MAX_FILE_SIZE_DOCUMENT` | ✓ | — |
-| editable_text | `application/html` | `.html` | `MAX_FILE_SIZE_DOCUMENT` | ✓ | — |
+| editable_text | `text/html` | `.html` | `MAX_FILE_SIZE_DOCUMENT` | ✓ | — |
 | ingestible_document | `application/pdf` | `.pdf` | `MAX_FILE_SIZE_DOCUMENT` | — | ✓ |
 | ingestible_document | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `.docx` | `MAX_FILE_SIZE_DOCUMENT` | — | ✓ |
 | ingestible_document | `application/vnd.openxmlformats-officedocument.presentationml.presentation` | `.pptx` | `MAX_FILE_SIZE_DOCUMENT` | — | ✓ |
