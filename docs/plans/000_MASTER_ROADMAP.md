@@ -24,9 +24,16 @@ covering Phases 3–6 end to end, consistency-reviewed against the landed
 completion, while the master roadmap tracks them with `C` prefixes so they do
 not collide with existing roadmap plans. C01, C02, C03, and C04 were completed
 2026-07-06 and moved to `plans/complete/`. Plan 035 was completed
-2026-07-06 and moved to `plans/complete/`; Plan 036 was completed
+2026-07-06 and moved to `plans/complete/`; Plan 036 and Plan 024 were completed
 2026-07-07 and moved to `plans/complete/`. Every reserved number now has a
-written plan.
+written plan. Plans 052 (Lane O homepage redesign) and 053–060 (Lane H,
+harness hardening — added 2026-07-07 by a directed harness-engineering
+review, grounded at `c2f08cc` with installed-package probes) extend the
+roadmap past the reserved range; Lane H is defined in §4 below and adds
+Gate G5. Plan 061 (integration provider packaging, decision D10) was
+written and executed 2026-07-07 as a design-note plan in the 029 mold —
+it produced `docs/architecture/integration-packaging.md` and amended
+037/039/041/042 before any Phase 4a code exists.
 
 ---
 
@@ -73,6 +80,7 @@ product interview on 2026-07-02.
 | D7 | MCP client support | Deferred until the native registry is stable and the catalog is big enough to need `defer_loading`. Not in any phase below. | — |
 | D8 | Client-side password hashing | Rejected (no threat model it addresses; passwords already hashed at rest, TLS in transit). Closes the NOTES item. | — |
 | D9 | OKF and Google Knowledge Catalog posture | **Own the KB; use OKF for compatibility.** Praxis owns storage, indexing, permissions, jobs, audit, retention, and agent behavior. Open Knowledge Format informs markdown/frontmatter structure, stable concept identifiers, and import/export. Google Knowledge Catalog may become an optional integration/source/sink later, not the runtime substrate. | 044–047 |
+| D10 | Integration provider packaging | **Self-contained, individually-enableable provider packages on both sides; the registry and dispatch choke point stay singular.** Backend: one package per provider under `apps/api/integrations/` exporting an `IntegrationProviderPlugin`, loaded only when named in `INTEGRATIONS_ENABLED_PROVIDERS`; per-provider pyproject extras for SDK deps; machine-enforced import laws. Frontend: per-provider lazy modules under `apps/web/src/integrations/` (one chunk each), default-first server-declared tool presentation, custom rows exceptional; no pnpm workspace (rejected with revisit trigger). Design note: `docs/architecture/integration-packaging.md` (plan 061, DONE 2026-07-07); binds 037/039/041/042 via amendments. Motivated by the donor system's everything-always interconnection failure and customers wanting disjoint provider subsets. | 037–042 and every later provider |
 
 Per-subsystem open decisions that do *not* change ordering (embedding
 default, contextual-annotation default, scratch TTL, memory approval
@@ -100,6 +108,17 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   `docs/architecture/governance.md` (029 DONE 2026-07-06).
 - **G4 (no tuning without evals)**: the retrieval/memory eval harness
   (inside 045) exists before any search or memory-write-policy tuning.
+- **G5 (no harness changes without scenarios)**: the agent-behavior
+  scenario suite (055) is green before 048 memory-write-policy tuning,
+  before 057 changes delegation concurrency, and before default
+  prompt-assembly or model changes ship. G4 grades what retrieval
+  returns; G5 pins what the harness does. Each Lane H plan adds its
+  scenarios as part of its done criteria.
+- **G1 extension (stoppable + enveloped before spend)**: 053 (cooperative
+  cancellation) and 054 (principal-derived run envelopes) complete before
+  041 ships agent-callable integration tools — a run that cannot be
+  stopped, or an unattended run whose side-effect grant equals an
+  interactive one, must not hold money-spending tools.
 
 ## 4. The Roadmap
 
@@ -151,7 +170,7 @@ Not a numbered plan; a checklist chore:
 | 021 | Schedule REST routes: CRUD, pause/enable, run-now, run history, awaiting-approval visibility. Backend worker already exists; this is the missing product surface. **DONE 2026-07-03.** | P1 |
 | 022 | Schedules management UI: list, editor (prompt/cadence/timezone), run history with statuses, approval-resume visibility. Active-context selection is added later by 040. **DONE 2026-07-03.** | P1 |
 | 023 | Audit & security log read API + viewer UI: workspace-scoped audit list with action/resource/status/actor/date filters, event detail drawer, security event list; owner/admin-only. Backend write/query services already exist. **DONE 2026-07-03; viewer lives in Workspace Settings → Audit log.** | P1 |
-| 024 | Workspace default & invite UX: persist active workspace to `users.default_workspace_id` on switch, accept pending invites after sign-in, copy-invite-URL/code buttons, personal-vs-team switcher behavior. | P2 |
+| 024 | Workspace default & invite UX: persist active workspace to `users.default_workspace_id` on switch, accept pending invites after sign-in, copy-invite-URL/code buttons, personal-vs-team switcher behavior. **DONE 2026-07-07.** | P2 |
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 
@@ -214,6 +233,14 @@ Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
 
 ### Phase 4a — Integrations (donor Phase C; gates G1, G3; parallel with 4b)
 
+Structural pre-decision: D10 / plan 061 (`docs/architecture/
+integration-packaging.md`, DONE 2026-07-07) binds how provider code is
+packaged — 037 lands the plugin contract + loader and the fake provider as
+the first package, 041's providers land as `apps/api/integrations/<key>/`
+packages, 042 lands the `src/integrations/` lazy-module seam. The
+037/039/041/042 amendment blocks carry the deltas; the note wins on
+structure.
+
 | Plan | Scope |
 |------|-------|
 | 037 | Core models (credentials/connections/resources/discovery_runs — **full multi-connection per D3**: no per-provider uniqueness, required connection labels, principal fingerprints for cross-connection dedup) + declarative provider manifest + credential service (encryption, locked proactive refresh, needs_reauth) + secret references per 029. (Donor C1.) |
@@ -247,6 +274,33 @@ Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
 | 050 | `artifacts` model over FileRevisions + `create_artifact`/`update_artifact` registry tools + serving route with the three-layer defense (opaque-origin sandbox, `ARTIFACT_ORIGIN`, strict CSP with `connect-src 'none'`). Local dev: srcdoc + sandbox; separate origin required only when share links ship. (Donor F1.) |
 | 051 | Chat artifact cards (sandboxed preview, version selector, diff/restore) + share links (≥128-bit tokens, version-pinned, expiry/revocation, audited, rate-limited per 029). (Donor F2.) |
 
+### Lane H — Harness Hardening & Evals (added 2026-07-07; plans 053–060)
+
+A directed review of the agent harness against current
+harness-engineering practice (grounded at `c2f08cc`; pydantic-ai 2.1.0
+facts probed against the installed package, recorded in each plan). Two
+items are Gate G1-adjacent and interleave before Phase 4a; the rest
+bracket Phases 4–6.
+
+| Plan | Scope | Priority | When |
+|------|-------|----------|------|
+| 053 | Cooperative run cancellation: cancel route + audit, `RunTaskRegistry.cancel`, heartbeat cancel-detection (works cross-process via the lease seam), `CancelledError` terminal handling, UI stop control. Today `cancel_agent_run` has no route and no callers; nothing stops the executing task. | P1 | Before 041 (G1 extension) |
+| 054 | Run envelope enforcement: `effect_scope` (internal/external) on the tool contract, principal-derived `side_effect_policy` (scheduled → `require_approval` for external writes by default), the missing `require_approval` dispatch branch, delegated inheritance recorded at mint time. Today every run gets the constant grant `("allow", depth 1)`. | P1 | Before 041 (G1 extension) |
+| 055 | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). Content, not platform. | P1 | Parallel with Phase 4; before 048 |
+| 056 | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. | P1 | Before 048/049 |
+| 057 | Parallel delegation fan-out: depth stays 1; bound (per-run semaphore), prove (usage accounting, multi-child approval collapse, cancellation propagation — all as scenarios), and prompt the concurrency pydantic-ai already executes for parallel tool calls. | P2 | After 054/055 |
+| 058 | Model failover chain: catalog-defined `FallbackModel` chains, double opt-in (settings + agent), same-capability-class validation, actually-used model recorded. Supersedes the 2026-07-01 rejection — product decision taken 2026-07-07. | P3 | Filler (with 015) |
+| 059 | Sandboxed code execution: `run_code` registry tool via the 028 helper-model pattern + `NativeTool(CodeExecutionTool())` (Anthropic/OpenAI/Google), 036-gated file inlining, outputs bounded + scratch-captured behind `promote_scratch`. e2b/Vercel/Cloudflare deferred as future integration providers behind the same seam. | P2 | After Phase 6 |
+| 060 | Durable run event log + live stream replay: append-only `agent_run_events`, TeeSink batched writes, replay-then-live bridge with LISTEN/NOTIFY cross-instance wake-up, short retention sweep. Supersedes the streaming plan's live-replay non-goal. | P3 | Last |
+
+Not in Lane H but recorded 2026-07-07 as named follow-ups: email/Slack
+delivery of scheduled-run results (extends the §6 notification policy in
+`governance.md` — likely the highest-ROI unplanned product feature),
+KB ingestion from integration sources (Drive/Gmail → `kb.sync_source`
+jobs; the Phase 4a×4b intersection), and workspace-level LLM token
+budgets (governance §4 counters exist on `agent_runs` hot columns; only
+the quota surface is missing).
+
 ### Rolling polish lane (P3, unnumbered)
 
 Batched into small tickets whenever convenient; never blocks a phase:
@@ -274,8 +328,18 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 → 014 → C05 → {037–042 ∥ 043–047} → 048 →
-049 → 050 → 051` — with 015 and the polish lane as filler.
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 → 053 → 054 → C05 → {037–042 ∥ 043–047 ∥ 055} → 056 → 048 →
+049 → 057 → 050 → 051 → 059 → 060` — with 015, 052, 058, and the polish
+lane as filler.
+
+Lane H placement rationale: 053/054 sit between 014 and Phase 4a because
+the G1 extension binds them before 041; 055 runs parallel with Phase 4
+(it observes, it does not change the runtime) and must be green before
+048; 056 lands after Phase 4 starts but before 048/049 claim their prompt
+blocks; 057 needs 054's inheritance and 055's scenarios and pays off once
+delegates hold 041/046 tools; 059 follows Phase 6; 060 is last by
+operator decision.
 
 With parallel capacity: one stream takes Lane O while another runs Phase 1
-→ 2; Phases 4a/4b split naturally across streams after Phase 3.
+→ 2; Phases 4a/4b split naturally across streams after Phase 3; 055 is a
+natural third stream during Phase 4.

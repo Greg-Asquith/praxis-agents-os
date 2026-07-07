@@ -19,6 +19,7 @@ from services.auth.utils import (
     verify_totp_or_backup,
 )
 from services.security import SecurityEventType
+from services.workspaces.invitations import accept_pending_invitations_for_user
 
 
 async def verify_totp(
@@ -78,6 +79,8 @@ async def verify_totp(
         user_email=user.email,
         details={"session_id": upgraded["session_id"]},
     )
+    # Password/OAuth full sessions accept invites in issue_auth_response; TOTP upgrades here.
+    await accept_pending_invitations_for_user(db, user=user, request=request)
     return AuthResponse(
         user=await build_auth_user(db, user),
         session=AuthSession(expires_at=upgraded["expires_at"], twofa_verified=True),

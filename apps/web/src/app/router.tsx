@@ -93,6 +93,17 @@ const workspacesRoute = createRoute({
   ),
 })
 
+const acceptInvitationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/invitations/accept",
+  validateSearch: (search): { token?: string } =>
+    typeof search["token"] === "string" ? { token: search["token"] } : {},
+  component: lazyRouteComponent(
+    () => import("@/features/workspaces/routes/accept-invitation-route"),
+    "AcceptInvitationRoute"
+  ),
+})
+
 const conversationsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/conversations",
@@ -262,6 +273,7 @@ const routeTree = rootRoute.addChildren([
     newScheduleRoute,
     scheduleDetailRoute,
     workspacesRoute,
+    acceptInvitationRoute,
     workspaceSettingsRoute,
     profileRoute,
     oauthLinkCallbackRoute,

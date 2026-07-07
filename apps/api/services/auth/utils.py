@@ -24,6 +24,7 @@ from services.security import (
     safe_record_security_event,
     safe_record_security_event_committed,
 )
+from services.workspaces.invitations import accept_pending_invitations_for_user
 from utils.security import generate_csrf_token
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,9 @@ async def issue_auth_response(
         user_email=user.email,
         details={**details, "session_id": session_result["session_id"]},
     )
+    # TOTP completion has its own full-auth hook in verify_totp.
+    if not require_twofa:
+        await accept_pending_invitations_for_user(db, user=user, request=request)
     auth_user = None if require_twofa else await build_auth_user(db, user)
     return AuthResponse(
         user=auth_user,

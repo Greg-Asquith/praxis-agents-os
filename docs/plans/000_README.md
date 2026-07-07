@@ -27,6 +27,8 @@ processing slice.
 Plan 034 was executed 2026-07-06 as the agent file tools and scratch-space
 runtime slice. Plan 035 was executed 2026-07-06 as the files UI slice. Plan
 036 was executed 2026-07-07 as the multimodal chat-input slice over Files.
+Plan 024 was executed 2026-07-07 as the workspace default persistence and
+invite UX slice.
 
 Cleanup plans C01-C05 were added 2026-07-06 from `plans/improvements/` into
 this authoritative ordering without renumbering existing product plans; their
@@ -34,6 +36,24 @@ source files keep their local 001-005 names until completion, while the main
 task list tracks them with `C` prefixes to avoid colliding with roadmap plans
 001-005. C01, C02, C03, and C04 were executed 2026-07-06 and moved to
 `plans/complete/`.
+
+Plans 053–060 (Lane H, harness hardening) were written 2026-07-07 by a
+directed harness-engineering review against the working tree at `c2f08cc`:
+cooperative cancellation, principal-derived run envelopes, the agent
+behavior eval harness (Gate G5), context compaction, parallel delegation
+fan-out, model failover, provider-native code execution, and durable stream
+replay. Key pydantic-ai 2.1.0 facts were probed against the installed
+package (parallel tool-task execution in `_tool_execution.py`,
+`FallbackModel`, `CodeExecutionTool`/`NativeTool`, `pydantic-evals` already
+shipping with the meta-package) and are recorded in the plans, not guessed.
+See the roadmap's Lane H section for ordering.
+
+Plan 061 (integration provider packaging, roadmap decision D10) was written
+and executed 2026-07-07 as a design-note plan: it produced
+`docs/architecture/integration-packaging.md` and amended 037/039/041/042 so
+Phase 4a builds provider code as self-contained, individually-enableable
+packages from day one.
+
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -64,7 +84,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 021 | Add the schedule REST routes | P1 | L | - | DONE |
 | 022 | Build the schedules management UI | P1 | L | 021 | DONE |
 | 023 | Audit & security log read API and viewer UI | P1 | L | - | DONE |
-| 024 | Workspace default persistence and invite UX | P2 | M | - | TODO |
+| 024 | Workspace default persistence and invite UX | P2 | M | - | DONE |
 | 025 | Tool registry contract, decorator, and catalog API | P1 | M | - | DONE |
 | 026 | Dispatch choke point: tool audit, mutation tracking, envelopes | P1 | L | 025 | DONE |
 | 027 | Registry-driven tool catalog in the agent form | P1 | M | 025 (soft: 023, 026) | DONE |
@@ -98,6 +118,15 @@ integrations, files, knowledge base, memory, artifacts).
 | 050 | Artifacts model, registry tools, and CSP-locked serving | P2 | L | 031, 032, 034 | TODO |
 | 051 | Chat artifact cards, versions UI, and share links | P2 | L | 050, 030 (soft: 035) | TODO |
 | 052 | Action-driven homepage redesign | P2 | M | - | TODO |
+| 053 | Cooperative run cancellation (kill switch) | P1 | M | - (before 041) | TODO |
+| 054 | Run envelope enforcement — principal-derived side-effect policy | P1 | M | 025, 026 (hard: before 041) | TODO |
+| 055 | Agent behavior eval harness (Gate G5) | P1 | L | - (soft: 053, 054 add scenarios) | TODO |
+| 056 | Context compaction — watermark summaries + token-aware budgets | P1 | L | 013, 018, 030 (hard: before 048/049) | TODO |
+| 057 | Parallel delegation fan-out (breadth, not depth) | P2 | M | 054, 055 (soft: 053) | TODO |
+| 058 | Model failover chain | P3 | S-M | 010 (filler; supersedes the 2026-07-01 FallbackModel rejection) | TODO |
+| 059 | Sandboxed code execution — provider-native run_code | P2 | L | 025, 026, 028, 031-034 (soft: 036, 054, 055; after 050/051) | TODO |
+| 060 | Durable run event log and live stream replay | P3 | L | 030 (soft: 053, 056; last in Lane H) | TODO |
+| 061 | Integration provider packaging architecture (design note, D10) | P1 | S | 029; binds before 037 executes | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -274,6 +303,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   now returns `is_super_admin`. The web viewer lives as an **Audit log** tab
   inside Workspace Settings (not as a standalone sidebar route), with a
   nested Security events tab for super admins.
+- `024` marked DONE 2026-07-07: `PATCH /auth/me` now persists
+  `users.default_workspace_id` after validating live workspace membership;
+  full password/OAuth sessions and TOTP upgrades auto-accept valid pending
+  invitations without switching the active workspace; the web app persists
+  workspace switches, groups personal/team workspaces in the switcher, adds
+  invite role selection plus copy-code/copy-link controls, and exposes
+  `/invitations/accept?token=...`. Workspace Settings now hides
+  manager-only Invitations/Audit tabs for roles that cannot access them.
 - `026` and `014` share the dispatch seam: `014` (OTel) must wrap `026`'s
   `dispatch.py`, not add a second interception layer. If `014` lands first,
   it should leave a named hook point; whichever lands second rebases.
@@ -435,6 +472,20 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `uv run ruff check .`, `DATABASE_URL=... uv run alembic check`,
   DB-backed multimodal/conversation/files tests, and the non-DB fallback
   focused backend suite passed.
+- `061` marked DONE 2026-07-07: a design-note plan (029 mold) motivated by
+  the donor system's everything-always interconnection failure and the
+  product reality that customers want disjoint provider subsets. It
+  produced `docs/architecture/integration-packaging.md` (decision D10:
+  self-contained, individually-enableable provider packages —
+  `apps/api/integrations/<key>/` behind an `IntegrationProviderPlugin`
+  contract + settings-driven loader on the backend; lazy per-provider
+  modules under `apps/web/src/integrations/` with default-first
+  server-declared tool presentation on the frontend; the single registry
+  and dispatch choke point deliberately retained) and added binding
+  amendment blocks to 037/039/041/042. No code changed; the packaging
+  seams land inside those plans' execution. pnpm workspace and separate
+  Python distributions were rejected-for-now with revisit triggers
+  recorded in the note.
 - `037 → 038 → 039 → 040 → 041` is a hard chain. `040` must land before
   `041` registers any integration tool: it changes `RuntimeDeps` and
   `build_runtime_tools` and adds the context prompt block. Context is
@@ -481,6 +532,48 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   consumes (007/008 approvals, 021/022 schedule health, 019 agents UI) has
   landed. It can run any time and does not conflict with pending plans
   037–051.
+- `053`–`060` (Lane H) ordering rationale, from the roadmap's Lane H
+  section: `053` and `054` are Gate G1-adjacent — both must land before
+  `041` ships money-spending integration tools (a run you cannot stop, or
+  an unattended run whose side-effect grant equals an interactive one, is
+  not fit to hold spend tools). `055` delivers Gate G5 (the scenario suite
+  must be green before `048` tuning, `057` concurrency changes, or default
+  prompt/model swaps). `056` must land before `048`/`049` so the context
+  window's tenants (history, summaries, memories, active context) are
+  budgeted in one designed pass. `057` depends on `054` (envelope
+  inheritance) and `055` (its concurrency claims land as scenarios). `058`
+  is filler-priority by operator decision. `059` follows Phase 6 in the
+  default stream. `060` is deliberately last.
+- `053` finding worth knowing before executing: `cancel_agent_run`
+  (`services/agent_runs/cancel.py`) currently has **no route and no
+  callers outside tests** — there is no user-facing cancel at all, and the
+  client-side stream `abort()` only closes the HTTP response while the
+  detached worker keeps running. The heartbeat's failed-renewal path
+  (`renew_agent_run_lease` matches only pending/running rows) is the
+  cross-process cancel-detection seam.
+- `054` finding worth knowing before executing: `build_run_envelope` sets
+  only `principal`; `side_effect_policy="allow"` / `max_delegation_depth=1`
+  are constants for every run, and `check_envelope` tests only `deny` —
+  the `require_approval` policy value has no enforcement branch anywhere.
+- `055`: `pydantic-evals 2.1.0` is already installed via the pydantic-ai
+  meta-package — the graded layer adds no dependency. Scenario tests are
+  ordinary pytest under `tests/scenarios/`; `evals/` must never be
+  collected by pytest or run in CI.
+- `057` probe recorded 2026-07-07: pydantic-ai 2.1.0 already executes the
+  tool calls of one model response concurrently
+  (`_tool_execution.py:608-627`, barrier-segmented `asyncio.create_task`
+  per call) and Praxis mounts `delegate_to_agent` without `sequential=True`
+  — concurrent fan-out is *current, untested behavior*; the plan bounds
+  and pins it rather than introducing it.
+- `059` rides the `028` web_search helper-model pattern with
+  `NativeTool(CodeExecutionTool())` (probed: constructor takes only
+  `kind`/`optional`, so v1 file input is 036-style content inlining, not a
+  provider file-store bridge). External sandbox vendors (e2b, Vercel,
+  Cloudflare) are future integration providers behind the same `run_code`
+  seam — never a second code tool.
+- `053`/`054`/`056`/`057`/`058`/`059` each add scenario-suite coverage
+  under `tests/scenarios/` as part of their done criteria (Gate G5
+  discipline; `055` maintenance notes).
 
 ## Findings Considered And Rejected
 
@@ -503,6 +596,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **`FallbackModel` provider failover**: not planned; transport retries
   (plan 010) cover transient failures, and multi-provider failover changes
   billing/behavior semantics that need a product decision first.
+  **Superseded 2026-07-07**: the product decision was taken — opt-in,
+  observable, same-capability-class failover is now plan `058` (P3
+  filler).
 - **Rebuilding the conversation-naming `Agent` per call**
   (`services/conversations/naming.py:58`): not worth doing — construction is
   cheap, the model can vary by settings, and caching adds state for no

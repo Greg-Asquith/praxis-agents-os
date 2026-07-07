@@ -129,3 +129,4 @@ docs/*
 !docs/architecture/
 docs/architecture/*
 !docs/architecture/governance.md
+!docs/architecture/integration-packaging.md

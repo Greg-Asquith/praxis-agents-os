@@ -2,6 +2,7 @@
 
 """Focused tests for workspace-management service invariants."""
 
+import importlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,7 +17,10 @@ from models.workspace import WorkspaceInvitation, WorkspaceMembership, Workspace
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
 from services.workspaces import create_workspace, delete_workspace
-from services.workspaces.invitations import accept_invitation_by_token
+from services.workspaces.invitations import (
+    accept_invitation_by_token,
+    accept_pending_invitations_for_user,
+)
 from services.workspaces.memberships import delete_membership, update_membership
 from services.workspaces.schemas import (
     WorkspaceCreateRequest,
@@ -273,6 +277,116 @@ async def test_accept_invitation_by_token_creates_membership_and_records_securit
     assert security_event is not None
     assert security_event.details["invitation_id"] == str(invitation.id)
     assert security_event.details["membership_id"] == str(membership.id)
+
+
+async def test_accept_pending_invitations_for_user_accepts_valid_matches_only_and_skips_failures(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = build_user(email="owner@example.com")
+    invited = build_user(email="invited@example.com")
+    valid_workspace = build_workspace(slug="valid-team", is_personal=False)
+    failing_workspace = build_workspace(slug="failing-team", is_personal=False)
+    expired_workspace = build_workspace(slug="expired-team", is_personal=False)
+    other_workspace = build_workspace(slug="other-team", is_personal=False)
+    owner_memberships = [
+        build_workspace_membership(
+            workspace_id=workspace.id,
+            user_id=owner.id,
+            role=WorkspaceRole.OWNER,
+        )
+        for workspace in [valid_workspace, failing_workspace, expired_workspace, other_workspace]
+    ]
+    valid_invitation = WorkspaceInvitation(
+        workspace_id=valid_workspace.id,
+        email=invited.email,
+        role=WorkspaceRole.MEMBER.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("valid-invite-token"),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    failing_invitation = WorkspaceInvitation(
+        workspace_id=failing_workspace.id,
+        email=invited.email,
+        role=WorkspaceRole.ADMIN.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("failing-invite-token"),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    expired_invitation = WorkspaceInvitation(
+        workspace_id=expired_workspace.id,
+        email=invited.email,
+        role=WorkspaceRole.ADMIN.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("expired-invite-token"),
+        expires_at=datetime.now(UTC) - timedelta(days=1),
+    )
+    other_invitation = WorkspaceInvitation(
+        workspace_id=other_workspace.id,
+        email="someone-else@example.com",
+        role=WorkspaceRole.ADMIN.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("other-invite-token"),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    db_session.add_all(
+        [
+            owner,
+            invited,
+            valid_workspace,
+            failing_workspace,
+            expired_workspace,
+            other_workspace,
+            *owner_memberships,
+            valid_invitation,
+            failing_invitation,
+            expired_invitation,
+            other_invitation,
+        ]
+    )
+    await db_session.flush()
+
+    pending_module = importlib.import_module(
+        "services.workspaces.invitations.accept_pending_invitations_for_user"
+    )
+    original_accept_invitation = pending_module.accept_invitation
+
+    async def fake_accept_invitation(*args, **kwargs):
+        if kwargs["invitation"].id == failing_invitation.id:
+            raise RuntimeError("simulated invite failure")
+        return await original_accept_invitation(*args, **kwargs)
+
+    monkeypatch.setattr(pending_module, "accept_invitation", fake_accept_invitation)
+
+    accepted_count = await accept_pending_invitations_for_user(
+        db_session,
+        user=invited,
+        request=build_test_request(path="/api/v1/auth/login"),
+    )
+
+    assert accepted_count == 1
+    assert valid_invitation.accepted_at is not None
+    assert failing_invitation.accepted_at is None
+    assert expired_invitation.accepted_at is None
+    assert other_invitation.accepted_at is None
+
+    accepted_membership = await db_session.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == valid_workspace.id,
+            WorkspaceMembership.user_id == invited.id,
+            WorkspaceMembership.deleted.is_(False),
+        )
+    )
+    assert accepted_membership is not None
+    assert accepted_membership.role == WorkspaceRole.MEMBER.value
+
+    skipped_membership = await db_session.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == failing_workspace.id,
+            WorkspaceMembership.user_id == invited.id,
+        )
+    )
+    assert skipped_membership is None
 
 
 async def test_accept_invitation_by_token_rejects_different_user_email(

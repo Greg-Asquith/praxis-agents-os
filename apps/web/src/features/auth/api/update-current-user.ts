@@ -18,6 +18,7 @@ export function useUpdateCurrentUserMutation() {
 
   return useMutation({
     mutationFn: updateCurrentUser,
+    scope: { id: "auth-update-current-user" },
     onSuccess: (user) => {
       queryClient.setQueryData(currentUserQueryKey, user)
     },

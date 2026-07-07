@@ -1,9 +1,10 @@
 // apps/web/src/features/workspaces/components/active-workspace-provider.tsx
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
+import { useUpdateCurrentUserMutation } from "@/features/auth/api/update-current-user"
 import { useWorkspacesQuery } from "@/features/workspaces/api/list-workspaces"
 import type { Workspace } from "@/features/workspaces/types"
 import { ActiveWorkspaceContext } from "@/features/workspaces/components/active-workspace-context"
@@ -41,6 +42,7 @@ function chooseWorkspace(
 export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const { data } = useWorkspacesQuery()
+  const { mutateAsync: updateCurrentUser } = useUpdateCurrentUserMutation()
   const workspaces = data.workspaces
   const [activeSlug, setActiveSlug] = useState(() => readStoredSlug())
 
@@ -58,6 +60,19 @@ export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [activeWorkspace])
 
+  const setWorkspaceBySlug = useCallback(
+    (slug: string) => {
+      const nextWorkspace = workspaces.find((workspace) => workspace.slug === slug)
+      setActiveSlug(slug)
+      if (!nextWorkspace) {
+        return
+      }
+
+      void updateCurrentUser({ default_workspace_id: nextWorkspace.id }).catch(() => undefined)
+    },
+    [updateCurrentUser, workspaces]
+  )
+
   const value = useMemo(() => {
     if (!activeWorkspace) {
       return null
@@ -66,9 +81,9 @@ export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
     return {
       workspace: activeWorkspace,
       workspaces,
-      setWorkspaceBySlug: setActiveSlug,
+      setWorkspaceBySlug,
     }
-  }, [activeWorkspace, workspaces])
+  }, [activeWorkspace, setWorkspaceBySlug, workspaces])
 
   if (!value) {
     return (

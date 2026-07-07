@@ -10,7 +10,7 @@ import { WorkspaceRoleBadge } from "@/features/workspaces/components/workspace-r
 
 export function WorkspaceSettingsRoute() {
   const { workspace } = useActiveWorkspace()
-  const canViewAudit =
+  const canManageWorkspace =
     workspace.current_user_role === "owner" || workspace.current_user_role === "admin"
 
   return (
@@ -26,8 +26,8 @@ export function WorkspaceSettingsRoute() {
         <TabsList variant="line">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="invitations">Invitations</TabsTrigger>
-          {canViewAudit ? <TabsTrigger value="audit">Audit Log</TabsTrigger> : null}
+          {canManageWorkspace ? <TabsTrigger value="invitations">Invitations</TabsTrigger> : null}
+          {canManageWorkspace ? <TabsTrigger value="audit">Audit Log</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="details">
           <WorkspaceSettingsForm />
@@ -35,10 +35,12 @@ export function WorkspaceSettingsRoute() {
         <TabsContent value="members">
           <MembersTable />
         </TabsContent>
-        <TabsContent value="invitations">
-          <InvitationsTable />
-        </TabsContent>
-        {canViewAudit ? (
+        {canManageWorkspace ? (
+          <TabsContent value="invitations">
+            <InvitationsTable />
+          </TabsContent>
+        ) : null}
+        {canManageWorkspace ? (
           <TabsContent value="audit">
             <AuditSettingsPanel />
           </TabsContent>

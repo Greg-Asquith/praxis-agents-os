@@ -9,6 +9,7 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
@@ -25,6 +26,9 @@ export function WorkspaceSwitcher({
   workspace: Workspace
   workspaces: Workspace[]
 }) {
+  const personalWorkspaces = workspaces.filter((item) => item.is_personal)
+  const teamWorkspaces = workspaces.filter((item) => !item.is_personal)
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -37,20 +41,51 @@ export function WorkspaceSwitcher({
       <DropdownMenuContent align={align} className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Switch Workspace</DropdownMenuLabel>
-          {workspaces.map((item) => (
-            <DropdownMenuItem
-              key={item.id}
-              className="gap-2 px-2 py-2"
-              onClick={() => {
-                setWorkspaceBySlug(item.slug)
-              }}
-            >
-              <WorkspaceIcon size="sm" workspace={item} />
-              <span className="truncate">{item.name}</span>
-            </DropdownMenuItem>
-          ))}
+          {personalWorkspaces.length > 0 && (
+            <WorkspaceMenuGroup
+              label="Personal"
+              setWorkspaceBySlug={setWorkspaceBySlug}
+              workspaces={personalWorkspaces}
+            />
+          )}
+          {personalWorkspaces.length > 0 && teamWorkspaces.length > 0 && <DropdownMenuSeparator />}
+          {teamWorkspaces.length > 0 && (
+            <WorkspaceMenuGroup
+              label="Teams"
+              setWorkspaceBySlug={setWorkspaceBySlug}
+              workspaces={teamWorkspaces}
+            />
+          )}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function WorkspaceMenuGroup({
+  label,
+  setWorkspaceBySlug,
+  workspaces,
+}: {
+  label: string
+  setWorkspaceBySlug: (slug: string) => void
+  workspaces: Workspace[]
+}) {
+  return (
+    <>
+      <DropdownMenuLabel className="pt-2">{label}</DropdownMenuLabel>
+      {workspaces.map((item) => (
+        <DropdownMenuItem
+          key={item.id}
+          className="gap-2 px-2 py-2"
+          onClick={() => {
+            setWorkspaceBySlug(item.slug)
+          }}
+        >
+          <WorkspaceIcon size="sm" workspace={item} />
+          <span className="truncate">{item.name}</span>
+        </DropdownMenuItem>
+      ))}
+    </>
   )
 }

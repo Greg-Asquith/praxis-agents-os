@@ -55,6 +55,7 @@ export type OAuthAuthorizationUrlResponse = {
 
 export type UpdateCurrentUserRequest = {
   display_name?: string | null
+  default_workspace_id?: string | null
 }
 
 export type ChangePasswordRequest = {

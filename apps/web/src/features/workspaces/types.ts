@@ -84,3 +84,15 @@ export type WorkspaceInvitationCreateResponse = {
   invitation: WorkspaceInvitation
   token: string
 }
+
+export type WorkspaceInvitationAcceptRequest = {
+  token: string
+}
+
+export type WorkspaceInvitationAcceptResponse = {
+  workspace: Workspace
+  membership: WorkspaceMembership
+  invitation: WorkspaceInvitation
+  status: string
+  message: string
+}

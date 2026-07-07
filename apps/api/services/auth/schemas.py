@@ -132,6 +132,7 @@ class OAuthCallbackRequest(BaseModel):
 
 class CurrentUserUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
+    default_workspace_id: UUID | None = None
 
     @field_validator("display_name")
     @classmethod
