@@ -72,6 +72,7 @@ on a trustworthy gate, a behavioral test net, and a decomposed
 deliberately not planned are recorded in the rejected/deferred section
 below.
 Plan 062 was executed 2026-07-07 as the trustworthy local gate and DX slice.
+Plan 063 was executed 2026-07-07 as the behavioral test safety-net slice.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -147,7 +148,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 060 | Durable run event log and live stream replay | P3 | L | 030 (soft: 053, 056; last in Lane H) | TODO |
 | 061 | Integration provider packaging architecture (design note, D10) | P1 | S | 029; binds before 037 executes | DONE |
 | 062 | Trustworthy local gate & DX hardening (make api-test DB, CI uv cache, worker reload, AGENTS.md fixes) | P1 | S | - | DONE |
-| 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | TODO |
+| 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | DONE |
 | 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | TODO |
 | 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | TODO |
 | 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | TODO |
@@ -465,6 +466,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `.editorconfig` exists; and AGENTS.md now reflects pytest asyncio auto mode
   plus the Vitest-backed frontend gate. `make api-test` passed with 494 tests
   and no `Set TEST_DATABASE_URL` skips.
+- `063` marked DONE 2026-07-07: service-level Vitest tests now cover
+  message-parts parsing and tool-result pairing, agent and schedule form
+  models including the Europe/London DST round trip and invalid local times,
+  approval-decision helpers, and shared formatters under `apps/web/tests/`.
+  DB-backed auth route tests pin the internal HS256 bearer token acceptance
+  path in `core/dependencies.py`, including schedule-run workspace/user/deleted
+  rejections, expired tokens, invalid UUIDs, and workspace-header confinement
+  via a workspace-scoped schedules route. `pnpm check`,
+  `TEST_DATABASE_URL=... uv run pytest tests/routes/auth -q`,
+  `TEST_DATABASE_URL=... uv run pytest tests/routes/auth tests/middleware -q`,
+  `uv run ruff check .`, and `uv run ruff format --check .` passed.
 - `C05` is P2 production-readiness work. The license step is a maintainer
   decision and should block that step rather than let an executor choose a
   license. Its metrics route must stay independent of `014` OTel, and its 403
@@ -616,7 +628,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `062`–`066` ordering rationale: `062` first because it makes the local
   gate honest (today `make check` runs pytest without `TEST_DATABASE_URL`,
   silently skipping ~57 of 84 test modules) — every later plan's
-  verification depends on it. `063` before `064` is a hard edge: the form
+  verification depends on it. `063` before `064` is a completed hard edge: the form
   models and formatters `064` consolidates get their behavioral tests in
   `063`, and `064` must keep those assertions unchanged. `065` is
   independent of the web plans. `066` must land before `053`/`054`/`056`

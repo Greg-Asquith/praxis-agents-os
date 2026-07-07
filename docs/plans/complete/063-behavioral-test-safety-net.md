@@ -20,6 +20,7 @@
 - **Depends on**: 062 (for `make api-test`; soft — `TEST_DATABASE_URL` can be exported manually)
 - **Category**: tests
 - **Planned at**: commit `d326b68`, 2026-07-07
+- **Completed at**: 2026-07-07
 
 ## Why this matters
 
@@ -50,7 +51,8 @@ follow-up, not made here.
 ### Frontend
 
 - Test runner: Vitest 4 (`apps/web/package.json` → `"test": "vitest run"`,
-  part of `pnpm check`). Config: `apps/web/vitest.config.ts`.
+  part of `pnpm check`). Config: `apps/web/vitest.config.ts`, which includes
+  `tests/**/*.test.ts`.
 - Pattern exemplar: `apps/web/src/features/conversations/stream/reducer.test.ts`
   — plain `describe`/`it`/`expect` from `vitest`, literal fixture objects for
   API types, no DOM/react testing library (do not add one):
@@ -135,12 +137,12 @@ follow-up, not made here.
 
 **In scope** (create only; plus reading anything):
 
-- `apps/web/src/features/conversations/message-parts/parse.test.ts`
-- `apps/web/src/features/conversations/message-parts/pair-tool-results.test.ts`
-- `apps/web/src/features/agents/components/agent-form-model.test.ts`
-- `apps/web/src/features/schedules/components/schedule-form-model.test.ts`
-- `apps/web/src/features/conversations/approval-decisions.test.ts`
-- `apps/web/src/lib/format.test.ts`
+- `apps/web/tests/features/conversations/message-parts/parse.test.ts`
+- `apps/web/tests/features/conversations/message-parts/pair-tool-results.test.ts`
+- `apps/web/tests/features/agents/components/agent-form-model.test.ts`
+- `apps/web/tests/features/schedules/components/schedule-form-model.test.ts`
+- `apps/web/tests/features/conversations/approval-decisions.test.ts`
+- `apps/web/tests/lib/format.test.ts`
 - `apps/api/tests/routes/auth/test_internal_token_auth.py`
 
 **Out of scope** (do NOT touch):
@@ -240,10 +242,12 @@ def _forge_internal_token(**claims) -> str:
     return jwt.encode(payload, settings.SECRET_KEY.get_secret_value(), algorithm="HS256")
 ```
 
-Drive a cheap authenticated GET route (e.g. `/api/v1/auth/me` — confirm the
-exact path in `routes/auth/`) with `Authorization: Bearer <token>` and the
+Drive a cheap authenticated workspace-scoped GET route
+(`/api/v1/schedules/`) with `Authorization: Bearer <token>` and the
 `X-Workspace` header, via the app client fixture used by other
-`tests/routes/` modules. Cases, each asserting the response status:
+`tests/routes/` modules. This route is intentionally used instead of
+`/api/v1/auth/me` because it resolves `CurrentWorkspaceDep` and exercises
+`_enforce_internal_token_workspace`. Cases, each asserting the response status:
 
 1. Happy path: valid claims, matching workspace → 200.
 2. `type` wrong → 401. `internal` missing/False → 401. `jti` missing → 401.
@@ -271,11 +275,11 @@ steps. Structural patterns: `reducer.test.ts` (web),
 
 Machine-checkable. ALL must hold:
 
-- [ ] `cd apps/web && pnpm check` exits 0 (includes the new tests, zero lint warnings, knip clean)
-- [ ] Six new `.test.ts` files exist at the in-scope paths and contain ≥ 30 assertions total
-- [ ] `cd apps/api && TEST_DATABASE_URL=... uv run pytest tests/routes/auth -q` exits 0 and collects the 7+ new cases
-- [ ] `git status` shows only new test files (no production source modified)
-- [ ] Status row updated in `docs/plans/000_README.md`
+- [x] `cd apps/web && pnpm check` exits 0 (includes the new tests, zero lint warnings, knip clean)
+- [x] Six new `.test.ts` files exist at the in-scope paths and contain ≥ 30 assertions total
+- [x] `cd apps/api && TEST_DATABASE_URL=... uv run pytest tests/routes/auth -q` exits 0 and collects the 7+ new cases
+- [x] `git status` shows only new test files plus roadmap/plan status updates (no production source modified)
+- [x] Status row updated in `docs/plans/000_README.md`
 
 ## STOP conditions
 
