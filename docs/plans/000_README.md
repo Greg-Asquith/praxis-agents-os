@@ -95,7 +95,9 @@ prompt-injection threat-model design note that registers Gate G6; 076
 extends Lane H with bounded tool results and calibrated token estimation;
 077 is a Phase 4a structural design note reserving the inbound-events
 (webhooks) seam; 078 opens Lane P — public launch & adoption. See the
-roadmap's Lane B / Lane P sections for ordering.
+roadmap's Lane B / Lane P sections for ordering. Plan 073 was executed
+2026-07-09 as the cancellation-terminal-hardening amendment to 053 and
+moved to `plans/complete/`.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -161,7 +163,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 050 | Artifacts model, registry tools, and CSP-locked serving | P2 | L | 031, 032, 034 | TODO |
 | 051 | Chat artifact cards, versions UI, and share links | P2 | L | 050, 030 (soft: 035) | TODO |
 | 052 | Action-driven homepage redesign | P2 | M | - | TODO |
-| 053 | Cooperative run cancellation (kill switch) | P1 | M | - (before 041) | TODO |
+| 053 | Cooperative run cancellation (kill switch; amended by 073) | P1 | M | - (before 041) | TODO |
 | 054 | Run envelope enforcement — principal-derived side-effect policy | P1 | M | 025, 026 (hard: before 041) | TODO |
 | 055 | Agent behavior eval harness (Gate G5) | P1 | L | - (soft: 053, 054 add scenarios) | TODO |
 | 056 | Context compaction — watermark summaries + token-aware budgets | P1 | L | 013, 018, 030 (hard: before 048/049) | TODO |
@@ -181,7 +183,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 070 | Artifact CSP — close the CDN script exfiltration channel (amendment to 050) | P1 | S | 050 (binds before it executes) | TODO |
 | 071 | Memory dedup contradiction resolution (amendment to 048) | P1 | S-M | 048 (binds before it executes) | TODO |
 | 072 | Sandbox egress verification (amendment to 059) | P1 | S | 059, 054 (binds before 059 executes) | TODO |
-| 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (binds before it executes — 053 is next in the order, so this is time-sensitive) | TODO |
+| 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (binds before it executes — 053 is next in the order, so this is time-sensitive) | DONE |
 | 074 | Integration & KB plan consistency sweep (amendments to 039/042/043/044/045) | P1 | S-M | 039/042/043/044/045 (binds before Phase 4a/4b) | TODO |
 | 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | TODO |
@@ -643,7 +645,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   client-side stream `abort()` only closes the HTTP response while the
   detached worker keeps running. The heartbeat's failed-renewal path
   (`renew_agent_run_lease` matches only pending/running rows) is the
-  cross-process cancel-detection seam.
+  cross-process cancel-detection seam. Plan 073 is now appended to 053 and
+  supersedes 053's original unshielded cleanup claim.
 - `054` finding worth knowing before executing: `build_run_envelope` sets
   only `principal`; `side_effect_policy="allow"` / `max_delegation_depth=1`
   are constants for every run, and `check_envelope` tests only `deny` —

@@ -55,7 +55,11 @@ finding re-verified against the target plan's own text. Lane B (067–074,
 pre-execution amendment plans in the 061 mold) and Lane P (078, public
 launch & adoption) are defined in §4 below; 075 is a cross-cutting
 threat-model design note that registers Gate G6; 076 extends Lane H; 077
-is a Phase 4a structural design note in the 061 mold.
+is a Phase 4a structural design note in the 061 mold. Plan 073 was
+completed 2026-07-09 and moved to `docs/plans/complete/`; it amends 053
+with shielded cancellation finalization, tier-deduped heartbeat cancel
+delivery, interrupted-tool audit disposition, and first-turn prompt
+persistence requirements.
 
 ---
 
@@ -313,7 +317,7 @@ bracket Phases 4–6.
 
 | Plan | Scope | Priority | When |
 |------|-------|----------|------|
-| 053 | Cooperative run cancellation: cancel route + audit, `RunTaskRegistry.cancel`, heartbeat cancel-detection (works cross-process via the lease seam), `CancelledError` terminal handling, UI stop control. Today `cancel_agent_run` has no route and no callers; nothing stops the executing task. | P1 | Before 041 (G1 extension) |
+| 053 | Cooperative run cancellation: cancel route + audit, `RunTaskRegistry.cancel`, heartbeat cancel-detection (works cross-process via the lease seam), `CancelledError` terminal handling, UI stop control. Today `cancel_agent_run` has no route and no callers; nothing stops the executing task. Amended by 073. | P1 | Before 041 (G1 extension) |
 | 054 | Run envelope enforcement: `effect_scope` (internal/external) on the tool contract, principal-derived `side_effect_policy` (scheduled → `require_approval` for external writes by default), the missing `require_approval` dispatch branch, delegated inheritance recorded at mint time. Today every run gets the constant grant `("allow", depth 1)`. | P1 | Before 041 (G1 extension) |
 | 055 | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). Content, not platform. | P1 | Parallel with Phase 4; before 048 |
 | 056 | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. | P1 | Before 048/049 |
@@ -372,7 +376,7 @@ migration.
 | 070 | Artifact CSP: drop the general-purpose CDN whitelist (jsdelivr/unpkg serve every npm package — arbitrary script one URL away, and `connect-src 'none'` does not block self-navigation exfil); v1 artifacts are self-contained, self-hosted vetted bundles are the named follow-up. Amends 050. | P1 | Before 050 |
 | 071 | Memory dedup contradiction resolution: near-duplicates surface to the writing agent (save-as-new / supersede / skip) instead of silently reinforcing the stale row; threshold calibration fixture; decay half-lives marked provisional under Gate G4. Amends 048. | P1 | Before 048 |
 | 072 | Sandbox egress verification: per-provider DNS/HTTP canary probe; `run_code`'s `internal`+`supports_auto` classification gated on an egress-verified provider allowlist; re-probe on SDK bumps; poisoned-file fixture. Amends 059. | P1 | Before 059 |
-| 073 | Cancellation terminal hardening: shield terminal persistence against double-cancel, tier-2 dedupe of already-cancelled tasks, `cancelled` disposition on the interrupted dispatch audit row. Amends 053. | P1 | **Next — 053 immediately follows Lane Q** |
+| 073 | Cancellation terminal hardening: shield terminal persistence against double-cancel, tier-2 dedupe of already-cancelled tasks, `cancelled` disposition on the interrupted dispatch audit row. **DONE 2026-07-09.** Amends 053. | P1 | Complete. |
 | 074 | Consistency sweep: scheduled re-discovery job for permission staleness (039), `top_k`/CTE-limit cross-check (045), unstorable `text-embedding-3-large` registry entry (043), phantom connection-rename route (042↔038), IP-pinned connects for DNS-rebinding TOCTOU (044). Amends 039/042/043/044/045. | P1 | Before Phase 4a/4b |
 
 Adjacent additions from the same review, not in Lane B: 075 (threat-model
@@ -425,7 +429,7 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 → 053 → 054 → 076 → C05 →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 → 054 → 076 → C05 →
 067 → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,

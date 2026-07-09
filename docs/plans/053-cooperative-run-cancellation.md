@@ -386,3 +386,72 @@ Stop and report back (do not improvise) if:
   re-raising unconditionally, `persist_cancelled_run` never raising, and
   the route's permission branch (owner-or-manager) having tests for the
   deny case.
+
+## Amendment (plan 073, 2026-07-07): terminal hardening
+
+Binding deltas; where this section conflicts with the text above, this
+section wins.
+
+**Decision deltas**
+
+- Decision 3's "no `asyncio.shield` is needed" is superseded. The
+  cleanup's `suppress(Exception)` guards do not stop a second
+  `CancelledError` (`BaseException`), and decision 1's two delivery
+  tiers can double-deliver. Terminal persistence and terminal event
+  emission are shielded (see step 4 below).
+- Decision 1 gains tier dedupe: heartbeat cancel-detection must skip
+  delivery when `cancel_target.done()` or
+  `cancel_target.cancelling() > 0` — a task the registry already
+  cancelled is not cancelled again.
+- New decision: cancellation landing inside `dispatch_tool_execution`
+  records a terminal audit row for the interrupted invocation. Add
+  `"cancelled"` to `ToolAuditOutcome`; an
+  `except asyncio.CancelledError` branch around `await handler(args)`
+  best-effort records (status `FAILURE`, outcome `cancelled`,
+  `error_code="CancelledError"`, the entry-computed args digest) under
+  `suppress(BaseException)`, then re-raises. For write-effect tools the
+  row is the reconciliation record — the external action may or may not
+  have completed. Compensation hooks are explicitly deferred.
+- Decision 5 delta / STOP condition 3 resolved: persist the user message
+  eagerly in the turn-start commit (`started`, `execute_run.py:152`);
+  terminal `persist_new_messages` skips the already-persisted prompt,
+  and the `execute_run` docstring contract is updated to match.
+
+**Step deltas**
+
+- Step 3: apply the tier-dedupe check before `cancel_target.cancel()`.
+- Step 4: replace the snippet's cleanup with a shielded finalizer:
+
+      except asyncio.CancelledError:
+          finalize = asyncio.ensure_future(
+              _finalize_cancelled_run(db, run_id, event_sink)
+          )
+          try:
+              await asyncio.shield(finalize)
+          except asyncio.CancelledError:
+              with suppress(BaseException):
+                  async with asyncio.timeout(CANCEL_FINALIZE_TIMEOUT):
+                      await finalize
+          raise
+
+  `_finalize_cancelled_run` owns the rollback, `persist_cancelled_run`,
+  and the `run.status`/`done` emits, and never raises; the timeout
+  (a few seconds) bounds the second-cancel wait so a stuck DB cannot
+  block the unwind.
+- Step 4 (dispatch): add the `except asyncio.CancelledError` audit
+  branch and the `ToolAuditOutcome` member.
+- Step 4 (messages): implement the eager user-message persist + terminal
+  dedupe. If `new_messages()` shapes make the skip ambiguous, STOP and
+  report (record deferral rather than double-writing).
+
+**Test-plan deltas** (+3 on the estimate)
+
+- Double-cancel: cancel a scripted run, deliver a second cancel while
+  finalization is in flight (slow `persist_cancelled_run` fake); assert
+  the row ends `cancelled` (never `failed`/stuck `running`) and the sink
+  received `done {cancelled}`.
+- Interrupted dispatch: cancel while a scripted tool sleeps inside its
+  handler; assert one `tool_call` audit row with outcome `cancelled`,
+  the tool name, and a non-empty `args_sha256`.
+- First-turn cancel: cancel a first turn mid-stream; the user message is
+  present in the conversation afterwards.
