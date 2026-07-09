@@ -127,4 +127,8 @@ async def test_create_membership_route_returns_forbidden_for_non_manager(
     assert response.headers["content-type"].startswith("application/problem+json")
     body = response.json()
     assert body["detail"] == "Requires higher level role"
-    assert body["membership_role"] == WorkspaceRole.MEMBER.value
+    assert body["allowed_roles"] == [WorkspaceRole.ADMIN.value, WorkspaceRole.OWNER.value]
+    assert "membership_id" not in body
+    assert "membership_role" not in body
+    assert "workspace_id" not in body
+    assert "user_id" not in body

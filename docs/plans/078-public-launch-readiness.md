@@ -7,11 +7,11 @@
 > in `docs/plans/000_README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat 6be5491..HEAD -- README.md LICENSE CHANGELOG.md .github/ apps/api/main.py apps/api/core/settings/app.py apps/api/pyproject.toml apps/web/package.json docs/plans/improvements/005-production-readiness-gaps.md`
+> `git diff --stat 6be5491..HEAD -- README.md LICENSE CHANGELOG.md .github/ apps/api/main.py apps/api/core/settings/app.py apps/api/pyproject.toml apps/web/package.json docs/plans/complete/C05-production-readiness-gaps.md`
 > If any in-scope file changed since this plan was written, compare the
-> "Current state" excerpts against the live files before proceeding. In
-> particular: if C05's index row is no longer TODO, read decision 1 before
-> touching the README.
+> "Current state" excerpts against the live files before proceeding. C05 is
+> DONE as of 2026-07-09; preserve its README/license corrections when rewriting
+> the public launch README.
 
 ## Status
 
@@ -19,8 +19,7 @@
 - **Effort**: L (many small artifacts, no product code)
 - **Risk**: LOW (docs/CI only; the release workflow is the only executable
   risk, and pushing the tag that triggers it is operator-gated)
-- **Depends on**: C05 (scope coordination only — see decision 1; neither
-  plan blocks the other), C01 (DONE — CI exists). No product-plan
+- **Depends on**: C05 (DONE — see decision 1), C01 (DONE — CI exists). No product-plan
   dependencies; this plan can interleave at any time.
 - **Category**: Lane P — public launch & adoption (new lane, added
   2026-07-07)
@@ -31,8 +30,8 @@
 The repository is engineered to be good — CI, a trustworthy local gate,
 governance docs, an audited tool runtime — but nothing in the roadmap
 makes it *visible*. Lanes R/O/C/H/Q all improve the product; no lane
-covers adoption: the README still describes an "early porting stage" and
-claims there is no license, and there is no security policy, contributing
+covers adoption. C05 added the Apache-2.0 license and fixed the most obvious
+README inaccuracies, but there is still no security policy, contributing
 guide, issue template, dependency-update or code-scanning automation,
 changelog, tagged release, or readable API spec. For a project whose
 differentiator is governance and auditability, a missing SECURITY.md and
@@ -44,18 +43,13 @@ published API image, and an exported OpenAPI spec.
 ## Decisions taken
 
 1. **C05 precedence on the README.** C05
-   (`docs/plans/improvements/005-production-readiness-gaps.md`, index row
-   TODO) owns license/metrics/403-bodies plus *surgical* README
+   (`docs/plans/complete/C05-production-readiness-gaps.md`, DONE
+   2026-07-09) owns license/metrics/403-bodies plus *surgical* README
    corrections (its Step 4). This plan rewrites the README wholesale and
-   therefore **subsumes C05 Step 4**: every correction C05 names (the
-   line-6 typos, "Node.js 22", the two "still being normalized" passages,
-   the license note) is included here. Whichever plan executes first wins
-   on those lines — if C05 ran first, this rewrite preserves its
-   corrections inside the new structure; if this plan runs first, C05
-   Step 4's verification greps find no matches and that step becomes a
-   recorded no-op. C05's metrics and 403-body steps are untouched here,
-   and its Step 1 (license) is moot: `LICENSE` (Apache-2.0) already
-   exists at the repo root.
+   must preserve every correction C05 made: the line-6 typo/comma fixes,
+   Node.js 24, `make bootstrap` / `make dev` as the supported local flow,
+   and the Apache-2.0 license note. C05's metrics and 403-body steps are
+   complete and untouched here.
 2. **OpenAPI export is a CI artifact, not a served route.** `main.py`
    disables `docs_url`/`redoc_url`/`openapi_url` deliberately (attack
    surface: the API serves credentialed browser clients, not anonymous
@@ -111,21 +105,16 @@ with no dependency updates is an easy dismissal.
 
 All anchors verified on the working tree at `6be5491` (2026-07-07).
 
-- **README.md** (248 lines) is the old porting-era front door:
-  - Line 6: "The focus i on practical agent workflows" (missing "s") and
-    "approvals, auditability notifications, schedules" (missing comma).
+- **README.md** remains a porting-era front door after C05's surgical fixes:
   - Line 10: "This repository is in an early porting stage." — stale; the
     index records ~50 executed plans across the product and quality lanes.
-  - Lines 17 and 221: the Docker/Compose path is distrusted ("still being
-    normalized … prefer the manual backend and frontend commands"),
-    contradicting the supported `make bootstrap` / `make dev` flow.
-  - Line 65: "Node.js 22" — the web image is `node:24-slim`
-    (`apps/web/Dockerfile:4`) and `@types/node` is `^24`.
+  - C05 corrected the line-6 typo/comma issue, the distrusted Docker/Compose
+    copy, the Node.js 24 prerequisite, and the license note. Preserve those
+    corrections in the rewrite.
   - Lines 191–195: frontend checks listed as `pnpm lint` + `pnpm build`;
     the actual gate is `pnpm check` (`makefiles/checks.mk:18-19`).
   - Line 232: "Add focused tests and CI as each surface becomes real" —
-    CI exists (`.github/workflows/ci.yml`, since C01). Lines 246–248: "No
-    license file has been committed yet." — false: `LICENSE` (Apache
+    CI exists (`.github/workflows/ci.yml`, since C01). `LICENSE` (Apache
     License 2.0) exists at the repo root.
   - No badges, screenshots, feature overview, positioning, or pointer to
     `docs/architecture/`.
@@ -230,8 +219,8 @@ Rewrite `README.md` as the storefront, in this order:
    decision 8.
 6. Quickstart: prerequisites (Python 3.12, uv, **Node.js 24**, pnpm,
    Docker), then `make bootstrap` / `make dev` / `make check` as the
-   supported flow, with per-app manual commands as the alternative — drop
-   both "still being normalized" passages.
+   supported flow, with per-app manual commands as the alternative. Preserve
+   the C05 quickstart corrections.
 7. Keep (corrected) sections: repository layout, technology, backend and
    frontend development, migrations, Compose env files. Frontend checks
    become `pnpm check`.
@@ -379,9 +368,8 @@ Stop and report back (do not improvise) if:
 - Any license question arises beyond pointing at the existing Apache-2.0
   `LICENSE` — relicensing, a NOTICE file, CLA/DCO policy, or third-party
   license auditing are maintainer decisions.
-- C05 has already executed (index row not TODO) or its README edits are
-  in the working tree — reconcile your rewrite with its corrections
-  instead of overwriting, and say so in the report.
+- C05's completed README corrections are not present in the working tree —
+  reconcile before rewriting instead of reintroducing stale claims.
 - A `SECURITY.md`/`CODE_OF_CONDUCT.md` contact needs a real email address
   or GitHub private vulnerability reporting is unavailable for the repo —
   the disclosure channel is a maintainer decision; do not invent one.

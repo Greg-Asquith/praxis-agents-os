@@ -64,6 +64,12 @@ def test_tool_catalog_route_is_registered_under_api_v1(
     assert {"get"} == set(paths["/api/v1/tools/catalog"])
 
 
+def test_operational_metrics_route_is_not_in_openapi_schema(
+    openapi_schema: dict[str, object],
+) -> None:
+    assert "/api/metrics" not in openapi_schema["paths"]
+
+
 def test_agent_routes_are_registered_under_api_v1(
     openapi_schema: dict[str, object],
 ) -> None:

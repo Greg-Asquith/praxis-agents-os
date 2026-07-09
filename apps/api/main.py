@@ -7,16 +7,20 @@ Initializes the FastAPI application with all routes and middleware.
 """
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from core.database import check_database_connection, close_db_connections
+from core.exceptions.auth import AuthenticationError
 from core.exceptions.exception_handlers import register_exception_handlers
+from core.exceptions.general import NotFoundError
 from core.logging import setup_logging
-from core.observability import setup_agent_tracing
+from core.observability import get_metrics, setup_agent_tracing
 from core.settings import settings
 from middleware import (
     AuditContextMiddleware,
@@ -115,6 +119,20 @@ register_exception_handlers(app)
 
 # Register API routes.
 app.include_router(api_router)
+
+
+@app.get("/api/metrics", include_in_schema=False)
+async def metrics(request: Request) -> Response:
+    if not settings.METRICS_ENABLED:
+        raise NotFoundError("Not found")
+
+    if settings.METRICS_TOKEN:
+        auth = request.headers.get("Authorization", "")
+        if not secrets.compare_digest(auth, f"Bearer {settings.METRICS_TOKEN}"):
+            raise AuthenticationError("Invalid metrics credentials")
+
+    return Response(content=get_metrics(), media_type=CONTENT_TYPE_LATEST)
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG, log_level="info")

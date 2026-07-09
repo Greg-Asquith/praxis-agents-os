@@ -23,10 +23,11 @@ covering Phases 3–6 end to end, consistency-reviewed against the landed
 `plans/improvements/`; their source files keep local numbers 001-005 until
 completion, while the master roadmap tracks them with `C` prefixes so they do
 not collide with existing roadmap plans. C01, C02, C03, and C04 were completed
-2026-07-06 and moved to `plans/complete/`. Plan 035 was completed
-2026-07-06 and moved to `plans/complete/`; Plan 036 and Plan 024 were completed
-2026-07-07 and moved to `plans/complete/`. Every reserved number now has a
-written plan. Plans 052 (Lane O homepage redesign) and 053–060 (Lane H,
+2026-07-06 and moved to `plans/complete/`; C05 was completed 2026-07-09 and
+moved to `plans/complete/`. Plan 035 was completed 2026-07-06 and moved to
+`plans/complete/`; Plan 036 and Plan 024 were completed 2026-07-07 and moved
+to `plans/complete/`. Every reserved number now has a written plan. Plans 052
+(Lane O homepage redesign) and 053–060 (Lane H,
 harness hardening — added 2026-07-07 by a directed harness-engineering
 review, grounded at `c2f08cc` with installed-package probes) extend the
 roadmap past the reserved range; Lane H is defined in §4 below and adds
@@ -254,7 +255,7 @@ non-colliding roadmap aliases used in `docs/plans/000_README.md`.
 | C02 | Harden the files vertical: upload/confirm race fixes, escaped file search, streaming hash primitive, safer download default, and download audit. **DONE 2026-07-06.** | P1 | Complete. |
 | C03 | Bound conversation history reads and paginate the messages API while preserving capability-load pairs for the 013/018 history and skill-disclosure contract. **DONE 2026-07-06.** | P1 | Complete. |
 | C04 | Rate limiter hardening: bounded endpoint keys, retention sweep on the 030 jobs harness, and rate-limit regression tests without changing policy. **DONE 2026-07-06.** | P1 | Complete; remaining files work resumes with 034. |
-| C05 | Small production-readiness gaps: maintainer-chosen license, settings-gated `/api/metrics`, filtered 403 response bodies, and README corrections. | P2 | Before public-production polish for Phase 4+; license step blocks on maintainer choice. |
+| C05 | Small production-readiness gaps: Apache-2.0 license, settings-gated `/api/metrics`, filtered 403 response bodies, and README corrections. **DONE 2026-07-09.** | P2 | Complete. |
 
 Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
 
@@ -400,7 +401,8 @@ Follow-on lane items recorded in 078's maintenance notes (docs site
 seeded from `docs/architecture/`, one-command seeded demo, demo video,
 published eval results once 055 lands, deployment guides) become numbered
 Lane P plans when picked up. 078 has no product-code dependencies and
-interleaves any time; it coordinates scope with C05.
+interleaves any time; it can build on the completed C05 license and README
+baseline.
 
 ### Rolling polish lane (P3, unnumbered)
 
@@ -429,7 +431,7 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 → 076 → C05 →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 → 076 → C05 (DONE) →
 067 → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,

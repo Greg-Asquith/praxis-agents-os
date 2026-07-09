@@ -1,4 +1,4 @@
-# Plan 005: Close the small production-readiness gaps (license, metrics, 403 bodies, README)
+# Plan C05: Close the small production-readiness gaps (license, metrics, 403 bodies, README)
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
@@ -19,6 +19,19 @@
 - **Depends on**: none
 - **Category**: docs / security / tech-debt
 - **Planned at**: commit `a0eea1c`, 2026-07-06
+- **Completed**: 2026-07-09
+
+## Completion notes
+
+- Apache-2.0 `LICENSE` already existed in the live tree and the README license
+  note now points to it.
+- `/api/metrics` is settings-gated, token-protected outside disabled mode, and
+  excluded from OpenAPI.
+- Authorization problem details keep `allowed_roles` visible while filtering
+  internal membership, user, and workspace identifiers at the exception
+  boundary.
+- README local-development copy now points to `make bootstrap` / `make dev` as
+  the supported flow and lists Node.js 24.
 
 ## Why this matters
 
@@ -255,13 +268,13 @@ available) → all pass including the new tests.
 
 ## Done criteria
 
-- [ ] `LICENSE` exists (or the step is explicitly marked BLOCKED in the index awaiting the maintainer's choice)
-- [ ] `curl` checks in Step 2 behave as specified, and the route tests pass
-- [ ] Unit test proves 403 bodies exclude `membership_id`/`user_id`/`workspace_id`/`membership_role` and include `allowed_roles`
-- [ ] `grep -n "focus i \|Node.js 22\|still being normalized" README.md` → no matches
-- [ ] `uv run ruff check .` exits 0; `make check` exits 0
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `plans/improvements/README.md` status row updated
+- [x] `LICENSE` exists (or the step is explicitly marked BLOCKED in the index awaiting the maintainer's choice)
+- [x] `curl` checks in Step 2 behave as specified, and the route tests pass
+- [x] Unit test proves 403 bodies exclude `membership_id`/`user_id`/`workspace_id`/`membership_role` and include `allowed_roles`
+- [x] `grep -n "focus i \|Node.js 22\|still being normalized" README.md` → no matches
+- [x] `uv run ruff check .` exits 0; `make check` exits 0
+- [x] `git status` shows no modified files outside the in-scope list
+- [x] `plans/improvements/README.md` status row updated
 
 ## STOP conditions
 

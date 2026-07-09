@@ -38,6 +38,7 @@ this authoritative ordering without renumbering existing product plans; their
 source files keep their local 001-005 names until completion, while the main
 task list tracks them with `C` prefixes to avoid colliding with roadmap plans
 001-005. C01, C02, C03, and C04 were executed 2026-07-06 and moved to
+`plans/complete/`. C05 was executed 2026-07-09 and moved to
 `plans/complete/`.
 
 Plans 053–060 (Lane H, harness hardening) were written 2026-07-07 by a
@@ -154,7 +155,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 034 | Agent file tools and scratch space | P1 | L | 030, 031, 032, C02 | DONE |
 | 035 | Files UI | P1 | L | 032, C02 | DONE |
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | DONE |
-| C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | TODO |
+| C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | DONE |
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | TODO |
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
@@ -196,7 +197,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | TODO |
 | 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | TODO |
-| 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; coordinate scope with C05 | TODO |
+| 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -462,14 +463,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   registry/converter probes, the MarkItDown call-site grep, the route registry
   check for thirteen effective `/files` entries, and
   `DATABASE_URL=... uv run python -m workers.job_runner --once` passed.
-- Cleanup plans `C04`-`C05` live under `plans/improvements/` and are tracked
-  here with `C` identifiers because their source files are locally numbered
+- Cleanup plans `C04`-`C05` were tracked under `plans/improvements/` with
+  `C` identifiers because their source files were locally numbered
   `004`-`005`, which collide with existing roadmap plan numbers. Completed
-  cleanup plans move to `plans/complete/`; C01, C02, C03, and C04 now live at
-  `plans/complete/C01-ci-and-complete-quality-gate.md` and
-  `plans/complete/C02-files-vertical-hardening.md`, and
-  `plans/complete/C03-bound-conversation-history.md`, and
-  `plans/complete/C04-rate-limiter-hardening.md`.
+  cleanup plans move to `plans/complete/`; C01, C02, C03, C04, and C05 now
+  live at `plans/complete/C01-ci-and-complete-quality-gate.md`,
+  `plans/complete/C02-files-vertical-hardening.md`,
+  `plans/complete/C03-bound-conversation-history.md`,
+  `plans/complete/C04-rate-limiter-hardening.md`, and
+  `plans/complete/C05-production-readiness-gaps.md`.
 - `C01` marked DONE 2026-07-06: `.github/workflows/ci.yml` now runs API and
   web gates, `make check` includes backend format and tests, pytest asyncio
   auto mode is enabled with no collection-count change, and Vitest covers the
@@ -530,11 +532,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `buildFieldErrors` from `lib/forms.ts`; relative and timezone-aware date
   helpers live in `lib/format.ts`; and skill creation warnings now render as
   an inline `Alert` before navigating. `pnpm check` passed from `apps/web`.
-- `C05` is P2 production-readiness work. The license step is a maintainer
-  decision and should block that step rather than let an executor choose a
-  license. Its metrics route must stay independent of `014` OTel, and its 403
-  body filtering belongs at the exception choke point rather than at each
-  `AuthorizationError` raise site.
+- `C05` marked DONE 2026-07-09: Apache-2.0 is present at the repo root; the
+  README front door now reflects Node.js 24 and the supported `make bootstrap`
+  / `make dev` local flow; `/api/metrics` is settings-gated, bearer-token
+  protected when enabled with a token, and hidden from OpenAPI; and 403
+  response bodies filter membership/user/workspace internals at the
+  `AuthorizationError` problem-details choke point while preserving
+  `allowed_roles`.
 - KB plans 044–047 should stay **Praxis-owned and OKF-compatible**:
   Praxis owns storage, indexing, permissions, jobs, audit, retention, and
   agent/runtime behavior; Open Knowledge Format informs markdown/frontmatter

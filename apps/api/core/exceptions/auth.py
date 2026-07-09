@@ -12,6 +12,8 @@ from core.exceptions._problem import PROBLEM_RESERVED_KEYS as _PROBLEM_RESERVED_
 
 # Authentication & Authorization Errors
 
+_INTERNAL_DETAIL_KEYS = {"membership_id", "membership_role", "user_id", "workspace_id"}
+
 
 class AuthenticationError(Exception):
     """Exception for authentication failures"""
@@ -66,7 +68,11 @@ class AuthorizationError(Exception):
 
         if self.details:
             problem.update(
-                {k: v for k, v in self.details.items() if k not in _PROBLEM_RESERVED_KEYS}
+                {
+                    k: v
+                    for k, v in self.details.items()
+                    if k not in _PROBLEM_RESERVED_KEYS and k not in _INTERNAL_DETAIL_KEYS
+                }
             )
 
         return problem

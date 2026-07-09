@@ -6,6 +6,12 @@ from pydantic import Field, model_validator
 
 
 class ObservabilitySettingsMixin:
+    METRICS_ENABLED: bool = Field(default=False, description="Expose /api/metrics.")
+    METRICS_TOKEN: str | None = Field(
+        default=None,
+        description="Bearer token required by /api/metrics.",
+    )
+
     AGENT_TRACING_ENABLED: bool = Field(
         default=False,
         description="Emit OpenTelemetry spans for agent runs, model requests, and tool calls.",

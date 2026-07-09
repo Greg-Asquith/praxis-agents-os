@@ -3,7 +3,7 @@
 Open source foundations for the system behind
 [Praxis Agents](https://www.praxis-agents.ai/).
 
-Praxis Agents OS is being rebuilt from a larger internal project into a cleaner, smaller codebase for creating, operating, and governing AI agents. The focus i on practical agent workflows: workspaces, identity, approvals, auditability notifications, schedules, conversations, skills, and integrations that can be maintained by a small team.
+Praxis Agents OS is being rebuilt from a larger internal project into a cleaner, smaller codebase for creating, operating, and governing AI agents. The focus is on practical agent workflows: workspaces, identity, approvals, auditability, notifications, schedules, conversations, skills, and integrations that can be maintained by a small team.
 
 ## Status
 
@@ -14,7 +14,7 @@ This repository is in an early porting stage.
   workspace services, routes, notifications, and schedule domain logic.
 - The web app is a Vite SPA with the initial Praxis auth, shell, and workspace
   management foundation.
-- Docker Compose is present for local integration work, but the Docker setup is still being normalized as the workspace moves to the final package managers and app layout.
+- `make bootstrap` and `make dev` are the supported local flow; Docker Compose runs Postgres, the API, the worker, and the web app.
 
 Expect sharp edges while the old system is being reduced and rebuilt.
 
@@ -62,7 +62,7 @@ Install these before running the apps locally:
 
 - Python 3.12
 - `uv`
-- Node.js 22
+- Node.js 24
 - `pnpm`
 - Docker Desktop or another Docker Compose compatible runtime
 
@@ -218,7 +218,7 @@ Intended local service URLs:
 - API: `http://localhost:8000`
 - Postgres: `postgresql://postgres:postgres@localhost:5432/postgres`
 
-Because the Docker setup is still being normalized, prefer the manual backend and frontend commands above when you need a dependable local development loop.
+Use `make bootstrap` and `make dev` for the default local development loop. The manual backend and frontend commands above are useful when you need to run one app in isolation.
 
 ## Project Direction
 
@@ -245,4 +245,4 @@ In short:
 
 ## License
 
-No license file has been committed yet. Add one before treating this repository as ready for public redistribution.
+Apache License 2.0. See `LICENSE`.

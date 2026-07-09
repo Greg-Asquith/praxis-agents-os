@@ -69,6 +69,15 @@ class Settings(
         if self.EMAIL_PROVIDER == "console" and self.ENVIRONMENT != "local":
             raise ValueError("EMAIL_PROVIDER=console is only allowed when ENVIRONMENT=local")
 
+        if (
+            self.METRICS_ENABLED
+            and not self.METRICS_TOKEN
+            and self.ENVIRONMENT not in {"local", "development"}
+        ):
+            raise ValueError(
+                "METRICS_TOKEN must be set when METRICS_ENABLED=true outside local/development"
+            )
+
         if self.AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS >= self.AGENT_RUN_LEASE_TTL_SECONDS:
             raise ValueError(
                 "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS must be less than AGENT_RUN_LEASE_TTL_SECONDS"
