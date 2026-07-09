@@ -8,6 +8,9 @@ Plans 010–015 were added 2026-07-01 by a focused audit of the Pydantic AI
 integration against the installed 2.1.0 package, the current upstream docs, and
 the repo's own `docs/pydantic-ai/` digest. Run non-interactively: the top
 findings by leverage were planned by default.
+Plan 015 was executed 2026-07-09 as the docs-only Pydantic AI digest refresh:
+the stale open-items section was replaced with verified 2.1.0 answers, flagged
+passages were resolved, and the spot-check imports passed.
 
 `000_MASTER_ROADMAP.md` (added 2026-07-02) is the authoritative ordering
 document — it unifies `DONOR_PORT_ROADMAP.md`,
@@ -125,7 +128,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 012 | Stream thinking parts live over SSE and render them in the chat UI | P1 | M | - | DONE |
 | 013 | Bound model context with a cache-stable ProcessHistory trimming capability | P2 | M | 018 (hard — capability-load preservation) | DONE |
 | 014 | Add config-gated OpenTelemetry instrumentation for agent runs | P2 | M | - | DONE |
-| 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | TODO |
+| 015 | Close the verified-against-2.1.0 gaps in the pydantic-ai docs digest | P3 | S | - | DONE |
 | 016 | Add the skills CRUD service and routes | P1 | M | - | DONE |
 | 017 | Build the skill document upload and markdown-conversion pipeline | P1 | L | 016 | DONE |
 | 018 | Wire assigned skills into the runtime as deferred capabilities | P1 | L | 016, 017 (for document reading) | DONE |
@@ -228,7 +231,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `010`, `011`, and `012` are DONE. `011` marked DONE 2026-07-03: runtime
   `UsageLimits` now includes an optional settings-level total token cap and
   failed capped runs persist with `UsageLimitExceeded`.
-- `013` and `014` are DONE. `015` remains independent of `009` and is filler.
+- `013`, `014`, and `015` are DONE.
   Note `013` and `009` both touch
   `runtime/capabilities.py`-adjacent code — rebase whichever lands second.
 - `012` marked DONE 2026-07-03: live `ThinkingPart` content now streams over

@@ -98,7 +98,7 @@ product interview on 2026-07-02.
 | # | Decision | Outcome | Binds at |
 |---|----------|---------|----------|
 | D1 | Operational surfaces vs donor phases | **Parallel lane.** Registry work starts immediately; schedules UI, audit/security viewer, workspace/invite UX run alongside and must complete before integrations ship side-effect tools (Gate G1). | 021–024 / Gate G1 |
-| D2 | Runtime hardening plans 010–015 | **Split by leverage.** 010/012/011 landed first; 013 landed after 018 to preserve capability-load pairs; 014 (OTel) completed 2026-07-07 and gates Phase C; 015 is filler. | Lane R |
+| D2 | Runtime hardening plans 010–015 | **Split by leverage.** 010/012/011 landed first; 013 landed after 018 to preserve capability-load pairs; 014 (OTel) completed 2026-07-07 and gates Phase C; 015 completed 2026-07-09 as the Pydantic AI docs digest refresh. | Lane R |
 | D3 | Multi-connection per provider | **Full multi-connection in v1.** Multiple simultaneous connections per provider per owner from the first integrations release: no one-active-per-provider uniqueness constraint, a required user-set label per connection, active-context resolution across N connections, and connection pickers in the v1 UI. Resolves the NOTES-vs-donor conflict in favor of the agency use case; adds scope to 037/040/042. | 037/040/042 |
 | D4 | First integration providers | **Gmail (user OAuth) + Google Ads (workspace OAuth + MCC→account discovery) + Airtable (api-key + secret reference).** Google Ads over GA4: richer resource hierarchy and closer to the agency product. Its write operations spend real money — they default to `approval` in tool policy and are the first hard test of Gate G1. | 041 |
 | D5 | Schema branch | All roadmap tables go in **`core`** (platform infrastructure); `app` stays reserved for verticals. (From donor roadmap §2, confirmed.) | all migrations |
@@ -179,8 +179,8 @@ Not a numbered plan; a checklist chore:
 
 - Mark 009 DONE in the README (delegation landed at `f83d210`; verify the
   approval-resume path for delegated runs while confirming).
-- Verify/refresh statuses of 010–020 (verified 2026-07-07: 015 remains
-  TODO. 010, 011, 012, 013, 014, 016, 017, 018, 019, and 020 are DONE; skills CRUD,
+- Verify/refresh statuses of 010–020 (verified 2026-07-09: 010, 011, 012,
+  013, 014, 015, 016, 017, 018, 019, and 020 are DONE; skills CRUD,
   the skill document pipeline, runtime skill disclosure, the management UI,
   skill activation chat treatment, and cache-stable history trimming now exist).
 - Point the README at this document as the ordering authority.
@@ -194,7 +194,7 @@ Not a numbered plan; a checklist chore:
 | 011 | Per-run token caps (UsageLimits) | P2 | DONE 2026-07-03 |
 | 014 | OTel instrumentation (config-gated). **DONE 2026-07-07.** | P2 | Complete. |
 | 013 | History trimming (ProcessHistory) | P2 | DONE 2026-07-06 |
-| 015 | pydantic-ai docs digest refresh | P3 | Filler, any time |
+| 015 | pydantic-ai docs digest refresh | P3 | DONE 2026-07-09 |
 
 ### Lane O — Operational Surfaces (parallel with Phases 1–2, gate G1)
 
@@ -322,7 +322,7 @@ bracket Phases 4–6.
 | 055 | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). Content, not platform. | P1 | Parallel with Phase 4; before 048 |
 | 056 | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. | P1 | Before 048/049 |
 | 057 | Parallel delegation fan-out: depth stays 1; bound (per-run semaphore), prove (usage accounting, multi-child approval collapse, cancellation propagation — all as scenarios), and prompt the concurrency pydantic-ai already executes for parallel tool calls. | P2 | After 054/055 |
-| 058 | Model failover chain: catalog-defined `FallbackModel` chains, double opt-in (settings + agent), same-capability-class validation, actually-used model recorded. Supersedes the 2026-07-01 rejection — product decision taken 2026-07-07. | P3 | Filler (with 015) |
+| 058 | Model failover chain: catalog-defined `FallbackModel` chains, double opt-in (settings + agent), same-capability-class validation, actually-used model recorded. Supersedes the 2026-07-01 rejection — product decision taken 2026-07-07. | P3 | Filler |
 | 059 | Sandboxed code execution: `run_code` registry tool via the 028 helper-model pattern + `NativeTool(CodeExecutionTool())` (Anthropic/OpenAI/Google), 036-gated file inlining, outputs bounded + scratch-captured behind `promote_scratch`. e2b/Vercel/Cloudflare deferred as future integration providers behind the same seam. | P2 | After Phase 6 |
 | 060 | Durable run event log + live stream replay: append-only `agent_run_events`, TeeSink batched writes, replay-then-live bridge with LISTEN/NOTIFY cross-instance wake-up, short retention sweep. Supersedes the streaming plan's live-replay non-goal. | P3 | Last |
 
