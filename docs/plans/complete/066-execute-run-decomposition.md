@@ -33,7 +33,7 @@ emission. It is the second-highest-churn file in the runtime, and three
 pending roadmap plans (cooperative cancellation, envelope enforcement,
 context compaction) will each modify it. Every change currently requires
 re-reading one deeply nested function; sub-phases cannot be unit-tested in
-isolation. Decomposing it into named same-module helpers — with the
+isolation. Decomposing it into named private phase helpers — with the
 transaction boundaries and event ordering pinned by tests first — makes the
 subsequent runtime work cheaper and safer.
 
@@ -115,6 +115,7 @@ not an HTTP-facing exception. Leave it alone.
 **In scope**:
 
 - `apps/api/services/agents/runtime/execute_run.py`
+- `apps/api/services/agents/runtime/_execute_run_*.py`
 - `apps/api/tests/services/agents/runtime/test_execute_run_phases.py` (create)
 
 **Out of scope** (do NOT touch):
@@ -126,9 +127,10 @@ not an HTTP-facing exception. Leave it alone.
   change them.
 - No behavior changes of any kind: same events in the same order, same
   commits at the same points, same exceptions, same return values.
-- No new files for the helpers — they stay private in `execute_run.py`
-  (splitting into submodules would churn imports that plans 053/054/056
-  already anchor on).
+- Keep `services.agents.runtime.execute_run` as the public import path. The
+  initial execution kept helpers in `execute_run.py`; a post-review readability
+  pass split the helper bodies into private `_execute_run_*` runtime modules
+  without changing that import path.
 
 ## Git workflow
 
@@ -167,8 +169,8 @@ noise):
 
 ### Step 2: Extract the phase helpers
 
-Refactor `execute_run` into private same-module helpers matching the phase
-map above. Target shape (signatures indicative — keep them minimal and typed):
+Refactor `execute_run` into private phase helpers matching the phase map above.
+Target shape (signatures indicative — keep them minimal and typed):
 
 ```python
 def _validate_execution_preconditions(run, *, user_prompt, message_history, deferred_tool_results, expected_status) -> None
@@ -219,12 +221,12 @@ before AND after the refactor with unchanged assertions.
 
 Machine-checkable. ALL must hold:
 
-- [ ] `test_execute_run_phases.py` exists with the 5 cases (minus any proven duplicates, named in your report) and passes
-- [ ] Full `TEST_DATABASE_URL=... uv run pytest` exits 0
-- [ ] `execute_run` body ≤ ~120 lines; helpers are private (`_`-prefixed), same module
-- [ ] Public signature and docstring of `execute_run` unchanged (`git diff` shows no edit to either)
-- [ ] `dispatch.py` untouched (`git diff --stat` confirms)
-- [ ] Status row updated in `docs/plans/000_README.md`
+- [x] `test_execute_run_phases.py` exists with the 5 cases (minus any proven duplicates, named in your report) and passes
+- [x] Full `TEST_DATABASE_URL=... uv run pytest` exits 0
+- [x] `execute_run` body ≤ ~120 lines; helpers are private runtime-local phase modules
+- [x] Public signature and docstring of `execute_run` unchanged (`git diff` shows no edit to either)
+- [x] `dispatch.py` untouched (`git diff --stat` confirms)
+- [x] Status row updated in `docs/plans/000_README.md`
 
 ## STOP conditions
 

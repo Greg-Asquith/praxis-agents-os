@@ -77,6 +77,25 @@ Plan 064 was executed 2026-07-07 as the web feature scaffolding
 consolidation slice.
 Plan 065 was executed 2026-07-07 as the API service scaffolding
 consolidation slice.
+Plan 066 was executed 2026-07-07 as the `execute_run` decomposition and
+characterization-test slice.
+
+Plans 067–078 were added 2026-07-07 by a best-practice review of the plan
+set against current industry practice for agent harnesses, OAuth/RAG
+engineering, and open-source delivery — five parallel review passes, every
+planned finding re-verified against the target plan's own text. Lane B
+(067–074) are pre-execution amendment plans in the 061 mold: each binds an
+unexecuted plan before it runs (OAuth PKCE + single-use state for 038;
+credential encryption posture for 037/041/050; memory-block ordering
+determinism for 049; the artifact CSP CDN exfiltration channel for 050;
+memory dedup contradiction resolution for 048; sandbox egress verification
+for 059; cancellation terminal hardening for 053; and a five-plan
+consistency sweep over 039/042/043/044/045). Plan 075 is a cross-cutting
+prompt-injection threat-model design note that registers Gate G6; 076
+extends Lane H with bounded tool results and calibrated token estimation;
+077 is a Phase 4a structural design note reserving the inbound-events
+(webhooks) seam; 078 opens Lane P — public launch & adoption. See the
+roadmap's Lane B / Lane P sections for ordering.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -155,7 +174,19 @@ integrations, files, knowledge base, memory, artifacts).
 | 063 | Behavioral test safety net (web pure logic + internal-token auth path) | P1 | M | 062 (soft) | DONE |
 | 064 | Web feature scaffolding consolidation (query keys, form plumbing, formatters) | P1 | M | 063 (hard) | DONE |
 | 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | DONE |
-| 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | TODO |
+| 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | DONE |
+| 067 | OAuth PKCE & single-use state hardening (amendment to 038) | P1 | S | 038 (binds before it executes) | TODO |
+| 068 | Credential encryption posture — envelope keys, rotation sweep, key separation (amendments to 037/041/050) | P1 | S-M | 037/041/050 (binds before 037 executes) | TODO |
+| 069 | Memory block ordering determinism (amendment to 049) | P1 | S | 049 (binds before it executes) | TODO |
+| 070 | Artifact CSP — close the CDN script exfiltration channel (amendment to 050) | P1 | S | 050 (binds before it executes) | TODO |
+| 071 | Memory dedup contradiction resolution (amendment to 048) | P1 | S-M | 048 (binds before it executes) | TODO |
+| 072 | Sandbox egress verification (amendment to 059) | P1 | S | 059, 054 (binds before 059 executes) | TODO |
+| 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (binds before it executes — 053 is next in the order, so this is time-sensitive) | TODO |
+| 074 | Integration & KB plan consistency sweep (amendments to 039/042/043/044/045) | P1 | S-M | 039/042/043/044/045 (binds before Phase 4a/4b) | TODO |
+| 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
+| 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | TODO |
+| 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | TODO |
+| 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; coordinate scope with C05 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -654,10 +685,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   removed. `uv run ruff check .`, `uv run ruff format --check .`, focused
   route/workspace/assets/notification suites, contract tests, and the full
   DB-backed API suite passed.
-- `066` must land before `053`/`054`/`056`
-  (all three edit `execute_run.py`; the decomposition gives each a named
-  seam and characterization coverage). `063` also records a maintainer
-  decision: the internal `user_session_token` acceptance path in
+- `066` marked DONE 2026-07-07: `execute_run` now stays readable by keeping
+  the public lifecycle skeleton in `execute_run.py` and delegating validation,
+  start, runtime preparation, stream consumption, terminal finalization, and
+  failure emission to private runtime-local phase modules. The characterization
+  tests pin pre-start conflicts, preconditions, post-start failure ordering,
+  attachment prompt promotion, and sink closure. `uv run ruff check .`,
+  `uv run ruff format --check .`,
+  focused runtime/conversation suites, and the full DB-backed API suite
+  passed. `063` also records a maintainer decision: the internal
+  `user_session_token` acceptance path in
   `core/dependencies.py` has no minting code anywhere in the repo — keep it
   (for the planned schedules HTTP surface) or remove it; the new tests pin
   behavior either way.

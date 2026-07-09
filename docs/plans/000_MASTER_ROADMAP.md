@@ -46,7 +46,16 @@ decompose `execute_run` before 053/054/056 edit it. Lane Q is defined in
 `docs/plans/complete/`. Plan 063 was completed 2026-07-07 and moved to
 `docs/plans/complete/`. Plan 064 was completed 2026-07-07 and moved to
 `docs/plans/complete/`. Plan 065 was completed 2026-07-07 and moved to
+`docs/plans/complete/`. Plan 066 was completed 2026-07-07 and moved to
 `docs/plans/complete/`.
+Plans 067–078 were added 2026-07-07 by a best-practice review of the plan
+set against current industry practice (agent harnesses, OAuth/RAG
+engineering, open-source delivery), grounded at `c770a1c` with every
+finding re-verified against the target plan's own text. Lane B (067–074,
+pre-execution amendment plans in the 061 mold) and Lane P (078, public
+launch & adoption) are defined in §4 below; 075 is a cross-cutting
+threat-model design note that registers Gate G6; 076 extends Lane H; 077
+is a Phase 4a structural design note in the 061 mold.
 
 ---
 
@@ -132,6 +141,13 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   041 ships agent-callable integration tools — a run that cannot be
   stopped, or an unattended run whose side-effect grant equals an
   interactive one, must not hold money-spending tools.
+- **G6 (untrusted content needs a threat model — reserved)**: defined and
+  registered by plan 075 when it executes. Shape: no plan that feeds model
+  context from a new untrusted-content source (integration-fetched
+  content, KB documents, memory content, history summaries, file-driven
+  code generation) ships without the threat-model doc listing the channel
+  and adversarial fixtures exercising it. 075 must complete before
+  041/046/048 execute.
 
 ## 4. The Roadmap
 
@@ -333,7 +349,54 @@ section — check there before re-proposing.
 | 063 | Behavioral test safety net: Vitest coverage for the message-parts parser, agent/schedule form models (incl. the DST-sensitive timezone round-trip), approval decisions, shared formatters; backend tests pinning the internal-token workspace-confinement branches in `core/dependencies.py` (no code mints those tokens today — keep-vs-remove is a recorded maintainer decision). **DONE 2026-07-07.** | P1 | Complete. |
 | 064 | Web scaffolding consolidation: one workspace-scoped query-key factory (kills 8 copies of the `__no_workspace__` tenant-scoping sentinel), consistent mutation invalidation, shared `FormValidationEntry`/`buildFieldErrors` in `lib/forms.ts`, one home for date/time formatting, `window.alert` → `Alert`. **DONE 2026-07-07.** | P1 | Complete. |
 | 065 | API scaffolding consolidation: `paginate()` + `OffsetPage` envelope, `AssetSpec`-driven avatar/icon lifecycle helpers, notifications split to one-op-per-file. **DONE 2026-07-07.** | P1 | Complete. |
-| 066 | Decompose the ~286-line `execute_run` into named phase helpers behind new characterization tests (pre-start failure ordering, precondition trio, attachment prompt promotion, sink close). Dispatch split explicitly rejected — `dispatch.py` stays the single wrap-here choke point. | P1 | Before 053/054/056. |
+| 066 | Decompose the ~286-line `execute_run` into named phase helpers behind new characterization tests (pre-start failure ordering, precondition trio, attachment prompt promotion, sink close). **DONE 2026-07-07.** Dispatch split explicitly rejected — `dispatch.py` stays the single wrap-here choke point. | P1 | Complete. |
+
+### Lane B — Best-Practice Amendments (added 2026-07-07; plans 067–074)
+
+A best-practice review of the written-but-unexecuted plan set against
+current industry practice (OAuth 2.1/RFC 9700, credential-vault
+encryption, prompt-cache engineering, memory-system literature, CSP/
+sandbox semantics, structured-concurrency cancellation), every finding
+verified against the target plan's own text. Each Lane B plan is a
+docs-only amendment plan in the 061 mold: it appends a drafted amendment
+block to its target plan(s) and must land **before its target executes** —
+the code cost is absorbed into the amended plans. Deciding these now,
+while zero target code exists, is free; retrofitting after execution is a
+migration.
+
+| Plan | Scope | Priority | When |
+|------|-------|----------|------|
+| 067 | OAuth PKCE (S256) + single-use state via a server-side pending-state row; https redirect-URI enforcement outside local. Amends 038. | P1 | Before 038 |
+| 068 | Credential encryption posture: root key through the secrets-provider seam, HKDF purpose-separated subkeys (fingerprints, artifact view URLs), re-encryption sweep job so rotation actually retires keys, `SecretStr` for the Ads developer token. Amends 037/041/050. | P1 | Before 037 |
+| 069 | Memory block ordering determinism: rank on stored confidence, not wall-clock-decayed `effective_confidence` — decay-crossing reorders silently bust the prompt-cache prefix 049 exists to protect; two-`now` byte-identity test. Amends 049. | P1 | Before 049 |
+| 070 | Artifact CSP: drop the general-purpose CDN whitelist (jsdelivr/unpkg serve every npm package — arbitrary script one URL away, and `connect-src 'none'` does not block self-navigation exfil); v1 artifacts are self-contained, self-hosted vetted bundles are the named follow-up. Amends 050. | P1 | Before 050 |
+| 071 | Memory dedup contradiction resolution: near-duplicates surface to the writing agent (save-as-new / supersede / skip) instead of silently reinforcing the stale row; threshold calibration fixture; decay half-lives marked provisional under Gate G4. Amends 048. | P1 | Before 048 |
+| 072 | Sandbox egress verification: per-provider DNS/HTTP canary probe; `run_code`'s `internal`+`supports_auto` classification gated on an egress-verified provider allowlist; re-probe on SDK bumps; poisoned-file fixture. Amends 059. | P1 | Before 059 |
+| 073 | Cancellation terminal hardening: shield terminal persistence against double-cancel, tier-2 dedupe of already-cancelled tasks, `cancelled` disposition on the interrupted dispatch audit row. Amends 053. | P1 | **Next — 053 immediately follows Lane Q** |
+| 074 | Consistency sweep: scheduled re-discovery job for permission staleness (039), `top_k`/CTE-limit cross-check (045), unstorable `text-embedding-3-large` registry entry (043), phantom connection-rename route (042↔038), IP-pinned connects for DNS-rebinding TOCTOU (044). Amends 039/042/043/044/045. | P1 | Before Phase 4a/4b |
+
+Adjacent additions from the same review, not in Lane B: 075 (threat-model
+design note, registers Gate G6, before 041/046/048), 076 (bounded tool
+results + calibrated token estimation — Lane H extension: after 066,
+after 054 settles dispatch, hard-before 056 whose pressure math consumes
+the calibrated estimator, and before 041 whose integration tools produce
+the large outputs it bounds), and 077 (inbound integration events design
+note — webhooks/verification/event-triggered runs; reserves the seam in
+037/041 before Phase 4a code lands; MCP stays deferred per D7).
+
+### Lane P — Public Launch & Adoption (added 2026-07-07; plan 078)
+
+The roadmap builds the platform to be good; nothing in it makes the repo
+visible. Lane P owns adoption: 078 delivers the README-as-storefront
+rewrite, the community health pack (SECURITY/CONTRIBUTING/CODE_OF_CONDUCT,
+issue/PR templates), supply-chain automation (dependabot, CodeQL,
+dependency audit, SHA-pinned actions), the first tagged release
+(CHANGELOG, v0.1.0, GHCR images), and the OpenAPI reference decision.
+Follow-on lane items recorded in 078's maintenance notes (docs site
+seeded from `docs/architecture/`, one-command seeded demo, demo video,
+published eval results once 055 lands, deployment guides) become numbered
+Lane P plans when picked up. 078 has no product-code dependencies and
+interleaves any time; it coordinates scope with C05.
 
 ### Rolling polish lane (P3, unnumbered)
 
@@ -362,9 +425,18 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 → 053 → 054 → C05 → {037–042 ∥ 043–047 ∥ 055} → 056 → 048 →
-049 → 057 → 050 → 051 → 059 → 060` — with 015, 052, 058, and the polish
-lane as filler.
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 → 053 → 054 → 076 → C05 →
+067 → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
+069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
+078, and the polish lane as filler (078 is P1 filler: no dependencies,
+land it early).
+
+Lane B placement rationale: each amendment lands immediately before the
+plan it binds — 073 before 053 (next in the order), 067/068/074/077/075
+batched before the Phase 4a/4b fork they all gate, 071 before 048, 069
+before 049, 070 before 050, 072 before 059. 076 sits after 054 (both edit
+dispatch) and hard-before 056 (whose pressure math consumes its
+calibrated estimator).
 
 Lane Q placement rationale: 062 first because every later plan verifies
 through the gate it fixes; 063 is done and precedes 064 (its tests are the
