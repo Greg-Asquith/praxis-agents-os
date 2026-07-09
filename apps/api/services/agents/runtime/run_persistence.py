@@ -2,6 +2,7 @@
 
 """Persist runtime execution outcomes back to agent-run state."""
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
@@ -10,10 +11,12 @@ from pydantic_ai import DeferredToolRequests
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import configure_async_db_session, get_async_db_session_factory
 from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.await_approval import mark_run_awaiting_approval
+from services.agent_runs.cancel import cancel_agent_run
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
@@ -28,8 +31,10 @@ from services.agents.runtime.approval_state import (
     clear_suspended_run_metadata,
 )
 from services.agents.runtime.load_context import load_run_context
-from services.agents.runtime.persistence import persist_new_messages
+from services.agents.runtime.persistence import persist_new_messages, without_initial_user_prompt
 from services.agents.runtime.staged_tool_content import stage_write_file_approval_content
+
+logger = logging.getLogger(__name__)
 
 
 async def persist_suspended_run(
@@ -40,6 +45,7 @@ async def persist_suspended_run(
     terminal_result: Any,
     deferred_tool_requests: DeferredToolRequests,
     client_message_id: str | None,
+    skip_initial_user_prompt: bool = False,
 ) -> tuple[AgentRun, int, DeferredToolRequests]:
     """Store messages and suspend a running run for human tool approval."""
     run, conversation, _agent = await load_run_context(
@@ -58,10 +64,14 @@ async def persist_suspended_run(
             details={"run_id": str(run.id), "run_status": run.status},
         )
 
+    new_messages = terminal_result.new_messages()
+    messages_to_persist = (
+        without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
+    )
     staged = await stage_write_file_approval_content(
         workspace_id=run.workspace_id,
         run_id=run.id,
-        new_messages=terminal_result.new_messages(),
+        new_messages=messages_to_persist,
         all_messages=terminal_result.all_messages(),
         deferred_tool_requests=deferred_tool_requests,
     )
@@ -98,6 +108,7 @@ async def persist_successful_run(
     terminal_result: Any,
     client_message_id: str | None,
     tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] | None = None,
+    skip_initial_user_prompt: bool = False,
 ) -> tuple[AgentRun, int]:
     """Store messages and complete a running run."""
     run, conversation, _agent = await load_run_context(
@@ -116,11 +127,15 @@ async def persist_successful_run(
             details={"run_id": str(run.id), "run_status": run.status},
         )
 
+    new_messages = terminal_result.new_messages()
+    messages_to_persist = (
+        without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
+    )
     persisted_messages = await persist_new_messages(
         db,
         conversation=conversation,
         run_id=run.id,
-        messages=terminal_result.new_messages(),
+        messages=messages_to_persist,
         client_message_id=client_message_id,
         tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
     )
@@ -161,6 +176,33 @@ async def persist_failed_run(
     )
     await db.commit()
     return run
+
+
+async def persist_cancelled_run(run_id: UUID) -> AgentRun | None:
+    """Mark a run cancelled in an isolated transaction without raising to unwind code."""
+    try:
+        session_factory = get_async_db_session_factory()
+        async with session_factory() as db:
+            await configure_async_db_session(db)
+            run = await db.get(AgentRun, run_id, populate_existing=True)
+            if run is None:
+                await db.commit()
+                return None
+            if is_terminal(run.status):
+                await db.commit()
+                return run
+
+            run.metadata_json = clear_suspended_run_metadata(run)
+            await cancel_agent_run(db, run)
+            await db.commit()
+            return run
+    except Exception:
+        logger.warning(
+            "Failed to persist cancelled agent run",
+            exc_info=True,
+            extra={"run_id": str(run_id)},
+        )
+        return None
 
 
 def usage_snapshot(usage: Any) -> RunUsageSnapshot:

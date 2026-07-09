@@ -37,11 +37,11 @@ async def execute_run(
 ) -> ExecuteRunResult:
     """Drive one agent turn to completion or approval suspension.
 
-    The user prompt is persisted from Pydantic AI's ``new_messages()``; callers
-    must not insert a separate user message for the same turn. Resume callers
-    pass rehydrated ``message_history`` and ``deferred_tool_results`` instead of a
-    new prompt. This function owns the run lifecycle transaction boundaries: it
-    commits the running+lease state before provider streaming, commits final
+    New turn prompts are persisted before provider streaming so cancellation does
+    not lose the user message. Resume callers pass rehydrated
+    ``message_history`` and ``deferred_tool_results`` instead of a new prompt.
+    This function owns the run lifecycle transaction boundaries: it commits the
+    running+lease state before provider streaming, commits final
     messages/usage/status after the stream, and commits failures before
     re-raising so rollback-based dependencies do not erase diagnostic state.
     """

@@ -9,8 +9,7 @@ import {
   type SyntheticEvent,
 } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { Loader2Icon, PaperclipIcon, SendIcon, UploadCloudIcon, XIcon } from "lucide-react"
-
+import { CircleStopIcon, Loader2Icon, PaperclipIcon, SendIcon, UploadCloudIcon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -33,22 +32,14 @@ import {
   uploadChatAttachment,
   type MessageAttachment,
 } from "@/features/conversations/attachments"
+import { useCancelAgentRunMutation } from "@/features/conversations/api/cancel-run"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
+import { AttachmentChip } from "./attachment-chip"
 import { filesQueryKeys } from "@/features/files/api/list-files"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatBytes } from "@/lib/format"
 import { cn } from "@/lib/utils"
-
-type ComposerAttachment = {
-  localId: string
-  fileId: string | null
-  mediaType: string
-  name: string
-  sizeBytes: number
-  status: "uploading" | "ready"
-}
 
 type ConversationComposerProps =
   | {
@@ -66,8 +57,18 @@ type ConversationComposerProps =
       disabledReason?: string | null
     }
 
+export type ComposerAttachment = {
+  localId: string
+  fileId: string | null
+  mediaType: string
+  name: string
+  sizeBytes: number
+  status: "uploading" | "ready"
+}
+
 export function ConversationComposer(props: ConversationComposerProps) {
   const queryClient = useQueryClient()
+  const cancelRunMutation = useCancelAgentRunMutation()
   const attachmentInputId = useId()
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const dragDepthRef = useRef(0)
@@ -101,6 +102,11 @@ export function ConversationComposer(props: ConversationComposerProps) {
     isCurrentStreamBlocking ||
     !promptText ||
     (props.mode === "create" && !effectiveSelectedAgentId)
+  const canStopStream =
+    stream.isStreaming &&
+    stream.runId !== null &&
+    stream.status === "running" &&
+    (props.mode === "create" || stream.conversationId === props.conversationId)
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -158,6 +164,22 @@ export function ConversationComposer(props: ConversationComposerProps) {
       setPrompt(promptText)
       setAttachments(sentAttachments)
       setError(getErrorMessage(submitError))
+    }
+  }
+
+  async function handleStopRun() {
+    if (!canStopStream || stream.runId === null) {
+      return
+    }
+
+    setError(null)
+    try {
+      await cancelRunMutation.mutateAsync({
+        runId: stream.runId,
+        conversationId: props.mode === "turn" ? props.conversationId : stream.conversationId,
+      })
+    } catch (stopError) {
+      setError(getErrorMessage(stopError))
     }
   }
 
@@ -309,7 +331,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
         {error && (
           <Alert variant="destructive">
-            <AlertTitle>Message not sent</AlertTitle>
+            <AlertTitle>{canStopStream ? "Run not stopped" : "Message not sent"}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
@@ -407,6 +429,23 @@ export function ConversationComposer(props: ConversationComposerProps) {
             >
               <PaperclipIcon />
             </Button>
+            {canStopStream ? (
+              <Button
+                disabled={cancelRunMutation.isPending}
+                onClick={() => {
+                  void handleStopRun()
+                }}
+                type="button"
+                variant="outline"
+              >
+                {cancelRunMutation.isPending ? (
+                  <Loader2Icon data-icon="inline-start" className="animate-spin" />
+                ) : (
+                  <CircleStopIcon data-icon="inline-start" />
+                )}
+                Stop
+              </Button>
+            ) : null}
             <Button disabled={isDisabled} type="submit">
               <SendIcon data-icon="inline-start" />
               Send
@@ -446,34 +485,4 @@ async function invalidateUploadedFileQueries(queryClient: QueryClient, fileId: s
     queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(fileId) }),
     queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisions(fileId) }),
   ])
-}
-
-function AttachmentChip({
-  attachment,
-  onRemove,
-}: {
-  attachment: ComposerAttachment
-  onRemove: () => void
-}) {
-  return (
-    <div className="bg-muted/50 flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-xs">
-      {attachment.status === "uploading" ? (
-        <Loader2Icon className="text-muted-foreground size-3.5 animate-spin" />
-      ) : (
-        <PaperclipIcon className="text-muted-foreground size-3.5" />
-      )}
-      <span className="min-w-0 truncate font-medium">{attachment.name}</span>
-      <span className="text-muted-foreground shrink-0">{formatBytes(attachment.sizeBytes)}</span>
-      <Button
-        aria-label={`Remove ${attachment.name}`}
-        disabled={attachment.status === "uploading"}
-        onClick={onRemove}
-        size="icon-sm"
-        type="button"
-        variant="ghost"
-      >
-        <XIcon />
-      </Button>
-    </div>
-  )
 }

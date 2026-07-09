@@ -17,6 +17,7 @@ class AuditAction(StrEnum):
     READ = "read"
     UPDATE = "update"
     DELETE = "delete"
+    CANCEL = "cancel"
     EXECUTE = "execute"
     ENABLE = "enable"
     DISABLE = "disable"

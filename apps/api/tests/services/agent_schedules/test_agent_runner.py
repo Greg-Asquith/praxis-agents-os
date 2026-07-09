@@ -3,8 +3,9 @@
 """Worker-level tests for the scheduled agent runner."""
 
 import asyncio
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai import DeferredToolResults, ToolApproved
@@ -17,13 +18,17 @@ from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
+from services.agent_runs import cancel_agent_run
+from services.agent_runs.domain import RUN_STATUS_CANCELLED
 from services.agent_schedules.runs import (
     RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
+    RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
 )
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agents.runtime.heartbeat import cancel_target_if_run_cancelled
 from services.agents.runtime.sinks import NullSink
 from services.agents.runtime.worker import run_resume_worker
 from tests.factories import build_user, build_workspace
@@ -232,6 +237,181 @@ async def test_run_once_provider_failure_disables_schedule_and_prunes_conversati
         conversation = await db.get(Conversation, schedule_run.conversation_id)
         assert conversation is not None
         assert conversation.deleted is True
+
+
+async def test_run_once_finalizes_cooperatively_cancelled_schedule(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule_id = await _create_due_schedule(committed_db_session_factory)
+
+    async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
+        assert owner_instance_id == "test-worker"
+        assert model is None
+        async with committed_db_session_factory() as db:
+            run = await db.get(AgentRun, prepared.agent_run_id)
+            assert run is not None
+            await cancel_agent_run(db, run)
+            await db.commit()
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(agent_runner, "_execute_prepared", fake_execute_prepared)
+
+    attempted = await run_once(owner_instance_id="test-worker")
+
+    assert attempted >= 1
+    async with committed_db_session_factory() as db:
+        schedule = await db.get(AgentSchedule, schedule_id)
+        assert schedule is not None
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+        assert schedule.is_active is False
+        assert schedule_run.last_error_code == "agent_run_cancelled"
+
+        agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert agent_run is not None
+        assert agent_run.status == "cancelled"
+
+
+async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule_ids = [
+        await _create_due_schedule(committed_db_session_factory),
+        await _create_due_schedule(committed_db_session_factory),
+    ]
+    cancelled_run_ids: set[UUID] = set()
+    cancelled_run_events: dict[UUID, asyncio.Event] = {}
+
+    def event_for_run(run_id: UUID) -> asyncio.Event:
+        event = cancelled_run_events.get(run_id)
+        if event is None:
+            event = asyncio.Event()
+            cancelled_run_events[run_id] = event
+        return event
+
+    async def fake_status(*, run_id):
+        return RUN_STATUS_CANCELLED if run_id in cancelled_run_ids else None
+
+    async def fake_heartbeat(
+        *,
+        run_id,
+        owner_instance_id: str,
+        stop: asyncio.Event,
+        cancel_target: asyncio.Task | None = None,
+    ) -> None:
+        cancelled_wait = asyncio.create_task(event_for_run(run_id).wait())
+        stopped_wait = asyncio.create_task(stop.wait())
+        done, pending = await asyncio.wait(
+            {cancelled_wait, stopped_wait},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        for task in pending:
+            with suppress(asyncio.CancelledError):
+                await task
+        if stopped_wait in done:
+            return
+        await cancel_target_if_run_cancelled(
+            run_id=run_id,
+            owner_instance_id=owner_instance_id,
+            cancel_target=cancel_target,
+        )
+
+    async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
+        assert owner_instance_id == "test-worker"
+        assert model is None
+        async with committed_db_session_factory() as db:
+            run = await db.get(AgentRun, prepared.agent_run_id)
+            assert run is not None
+            await cancel_agent_run(db, run)
+            await db.commit()
+        cancelled_run_ids.add(prepared.agent_run_id)
+        event_for_run(prepared.agent_run_id).set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(settings, "AGENT_SCHEDULE_WORKER_BATCH_SIZE", 2)
+    monkeypatch.setattr(agent_runner, "_execute_prepared", fake_execute_prepared)
+    monkeypatch.setattr(agent_runner, "heartbeat_agent_run_lease", fake_heartbeat)
+    monkeypatch.setattr(
+        "services.agents.runtime.heartbeat.read_agent_run_status_once",
+        fake_status,
+    )
+
+    attempted = await asyncio.wait_for(
+        run_once(owner_instance_id="test-worker"),
+        timeout=2,
+    )
+
+    assert attempted >= 2
+    async with committed_db_session_factory() as db:
+        schedule_runs = (
+            await db.scalars(
+                select(AgentScheduleRun).where(AgentScheduleRun.schedule_id.in_(schedule_ids))
+            )
+        ).all()
+        assert len(schedule_runs) == 2
+        assert {schedule_run.status for schedule_run in schedule_runs} == {
+            RUN_STATUS_TERMINAL_FAILED
+        }
+        agent_runs = (
+            await db.scalars(
+                select(AgentRun).where(
+                    AgentRun.id.in_(
+                        [
+                            schedule_run.agent_run_id
+                            for schedule_run in schedule_runs
+                            if schedule_run.agent_run_id is not None
+                        ]
+                    )
+                )
+            )
+        ).all()
+        assert len(agent_runs) == 2
+        assert {agent_run.status for agent_run in agent_runs} == {RUN_STATUS_CANCELLED}
+
+
+async def test_run_once_shutdown_cancel_does_not_mark_schedule_cancelled(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedule_id = await _create_due_schedule(committed_db_session_factory)
+    execution_started = asyncio.Event()
+
+    async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
+        assert owner_instance_id == "test-worker"
+        assert model is None
+        execution_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(agent_runner, "_execute_prepared", fake_execute_prepared)
+
+    run_task = asyncio.create_task(run_once(owner_instance_id="test-worker"))
+    await asyncio.wait_for(execution_started.wait(), timeout=2)
+    run_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+    async with committed_db_session_factory() as db:
+        schedule = await db.get(AgentSchedule, schedule_id)
+        assert schedule is not None
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == RUN_STATUS_RUNNING
+        assert schedule.is_active is True
+        assert schedule_run.last_error_code is None
+
+        agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert agent_run is not None
+        assert agent_run.status == "pending"
 
 
 async def test_run_forever_waits_for_in_flight_pass_on_shutdown(

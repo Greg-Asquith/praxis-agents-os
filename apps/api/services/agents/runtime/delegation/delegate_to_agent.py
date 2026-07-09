@@ -136,7 +136,12 @@ async def delegate_to_agent(
         child_conversation_id = child_conversation.id
 
         heartbeat_task = asyncio.create_task(
-            heartbeat(child_run.id, owner_id, heartbeat_stop),
+            heartbeat(
+                child_run.id,
+                owner_id,
+                heartbeat_stop,
+                cancel_target=asyncio.current_task(),
+            ),
             name=f"delegated-agent-run-heartbeat:{child_run.id}",
         )
 

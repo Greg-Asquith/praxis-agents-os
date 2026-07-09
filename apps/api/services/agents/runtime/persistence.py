@@ -8,7 +8,13 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    UserContent,
+    UserPromptPart,
+)
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -187,8 +193,42 @@ async def persist_new_messages(
     return rows
 
 
+async def persist_eager_user_prompt(
+    db: AsyncSession,
+    *,
+    conversation: Conversation,
+    run_id: UUID,
+    user_prompt: str | Sequence[UserContent] | None,
+    client_message_id: str | None,
+) -> list[ConversationMessage]:
+    """Persist the current turn's user prompt before provider streaming starts."""
+    if user_prompt is None:
+        return []
+    return await persist_new_messages(
+        db,
+        conversation=conversation,
+        run_id=run_id,
+        messages=[ModelRequest(parts=[UserPromptPart(user_prompt)])],
+        client_message_id=client_message_id,
+    )
+
+
+def without_initial_user_prompt(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
+    """Drop the first current-run user prompt already written by eager persistence."""
+    pending = list(messages)
+    if pending and _is_user_prompt_request(pending[0]):
+        return pending[1:]
+    return pending
+
+
 def _dump_messages(messages: Sequence[ModelMessage]) -> list[dict[str, Any]]:
     return json.loads(ModelMessagesTypeAdapter.dump_json(list(messages)))
+
+
+def _is_user_prompt_request(message: ModelMessage) -> bool:
+    return isinstance(message, ModelRequest) and any(
+        isinstance(part, UserPromptPart) for part in message.parts
+    )
 
 
 async def _next_sequence(db: AsyncSession, *, conversation_id: UUID) -> int:

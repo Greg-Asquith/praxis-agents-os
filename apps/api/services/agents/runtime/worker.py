@@ -48,11 +48,13 @@ async def run_turn_worker(
     session = session_factory()
 
     try:
+        worker_task = asyncio.current_task()
         heartbeat_task = asyncio.create_task(
             heartbeat_agent_run_lease(
                 run_id=run_id,
                 owner_instance_id=owner_instance_id,
                 stop=heartbeat_stop,
+                cancel_target=worker_task,
             ),
             name=f"agent-run-heartbeat:{run_id}",
         )
@@ -103,11 +105,13 @@ async def run_resume_worker(
     session = session_factory()
 
     try:
+        worker_task = asyncio.current_task()
         heartbeat_task = asyncio.create_task(
             heartbeat_agent_run_lease(
                 run_id=run_id,
                 owner_instance_id=owner_instance_id,
                 stop=heartbeat_stop,
+                cancel_target=worker_task,
             ),
             name=f"agent-run-resume-heartbeat:{run_id}",
         )

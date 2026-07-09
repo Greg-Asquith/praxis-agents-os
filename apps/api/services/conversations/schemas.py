@@ -8,9 +8,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from services.agent_runs.schemas import AgentRunRead
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -148,33 +148,6 @@ class ConversationMessagesResponse(BaseModel):
     messages: list[ConversationMessageRead]
     total: int
     has_more: bool = False
-
-
-class AgentRunRead(BaseModel):
-    id: UUID
-    conversation_id: UUID
-    agent_id: UUID
-    workspace_id: UUID
-    user_id: UUID
-    parent_run_id: UUID | None = None
-    delegation_depth: int
-    trigger: str
-    status: str
-    model_name: str | None = None
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-    failed_at: datetime | None = None
-    lease_expires_at: datetime | None = None
-    error_code: str | None = None
-    error_message: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def from_run(cls, run: AgentRun) -> "AgentRunRead":
-        return cls.model_validate(run)
 
 
 class ConversationActiveRunResponse(BaseModel):

@@ -77,6 +77,7 @@ async def heartbeat(
     run_id: UUID,
     owner_instance_id: str,
     stop: asyncio.Event,
+    cancel_target: asyncio.Task | None = None,
 ) -> None:
     from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
 
@@ -84,4 +85,5 @@ async def heartbeat(
         run_id=run_id,
         owner_instance_id=owner_instance_id,
         stop=stop,
+        cancel_target=cancel_target,
     )

@@ -3,6 +3,7 @@
 """Persist terminal execute_run outcomes and emit terminal events."""
 
 from collections.abc import Sequence
+from contextlib import suppress
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
 )
@@ -24,6 +26,7 @@ from services.agents.runtime.approval_events import (
 )
 from services.agents.runtime.events import EVENT_DONE, EVENT_ERROR, EVENT_RUN_STATUS
 from services.agents.runtime.run_persistence import (
+    persist_cancelled_run,
     persist_failed_run,
     persist_successful_run,
     persist_suspended_run,
@@ -31,6 +34,8 @@ from services.agents.runtime.run_persistence import (
 from services.agents.runtime.sinks import EventSink
 
 from .types import ExecuteRunResult
+
+CANCEL_FINALIZE_TIMEOUT = 3.0
 
 
 async def finalize_terminal_run(
@@ -43,6 +48,7 @@ async def finalize_terminal_run(
     client_message_id: str | None,
     history: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults | None,
+    skip_initial_user_prompt: bool = False,
 ) -> ExecuteRunResult:
     if deferred_tool_results is not None:
         await emit_deferred_tool_resume_events(
@@ -60,6 +66,7 @@ async def finalize_terminal_run(
             run=run,
             terminal_result=terminal_result,
             client_message_id=client_message_id,
+            skip_initial_user_prompt=skip_initial_user_prompt,
         )
 
     return await finalize_successful_run(
@@ -71,6 +78,7 @@ async def finalize_terminal_run(
         client_message_id=client_message_id,
         history=history,
         deferred_tool_results=deferred_tool_results,
+        skip_initial_user_prompt=skip_initial_user_prompt,
     )
 
 
@@ -82,6 +90,7 @@ async def finalize_suspended_run(
     run: AgentRun,
     terminal_result: Any,
     client_message_id: str | None,
+    skip_initial_user_prompt: bool = False,
 ) -> ExecuteRunResult:
     deferred_tool_requests = terminal_result.output
     suspended_run, new_message_count, deferred_tool_requests = await persist_suspended_run(
@@ -91,6 +100,7 @@ async def finalize_suspended_run(
         terminal_result=terminal_result,
         deferred_tool_requests=deferred_tool_requests,
         client_message_id=client_message_id,
+        skip_initial_user_prompt=skip_initial_user_prompt,
     )
     await emit_approval_required_events(event_sink, deferred_tool_requests)
     await event_sink.emit(
@@ -115,6 +125,7 @@ async def finalize_successful_run(
     client_message_id: str | None,
     history: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults | None,
+    skip_initial_user_prompt: bool = False,
 ) -> ExecuteRunResult:
     tool_approval_metadata_by_call_id = (
         build_deferred_tool_result_metadata(
@@ -133,6 +144,7 @@ async def finalize_successful_run(
         terminal_result=terminal_result,
         client_message_id=client_message_id,
         tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
+        skip_initial_user_prompt=skip_initial_user_prompt,
     )
     if final_run.status == RUN_STATUS_COMPLETED:
         await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_COMPLETED})
@@ -193,3 +205,24 @@ async def emit_failure_events(
             },
         )
     await event_sink.emit(EVENT_DONE, {"status": terminal_status})
+
+
+async def finalize_cancelled_run(
+    db: AsyncSession,
+    *,
+    event_sink: EventSink,
+    run_id: UUID,
+) -> None:
+    """Persist and emit cancelled terminal state during cancellation unwind."""
+    with suppress(Exception):
+        await db.rollback()
+
+    status = RUN_STATUS_CANCELLED
+    with suppress(Exception):
+        cancelled_run = await persist_cancelled_run(run_id)
+        if cancelled_run is not None:
+            status = str(cancelled_run.status)
+
+    with suppress(BaseException):
+        await event_sink.emit(EVENT_RUN_STATUS, {"status": status})
+        await event_sink.emit(EVENT_DONE, {"status": status})

@@ -21,10 +21,11 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
 from models.session import Session
 from models.user import User
-from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs import create_agent_run
+from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
+from services.agent_runs import create_agent_run, request_agent_run_cancellation
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
     RUN_TRIGGER_DELEGATED,
@@ -491,6 +492,122 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
             ).all()
             assert parent_messages[-1].role == "assistant"
             assert "parent final after approval" in str(parent_messages[-1].parts)
+    finally:
+        await _delete_committed_delegation_context(
+            committed_db_session_factory,
+            runtime_context,
+        )
+
+
+async def test_cancelling_suspended_delegated_parent_cancels_child_approval_run(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_context = await _create_committed_delegation_context(
+        committed_db_session_factory,
+        child_tool_names=["test_add_numbers"],
+        child_tool_policies={"test_add_numbers": "approval"},
+    )
+    sink = CollectingSink(
+        run_id=runtime_context.run_id,
+        conversation_id=runtime_context.conversation_id,
+    )
+
+    async def stream_delegate_approval_flow(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        tool_names = {tool.name for tool in info.function_tools}
+        if "list_delegate_agents" not in tool_names:
+            if "test_add_numbers" in tool_names and not _has_tool_return(
+                messages, "test_add_numbers"
+            ):
+                yield {
+                    0: DeltaToolCall(
+                        name="test_add_numbers",
+                        json_args=json.dumps({"a": 2, "b": 3}),
+                        tool_call_id="child-add",
+                    )
+                }
+                return
+            yield "child approved result"
+            return
+
+        if not _has_tool_return(messages, "list_delegate_agents"):
+            yield {
+                0: DeltaToolCall(
+                    name="list_delegate_agents",
+                    json_args="{}",
+                    tool_call_id="list-delegates",
+                )
+            }
+            return
+
+        if not _has_tool_return(messages, "delegate_to_agent"):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate_to_agent",
+                    json_args=json.dumps(
+                        {
+                            "agent_id": str(runtime_context.child_agent_id),
+                            "task": "Add two numbers.",
+                        }
+                    ),
+                    tool_call_id="delegate-child",
+                )
+            }
+            return
+
+        yield "parent final after approval"
+
+    monkeypatch.setattr(
+        "services.agents.runtime.loop.build_model",
+        lambda _resolved_model: FunctionModel(
+            stream_function=stream_delegate_approval_flow,
+            model_name="delegate-approval-cancel-flow",
+        ),
+    )
+
+    try:
+        async with committed_db_session_factory() as db:
+            suspended = await execute_run(
+                db,
+                conversation_id=runtime_context.conversation_id,
+                run_id=runtime_context.run_id,
+                user_prompt="Use the specialist.",
+                sink=sink,
+            )
+
+        assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
+
+        async with committed_db_session_factory() as db:
+            user = await db.get(User, runtime_context.user_id)
+            workspace = await db.get(Workspace, runtime_context.workspace_id)
+            assert user is not None
+            assert workspace is not None
+            cancel_response = await request_agent_run_cancellation(
+                db,
+                actor=user,
+                workspace=workspace,
+                membership=WorkspaceMembership(
+                    workspace_id=workspace.id,
+                    user_id=user.id,
+                    role=WorkspaceRole.OWNER.value,
+                ),
+                run_id=runtime_context.run_id,
+            )
+
+        assert cancel_response.run.status == RUN_STATUS_CANCELLED
+
+        async with committed_db_session_factory() as db:
+            parent_run = await db.get(AgentRun, runtime_context.run_id)
+            assert parent_run is not None
+            child_run = await db.scalar(
+                select(AgentRun).where(AgentRun.parent_run_id == runtime_context.run_id)
+            )
+            assert child_run is not None
+            assert parent_run.status == RUN_STATUS_CANCELLED
+            assert child_run.status == RUN_STATUS_CANCELLED
     finally:
         await _delete_committed_delegation_context(
             committed_db_session_factory,

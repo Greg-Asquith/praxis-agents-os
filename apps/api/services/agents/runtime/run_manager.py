@@ -8,6 +8,8 @@ from collections.abc import Coroutine
 from typing import Any
 from uuid import UUID
 
+from services.agents.runtime.cancellation import request_agent_run_task_cancel
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +33,14 @@ class RunTaskRegistry:
     def is_running(self, run_id: UUID) -> bool:
         task = self._tasks.get(run_id)
         return task is not None and not task.done()
+
+    def cancel(self, run_id: UUID) -> bool:
+        """Request cancellation of a process-local run task."""
+        task = self._tasks.get(run_id)
+        if task is None or task.done():
+            return False
+        request_agent_run_task_cancel(task, run_id=run_id)
+        return True
 
     async def drain(self, *, max_wait_seconds: float | None = None) -> None:
         """Wait for currently in-flight tasks up to ``max_wait_seconds`` seconds."""

@@ -25,7 +25,8 @@ from core.logging import setup_logging
 from core.observability import setup_agent_tracing
 from core.settings import settings
 from models.agent import AgentSchedule, AgentScheduleRun
-from services.agent_runs.domain import RUN_STATUS_PENDING
+from models.agent_run import AgentRun
+from services.agent_runs.domain import RUN_STATUS_CANCELLED, RUN_STATUS_PENDING
 from services.agent_schedules.finalize_schedule_run_execution import (
     finalize_schedule_run_execution,
 )
@@ -96,17 +97,34 @@ async def execute_claimed_schedule_run(
     conversation_id, agent_run_id, _user_prompt = _execution_values(prepared)
 
     heartbeat_stop = asyncio.Event()
+    execution_task = asyncio.create_task(
+        _execute_prepared(prepared, owner_instance_id=owner_instance_id, model=model),
+        name=f"scheduled-agent-run:{agent_run_id}",
+    )
     heartbeat_task = asyncio.create_task(
         heartbeat_agent_run_lease(
             run_id=agent_run_id,
             owner_instance_id=owner_instance_id,
             stop=heartbeat_stop,
+            cancel_target=execution_task,
         ),
         name=f"scheduled-agent-run-heartbeat:{agent_run_id}",
     )
 
     try:
-        await _execute_prepared(prepared, owner_instance_id=owner_instance_id, model=model)
+        await execution_task
+    except asyncio.CancelledError:
+        if not await _agent_run_was_cancelled(agent_run_id):
+            raise
+        logger.info(
+            "Scheduled agent run execution cancelled cooperatively",
+            extra={
+                "schedule_id": str(prepared.schedule_id),
+                "schedule_run_id": str(prepared.schedule_run_id),
+                "agent_run_id": str(agent_run_id),
+                "conversation_id": str(conversation_id),
+            },
+        )
     except Exception:
         logger.exception(
             "Scheduled agent run execution failed",
@@ -122,6 +140,10 @@ async def execute_claimed_schedule_run(
         heartbeat_task.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat_task
+        if not execution_task.done():
+            execution_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await execution_task
 
     await _finalize(prepared)
 
@@ -310,6 +332,20 @@ async def _finalize(prepared: PreparedScheduleRunExecution) -> None:
                     "conversation_id": str(prepared.conversation_id),
                 },
             )
+
+
+async def _agent_run_was_cancelled(agent_run_id: UUID) -> bool:
+    session_factory = get_async_db_session_factory()
+    async with session_factory() as db:
+        await configure_async_db_session(db)
+        run_status = await db.scalar(
+            select(AgentRun.status).where(
+                AgentRun.id == agent_run_id,
+                AgentRun.deleted == False,  # noqa: E712
+            )
+        )
+        await db.commit()
+        return run_status == RUN_STATUS_CANCELLED
 
 
 async def _record_claim_setup_failure(schedule_run_id: UUID, exc: Exception) -> None:

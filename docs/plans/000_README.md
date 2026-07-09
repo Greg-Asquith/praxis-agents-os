@@ -99,6 +99,11 @@ roadmap's Lane B / Lane P sections for ordering. Plan 073 was executed
 2026-07-09 as the cancellation-terminal-hardening amendment to 053 and
 moved to `plans/complete/`.
 
+Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
+workspace-scoped cancel route + audit, local task cancellation, heartbeat
+cancel-detection, shielded cancellation finalization, cancelled tool audit
+records, and a web Stop control.
+
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -163,7 +168,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 050 | Artifacts model, registry tools, and CSP-locked serving | P2 | L | 031, 032, 034 | TODO |
 | 051 | Chat artifact cards, versions UI, and share links | P2 | L | 050, 030 (soft: 035) | TODO |
 | 052 | Action-driven homepage redesign | P2 | M | - | TODO |
-| 053 | Cooperative run cancellation (kill switch; amended by 073) | P1 | M | - (before 041) | TODO |
+| 053 | Cooperative run cancellation (kill switch; amended by 073) | P1 | M | - (before 041) | DONE |
 | 054 | Run envelope enforcement — principal-derived side-effect policy | P1 | M | 025, 026 (hard: before 041) | TODO |
 | 055 | Agent behavior eval harness (Gate G5) | P1 | L | - (soft: 053, 054 add scenarios) | TODO |
 | 056 | Context compaction — watermark summaries + token-aware budgets | P1 | L | 013, 018, 030 (hard: before 048/049) | TODO |
@@ -183,7 +188,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 070 | Artifact CSP — close the CDN script exfiltration channel (amendment to 050) | P1 | S | 050 (binds before it executes) | TODO |
 | 071 | Memory dedup contradiction resolution (amendment to 048) | P1 | S-M | 048 (binds before it executes) | TODO |
 | 072 | Sandbox egress verification (amendment to 059) | P1 | S | 059, 054 (binds before 059 executes) | TODO |
-| 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (binds before it executes — 053 is next in the order, so this is time-sensitive) | DONE |
+| 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (completed before 053 executed) | DONE |
 | 074 | Integration & KB plan consistency sweep (amendments to 039/042/043/044/045) | P1 | S-M | 039/042/043/044/045 (binds before Phase 4a/4b) | TODO |
 | 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | TODO |
@@ -589,7 +594,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   (no schedule migration) and unhides it in the `021` routes and `022`
   form; one pinned schedule route test flips.
 - `041` has a hard Gate G1 pre-flight now satisfied by `014` (OTel) being
-  DONE; `053` and `054` still bind before `041` under the G1 extension. The
+  DONE; `053` is DONE and `054` still binds before `041` under the G1 extension. The
   registry name pattern forbids dots, so provider tools are snake_case
   (`gmail_search_messages`, …). Google Ads spend ops are `approval` with
   `supports_auto=False`, enforced by the existing `025` write-time and
@@ -639,14 +644,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   inheritance) and `055` (its concurrency claims land as scenarios). `058`
   is filler-priority by operator decision. `059` follows Phase 6 in the
   default stream. `060` is deliberately last.
-- `053` finding worth knowing before executing: `cancel_agent_run`
-  (`services/agent_runs/cancel.py`) currently has **no route and no
-  callers outside tests** — there is no user-facing cancel at all, and the
-  client-side stream `abort()` only closes the HTTP response while the
-  detached worker keeps running. The heartbeat's failed-renewal path
-  (`renew_agent_run_lease` matches only pending/running rows) is the
-  cross-process cancel-detection seam. Plan 073 is now appended to 053 and
-  supersedes 053's original unshielded cleanup claim.
+- `053` marked DONE 2026-07-09: `/api/v1/agent-runs/{run_id}/cancel` now
+  cancels non-terminal workspace runs for the run owner or workspace
+  manager, records workspace audit, interrupts same-process tasks through
+  `RunTaskRegistry.cancel`, and lets failed heartbeat renewals detect
+  cross-process cancellation. `execute_run` now persists submitted
+  interactive prompts before announcing running, finalizes cancelled runs
+  under `asyncio.shield`, emits terminal `run.status`/`done`, and records
+  cancelled tool-call audit rows. The web composer uses the server cancel
+  route for Stop instead of local stream abort.
 - `054` finding worth knowing before executing: `build_run_envelope` sets
   only `principal`; `side_effect_policy="allow"` / `max_delegation_depth=1`
   are constants for every run, and `check_envelope` tests only `deny` —

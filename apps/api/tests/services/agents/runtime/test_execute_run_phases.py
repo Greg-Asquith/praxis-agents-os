@@ -2,6 +2,8 @@
 
 """Characterization tests for execute_run phase boundaries."""
 
+import asyncio
+import importlib
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from uuid import UUID, uuid4
@@ -16,20 +18,23 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.general import ConflictError
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
-from models.conversation import Conversation
+from models.conversation import Conversation, ConversationMessage
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import (
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_INTERACTIVE,
 )
+from services.agents.runtime.cancellation import request_agent_run_task_cancel
 from services.agents.runtime.events import EVENT_DONE, EVENT_ERROR, EVENT_RUN_STATUS
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
@@ -177,6 +182,186 @@ async def test_post_start_stream_failure_persists_failed_run_and_event_order(
     assert sink.closed
 
 
+async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with committed_db_session_factory() as db:
+        context = await _persist_runtime_context(db)
+        await db.commit()
+        sink = ClosingCollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+        finalize_module = importlib.import_module("services.agents.runtime.execute.finalize")
+        real_persist_cancelled_run = finalize_module.persist_cancelled_run
+
+        async def slow_persist_cancelled_run(run_id: UUID):
+            await asyncio.sleep(0.05)
+            return await real_persist_cancelled_run(run_id)
+
+        async def slow_stream(
+            _messages: list[ModelMessage],
+            _info: AgentInfo,
+        ) -> AsyncIterator[str]:
+            await asyncio.sleep(10)
+            yield "too late"
+
+        monkeypatch.setattr(finalize_module, "persist_cancelled_run", slow_persist_cancelled_run)
+
+        task = asyncio.create_task(
+            execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Stop this run",
+                sink=sink,
+                model=FunctionModel(
+                    stream_function=slow_stream,
+                    model_name="phase-cancel",
+                ),
+                client_message_id="cancel-client",
+            )
+        )
+
+        await _wait_for_status_event(sink, RUN_STATUS_RUNNING)
+        request_agent_run_task_cancel(task, run_id=context.run_id)
+        await asyncio.sleep(0.01)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async with committed_db_session_factory() as db:
+        stored_run = await db.get(AgentRun, context.run_id)
+        assert stored_run is not None
+        assert stored_run.status == RUN_STATUS_CANCELLED
+
+        messages = (
+            await db.scalars(
+                select(ConversationMessage)
+                .where(ConversationMessage.conversation_id == context.conversation_id)
+                .order_by(ConversationMessage.sequence)
+            )
+        ).all()
+    assert [(message.role, message.client_message_id) for message in messages] == [
+        ("user", "cancel-client")
+    ]
+    assert messages[0].parts["parts"][0]["content"] == "Stop this run"
+
+    assert [event.event for event in sink.events] == [
+        EVENT_RUN_STATUS,
+        EVENT_RUN_STATUS,
+        EVENT_DONE,
+    ]
+    assert sink.events[0].data["status"] == RUN_STATUS_RUNNING
+    assert sink.events[1].data["status"] == RUN_STATUS_CANCELLED
+    assert sink.events[2].data["status"] == RUN_STATUS_CANCELLED
+    assert EVENT_ERROR not in [event.event for event in sink.events]
+    assert sink.closed
+
+
+async def test_unmarked_task_cancellation_does_not_persist_cancelled_run(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with committed_db_session_factory() as db:
+        context = await _persist_runtime_context(db)
+        await db.commit()
+        sink = ClosingCollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+
+        async def slow_stream(
+            _messages: list[ModelMessage],
+            _info: AgentInfo,
+        ) -> AsyncIterator[str]:
+            await asyncio.sleep(10)
+            yield "too late"
+
+        task = asyncio.create_task(
+            execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Worker shutdown should not cancel the run",
+                sink=sink,
+                model=FunctionModel(
+                    stream_function=slow_stream,
+                    model_name="phase-generic-cancel",
+                ),
+                client_message_id="generic-cancel-client",
+            )
+        )
+
+        await _wait_for_status_event(sink, RUN_STATUS_RUNNING)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async with committed_db_session_factory() as db:
+        stored_run = await db.get(AgentRun, context.run_id)
+        assert stored_run is not None
+        assert stored_run.status == RUN_STATUS_RUNNING
+
+        messages = (
+            await db.scalars(
+                select(ConversationMessage)
+                .where(ConversationMessage.conversation_id == context.conversation_id)
+                .order_by(ConversationMessage.sequence)
+            )
+        ).all()
+
+    assert [(message.role, message.client_message_id) for message in messages] == [
+        ("user", "generic-cancel-client")
+    ]
+    assert [event.data["status"] for event in sink.events if event.event == EVENT_RUN_STATUS] == [
+        RUN_STATUS_RUNNING
+    ]
+    assert EVENT_DONE not in [event.event for event in sink.events]
+    assert sink.closed
+
+
+async def test_eager_persisted_interactive_prompt_is_not_replayed_as_history(
+    db_session: AsyncSession,
+) -> None:
+    context = await _persist_runtime_context(db_session)
+    seen_messages: list[ModelMessage] = []
+
+    async def capture_prompt(
+        messages: list[ModelMessage],
+        _info: AgentInfo,
+    ) -> AsyncIterator[str]:
+        seen_messages[:] = messages
+        yield "ok"
+
+    result = await execute_run(
+        db_session,
+        conversation_id=context.conversation_id,
+        run_id=context.run_id,
+        user_prompt="Send this once",
+        sink=ClosingCollectingSink(
+            run_id=context.run_id,
+            conversation_id=context.conversation_id,
+        ),
+        model=FunctionModel(
+            stream_function=capture_prompt,
+            model_name="prompt-history-capture",
+        ),
+        client_message_id="send-once",
+    )
+
+    assert result.run.status == RUN_STATUS_COMPLETED
+    assert _user_prompt_contents(seen_messages) == ["Send this once"]
+
+    stored_messages = (
+        await db_session.scalars(
+            select(ConversationMessage)
+            .where(ConversationMessage.conversation_id == context.conversation_id)
+            .order_by(ConversationMessage.sequence)
+        )
+    ).all()
+    assert [(message.role, message.client_message_id) for message in stored_messages] == [
+        ("user", "send-once"),
+        ("assistant", None),
+    ]
+
+
 async def test_attachment_prompt_promotes_string_to_multimodal_content(
     db_session: AsyncSession,
     local_storage_settings: None,
@@ -270,6 +455,36 @@ def _last_user_prompt_content(messages: list[ModelMessage]):
             if isinstance(part, UserPromptPart):
                 return part.content
     raise AssertionError("No user prompt part was sent to the model")
+
+
+def _user_prompt_contents(messages: list[ModelMessage]):
+    return [
+        part.content
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    ]
+
+
+async def _wait_for_status_event(
+    sink: ClosingCollectingSink,
+    status: str,
+    *,
+    max_wait_seconds: float = 2.0,
+) -> None:
+    def observed() -> bool:
+        return any(
+            event.event == EVENT_RUN_STATUS and event.data.get("status") == status
+            for event in sink.events
+        )
+
+    deadline = asyncio.get_running_loop().time() + max_wait_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        if observed():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"Timed out waiting for run.status {status!r}")
 
 
 async def _persist_runtime_context(db: AsyncSession) -> RuntimeContext:

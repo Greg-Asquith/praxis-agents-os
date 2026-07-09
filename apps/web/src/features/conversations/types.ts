@@ -80,6 +80,11 @@ export type ConversationActiveRunResponse = {
   active_run: AgentRun | null
 }
 
+export type AgentRunCancelResponse = {
+  run: AgentRun
+  local_cancel_delivered: boolean
+}
+
 export type ConversationCreateRequest = {
   agent_id: string
   user_prompt: string

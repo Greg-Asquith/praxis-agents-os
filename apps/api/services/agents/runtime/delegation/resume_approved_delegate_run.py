@@ -135,7 +135,12 @@ async def resume_approved_delegate_run(
 
         suspended_state = load_suspended_run_state(child_run)
         heartbeat_task = asyncio.create_task(
-            heartbeat(child_run.id, owner_id, heartbeat_stop),
+            heartbeat(
+                child_run.id,
+                owner_id,
+                heartbeat_stop,
+                cancel_target=asyncio.current_task(),
+            ),
             name=f"delegated-agent-run-resume-heartbeat:{child_run.id}",
         )
 

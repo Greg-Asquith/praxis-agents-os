@@ -305,7 +305,7 @@ async def test_create_conversation_rejects_inactive_agent_without_creating_run(
     assert runs == []
 
 
-async def test_create_conversation_runtime_failure_prunes_empty_conversation(
+async def test_create_conversation_runtime_failure_keeps_submitted_prompt_conversation(
     app: FastAPI,
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
@@ -328,7 +328,7 @@ async def test_create_conversation_runtime_failure_prunes_empty_conversation(
                 headers=headers,
                 json={
                     "agent_id": str(agent.id),
-                    "user_prompt": "Please fail before saving messages",
+                    "user_prompt": "Please fail after saving prompt",
                 },
             ) as response,
         ):
@@ -343,7 +343,7 @@ async def test_create_conversation_runtime_failure_prunes_empty_conversation(
             committed_db_session_factory,
             user_id=user.id,
             workspace_id=workspace.id,
-            count=1,
+            count=2,
         )
 
         transport = ASGITransport(app=app)
@@ -351,18 +351,34 @@ async def test_create_conversation_runtime_failure_prunes_empty_conversation(
             list_response = await client.get("/api/v1/conversations/", headers=headers)
 
         assert list_response.status_code == 200
-        assert list_response.json()["total"] == 1
+        assert list_response.json()["total"] == 2
 
         async with committed_db_session_factory() as db:
-            pruned = await db.scalar(
+            failed_conversation = await db.scalar(
                 select(Conversation).where(
                     Conversation.user_id == user.id,
                     Conversation.workspace_id == workspace.id,
-                    Conversation.title == "Please fail before saving messages",
-                    Conversation.deleted == True,  # noqa: E712
+                    Conversation.title == "Please fail after saving prompt",
+                    Conversation.deleted == False,  # noqa: E712
                 )
             )
-            assert pruned is not None
+            assert failed_conversation is not None
+            failed_run = await db.scalar(
+                select(AgentRun).where(AgentRun.conversation_id == failed_conversation.id)
+            )
+            assert failed_run is not None
+            assert failed_run.status == "failed"
+            messages = (
+                await db.scalars(
+                    select(ConversationMessage)
+                    .where(ConversationMessage.conversation_id == failed_conversation.id)
+                    .order_by(ConversationMessage.sequence)
+                )
+            ).all()
+            assert [(message.role, message.client_message_id) for message in messages] == [
+                ("user", None)
+            ]
+            assert messages[0].parts["parts"][0]["content"] == "Please fail after saving prompt"
     finally:
         try:
             await _drain_initial_conversation_background_work()

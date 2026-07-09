@@ -115,6 +115,7 @@ def test_agent_run_routes_are_registered_under_api_v1(
     paths = set(openapi_schema["paths"])
 
     assert {
+        "/api/v1/agent-runs/{run_id}/cancel",
         "/api/v1/agent-runs/{run_id}/approval-state",
         "/api/v1/agent-runs/{run_id}/resume",
     } <= paths

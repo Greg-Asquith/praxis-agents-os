@@ -141,8 +141,8 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   returns; G5 pins what the harness does. Each Lane H plan adds its
   scenarios as part of its done criteria.
 - **G1 extension (stoppable + enveloped before spend)**: 053 (cooperative
-  cancellation) and 054 (principal-derived run envelopes) complete before
-  041 ships agent-callable integration tools — a run that cannot be
+  cancellation, DONE 2026-07-09) and 054 (principal-derived run envelopes)
+  complete before 041 ships agent-callable integration tools — a run that cannot be
   stopped, or an unattended run whose side-effect grant equals an
   interactive one, must not hold money-spending tools.
 - **G6 (untrusted content needs a threat model — reserved)**: defined and
@@ -317,7 +317,7 @@ bracket Phases 4–6.
 
 | Plan | Scope | Priority | When |
 |------|-------|----------|------|
-| 053 | Cooperative run cancellation: cancel route + audit, `RunTaskRegistry.cancel`, heartbeat cancel-detection (works cross-process via the lease seam), `CancelledError` terminal handling, UI stop control. Today `cancel_agent_run` has no route and no callers; nothing stops the executing task. Amended by 073. | P1 | Before 041 (G1 extension) |
+| 053 | Cooperative run cancellation: cancel route + audit, `RunTaskRegistry.cancel`, heartbeat cancel-detection (works cross-process via the lease seam), `CancelledError` terminal handling, UI stop control. DONE 2026-07-09; amended by 073. | P1 | Complete |
 | 054 | Run envelope enforcement: `effect_scope` (internal/external) on the tool contract, principal-derived `side_effect_policy` (scheduled → `require_approval` for external writes by default), the missing `require_approval` dispatch branch, delegated inheritance recorded at mint time. Today every run gets the constant grant `("allow", depth 1)`. | P1 | Before 041 (G1 extension) |
 | 055 | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). Content, not platform. | P1 | Parallel with Phase 4; before 048 |
 | 056 | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. | P1 | Before 048/049 |
@@ -429,14 +429,14 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 → 054 → 076 → C05 →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 → 076 → C05 →
 067 → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).
 
 Lane B placement rationale: each amendment lands immediately before the
-plan it binds — 073 before 053 (next in the order), 067/068/074/077/075
+plan it binds — 073 before 053 (both done), 067/068/074/077/075
 batched before the Phase 4a/4b fork they all gate, 071 before 048, 069
 before 049, 070 before 050, 072 before 059. 076 sits after 054 (both edit
 dispatch) and hard-before 056 (whose pressure math consumes its

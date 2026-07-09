@@ -1,5 +1,6 @@
 """Runtime dispatch/audit tests for tool execution."""
 
+import asyncio
 import importlib
 import json
 from collections.abc import AsyncIterator
@@ -28,8 +29,13 @@ from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs import create_agent_run
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_COMPLETED
+from services.agent_runs.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_CANCELLED,
+    RUN_STATUS_COMPLETED,
+)
 from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agents.runtime.cancellation import request_agent_run_task_cancel
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
 from services.agents.runtime.dispatch import (
     _tool_call_args_for_digest,
@@ -474,6 +480,64 @@ async def test_denied_approval_records_audit_without_executing_tool(
         assert event.details["args_sha256"] == expected_sha
         assert event.details["args_bytes"] == expected_bytes
     finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_cancelled_tool_call_records_cancelled_audit_row(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    tool_name = f"dispatch_cancel_{uuid4().hex}"
+    tool_started = asyncio.Event()
+    RUNTIME_TOOL_CATALOG.pop(tool_name, None)
+
+    @runtime_tool(
+        name=tool_name,
+        provider="test",
+        label="Dispatch cancel",
+        description="Sleep until the run is cancelled.",
+        effect=TOOL_EFFECT_WRITE,
+    )
+    async def dispatch_cancel(value: str) -> dict[str, bool]:
+        tool_started.set()
+        await asyncio.sleep(10)
+        return {"ok": bool(value)}
+
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=[tool_name],
+    )
+
+    try:
+        task = asyncio.create_task(
+            _execute_single_tool(
+                committed_db_session_factory,
+                context,
+                tool_name=tool_name,
+                args={"value": "interrupt"},
+            )
+        )
+        await asyncio.wait_for(tool_started.wait(), timeout=2)
+        request_agent_run_task_cancel(task, run_id=context.run_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        async with committed_db_session_factory() as db:
+            run = await db.get(AgentRun, context.run_id)
+            assert run is not None
+            assert run.status == RUN_STATUS_CANCELLED
+
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name=tool_name,
+        )
+        assert event.status == "failure"
+        assert event.details["outcome"] == "cancelled"
+        assert event.details["error_code"] == "CancelledError"
+        assert event.details["args_sha256"]
+    finally:
+        RUNTIME_TOOL_CATALOG.pop(tool_name, None)
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 

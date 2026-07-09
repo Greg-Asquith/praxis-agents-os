@@ -145,6 +145,7 @@ async def load_delegated_child_run_for_approval(
     *,
     parent_run: AgentRun,
     metadata: dict[str, object] | None,
+    lock: bool = False,
 ) -> AgentRun | None:
     """Load a suspended delegated child run referenced by parent approval metadata."""
     if not isinstance(metadata, dict):
@@ -157,16 +158,18 @@ async def load_delegated_child_run_for_approval(
     except (KeyError, TypeError, ValueError):
         return None
 
-    return await db.scalar(
-        select(AgentRun).where(
-            AgentRun.id == child_run_id,
-            AgentRun.parent_run_id == parent_run.id,
-            AgentRun.workspace_id == parent_run.workspace_id,
-            AgentRun.user_id == parent_run.user_id,
-            AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
-            AgentRun.deleted == False,  # noqa: E712
-        )
+    statement = select(AgentRun).where(
+        AgentRun.id == child_run_id,
+        AgentRun.parent_run_id == parent_run.id,
+        AgentRun.workspace_id == parent_run.workspace_id,
+        AgentRun.user_id == parent_run.user_id,
+        AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
+        AgentRun.deleted == False,  # noqa: E712
     )
+    if lock:
+        statement = statement.with_for_update()
+
+    return await db.scalar(statement)
 
 
 def validate_schedule_run_link(schedule_run: AgentScheduleRun, run: AgentRun) -> None:

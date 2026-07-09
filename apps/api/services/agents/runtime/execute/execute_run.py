@@ -2,7 +2,9 @@
 
 """Execute one agent turn through Pydantic AI."""
 
+import asyncio
 from collections.abc import Sequence
+from contextlib import suppress
 from uuid import UUID
 
 from pydantic_ai import DeferredToolResults
@@ -11,19 +13,35 @@ from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.agent_runs.domain import RUN_STATUS_PENDING, RUN_STATUS_RUNNING
+from services.agent_runs.domain import (
+    RUN_STATUS_PENDING,
+    RUN_STATUS_RUNNING,
+    RUN_TRIGGER_INTERACTIVE,
+)
+from services.agents.runtime.cancellation import (
+    clear_agent_run_cancel_request,
+    is_agent_run_cancel_request,
+)
 from services.agents.runtime.events import EVENT_RUN_STATUS
 from services.agents.runtime.load_context import (
+    load_actor_context,
     load_agent_skills,
     load_available_files,
     load_run_context,
 )
+from services.agents.runtime.persistence import load_message_history, persist_eager_user_prompt
 from services.agents.runtime.sinks import EventSink, NullSink
 
-from .finalize import emit_failure_events, finalize_terminal_run
+from .finalize import (
+    CANCEL_FINALIZE_TIMEOUT,
+    emit_failure_events,
+    finalize_cancelled_run,
+    finalize_terminal_run,
+)
 from .setup import (
     RunEnvelopeBuilder,
     RuntimeAgentBuilder,
+    assemble_user_prompt,
     prepare_runtime,
     start_run,
     validate_execution_preconditions,
@@ -52,11 +70,11 @@ async def execute_run_with_builders(
 ) -> ExecuteRunResult:
     """Drive one agent turn to completion or approval suspension.
 
-    The user prompt is persisted from Pydantic AI's ``new_messages()``; callers
-    must not insert a separate user message for the same turn. Resume callers
-    pass rehydrated ``message_history`` and ``deferred_tool_results`` instead of a
-    new prompt. This function owns the run lifecycle transaction boundaries: it
-    commits the running+lease state before provider streaming, commits final
+    New turn prompts are persisted before provider streaming so cancellation does
+    not lose the user message. Resume callers pass rehydrated
+    ``message_history`` and ``deferred_tool_results`` instead of a new prompt.
+    This function owns the run lifecycle transaction boundaries: it commits the
+    running+lease state before provider streaming, commits final
     messages/usage/status after the stream, and commits failures before
     re-raising so rollback-based dependencies do not erase diagnostic state.
     """
@@ -82,6 +100,37 @@ async def execute_run_with_builders(
 
         await start_run(db, run, owner_instance_id=owner_instance_id)
         started = True
+        prepared_user_prompt = user_prompt
+        attachment_file_ids_for_prepare = attachment_file_ids
+        runtime_message_history = message_history
+        eager_message_count = 0
+        user_prompt_persisted = False
+        if user_prompt is not None and run.trigger == RUN_TRIGGER_INTERACTIVE:
+            if runtime_message_history is None:
+                runtime_message_history = await load_message_history(
+                    db,
+                    conversation_id=conversation.id,
+                )
+            if attachment_file_ids:
+                _user, workspace = await load_actor_context(db, run)
+                prepared_user_prompt = await assemble_user_prompt(
+                    db,
+                    workspace=workspace,
+                    agent=agent,
+                    user_prompt=user_prompt,
+                    attachment_file_ids=attachment_file_ids,
+                )
+                attachment_file_ids_for_prepare = ()
+            eager_rows = await persist_eager_user_prompt(
+                db,
+                conversation=conversation,
+                run_id=run.id,
+                user_prompt=prepared_user_prompt,
+                client_message_id=client_message_id,
+            )
+            await db.commit()
+            eager_message_count = len(eager_rows)
+            user_prompt_persisted = True
         await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_RUNNING})
 
         prepared = await prepare_runtime(
@@ -91,9 +140,9 @@ async def execute_run_with_builders(
             agent=agent,
             model=model,
             event_sink=event_sink,
-            user_prompt=user_prompt,
-            attachment_file_ids=attachment_file_ids,
-            message_history=message_history,
+            user_prompt=prepared_user_prompt,
+            attachment_file_ids=attachment_file_ids_for_prepare,
+            message_history=runtime_message_history,
             deferred_tool_results=deferred_tool_results,
             skills=skills,
             available_files=available_files,
@@ -123,7 +172,7 @@ async def execute_run_with_builders(
         if terminal_result is None:
             raise RuntimeError("Pydantic AI stream ended without a terminal result")
 
-        return await finalize_terminal_run(
+        result = await finalize_terminal_run(
             db,
             event_sink=event_sink,
             conversation=conversation,
@@ -132,7 +181,34 @@ async def execute_run_with_builders(
             client_message_id=client_message_id,
             history=built_agent.history,
             deferred_tool_results=deferred_tool_results,
+            skip_initial_user_prompt=user_prompt_persisted,
         )
+        if eager_message_count == 0:
+            return result
+        return ExecuteRunResult(
+            run=result.run,
+            output=result.output,
+            new_message_count=result.new_message_count + eager_message_count,
+        )
+    except asyncio.CancelledError as exc:
+        if not is_agent_run_cancel_request(exc, run_id=run_id):
+            with suppress(Exception):
+                await db.rollback()
+            raise
+        finalize = asyncio.ensure_future(
+            finalize_cancelled_run(
+                db,
+                event_sink=event_sink,
+                run_id=run_id,
+            )
+        )
+        try:
+            await asyncio.shield(finalize)
+        except asyncio.CancelledError:
+            with suppress(BaseException):
+                async with asyncio.timeout(CANCEL_FINALIZE_TIMEOUT):
+                    await finalize
+        raise
     except Exception as exc:
         await emit_failure_events(
             db,
@@ -143,4 +219,5 @@ async def execute_run_with_builders(
         )
         raise
     finally:
+        clear_agent_run_cancel_request(run_id)
         await event_sink.close()

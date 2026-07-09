@@ -21,10 +21,12 @@ emission in one invocation-local scope. Future instrumentation should wrap this
 module rather than adding another interception layer.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -33,6 +35,7 @@ from pydantic import ValidationError
 from pydantic_ai import ApprovalRequired, DeferredToolResults, ModelRetry, ToolDenied
 from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
 
+from services.agents.runtime.cancellation import is_agent_run_cancel_request
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
 from services.agents.runtime.staged_tool_content import (
@@ -178,6 +181,24 @@ async def dispatch_tool_execution(
             outcome="approval_requested",
             approval_ref=call.tool_call_id,
         )
+        raise
+    except asyncio.CancelledError as exc:
+        if is_agent_run_cancel_request(exc, run_id=ctx.deps.run.id):
+            with suppress(BaseException):
+                await record_invocation(
+                    deps=ctx.deps,
+                    tool_name=tool_name,
+                    tool_provider=tool_provider,
+                    status=AuditStatus.FAILURE,
+                    args=args,
+                    args_sha256=args_sha256,
+                    args_bytes=args_bytes,
+                    started=started,
+                    tool_call_id=tool_call_id,
+                    outcome="cancelled",
+                    approval_ref=approval_ref,
+                    error_code="CancelledError",
+                )
         raise
     except Exception as exc:
         await record_invocation(
