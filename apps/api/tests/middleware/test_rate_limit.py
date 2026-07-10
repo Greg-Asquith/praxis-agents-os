@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 import middleware.rate_limit as rate_limit_module
 from core.rate_limiting import RateLimitResult

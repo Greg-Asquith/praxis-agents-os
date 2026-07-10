@@ -1,7 +1,7 @@
 """HTTP-boundary tests for the operational metrics endpoint."""
 
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 
 from core.settings import settings
 

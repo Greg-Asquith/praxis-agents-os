@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -269,7 +269,9 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert created_run.metadata_json is not None
     assert created_run.metadata_json["client_message_id"] == "first-message"
     assert created_run.metadata_json["audit_context"]["ip_address"] == "127.0.0.1"
-    assert created_run.metadata_json["audit_context"]["user_agent"].startswith("python-httpx/")
+    assert created_run.metadata_json["audit_context"]["user_agent"].startswith(
+        "python-httpx2/"
+    )
     assert created_run.metadata_json["audit_context"]["request_id"]
 
 

@@ -4,7 +4,7 @@
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from middleware.csrf import CSRFMiddleware
 from utils.security import generate_csrf_token

@@ -176,8 +176,7 @@ def setup_logging() -> None:
         "sqlalchemy.engine": logging.INFO if settings.SQL_DEBUG else logging.WARNING,
         "sqlalchemy.pool": logging.WARNING,
         "sqlalchemy.dialects": logging.WARNING,
-        # HTTP libraries — "httpx2" targets the httpx2 package (in uv.lock);
-        # "httpx" covers standard httpx if also present at runtime.
+        # HTTP libraries used directly and by transitive dependencies.
         "httpx": logging.WARNING,
         "httpx2": logging.WARNING,
         "urllib3": logging.WARNING,

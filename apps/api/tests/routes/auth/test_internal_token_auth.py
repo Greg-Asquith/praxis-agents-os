@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings

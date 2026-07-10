@@ -10,6 +10,8 @@ secret-manager branches are wired, swap the body here without touching callers.
 
 from functools import lru_cache
 
+# OpenAI, Anthropic, and Google provider SDKs currently enforce the original
+# httpx AsyncClient type at runtime and reject httpx2 clients.
 import httpx
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from tenacity import stop_after_attempt, wait_exponential

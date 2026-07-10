@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from pydantic_ai import RunContext, models as pydantic_ai_models
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool

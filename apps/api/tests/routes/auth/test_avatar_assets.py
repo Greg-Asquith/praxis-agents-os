@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from urllib.parse import urlsplit
 
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager

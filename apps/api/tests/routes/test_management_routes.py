@@ -5,7 +5,7 @@
 from typing import Any
 
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager

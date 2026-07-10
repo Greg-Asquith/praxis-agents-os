@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

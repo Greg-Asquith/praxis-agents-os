@@ -7,7 +7,7 @@ from datetime import timedelta
 from urllib.parse import urlsplit
 
 import pytest
-from httpx import AsyncClient
+from httpx2 import AsyncClient
 
 from core.settings import settings
 from services.storage.domain import StorageBucket, make_storage_object_ref
