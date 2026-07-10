@@ -50,6 +50,68 @@
 >    `tests/integrations/test_import_laws.py`; provider-package tests
 >    live under `tests/integrations/<key>/`.
 
+> **Amendment (2026-07-07, plan 068 — credential encryption posture)**:
+> this amendment wins over decision 3's key sourcing, the Step 5
+> fingerprint recipe, and the key-rotation maintenance note where they
+> diverge:
+>
+> 1. **Dedicated credential root key, sourced through the secrets
+>    provider.** OAuth token columns are NOT encrypted with the app-wide
+>    `ENCRYPTION_KEY`. Outside `ENVIRONMENT=local`, the root key
+>    material resolves at first use through `services/secrets`
+>    (reference name from a new setting
+>    `CREDENTIAL_MASTER_KEY_SECRET_NAME`, default
+>    `credential-master-key`, version `latest`); the new env setting
+>    `CREDENTIAL_MASTER_KEYS` (comma-separated Fernet keys, newest
+>    first — the secret value uses the same format) is a local-only
+>    fallback, rejected outside local by the Step 1 validator (same law
+>    as `SECRET_PROVIDER=local`). Resolution is an async cached
+>    accessor — once per process, never at import time.
+> 2. **HKDF purpose subkeys.** Add `derive_purpose_key(root: bytes,
+>    purpose: str) -> bytes` (HKDF-SHA256; `cryptography` is already a
+>    dep) to `utils/security.py`. Token columns encrypt/decrypt through
+>    a `MultiFernet` over keys derived with purpose
+>    `praxis:credential-tokens:v1` (one per root key, newest first;
+>    Fernet key = urlsafe-b64 of the 32-byte HKDF output).
+>    `compute_principal_fingerprint` keys its HMAC with the newest key
+>    derived with purpose `praxis:principal-fingerprint:v1` — NOT
+>    `SECRET_KEY`. The encrypt/decrypt property pairs on
+>    `ExternalCredential` route through this seam instead of
+>    `encrypt_data`/`decrypt_data`; `UserAuth`/TOTP stay on
+>    `ENCRYPTION_KEY` unchanged.
+> 3. **`encryption_key_id` column.** Table 1 gains `encryption_key_id`
+>    String(16) nullable — the first 16 hex chars of SHA-256 over the
+>    root key string that encrypted the row; null when both token
+>    columns are null. `store_oauth_credential`, every refresh, and
+>    `crypto_shred` keep it accurate. Rotation progress is thereby a
+>    SQL query, not a guess.
+> 4. **Re-encryption sweep job.** Register job kind
+>    `integrations.rotate_credential_encryption` on the plan-030 jobs
+>    harness (DONE) — an explicit exception to this plan's "no job
+>    handlers" out-of-scope line. It walks live `external_credentials`
+>    rows whose `encryption_key_id` differs from the newest root key
+>    id, re-encrypts under the newest key with per-row
+>    `SELECT ... FOR UPDATE` (the `ensure_fresh_credential` lock
+>    discipline), and restamps the id. Enqueued manually (document the
+>    command); no schedule. One summary audit event (`UPDATE` on
+>    `INTEGRATION_CREDENTIAL`, count-only details). Fingerprints are
+>    NOT recomputed — the plaintext principal id is not stored; on root
+>    rotation, dedup detection degrades gracefully for pre-rotation
+>    rows and heals at reconnect. Replace the maintenance note's
+>    `SECRET_KEY`-orphaning sentence with this posture.
+> 5. **Tests and done criteria grow**: after a sweep, every live row
+>    decrypts with ONLY the newest key (old keys droppable — proven
+>    with a two-key fixture); fingerprints are unchanged by a
+>    `SECRET_KEY` change; the local-only `CREDENTIAL_MASTER_KEYS`
+>    fallback is rejected outside local. Add done criteria: "sweep
+>    leaves no live row with a stale `encryption_key_id`" and "grep
+>    confirms no code under `services/integrations/` or
+>    `services/secrets/` reads `settings.ENCRYPTION_KEY` or signs with
+>    raw `SECRET_KEY`".
+> 6. Full envelope encryption (per-credential DEKs wrapped by a KMS
+>    KEK) is the recorded end-state with revisit triggers in plan 068 —
+>    do not build it here.
+
 ## Status
 
 - **Priority**: P1

@@ -29,6 +29,7 @@
 - **Category**: Lane B — best-practice amendments (067–074, added
   2026-07-07)
 - **Planned at**: working tree at commit `c770a1c`, 2026-07-07
+- **Completed**: 2026-07-10
 
 ## Decisions taken
 

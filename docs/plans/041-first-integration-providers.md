@@ -58,6 +58,17 @@
 >    `services/audit_events/integration_events.py`; provider packages
 >    call it, never write audit rows their own way.
 
+> **Amendment (2026-07-07, plan 068 — credential encryption posture)**:
+> in Step 1 / decision 9, type the developer token as a secret —
+> `GOOGLE_ADS_DEVELOPER_TOKEN: SecretStr | None = None` — matching the
+> `ANTHROPIC_API_KEY: SecretStr | None` precedent
+> (`core/settings/models.py:69`) and the OAuth client secrets
+> (`core/settings/auth.py:29-46`). The Google Ads client reads it via
+> `.get_secret_value()` when building the `developer-token` header; the
+> value must never appear in logs, audit details, or exception context
+> (`SecretStr` masks repr; the availability gate in decision 9 checks
+> truthiness, which is unaffected).
+
 ## Status
 
 - **Priority**: P1

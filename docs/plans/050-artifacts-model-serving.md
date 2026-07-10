@@ -29,6 +29,25 @@
 > (middleware ordering comment, tool registry shape, exception layer,
 > signed-URL helpers) as a STOP condition, not a formality.
 
+> **Amendment (2026-07-07, plan 068 — credential encryption posture)**:
+> decision 3's view-URL signature changes in two ways:
+>
+> 1. **Purpose-derived key.** The HMAC key is
+>    `derive_purpose_key(SECRET_KEY, "praxis:artifact-view-url:v1")`
+>    (helper landed by 037's plan-068 amendment; if executing before
+>    037, land the helper here — it is ~3 lines on `cryptography`),
+>    never raw `SECRET_KEY`: the key that signs sessions and CSRF must
+>    not also sign anonymous capability URLs. `SECRET_KEY` remains the
+>    root deliberately — serving takes no request-time dependency on
+>    the secrets provider, and with a 300 s TTL a root rotation merely
+>    invalidates in-flight URLs.
+> 2. **Versioned scheme.** The signed payload becomes
+>    `artifact-view:v1:{artifact_id}:{version_id}:{expires}` and the
+>    query parameter becomes `sig=v1.{hex}`; the route rejects unknown
+>    version prefixes with the same uniform 404. Step 5's recipe, the
+>    Step 7 tampering tests, and the 051 share-route reuse note inherit
+>    this shape.
+
 ## Status
 
 - **Priority**: P2

@@ -107,6 +107,12 @@ amendment to 038: every authorization-code connect now requires PKCE S256,
 state becomes single-use through an atomically consumed pending-state row,
 and non-local redirect URIs must use HTTPS. Plan 038 remains TODO and owns
 the implementation. Plan 067 moved to `plans/complete/`.
+Plan 068 was executed 2026-07-10 as the credential-encryption-posture
+amendment to 037/041/050: integration credentials gain a secrets-provider
+root, purpose-separated HKDF subkeys, queryable key ids, and a re-encryption
+sweep; Google Ads' developer token becomes `SecretStr`; artifact view URLs
+gain a purpose-derived key and versioned signature scheme. The amended plans
+remain TODO and own the implementation. Plan 068 moved to `plans/complete/`.
 
 Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
 workspace-scoped cancel route + audit, local task cancellation, heartbeat
@@ -206,7 +212,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 065 | API service scaffolding consolidation (paginate helper, AssetSpec, notifications split) | P1 | M | 062 (soft) | DONE |
 | 066 | Decompose execute_run behind characterization tests | P1 | M | 062 (soft); before 053/054/056 | DONE |
 | 067 | OAuth PKCE & single-use state hardening (amendment to 038) | P1 | S | 038 (binds before it executes) | DONE |
-| 068 | Credential encryption posture — envelope keys, rotation sweep, key separation (amendments to 037/041/050) | P1 | S-M | 037/041/050 (binds before 037 executes) | TODO |
+| 068 | Credential encryption posture — envelope keys, rotation sweep, key separation (amendments to 037/041/050) | P1 | S-M | 037/041/050 (binds before 037 executes) | DONE |
 | 069 | Memory block ordering determinism (amendment to 049) | P1 | S | 049 (binds before it executes) | TODO |
 | 070 | Artifact CSP — close the CDN script exfiltration channel (amendment to 050) | P1 | S | 050 (binds before it executes) | TODO |
 | 071 | Memory dedup contradiction resolution (amendment to 048) | P1 | S-M | 048 (binds before it executes) | TODO |
