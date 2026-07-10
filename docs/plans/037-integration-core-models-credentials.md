@@ -112,6 +112,28 @@
 >    KEK) is the recorded end-state with revisit triggers in plan 068 —
 >    do not build it here.
 
+> **Amendment (2026-07-07, plan 077 — inbound integration events)**: per
+> `docs/architecture/integration-events.md`, reserve the event seams —
+> nothing here implements events:
+>
+> 1. **Manifest field.** `IntegrationProviderManifest` gains
+>    `event_delivery: Literal["none", "webhook", "pubsub_push"] =
+>    "none"` (data only; the loader and plugin contract are unchanged).
+>    Decision 6's entries set gmail `"pubsub_push"`, airtable
+>    `"webhook"`, google_ads `"none"`, fake `"none"` (041 flips fake to
+>    a synthetic value when its test harness needs one).
+> 2. **Webhook secrets ride the existing seams.** Per-webhook MAC
+>    secrets are `services/secrets` references named
+>    `integrations/{provider_key}/{connection_id}/webhook/{webhook_id}`
+>    — no new column, table, or encryption mechanism (the plan-068
+>    posture is unaffected). Note this in the credential service's
+>    docstring so the implementing plan finds one seam, not two.
+> 3. **`integration_events` is a reserved table decision, not scope.**
+>    The note §4 fixes its shape (plain rows, dedup unique index,
+>    bounded payload); the migration lands with the first event
+>    implementation plan, on the core branch. Do not create it here —
+>    but do not claim its name for anything else either.
+
 ## Status
 
 - **Priority**: P1

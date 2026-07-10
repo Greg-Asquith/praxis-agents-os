@@ -69,6 +69,21 @@
 > (`SecretStr` masks repr; the availability gate in decision 9 checks
 > truthiness, which is unaffected).
 
+> **Amendment (2026-07-07, plan 077 — inbound integration events)**: per
+> `docs/architecture/integration-events.md`, record each provider's
+> event posture so the packages leave hooks — no event code lands here:
+>
+> 1. Manifest entries carry the 037-amendment `event_delivery` values:
+>    gmail `"pubsub_push"` (`users.watch` + Pub/Sub + ~7-day renewal —
+>    a later plan's sweep kind), airtable `"webhook"` (per-webhook MAC
+>    secrets + refresh cycle; thin pings, payloads pulled), google_ads
+>    `"none"` (no push surface exists — poll-only, permanently until
+>    Google ships one).
+> 2. The 061 package layout reserves an `events.py` module slot per
+>    provider (verifier + watch/webhook management); leave it absent,
+>    not stubbed. Provider clients must not acquire push-registration
+>    calls here.
+
 ## Status
 
 - **Priority**: P1

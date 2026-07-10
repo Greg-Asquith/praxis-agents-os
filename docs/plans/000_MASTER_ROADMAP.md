@@ -78,6 +78,11 @@ its amendments move integration credential encryption behind a
 secrets-provider root with purpose-separated keys and a real re-encryption
 sweep, mask the Google Ads developer token, and version artifact view-URL
 signatures before plans 037/041/050 execute.
+Plan 077 was completed 2026-07-10 and moved to `docs/plans/complete/`;
+`docs/architecture/integration-events.md` now binds inbound provider receipt,
+verification, deduplication, jobs processing, and the unattended-run envelope
+law before plans 037/041 execute. Plan 079 is reserved as the first
+implementation slice (receipt spine + Airtable webhooks).
 
 ---
 
@@ -301,6 +306,7 @@ structure.
 | 040 | Active context: per-user-per-workspace selection, context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. (Donor C6.) |
+| 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation.) |
 
 ### Phase 4b — Knowledge Base (donor Phase D; gates G3, G4; parallel with 4a)
 
@@ -401,9 +407,10 @@ migration.
 Adjacent additions from the same review, not in Lane B: 075 (threat-model
 design note, registers Gate G6, before 041/046/048), 076 (**DONE
 2026-07-10** — bounded tool results + calibrated token estimation), and 077
-(inbound integration events design
-note — webhooks/verification/event-triggered runs; reserves the seam in
-037/041 before Phase 4a code lands; MCP stays deferred per D7).
+(**DONE 2026-07-10** — inbound integration events design note covering
+webhooks/verification/event-triggered runs; reserves the seam in 037/041
+before Phase 4a code lands and reserves 079 as the first implementation;
+MCP stays deferred per D7).
 
 ### Lane P — Public Launch & Adoption (added 2026-07-07; plan 078)
 
@@ -448,14 +455,15 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 → {037–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).
 
 Lane B placement rationale: each amendment lands immediately before the
-plan it binds — 073 before 053 (both done), 067/068/074 (done) and 077/075
-batched before the Phase 4a/4b fork they all gate, 071 before 048, 069
+plan it binds — 073 before 053 (both done), 067/068/074/077 (done) and 075
+before the Phase 4a/4b fork they gate, 079 after its 037–041 substrate,
+071 before 048, 069
 before 049, 070 before 050, 072 before 059. 076 is done; it landed after
 054 and before 056, whose pressure math consumes its calibrated estimator.
 

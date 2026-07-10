@@ -120,6 +120,11 @@ permission re-discovery, 043 documents truncate-only use of
 keeps its candidate pool at least as large as its accepted `top_k`. The six
 amended plans remain TODO and own the implementation. Plan 074 moved to
 `plans/complete/`.
+Plan 077 was executed 2026-07-10 as the inbound integration-events design
+note: it fixed the verification-first receipt surface, bounded payload and
+dedup contract, provider event postures, and the scheduled-equivalent envelope
+law for unattended event runs; it amended 037/041 and reserved plan 079 for
+the receipt spine plus Airtable webhooks. Plan 077 moved to `plans/complete/`.
 
 Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
 workspace-scoped cancel route + audit, local task cancellation, heartbeat
@@ -228,8 +233,9 @@ integrations, files, knowledge base, memory, artifacts).
 | 074 | Integration & KB plan consistency sweep (amendments to 038/039/042/043/044/045) | P1 | S-M | 038/039/042/043/044/045 (binds before Phase 4a/4b) | DONE |
 | 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | DONE |
-| 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | TODO |
+| 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | DONE |
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
+| 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -722,6 +728,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `053`/`054`/`056`/`057`/`058`/`059` each add scenario-suite coverage
   under `tests/scenarios/` as part of their done criteria (Gate G5
   discipline; `055` maintenance notes).
+- `077` marked DONE 2026-07-10: `docs/architecture/integration-events.md`
+  reserves one verification-first webhook family with no CSRF exemption,
+  bounded receipt/persistence, provider-owned dedup, and processing through
+  the 030 jobs harness. Event-triggered runs gain a reserved `event` trigger
+  whose server-minted envelope must match scheduled runs (`require_approval`
+  by default). Amendments in 037/041 reserve manifest values, webhook-secret
+  references, and provider `events.py` slots without adding code. `079` is the
+  first implementation slice: the shared receipt spine plus Airtable webhooks.
 
 - `062`–`066` ordering rationale: `062` first because it makes the local
   gate honest (today `make check` runs pytest without `TEST_DATABASE_URL`,
