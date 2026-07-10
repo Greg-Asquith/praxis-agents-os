@@ -82,7 +82,22 @@ Plan 077 was completed 2026-07-10 and moved to `docs/plans/complete/`;
 `docs/architecture/integration-events.md` now binds inbound provider receipt,
 verification, deduplication, jobs processing, and the unattended-run envelope
 law before plans 037/041 execute. Plan 079 is reserved as the first
-implementation slice (receipt spine + Airtable webhooks).
+implementation slice (receipt spine + Airtable webhooks); its plan document
+is written by the Phase 4a executor once 041 lands.
+Plan 080 was written and executed 2026-07-10 as the Phase 4a/4b handoff
+readiness sweep (docs-only, the 074 mold): it refreshed the stale
+post-053/054/066 runtime anchors in 040/046, registered threat-model
+channels for integration-fetched content (041) and the KB annotation
+helper (044) under Gate G6, made 044 ingest upload-source documents for
+real now that 033 is landed, reconciled cross-plan route/contract
+mismatches across 037–042 and 044–047, recorded the optional
+`oauth_operations` plugin seam and the KB-write approval default, and
+consolidated the Lane H follow-up notes into `FOLLOW_UPS.md`. A same-day
+maintainer decision (D11) then removed the fake integration provider
+outright: 037–039 ship no fake package or gating, the `oauth_operations`
+seam recorded by 080 is dropped with its only consumer, and contract/
+loader testing moves to a suite-local test provider with transport-mocked
+provider HTTP. Phases 4a and 4b are hand-off ready.
 
 ---
 
@@ -129,6 +144,7 @@ product interview on 2026-07-02.
 | D7 | MCP client support | Deferred until the native registry is stable and the catalog is big enough to need `defer_loading`. Not in any phase below. | — |
 | D8 | Client-side password hashing | Rejected (no threat model it addresses; passwords already hashed at rest, TLS in transit). Closes the NOTES item. | — |
 | D9 | OKF and Google Knowledge Catalog posture | **Own the KB; use OKF for compatibility.** Praxis owns storage, indexing, permissions, jobs, audit, retention, and agent behavior. Open Knowledge Format informs markdown/frontmatter structure, stable concept identifiers, and import/export. Google Knowledge Catalog may become an optional integration/source/sink later, not the runtime substrate. | 044–047 |
+| D11 | Fake integration provider | **Removed (2026-07-10).** The shipped provider set is exactly D4 (Gmail, Google Ads, Airtable): no fake provider package, manifest entry, or local-only settings gate ships. The plugin contract and loader are exercised by a suite-local test provider registered through the loader seam in test code only, with provider HTTP mocked at the transport layer; manual QA connects real dev credentials (Airtable's API key is the cheapest). The optional `oauth_operations` plugin seam (plan 080 decision 1) is dropped with its only consumer — the engine's generic manifest-driven OAuth flow is the only token path; revisit only if a real provider cannot use it. Supersedes 037's decision 7 and the fake slices of the 061/077/080 notes; 039 ships its discovery engine with no working shipped arm until 041. | 037–039, 079 |
 | D10 | Integration provider packaging | **Self-contained, individually-enableable provider packages on both sides; the registry and dispatch choke point stay singular.** Backend: one package per provider under `apps/api/integrations/` exporting an `IntegrationProviderPlugin`, loaded only when named in `INTEGRATIONS_ENABLED_PROVIDERS`; per-provider pyproject extras for SDK deps; machine-enforced import laws. Frontend: per-provider lazy modules under `apps/web/src/integrations/` (one chunk each), default-first server-declared tool presentation, custom rows exceptional; no pnpm workspace (rejected with revisit trigger). Design note: `docs/architecture/integration-packaging.md` (plan 061, DONE 2026-07-07); binds 037/039/041/042 via amendments. Motivated by the donor system's everything-always interconnection failure and customers wanting disjoint provider subsets. | 037–042 and every later provider |
 
 Per-subsystem open decisions that do *not* change ordering (embedding
@@ -175,7 +191,8 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   unless `docs/architecture/threat-model.md` lists the channel and
   adversarial fixtures exercise it. Deterministic tests pin sanitization
   mechanics; behavioral resistance rides 055's graded eval layer. Binds
-  041/046/048/049/056/059 and every later content source.
+  041/044/046/048/049/056/059 and every later content source (044 added
+  2026-07-10 by plan 080 for the ingestion annotation channel).
 
 ## 4. The Roadmap
 
@@ -292,8 +309,9 @@ Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
 
 Structural pre-decision: D10 / plan 061 (`docs/architecture/
 integration-packaging.md`, DONE 2026-07-07) binds how provider code is
-packaged — 037 lands the plugin contract + loader and the fake provider as
-the first package, 041's providers land as `apps/api/integrations/<key>/`
+packaged — 037 lands the plugin contract + loader (exercised by a
+suite-local test provider per D11; no fake provider ships), 041's providers
+land as the first real `apps/api/integrations/<key>/`
 packages, 042 lands the `src/integrations/` lazy-module seam. The
 037/039/041/042 amendment blocks carry the deltas; the note wins on
 structure.
@@ -306,7 +324,7 @@ structure.
 | 040 | Active context: per-user-per-workspace selection, context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. (Donor C6.) |
-| 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation.) |
+| 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |
 
 ### Phase 4b — Knowledge Base (donor Phase D; gates G3, G4; parallel with 4a)
 
@@ -357,7 +375,8 @@ delivery of scheduled-run results (extends the §6 notification policy in
 KB ingestion from integration sources (Drive/Gmail → `kb.sync_source`
 jobs; the Phase 4a×4b intersection), and workspace-level LLM token
 budgets (governance §4 counters exist on `agent_runs` hot columns; only
-the quota surface is missing).
+the quota surface is missing). All three are tracked as items 3–5 in
+`docs/plans/FOLLOW_UPS.md` (consolidated by plan 080).
 
 ### Lane Q — Quality Consolidation (added 2026-07-07; plans 062–066)
 
@@ -456,7 +475,7 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → {037–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → {037–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).

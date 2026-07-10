@@ -18,6 +18,18 @@
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file amends this plan (manifest
+> smoke, plugin OAuth seam, drift-check paths); where it conflicts with
+> the body above or the amendment blocks below, the plan 080 amendment
+> wins.
+>
+> **Amendment (decision D11) pre-flight**: the "Amendment (decision D11,
+> 2026-07-10)" block at the end of this file removes the fake provider
+> entirely (D4 provider set only; suite-local test provider in test code;
+> no `oauth_operations` seam); where it conflicts with the body above OR
+> any other amendment block (061/068/077/080), the D11 amendment wins.
 
 > **Amendment (2026-07-07, plan 061 — provider packaging)**: this plan now
 > also lands the packaging seams from
@@ -40,9 +52,14 @@
 >    them). The settings validator rejects `"fake"` in the enabled list
 >    outside `ENVIRONMENT=local` (replaces
 >    `INTEGRATIONS_FAKE_PROVIDER_ENABLED` — drop that setting).
+>    *(the `fake/` package and the `"fake"`-in-list validator gate are
+>    superseded — see Amendment (decision D11): no fake ships in any
+>    form; three packages only)*
 > 3. The manifest smoke command becomes loader-driven and runs with all
 >    four packages enabled locally; with the default empty list it prints
->    `[]` — both expectations get tests.
+>    `[]` — both expectations get tests. *(superseded — see Amendment
+>    (decision D11): three packages, `['airtable', 'gmail',
+>    'google_ads']`)*
 > 4. `build_runtime_tools` goes lenient on catalog-absent saved tool
 >    names per the note §4.7 (skip + log + run metadata, not
 >    `ModelConfigurationError`); write-time validation stays strict.
@@ -121,7 +138,9 @@
 >    "none"` (data only; the loader and plugin contract are unchanged).
 >    Decision 6's entries set gmail `"pubsub_push"`, airtable
 >    `"webhook"`, google_ads `"none"`, fake `"none"` (041 flips fake to
->    a synthetic value when its test harness needs one).
+>    a synthetic value when its test harness needs one). *(the fake
+>    entry is superseded — see Amendment (decision D11): three entries,
+>    no fake)*
 > 2. **Webhook secrets ride the existing seams.** Per-webhook MAC
 >    secrets are `services/secrets` references named
 >    `integrations/{provider_key}/{connection_id}/webhook/{webhook_id}`
@@ -196,7 +215,9 @@
    (`services/agents/runtime/tools/registry.py:33-91`, duplicate-name
    `RuntimeError` at 86-88). One frozen dataclass per provider: auth modes,
    owner scope, OAuth scopes, resource types, discovery flag, required form
-   fields, capability flags, env gating. Ships **four entries**: `fake`
+   fields, capability flags, env gating. Ships **four entries**
+   *(superseded — see Amendment (decision D11): three entries, no
+   `fake`)*: `fake`
    (below), plus `gmail`, `google_ads`, `airtable` as **data only** per D4 —
    their operations, clients, and registry tools are plan 041's scope, and
    all three are env-gated off by default.
@@ -205,7 +226,10 @@
    issuance/refresh/revoke and configurable discovery results, enabled only
    via `INTEGRATIONS_FAKE_PROVIDER_ENABLED` which the settings validator
    rejects outside `ENVIRONMENT=local` (same law as local_fs storage). 038
-   and 039 test against it; it never ships enabled in prod.
+   and 039 test against it; it never ships enabled in prod. *(superseded —
+   see Amendment (decision D11): overruled — no fake provider ships in any
+   form; the contract is exercised by a suite-local test provider in test
+   code only)*
 8. **Locked proactive refresh.** `ensure_fresh_credential` refreshes when
    `token_expires_at - now < INTEGRATIONS_TOKEN_REFRESH_LEEWAY_SECONDS`
    (default 120, inside the donor's 60–180 s band), serialized per
@@ -351,7 +375,7 @@ the exception layer; there is no `services/integrations/`, no
 | Migration sanity | `uv run alembic check` | no pending operations after Step 3 |
 | Apply migration | `uv run alembic upgrade heads` | four tables created |
 | Downgrade round-trip | `uv run alembic downgrade core@-1 && uv run alembic upgrade heads` | clean |
-| Manifest smoke | `uv run python -c "from services.integrations.manifest import PROVIDER_MANIFESTS; print(sorted(PROVIDER_MANIFESTS))"` | `['airtable', 'fake', 'gmail', 'google_ads']` |
+| Manifest smoke | `uv run python -c "from services.integrations.manifest import PROVIDER_MANIFESTS; print(sorted(PROVIDER_MANIFESTS))"` | `['airtable', 'fake', 'gmail', 'google_ads']` *(superseded — see Amendment (plan 080): loader-driven; `[]` by default; and Amendment (decision D11): `['airtable', 'gmail', 'google_ads']` with the three packages enabled)* |
 | New tests | `TEST_DATABASE_URL=... uv run pytest tests/services/integrations tests/services/secrets -q` | all pass |
 | Full API tests | `TEST_DATABASE_URL=... uv run pytest -q` | all pass |
 
@@ -378,7 +402,10 @@ the exception layer; there is no `services/integrations/`, no
   `credentials/store_secret_reference_credential.py`,
   `credentials/find_duplicate_principals.py`,
   `connections/__init__.py`, `connections/transition_connection_status.py`,
-  `providers/__init__.py`, `providers/fake.py`
+  `providers/__init__.py`, `providers/fake.py` *(superseded by the 061
+  amendment — the fake lives at `integrations/fake/`; see Amendment
+  (plan 080))* *(superseded — see Amendment (decision D11): not built at
+  all — neither `providers/fake.py` nor `integrations/fake/` exists)*
 - `apps/api/services/audit_events/enums.py` (add four
   `AuditResourceType` members)
 - `apps/api/pyproject.toml` (add optional extra
@@ -395,7 +422,9 @@ the exception layer; there is no `services/integrations/`, no
   (governance §6 explicitly names 039 for `needs_reauth`/discovery-failure
   notifications; this plan only sets status + audit).
 - Active context and `RuntimeDeps` injection — 040.
-- Real provider operations, API clients beyond the fake provider, and
+- Real provider operations, API clients beyond the fake provider
+  *(superseded — see Amendment (decision D11): no fake — ALL provider API
+  clients are 041's)*, and
   registry tools — 041 (Gate G1 applies there, not here).
 - UI — 042.
 - Swapping the LLM `provider_api_key` seam
@@ -423,7 +452,7 @@ INTEGRATIONS_HTTP_TIMEOUT_SECONDS: float = 30.0        # per-request timeout
 INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS: int = 3          # bounded attempts (governance §4)
 INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR: float = 0.5    # fallback exponential backoff
 INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS: int = 60    # Retry-After honored up to this cap
-INTEGRATIONS_FAKE_PROVIDER_ENABLED: bool = False       # decision 7; local-only (validator)
+INTEGRATIONS_FAKE_PROVIDER_ENABLED: bool = False       # decision 7 (superseded by the 061 amendment — see Amendment (plan 080); removed entirely — see Amendment (decision D11))
 INTEGRATIONS_AIRTABLE_ENABLED: bool = False            # manifest env gate (D4; ops are 041)
 ```
 
@@ -440,7 +469,7 @@ if self.SECRET_PROVIDER == "local" and self.ENVIRONMENT != "local":
     raise ValueError("SECRET_PROVIDER=local is only allowed when ENVIRONMENT=local")
 if self.SECRET_PROVIDER == "gcp_secret_manager" and not (self.GCP_PROJECT_ID or "").strip():
     raise ValueError("SECRET_PROVIDER=gcp_secret_manager requires GCP_PROJECT_ID")
-if self.INTEGRATIONS_FAKE_PROVIDER_ENABLED and self.ENVIRONMENT != "local":
+if self.INTEGRATIONS_FAKE_PROVIDER_ENABLED and self.ENVIRONMENT != "local":  # (superseded by the 061 amendment — the gate is "fake" in INTEGRATIONS_ENABLED_PROVIDERS; removed entirely — see Amendment (decision D11): no fake gate ships)
     raise ValueError("INTEGRATIONS_FAKE_PROVIDER_ENABLED is only allowed when ENVIRONMENT=local")
 ```
 
@@ -592,7 +621,8 @@ Table 3 — `IntegrationResource(BaseModel)`,
 - `connection_id` UUID FK `integration_connections.id`
   `ondelete="CASCADE"` not null, indexed
 - `resource_type` String(64) not null (manifest vocabulary: `gmail_mailbox`,
-  `google_ads_account`, `airtable_base`, `fake_resource`)
+  `google_ads_account`, `airtable_base`, `fake_resource` *(the
+  `fake_resource` kind is superseded — see Amendment (decision D11))*)
 - `external_id` String(255) not null; `display_name` String(255) not null;
   `parent_external_id` String(255) nullable (MCC→account hierarchy, D4)
 - `enabled` Boolean not null server_default `false` (admin/member selection,
@@ -677,11 +707,15 @@ the transition map (dict of status → allowed next statuses) implementing:
 `is_provider_enabled(manifest) -> bool` reading
 `getattr(settings, manifest.enabled_setting)` when set.
 
-The four entries (decision 6; D4):
+The four entries (decision 6; D4) *(superseded by the 061 amendment —
+entries live in `apps/api/integrations/<key>/` packages, not in
+`manifest.py`; see Amendment (plan 080))* *(superseded — see Amendment
+(decision D11): THREE entries — the `fake` entry below is removed)*:
 
 - `fake` — auth_modes `("oauth", "api_key")`, owner_scope `"user"`,
   requires_discovery True, resource_types `("fake_resource",)`,
-  enabled_setting `"INTEGRATIONS_FAKE_PROVIDER_ENABLED"`.
+  enabled_setting `"INTEGRATIONS_FAKE_PROVIDER_ENABLED"`. *(superseded —
+  see Amendment (decision D11): this entry does not ship)*
 - `gmail` — `("oauth",)`, `"user"`, requires_discovery False (the mailbox
   is the principal), oauth_scopes = the Gmail readonly+send scopes (041
   finalizes; placeholders here are fine because the provider is gated),
@@ -700,10 +734,16 @@ The four entries (decision 6; D4):
 short expiry), `refresh(refresh_token)` (fails when the token carries a
 `poison-` prefix — the needs_reauth test hook), `revoke()`,
 `discover_resources()` (returns a module-level configurable list; tests
-monkeypatch it). No HTTP anywhere.
+monkeypatch it). No HTTP anywhere. *(superseded — see Amendment (decision
+D11): not built — a suite-local test provider, registered through the
+loader seam in test code only, replaces it; provider HTTP is mocked at the
+transport layer)*
 
 **Verify**: manifest smoke command from the table →
-`['airtable', 'fake', 'gmail', 'google_ads']`; a duplicate `_register` in a
+`['airtable', 'fake', 'gmail', 'google_ads']` *(superseded — see
+Amendment (plan 080), then Amendment (decision D11): loader-driven,
+`['airtable', 'gmail', 'google_ads']` with the three packages enabled;
+`[]` by default)*; a duplicate `_register` in a
 test raises `RuntimeError`; ruff exit 0.
 
 ### Step 5: Credential service + HTTP helper
@@ -756,7 +796,9 @@ Credential ops (one per file, AGENTS.md):
       return credential
   ```
 
-  then call the provider refresh (fake provider in this plan; 038 adds the
+  then call the provider refresh (fake provider in this plan *(superseded
+  — see Amendment (decision D11): exercised via the suite-local test
+  provider with transport-mocked token HTTP)*; 038 adds the
   real OAuth token endpoint call through `http.py`), store the rotated
   tokens, stamp `last_refreshed_at`, audit `UPDATE` (status SUCCESS).
   On refresh failure: increment `refresh_failure_count`, stamp
@@ -802,7 +844,8 @@ tests still green); ruff exit 0.
 ### Step 7: Tests
 
 `tests/factories/integrations.py`: `create_external_credential(...)`,
-`create_integration_connection(...)` (defaults: fake provider, oauth mode,
+`create_integration_connection(...)` (defaults: fake provider *(superseded
+— see Amendment (decision D11): the suite-local test provider)*, oauth mode,
 workspace owner, label "Test connection"), `create_integration_resource(...)`
 — the `tests/factories/` style, DB rows via the shared session fixture.
 
@@ -810,9 +853,12 @@ New modules (all set `pytestmark = pytest.mark.asyncio`; DB-backed ones
 skip cleanly without `TEST_DATABASE_URL`):
 
 - `tests/services/integrations/test_manifest.py` (no DB): four entries
-  registered; duplicate key raises `RuntimeError`; oauth-without-scopes and
+  registered *(superseded — see Amendment (decision D11): three)*;
+  duplicate key raises `RuntimeError`; oauth-without-scopes and
   api_key-without-form-fields rejected; `is_provider_enabled` honors the
-  gate; fake provider disabled by default.
+  gate; fake provider disabled by default *(superseded — see Amendment
+  (decision D11): dropped — no fake exists; loader-path coverage uses the
+  suite-local test provider)*.
 - `tests/services/integrations/test_models.py` (DB): owner XOR CHECK
   (both/neither owner → IntegrityError); blank label rejected; status CHECK
   rejects unknown status; mode-payload CHECK (oauth row with secret_name
@@ -832,7 +878,9 @@ skip cleanly without `TEST_DATABASE_URL`):
 - `tests/services/integrations/test_refresh_locking.py` (DB): **the
   double-refresh serialization invariant** — two concurrent sessions call
   `ensure_fresh_credential` on the same expiring credential; assert the
-  fake provider's refresh call-count is exactly 1 and both callers see the
+  fake provider's *(superseded — see Amendment (decision D11): the
+  suite-local test provider's, with transport-mocked refresh HTTP)*
+  refresh call-count is exactly 1 and both callers see the
   same rotated token (second session re-checks after the FOR UPDATE lock).
 - `tests/services/integrations/test_status_transitions.py` (DB or unit on
   the map): every row of the Step 4 table allowed; `revoked → *` and other
@@ -850,8 +898,13 @@ skip cleanly without `TEST_DATABASE_URL`):
 - `tests/services/secrets/test_settings_gating.py` (no DB): building
   `Settings` with `SECRET_PROVIDER=local, ENVIRONMENT=production` raises;
   `gcp_secret_manager` without `GCP_PROJECT_ID` raises; fake provider
-  enabled outside local raises (construct Settings objects directly with
-  overrides — the existing settings-validation test pattern).
+  enabled outside local raises *(superseded by the 061 amendment — the
+  rejected combination is `"fake"` in `INTEGRATIONS_ENABLED_PROVIDERS`
+  outside local; see Amendment (plan 080))* *(superseded — see Amendment
+  (decision D11): this rejected-combination case is dropped entirely — no
+  fake gate exists)* (construct Settings objects
+  directly with overrides — the existing settings-validation test
+  pattern).
 
 **Verify**:
 `TEST_DATABASE_URL=... uv run pytest tests/services/integrations tests/services/secrets -q`
@@ -866,7 +919,9 @@ under concurrency), **fingerprint dedup detects and never blocks** (D3),
 **crypto-shred at revoke** (ciphertext gone, metadata kept, audit clean of
 values), **no per-provider uniqueness** (two labeled connections insert),
 **owner XOR and non-blank label at the database layer**, **local secrets
-and the fake provider cannot leave local** (settings validator), and
+and the fake provider cannot leave local** (settings validator)
+*(superseded — see Amendment (decision D11): the fake-provider half is
+dropped; the local-secrets gating stands)*, and
 **Retry-After honored, capped, and bounded** (governance §4).
 
 ## Done criteria
@@ -876,6 +931,11 @@ and the fake provider cannot leave local** (settings validator), and
       is on the **core** branch (D5) and downgrade round-trips
 - [ ] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite)
 - [ ] Manifest smoke prints `['airtable', 'fake', 'gmail', 'google_ads']`
+      *(superseded — see Amendment (plan 080): with all four providers
+      enabled; `[]` with the default empty list)* *(superseded — see
+      Amendment (decision D11): `['airtable', 'gmail', 'google_ads']`
+      with the three providers enabled; `[]` with the default empty
+      list)*
 - [ ] Grep confirms NO unique index or constraint on
       `(owner_*, provider_key)` in `models/integrations.py` (D3)
 - [ ] Grep confirms no raw token/secret value appears in any audit
@@ -957,3 +1017,107 @@ Stop and report back (do not improvise) if:
   in `ensure_fresh_credential`, that `transition_connection_status` is the
   ONLY writer of `IntegrationConnection.status` (grep before approving),
   and that no test or fixture ever writes a real provider credential.
+
+## Amendment (plan 080, 2026-07-10)
+
+Where this amendment contradicts the body above (including the earlier
+amendment blocks), this amendment wins. Grounding: the pre-handoff
+readiness review at `bbfd769`; decisions recorded in
+`docs/plans/080-phase4a-4b-handoff-readiness-sweep.md`.
+
+1. **Manifest smoke reconciled with the 061 amendment (loader-driven,
+   default-empty).** The Commands-table smoke, Step 4's verify line, and
+   the done criterion still read
+   `from services.integrations.manifest import PROVIDER_MANIFESTS` →
+   `['airtable', 'fake', 'gmail', 'google_ads']`, which contradicts the
+   061 amendment: `manifest.py` carries no hardcoded entries and
+   `INTEGRATIONS_ENABLED_PROVIDERS` defaults to `[]`. The smoke becomes:
+   run with all four provider packages named in
+   `INTEGRATIONS_ENABLED_PROVIDERS` and assert the loader-assembled
+   registry prints `['airtable', 'fake', 'gmail', 'google_ads']`; run
+   with the default empty list and assert it prints `[]`. Both
+   expectations get tests (the 061 amendment item 3 already requires
+   this — this item makes the body's three literal expectations match
+   it). The inline `*(superseded ...)*` markers at the Step 1 fake
+   setting, the Step 4 entries, the in-scope `providers/fake.py` line,
+   and the Step 7 fake-gating test flag the other body text the 061
+   amendment already superseded. *(the four-key expectation is
+   superseded — see Amendment (decision D11): three packages,
+   `['airtable', 'gmail', 'google_ads']`)*
+2. **Fake-provider token seam: optional `oauth_operations` on the plugin
+   contract** (plan 080 decision 1) *(superseded in full — see Amendment
+   (decision D11): the seam is not added; the plugin contract stays
+   `manifest + discover_resources + tool_definitions`)*.
+   `IntegrationProviderPlugin`
+   (`services/integrations/plugin.py`, 061 amendment) gains an optional
+   `oauth_operations` attribute, default `None`, resolved only through
+   the loader. The engine's generic manifest-driven OAuth HTTP flow
+   (038) is the default; a provider supplies `oauth_operations` only
+   when its token issuance/refresh/revoke cannot be expressed as
+   manifest-driven HTTP. The fake provider is the first consumer: its
+   in-process `issue_tokens`/`refresh`/`revoke` (decision 7, now in
+   `integrations/fake/` per the 061 amendment) are exposed through this
+   seam. `ensure_fresh_credential`'s provider refresh call and 038's
+   fake short-circuit resolve the implementation through the loaded
+   plugin — never by importing `integrations.*` directly — keeping the
+   packaging note's §4.6 import laws intact. Recorded in
+   `docs/architecture/integration-packaging.md` (plan 080 addendum).
+3. **Drift check widened.** Add
+   `apps/api/services/agents/runtime/tools/registry.py` and
+   `apps/api/services/agents/models/utils.py` to the drift-check command
+   in the executor blockquote. Both are cited as load-bearing precedents
+   (the registry's import-time invariant shape; the
+   `retrying_http_client`/`provider_api_key` seams decision 9 and the
+   maintenance notes reason about) but sit outside the current drift
+   paths, so a change to either would not trip the check.
+
+## Amendment (decision D11, 2026-07-10)
+
+Where this amendment contradicts anything above — the plan body, the
+plan 061/068/077 amendment blockquotes, AND the plan 080 amendment —
+this amendment wins. Grounding: roadmap decision D11 (2026-07-10):
+"**The fake integration provider is removed entirely.** The shipped
+provider set is exactly D4 — Gmail, Google Ads, Airtable."
+
+1. **Decision 7 is overruled — no fake provider ships, in any form.**
+   No fake provider package, no fake manifest entry, no
+   `INTEGRATIONS_FAKE_PROVIDER_ENABLED` setting, and no
+   `"fake"`-in-enabled-list local-only validator gate ships.
+   `services/integrations/providers/fake.py` (Step 4) is not built, and
+   neither is its 061-amendment relocation `integrations/fake/`.
+2. **Step 1**: the `INTEGRATIONS_FAKE_PROVIDER_ENABLED` field and its
+   environment-validator clause are gone entirely. Note the 061
+   amendment had already replaced the setting with `"fake"`-in-
+   `INTEGRATIONS_ENABLED_PROVIDERS` gating — that gating is gone too:
+   there is no `"fake"` key to gate. The Step 7 settings test's
+   rejected-combination case for `"fake"` in
+   `INTEGRATIONS_ENABLED_PROVIDERS` is dropped.
+3. **Step 4 ships THREE manifest entries** — `gmail`, `google_ads`,
+   `airtable` (the D4 set, still packages under `apps/api/integrations/`
+   per the 061 amendment). The `fake` entry, its auth_modes and
+   resource_types, and the `fake_resource` resource-type kind are
+   removed. The 077 amendment's `event_delivery` values reduce to gmail
+   `"pubsub_push"`, airtable `"webhook"`, google_ads `"none"` — no fake
+   entry, no synthetic flip.
+4. **Manifest smoke and done criteria**: still loader-driven per the
+   plan 080 amendment item 1, but the all-enabled expectation is
+   `['airtable', 'gmail', 'google_ads']` (the three packages named in
+   `INTEGRATIONS_ENABLED_PROVIDERS`); the default-empty-list
+   expectation stays `[]`. Both expectations get tests.
+5. **The plugin contract and loader are exercised by a suite-local test
+   provider registered through the loader seam in test code only**
+   (fixtures under the test tree, never product code), with provider
+   HTTP (token/userinfo/discovery endpoints) mocked at the transport
+   layer. The credential-refresh tests — the locked proactive refresh,
+   the refresh call-count invariant, and needs_reauth poisoning — run
+   against this suite-local test provider with transport-mocked HTTP,
+   and the Step 7 connection factory defaults to it. Manual QA connects
+   real dev credentials (Airtable's API key is the cheapest connect).
+6. **Plan 080 amendment item 2 (`oauth_operations`) is superseded in
+   full — the seam is dropped with its only consumer.** The optional
+   `oauth_operations` plugin attribute is not added; the plugin
+   contract stays `manifest + discover_resources + tool_definitions`,
+   and the engine's generic manifest-driven OAuth flow (038) is the
+   only token path. Revisit only if a real provider cannot use the
+   generic flow. Plan 080 amendment item 1's four-key smoke expectation
+   is likewise superseded by item 4 above.

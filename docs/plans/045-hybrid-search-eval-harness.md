@@ -38,6 +38,12 @@
 > **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
 > 2026-07-07)" block at the end of this file amends this plan; where it
 > conflicts with the body above, the amendment wins.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file also amends this plan —
+> the search contract gains `is_private` on hits and a SQL-level
+> `private_only` filter (dictated by 046/047); where it conflicts with
+> the body above, the amendment wins.
 
 ## Status
 
@@ -160,7 +166,9 @@ the subsystem design (`DONOR_PORT_ROADMAP.md:302-306`); its failure was
 having no typed vectors to search and no way to evaluate changes. Gate G4
 (`000_MASTER_ROADMAP.md:88-89`) exists because retrieval and
 memory-write tuning without an eval harness is superstition: every
-constant in this plan (rrf_k=60, K=40/40, ef_search=100) is a *default
+constant in this plan (rrf_k=60, K=40/40 *(superseded — the plan 074
+amendment raises `KB_SEARCH_CTE_LIMIT` to 50, so K=50/50)*,
+ef_search=100) is a *default
 with a scoreboard*, not a tuned value. The same engine, seam, and harness
 are reused by 046 (tools call `search_chunks`), 047 (UI calls the route),
 and 048 (memories copy the SQL shape and extend the harness) — so the
@@ -340,7 +348,9 @@ KB_RERANKER: Literal["none"] = "none"    # decision 8 — interface only
 `services/kb/search_chunks.py` — `search_chunks(db, *, workspace_id:
 UUID, user_id: UUID, query: str, top_k: int | None = None, source_types:
 Sequence[str] | None = None, document_ids: Sequence[UUID] | None = None,
-provider: EmbeddingProvider | None = None) -> KBSearchResult`:
+provider: EmbeddingProvider | None = None) -> KBSearchResult`
+*(signature amended — adds `private_only: bool = False`; see Amendment
+(plan 080))*:
 
 1. Validate: non-empty query (≤ 1000 chars), `top_k` clamped to
    `[1, KB_SEARCH_TOP_K_MAX]`, source types against the 044 constants.
@@ -410,6 +420,8 @@ LIMIT :top_k
    `halfvec_cosine_ops`); the privacy/workspace/delete predicates appear
    in BOTH CTEs (decision 4 — never post-filter); `websearch_to_tsquery`
    (not `to_tsquery`) so user syntax can't error the statement.
+   *(amended — the final SELECT also returns `d.is_private`, and both
+   CTEs take the `private_only` filter; see Amendment (plan 080))*
 4. If `get_reranker()` returns one, apply it to the fused rows
    (decision 8; with `KB_RERANKER="none"` this is dead-by-default).
 5. Return `KBSearchResult(results=[KBSearchHit(...)],
@@ -725,3 +737,30 @@ corpus returns `top_k` rows. Gate G4 note: this corrects a written
 default before the harness exists — not ranking tuning; the tuning
 protocol does not apply. Any FURTHER change to either value follows the
 protocol as usual.
+
+## Amendment (plan 080, 2026-07-10): privacy fields in the search contract
+
+Where this block conflicts with the body above, this block wins. The
+plan 074 amendment above is unaffected.
+
+**New decision 13 (plan 080 decision 6).** 046's `search_knowledge`
+tool output dictates `KnowledgeChunkResult.is_private` and a
+`KnowledgeSearchFilters.private_only` filter, and 047's search panel
+renders privacy badges from the hit payload. Without these fields in
+this plan's contract, 046 would have to re-query documents per hit or
+post-filter in Python — both forbidden by decision 4. Three additions:
+
+1. The Step 3 final SELECT also returns `d.is_private`.
+2. `KBSearchHit` (`services/kb/schemas.py`) carries `is_private: bool`.
+3. `search_chunks` gains a `private_only: bool = False` keyword; when
+   true, both CTEs additionally require `d.is_private` — SQL-level,
+   inside the CTEs like every other filter (decision 4). The decision-5
+   visibility predicate still applies unchanged, so `private_only=True`
+   returns only the acting user's own private documents.
+
+**Test deltas (Step 6)**: a service/harness case asserts
+`private_only=True` returns only private documents owned by the acting
+user (and nothing from other users or workspaces), and that
+`is_private` is populated on every hit in both hybrid and
+lexical-fallback modes. The existing isolation/privacy assertions stand
+unchanged.

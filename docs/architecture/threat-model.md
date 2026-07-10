@@ -3,6 +3,8 @@
 - **Status**: living document
 - **Owning gate**: G6 (untrusted content is framed and fixture-tested)
 - **Written**: 2026-07-10 (plan 075)
+- **Amended**: 2026-07-10 (plan 080 — channels (g) integration-fetched
+  content and (h) KB annotation helper; hostile email-body fixture)
 - **Rule**: downstream plans implement slices of this note and cite the
   relevant sections. A plan that changes a channel, defense, or test contract
   records the deviation here in the same change. New model-visible untrusted
@@ -27,8 +29,9 @@ authenticated or otherwise legitimate workflow:
 - external text in tool results, including search results and delegated-child
   output;
 - stored memory content authored by an agent during a run;
-- conversation spans passed to a summarizer; and
-- file content passed to a helper model for code generation.
+- conversation spans passed to a summarizer;
+- file content passed to a helper model for code generation; and
+- document content passed to the KB ingestion annotation helper.
 
 An attacker can place instructions, counterfeit delimiters, system-prompt-like
 headings, tool-call requests, or data-exfiltration directions in any of these
@@ -61,6 +64,8 @@ layer tests whether a model resists the content.
 | **(d) File content to generated code** | A hostile CSV cell or file passage can steer the helper model that writes code. | Keep task text separate; frame all inlined file content as untrusted before the helper-model call. | The hostile CSV fixture is entirely enclosed by the shared frame and cannot forge its end marker. | Generated code follows the user's task rather than file-borne instructions. Sandbox egress is tested separately by 072. | 059 |
 | **(e) Read-tool egress** | A URL or free-text query can encode workspace data into an outbound request even though the tool is classified as a read. | **[default — confirm at review]** Keep query arguments audit-visible through existing dispatch digests; add no new enforcement machinery in v1. Write envelopes do not cover reads. | Assert audit metadata records bounded argument digests without exposing secret values. | The model does not encode workspace data into outbound URL/query parameters and reports the attempt. | 055, with 041/054 context |
 | **(f) KB retrieval** | Retrieved documents and URL content can carry direct or indirect instructions. | Wrap every retrieved byte with the shared markers after forgery sanitization; one standing prompt block declares framed content data, never instructions. | Reuse the shared prompt-injection documents across retrieval and tool-framing tests. | `search_knowledge` and `read_document` cases do not follow fixture instructions. | 046 (reference defense), 055 behavioral layer |
+| **(g) Integration-fetched content** | Provider API payloads (Gmail bodies, Airtable records, Ads report text) are attacker-controlled and become model-visible through integration read tools. | Provider free text enters model context only through dispatch tool results, wrapped with the shared markers and a server-minted source kind and `ref` (for example a Gmail message id); size is bounded by 076's dispatch truncation. | The hostile email-body fixture is entirely enclosed by the shared frame, forged markers are neutralized, and the source ref is server-minted. | The model does not follow instructions embedded in provider content and reports the attempt. | 041, 055 behavioral layer |
+| **(h) KB ingestion annotation helper** | Full untrusted document content is fed to the contextual-annotation model; the model-authored `context_line` enters the lexical index, the embedding input, and search-hit payloads. | The annotation prompt frames document content as untrusted and instructs the helper to extract, not obey (§3); `context_line` is length-bounded server-side and stays labelled automatic. | A scripted model pins the annotation prompt shape against the shared hostile documents, and the stored `context_line` respects the bound. | Annotating a hostile document yields a descriptive context line that adopts no instructions. | 044, 055 behavioral layer |
 
 A new channel means any new path that places attacker-influenced text in model
 context, whether directly, through storage, or after transformation. Its plan
@@ -103,9 +108,11 @@ The fixture corpus starts with 045's shared documents:
 - `prompt_injection_exfil.md`.
 
 It extends them with a hostile memory title/content pair, a hostile
-conversation span, and a hostile CSV for code generation. Fixtures cover
-marker forgery, policy-block impersonation, tool-call coercion, durable
-instruction laundering, and query-parameter exfiltration.
+conversation span, a hostile CSV for code generation, and a hostile email
+body for integration reads; the annotation channel (h) reuses the shared
+documents rather than adding its own. Fixtures cover marker forgery,
+policy-block impersonation, tool-call coercion, durable instruction
+laundering, and query-parameter exfiltration.
 
 Use **[default — confirm at review]** a hoisted shared fixture directory when
 the second non-KB consumer arrives; until then, extend
@@ -133,7 +140,7 @@ model context from a new untrusted-content source (retrieval, memory,
 summaries, integration-fetched content, file/tool text) ships unless this note
 lists the channel and adversarial fixtures exercise it. Deterministic tests pin
 sanitization mechanics; behavioral resistance rides 055's graded eval layer.
-G6 binds 041/046/048/049/056/059 and every later content source.
+G6 binds 041/044/046/048/049/056/059 and every later content source.
 
 Passing G6 requires a §2 channel row, an explicit owner, a shared-fixture
 mechanical test, and a named graded-eval case. A plan cannot satisfy the gate by
@@ -144,7 +151,8 @@ that delimiters alone prevent prompt injection.
 
 | Plan | Sections implemented |
 |---|---|
-| 041 (first integration providers) | §1 external-content boundary; §2(e) integration read/query exposure; §5 gate before Gmail bodies become model-visible |
+| 041 (first integration providers) | §1 external-content boundary; §2(e) integration read/query exposure; §2(g) provider-content framing; §5 gate before Gmail bodies become model-visible |
+| 044 (KB models/ingestion) | §2(h) annotation channel; §3 extraction-not-obedience prompt; §4 shared documents |
 | 046 (KB tools) | §2(f) reference defense; §3 shared framing vocabulary; §4 KB fixtures |
 | 048 (memory model/tools) | §2(a) persistence channel; §3 provenance and read framing; §4 hostile memory fixtures |
 | 049 (memory injection/UI) | §2(b) prompt-authority boundary; §3 structural escaping and provenance; §4 rendering fixtures |

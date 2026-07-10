@@ -98,7 +98,7 @@ tests — and optionally a small web UI module.
 ```
 apps/api/integrations/
   __init__.py            # namespace only — no imports of provider packages
-  fake/                  # the 037 contract-fake, first package (local-only)
+  fake/                  # the 037 contract-fake, first package (local-only) — superseded, see §10 (decision D11): removed; the first packages are 041's real providers
   gmail/
     __init__.py          # exports PROVIDER: IntegrationProviderPlugin
     manifest.py          # the IntegrationProviderManifest entry (data)
@@ -134,7 +134,10 @@ Each provider package's `__init__.py` exports exactly one
 `PROVIDER: IntegrationProviderPlugin`. The contract is intentionally
 boring — data plus two kinds of callables. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
-don't grow the contract ad hoc.
+don't grow the contract ad hoc. (Addendum §9 adds one optional
+attribute: `oauth_operations`, default `None`.) *(superseded — see §10
+(decision D11): §9 is withdrawn; the contract stays `manifest +
+discover_resources + tool_definitions`)*
 
 ### 4.3 The loader
 
@@ -174,6 +177,8 @@ def load_enabled_providers() -> None:
   enablement list. Empty default: integrations are opt-in per deployment.
 - Settings validator: `"fake"` in the list is rejected outside
   `ENVIRONMENT=local` (same law as local_fs storage / console email).
+  *(superseded — see §10 (decision D11): no `"fake"` key exists to gate;
+  the clause is not built)*
 - Per-provider operational settings (OAuth client ids, developer tokens)
   stay in the core settings mixins as today — settings are deployment
   config, not provider code. A provider's manifest names its
@@ -332,3 +337,57 @@ Adding a provider touches:
 It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,
 or any `features/` code. Reviewers hold the line here.
+
+## 9. Addendum (2026-07-10, plan 080): optional OAuth-operations seam *(superseded — see §10 (decision D11))*
+
+*(This entire section is superseded — see §10 (decision D11): the seam
+is withdrawn with its only consumer.)*
+
+Recorded from plan 080 decision 1 (amends §4.2; 037 implements):
+
+- `IntegrationProviderPlugin` gains one optional attribute —
+  `oauth_operations`, default `None` — for providers that cannot use the
+  engine's generic manifest-driven OAuth HTTP flow (038). The generic
+  flow remains the default; a provider supplies `oauth_operations` only
+  when its token issuance/refresh/revoke cannot be expressed as
+  manifest-driven HTTP against provider endpoints.
+- The fake provider is the first consumer: its in-process token
+  issuance/refresh/revoke back the 037/038 credential state machine
+  without real OAuth, resolving the gap between the 037 amendment (the
+  fake moves wholly into `integrations/fake/`) and a plugin contract
+  that previously had no token seam.
+- Resolution is loader-only: the engine (credential service refresh,
+  038's connect-flow short-circuits) reaches a provider's
+  `oauth_operations` through the loaded plugin, never by importing
+  `integrations.*` directly — the §4.6 import laws are unchanged.
+- The registry/dispatch singularity (§2 principle 1, §3) is unaffected:
+  this distributes contribution of an auth *implementation*, not
+  policy, audit, credential storage, or dispatch.
+
+## 10. Addendum (2026-07-10, decision D11): the fake provider is removed
+
+Recorded from roadmap decision D11 (2026-07-10): "**The fake integration
+provider is removed entirely.** The shipped provider set is exactly D4 —
+Gmail, Google Ads, Airtable." Where this section conflicts with anything
+above (including §9), this section wins.
+
+- **The fake provider is removed from the design.** The §4.1 package
+  tree's `fake/` first-package entry and the §4.4 settings-validator
+  rejection of `"fake"` in `INTEGRATIONS_ENABLED_PROVIDERS` no longer
+  apply — no fake provider package, no fake manifest entry, and no
+  fake-specific validator clause ships. The first packages under
+  `apps/api/integrations/` are 041's real providers (`gmail/`,
+  `google_ads/`, `airtable/`).
+- **§9's `oauth_operations` seam is withdrawn with its only consumer.**
+  The plugin contract stays
+  `manifest + discover_resources + tool_definitions` (§4.2 as originally
+  written); the engine's generic manifest-driven OAuth flow (038) is the
+  only token path. Revisit only if a real provider cannot use the
+  generic flow.
+- **Contract/loader tests use a suite-local test provider registered
+  through the loader in test code** — fixtures under the test tree,
+  never product code — with provider HTTP (token/userinfo/discovery
+  endpoints) mocked at the transport layer. Manual QA connects real dev
+  credentials (Airtable's API key is the cheapest connect). The import
+  laws (§4.6), loader invariants (§4.3), and enablement layers (§4.4,
+  §6) are otherwise unchanged.

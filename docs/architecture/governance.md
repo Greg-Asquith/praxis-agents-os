@@ -56,12 +56,14 @@ point, per-agent `tool_policies`); this section is the policy law:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
-  scratch, Praxis Files, memory notes) are internal in the run envelope.
-  Their tool-level approval policy can still be stricter: durable Praxis
-  file writes and scratch promotion require approval even though they do
-  not cross the Praxis boundary. [implemented: plan 028 for todos;
-  implemented: plans 034/054 for scratch and Praxis Files; memory notes
-  pending]
+  scratch, Praxis Files, memory notes, KB documents — D9: Praxis owns the
+  KB) are internal in the run envelope. Their tool-level approval policy
+  can still be stricter: durable Praxis file writes and scratch promotion
+  require approval even though they do not cross the Praxis boundary, and
+  agent-initiated KB document writes default `approval` through plan 046's
+  write-policy choke point. [implemented: plan 028 for todos; implemented:
+  plans 034/054 for scratch and Praxis Files; memory notes and KB writes
+  pending — KB default recorded by plan 080]
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. [integrations, artifacts, and

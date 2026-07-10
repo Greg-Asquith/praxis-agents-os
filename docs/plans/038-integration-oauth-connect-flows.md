@@ -21,6 +21,17 @@
 > 2026-07-07)" block at the end of this file amends this plan; where it
 > conflicts with the body above, the amendment wins.
 >
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file amends this plan (route
+> count, callback success params, PKCE verifier key purpose); where it
+> conflicts with the body above or the earlier amendments, it wins.
+>
+> **Amendment (decision D11) pre-flight**: the "Amendment (decision D11,
+> 2026-07-10)" block at the end of this file removes every fake-provider
+> arm — the OAuth service is purely generic manifest-driven; tests use a
+> suite-local test provider with transport-mocked endpoints. Where it
+> conflicts with the body above or any earlier amendment, it wins.
+>
 > **Drift check (run first)**:
 > `git diff --stat 0cbbb39..HEAD -- apps/api/routes/ apps/api/services/integrations/ apps/api/services/secrets/ apps/api/services/auth/oauth/ apps/api/core/auth/oauth_providers/ apps/api/middleware/csrf.py apps/api/core/rate_limiting.py apps/api/core/settings/ apps/api/core/dependencies.py`
 > If any in-scope file changed since this plan was written, compare the
@@ -165,7 +176,9 @@ consumes and re-verifies at execution.
   `store_oauth_credential`, `store_secret_reference_credential`,
   `ensure_fresh_credential`, `revoke_credential`,
   `find_duplicate_principals`, `transition_connection_status`, and the
-  `fake` provider), `services/secrets/` (`write_secret`, `resolve_secret`),
+  `fake` provider *(superseded — see Amendment (decision D11): no fake —
+  a suite-local test provider exists in 037's test tree instead)*),
+  `services/secrets/` (`write_secret`, `resolve_secret`),
   audit resource types `INTEGRATION_*`/`SECRET_REFERENCE`.
 - Login OAuth state signing precedent: `services/auth/oauth/utils.py` —
   `create_oauth_state` (137-154: HS256 JWT over `SECRET_KEY`, `jti`, `exp`
@@ -320,7 +333,9 @@ round-trips, expires, and tamper-rejects; ruff exit 0.
 
 `services/integrations/oauth/` protocol ops (one per file), all
 manifest-driven with a provider-key dispatch (`fake` short-circuits
-in-process; `gmail`/`google_ads` share the Google endpoints from
+in-process *(superseded — see Amendment (decision D11): no fake arm — the
+service is purely generic manifest-driven)*; `gmail`/`google_ads` share
+the Google endpoints from
 `core/auth/oauth_providers/google.py:28-31` as URL constants re-declared
 locally; `airtable` has no OAuth mode in v1):
 
@@ -331,7 +346,9 @@ locally; `airtable` has no OAuth mode in v1):
   `access_type=offline`, `prompt=consent`,
   **`include_granted_scopes=false`** (decision 8). Fake: returns
   `{FRONTEND_URL}/integrations/fake-consent?state=...` (the test suite
-  calls the callback directly instead).
+  calls the callback directly instead). *(superseded — see Amendment
+  (decision D11): the fake-consent device is replaced by the suite-local
+  test provider's transport-mocked authorize/token endpoints)*
 - `exchange_authorization_code.py` — token POST via
   `services/integrations/http.py` (Retry-After aware, typed errors);
   validates the payload the way `_parse_token_payload` does
@@ -341,7 +358,9 @@ locally; `airtable` has no OAuth mode in v1):
   id + label for fingerprinting: Google userinfo `sub`/`email` for gmail;
   for google_ads, the authenticating Google identity at connect time (the
   MCC/account hierarchy is discovery data, 039/041); fake returns a
-  configurable principal.
+  configurable principal *(superseded — see Amendment (decision D11):
+  the suite-local test provider's userinfo endpoint is mocked at the
+  transport layer instead)*.
 
 Connection service ops (`services/integrations/connections/`, one per
 file):
@@ -387,7 +406,9 @@ file):
 - `test_connection.py` — resolves a working credential
   (`ensure_fresh_credential` for oauth; `resolve_secret` for references —
   §5 rotation re-test lives here) and performs the manifest's cheap
-  identity call (fake: no-op; Google: userinfo). Success → audit; auth
+  identity call (fake: no-op *(superseded — see Amendment (decision D11):
+  no fake arm — tests mock the identity endpoint at the transport
+  layer)*; Google: userinfo). Success → audit; auth
   failure → transition `needs_reauth`, typed error.
 - `refresh_connection.py` — forces `ensure_fresh_credential` regardless of
   leeway; surfaces the refreshed expiry.
@@ -397,7 +418,9 @@ file):
   `require_connection_mutation_allowed(connection, user, membership)`).
 
 **Verify**: ruff exit 0; service-level tests (Step 7) pass against the fake
-provider without any network.
+provider without any network *(superseded — see Amendment (decision D11):
+against the suite-local test provider with transport-mocked provider
+HTTP)*.
 
 ### Step 4: Routes
 
@@ -469,19 +492,26 @@ URLs and schemes.
 
 `tests/routes/integrations/` (DB-backed, `pytestmark =
 pytest.mark.asyncio`, factories from 037, fake provider enabled via test
-env):
+env *(superseded — see Amendment (decision D11): the suite-local test
+provider registered through the loader seam in test fixtures; its
+authorize/token/userinfo endpoints mocked at the transport layer)*):
 
 - `test_oauth_connect_flow.py`: start (member) → connection in
   `auth_pending` with label; callback with valid state → credential stored
   encrypted, scopes filtered to the manifest set (grant a superset in the
-  fake payload; assert intersection persisted), status
-  `discovery_pending` (fake requires discovery), 302 to
+  fake payload *(superseded — see Amendment (decision D11): in the mocked
+  token-endpoint response)*; assert intersection persisted), status
+  `discovery_pending` (fake requires discovery *(superseded — see
+  Amendment (decision D11): the suite-local test provider requires
+  discovery)*), 302 to
   `FRONTEND_URL + next_path`; **the authorization URL contains
   `include_granted_scopes=false`** for a Google-family provider (unit-level
   on `build_authorization_url` with the gate setting patched); callback
   with tampered state → 401-class redirect with `integration_error`, no
   credential written, security event row present; second connect of the
-  same fake principal under a new label succeeds AND reports the sibling in
+  same fake principal *(superseded — see Amendment (decision D11): same
+  test-provider principal, via the mocked userinfo endpoint)* under a new
+  label succeeds AND reports the sibling in
   `duplicate_of_connection_ids` (D3).
 - `test_api_key_connect.py`: **api-key-never-stored** — connect with a raw
   key; assert the plaintext appears nowhere in `external_credentials`,
@@ -491,7 +521,10 @@ env):
   problem+json.
 - `test_connection_lifecycle_routes.py`: test/refresh/revoke happy paths
   against the fake provider; refresh after poisoning the fake refresh
-  token → connection `needs_reauth`; revoke → token columns NULL
+  token *(superseded — see Amendment (decision D11): against the
+  suite-local test provider; the mocked token endpoint returns 4xx for
+  the poisoned refresh token)* → connection `needs_reauth`; revoke →
+  token columns NULL
   (crypto-shred), status `revoked`, provider revoke failure does not block
   local revoke; revoked connection rejects test/refresh (transition guard).
 - `test_rbac_and_csrf_posture.py`: RBAC matrix — member can start a
@@ -525,7 +558,8 @@ state).
 - [ ] `uv run ruff check .` exits 0; `uv run alembic check` clean (no new
       migration in this plan)
 - [ ] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite)
-- [ ] Route smoke lists exactly the nine Step 4 paths
+- [ ] Route smoke lists exactly the nine Step 4 paths *(superseded — see
+      Amendment (plan 080): ten paths with 074's rename route)*
 - [ ] `git diff middleware/csrf.py` is empty (decision 3)
 - [ ] Grep shows no raw-value interpolation:
       `grep -rn "get_secret_value" apps/api/services/integrations/connections/`
@@ -560,7 +594,9 @@ Stop and report back (do not improvise) if:
 - You cannot complete the connect handshake for a D4 provider without
   implementing data-plane API calls (messages, campaigns, records) — that
   is 041 scope leaking in; ship the fake-provider path and STOP on the
-  real-provider gap.
+  real-provider gap. *(superseded — see Amendment (decision D11): ship
+  the generic flow proven against the suite-local test provider and STOP
+  — real-provider live connects remain 041-scope-leak territory)*
 - You feel the need to widen `exempt_paths`, add a migration, enqueue a
   job, or send a notification — 037/039 boundaries leaking.
 
@@ -614,7 +650,10 @@ session-bound (decision 1/2).
     `code_challenge_method=S256` on the authorization URL;
     `exchange_authorization_code` sends the `code_verifier` in the token
     POST. Applies to the Google family AND the fake provider (which must
-    verify challenge↔verifier so tests pin the relation). Any future
+    verify challenge↔verifier so tests pin the relation) *(the fake
+    clause is superseded — see Amendment (decision D11): tests pin the
+    PKCE relation against the suite-local test provider's mocked token
+    exchange)*. Any future
     OAuth-mode provider (e.g. Airtable, whose OAuth requires PKCE)
     inherits this unconditionally.
 14. **Server-side pending-OAuth-state row, single-use.** New table
@@ -660,11 +699,17 @@ session-bound (decision 1/2).
   `exchange_authorization_code` gains `code_verifier`;
   `complete_oauth_callback` consumes the row first (decision 14). Fake
   provider verifies the S256 relation and rejects a wrong verifier.
+  *(superseded — see Amendment (decision D11): the mocked token endpoint
+  in the test suite verifies the S256 relation and rejects a wrong
+  verifier)*
 - **New step (before Step 1)**: the `integration_oauth_states`
   migration per decision 16; `uv run alembic check` clean afterwards.
 - **Step 7 / test plan additions**: authorization URL carries
   `code_challenge` + `method=S256`; the fake exchange fails on a
-  mismatched verifier and succeeds on the real one; **replay** — a
+  mismatched verifier and succeeds on the real one *(superseded — see
+  Amendment (decision D11): the mocked exchange — PKCE S256 and
+  single-use state are asserted against the transport-mocked token
+  endpoint)*; **replay** — a
   second callback with the same valid state → error redirect, security
   event, no second credential, connection state unchanged; expired
   pending row → same rejection even with a not-yet-expired JWT;
@@ -697,3 +742,81 @@ credential access.
 "lists all ten paths"; Step 6's audit sweep covers rename; Step 7 adds:
 rename happy path + audit row, blank label 400, non-owner member 403 on a
 user-scoped connection, read_only 403.
+
+## Amendment (plan 080, 2026-07-10)
+
+Where this amendment contradicts the body above (including the earlier
+amendment blocks), this amendment wins. Grounding: the pre-handoff
+readiness review at `bbfd769`; decisions recorded in
+`docs/plans/080-phase4a-4b-handoff-readiness-sweep.md`.
+
+1. **Ten routes, not nine.** The 074 amendment added
+   `PATCH /integrations/connections/{connection_id}` (rename) and
+   already updated Step 4's verify line to "all ten paths", but the done
+   criterion still says "exactly the nine Step 4 paths". It reads: the
+   route smoke lists exactly the TEN paths (Step 4's nine plus 074's
+   rename).
+2. **Callback success contract** (plan 080 decision 2): on success the
+   callback's 302 redirect appends `connection_id=<connection uuid>` and
+   `status=<post-callback connection status>` query parameters to
+   `FRONTEND_URL + next_path`. The failure parameter stays
+   `integration_error` as the body defines. 042's OAuth-return success
+   alert consumes exactly these two success params — this pins the
+   contract 042 decision 6 was written to reconcile against, so the
+   redirect shape is no longer an open assumption.
+3. **PKCE verifier key purpose** (plan 080 decision 7): the stored
+   `code_verifier` (067 decision 14) is encrypted under a dedicated HKDF
+   purpose string `praxis:oauth-pkce-verifier:v1`, derived through the
+   purpose-derivation seam 037's 068 amendment ships
+   (`derive_purpose_key` + `MultiFernet` over the credential root keys,
+   newest first) — NOT by reusing the credential-token purpose
+   `praxis:credential-tokens:v1`. This tightens 067's "encrypted at rest
+   with the same symmetric primitive 037 uses ... reuse its helper"
+   wording: reuse the primitive and the seam, never the purpose. Tests
+   pin that a verifier ciphertext does not decrypt under the
+   credential-token subkey.
+4. **Route spelling confirmed authoritative.** The body consistently
+   uses `POST /integrations/connections/oauth/start` (verified — no
+   other spelling appears in this plan). Per plan 080 decision 2 the
+   038/039 spellings are authoritative; 042's endpoint table (which
+   sketched `oauth/initiate`, `.../resources`, `.../discovery`) is
+   corrected by 042's own plan-080 amendment.
+
+## Amendment (decision D11, 2026-07-10)
+
+Where this amendment contradicts anything above — the plan body AND the
+plan 067/074/080 amendment blocks — this amendment wins. Grounding:
+roadmap decision D11 (2026-07-10): "**The fake integration provider is
+removed entirely.** ... The plugin contract and loader are exercised by
+a **suite-local test provider registered through the loader seam in test
+code only** (fixtures under the test tree, never product code), with
+provider HTTP (token/userinfo/discovery endpoints) mocked at the
+transport layer."
+
+1. **Every "fake short-circuits in-process" arm is removed.** The OAuth
+   service ops (`build_authorization_url`,
+   `exchange_authorization_code`, `fetch_external_principal`) and
+   `test_connection`'s identity call are purely generic
+   manifest-driven; there is no fake dispatch arm, no
+   `{FRONTEND_URL}/integrations/fake-consent?state=...` device, and no
+   "identity call (fake: no-op)" branch. The 067 amendment's "Applies
+   to the Google family AND the fake provider" (decision 13) loses its
+   fake clause; the `oauth_operations` plugin seam that would have
+   carried the fake's in-process token ops is dropped with it (see
+   037's D11 amendment item 6) — the engine's generic manifest-driven
+   OAuth flow is the only token path.
+2. **Tests register the suite-local test provider** (through the loader
+   seam, in test fixtures — never product code) **and mock its
+   authorize/token/userinfo endpoints at the transport layer.** Step
+   7's "fake provider enabled via test env" setup becomes suite-local
+   registration. PKCE S256 and single-use state are asserted against
+   the mocked token exchange (including the 067 amendment's
+   `code_challenge`/verifier assertions: the mocked exchange fails on a
+   mismatched verifier and succeeds on the correct one); the poisoned
+   refresh token, scope-superset filtering, and duplicate-principal
+   cases become mocked-transport responses.
+3. **STOP condition rewritten**: "ship the fake-provider path and STOP"
+   becomes "ship the generic flow proven against the suite-local test
+   provider and STOP" — real-provider live connects remain
+   041-scope-leak territory. Manual QA connects real dev credentials
+   (Airtable's API key is the cheapest connect).

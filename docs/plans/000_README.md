@@ -151,6 +151,32 @@ model-calibrated token estimator with plan 056. The completion pass also
 clarified the envelope boundary: Praxis Files and scratch are internal;
 writes to outside systems are external.
 
+Plan 080 was written and executed 2026-07-10 as the Phase 4a/4b handoff
+readiness sweep (docs-only, the 074 mold), grounded in a three-track
+pre-handoff review at `bbfd769`: it refreshed the post-053/054/066 runtime
+anchors in 040/046 (whose own STOP conditions had gone live), registered
+threat-model channels (g) integration-fetched content (041) and (h) the KB
+annotation helper (044), resolved upload-source KB ingestion for the landed
+033 substrate (044 ingests uploads for real; 047's flow works end to end),
+reconciled cross-plan contracts (route paths and callback success params
+038↔042, kind smoke 037↔039, search method/fields/filters/limits
+044/045/046/047, `effect_scope` in 041/046), recorded the optional
+`oauth_operations` plugin seam in `integration-packaging.md`, recorded the
+KB-write approval default in `governance.md` §2, consolidated the three
+roadmap-prose follow-ups into `FOLLOW_UPS.md`, and moved the long-DONE 029
+and 061 plan files to `plans/complete/`. The amended plans remain TODO and
+own the implementation.
+
+A 2026-07-10 maintainer decision (roadmap D11) removed the fake integration
+provider outright: the shipped provider set is exactly D4 (Gmail, Google
+Ads, Airtable), 037–039 carry `Amendment (decision D11)` blocks dropping
+the fake package, its manifest entry, and its settings gating, plan 080's
+`oauth_operations` seam is withdrawn with its only consumer, and the
+contract/loader tests run against a suite-local test provider (test code
+only) with provider HTTP mocked at the transport layer. 039 ships its
+discovery engine with no working shipped arm until 041 — expected and
+documented, not a gap.
+
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -203,9 +229,9 @@ integrations, files, knowledge base, memory, artifacts).
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |
-| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014 (Gate G1) | TODO |
+| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO |
 | 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | TODO |
-| 043 | Embeddings provider service | P1 | M | - | TODO |
+| 043 | Embeddings provider service | P1 | M | 029 (Gate G3; done) | TODO |
 | 044 | KB models and ingestion pipeline | P1 | L | 030, 031, 043 | TODO |
 | 045 | Hybrid search engine, KB routes, and the Gate G4 eval harness | P1 | L | 044 | TODO |
 | 046 | KB agent tools, write-policy choke point, and document sources | P1 | L | 044, 045 | TODO |
@@ -241,7 +267,8 @@ integrations, files, knowledge base, memory, artifacts).
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | DONE |
 | 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | DONE |
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
-| 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO |
+| 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO (plan doc written by the Phase 4a executor once 041 lands) |
+| 080 | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h) | P1 | S-M | binds before Phase 4a/4b execute | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -660,11 +687,29 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   shared `services/retrieval/` parts + the written RRF SQL shape, not a
   parameterized multi-table engine.
 - `075` is DONE and activates Gate G6 through
-  `docs/architecture/threat-model.md`: 046/048/049/056/059 own
-  deterministic framing and adversarial-fixture tests for their channels;
-  055 owns the opt-in behavioral injection-resistance category. New
-  model-visible untrusted content must add a threat-model channel row and
-  shared-fixture coverage before shipping.
+  `docs/architecture/threat-model.md`: 041/044/046/048/049/056/059 own
+  deterministic framing and adversarial-fixture tests for their channels
+  (041 and 044 were added by plan 080 as channels (g) integration-fetched
+  content and (h) the KB annotation helper); 055 owns the opt-in behavioral
+  injection-resistance category. New model-visible untrusted content must
+  add a threat-model channel row and shared-fixture coverage before
+  shipping.
+- `079` has a reserved number and README row but no plan document yet — by
+  design. Per 077's maintenance notes, the plan is written by the Phase 4a
+  executor once 041 lands, re-checking the recorded provider facts at that
+  point. Nothing in 037–042 assumes 079 exists.
+- `080` is the pre-handoff amendment layer for Phases 4a/4b: read each
+  target plan's `Amendment (plan 080, 2026-07-10)` block before executing.
+  Notably: 040/046 runtime anchors are refreshed to the post-053/054/066
+  tree; 044 ingests upload-source documents for real (033 landed); routes
+  are reconciled with 038/039 authoritative; 041/044 carry Gate G6
+  channel obligations; 046 clamps its tool limit to 045's settings.
+- Decision D11 (2026-07-10) supersedes the fake-provider slices of 037–039
+  and plan 080's `oauth_operations` item: read the `Amendment (decision
+  D11, 2026-07-10)` blocks in 037/038/039 before executing. No fake
+  provider ships anywhere; tests use a suite-local test provider through
+  the loader seam plus transport-level HTTP mocks; manual QA connects real
+  dev credentials.
 - `GET /api/v1/kb/documents` (list) is owned by `046` (assigned at the
   2026-07-06 reconciliation; `045` deliberately ships only search +
   get-document); `047` consumes it.

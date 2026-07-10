@@ -27,6 +27,13 @@
 > expected; for everything else compare the "Current state" excerpts
 > against live code before proceeding; on a mismatch in the router, query
 > patterns, or tool-row registry, treat it as a STOP condition.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file amends this plan — Vitest
+> unit tests exist and are mandatory for the new pure logic, query keys
+> ride `createWorkspaceScopedQueryKeys` (plan 064), and the upload flow
+> is real end-to-end (044's plan-080 amendment); where it conflicts with
+> the body above, the amendment wins.
 
 ## Status
 
@@ -126,7 +133,9 @@ Frontend anchors verified at `0cbbb39` (see working-tree note above).
   `new-skill-route.tsx`, `skill-detail-route.tsx`), `types.ts`.
 - `features/skills/api/list-skills.ts` — the read-op shape: structured
   `skillsQueryKeys` with the workspace scope baked in via
-  `getActiveWorkspaceSlug()` (15–27), `queryOptions` factory (43–49),
+  `getActiveWorkspaceSlug()` (15–27) *(superseded — the keys are now
+  composed from `createWorkspaceScopedQueryKeys` (plan 064); see
+  Amendment (plan 080))*, `queryOptions` factory (43–49),
   `useSuspenseQuery` hook (51–53), `apiRequest` with a `query` object
   (34–41).
 - `features/skills/api/skill-documents.ts` — mutations + the two-phase
@@ -166,7 +175,9 @@ Frontend anchors verified at `0cbbb39` (see working-tree note above).
   on unknown event names; this plan must not require any new server
   event (decision 5).
 
-**Quality gate**: no test framework; `pnpm check` = typecheck, eslint
+**Quality gate**: no test framework *(superseded — Vitest ships in
+`pnpm check` since 062/063; see Amendment (plan 080))*; `pnpm check` =
+typecheck, eslint
 (zero warnings), prettier, knip, dependency-cruiser (`pnpm arch`), build.
 `src/components/ui/` is vendored shadcn (`base-nova` on
 `@base-ui/react`); prefer adding shadcn primitives over hand-building.
@@ -282,7 +293,9 @@ mismatch beyond field-level naming is a STOP condition.
 Create `features/knowledge/types.ts` (hand-written, `type` aliases only)
 mirroring Step 0's real payloads. Create `api/list-documents.ts` first —
 it owns the key factory, mirroring `skillsQueryKeys`
-(`list-skills.ts:15-27`) including the workspace scope:
+(`list-skills.ts:15-27`) including the workspace scope *(sketch below
+superseded — build on `createWorkspaceScopedQueryKeys`; see Amendment
+(plan 080))*:
 
 ```ts
 export const knowledgeQueryKeys = {
@@ -468,7 +481,9 @@ dependency-cruiser rejects the `MessageMarkdown` cross-feature import
 ## Test plan
 
 There is no frontend test framework (AGENTS.md); the gate is static plus
-scripted manual verification. Pinned checks:
+scripted manual verification. *(superseded — Vitest exists and unit
+tests for this plan's pure logic are mandatory; see Amendment
+(plan 080))* Pinned checks:
 
 - `pnpm check` fully green (typecheck strict incl.
   `exactOptionalPropertyTypes`, eslint 0 warnings, prettier, knip,
@@ -561,3 +576,63 @@ Stop and report back (do not improvise) if:
   interval is a quiet cost), problem+json surfacing on write-policy
   rejections (secret blocking must be legible, not a generic toast), and
   that privacy affordances never offer private→shared.
+
+## Amendment (plan 080, 2026-07-10): Vitest, shared query keys, real upload path
+
+Where this block conflicts with the body above, this block wins.
+
+**1. Frontend tests exist (plan 080 decision 11).** The "no frontend
+test framework" claims predate plans 062/063: Vitest is installed and
+`pnpm test` (`vitest run`) runs inside `pnpm check` and CI
+(`apps/web/package.json`), with tests under `apps/web/tests/` mirroring
+the source module paths — AGENTS.md mandates that layout; do not
+colocate tests under `src/`. Test-plan delta: unit-test the pure logic
+this plan adds, under `apps/web/tests/features/knowledge/`:
+
+- the form models — `manual-document-form-model.test.ts` (and the URL
+  form's validation if it is a separate module), following the
+  `tests/features/agents/components/agent-form-model.test.ts` precedent;
+- the query keys — workspace scoping and key composition (the
+  `tests/features/workspaces/query-keys.test.ts` precedent);
+- the status mapping — the processing-status → badge map and the
+  `hasActiveProcessing` polling predicate (decision 3's shutoff is the
+  quiet-cost hazard the maintenance notes flag; pin it).
+
+The scripted manual QA matrix and the grep assertions stand unchanged.
+The commands-table expectation for `pnpm check` now includes
+`vitest run`.
+
+**2. Query keys ride the shared factory (plan 064).** Step 1's
+hand-rolled `knowledgeQueryKeys` sketch mirrors a retired pattern:
+`features/skills/api/list-skills.ts` now builds its keys from
+`createWorkspaceScopedQueryKeys` in
+`src/features/workspaces/query-keys.ts`, which provides `all`,
+`workspace()`, `lists()`, `list(params)`, `details()`, and
+`detail(id)` with the workspace scope baked in. Do the same:
+
+```ts
+const baseKnowledgeQueryKeys = createWorkspaceScopedQueryKeys("knowledge")
+
+export const knowledgeQueryKeys = {
+  ...baseKnowledgeQueryKeys,
+  searches: () => [...baseKnowledgeQueryKeys.workspace(), "search"] as const,
+  search: (query: string) => [...knowledgeQueryKeys.searches(), query] as const,
+}
+```
+
+The workspace-scope done criterion and grep assertion are satisfied by
+the factory; do not re-implement `workspace()`/`getActiveWorkspaceSlug()`
+plumbing in the feature.
+
+**3. The upload path is real end-to-end.** 044's plan-080 amendment
+ships upload-source ingestion with 044 (plan 033 landed), so
+`POST /kb/documents/from-file` produces a document that actually
+ingests — there is no pending-033 messaging to design around, and the
+Step 5 upload dialog plus decision-3 polling reflect real ingestion
+progress through to `ready`.
+
+**Done-criteria addition:**
+
+- [ ] Unit tests for the knowledge form models, query keys, and status
+      mapping exist under `apps/web/tests/features/knowledge/`, and
+      `pnpm check` (which includes `vitest run`) exits 0

@@ -12,7 +12,9 @@
 > 037/038/039 code matches every dictated name used below
 > (`integration_connections`, `integration_resources`, connection status
 > machine, `services/integrations/manifest.py` with `provider_keys`/
-> `resource_types` compatibility metadata, `routes/integrations/`). Any
+> `resource_types` compatibility metadata *(corrected — see Amendment
+> (plan 080): `provider_keys` is a tool-binding field, not a manifest
+> field)*, `routes/integrations/`). Any
 > mismatch is a STOP condition — reconcile against the landed code, do not
 > guess.
 >
@@ -21,6 +23,13 @@
 > *runtime or schedule* file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file refreshes this plan's
+> runtime anchors (053/054/066 moved the seams after `0cbbb39`) and
+> corrects decision 5's dedup wording and the manifest `provider_keys`
+> claim; where it conflicts with the body above, the amendment wins. The
+> runtime-drift STOPs the body would fire on contact are answered there.
 
 ## Status
 
@@ -58,7 +67,9 @@
    columns + CHECK), `agent_schedules.active_context` keeps the existing
    JSONB column — no schema change needed there, the column already exists.
 3. **Context source is chosen by run principal.** Resolution happens once
-   per run in `execute_run` before `RuntimeDeps` is built: `interactive`
+   per run in `execute_run` *(anchor superseded — see Amendment
+   (plan 080): inside `prepare_runtime`)* before `RuntimeDeps` is built:
+   `interactive`
    runs read the caller's `active_context_selections` row; `scheduled` runs
    read `AgentSchedule.active_context` (found via
    `AgentScheduleRun.agent_run_id`); `delegated` runs walk
@@ -78,7 +89,9 @@
    pre-active statuses make the entry **unavailable** (listed, not usable).
    Duplicate external principals across connections (same
    `provider_key` + resource `external_id`, detectable via 037's principal
-   fingerprints) dedup to the most recently created active connection.
+   fingerprints *(corrected — see Amendment (plan 080): the dedup key is
+   the resource tuple; fingerprints are a credential-level concept)*)
+   dedup to the most recently created active connection.
 6. **Tool compatibility metadata lives on the tool definition.** 040 adds
    one optional frozen field to `RuntimeToolDefinition`
    (`contract.py:33-57`): `integration_binding: IntegrationToolBinding |
@@ -156,6 +169,10 @@ All anchors verified at `0cbbb39`.
 
 ### Runtime seam
 
+*(anchors superseded — this subsection was verified at `0cbbb39`;
+053/054/066 have since moved the seams. See Amendment (plan 080) for the
+re-verified anchors; the requirements stand.)*
+
 - `apps/api/services/agents/runtime/context.py:18-30` — `RuntimeDeps` is a
   frozen dataclass (`db/user/workspace/conversation/agent/run/sink/
   envelope/delegation_depth`); the injection target.
@@ -232,7 +249,10 @@ All anchors verified at `0cbbb39`.
   (generic, `enabled`, write-permission metadata),
   `integration_discovery_runs`; `services/integrations/manifest.py`
   (auth modes, owner scope, resource types, capability flags,
-  `provider_keys`/`resource_types` compatibility metadata);
+  `provider_keys`/`resource_types` compatibility metadata *(corrected —
+  see Amendment (plan 080): the manifest carries a singular
+  `provider_key` plus `resource_types`; `provider_keys` lives on this
+  plan's tool binding)*);
   `services/secrets/` references-only abstraction.
 - 038: OAuth + api-key connect + test/revoke/refresh routes under
   `/api/v1/integrations` (`routes/integrations/` package).
@@ -564,6 +584,10 @@ gating, and the empty-set retry.
 
 ### Step 7: RuntimeDeps injection + prompt block
 
+*(line anchors and the `execute_run.py`/`prompt.py` shapes below are
+superseded — see Amendment (plan 080) items 1-2 for the current seams;
+the behavior required is unchanged.)*
+
 - `context.py`: add `active_context: "ResolvedActiveContext | None" =
   None` to `RuntimeDeps` (defaulted — existing constructors and tests
   keep working; delegation sub-runs build their own deps and re-resolve).
@@ -742,7 +766,10 @@ Stop and report back (do not improvise) if:
   selection-value decision (2) assumed it.
 - `RuntimeDeps`, `build_runtime_agent`, `runtime_prompt_blocks`, or
   `execute_run`'s build-order (agent built at 159, deps at 176) no longer
-  match the "Current state" excerpts.
+  match the "Current state" excerpts. *(answered — see Amendment
+  (plan 080): they no longer match; the amendment carries the
+  re-verified anchors. This STOP re-arms only for changes landing after
+  2026-07-10.)*
 - The core migration head at execution time is not what 037/039 left —
   renumber and re-verify index/constraint names don't collide.
 - pydantic-ai has been upgraded past 2.1.0 and `Tool`/toolset mounting
@@ -778,3 +805,95 @@ Stop and report back (do not improvise) if:
   constraint race → retry or `ConflictError`, never a 500), and that the
   prompt block renders the law before the listing so budget truncation
   never eats the rules.
+
+## Amendment (plan 080, 2026-07-10): runtime anchor refresh
+
+Where this amendment contradicts the body above, this amendment wins.
+Grounding: the pre-handoff readiness review at `bbfd769`; decisions
+recorded in `docs/plans/080-phase4a-4b-handoff-readiness-sweep.md`. All
+anchors below were re-verified against the live tree on 2026-07-10.
+
+1. **Runtime seam refresh** — plans 053/054/066 decomposed the turn
+   path after this plan was anchored at `0cbbb39`; the "Current state →
+   Runtime seam" excerpts and Step 7's line anchors no longer match.
+   Current shape:
+   - `RuntimeDeps` is constructed in `prepare_runtime()`
+     (`services/agents/runtime/execute/setup.py:103`; the
+     `RuntimeDeps(...)` call is at ~141) — not in `execute_run.py:176`.
+   - `load_actor_context` lives in
+     `services/agents/runtime/load_context.py` (~183) and its
+     `(user, workspace)` result is the first thing `prepare_runtime`
+     loads.
+   - `services/agents/runtime/execute_run.py` is now a thin public
+     wrapper: `execute_run` (~22) delegates to
+     `execute_run_with_builders`
+     (`services/agents/runtime/execute/execute_run.py:53`), passing a
+     `runtime_agent_builder=build_runtime_agent` parameter (~62) and
+     `run_envelope_builder=build_run_envelope`. `build_runtime_agent`
+     itself still lives in `runtime/loop.py` (~41) and is invoked via
+     `build_agent_for_run` inside `prepare_runtime`.
+   - **Where this plan's work lands**: active-context resolution and
+     injection happen inside `prepare_runtime`, after
+     `load_actor_context` returns and before `build_agent_for_run` runs
+     the agent builder; the resolved context threads into both the
+     builder call (tools + instructions) and the `RuntimeDeps(...)`
+     construction. Decision 3's "in `execute_run` before `RuntimeDeps`
+     is built" and Step 7's "between `load_actor_context` (line 150) and
+     `build_runtime_agent` (159)" read accordingly. The decision-4
+     try/except-degrade rule is unchanged — it wraps the resolution call
+     in `prepare_runtime`.
+   - `build_runtime_tools` is now
+     `build_runtime_tools(agent, *, include_delegation: bool = False)`
+     at `runtime/tools/registry.py:102`; Step 5's `active_context`
+     parameter extends that signature. The registration side-effect
+     import block sits at `registry.py:267-272` (now also imports
+     `files`).
+2. **Prompt-block position** (plan 080 decision 11).
+   `runtime_prompt_blocks` is now `runtime_prompt_blocks(agent, *,
+   include_delegation: bool, available_files: Sequence[AvailableFile] =
+   ())` (`runtime/prompt.py:47`), returning FOUR ordered blocks:
+   `identity`, `planning`, `delegation`, `available_files`. Decision 14's
+   "append `active_context` after `delegation`" is refreshed to: the
+   `active_context` block slots BETWEEN `delegation` and
+   `available_files`, per the roadmap §1 block order (identity → skills
+   → memories → active integration context → available files). Step 7's
+   signature extension must carry the new parameter alongside the
+   existing one — `runtime_prompt_blocks(agent, *, include_delegation,
+   available_files=(), active_context_block="")` — with
+   `build_runtime_agent`/`_runtime_instructions` (`loop.py:41,88`)
+   threading it exactly as they already thread `available_files`. The
+   2000-char budget and law-first truncation rule stand.
+3. **Tool contract field-list refresh.** `RuntimeToolDefinition`
+   (`services/agents/runtime/tools/contract.py`) has gained
+   `effect_scope` (~92), `effect_scope_resolver` (~101),
+   `max_result_chars` (~104), and `presentation` (~110) since the cited
+   33-57 field list; the name pattern is at line 34 and
+   `validate_definition` now starts at ~162 (read tools must keep
+   `effect_scope="internal"`, enforced at ~178-183). Step 5's
+   `integration_binding` field, the import-time deny-list, and the
+   binding validation extend this current shape; the body's line ranges
+   are stale, the requirements unchanged. (041's plan-080 amendment
+   assigns `effect_scope` values to the integration tools themselves.)
+4. **Decision 5 and the manifest metadata claim corrected.**
+   Usable-entry dedup keys on the RESOURCE tuple
+   `(provider_key, external_id)` — exactly as Step 4 point 4 implements
+   it. 037's principal fingerprints are a CREDENTIAL-level concept (an
+   HMAC over the external principal id, used for cross-connection
+   principal dedup warnings in 038/042); they are not how this plan's
+   resource-level dedup is detected, and the two mechanisms must not be
+   conflated. Separately, the pre-flight and the dictated-contract
+   bullet claim the manifest carries `provider_keys` (plural)
+   compatibility metadata: it does not — `provider_keys` is a field of
+   this plan's `IntegrationToolBinding` (decision 6); the manifest
+   carries a singular `provider_key` plus `resource_types`. Verify the
+   landed manifest against 037's contract as amended, not against the
+   plural spelling.
+5. **This amendment answers the plan's own STOP conditions.** The
+   runtime-shape STOPs (`RuntimeDeps`/`build_runtime_agent`/
+   `runtime_prompt_blocks`/`execute_run` build-order no longer matching
+   the excerpts) fire on contact with the live tree; as of 2026-07-10
+   they are answered by items 1-3 above — do not stop for them. The
+   drift check remains in force for changes landing AFTER 2026-07-10:
+   on a fresh mismatch, compare against this amendment's anchors rather
+   than the body's, and treat a divergence from THESE anchors as the
+   STOP.

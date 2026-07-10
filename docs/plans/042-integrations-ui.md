@@ -25,6 +25,12 @@
 > **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
 > 2026-07-07)" block at the end of this file amends this plan; where it
 > conflicts with the body above, the amendment wins.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file amends this plan (endpoint
+> paths, Vitest tests, dep-cruiser/knip scope, query-key factory, small
+> verified drift); where it conflicts with the body above or the earlier
+> amendments, it wins.
 
 > **Amendment (2026-07-07, plan 061 — provider packaging)**: this plan
 > additionally lands the frontend packaging seams from
@@ -264,15 +270,15 @@ All anchors verified at `a0eea1c`.
 |---|---|---|
 | Provider catalog (manifest-driven: key, label, auth mode, owner scope, resource types, availability, form help) | `GET /integrations/providers` | 037/038 |
 | List connections (both scopes, with status/label/provider/owner) | `GET /integrations/connections` | 038 |
-| OAuth initiate (new connection or re-auth) | `POST /integrations/connections/oauth/initiate` → `{authorize_url}` | 038 |
+| OAuth initiate (new connection or re-auth) | `POST /integrations/connections/oauth/initiate` → `{authorize_url}` *(superseded — see Amendment (plan 080): `oauth/start`)* | 038 |
 | API-key connect (label + secret value, write-only) | `POST /integrations/connections/api-key` | 038 |
 | Test connection | `POST /integrations/connections/{id}/test` | 038 |
 | Refresh credentials | `POST /integrations/connections/{id}/refresh` | 038 |
 | Revoke connection | `POST /integrations/connections/{id}/revoke` (or DELETE) | 038 |
 | Rename connection label | `PATCH /integrations/connections/{id}` | 038 |
 | List discovered resources for a connection | `GET /integrations/connections/{id}/resources` | 039 |
-| Enable/disable resources | `PUT /integrations/connections/{id}/resources` (id set or per-resource PATCH) | 039 |
-| Retry discovery | `POST /integrations/connections/{id}/discovery` | 039 |
+| Enable/disable resources | `PUT /integrations/connections/{id}/resources` (id set or per-resource PATCH) *(superseded — see Amendment (plan 080): `.../resources/selection`)* | 039 |
+| Retry discovery | `POST /integrations/connections/{id}/discovery` *(superseded — see Amendment (plan 080): `.../discover`)* | 039 |
 | Get active context (selection + resolved summary) | `GET /integrations/context` | 040 |
 | Set / clear active context | `PUT /integrations/context` / `DELETE /integrations/context` | 040 |
 | Context groups CRUD | `GET/POST /integrations/context-groups`, `PATCH/DELETE /integrations/context-groups/{id}` | 040 |
@@ -368,7 +374,9 @@ plus the context types from 040 (`ActiveContextSelectionValue`,
 `ContextGroup`, resolved summary).
 
 Create `integrationsQueryKeys` in `api/list-connections.ts` (the
-`schedulesQueryKeys` shape, `list-schedules.ts:16-27`): `all` →
+`schedulesQueryKeys` shape, `list-schedules.ts:16-27`) *(superseded —
+see Amendment (plan 080): build on `createWorkspaceScopedQueryKeys`, the
+plan-064 factory)*: `all` →
 workspace scope → `providers`, `connections`, `resources(connectionId)`,
 `contextGroups`, `activeContext`. Read files export `queryOptions`
 factories + `useSuspenseQuery` hooks: `list-providers.ts` (staleTime
@@ -565,7 +573,8 @@ the rules).
 ### Step 9: Final gate + manual QA sweep
 
 Run the full static gate and the manual script below (no frontend test
-framework exists — the gate is static + scripted QA, per AGENTS.md).
+framework exists *(superseded — see Amendment (plan 080): Vitest runs
+inside `pnpm check`)* — the gate is static + scripted QA, per AGENTS.md).
 
 **Verify**: `pnpm check` exits 0 with zero warnings (knip: every api
 file consumed; dep-cruiser: no violations; build succeeds).
@@ -648,7 +657,9 @@ Stop and report back (do not improvise) if:
 - dependency-cruiser forbids the conversations→integrations import and
   no existing cross-feature pattern resolves it — restructuring that
   crosses plan scope needs an operator decision (do not edit
-  `.dependency-cruiser.cjs`).
+  `.dependency-cruiser.cjs`). *(qualified — see Amendment (plan 080):
+  the 061 amendment's NEW `src/integrations` rules and knip entries are
+  in scope; this STOP covers any other rule edit)*
 - You feel the need to add backend routes, a form library, optimistic
   credential updates, or per-conversation context state — scope leak.
 
@@ -687,3 +698,59 @@ route at pre-flight like every other row. Decision 4's inline rename and
 Step 2's `rename-connection.ts` are unchanged. If 038 executed WITHOUT
 its 074 amendment, this row is a structural gap — STOP per the existing
 pre-flight rule rather than shipping rename UI against a missing route.
+
+## Amendment (plan 080, 2026-07-10)
+
+Where this amendment contradicts the body above (including the earlier
+amendment blocks), this amendment wins. Grounding: the pre-handoff
+readiness review at `bbfd769`; decisions recorded in
+`docs/plans/080-phase4a-4b-handoff-readiness-sweep.md`.
+
+1. **Endpoint table reconciled against 038/039/040 as written** (plan
+   080 decision 2 makes the backend plans authoritative): OAuth initiate
+   is `POST /integrations/connections/oauth/start` (not
+   `oauth/initiate`; the local api file may stay `initiate-oauth.ts`);
+   resource selection is
+   `PUT /integrations/connections/{id}/resources/selection`; retry
+   discovery is `POST /integrations/connections/{id}/discover`. The
+   pre-flight reconciliation against landed routes still runs — these
+   are the expected spellings, not a waiver. Decision 6's success-params
+   assumption is now a pinned contract: 038's plan-080 amendment
+   specifies that the callback success redirect appends `connection_id`
+   and `status` query parameters (failure stays `integration_error`).
+2. **Frontend tests exist** — the Step 9 "no frontend test framework
+   exists" claim is stale: Vitest runs inside `pnpm check`
+   (`"test": "vitest run"` in the check chain), with tests under
+   `apps/web/tests/` mirroring the source module paths (AGENTS.md
+   mandates the location; no colocated tests under `src/`). Test-plan
+   delta: add focused unit tests for the pure logic this plan
+   introduces — the api-key connect form validation model, the
+   decision-7 status → badge/CTA mapping (all 8 states plus the unknown
+   fallback), and the `integrationsQueryKeys` shapes — under
+   `apps/web/tests/features/integrations/`. The static gate and the
+   manual QA script stand unchanged.
+3. **STOP condition qualified; scope extended.** The 061 amendment
+   (item 3) requires NEW dependency-cruiser rules for `src/integrations`
+   (packaging note §5.5) and knip entries for
+   `src/integrations/*/index.ts` — those edits to
+   `.dependency-cruiser.cjs` and `knip.json` ARE in scope. The body's
+   "do not edit `.dependency-cruiser.cjs`" STOP applies to any OTHER
+   rule edit (e.g. loosening feature-boundary rules to make the
+   conversations→integrations import pass — still restructure, never
+   weaken). Add `.dependency-cruiser.cjs` and `knip.json` to the
+   in-scope file list.
+4. **Query keys via the plan-064 factory.** Step 1 builds
+   `integrationsQueryKeys` with `createWorkspaceScopedQueryKeys` from
+   `src/features/workspaces/query-keys.ts`, extending the returned base
+   with the extra shapes this plan needs (`providers`,
+   `resources(connectionId)`, `contextGroups`, `activeContext`) — the
+   pattern `features/schedules/api/list-schedules.ts:16-23` now
+   demonstrates. The body's hand-rolled `schedulesQueryKeys`-shape
+   sketch describes the retired pre-064 form.
+5. **Small verified drift** (2026-07-10): the conversation header's
+   right-hand column label is now "Last Updated"
+   (`conversation-detail-header.tsx:61`), not "Last activity" —
+   decision 11 and Step 8's mount-point language read accordingly.
+   `src/components/ui/confirm-dialog.tsx` now exists — use it for
+   `revoke-connection-dialog.tsx` and the context-group delete confirm
+   instead of hand-building on `dialog`.

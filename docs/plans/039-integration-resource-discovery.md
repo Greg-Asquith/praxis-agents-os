@@ -25,11 +25,25 @@
 > **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
 > 2026-07-07)" block at the end of this file amends this plan; where it
 > conflicts with the body above, the amendment wins.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file amends this plan (kind-smoke
+> count, notifications citation); where it conflicts with the body above
+> or the earlier amendments, it wins.
+>
+> **Amendment (decision D11) pre-flight**: the "Amendment (decision D11,
+> 2026-07-10)" block at the end of this file removes the fake provider —
+> this plan proves the discovery engine end-to-end with a suite-local
+> test provider (test code only), and every shipped manifest discovery
+> arm raises until 041. Where it conflicts with the body above or any
+> earlier amendment, it wins.
 
 > **Amendment (2026-07-07, plan 061 — provider packaging)**: per
 > `docs/architecture/integration-packaging.md`, the fake provider lives at
 > `apps/api/integrations/fake/` (not
-> `services/integrations/providers/fake.py`), and the discovery job
+> `services/integrations/providers/fake.py`) *(superseded — see Amendment
+> (decision D11): the fake provider is removed entirely; a suite-local
+> test provider in test code replaces it)*, and the discovery job
 > resolves each provider's `discover_resources` function through the
 > loaded `IntegrationProviderPlugin` (037 amendment) rather than importing
 > a provider module directly — the harness must not import `integrations.*`
@@ -43,7 +57,9 @@
   transitions strand connections, but no new secret-bearing surface)
 - **Depends on**: 030 (**hard** — job harness: `enqueue_job`,
   `@job_handler`, sweep pattern), 037 (**hard** — tables, status guard,
-  manifest, fake provider), 038 (**hard** — the connect flows that produce
+  manifest, fake provider *(superseded — see Amendment (decision D11):
+  manifest + loader seam; the suite-local test provider lives in 037's
+  test tree)*), 038 (**hard** — the connect flows that produce
   `discovery_pending` connections and the enqueue seam comments)
 - **Category**: Phase 4a integrations (roadmap `000_MASTER_ROADMAP.md` §4
   Phase 4a row 039; donor `DONOR_PORT_ROADMAP.md` §4.2 / §6 row C3;
@@ -173,7 +189,9 @@ consumed-and-verified-at-execution contracts.
   (`resources_found/added/removed/unchanged`), `job_id` UUID (no FK),
   status `running/succeeded/failed`; `services/integrations/domain.py`
   transition map; `transition_connection_status` as the single status
-  writer; the `fake` provider's `discover_resources()`;
+  writer; the `fake` provider's `discover_resources()` *(superseded — see
+  Amendment (decision D11): the suite-local test provider's
+  `discover_resources`, registered in test code)*;
   `ensure_fresh_credential` raising `IntegrationAuthError` on auth
   failures; audit resource types `INTEGRATION_RESOURCE` etc.
 - Will exist after 038 (verify): `routes/integrations/` +
@@ -212,7 +230,7 @@ consumed-and-verified-at-execution contracts.
 |---------|---------------------------|---------------------|
 | Lint | `uv run ruff check .` | exit 0 |
 | Migration sanity | `uv run alembic check` | no pending operations (this plan adds NO migration) |
-| Kind registration smoke | `uv run python -c "from services.jobs.registry import JOB_HANDLERS; print(sorted(k for k in JOB_HANDLERS if k.startswith('integrations.')))"` | `['integrations.discover_resources', 'integrations.sweep_stale']` |
+| Kind registration smoke | `uv run python -c "from services.jobs.registry import JOB_HANDLERS; print(sorted(k for k in JOB_HANDLERS if k.startswith('integrations.')))"` | `['integrations.discover_resources', 'integrations.sweep_stale']` *(superseded — see Amendment (plan 080): four kinds)* |
 | New tests | `TEST_DATABASE_URL=... uv run pytest tests/services/integrations tests/routes/integrations -q` | all pass |
 | Jobs regression | `TEST_DATABASE_URL=... uv run pytest tests/services/jobs -q` | all pass, untouched behavior |
 | Worker smoke | `uv run python -m workers.job_runner --once` | one pass, exit 0 |
@@ -259,6 +277,9 @@ consumed-and-verified-at-execution contracts.
   clients; this plan runs against the `fake` provider and leaves the
   google_ads/airtable dispatch arms raising
   `IntegrationValidationError("provider discovery not implemented")`.
+  *(superseded — see Amendment (decision D11): runs against the
+  suite-local test provider; ALL shipped discovery arms raise until 041
+  lands — expected and documented, not a gap)*
 - UI — 042. Workers/compose/make wiring — 030 owns the loop.
 - 030's harness internals (`claim_jobs`, backoff, dedup index) — consume,
   never modify.
@@ -296,7 +317,10 @@ exit 0.
    the transition hook, decision 6) — do NOT also emit discovery-failed.
 4. Fetch resources via the manifest dispatch (fake:
    `providers/fake.py::discover_resources`; google_ads/airtable arms raise
-   until 041 — out of scope note above).
+   until 041 — out of scope note above). *(superseded — see Amendment
+   (decision D11): dispatch resolves `discover_resources` through the
+   loaded plugin; every shipped arm raises until 041 — tests exercise the
+   engine through the suite-local test provider's plugin)*
 5. Apply the idempotent diff (decision 3), stamping
    `first_seen_at`/`last_seen_at`, `writable`, `permissions_metadata`
    (write-permission metadata from the provider payload), counters onto
@@ -312,7 +336,8 @@ local helper), connection → `degraded` (had a prior succeeded run) or
 the 030 harness counts the attempt.
 
 **Verify**: unit-level tests (Step 7) drive it directly with the fake
-provider; run twice → identical resource rows, counters
+provider *(superseded — see Amendment (decision D11): the suite-local
+test provider)*; run twice → identical resource rows, counters
 `added=0, unchanged=N` on the second pass.
 
 ### Step 3: Status recomputation (`recompute_connection_status.py`)
@@ -443,7 +468,8 @@ routes — CSRF enforced by default, no exemptions, no new rate limits
 
 Extend `tests/factories/integrations.py` with
 `create_integration_discovery_run(...)` and a helper to seed fake-provider
-resources.
+resources *(superseded — see Amendment (decision D11): seeds
+test-provider resources for the suite-local test provider)*.
 
 - `tests/services/integrations/test_run_discovery.py` (DB): happy path
   populates resources with counters; **idempotency** — second run changes
@@ -463,7 +489,9 @@ resources.
   never touches degraded/error/needs_reauth.
 - `tests/services/integrations/test_discovery_handler.py` (DB; the 030
   `test_job_runner.py` fixture pattern): enqueue → `run_once` executes end
-  to end against the fake provider; **enqueue dedup** — two enqueues for
+  to end against the fake provider *(superseded — see Amendment
+  (decision D11): the suite-local test provider)*; **enqueue dedup** —
+  two enqueues for
   one connection yield one in-flight job; failure below `max_attempts` →
   retry, **no notification row**; final attempt → `failed` job, exactly
   ONE `integration_discovery_failed` notification to
@@ -471,7 +499,10 @@ resources.
   no-initiator choice, decision 6); **the callback never discovers** —
   complete a fake OAuth connect and assert a pending job row exists while
   the fake provider's `discover_resources` call count is still 0
-  (decision 1 pinned).
+  (decision 1 pinned). *(superseded — see Amendment (decision D11): a
+  test-provider OAuth connect with transport-mocked endpoints; the
+  suite-local test provider's `discover_resources` call count is still
+  0)*
 - `tests/services/integrations/test_needs_reauth_notification.py` (DB):
   transition into `needs_reauth` → one notification; a second failed
   refresh while already `needs_reauth` → no second notification;
@@ -510,7 +541,8 @@ only after final retry, no double via 030's generic path), and **the 90 d /
 - [ ] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite,
       including an untouched `tests/services/jobs`)
 - [ ] Kind smoke prints exactly `['integrations.discover_resources',
-      'integrations.sweep_stale']`
+      'integrations.sweep_stale']` *(superseded — see Amendment
+      (plan 080): four kinds)*
 - [ ] `uv run python -m workers.job_runner --once` exits 0
 - [ ] Grep shows `transition_connection_status` is still the only assigner
       of `IntegrationConnection.status`, and `recompute_connection_status`
@@ -610,11 +642,71 @@ transition only; `discovery_failed` only after the final retry; no
 `sweep_stale.py`, bootstrapped at the same `ensure_integrations_sweep_job`
 call site; the kind smoke (and its done criterion) becomes
 `['integrations.discover_resources', 'integrations.rediscover_stale',
-'integrations.sweep_stale']`. **Test-plan delta**
+'integrations.sweep_stale']` *(superseded — see Amendment (plan 080):
+four kinds)*. **Test-plan delta**
 (`test_rediscover_stale.py`, DB): a connection with a `writable=true`
 resource and a succeeded run aged past the interval, fake provider now
-reporting `writable=false` → one sweep pass enqueues discovery (no
+reporting `writable=false` *(superseded — see Amendment (decision D11):
+the suite-local test provider now reporting `writable=false`)* → one
+sweep pass enqueues discovery (no
 initiator) and the run flips the resource row to `writable=false` — the
 value 040's `write_allowed` computation reads at resolution time (040
 owns the gate-side test). Also pin: fresh-run connections not enqueued;
 `needs_reauth`/`revoked` skipped; an in-flight discovery not duplicated.
+
+## Amendment (plan 080, 2026-07-10)
+
+Where this amendment contradicts the body above (including the earlier
+amendment blocks), this amendment wins. Grounding: the pre-handoff
+readiness review at `bbfd769`; decisions recorded in
+`docs/plans/080-phase4a-4b-handoff-readiness-sweep.md`.
+
+1. **Kind smoke: four kinds.** 037's 068 amendment registers a third
+   integration kind, `integrations.rotate_credential_encryption`, on the
+   jobs harness, and this plan's 074 amendment adds
+   `integrations.rediscover_stale`. Once 037 and this plan have both
+   executed, the kind smoke and its done criterion therefore expect FOUR
+   kinds:
+   `['integrations.discover_resources', 'integrations.rediscover_stale',
+   'integrations.rotate_credential_encryption',
+   'integrations.sweep_stale']`. This supersedes both the body's
+   two-kind list and the 074 amendment's three-kind list. (The rotation
+   kind is 037's scope — this plan neither implements nor tests it, but
+   the `startswith('integrations.')` smoke sees it.)
+2. **Notifications citation refresh** (verified 2026-07-10).
+   `services/notifications/service.py:105-158` no longer exists — the
+   notifications service was decomposed into op-per-file modules. The
+   same `create_notification(db, *, notification_type, title, body=None,
+   payload=None, actions=None, recipient_user_id=None, target_email=None,
+   workspace_id=None, source=None, requested_by_user_id=None)` signature
+   now lives at `services/notifications/create_notification.py:21`.
+   Applies wherever the body cites the old path: decision 6, the
+   Current-state notifications bullet, and Step 5.
+
+## Amendment (decision D11, 2026-07-10)
+
+Where this amendment contradicts anything above — the plan body AND the
+plan 061/074/080 amendment blocks — this amendment wins. Grounding:
+roadmap decision D11 (2026-07-10): "**The fake integration provider is
+removed entirely.** ... Consequence for 039: the shipped manifest
+discovery arms all raise until 041 lands; 039 proves the discovery
+engine end-to-end with the suite-local test provider."
+
+1. **No fake provider exists — the suite-local test provider replaces
+   it.** This plan runs its discovery engine, job wiring, dedup, and
+   status machine against the suite-local test provider (registered
+   through the loader seam in test code only — fixtures under the test
+   tree, never product code), not a shipped fake. Every "fake provider"
+   reference in the Current-state bullets, Step 2, Step 7's tests, and
+   the 074 amendment reads as the suite-local test provider; provider
+   HTTP stays mocked at the transport layer. The seed helper seeds
+   test-provider resources. The 061 amendment blockquote's
+   `apps/api/integrations/fake/` location is superseded (nothing lives
+   there); its plugin-resolution law — the harness resolves
+   `discover_resources` through the loaded `IntegrationProviderPlugin`,
+   never by importing `integrations.*` — stands unchanged.
+2. **The shipped manifest dispatch has no working arm until 041.** All
+   real-provider discovery arms (google_ads, airtable) raise
+   not-implemented until 041 lands — this is expected and documented,
+   not a gap. The plan still proves the discovery engine end-to-end,
+   via the suite-local test provider's plugin.

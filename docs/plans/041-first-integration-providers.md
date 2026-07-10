@@ -31,6 +31,12 @@
 > dispatch, or `validate_tool_configuration` shape changed beyond what 040
 > specifies, compare against "Current state" before proceeding; on a
 > mismatch, treat it as a STOP condition.
+>
+> **Amendment (plan 080) pre-flight**: the "Amendment (plan 080,
+> 2026-07-10)" block at the end of this file amends this plan (Gate G6
+> channel (g) ownership, `effect_scope` on the tool table, dispatch
+> anchors + drift path, Step 0 053/054 checks); where it conflicts with
+> the body above or the earlier amendments, it wins.
 
 > **Amendment (2026-07-07, plan 061 — provider packaging)**: provider code
 > lands as self-contained packages per
@@ -104,7 +110,8 @@
    `gmail.search_messages`-style names, but the registry name pattern is
    `^[a-z][a-z0-9_]*$` (`contract.py:29`) — dots are invalid at import
    time. Final curated set (10 tools, deliberately small; the manifest
-   makes later additions incremental):
+   makes later additions incremental) *(extended — see Amendment
+   (plan 080): the table gains an `effect_scope` column)*:
 
    | Tool | Provider | Effect | Default policy | supports_auto | Binding (provider_keys / resource_types / requires_write) |
    |------|----------|--------|----------------|---------------|------------------------------------------------------------|
@@ -256,7 +263,8 @@ All anchors verified at `0cbbb39`.
 - `apps/api/services/agents/runtime/dispatch.py` — the 026 choke point:
   every tool call audited (127-227) with digest, latency, outcome,
   approval refs; mutation warning constants (50-53); denied approvals
-  audited on resume (230-259).
+  audited on resume (230-259). *(line anchors superseded — see Amendment
+  (plan 080) item 3)*
 - `apps/api/services/audit_events/tool_events.py:34-50` —
   `record_tool_invocation_audit_event(...)` independent-transaction
   precedent decision 8 copies for per-resource events.
@@ -292,7 +300,7 @@ All anchors verified at `0cbbb39`.
 
 | Purpose | Command (from `apps/api`) | Expected on success |
 |---------|---------------------------|---------------------|
-| Gate G1 check | `grep -E '^\| 014 ' ../../docs/plans/000_README.md` | row says DONE — else STOP |
+| Gate G1 check | `grep -E '^\| 014 ' ../../docs/plans/000_README.md` *(extended — see Amendment (plan 080): grep `(014|053|054)`)* | row says DONE — else STOP |
 | Lint | `uv run ruff check .` | exit 0 |
 | Registry smoke | `uv run python -c "from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG; print(sorted(n for n in RUNTIME_TOOL_CATALOG if n.startswith(('gmail_','google_ads_','airtable_'))))"` | the 10 decision-1 names |
 | New tests | `TEST_DATABASE_URL=... uv run pytest tests/services/integrations -q` | all pass |
@@ -512,7 +520,8 @@ transaction; never raises into the tool path — log on failure).
   timeout=60, output_model=..., integration_binding=
   IntegrationToolBinding(provider_keys=frozenset({...}),
   resource_types=frozenset({...}), requires_write=...))` per the
-  decision-1 table.
+  decision-1 table. *(extended — see Amendment (plan 080): write tools
+  additionally pass `effect_scope="external"`)*
 - Body: validate model-visible args (raise `ModelRetry` for correctable
   problems — empty query, no recipients, bad status value — the
   `web_search.py:120-121` shape), then
@@ -656,3 +665,65 @@ Stop and report back (do not improvise) if:
 - 014's OTel spans wrap the dispatch layer; once both are live, add
   provider/connection attributes to integration tool spans — record that
   as a FOLLOW_UPS item at execution, not a scope change here.
+
+## Amendment (plan 080, 2026-07-10)
+
+Where this amendment contradicts the body above (including the earlier
+amendment blocks), this amendment wins. Grounding: the pre-handoff
+readiness review at `bbfd769`; decisions recorded in
+`docs/plans/080-phase4a-4b-handoff-readiness-sweep.md`.
+
+1. **Gate G6 — this plan owns threat-model channel (g),
+   integration-fetched content** (plan 080 decision 9).
+   `docs/architecture/threat-model.md` §2 gains row **(g)
+   integration-fetched content**: provider API payloads — Gmail message
+   bodies/snippets/headers, Airtable record fields, Google Ads report
+   text — are attacker-authorable input. Binding requirements on this
+   plan:
+   - Provider-fetched free text enters model context only through
+     dispatch tool results framed with the shared §3 marker vocabulary,
+     carrying a server-minted source kind/ref (e.g. the Gmail message
+     id, the Airtable record id) — provider code never hand-assembles
+     its own delimiting.
+   - A hostile-email-body fixture joins the shared §4 adversarial
+     corpus.
+   - A deterministic test proves complete enclosure of fetched content
+     AND neutralization of forged markers embedded in it.
+   - A named graded-eval case rides plan 055's injection-resistance
+     category.
+   - **G6 pre-flight (add to Step 0)**: this plan must NOT ship Gmail
+     read tools before the §2(g) channel row's mechanical defense and
+     the fixture test exist. If `threat-model.md` §2 lacks row (g) at
+     execution time, STOP and reconcile with plan 080's tracking before
+     coding.
+2. **`effect_scope` column on the decision-1 table** (plan 080
+   decision 11). Every integration write/spend tool declares
+   `effect_scope="external"`; every read tool stays
+   `effect_scope="internal"` (the contract forces reads internal —
+   `contract.py:178-183`). Per tool: `gmail_send_message`,
+   `google_ads_update_campaign_status`, `airtable_create_record`,
+   `airtable_update_record` → `external`; the six read tools →
+   `internal`. Step 6's decorator sample gains
+   `effect_scope="external"` on write tools, so the decision-1 table,
+   the Step 6 sample, and Step 7's existing `test_integration_tools.py`
+   assertion ("every integration write tool is
+   `effect_scope='external'`") all agree.
+3. **Drift path + dispatch anchors** (verified 2026-07-10). Add
+   `apps/api/services/agents/runtime/dispatch.py` to the drift-check
+   command in the executor blockquote — the plan cites it throughout but
+   it sits outside `runtime/tools/`, so the current command would miss
+   its drift. Refreshed anchors: `dispatch_tool_execution` starts at
+   `dispatch.py:244` (the body's 127-227 range is stale); the mutation
+   warning constant is `MUTATION_OUTPUT_WARNING` at ~64 (was 50-53);
+   output-contract validation is `validate_output` at ~166, with run
+   envelope enforcement in `check_envelope` at ~125 (the body's 106-124
+   citation). `validate_definition` now starts at `contract.py:162`
+   (was 109-176). Same machinery, moved lines — decisions 2/4/8/12 read
+   against these locations.
+4. **Step 0 checklist gains 053/054.** Both are DONE as of 2026-07-10.
+   Step 0 confirms 053 and 054 alongside 014/021/022/023 and
+   037/038/039/040, matching the executor blockquote's G1-extension
+   language and the STOP condition (which already name them). Extend the
+   Commands-table Gate G1 check to
+   `grep -E '^\| (014|053|054) ' ../../docs/plans/000_README.md` — all
+   three rows must say DONE, and the completion report quotes them.
