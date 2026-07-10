@@ -65,6 +65,10 @@ persistence requirements. Plan 054 was completed 2026-07-09 and moved to
 grants, delegated runs inherit them, and dispatch suspends unapproved
 external writes under `require_approval` while preserving explicit scheduled
 write allowance.
+Plan 076 was completed 2026-07-10 and moved to `docs/plans/complete/`;
+free-text tool results are now bounded deterministically at dispatch,
+structured results remain intact and observable, and plan 056 consumes the
+shared model-calibrated token estimator.
 
 ---
 
@@ -386,11 +390,9 @@ migration.
 | 074 | Consistency sweep: scheduled re-discovery job for permission staleness (039), `top_k`/CTE-limit cross-check (045), unstorable `text-embedding-3-large` registry entry (043), phantom connection-rename route (042↔038), IP-pinned connects for DNS-rebinding TOCTOU (044). Amends 039/042/043/044/045. | P1 | Before Phase 4a/4b |
 
 Adjacent additions from the same review, not in Lane B: 075 (threat-model
-design note, registers Gate G6, before 041/046/048), 076 (bounded tool
-results + calibrated token estimation — Lane H extension: after 066,
-after 054 settles dispatch, hard-before 056 whose pressure math consumes
-the calibrated estimator, and before 041 whose integration tools produce
-the large outputs it bounds), and 077 (inbound integration events design
+design note, registers Gate G6, before 041/046/048), 076 (**DONE
+2026-07-10** — bounded tool results + calibrated token estimation), and 077
+(inbound integration events design
 note — webhooks/verification/event-triggered runs; reserves the seam in
 037/041 before Phase 4a code lands; MCP stays deferred per D7).
 
@@ -436,7 +438,7 @@ If work proceeds roughly serially, the default order is:
 
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 → C05 (DONE) →
+C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
 067 → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
@@ -445,9 +447,8 @@ land it early).
 Lane B placement rationale: each amendment lands immediately before the
 plan it binds — 073 before 053 (both done), 067/068/074/077/075
 batched before the Phase 4a/4b fork they all gate, 071 before 048, 069
-before 049, 070 before 050, 072 before 059. 076 sits after 054 (both edit
-dispatch) and hard-before 056 (whose pressure math consumes its
-calibrated estimator).
+before 049, 070 before 050, 072 before 059. 076 is done; it landed after
+054 and before 056, whose pressure math consumes its calibrated estimator.
 
 Lane Q placement rationale: 062 first because every later plan verifies
 through the gate it fixes; 063 is done and precedes 064 (its tests are the

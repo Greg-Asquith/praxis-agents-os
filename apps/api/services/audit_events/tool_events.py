@@ -48,6 +48,9 @@ async def record_tool_invocation_audit_event(
     outcome: ToolAuditOutcome,
     approval_ref: str | None = None,
     error_code: str | None = None,
+    result_chars: int | None = None,
+    result_truncated: bool | None = None,
+    result_original_chars: int | None = None,
 ) -> None:
     """Record one tool invocation in an independent committed transaction."""
     try:
@@ -86,6 +89,19 @@ async def record_tool_invocation_audit_event(
                         "run_id": str(run.id),
                         "agent_id": str(agent.id),
                         "agent_name": agent.name,
+                        **(
+                            {
+                                "result_chars": result_chars,
+                                "result_truncated": result_truncated,
+                            }
+                            if result_chars is not None and result_truncated is not None
+                            else {}
+                        ),
+                        **(
+                            {"result_original_chars": result_original_chars}
+                            if result_original_chars is not None
+                            else {}
+                        ),
                     }
                 ),
                 request_id=audit_context.get("request_id"),

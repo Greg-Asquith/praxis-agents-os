@@ -47,6 +47,7 @@ class ModelInfo:
     model: str
     display_name: str
     context_window: int
+    chars_per_token: float = 4.0
     supports_tools: bool = True
     supports_thinking: bool = False
     supports_vision: bool = False

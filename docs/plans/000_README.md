@@ -114,6 +114,13 @@ explicit `allow` via schedule execution params), delegated children inherit
 the parent grant at mint time, and dispatch suspends unapproved external
 writes under `require_approval` while preserving explicit scheduled write
 allowance.
+Plan 076 was executed 2026-07-10 as the bounded-tool-result slice: the
+dispatch choke point now deterministically bounds oversized free-text
+results before model visibility or persistence, preserves and measures
+structured results, records truncation audit metadata, and shares a
+model-calibrated token estimator with plan 056. The completion pass also
+clarified the envelope boundary: Praxis Files and scratch are internal;
+writes to outside systems are external.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -202,7 +209,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (completed before 053 executed) | DONE |
 | 074 | Integration & KB plan consistency sweep (amendments to 039/042/043/044/045) | P1 | S-M | 039/042/043/044/045 (binds before Phase 4a/4b) | TODO |
 | 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
-| 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | TODO |
+| 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | DONE |
 | 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | TODO |
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
 
@@ -669,9 +676,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   cancelled tool-call audit rows. The web composer uses the server cancel
   route for Stop instead of local stream abort.
 - `054` marked DONE 2026-07-09: `RuntimeToolDefinition` now exposes
-  `effect_scope` and optional call-argument scope resolution, so mixed tools
-  such as `write_file` treat scratch writes as internal and durable writes as
-  external. Scheduled runs stamp their server-minted envelope policy in run
+  `effect_scope` and optional call-argument scope resolution. Praxis-owned
+  scratch and durable File operations are internal (while retaining their
+  stricter tool-level approval where configured); writes to outside systems
+  are external. Scheduled runs stamp their server-minted envelope policy in run
   metadata at preparation time (`require_approval` by default; explicit
   `allow` via schedule execution params and the schedules form), delegated
   children inherit the parent policy, and dispatch raises

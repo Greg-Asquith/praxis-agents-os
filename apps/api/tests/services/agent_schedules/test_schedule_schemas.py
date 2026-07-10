@@ -36,7 +36,5 @@ def test_schedule_execution_params_rejects_deny_policy() -> None:
 def test_schedule_execution_params_rejects_non_string_policy_with_validation_error() -> None:
     with pytest.raises(ValidationError):
         AgentScheduleCreateRequest.model_validate(
-            _valid_payload(
-                execution_params={"envelope": {"side_effect_policy": ["allow"]}}
-            )
+            _valid_payload(execution_params={"envelope": {"side_effect_policy": ["allow"]}})
         )

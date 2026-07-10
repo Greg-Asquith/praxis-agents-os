@@ -238,9 +238,6 @@ def schedule_side_effect_policy(
         execution_params = ScheduleExecutionParams.model_validate(value or {})
     except ValidationError:
         return default
-    if (
-        execution_params.envelope is None
-        or execution_params.envelope.side_effect_policy is None
-    ):
+    if execution_params.envelope is None or execution_params.envelope.side_effect_policy is None:
         return default
     return execution_params.envelope.side_effect_policy

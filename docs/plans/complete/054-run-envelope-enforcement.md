@@ -57,14 +57,16 @@ must be wired before 041 ships tools whose writes cost money.
    `RuntimeToolDefinition` gains `effect_scope: Literal["internal",
    "external"]` (default `"internal"`), meaningful only for
    `effect="write"`. Internal writes mutate Praxis-owned state (todos,
-   scratch, memory notes later); external writes touch systems outside
-   Praxis (integration writes, durable file promotion, artifact creation,
-   KB writes). This mirrors governance §2's internal/external split, which
+   scratch, Praxis Files, memory notes later); external writes touch systems
+   outside Praxis (integration writes such as Google Drive or SharePoint
+   mutations, artifact publication, external KB writes). This mirrors
+   governance §2's internal/external split, which
    the contract currently cannot express. Landed write tools classify as:
-   `write_todos` internal, `write_file` **scratch-mode internal /
-   durable-mode external** — since the mode is an argument, not a
-   definition, classify the *definition* external iff it can produce a
-   durable write; `promote_scratch` external. Import-time validation:
+   `write_todos` internal, `write_file` internal in both scratch and durable
+   Praxis Files modes, and `promote_scratch` internal. Their existing
+   tool-level approval behavior remains stricter for durable writes; envelope
+   scope answers whether the action crosses Praxis, not whether it deserves
+   user approval. Import-time validation:
    `effect="read"` tools must not declare `external`.
 2. **Envelope policy derives from the principal.** `build_run_envelope`:
    - `interactive` → `allow`
@@ -298,11 +300,9 @@ Stop and report back (do not improvise) if:
   suspension in the installed pydantic-ai — probe first, and if the hook
   layer cannot suspend, move the check into a shared tool-body guard and
   record the deviation.
-- `write_file`'s dual scratch/durable nature cannot be honestly expressed
-  as a single `effect_scope` — do not split the tool here; report the
-  contract tension (the staged-approval flow may already make the durable
-  path safe enough to classify the definition `internal`; that call needs
-  the operator).
+- A Praxis-owned file operation is classified external merely because it is
+  durable — the boundary is Praxis versus an outside system, not scratch
+  versus persisted storage.
 - Any existing scheduled-run test starts suspending on internal writes —
   the internal/external line is wrong, not the tests.
 - You are tempted to add per-schedule overrides or a new permission — that

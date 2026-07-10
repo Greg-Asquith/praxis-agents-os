@@ -7,7 +7,8 @@ package:
 - ``Hooks.on`` exposes ``before_tool_execute``, ``after_tool_execute``,
   ``tool_execute``, ``tool_execute_error``, and ``before_tool_validate``.
 - Tool execution hooks receive ``RunContext.deps`` and fire for tools mounted
-  through the agent ``tools=[...]`` argument.
+  through the agent ``tools=[...]`` argument and capability ``tools=[...]``
+  (capability coverage re-probed 2026-07-10).
 - Raising ``ModelRetry`` from a tool-execution hook prevents the tool body from
   running and returns a model-visible retry message.
 - Approval-required tools do not fire execution hooks when the approval request
@@ -35,6 +36,7 @@ from pydantic import ValidationError
 from pydantic_ai import ApprovalRequired, DeferredToolResults, ModelRetry, ToolDenied
 from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
 
+from core.settings import settings
 from services.agents.runtime.cancellation import is_agent_run_cancel_request
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
@@ -55,6 +57,7 @@ from services.audit_events.tool_events import (
     ToolAuditOutcome,
     record_tool_invocation_audit_event,
 )
+from utils.tokens import estimate_tokens
 
 Handler = Callable[[Mapping[str, Any]], Awaitable[Any]]
 
@@ -82,6 +85,16 @@ class EnvelopeVerdict:
     denied_message: str | None = None
     requires_approval: bool = False
     effect_scope: ToolEffectScope | None = None
+
+
+@dataclass(frozen=True)
+class ResultSize:
+    """Measurement and truncation outcome for one tool result."""
+
+    chars: int | None
+    truncated: bool = False
+    original_chars: int | None = None
+    oversized: bool = False
 
 
 def digest_args(args: Mapping[str, Any] | None) -> tuple[str, int]:
@@ -169,6 +182,63 @@ def validate_output(
             retry_message=f"{READ_OUTPUT_WARNING} {exc}",
             outcome="failed",
         ) from exc
+
+
+def truncate_result(
+    definition: RuntimeToolDefinition | None,
+    result: Any,
+    *,
+    default_limit: int | None,
+) -> tuple[Any, ResultSize]:
+    """Bound eligible free-text results and measure structured exemptions."""
+    limit = definition.max_result_chars if definition is not None else None
+    if limit is None:
+        limit = default_limit
+
+    result_chars = _measure_result_chars(result)
+    if limit is None or result_chars is None or result_chars <= limit:
+        return result, ResultSize(chars=result_chars)
+
+    can_truncate = isinstance(result, str) and (
+        definition is None or definition.output_model is None
+    )
+    if not can_truncate:
+        return result, ResultSize(chars=result_chars, oversized=True)
+
+    head_chars = int(limit * 0.8)
+    tail_chars = limit - head_chars
+    elided_chars = result_chars - limit
+    elided_tokens = estimate_tokens(result[head_chars : result_chars - tail_chars])
+    marker = (
+        f"\n\n[Tool result truncated: {elided_chars} characters "
+        f"(~{elided_tokens} tokens) elided. Re-run this tool with narrower "
+        "arguments, pagination, or an offset to retrieve the missing content.]\n\n"
+    )
+    tail = result[-tail_chars:] if tail_chars else ""
+    truncated_result = f"{result[:head_chars]}{marker}{tail}"
+    return truncated_result, ResultSize(
+        chars=len(truncated_result),
+        truncated=True,
+        original_chars=result_chars,
+        oversized=True,
+    )
+
+
+def _measure_result_chars(result: Any) -> int | None:
+    if isinstance(result, str):
+        return len(result)
+    try:
+        return len(
+            json.dumps(
+                result,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                default=str,
+            )
+        )
+    except (TypeError, ValueError, RecursionError):
+        return None
 
 
 async def dispatch_tool_execution(
@@ -296,6 +366,31 @@ async def dispatch_tool_execution(
         )
         raise ModelRetry(exc.retry_message) from exc
 
+    result, result_size = truncate_result(
+        definition,
+        result,
+        default_limit=settings.AGENT_TOOL_RESULT_MAX_CHARS,
+    )
+    if result_size.truncated:
+        logger.warning(
+            "Truncated oversized tool result",
+            extra={
+                "run_id": str(ctx.deps.run.id),
+                "tool_name": tool_name,
+                "result_chars": result_size.chars,
+                "result_original_chars": result_size.original_chars,
+            },
+        )
+    elif result_size.oversized:
+        logger.warning(
+            "Oversized structured tool result exempt from truncation",
+            extra={
+                "run_id": str(ctx.deps.run.id),
+                "tool_name": tool_name,
+                "result_chars": result_size.chars,
+            },
+        )
+
     await record_invocation(
         deps=ctx.deps,
         tool_name=tool_name,
@@ -308,6 +403,9 @@ async def dispatch_tool_execution(
         tool_call_id=tool_call_id,
         outcome="completed",
         approval_ref=approval_ref,
+        result_chars=result_size.chars if result_size.oversized else None,
+        result_truncated=result_size.truncated if result_size.oversized else None,
+        result_original_chars=result_size.original_chars,
     )
     return result
 
@@ -412,6 +510,9 @@ async def record_invocation(
     outcome: ToolAuditOutcome,
     approval_ref: str | None = None,
     error_code: str | None = None,
+    result_chars: int | None = None,
+    result_truncated: bool | None = None,
+    result_original_chars: int | None = None,
 ) -> None:
     """Assemble and persist one invocation audit event."""
     await record_tool_invocation_audit_event(
@@ -429,6 +530,9 @@ async def record_invocation(
         outcome=outcome,
         approval_ref=approval_ref,
         error_code=error_code,
+        result_chars=result_chars,
+        result_truncated=result_truncated,
+        result_original_chars=result_original_chars,
     )
 
 

@@ -73,6 +73,11 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum total (input+output) tokens per agent run; None disables the cap.",
     )
+    AGENT_TOOL_RESULT_MAX_CHARS: int | None = Field(
+        default=16_000,
+        gt=0,
+        description="Maximum free-text tool-result characters; None disables the bound.",
+    )
     AGENT_SCHEDULED_SIDE_EFFECT_POLICY: Literal["allow", "require_approval", "deny"] = Field(
         default="require_approval",
         description="Side-effect policy minted for scheduled agent runs.",

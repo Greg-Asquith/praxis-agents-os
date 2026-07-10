@@ -136,6 +136,12 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             kind=TOOL_KIND_CAPABILITY,
             capability_factory=lambda: object(),
         ),
+        RuntimeToolDefinition(
+            name="bad_result_bound",
+            function=_noop,
+            description="Result bound must be positive.",
+            max_result_chars=0,
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_invariants(

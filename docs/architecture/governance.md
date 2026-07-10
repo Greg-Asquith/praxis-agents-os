@@ -56,12 +56,16 @@ point, per-agent `tool_policies`); this section is the policy law:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
-  scratch, memory notes) default `auto`. [implemented: plan 028 for
-  todos; implemented: plan 034 for scratch; memory notes pending]
+  scratch, Praxis Files, memory notes) are internal in the run envelope.
+  Their tool-level approval policy can still be stricter: durable Praxis
+  file writes and scratch promotion require approval even though they do
+  not cross the Praxis boundary. [implemented: plan 028 for todos;
+  implemented: plans 034/054 for scratch and Praxis Files; memory notes
+  pending]
 - `effect="write"` tools with **external side effects** (integration
-  writes, durable file writes via promote, artifact creation, KB writes
-  from conversations) default `approval`. [implemented: plan 034 for
-  durable file writes/promote; integrations, artifacts, and KB pending]
+  writes such as Google Drive or SharePoint mutations, artifact publication,
+  and external KB writes) default `approval`. [integrations, artifacts, and
+  external KB targets pending]
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. [default — confirm at review]

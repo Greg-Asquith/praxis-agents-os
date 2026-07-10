@@ -112,6 +112,18 @@ alone.
    little while the injected blocks are bounded and small; revisit if 040/
    049 blocks blow past their budgets in practice.
 
+## Amendment (plan 076, 2026-07-10): consume the calibrated estimator
+
+Plan 076 implements `utils/tokens.py::estimate_tokens` before this plan
+runs and adds `ModelInfo.chars_per_token` to the model catalog. Decision 5
+must consume that shared helper with the resolved model's catalog value;
+do not recreate the earlier `chars//4` sketch in this plan. The helper
+counts non-ASCII characters conservatively and keeps provider-specific
+recalibration offline, without adding a tokenizer or a provider round-trip
+to the turn path. Plan 076 also bounds oversized free-text tool results at
+dispatch production time, so this plan continues to own multi-turn pressure
+and summaries only; it must not retroactively edit stored tool results.
+
 ## Why this matters
 
 Compaction is the difference between "agents with a 20-turn memory" and
@@ -323,9 +335,9 @@ Stop and report back (do not improvise) if:
 - **Summary quality** is a Gate G5 concern: when graded evals (055) grow
   a long-conversation case, the summary prompt is tunable content — tune
   against evals, not vibes.
-- If chars//4 proves too wrong for a provider (systematic over/under
-  trim), swap `estimate_tokens` internals in one place; the fraction
-  setting absorbs calibration meanwhile.
+- If estimates drift for a provider (systematic over/under trim), recalibrate
+  that model's `chars_per_token` catalog value offline; the fraction setting
+  absorbs calibration meanwhile.
 - The workspace-level LLM budget follow-up (governance §4) should reuse
   the hot usage columns on `agent_runs` — counters exist; only the quota
   surface is missing.

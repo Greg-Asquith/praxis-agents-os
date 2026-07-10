@@ -241,9 +241,7 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
         run_id=run_id,
         conversation_id=conversation_id,
         message_history=suspended_state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={tool_call_id: ToolApproved()}
-        ),
+        deferred_tool_results=DeferredToolResults(approvals={tool_call_id: ToolApproved()}),
         sink=NullSink(run_id=run_id, conversation_id=conversation_id),
         model=model,
     )

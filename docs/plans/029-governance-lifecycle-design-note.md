@@ -155,10 +155,12 @@ citation against code. Legend: ✓ allowed, — denied. All cells
 
 Record the policy law (025/026 mechanics referenced, not restated):
 `effect="read"` tools default `auto`; `effect="write"` tools targeting
-**Praxis-internal state** (todos, scratch, memory notes) default `auto`;
-`effect="write"` tools with **external side effects** (integration writes,
-durable file writes via promote, artifact creation, KB writes from
-conversations) default `approval`; anything that **spends money** (Google
+**Praxis-internal state** (todos, scratch, Praxis Files, memory notes) is
+internal to the run envelope; durable Praxis file writes and scratch
+promotion may still keep stricter tool-level approval. `effect="write"`
+tools with **external side effects** (for example Google Drive or SharePoint
+mutations, artifact publication, and external KB writes) default `approval`;
+anything that **spends money** (Google
 Ads mutations, 041) is `approval` and `supports_auto=False` — per-agent
 config may not weaken it. Non-interactive principals: scheduled runs pause
 on approval (026 decision 3); delegated runs inherit the parent cap.

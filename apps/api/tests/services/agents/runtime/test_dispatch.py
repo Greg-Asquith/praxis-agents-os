@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Literal
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,6 +24,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -55,6 +57,7 @@ from tests.factories import build_user, build_workspace
 pytestmark = pytest.mark.asyncio
 
 execute_run_module = importlib.import_module("services.agents.runtime.execute_run")
+dispatch_module = importlib.import_module("services.agents.runtime.dispatch")
 
 
 class DispatchToolOutput(BaseModel):
@@ -79,6 +82,8 @@ def dispatch_test_tools():
         "dispatch_bad_write",
         "dispatch_needs_approval",
         "dispatch_internal_write_ok",
+        "dispatch_large_structured",
+        "dispatch_long_text",
         "dispatch_write_ok",
     ]
     for name in names:
@@ -151,6 +156,24 @@ def dispatch_test_tools():
         return {"ok": bool(value)}
 
     @runtime_tool(
+        name="dispatch_long_text",
+        provider="test",
+        label="Dispatch long text",
+        description="Return oversized free text for dispatch tests.",
+    )
+    async def dispatch_long_text(value: str) -> str:
+        return value
+
+    @runtime_tool(
+        name="dispatch_large_structured",
+        provider="test",
+        label="Dispatch large structured",
+        description="Return an oversized mapping for dispatch tests.",
+    )
+    async def dispatch_large_structured(value: str) -> dict[str, str]:
+        return {"value": value}
+
+    @runtime_tool(
         name="dispatch_write_ok",
         provider="test",
         label="Dispatch write ok",
@@ -218,7 +241,178 @@ async def test_tool_invocation_writes_digest_only_audit_row(
         assert event.details["latency_ms"] >= 1
         assert event.details["run_id"] == str(context.run_id)
         assert event.details["agent_id"] == str(context.agent_id)
+        assert "result_chars" not in event.details
+        assert "result_truncated" not in event.details
         assert marker not in json.dumps(event.details)
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_oversized_text_is_model_visible_persisted_and_audited_as_truncated(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_long_text"],
+    )
+    original = "h" * 80 + "middle-content" * 20 + "t" * 20
+    seen_messages: list[ModelMessage] = []
+    monkeypatch.setattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 100)
+
+    try:
+        result = await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_long_text",
+            args={"value": original},
+            seen_messages=seen_messages,
+        )
+
+        assert result.run.status == RUN_STATUS_COMPLETED
+        model_visible = _tool_result_content(seen_messages, "dispatch_long_text")
+        assert model_visible.startswith("h" * 80)
+        assert model_visible.endswith("t" * 20)
+        assert "Tool result truncated" in model_visible
+
+        async with committed_db_session_factory() as db:
+            persisted_row = await db.scalar(
+                select(ConversationMessage).where(
+                    ConversationMessage.conversation_id == context.conversation_id,
+                    ConversationMessage.tool_name == "dispatch_long_text",
+                    ConversationMessage.role == "tool",
+                )
+            )
+        assert persisted_row is not None
+        persisted_content = persisted_row.parts["parts"][0]["content"]
+        assert persisted_content == model_visible
+
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_long_text",
+        )
+        assert event.details["result_chars"] == len(model_visible)
+        assert event.details["result_truncated"] is True
+        assert event.details["result_original_chars"] == len(original)
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_oversized_structured_result_is_preserved_warned_and_audited(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_large_structured"],
+    )
+    original = "structured-content" * 20
+    seen_messages: list[ModelMessage] = []
+    warning = Mock()
+    monkeypatch.setattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 20)
+    monkeypatch.setattr(dispatch_module.logger, "warning", warning)
+
+    try:
+        await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_large_structured",
+            args={"value": original},
+            seen_messages=seen_messages,
+        )
+
+        assert original in str(_tool_result_content(seen_messages, "dispatch_large_structured"))
+        warning.assert_called_once()
+        assert (
+            warning.call_args.args[0] == "Oversized structured tool result exempt from truncation"
+        )
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_large_structured",
+        )
+        assert event.details["result_chars"] > 20
+        assert event.details["result_truncated"] is False
+        assert "result_original_chars" not in event.details
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_approved_oversized_result_is_truncated_once_and_replays_identically(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_long_text"],
+        tool_policies={"dispatch_long_text": "approval"},
+    )
+    original = "approved-head" * 20 + "approved-tail" * 20
+    stream_function, seen_messages = _single_tool_stream(
+        tool_name="dispatch_long_text",
+        args={"value": original},
+        final_text="approved result handled",
+    )
+    monkeypatch.setattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 80)
+
+    try:
+        async with committed_db_session_factory() as db:
+            suspended = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Use the approved tool.",
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream_function,
+                    model_name="dispatch-approved-long-result",
+                ),
+            )
+
+        assert isinstance(suspended.output, DeferredToolRequests)
+        suspended_state = load_suspended_run_state(suspended.run)
+        tool_call_id = suspended_state.pending_tool_call_ids[0]
+
+        async with committed_db_session_factory() as db:
+            resumed = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt=None,
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream_function,
+                    model_name="dispatch-approved-long-result",
+                ),
+                expected_status=RUN_STATUS_AWAITING_APPROVAL,
+                message_history=suspended_state.message_history,
+                deferred_tool_results=DeferredToolResults(approvals={tool_call_id: ToolApproved()}),
+            )
+
+        assert resumed.output == "approved result handled"
+        model_visible = _tool_result_content(seen_messages, "dispatch_long_text")
+        assert "Tool result truncated" in model_visible
+
+        async with committed_db_session_factory() as db:
+            persisted_row = await db.scalar(
+                select(ConversationMessage).where(
+                    ConversationMessage.conversation_id == context.conversation_id,
+                    ConversationMessage.tool_name == "dispatch_long_text",
+                    ConversationMessage.role == "tool",
+                )
+            )
+        assert persisted_row is not None
+        assert persisted_row.parts["parts"][0]["content"] == model_visible
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
@@ -885,6 +1079,17 @@ def _single_tool_stream(
         yield final_text
 
     return stream, captured_messages
+
+
+def _tool_result_content(messages: list[ModelMessage], tool_name: str):
+    for message in messages:
+        for part in message.parts:
+            if (
+                getattr(part, "part_kind", None) == "tool-return"
+                and getattr(part, "tool_name", None) == tool_name
+            ):
+                return part.content
+    raise AssertionError(f"No tool result found for {tool_name}")
 
 
 async def _tool_audit_events(

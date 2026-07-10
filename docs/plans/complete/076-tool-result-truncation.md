@@ -30,6 +30,7 @@
   both edit `dispatch.py`; whichever lands second rebases.
 - **Category**: Lane H extension — harness hardening, added 2026-07-07
 - **Planned at**: working tree at commit `6be5491`, 2026-07-07
+- **Completed**: 2026-07-10
 
 ## Product intent
 
@@ -316,18 +317,18 @@ is implemented by this plan's `utils/tokens.py` with per-model
 
 ## Done criteria
 
-- [ ] `grep -n "AGENT_TOOL_RESULT_MAX_CHARS" apps/api/core/settings/agents.py`
+- [x] `grep -n "AGENT_TOOL_RESULT_MAX_CHARS" apps/api/core/settings/agents.py`
       and `grep -n "max_result_chars"
       apps/api/services/agents/runtime/tools/contract.py` both hit
-- [ ] `grep -n "estimate_tokens" apps/api/utils/tokens.py` and
+- [x] `grep -n "estimate_tokens" apps/api/utils/tokens.py` and
       `grep -n "chars_per_token" apps/api/services/agents/models/domain.py`
       both hit
-- [ ] Oversized string tool results are bounded with a head+tail marker;
+- [x] Oversized string tool results are bounded with a head+tail marker;
       structured results are never cut (tests 1-7 pass)
-- [ ] Truncation is deterministic and audit-visible (tests 8, 11, 12 pass)
-- [ ] `docs/plans/056-context-compaction.md` carries the estimator
+- [x] Truncation is deterministic and audit-visible (tests 8, 11, 12 pass)
+- [x] `docs/plans/056-context-compaction.md` carries the estimator
       amendment block
-- [ ] `make api-test` green; `docs/plans/000_README.md` row updated
+- [x] `make api-test` green; `docs/plans/000_README.md` row updated
 
 ## STOP conditions
 

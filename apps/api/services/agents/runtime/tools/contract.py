@@ -101,6 +101,8 @@ class RuntimeToolDefinition:
     effect_scope_resolver: Callable[[dict[str, Any]], ToolEffectScope] | None = None
     output_model: type[BaseModel] | None = None
     """Declared output contract, enforced by the tool dispatch layer."""
+    max_result_chars: int | None = None
+    """Optional free-text result bound overriding the runtime default."""
     capability_factory: Callable[[], Any] | None = None
     supported_model_providers: frozenset[str] | None = None
     configurable: bool = True
@@ -171,6 +173,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool effect must be read or write")
     if definition.effect_scope not in VALID_TOOL_EFFECT_SCOPES:
         raise RuntimeError("Runtime tool effect scope must be internal or external")
+    if definition.max_result_chars is not None and definition.max_result_chars < 1:
+        raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
     if (
         definition.effect == TOOL_EFFECT_READ
         and definition.effect_scope != TOOL_EFFECT_SCOPE_INTERNAL
