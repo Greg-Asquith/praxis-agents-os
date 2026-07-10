@@ -26,6 +26,7 @@ from services.agents.runtime.tools.registry import (
     build_runtime_tools,
     list_allowed_tool_definitions,
     list_tool_presentations,
+    register_tool_definition,
     runtime_tool,
 )
 
@@ -50,6 +51,7 @@ __all__ = [
     "build_runtime_tools",
     "list_allowed_tool_definitions",
     "list_tool_presentations",
+    "register_tool_definition",
     "runtime_tool",
     "validate_definition",
 ]

@@ -47,6 +47,7 @@ def build_runtime_agent(
     force_delegation_tools: bool = False,
     skills: Sequence[Skill] = (),
     available_files: Sequence[AvailableFile] = (),
+    skipped_tool_names: list[str] | None = None,
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
     resolved_model = resolve_agent_model(agent)
@@ -64,7 +65,11 @@ def build_runtime_agent(
             ),
             deps_type=RuntimeDeps,
             output_type=[str, DeferredToolRequests],
-            tools=build_runtime_tools(agent, include_delegation=include_delegation),
+            tools=build_runtime_tools(
+                agent,
+                include_delegation=include_delegation,
+                skipped_tool_names=skipped_tool_names,
+            ),
             capabilities=[
                 *build_runtime_capabilities(agent),
                 *build_runtime_native_capabilities(agent, resolved_model),

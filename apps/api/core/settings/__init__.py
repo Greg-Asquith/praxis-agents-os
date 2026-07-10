@@ -20,6 +20,7 @@ from core.settings.database import DatabaseSettingsMixin
 from core.settings.email import EmailSettingsMixin
 from core.settings.files import FilesSettingsMixin
 from core.settings.gcp import GcpSettingsMixin
+from core.settings.integrations import IntegrationsSettingsMixin
 from core.settings.jobs import JobsSettingsMixin
 from core.settings.models import LLMSettingsMixin
 from core.settings.observability import ObservabilitySettingsMixin
@@ -41,6 +42,7 @@ class Settings(
     EmailSettingsMixin,
     FilesSettingsMixin,
     GcpSettingsMixin,
+    IntegrationsSettingsMixin,
     JobsSettingsMixin,
     LLMSettingsMixin,
     ObservabilitySettingsMixin,
@@ -68,6 +70,24 @@ class Settings(
 
         if self.EMAIL_PROVIDER == "console" and self.ENVIRONMENT != "local":
             raise ValueError("EMAIL_PROVIDER=console is only allowed when ENVIRONMENT=local")
+
+        if self.SECRET_PROVIDER == "local" and self.ENVIRONMENT != "local":
+            raise ValueError("SECRET_PROVIDER=local is only allowed when ENVIRONMENT=local")
+
+        if self.SECRET_PROVIDER == "gcp_secret_manager" and not (self.GCP_PROJECT_ID or "").strip():
+            raise ValueError("SECRET_PROVIDER=gcp_secret_manager requires GCP_PROJECT_ID")
+
+        if (
+            self.SECRET_PROVIDER == "azure_key_vault"
+            and not (self.AZURE_KEY_VAULT_URL or "").strip()
+        ):
+            raise ValueError("SECRET_PROVIDER=azure_key_vault requires AZURE_KEY_VAULT_URL")
+
+        if self.SECRET_PROVIDER == "aws_secrets_manager" and not self.AWS_REGION.strip():
+            raise ValueError("SECRET_PROVIDER=aws_secrets_manager requires AWS_REGION")
+
+        if self.CREDENTIAL_MASTER_KEYS and self.ENVIRONMENT != "local":
+            raise ValueError("CREDENTIAL_MASTER_KEYS is only allowed when ENVIRONMENT=local")
 
         if (
             self.METRICS_ENABLED

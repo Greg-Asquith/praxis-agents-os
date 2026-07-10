@@ -94,7 +94,6 @@ lcov.info
 !.env.*.example
 
 # Service account keys and secrets
-secrets/
 *.json.key
 *-key.json
 

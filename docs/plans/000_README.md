@@ -177,6 +177,17 @@ only) with provider HTTP mocked at the transport layer. 039 ships its
 discovery engine with no working shipped arm until 041 — expected and
 documented, not a gap.
 
+Plan 037 was executed 2026-07-10 as the integration foundation: handwritten
+core migration `core_0013`, multi-connection credentials/connections/resources,
+purpose-separated credential encryption and rotation, locked proactive refresh,
+the singular provider manifest/plugin loader, Retry-After-aware `httpx2`
+requests, and versioned secret references. Provider enablement was simplified
+by maintainer decision to the single `INTEGRATIONS_ENABLED_PROVIDERS` allowlist
+for every provider. The secrets contract supports local development plus GCP
+Secret Manager, Azure Key Vault, and AWS Secrets Manager in production. No
+routes, discovery execution, real provider operations, or UI were added; those
+remain with 038–042. Plan 037 moved to `plans/complete/`.
+
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -225,7 +236,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 035 | Files UI | P1 | L | 032, C02 | DONE |
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | DONE |
 | C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | DONE |
-| 037 | Integration core models, credential service, and secret references | P1 | L | 029 | TODO |
+| 037 | Integration core models, credential service, and secret references | P1 | L | 029 | DONE |
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |

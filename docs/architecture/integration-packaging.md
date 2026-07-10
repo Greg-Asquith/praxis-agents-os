@@ -55,7 +55,7 @@ Goals, in priority order:
    provider; providers import only published core seams; providers never
    import each other. Both sides enforce this mechanically (§4.6, §5.5),
    not by convention.
-4. **Enablement has three layers**, checked in order:
+4. **Enablement has two current layers**, checked in order:
    - *Install-time*: provider SDK dependencies are per-provider optional
      extras (`pyproject.toml`); the base install carries none. (v1
      providers are REST-over-httpx2 and need no extras; the pattern
@@ -63,11 +63,11 @@ Goals, in priority order:
    - *Boot-time*: `INTEGRATIONS_ENABLED_PROVIDERS` (settings) names the
      provider packages to load. Not listed ⇒ never imported: no manifest
      entry, no tools, no catalog presence, invisible to the product.
-   - *Runtime*: an enabled provider whose required settings are absent
-     reports itself unavailable through its manifest (037's
-     `enabled_setting` gating), and the existing `is_tool_allowed` seam
-     hides its tools. Workspace-level provider toggles are a future slice
-     of the same seam.
+   There is deliberately no second per-provider enable flag or manifest
+   availability gate: a provider is either named in the boot allowlist or it
+   is absent. Required deployment configuration is validated fail-fast when
+   the provider's operational slice lands. Workspace-level provider toggles
+   remain a future slice of the existing `is_tool_allowed` seam.
 5. **New provider ≠ new protocol.** Provider tools flow through the
    existing SSE events (`tool.call`/`tool.result`/`tool.approval_required`)
    and the existing presentation schema. Adding SSE event types or
@@ -181,8 +181,8 @@ def load_enabled_providers() -> None:
   the clause is not built)*
 - Per-provider operational settings (OAuth client ids, developer tokens)
   stay in the core settings mixins as today — settings are deployment
-  config, not provider code. A provider's manifest names its
-  `enabled_setting` gate exactly as 037 designed.
+  config, not provider code. They are prerequisites for loading the provider,
+  not a second enablement mechanism.
 
 ### 4.5 Optional dependencies
 
@@ -306,7 +306,6 @@ map. No other shared file changes per provider.
 | Install (backend) | pyproject extra `integration-<key>` | SDK absent; package import-guards explain which extra to install |
 | Boot (backend) | `INTEGRATIONS_ENABLED_PROVIDERS` | package never imported: no manifest, no tools, no catalog/provider-card presence |
 | Boot (frontend) | server catalog is the source of truth | provider card absent; module chunk never requested |
-| Runtime config | manifest `enabled_setting` (037) | provider visible as "needs configuration"; tools hidden via `is_tool_allowed` |
 | Workspace (future) | per-workspace provider toggles on the same `is_tool_allowed` seam | provider hidden for that workspace |
 
 ## 7. Old-system failure modes → countermeasures

@@ -25,6 +25,7 @@
 
 ## Status
 
+- **Status**: DONE (2026-07-10)
 - **Priority**: P1
 - **Effort**: L (the largest of the three Phase 4a foundation plans)
 - **Risk**: HIGH (credential storage, encryption, and the production secrets
@@ -45,6 +46,32 @@
   out; the full deliberation history lives in
   `docs/plans/complete/{061,068,077,080}-*.md` and the roadmap decision
   table.
+
+## Completion notes
+
+Plan 037 was implemented and verified on 2026-07-10. Three operator decisions
+made during execution supersede narrower details later in this historical plan:
+
+1. Integration enablement uses exactly one mechanism for every provider:
+   `INTEGRATIONS_ENABLED_PROVIDERS`. The manifest has no `enabled_setting`,
+   there is no `INTEGRATIONS_AIRTABLE_ENABLED`, and missing operational config
+   must fail fast when the owning provider slice lands.
+2. `SECRET_PROVIDER` supports local development plus all three production
+   cloud backends: GCP Secret Manager, Azure Key Vault, and AWS Secrets
+   Manager. Cloud SDK dependencies are bundled into one optional extra per
+   cloud (`gcp`, `azure`, or `aws`) across storage and secrets, and each secret
+   backend has provider-specific production validation.
+3. Shipped provider manifests advertise discovery only when their real
+   discovery callable lands. Airtable and Google Ads therefore remain
+   `requires_discovery=False` until plan 041 wires those operations.
+
+The migration was written by hand as `core_0013`, checked against SQLAlchemy
+metadata, and downgrade/upgraded cleanly. The focused integration/secrets suite
+passed 77 tests and the full DB-backed API suite passed 645 tests. Every root
+gate component passed except the all-tree API format check, which still reports
+pre-existing drift in `tests/routes/conversations/test_turn_streaming.py`; this
+scoped plan did not modify that unrelated file, and every changed Python path is
+Ruff-formatted.
 
 ## Decisions taken
 
@@ -116,20 +143,20 @@
    `services/storage/provider.py:17`), a factory singleton (shape of
    `services/storage/factory.py:22`), a **local provider** (env-var read
    plus a Fernet-encrypted `.local/` file store so the 038 api-key connect
-   flow can write locally), and **GCP Secret Manager** as the first real
-   provider behind a new optional extra. The existing, entirely unconsumed
+   flow can write locally), plus **GCP Secret Manager, Azure Key Vault, and
+   AWS Secrets Manager** behind optional extras. The existing, entirely unconsumed
    `SECRET_PROVIDER` setting (`core/settings/providers.py:16`; its only
    other mention is a docstring, `services/agents/models/utils.py:4-9`) is
-   **narrowed** to `Literal["local", "gcp_secret_manager"]` — the dead
+   setting is narrowed to those four concrete values — the dead generic
    `"secret_manager"`/`"key_value"` values go away while nothing reads them.
 6. **Production-safety validation per governance §5**: the `model_validator`
    in `core/settings/__init__.py:58` gains three rules mirroring the
    local_fs/console gating at lines 66-70: `SECRET_PROVIDER == "local"`
    only when `ENVIRONMENT == "local"`;
-   `SECRET_PROVIDER == "gcp_secret_manager"` requires a non-empty
-   `GCP_PROJECT_ID` (`core/settings/gcp.py:10`); `CREDENTIAL_MASTER_KEYS`
-   only when `ENVIRONMENT == "local"`. Outside local there is no third
-   option, so prod requires the real secret manager by construction.
+   each cloud provider requires its identifying setting (`GCP_PROJECT_ID`,
+   `AZURE_KEY_VAULT_URL`, or `AWS_REGION`); `CREDENTIAL_MASTER_KEYS` is
+   allowed only when `ENVIRONMENT == "local"`. Production therefore requires
+   a concretely configured cloud secret manager by construction.
 7. **Providers are packages behind a plugin contract and loader (plan
    061).** `services/integrations/manifest.py` is contract + registration
    only — **no hardcoded provider entries**. `services/integrations/
@@ -294,7 +321,7 @@ beyond the exception layer; there is no `services/integrations/`, no
   (`@runtime_checkable` Protocol with `provider_key` + async ops);
   factory singleton with lock (`services/storage/factory.py:19-51`);
   optional extras per cloud provider (`pyproject.toml:27-30`: `azure`,
-  `gcs`, `s3`).
+  `gcp`, `aws`).
 - HTTP: `httpx2>=2.5.0` is the runtime dep (`pyproject.toml:14`);
   `cryptography>=49` (line 11), `pyjwt>=2.13` (line 20). The OAuth retry
   precedent is `core/auth/oauth_providers/retrying.py:51-135` (bounded
@@ -368,8 +395,10 @@ Both loader-smoke expectations get tests (Step 7).
 - `apps/api/utils/security.py` (add `derive_purpose_key`)
 - `apps/api/services/secrets/` (create): `__init__.py`, `domain.py`,
   `provider.py`, `factory.py`, `resolve_secret.py`, `write_secret.py`,
+  `delete_secret.py`,
   `providers/__init__.py`, `providers/local.py`,
-  `providers/gcp_secret_manager.py`, `utils.py`
+  `providers/gcp_secret_manager.py`, `providers/azure_key_vault.py`,
+  `providers/aws_secrets_manager.py`, `utils.py`
 - `apps/api/services/integrations/` (create): `__init__.py`, `domain.py`,
   `manifest.py`, `plugin.py`, `loader.py`, `http.py`, `utils.py`,
   `credentials/__init__.py`, `credentials/store_oauth_credential.py`,
@@ -386,8 +415,8 @@ Both loader-smoke expectations get tests (Step 7).
   (`build_runtime_tools` lenient per packaging note §4.7)
 - `apps/api/services/audit_events/enums.py` (add four
   `AuditResourceType` members)
-- `apps/api/pyproject.toml` (add optional extra
-  `gcp-secrets = ["google-cloud-secret-manager>=2.20"]`)
+- `apps/api/pyproject.toml` (add optional extras for GCP Secret Manager,
+  Azure Key Vault, and AWS Secrets Manager)
 - `apps/api/tests/services/integrations/`, `apps/api/tests/services/secrets/`,
   and `apps/api/tests/integrations/` (create),
   `apps/api/tests/factories/integrations.py` (create)
@@ -432,15 +461,14 @@ INTEGRATIONS_HTTP_TIMEOUT_SECONDS: float = 30.0         # per-request timeout
 INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS: int = 3           # bounded attempts (governance §4)
 INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR: float = 0.5     # fallback exponential backoff
 INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS: int = 60     # Retry-After honored up to this cap
-INTEGRATIONS_AIRTABLE_ENABLED: bool = False             # manifest env gate (D4; ops are 041)
 CREDENTIAL_MASTER_KEY_SECRET_NAME: str = "credential-master-key"  # secrets-provider reference (decision 4)
 CREDENTIAL_MASTER_KEYS: str | None = None               # local-only fallback: comma-separated Fernet keys, newest first
 ```
 
 All numeric fields `Field(..., gt=0, description=...)`. In
 `core/settings/providers.py` narrow the Literal:
-`SECRET_PROVIDER: Literal["local", "gcp_secret_manager"]`, default
-`"local"` (decision 5 — verified zero consumers). Compose the mixin into
+`SECRET_PROVIDER` accepts `local`, `gcp_secret_manager`, `azure_key_vault`,
+or `aws_secrets_manager`, defaulting to `local`. Compose the mixin into
 `Settings` in `core/settings/__init__.py` and extend
 `validate_runtime_provider_config` (line 58), mirroring the
 local_fs/console pattern at 66-70:
@@ -450,6 +478,10 @@ if self.SECRET_PROVIDER == "local" and self.ENVIRONMENT != "local":
     raise ValueError("SECRET_PROVIDER=local is only allowed when ENVIRONMENT=local")
 if self.SECRET_PROVIDER == "gcp_secret_manager" and not (self.GCP_PROJECT_ID or "").strip():
     raise ValueError("SECRET_PROVIDER=gcp_secret_manager requires GCP_PROJECT_ID")
+if self.SECRET_PROVIDER == "azure_key_vault" and not (self.AZURE_KEY_VAULT_URL or "").strip():
+    raise ValueError("SECRET_PROVIDER=azure_key_vault requires AZURE_KEY_VAULT_URL")
+if self.SECRET_PROVIDER == "aws_secrets_manager" and not self.AWS_REGION.strip():
+    raise ValueError("SECRET_PROVIDER=aws_secrets_manager requires AWS_REGION")
 if self.CREDENTIAL_MASTER_KEYS and self.ENVIRONMENT != "local":
     raise ValueError("CREDENTIAL_MASTER_KEYS is only allowed when ENVIRONMENT=local")
 ```
@@ -462,7 +494,7 @@ value there, alongside the existing generated `ENCRYPTION_KEY`.
 
 **Verify**:
 `uv run python -c "from core.settings import settings; print(settings.INTEGRATIONS_TOKEN_REFRESH_LEEWAY_SECONDS)"`
-→ `120`; a non-DB unit test (Step 7) pins the three new validator rejections;
+→ `120`; non-DB unit tests pin the local-only and cloud-provider validator rejections;
 `uv run ruff check .` → exit 0.
 
 ### Step 2: Secrets provider abstraction (`services/secrets/`)
@@ -504,26 +536,33 @@ LOCAL-ONLY (gated in Step 1's validator):
   integration.py` with `operation="resolve_secret"` — typed, RFC 7807, and
   the audit hook (below) records the failure.
 
-`providers/gcp_secret_manager.py` — `GcpSecretManagerProvider`
+The cloud providers are `GcpSecretManagerProvider`, `AzureKeyVaultProvider`,
+and `AwsSecretsManagerProvider`. Each imports its SDK lazily behind its own
+optional extra and implements resolve/write/delete through the shared contract.
+For GCP, `providers/gcp_secret_manager.py`
+defines `GcpSecretManagerProvider`
 (`provider_key = "gcp_secret_manager"`), imports
 `google.cloud.secretmanager` lazily inside methods (optional-extra pattern —
 check how `services/storage/providers/gcs.py` guards its import and copy
 that shape). `resolve_secret` → `access_secret_version` on
 `projects/{GCP_PROJECT_ID}/secrets/{name}/versions/{version}` (`"latest"`
 allowed); `write_secret` → create-secret-if-missing + `add_secret_version`,
-returning the new version id. Add the `gcp-secrets` optional extra to
-`pyproject.toml` next to `gcs` (line 29).
+returning the new version id. Vault identifiers use a bounded SHA-256 mapping
+of the caller-facing reference name so slash-namespaced references remain
+collision-resistant on providers whose native names cannot contain slashes.
 
 `factory.py`: `get_secrets_provider()` singleton with the storage factory's
 locked-singleton shape (`services/storage/factory.py:19-51`), keyed on
 `settings.SECRET_PROVIDER`.
 
-`resolve_secret.py` / `write_secret.py` (service ops, one per file): thin
+`resolve_secret.py` / `write_secret.py` / `delete_secret.py` (service ops,
+one per file): thin
 wrappers that call the provider and write audit rows per governance §5 —
 `write_secret` audits `AuditAction.CREATE` on
 `AuditResourceType.SECRET_REFERENCE` with `details={"reference": ref.render()}`;
 `resolve_secret` audits ONLY on failure (`AuditStatus.FAILURE`, never the
-value, never on success). `__init__.py` re-exports the two ops only
+value, never on success); delete audits the reference identity. `__init__.py`
+re-exports the three ops only
 (AGENTS.md service-package rule).
 
 **Verify**: `uv run ruff check .` → exit 0; the package imports without the
@@ -686,17 +725,15 @@ provider entries** (decision 7): frozen dataclass
 `requires_discovery: bool`, `required_form_fields: tuple[str, ...]`
 (api-key modes), `capability_flags: frozenset[str]`,
 `event_delivery: Literal["none", "webhook", "pubsub_push"] = "none"`
-(decision 14, data only), `enabled_setting: str | None` (settings attribute
-name gating the provider; `None` = always available). Module-level
+(decision 14, data only). Module-level
 `PROVIDER_MANIFESTS: dict[str, IntegrationProviderManifest]` built by a
 `_register(manifest)` helper that runs registration-time invariant checks
 (the `runtime_tool` shape, `registry.py:95`): duplicate `provider_key` →
 `RuntimeError`; every `auth_mode` in the model CHECK vocabulary; oauth mode
 ⇒ non-empty `oauth_scopes`; api_key mode ⇒ non-empty
 `required_form_fields`; `requires_discovery` ⇒ non-empty `resource_types`;
-`provider_key` matches `^[a-z][a-z0-9_]*$`. Plus
-`is_provider_enabled(manifest) -> bool` reading
-`getattr(settings, manifest.enabled_setting)` when set.
+`provider_key` matches `^[a-z][a-z0-9_]*$`. Provider enablement is solely the
+loader's shared allowlist, not a manifest field.
 
 `services/integrations/plugin.py`: the `IntegrationProviderPlugin`
 contract — `manifest` + `discover_resources` + `tool_definitions`, exactly
@@ -717,18 +754,14 @@ scope):
 
 - `gmail/` — auth_modes `("oauth",)`, owner_scope `"user"`,
   requires_discovery False (the mailbox is the principal), oauth_scopes =
-  the Gmail readonly+send scopes (041 finalizes; placeholders here are fine
-  because the provider is gated), event_delivery `"pubsub_push"`,
-  enabled_setting pointing at a setting that is empty by default (038 adds
-  the real `INTEGRATIONS_GOOGLE_CLIENT_ID`-style gate), so the provider
-  reads as disabled until then.
+  the Gmail readonly+send scopes (041 finalizes), event_delivery
+  `"pubsub_push"`.
 - `google_ads/` — `("oauth",)`, `"workspace"`, requires_discovery True
   (MCC→account hierarchy), resource_types `("google_ads_account",)`,
-  event_delivery `"none"`, gated the same way.
+  event_delivery `"none"`.
 - `airtable/` — `("api_key",)`, `"workspace"`, requires_discovery True,
   resource_types `("airtable_base",)`, required_form_fields `("api_key",)`,
-  event_delivery `"webhook"`, enabled_setting
-  `"INTEGRATIONS_AIRTABLE_ENABLED"`.
+  event_delivery `"webhook"`.
 
 In `services/agents/runtime/tools/registry.py`, make `build_runtime_tools`
 **lenient** on catalog-absent saved tool names (packaging note §4.7): skip
@@ -921,13 +954,13 @@ New modules (DB-backed ones skip cleanly without `TEST_DATABASE_URL`):
   (freeze/patch sleep); `Retry-After` above the cap is capped; attempts
   bounded at `INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS`; 401 maps to
   `IntegrationAuthError` without retry.
-- `tests/services/secrets/test_local_provider.py`: env-var resolution;
+- `tests/services/secrets/test_local_secrets_provider.py`: env-var resolution;
   write→resolve round-trip through the encrypted file; file content on disk
   is not plaintext; missing secret raises `IntegrationAuthError` and writes
   a FAILURE audit row whose details contain the reference and **no value**.
 - `tests/services/secrets/test_settings_gating.py` (no DB): building
   `Settings` with `SECRET_PROVIDER=local, ENVIRONMENT=production` raises;
-  `gcp_secret_manager` without `GCP_PROJECT_ID` raises;
+  each cloud provider without its required project/vault/region setting raises;
   `CREDENTIAL_MASTER_KEYS` set outside local raises (construct Settings
   objects directly with overrides — the existing settings-validation test
   pattern).
@@ -952,33 +985,35 @@ only the newest key), and **Retry-After honored, capped, and bounded**
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0
-- [ ] `uv run alembic check` reports no pending operations; the migration
+- [x] `uv run ruff check .` exits 0
+- [x] `uv run alembic check` reports no pending operations; the migration
       is on the **core** branch (D5) and downgrade round-trips
-- [ ] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite)
-- [ ] Loader smoke prints `[]` with the default empty list and
+- [x] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite)
+- [x] Loader smoke prints `[]` with the default empty list and
       `['airtable', 'gmail', 'google_ads']` with the three packages
       enabled — both pinned by tests
-- [ ] Grep confirms NO unique index or constraint on
+- [x] Grep confirms NO unique index or constraint on
       `(owner_*, provider_key)` in `models/integrations.py` (D3)
-- [ ] Grep confirms no raw token/secret value appears in any audit
+- [x] Grep confirms no raw token/secret value appears in any audit
       `details` construction under `services/integrations/` or
       `services/secrets/`
-- [ ] Grep confirms no code under `services/integrations/` or
+- [x] Grep confirms no code under `services/integrations/` or
       `services/secrets/` reads `settings.ENCRYPTION_KEY` or signs with
       raw `SECRET_KEY` (decision 4)
-- [ ] The rotation sweep leaves no live row with a stale
+- [x] The rotation sweep leaves no live row with a stale
       `encryption_key_id` (pinned by the two-key fixture test)
-- [ ] No `routes/integrations/` package exists (038's surface; this plan is
+- [x] No `routes/integrations/` package exists (038's surface; this plan is
       backend-only and documented as pending)
-- [ ] `docs/architecture/governance.md` updated: §4 row "Integration API
+- [x] `docs/architecture/governance.md` updated: §4 row "Integration API
       retries" → `[implemented: plan 037]`; §5 bullets for provider
       requirement, references-only storage, OAuth-tokens-encrypted, and
       resolve-failure auditing → `[implemented: plan 037]` (leave the §5
       rotation bullet and api-key connect exception marked for 038; §1 and
       §3 credential cells flip in 038/039 as their plans complete)
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated (add the 037 row if
+- [x] `git status` reviewed: concurrent rewrites of the next-plan docs 038/039
+      appeared during verification and were left untouched; all other changes
+      are plan-037 implementation, support, tests, or roadmap bookkeeping
+- [x] `docs/plans/000_README.md` status row updated (add the 037 row if
       absent)
 
 ## STOP conditions

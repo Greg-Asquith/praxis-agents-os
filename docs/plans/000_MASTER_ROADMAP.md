@@ -318,7 +318,7 @@ structure.
 
 | Plan | Scope |
 |------|-------|
-| 037 | Core models (credentials/connections/resources/discovery_runs — **full multi-connection per D3**: no per-provider uniqueness, required connection labels, principal fingerprints for cross-connection dedup) + declarative provider manifest + credential service (encryption, locked proactive refresh, needs_reauth) + secret references per 029. (Donor C1.) |
+| 037 | Core models (credentials/connections/resources/discovery_runs — **full multi-connection per D3**: no per-provider uniqueness, required connection labels, principal fingerprints for cross-connection dedup) + declarative provider manifest + credential service (encryption, locked proactive refresh, needs_reauth) + secret references per 029. **DONE 2026-07-10**; one provider allowlist, cloud secrets on GCP/Azure/AWS. (Donor C1.) |
 | 038 | OAuth flows (initiate/callback with signed single-value state), non-OAuth connect, test/revoke/refresh routes. (Donor C2.) |
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. (Donor C3.) |
 | 040 | Active context: per-user-per-workspace selection, context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). (Donor C4.) |
@@ -475,7 +475,7 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → {037–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → {038–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).

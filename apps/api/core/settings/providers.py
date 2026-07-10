@@ -13,9 +13,11 @@ class ProviderSettingsMixin:
         default="gcp",
         description="Hosting cloud provider. Runtime capability axes such as storage and email are selected independently.",
     )
-    SECRET_PROVIDER: Literal["local", "secret_manager", "key_value"] = Field(
+    SECRET_PROVIDER: Literal[
+        "local", "gcp_secret_manager", "azure_key_vault", "aws_secrets_manager"
+    ] = Field(
         default="local",
-        description="Secret Manager provider - should match hosting cloud provider",
+        description="Provider used for application-managed secret references.",
     )
     STORAGE_PROVIDER: Literal["local_fs", "gcs", "azure_blob", "s3"] = Field(
         default="gcs",

@@ -1,6 +1,8 @@
 # apps/api/tests/conftest.py
 """Shared pytest fixtures for the API test suite."""
 
+# ruff: noqa: E402
+
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -14,13 +16,15 @@ from pydantic_ai import RunContext, models as pydantic_ai_models
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_POLICY_APPROVAL
-from services.agents.runtime.tools.registry import runtime_tool
 from tests.support.database import make_async_test_database_url, require_test_database_url
 from tests.support.settings import configure_test_environment
 
 configure_test_environment()
+
+from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.tools.contract import TOOL_POLICY_APPROVAL
+from services.agents.runtime.tools.registry import runtime_tool
+
 pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
 
 

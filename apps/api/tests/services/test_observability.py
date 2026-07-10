@@ -108,6 +108,8 @@ def _production_settings(**overrides: Any) -> Settings:
         "ENVIRONMENT": "production",
         "STORAGE_PROVIDER": "s3",
         "EMAIL_PROVIDER": "ses",
+        "SECRET_PROVIDER": "aws_secrets_manager",
+        "CREDENTIAL_MASTER_KEYS": None,
         "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@db.example.com/postgres?sslmode=require",
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),

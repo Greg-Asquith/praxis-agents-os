@@ -17,6 +17,12 @@ from models.base import BaseModel  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
 from models.conversation_todos import ConversationTodoList  # noqa: F401
 from models.files import File, FileReference, FileRevision, FileUpload  # noqa: F401
+from models.integrations import (  # noqa: F401
+    ExternalCredential,
+    IntegrationConnection,
+    IntegrationDiscoveryRun,
+    IntegrationResource,
+)
 from models.jobs import Job  # noqa: F401
 from models.notification import Notification  # noqa: F401
 from models.rate_limiting import RateLimitAttempt  # noqa: F401

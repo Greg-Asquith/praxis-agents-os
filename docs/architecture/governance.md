@@ -120,27 +120,31 @@ enforcement second**. Each counter names the plan that adds it. All values
 | Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings [implemented: plan 030 counter + warning, plan 033 claim-seam enforcement and files surface] | 030 (counter implemented), 033 (first enforcement seam) |
 | Per-run token/step caps | plan 011 `UsageLimits` + `max_steps` *(enforced today)* | — |
 | Artifact-share creation | 10/hour/workspace | 051 |
-| Integration API retries | `Retry-After`-aware, bounded attempts | 037 |
+| Integration API retries | `Retry-After`-aware, bounded attempts | 037 [implemented: plan 037] |
 
 ## 5. Secrets Operating Model
 
-- Production **requires** a secret-manager provider (GCP Secret Manager
-  first, behind a provider ABC like storage). Dev uses an env-var provider,
+- Production **requires** a cloud secret-manager provider (GCP Secret
+  Manager, Azure Key Vault, or AWS Secrets Manager, behind a provider
+  contract like storage). Dev uses an env-var/encrypted-file provider,
   **local-only** the way console email is; the production-safety
   `model_validator` in `core/settings/__init__.py:51` must reject a missing
-  secret provider outside local environments. [default — confirm at review]
+  or incompletely configured secret provider outside local environments.
+  [implemented: plan 037]
 - The API accepts **references only** (`{provider, name, version}`). A raw
   secret value in a request body is a validation error — except the
   deliberate api-key connect flow (037), which immediately writes the value
-  to the manager and stores only the reference. [default — confirm at review]
+  to the manager and stores only the reference. [references-only storage
+  implemented: plan 037; api-key HTTP flow pending plan 038]
 - Only OAuth tokens are stored (encrypted) in Postgres; everything else is
-  a reference resolved at call time. [default — confirm at review]
+  a reference resolved at call time. [implemented: plan 037]
 - Rotation = new secret version + connection re-test; the old version stays
   readable until the new one is confirmed. [default — confirm at review]
 - Entry rights per §1 (admin+). [default — confirm at review]
 - Audited events: reference create/update/delete and every **resolve
   failure** — never secret values, and no audit on successful resolves (too
-  noisy). [default — confirm at review]
+  noisy). [reference create/delete and resolve-failure audit implemented:
+  plan 037; reference update lands with connection rotation in plan 038]
 
 ## 6. Notification Policy
 

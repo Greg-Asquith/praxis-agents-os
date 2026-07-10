@@ -12,6 +12,18 @@ local-env: ## Create local env files and storage folders if they are missing
 		cp "$(API_DIR)/.env.example" ".local/generated/local.api.env"; \
 		echo "Created .local/generated/local.api.env"; \
 	fi
+	@credential_key="$$(awk -F= '/^CREDENTIAL_MASTER_KEYS=.+/ { print substr($$0, index($$0, "=") + 1); exit }' "$(API_DIR)/.env" ".local/generated/local.api.env")"; \
+	: "Replace the historical public placeholder by fingerprint without retaining it."; \
+	if [ -n "$$credential_key" ] && python3 -c 'import hashlib, sys; raise SystemExit(hashlib.sha256(sys.argv[1].encode()).hexdigest() != "059a4896bded304276493f16cba0345208fa6bb7a72af14b1433d28e7830169b")' "$$credential_key"; then \
+		credential_key=""; \
+	fi; \
+	if [ -z "$$credential_key" ]; then \
+		credential_key="$$(python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())')"; \
+	fi; \
+	for env_file in "$(API_DIR)/.env" ".local/generated/local.api.env"; do \
+		awk -v key="$$credential_key" 'BEGIN { written = 0 } /^CREDENTIAL_MASTER_KEYS=/ { if (!written) { print "CREDENTIAL_MASTER_KEYS=" key; written = 1 }; next } { print } END { if (!written) print "CREDENTIAL_MASTER_KEYS=" key }' "$$env_file" > "$$env_file.tmp"; \
+		mv "$$env_file.tmp" "$$env_file"; \
+	done
 	@if [ ! -f ".local/generated/local.web.env" ]; then \
 		printf '%s\n' 'VITE_API_BASE_URL=http://localhost:8000/api/v1' > ".local/generated/local.web.env"; \
 		echo "Created .local/generated/local.web.env"; \

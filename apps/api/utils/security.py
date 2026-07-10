@@ -19,6 +19,8 @@ import secrets
 import time
 
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pwdlib import PasswordHash
 
 from core.exceptions.auth import AuthorizationError
@@ -93,6 +95,20 @@ def verify_token_hash(token: str, token_hash: str) -> bool:
         True if token matches hash, False otherwise
     """
     return secrets.compare_digest(hash_token(token), token_hash)
+
+
+def derive_purpose_key(root: bytes, purpose: str) -> bytes:
+    """Derive a stable, purpose-separated 32-byte key from root material."""
+    if not root:
+        raise CustomValueError("Key root cannot be empty")
+    if not purpose.strip():
+        raise CustomValueError("Key purpose cannot be empty")
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=purpose.encode("utf-8"),
+    ).derive(root)
 
 
 # =============================================================================

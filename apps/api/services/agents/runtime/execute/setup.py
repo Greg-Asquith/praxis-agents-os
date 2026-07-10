@@ -47,6 +47,7 @@ class RuntimeAgentBuilder(Protocol):
         force_delegation_tools: bool = False,
         skills: Sequence[Skill] = (),
         available_files: Sequence[AvailableFile] = (),
+        skipped_tool_names: list[str] | None = None,
     ) -> RuntimeAgent: ...
 
 
@@ -212,6 +213,7 @@ async def build_agent_for_run(
     )
     # Pydantic AI still needs the original tool registered to resolve an approved deferred delegation; the tool body re-checks live policy.
     force_delegation_tools = has_delegated_deferred_results(deferred_tool_results)
+    skipped_tool_names: list[str] = []
     runtime_agent = runtime_agent_builder(
         agent,
         model=model,
@@ -220,7 +222,9 @@ async def build_agent_for_run(
         force_delegation_tools=force_delegation_tools,
         skills=skills,
         available_files=available_files,
+        skipped_tool_names=skipped_tool_names,
     )
+    _record_skipped_runtime_tools(run, skipped_tool_names)
     if run.model_name is None:
         run.model_name = runtime_agent.resolved_model.qualified_id
 
@@ -231,6 +235,21 @@ async def build_agent_for_run(
     )
     await db.commit()
     return BuiltRuntimeAgent(runtime_agent=runtime_agent, history=history)
+
+
+def _record_skipped_runtime_tools(run: AgentRun, skipped_tool_names: Sequence[str]) -> None:
+    if not skipped_tool_names:
+        return
+    metadata = dict(run.metadata_json or {})
+    existing = metadata.get("skipped_tool_names", [])
+    existing_names = existing if isinstance(existing, list) else []
+    metadata["skipped_tool_names"] = sorted(
+        {
+            *(name for name in existing_names if isinstance(name, str)),
+            *skipped_tool_names,
+        }
+    )
+    run.metadata_json = metadata
 
 
 def has_delegated_deferred_results(

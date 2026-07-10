@@ -40,6 +40,10 @@ class AuditResourceType(StrEnum):
     AGENT_SCHEDULE_RUN = "agent_schedule_run"
     SKILL = "skill"
     FILE = "file"
+    INTEGRATION_CONNECTION = "integration_connection"
+    INTEGRATION_CREDENTIAL = "integration_credential"
+    INTEGRATION_RESOURCE = "integration_resource"
+    SECRET_REFERENCE = "secret_reference"
 
 
 class AuditActorType(StrEnum):

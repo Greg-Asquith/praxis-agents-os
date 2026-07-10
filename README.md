@@ -118,14 +118,14 @@ uv run uvicorn main:app --reload --port 8000
 
 The API reads configuration from environment variables or `.env`. Local defaults are documented in `apps/api/.env.example`.
 
-Cloud object storage SDKs are optional extras. Local development defaults to `STORAGE_PROVIDER=local_fs` and does not install cloud SDKs. For a cloud-backed deployment, install the matching extra and build the image with the same provider selection, for example:
+Cloud SDKs are optional extras bundled once per cloud provider. Local development defaults to local providers and installs no cloud SDKs. For an AWS-backed deployment, for example, the single `aws` extra supplies both storage and secrets dependencies:
 
 ```bash
-uv sync --extra s3
-docker build --build-arg STORAGE_EXTRA=s3 apps/api
+uv sync --extra aws
+docker build --build-arg CLOUD_EXTRA=aws apps/api
 ```
 
-Supported storage extras are `gcs`, `s3`, and `azure`.
+Supported cloud extras are `gcp`, `aws`, and `azure`.
 
 The database server must expose the `vector` extension. Alembic enables it with `CREATE EXTENSION IF NOT EXISTS "vector"` during core migrations; if the provider does not make pgvector available, migration fails instead of silently degrading.
 

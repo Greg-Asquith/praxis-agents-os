@@ -25,9 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-azure = ["azure-identity>=1.17", "azure-storage-blob>=12.22"]
-gcs = ["google-cloud-storage>=2.18"]
-s3 = ["boto3>=1.35"]
+azure = ["azure-identity>=1.17", "azure-keyvault-secrets>=4.8", "azure-storage-blob>=12.22"]
+gcp = ["google-cloud-secret-manager>=2.20", "google-cloud-storage>=2.18"]
+aws = ["boto3>=1.35"]
 
 [dependency-groups]
 dev = [

@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {}
 
 
+def register_tool_definition(definition: RuntimeToolDefinition) -> None:
+    """Register a provider-contributed definition in the singular catalog."""
+    validate_definition(definition)
+    if definition.name in RUNTIME_TOOL_CATALOG:
+        raise RuntimeError(f"Duplicate runtime tool name: {definition.name}")
+    RUNTIME_TOOL_CATALOG[definition.name] = definition
+
+
 def runtime_tool(
     *,
     name: str,
@@ -90,16 +98,18 @@ def runtime_tool(
             auto_mount=auto_mount,
             presentation=presentation or ToolPresentation(),
         )
-        validate_definition(definition)
-        if definition.name in RUNTIME_TOOL_CATALOG:
-            raise RuntimeError(f"Duplicate runtime tool name: {definition.name}")
-        RUNTIME_TOOL_CATALOG[definition.name] = definition
+        register_tool_definition(definition)
         return function
 
     return decorator
 
 
-def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
+def build_runtime_tools(
+    agent: Agent,
+    *,
+    include_delegation: bool = False,
+    skipped_tool_names: list[str] | None = None,
+):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     tool_names = [
         *(
@@ -122,14 +132,15 @@ def build_runtime_tools(agent: Agent, *, include_delegation: bool = False):
         mounted_tool_names.add(name)
         definition = RUNTIME_TOOL_CATALOG.get(name)
         if definition is None:
-            raise ModelConfigurationError(
-                "Unknown runtime tool configured on agent",
-                details={
-                    "agent_id": str(agent.id),
-                    "tool_name": name,
-                    "available_tools": sorted(RUNTIME_TOOL_CATALOG),
-                },
+            if skipped_tool_names is not None:
+                skipped_tool_names.append(name)
+            logger.warning(
+                "Skipping unavailable saved runtime tool %s for agent %s",
+                name,
+                agent.id,
+                extra={"agent_id": str(agent.id), "skipped_tool_names": [name]},
             )
+            continue
         if definition.kind == TOOL_KIND_CAPABILITY:
             continue
         if not permissions.is_tool_allowed(definition, workspace=None, agent=agent):
@@ -270,3 +281,6 @@ from services.agents.runtime.tools import (
     native as _native,  # noqa: F401
     planning as _planning,  # noqa: F401
 )
+from services.integrations.loader import load_enabled_providers
+
+load_enabled_providers()
