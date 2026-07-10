@@ -29,6 +29,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
     RUN_TRIGGER_DELEGATED,
+    RUN_TRIGGER_SCHEDULED,
 )
 from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.resume_run_stream import resume_agent_run_stream
@@ -47,6 +48,8 @@ from services.agents.runtime.events import EVENT_TOOL_APPROVAL_REQUIRED
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools import build_runtime_tools
+from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.conversations import get_conversation, list_conversations
 from tests.factories import build_user, build_workspace
 
@@ -61,6 +64,28 @@ class DelegationRuntimeContext:
     child_agent_id: UUID
     conversation_id: UUID
     run_id: UUID
+
+
+@pytest.fixture
+def delegated_external_write_tool():
+    tool_name = "delegated_external_write"
+    RUNTIME_TOOL_CATALOG.pop(tool_name, None)
+    executions = {"count": 0}
+
+    @runtime_tool(
+        name=tool_name,
+        provider="test",
+        label="Delegated external write",
+        description="Perform an external write for delegated envelope tests.",
+        effect=TOOL_EFFECT_WRITE,
+        effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+    )
+    async def delegated_external_write(value: str) -> dict[str, bool]:
+        executions["count"] += 1
+        return {"ok": bool(value)}
+
+    yield executions
+    RUNTIME_TOOL_CATALOG.pop(tool_name, None)
 
 
 async def test_visible_delegate_agents_are_active_same_workspace_allowlist_members(
@@ -259,6 +284,7 @@ async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
             assert child_run.trigger == RUN_TRIGGER_DELEGATED
             assert child_run.delegation_depth == 1
             assert child_run.agent_id == runtime_context.child_agent_id
+            assert child_run.metadata_json["envelope"] == {"side_effect_policy": "allow"}
 
             child_conversation = await db.get(Conversation, child_run.conversation_id)
             assert child_conversation is not None
@@ -319,14 +345,88 @@ async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
         )
 
 
-async def test_delegated_child_approval_is_visible_and_resumes_parent(
+async def test_delegated_child_inherits_scheduled_parent_envelope(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime_context = await _create_committed_delegation_context(
         committed_db_session_factory,
-        child_tool_names=["test_add_numbers"],
-        child_tool_policies={"test_add_numbers": "approval"},
+        trigger=RUN_TRIGGER_SCHEDULED,
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+
+    async def stream_delegate_flow(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        tool_names = {tool.name for tool in info.function_tools}
+        if "list_delegate_agents" not in tool_names:
+            yield "child result"
+            return
+
+        if not _has_tool_return(messages, "delegate_to_agent"):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate_to_agent",
+                    json_args=json.dumps(
+                        {
+                            "agent_id": str(runtime_context.child_agent_id),
+                            "task": "Run the child task.",
+                        }
+                    ),
+                    tool_call_id="delegate-child",
+                )
+            }
+            return
+
+        yield "parent final"
+
+    monkeypatch.setattr(
+        "services.agents.runtime.loop.build_model",
+        lambda _resolved_model: FunctionModel(
+            stream_function=stream_delegate_flow,
+            model_name="scheduled-delegate-flow",
+        ),
+    )
+
+    try:
+        async with committed_db_session_factory() as db:
+            result = await execute_run(
+                db,
+                conversation_id=runtime_context.conversation_id,
+                run_id=runtime_context.run_id,
+                user_prompt="Use the specialist.",
+                sink=CollectingSink(
+                    run_id=runtime_context.run_id,
+                    conversation_id=runtime_context.conversation_id,
+                ),
+            )
+
+        assert result.run.status == RUN_STATUS_COMPLETED
+
+        async with committed_db_session_factory() as db:
+            child_run = await db.scalar(
+                select(AgentRun).where(AgentRun.parent_run_id == runtime_context.run_id)
+            )
+            assert child_run is not None
+            assert child_run.metadata_json["envelope"] == {"side_effect_policy": "require_approval"}
+    finally:
+        await _delete_committed_delegation_context(
+            committed_db_session_factory,
+            runtime_context,
+        )
+
+
+async def test_delegated_child_approval_is_visible_and_resumes_parent(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    delegated_external_write_tool,
+) -> None:
+    runtime_context = await _create_committed_delegation_context(
+        committed_db_session_factory,
+        child_tool_names=["delegated_external_write"],
+        trigger=RUN_TRIGGER_SCHEDULED,
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
     )
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -339,14 +439,14 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
     ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
         tool_names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in tool_names:
-            if "test_add_numbers" in tool_names and not _has_tool_return(
-                messages, "test_add_numbers"
+            if "delegated_external_write" in tool_names and not _has_tool_return(
+                messages, "delegated_external_write"
             ):
                 yield {
                     0: DeltaToolCall(
-                        name="test_add_numbers",
-                        json_args=json.dumps({"a": 2, "b": 3}),
-                        tool_call_id="child-add",
+                        name="delegated_external_write",
+                        json_args=json.dumps({"value": "external mutation"}),
+                        tool_call_id="child-write",
                     )
                 }
                 return
@@ -370,7 +470,7 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                     json_args=json.dumps(
                         {
                             "agent_id": str(runtime_context.child_agent_id),
-                            "task": "Add two numbers.",
+                            "task": "Perform the external write.",
                         }
                     ),
                     tool_call_id="delegate-child",
@@ -399,11 +499,12 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
             )
 
         assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
+        assert delegated_external_write_tool["count"] == 0
         approval_events = [
             event.data for event in sink.events if event.event == EVENT_TOOL_APPROVAL_REQUIRED
         ]
         assert [(event["tool_call_id"], event["name"]) for event in approval_events] == [
-            ("child-add", "test_add_numbers")
+            ("child-write", "delegated_external_write")
         ]
         delegated_metadata = suspended.run.metadata_json["approval_state"][
             "deferred_tool_requests"
@@ -450,7 +551,13 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                     json.loads(approval.args) if isinstance(approval.args, str) else approval.args,
                 )
                 for approval in approval_state.approvals
-            ] == [("child-add", "test_add_numbers", {"a": 2, "b": 3})]
+            ] == [
+                (
+                    "child-write",
+                    "delegated_external_write",
+                    {"value": "external mutation"},
+                )
+            ]
             assert approval_state.approvals[0].delegation is not None
             assert approval_state.approvals[0].delegation.child_run_id == child_run.id
             assert approval_state.approvals[0].delegation.parent_tool_call_id == "delegate-child"
@@ -463,7 +570,7 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                 payload=AgentRunResumeRequest(
                     decisions=[
                         AgentRunResumeDecision(
-                            tool_call_id="child-add",
+                            tool_call_id="child-write",
                             decision="approved",
                         )
                     ]
@@ -472,6 +579,7 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
 
         body = await _read_streaming_response(response)
         assert "parent final after approval" in body
+        assert delegated_external_write_tool["count"] == 1
 
         async with committed_db_session_factory() as db:
             parent_run = await db.get(AgentRun, runtime_context.run_id)
@@ -782,6 +890,8 @@ async def _create_committed_delegation_context(
     *,
     child_tool_names: list[str] | None = None,
     child_tool_policies: dict[str, str] | None = None,
+    trigger: str = "interactive",
+    metadata: dict[str, object] | None = None,
 ) -> DelegationRuntimeContext:
     async with session_factory() as db:
         user = build_user(email=f"runtime-delegation-{uuid4().hex}@example.com")
@@ -812,7 +922,8 @@ async def _create_committed_delegation_context(
             agent_id=parent_agent.id,
             workspace_id=workspace.id,
             user_id=user.id,
-            trigger="interactive",
+            trigger=trigger,
+            metadata=metadata,
         )
         await db.commit()
 

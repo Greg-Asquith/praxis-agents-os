@@ -5,12 +5,17 @@
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from models.agent import AgentSchedule
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_schedules.authorisation import assert_can_create_schedule
 from services.agent_schedules.domain import calculate_next_run, normalize_schedule_config
-from services.agent_schedules.schemas import AgentScheduleCreateRequest, AgentScheduleRead
+from services.agent_schedules.schemas import (
+    AgentScheduleCreateRequest,
+    AgentScheduleRead,
+    schedule_side_effect_policy,
+)
 from services.agent_schedules.utils import (
     normalize_default_prompt,
     require_active_agent_for_schedule,
@@ -75,6 +80,10 @@ async def create_schedule(
             "schedule_type": schedule.schedule_type,
             "timezone": schedule.timezone,
             "is_active": schedule.is_active,
+            "side_effect_policy": schedule_side_effect_policy(
+                schedule.execution_params,
+                default=settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY,
+            ),
         },
     )
     await db.refresh(schedule)

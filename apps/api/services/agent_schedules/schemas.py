@@ -3,15 +3,33 @@
 """Pydantic contracts for agent schedule routes."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_schedules.runs import schedule_health_from_run
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
+
+ScheduleSideEffectPolicy = Literal["allow", "require_approval"]
+
+
+class ScheduleExecutionEnvelope(BaseModel):
+    """Validated schedule-owned run-envelope overrides."""
+
+    side_effect_policy: ScheduleSideEffectPolicy | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ScheduleExecutionParams(BaseModel):
+    """Typed fields nested inside otherwise extensible execution params."""
+
+    envelope: ScheduleExecutionEnvelope | None = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class AgentScheduleRunRead(BaseModel):
@@ -138,6 +156,14 @@ class AgentScheduleCreateRequest(BaseModel):
     def normalize_optional_text(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
 
+    @field_validator("execution_params")
+    @classmethod
+    def validate_execution_params(
+        cls,
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        return validate_schedule_execution_params(value)
+
 
 class AgentScheduleUpdateRequest(BaseModel):
     schedule_type: str | None = Field(default=None, max_length=32)
@@ -161,6 +187,14 @@ class AgentScheduleUpdateRequest(BaseModel):
     def normalize_optional_text(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
 
+    @field_validator("execution_params")
+    @classmethod
+    def validate_execution_params(
+        cls,
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        return validate_schedule_execution_params(value)
+
 
 class SchedulePreviewRequest(BaseModel):
     schedule_type: str = Field(max_length=32)
@@ -183,3 +217,30 @@ class SchedulePreviewRequest(BaseModel):
 
 class SchedulePreviewResponse(BaseModel):
     next_runs: list[datetime]
+
+
+def validate_schedule_execution_params(
+    value: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    ScheduleExecutionParams.model_validate(value)
+    return value
+
+
+def schedule_side_effect_policy(
+    value: object,
+    *,
+    default: str,
+) -> str:
+    """Return a valid persisted override or the configured default."""
+    try:
+        execution_params = ScheduleExecutionParams.model_validate(value or {})
+    except ValidationError:
+        return default
+    if (
+        execution_params.envelope is None
+        or execution_params.envelope.side_effect_policy is None
+    ):
+        return default
+    return execution_params.envelope.side_effect_policy

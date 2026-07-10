@@ -11,6 +11,7 @@ from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_KIND_CAPABILITY,
     TOOL_POLICY_APPROVAL,
@@ -70,6 +71,7 @@ def test_runtime_tool_decorator_registers_definition_with_derived_label(
     assert definition.provider == "core"
     assert definition.label == "Test echo value"
     assert definition.effect == "read"
+    assert definition.effect_scope == "internal"
     assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
 
 
@@ -98,6 +100,12 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             description="Write without approval.",
             effect="write",
             supports_approval=False,
+        ),
+        RuntimeToolDefinition(
+            name="bad_read_scope",
+            function=_noop,
+            description="Read cannot be external.",
+            effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
         ),
         RuntimeToolDefinition(
             name="bad_capability_function",

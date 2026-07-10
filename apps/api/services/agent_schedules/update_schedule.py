@@ -9,6 +9,7 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
+from core.settings import settings
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_schedules.authorisation import assert_can_mutate_schedule
@@ -18,7 +19,11 @@ from services.agent_schedules.domain import (
     normalize_schedule_config,
 )
 from services.agent_schedules.runs import get_latest_runs_by_schedule_ids
-from services.agent_schedules.schemas import AgentScheduleRead, AgentScheduleUpdateRequest
+from services.agent_schedules.schemas import (
+    AgentScheduleRead,
+    AgentScheduleUpdateRequest,
+    schedule_side_effect_policy,
+)
 from services.agent_schedules.utils import (
     TIMING_FIELD_NAMES,
     get_schedule_for_workspace,
@@ -47,6 +52,10 @@ async def update_schedule(
     timing_fields = set(payload.model_fields_set).intersection(TIMING_FIELD_NAMES)
     config: ScheduleConfig | None = None
     was_active = schedule.is_active
+    previous_side_effect_policy = schedule_side_effect_policy(
+        schedule.execution_params,
+        default=settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY,
+    )
 
     if timing_fields:
         config = _normalize_timing_update(schedule, payload, supplied_fields=timing_fields)
@@ -86,6 +95,17 @@ async def update_schedule(
         )
 
     if changed_fields:
+        current_side_effect_policy = schedule_side_effect_policy(
+            schedule.execution_params,
+            default=settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY,
+        )
+        policy_transition = None
+        if current_side_effect_policy != previous_side_effect_policy:
+            changed_fields.append("side_effect_policy")
+            policy_transition = {
+                "old": previous_side_effect_policy,
+                "new": current_side_effect_policy,
+            }
         await db.flush()
         await record_workspace_audit_event(
             db,
@@ -100,6 +120,11 @@ async def update_schedule(
                 "schedule_type": schedule.schedule_type,
                 "timezone": schedule.timezone,
                 "changed_fields": changed_fields,
+                **(
+                    {"side_effect_policy": policy_transition}
+                    if policy_transition is not None
+                    else {}
+                ),
             },
         )
         await db.refresh(schedule)

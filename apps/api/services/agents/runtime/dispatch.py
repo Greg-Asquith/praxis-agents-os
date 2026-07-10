@@ -44,8 +44,10 @@ from services.agents.runtime.staged_tool_content import (
     delete_staged_write_content,
 )
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
     RuntimeToolDefinition,
+    ToolEffectScope,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.audit_events.enums import AuditStatus
@@ -71,6 +73,15 @@ class OutputContractError(Exception):
 
     retry_message: str
     outcome: ToolAuditOutcome
+
+
+@dataclass(frozen=True)
+class EnvelopeVerdict:
+    """Decision made by the server-minted run envelope for one tool call."""
+
+    denied_message: str | None = None
+    requires_approval: bool = False
+    effect_scope: ToolEffectScope | None = None
 
 
 def digest_args(args: Mapping[str, Any] | None) -> tuple[str, int]:
@@ -101,13 +112,42 @@ def _tool_call_args_for_digest(args: Any) -> Mapping[str, Any]:
 def check_envelope(
     definition: RuntimeToolDefinition | None,
     deps: RuntimeDeps,
-) -> str | None:
-    """Return a model-visible denial message when the run envelope blocks a tool."""
+    *,
+    args: Mapping[str, Any] | None = None,
+) -> EnvelopeVerdict:
+    """Return the run-envelope verdict for a runtime tool."""
+    if definition is None:
+        return EnvelopeVerdict()
+    effect_scope = resolve_effect_scope(definition, args)
+    if definition.effect == TOOL_EFFECT_WRITE and deps.envelope.side_effect_policy == "deny":
+        return EnvelopeVerdict(
+            denied_message=ENVELOPE_DENIAL_MESSAGE,
+            effect_scope=effect_scope,
+        )
+    if (
+        definition.effect == TOOL_EFFECT_WRITE
+        and effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
+        and deps.envelope.side_effect_policy == "require_approval"
+    ):
+        return EnvelopeVerdict(requires_approval=True, effect_scope=effect_scope)
+    return EnvelopeVerdict(effect_scope=effect_scope)
+
+
+def resolve_effect_scope(
+    definition: RuntimeToolDefinition | None,
+    args: Mapping[str, Any] | None,
+) -> ToolEffectScope | None:
+    """Return the effective scope for one tool call."""
     if definition is None:
         return None
-    if definition.effect == TOOL_EFFECT_WRITE and deps.envelope.side_effect_policy == "deny":
-        return ENVELOPE_DENIAL_MESSAGE
-    return None
+    if definition.effect_scope_resolver is None:
+        return definition.effect_scope
+    resolved = definition.effect_scope_resolver(dict(args or {}))
+    if resolved not in {"internal", "external"}:
+        raise RuntimeError(
+            f"Runtime tool {definition.name} resolved an invalid effect scope: {resolved!r}"
+        )
+    return resolved
 
 
 def validate_output(
@@ -148,8 +188,8 @@ async def dispatch_tool_execution(
     tool_call_id = call.tool_call_id
     approval_ref = call.tool_call_id if getattr(ctx, "tool_call_approved", False) else None
 
-    denial_message = check_envelope(definition, ctx.deps)
-    if denial_message is not None:
+    envelope_verdict = check_envelope(definition, ctx.deps, args=args)
+    if envelope_verdict.denied_message is not None:
         await record_invocation(
             deps=ctx.deps,
             tool_name=tool_name,
@@ -163,7 +203,27 @@ async def dispatch_tool_execution(
             outcome="denied_envelope",
             approval_ref=approval_ref,
         )
-        raise ModelRetry(denial_message)
+        raise ModelRetry(envelope_verdict.denied_message)
+    if envelope_verdict.requires_approval and not getattr(ctx, "tool_call_approved", False):
+        await record_invocation(
+            deps=ctx.deps,
+            tool_name=tool_name,
+            tool_provider=tool_provider,
+            status=AuditStatus.PENDING,
+            args=args,
+            args_sha256=args_sha256,
+            args_bytes=args_bytes,
+            started=started,
+            tool_call_id=tool_call_id,
+            outcome="approval_requested",
+            approval_ref=call.tool_call_id,
+        )
+        raise ApprovalRequired(
+            metadata={
+                "side_effect_policy": ctx.deps.envelope.side_effect_policy,
+                "effect_scope": envelope_verdict.effect_scope,
+            }
+        )
 
     try:
         result = await handler(args)

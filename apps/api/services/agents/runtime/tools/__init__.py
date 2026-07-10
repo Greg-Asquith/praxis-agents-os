@@ -4,6 +4,8 @@
 
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
+    TOOL_EFFECT_SCOPE_EXTERNAL,
+    TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_KIND_CAPABILITY,
     TOOL_KIND_FUNCTION,
@@ -11,6 +13,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
     ToolEffect,
+    ToolEffectScope,
     ToolFieldPresentation,
     ToolKind,
     ToolPolicy,
@@ -29,6 +32,8 @@ from services.agents.runtime.tools.registry import (
 __all__ = [
     "RUNTIME_TOOL_CATALOG",
     "TOOL_EFFECT_READ",
+    "TOOL_EFFECT_SCOPE_EXTERNAL",
+    "TOOL_EFFECT_SCOPE_INTERNAL",
     "TOOL_EFFECT_WRITE",
     "TOOL_KIND_CAPABILITY",
     "TOOL_KIND_FUNCTION",
@@ -36,6 +41,7 @@ __all__ = [
     "TOOL_POLICY_AUTO",
     "RuntimeToolDefinition",
     "ToolEffect",
+    "ToolEffectScope",
     "ToolFieldPresentation",
     "ToolKind",
     "ToolPolicy",

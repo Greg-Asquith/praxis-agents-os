@@ -1,6 +1,7 @@
 // apps/web/src/features/tools/types.ts
 
 type ToolEffect = "read" | "write"
+type ToolEffectScope = "internal" | "external"
 type ToolKind = "function" | "capability"
 export type ToolCatalogPolicy = "auto" | "approval"
 
@@ -11,6 +12,7 @@ export type ToolCatalogEntry = {
   description: string
   kind: ToolKind
   effect: ToolEffect
+  effect_scope: ToolEffectScope
   default_policy: ToolCatalogPolicy
   supported_policies: ToolCatalogPolicy[]
   defer_loading: boolean

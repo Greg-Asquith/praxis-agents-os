@@ -3,6 +3,7 @@
 """Tests for preparing claimed schedule runs."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
+from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -31,6 +33,7 @@ async def _schedule_context(
     db: AsyncSession,
     *,
     default_prompt: str | None = "Run the scheduled task",
+    execution_params: dict[str, Any] | None = None,
     status: str = RUN_STATUS_CLAIMED,
 ):
     now = datetime.now(UTC)
@@ -57,6 +60,7 @@ async def _schedule_context(
         run_once_at=now - timedelta(minutes=1),
         next_run_at=now - timedelta(minutes=1),
         default_prompt=default_prompt,
+        execution_params=execution_params,
     )
     db.add(schedule)
     await db.flush()
@@ -103,7 +107,45 @@ async def test_prepare_claimed_run_creates_conversation_and_agent_run(
     run = await db_session.get(AgentRun, prepared.agent_run_id)
     assert run is not None
     assert run.trigger == RUN_TRIGGER_SCHEDULED
+    assert run.metadata_json["envelope"] == {"side_effect_policy": "require_approval"}
     assert schedule_run.agent_run_id == run.id
+
+
+async def test_prepare_claimed_run_stamps_explicit_side_effect_grant(
+    db_session: AsyncSession,
+) -> None:
+    _user, _workspace, _agent, _schedule, schedule_run = await _schedule_context(
+        db_session,
+        execution_params={"envelope": {"side_effect_policy": "allow"}},
+    )
+
+    prepared = await prepare_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+    )
+
+    run = await db_session.get(AgentRun, prepared.agent_run_id)
+    assert run is not None
+    assert run.metadata_json["envelope"] == {"side_effect_policy": "allow"}
+
+
+@pytest.mark.parametrize("policy", ["allow", "deny"])
+async def test_prepare_claimed_run_uses_scheduled_policy_setting(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    policy: str,
+) -> None:
+    monkeypatch.setattr(settings, "AGENT_SCHEDULED_SIDE_EFFECT_POLICY", policy)
+    _user, _workspace, _agent, _schedule, schedule_run = await _schedule_context(db_session)
+
+    prepared = await prepare_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+    )
+
+    run = await db_session.get(AgentRun, prepared.agent_run_id)
+    assert run is not None
+    assert run.metadata_json["envelope"] == {"side_effect_policy": policy}
 
 
 async def test_prepare_reuses_existing_conversation(db_session: AsyncSession) -> None:

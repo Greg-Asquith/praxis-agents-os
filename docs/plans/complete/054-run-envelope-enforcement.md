@@ -24,6 +24,10 @@
 - **Category**: Lane H — harness hardening (post-roadmap additions
   053–060, added 2026-07-07)
 - **Planned at**: working tree at commit `c2f08cc`, 2026-07-07
+- **Completed**: 2026-07-09. The implementation preserves explicit
+  scheduled write allowance: schedules default to `require_approval`, but
+  can stamp `allow` in `execution_params.envelope.side_effect_policy` when
+  the schedule is intentionally write-capable.
 
 ## Product intent
 
@@ -91,12 +95,15 @@ must be wired before 041 ships tools whose writes cost money.
    configured defaults if absent (fail-closed for legacy rows). The
    envelope remains derived from persisted server state, never client
    input — the docstring's law (`envelope.py:19`) still holds.
-5. **No per-agent or per-schedule override in v1.** A future plan may let a
-   schedule owner grant `allow` to a specific schedule (with audit); doing
-   it now adds a permission surface before any external-write tool exists.
-   The settings-level default is the whole v1 configuration story. Record
-   in governance §2 as `[implemented: plan 054]` for the non-interactive
-   rows.
+5. **Explicit per-schedule allowance was added during execution.** The
+   operator clarified that the envelope must not prevent intentionally
+   write-capable scheduled agents from writing; it should prevent
+   read-oriented scheduled runs from silently becoming write-allowed. The
+   landed behavior stamps `require_approval` by default and allows a schedule
+   to opt into `allow` through `execution_params.envelope.side_effect_policy`
+   and the schedules form. The grant is copied into each scheduled
+   `AgentRun` at preparation time so the run is governed by persisted server
+   state, not mutable client input.
 6. **Spend-class tools are double-locked.** 041's
    `supports_auto=False` tools are unaffected by envelope logic (approval
    is already unconditional); the envelope matters for the *rest* of the
@@ -271,16 +278,16 @@ LLM.
 
 ## Done criteria
 
-- [ ] `build_run_envelope` no longer returns a constant grant; scheduled
-      default is `require_approval` via settings
-- [ ] External-write tools suspend for approval on scheduled/delegated-
-      from-scheduled runs even when their per-agent policy is `auto`
-- [ ] `deny` and depth enforcement behave exactly as before (regression
+- [x] `build_run_envelope` no longer returns a constant grant; scheduled
+      runs default to `require_approval` and can stamp explicit `allow`
+- [x] External-write tools suspend for approval on scheduled/delegated-
+      from-scheduled runs unless the run has an explicit `allow` grant
+- [x] `deny` and depth enforcement behave exactly as before (regression
       tests pass unchanged)
-- [ ] Delegated children can never hold a wider policy than their parent
-- [ ] Catalog exposes `effect_scope`; governance §2 cells updated in the
+- [x] Delegated children can never hold a wider policy than their parent
+- [x] Catalog exposes `effect_scope`; governance §2 cells updated in the
       same PR
-- [ ] Full API suite green; `docs/plans/000_README.md` row updated
+- [x] Full API suite green; `docs/plans/000_README.md` row updated
 
 ## STOP conditions
 

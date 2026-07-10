@@ -72,6 +72,7 @@ class ToolCatalogEntry(BaseModel):
     description: str
     kind: str
     effect: str
+    effect_scope: str
     default_policy: str
     supported_policies: list[str]
     defer_loading: bool
@@ -85,6 +86,7 @@ class ToolCatalogEntry(BaseModel):
             description=definition.description,
             kind=definition.kind,
             effect=definition.effect,
+            effect_scope=definition.effect_scope,
             default_policy=definition.default_policy,
             supported_policies=sorted(definition.allowed_policies()),
             defer_loading=definition.defer_loading,

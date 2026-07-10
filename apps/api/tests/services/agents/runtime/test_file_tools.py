@@ -88,7 +88,9 @@ async def test_file_tool_catalog_policies() -> None:
     assert RUNTIME_TOOL_CATALOG["list_files"].effect == TOOL_EFFECT_READ
     assert RUNTIME_TOOL_CATALOG["read_file"].effect == TOOL_EFFECT_READ
     assert RUNTIME_TOOL_CATALOG["write_file"].effect == TOOL_EFFECT_WRITE
+    assert RUNTIME_TOOL_CATALOG["write_file"].effect_scope == "external"
     assert RUNTIME_TOOL_CATALOG["write_file"].default_policy == TOOL_POLICY_AUTO
+    assert RUNTIME_TOOL_CATALOG["promote_scratch"].effect_scope == "external"
     assert RUNTIME_TOOL_CATALOG["promote_scratch"].default_policy == TOOL_POLICY_APPROVAL
     for tool_name in ("list_files", "read_file", "write_file", "promote_scratch"):
         assert RUNTIME_TOOL_CATALOG[tool_name].configurable is False

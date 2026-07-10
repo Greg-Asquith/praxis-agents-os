@@ -105,10 +105,11 @@ All anchors verified on the working tree at `c770a1c` (2026-07-07).
   per-provider file-output shape. No network probe. Decision 5 ("police
   the boundary") enumerates the boundary controls — file gates, policy,
   audit, output bounding — and egress posture is absent from the list.
-- **054's contract cannot express per-provider scope**:
-  `effect_scope: Literal["internal", "external"]` is a field on
-  `RuntimeToolDefinition` (054 decision 1) — per definition, not per
-  provider or per call. 054 is itself TODO; nothing here changes it.
+- **054's contract does not decide provider egress posture**:
+  `effect_scope` is now a tool-call side-effect classification (054 DONE
+  2026-07-09), including argument-based resolution for mixed tools, but it
+  is not a provider egress-verification mechanism. This plan still owns
+  the provider allowlist and canary-probe decision for 059.
 - **The enforcement seam already exists in 059**: decision 7 validates
   the per-call `model_provider` argument against a supported set (the
   `web_search` mechanics) — the natural choke point for an

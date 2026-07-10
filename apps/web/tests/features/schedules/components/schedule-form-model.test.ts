@@ -16,6 +16,8 @@ function validState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormSta
     agentId: "agent-1",
     cronExpression: DEFAULT_CRON_EXPRESSION,
     defaultPrompt: "  Run the launch report.  ",
+    executionParams: null,
+    externalWritesAllowed: false,
     intervalMinutes: "60",
     isActive: true,
     runOnceAt: "",
@@ -52,6 +54,8 @@ describe("initialScheduleFormState", () => {
       agentId: "",
       cronExpression: DEFAULT_CRON_EXPRESSION,
       defaultPrompt: "",
+      executionParams: null,
+      externalWritesAllowed: false,
       intervalMinutes: "60",
       isActive: true,
       runOnceAt: "",
@@ -65,6 +69,8 @@ describe("initialScheduleFormState", () => {
       agentId: "agent-1",
       cronExpression: DEFAULT_CRON_EXPRESSION,
       defaultPrompt: "Run once.",
+      executionParams: null,
+      externalWritesAllowed: false,
       intervalMinutes: "60",
       isActive: false,
       runOnceAt: "2027-07-01T09:30",
@@ -153,6 +159,51 @@ describe("buildSchedulePayload", () => {
       default_prompt: "Run the launch report.",
       execution_params: null,
       is_active: true,
+    })
+  })
+
+  it("builds an explicit external-write grant when enabled", () => {
+    expect(
+      buildSchedulePayload(validState({ externalWritesAllowed: true }), "create")
+    ).toMatchObject({
+      execution_params: { envelope: { side_effect_policy: "allow" } },
+    })
+  })
+
+  it("removes a revoked grant while preserving unrelated execution params", () => {
+    const state = validState({
+      executionParams: {
+        envelope: {
+          requested_by: "ops",
+          side_effect_policy: "allow",
+        },
+        temperature: 0,
+      },
+      externalWritesAllowed: false,
+    })
+
+    expect(buildSchedulePayload(state, "edit")).toMatchObject({
+      execution_params: {
+        envelope: {
+          requested_by: "ops",
+        },
+        temperature: 0,
+      },
+    })
+  })
+
+  it("preserves an existing explicit approval policy during ordinary edits", () => {
+    const state = validState({
+      executionParams: {
+        envelope: { side_effect_policy: "require_approval" },
+      },
+      externalWritesAllowed: false,
+    })
+
+    expect(buildSchedulePayload(state, "edit")).toMatchObject({
+      execution_params: {
+        envelope: { side_effect_policy: "require_approval" },
+      },
     })
   })
 

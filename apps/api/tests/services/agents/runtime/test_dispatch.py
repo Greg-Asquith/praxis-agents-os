@@ -5,6 +5,7 @@ import importlib
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from pydantic_ai import (
     DeferredToolRequests,
     DeferredToolResults,
     ModelRetry,
+    ToolApproved,
     ToolDenied,
 )
 from pydantic_ai.messages import ModelMessage
@@ -33,6 +35,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
+    RUN_TRIGGER_SCHEDULED,
 )
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.cancellation import request_agent_run_task_cancel
@@ -45,7 +48,7 @@ from services.agents.runtime.dispatch import (
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
-from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from tests.factories import build_user, build_workspace
 
@@ -75,12 +78,17 @@ def dispatch_test_tools():
         "dispatch_bad_read",
         "dispatch_bad_write",
         "dispatch_needs_approval",
+        "dispatch_internal_write_ok",
         "dispatch_write_ok",
     ]
     for name in names:
         RUNTIME_TOOL_CATALOG.pop(name, None)
 
-    counters = {"write_ok": 0}
+    counters = {"internal_write_ok": 0, "write_ok": 0, "scope_resolutions": 0}
+
+    def resolve_dispatch_write_scope(_args: dict[str, object]) -> Literal["external"]:
+        counters["scope_resolutions"] += 1
+        return TOOL_EFFECT_SCOPE_EXTERNAL
 
     @runtime_tool(
         name="dispatch_secret",
@@ -131,11 +139,25 @@ def dispatch_test_tools():
         raise ApprovalRequired(metadata={"value_length": len(value)})
 
     @runtime_tool(
+        name="dispatch_internal_write_ok",
+        provider="test",
+        label="Dispatch internal write ok",
+        description="Return a valid internal write output for dispatch tests.",
+        effect=TOOL_EFFECT_WRITE,
+        output_model=DispatchToolOutput,
+    )
+    async def dispatch_internal_write_ok(value: str) -> dict[str, bool]:
+        counters["internal_write_ok"] += 1
+        return {"ok": bool(value)}
+
+    @runtime_tool(
         name="dispatch_write_ok",
         provider="test",
         label="Dispatch write ok",
         description="Return a valid write output for dispatch tests.",
         effect=TOOL_EFFECT_WRITE,
+        effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+        effect_scope_resolver=resolve_dispatch_write_scope,
         output_model=DispatchToolOutput,
     )
     async def dispatch_write_ok(value: str) -> dict[str, bool]:
@@ -328,6 +350,155 @@ async def test_envelope_denies_write_tool_before_execution(
         )
         assert event.status == "denied"
         assert event.details["outcome"] == "denied_envelope"
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_envelope_requires_approval_for_external_write_tool_and_resumes(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_write_ok"],
+        trigger=RUN_TRIGGER_SCHEDULED,
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+    stream_function, _seen_messages = _single_tool_stream(
+        tool_name="dispatch_write_ok",
+        args={"value": "write externally"},
+        final_text="approved write done",
+    )
+
+    try:
+        async with committed_db_session_factory() as db:
+            suspended = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Use the tool.",
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream_function,
+                    model_name="dispatch-envelope-approval",
+                ),
+            )
+
+        assert isinstance(suspended.output, DeferredToolRequests)
+        assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
+        assert dispatch_test_tools["write_ok"] == 0
+        [pending_event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_write_ok",
+        )
+        assert pending_event.status == "pending"
+        assert pending_event.details["outcome"] == "approval_requested"
+        assert pending_event.details["approval_ref"] == "dispatch_write_ok-call"
+
+        suspended_state = load_suspended_run_state(suspended.run)
+        deferred_tool_results = DeferredToolResults(
+            approvals={suspended_state.pending_tool_call_ids[0]: ToolApproved()}
+        )
+        async with committed_db_session_factory() as db:
+            resumed = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt=None,
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream_function,
+                    model_name="dispatch-envelope-approval",
+                ),
+                expected_status=RUN_STATUS_AWAITING_APPROVAL,
+                message_history=suspended_state.message_history,
+                deferred_tool_results=deferred_tool_results,
+            )
+
+        assert resumed.output == "approved write done"
+        assert dispatch_test_tools["write_ok"] == 1
+        assert dispatch_test_tools["scope_resolutions"] == 2
+        events = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_write_ok",
+        )
+        assert [(event.status, event.details["outcome"]) for event in events] == [
+            ("pending", "approval_requested"),
+            ("success", "completed"),
+        ]
+        assert events[1].details["approval_ref"] == "dispatch_write_ok-call"
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_envelope_allows_scheduled_internal_write_tool(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_internal_write_ok"],
+        trigger=RUN_TRIGGER_SCHEDULED,
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+
+    try:
+        result = await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_internal_write_ok",
+            args={"value": "plan"},
+        )
+
+        assert result.run.status == RUN_STATUS_COMPLETED
+        assert dispatch_test_tools["internal_write_ok"] == 1
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_internal_write_ok",
+        )
+        assert event.status == "success"
+        assert event.details["outcome"] == "completed"
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_envelope_allows_external_write_with_explicit_scheduled_grant(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_write_ok"],
+        trigger=RUN_TRIGGER_SCHEDULED,
+        metadata={"envelope": {"side_effect_policy": "allow"}},
+    )
+
+    try:
+        result = await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_write_ok",
+            args={"value": "allowed"},
+        )
+
+        assert result.run.status == RUN_STATUS_COMPLETED
+        assert dispatch_test_tools["write_ok"] == 1
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_write_ok",
+        )
+        assert event.status == "success"
+        assert event.details["outcome"] == "completed"
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
@@ -558,6 +729,8 @@ async def _create_committed_runtime_context(
     *,
     tool_names: list[str],
     tool_policies: dict[str, str] | None = None,
+    trigger: str = "interactive",
+    metadata: dict[str, object] | None = None,
 ) -> DispatchRuntimeContext:
     async with session_factory() as db:
         user = build_user(email=f"runtime-dispatch-{uuid4().hex}@example.com")
@@ -594,13 +767,14 @@ async def _create_committed_runtime_context(
             agent_id=agent.id,
             workspace_id=workspace.id,
             user_id=user.id,
-            trigger="interactive",
+            trigger=trigger,
             metadata={
                 "audit_context": {
                     "request_id": "dispatch-test-request",
                     "ip_address": "203.0.113.24",
                     "user_agent": "dispatch-test-agent/1.0",
-                }
+                },
+                **(metadata or {}),
             },
         )
         await db.commit()

@@ -4,6 +4,14 @@ export type ScheduleType = "cron" | "interval" | "once"
 
 export type ScheduleHealth = "healthy" | "retrying" | "needs_attention" | "cancelled"
 
+type ScheduleSideEffectPolicy = "allow" | "require_approval"
+
+export type ScheduleExecutionParams = Record<string, unknown> & {
+  envelope?: Record<string, unknown> & {
+    side_effect_policy?: ScheduleSideEffectPolicy
+  }
+}
+
 export type ScheduleRunStatus =
   | "pending"
   | "claimed"
@@ -43,7 +51,7 @@ export type AgentSchedule = {
   run_once_at: string | null
   timezone: string
   default_prompt: string | null
-  execution_params: Record<string, unknown> | null
+  execution_params: ScheduleExecutionParams | null
   is_active: boolean
   last_run_at: string | null
   next_run_at: string | null
@@ -75,7 +83,7 @@ export type ScheduleCreateRequest = {
   run_once_at?: string | null
   timezone?: string | null
   default_prompt: string
-  execution_params?: Record<string, unknown> | null
+  execution_params?: ScheduleExecutionParams | null
   is_active?: boolean
 }
 

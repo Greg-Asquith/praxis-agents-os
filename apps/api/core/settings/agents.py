@@ -2,6 +2,8 @@
 
 """Agent runtime durability settings."""
 
+from typing import Literal
+
 from pydantic import Field
 
 
@@ -70,6 +72,15 @@ class AgentRunSettingsMixin:
         default=None,
         gt=0,
         description="Maximum total (input+output) tokens per agent run; None disables the cap.",
+    )
+    AGENT_SCHEDULED_SIDE_EFFECT_POLICY: Literal["allow", "require_approval", "deny"] = Field(
+        default="require_approval",
+        description="Side-effect policy minted for scheduled agent runs.",
+    )
+    AGENT_MAX_DELEGATION_DEPTH: int = Field(
+        default=1,
+        ge=0,
+        description="Maximum nested delegated-agent depth allowed for one run.",
     )
     AGENT_HISTORY_MAX_TURNS: int | None = Field(
         default=40,

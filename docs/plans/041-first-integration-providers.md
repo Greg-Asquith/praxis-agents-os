@@ -9,9 +9,9 @@
 > **Gate G1 pre-flight (HARD — run before Step 1)**: per
 > `docs/plans/000_MASTER_ROADMAP.md` §3, plans 021–023, 014 (OTel), and
 > the G1-extension plans 053–054 must be DONE before this plan ships
-> agent-callable integration tools. As of 2026-07-07, 021–023 and 014 are
-> DONE, while 053–054 remain TODO (`docs/plans/000_README.md` status
-> table). If any required row is not DONE at execution time, **STOP and
+> agent-callable integration tools. As of 2026-07-09, 021–023, 014, 053,
+> and 054 are DONE (`docs/plans/000_README.md` status table). If any
+> required row is not DONE at execution time, **STOP and
 > report — do not proceed, do not ship the tools disabled as a
 > workaround.** This plan's Google Ads mutations spend real money; the
 > roadmap requires tracing, cancellation, and run-envelope enforcement before
@@ -530,8 +530,9 @@ in tests):
 - `test_airtable_provider.py`: discovery maps `permissionLevel` to write
   metadata; 429 retry; create/update return record ids.
 - `test_integration_tools.py`: each tool's registered
-  effect/policy/binding matches the decision-1 table (loop the table —
-  one assertion set per tool); fan-out partial failure reaches the
+  effect/effect_scope/policy/binding matches the decision-1 table (loop
+  the table — one assertion set per tool; every integration write tool is
+  `effect_scope="external"`); fan-out partial failure reaches the
   model-visible output (`results` mixed success/error); per-entry audit
   events written with connection/resource/external-ref context; write
   tool against a read-only resource → `write_not_permitted` entry and NO

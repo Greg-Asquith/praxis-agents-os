@@ -59,6 +59,7 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
             ),
             "kind": "function",
             "effect": "read",
+            "effect_scope": "internal",
             "default_policy": "approval",
             "supported_policies": ["approval", "auto"],
             "defer_loading": False,

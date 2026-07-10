@@ -3,12 +3,16 @@
 """Worker-level tests for the scheduled agent runner."""
 
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai import DeferredToolResults, ToolApproved
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -30,6 +34,8 @@ from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.heartbeat import cancel_target_if_run_cancelled
 from services.agents.runtime.sinks import NullSink
+from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.agents.runtime.worker import run_resume_worker
 from tests.factories import build_user, build_workspace
 from workers.agent_runner import run_once
@@ -42,6 +48,7 @@ async def _create_due_schedule(
     *,
     tool_names: list[str] | None = None,
     tool_policies: dict[str, str] | None = None,
+    execution_params: dict[str, object] | None = None,
 ):
     async with session_factory() as db:
         now = datetime.now(UTC)
@@ -72,12 +79,35 @@ async def _create_due_schedule(
             run_once_at=now - timedelta(minutes=1),
             next_run_at=now - timedelta(minutes=1),
             default_prompt="Run the scheduled worker task",
+            execution_params=execution_params,
         )
         db.add(schedule)
         await db.flush()
         schedule_id = schedule.id
         await db.commit()
         return schedule_id
+
+
+@pytest.fixture
+def scheduled_external_write_tool():
+    tool_name = "scheduled_external_write"
+    RUNTIME_TOOL_CATALOG.pop(tool_name, None)
+    executions = {"count": 0}
+
+    @runtime_tool(
+        name=tool_name,
+        provider="test",
+        label="Scheduled external write",
+        description="Perform an external write for scheduled worker tests.",
+        effect=TOOL_EFFECT_WRITE,
+        effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+    )
+    async def scheduled_external_write(value: str) -> dict[str, bool]:
+        executions["count"] += 1
+        return {"ok": bool(value)}
+
+    yield executions
+    RUNTIME_TOOL_CATALOG.pop(tool_name, None)
 
 
 async def test_run_once_executes_due_once_schedule(
@@ -148,21 +178,48 @@ async def test_run_once_suspends_approval_required_schedule(
         assert conversation.unread is True
 
 
-async def test_resume_worker_finalizes_scheduled_approval_resume(
+async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
+    scheduled_external_write_tool,
 ) -> None:
     schedule_id = await _create_due_schedule(
         committed_db_session_factory,
-        tool_names=["test_add_numbers"],
-        tool_policies={"test_add_numbers": "approval"},
+        tool_names=["scheduled_external_write"],
+        execution_params={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+
+    async def stream_external_write(
+        messages: list[ModelMessage],
+        _info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        if not any(
+            getattr(part, "part_kind", None) == "tool-return"
+            and getattr(part, "tool_name", None) == "scheduled_external_write"
+            for message in messages
+            for part in getattr(message, "parts", [])
+        ):
+            yield {
+                0: DeltaToolCall(
+                    name="scheduled_external_write",
+                    json_args=json.dumps({"value": "scheduled mutation"}),
+                    tool_call_id="scheduled-write",
+                )
+            }
+            return
+        yield "scheduled external write completed"
+
+    model = FunctionModel(
+        stream_function=stream_external_write,
+        model_name="scheduled-external-write-flow",
     )
 
     attempted = await run_once(
         owner_instance_id="test-worker",
-        model=TestModel(call_tools=["test_add_numbers"]),
+        model=model,
     )
 
     assert attempted >= 1
+    assert scheduled_external_write_tool["count"] == 0
     async with committed_db_session_factory() as db:
         schedule_run = await db.scalar(
             select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
@@ -185,11 +242,13 @@ async def test_resume_worker_finalizes_scheduled_approval_resume(
         conversation_id=conversation_id,
         message_history=suspended_state.message_history,
         deferred_tool_results=DeferredToolResults(
-            approvals={tool_call_id: ToolApproved(override_args={"a": 2, "b": 3})}
+            approvals={tool_call_id: ToolApproved()}
         ),
         sink=NullSink(run_id=run_id, conversation_id=conversation_id),
-        model=TestModel(call_tools=["test_add_numbers"]),
+        model=model,
     )
+
+    assert scheduled_external_write_tool["count"] == 1
 
     async with committed_db_session_factory() as db:
         schedule = await db.get(AgentSchedule, schedule_id)

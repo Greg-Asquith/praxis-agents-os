@@ -120,7 +120,10 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
             "cron_expression": "*/5 * * * *",
             "timezone": "UTC",
             "default_prompt": "  Check account performance.  ",
-            "execution_params": {"temperature": 0},
+            "execution_params": {
+                "temperature": 0,
+                "envelope": {"side_effect_policy": "allow"},
+            },
         },
     )
 
@@ -132,7 +135,10 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
     assert body["schedule_type"] == "cron"
     assert body["cron_expression"] == "*/5 * * * *"
     assert body["default_prompt"] == "Check account performance."
-    assert body["execution_params"] == {"temperature": 0}
+    assert body["execution_params"] == {
+        "temperature": 0,
+        "envelope": {"side_effect_policy": "allow"},
+    }
     assert body["is_active"] is True
     assert body["next_run_at"] is not None
     assert body["health"] == "healthy"
@@ -149,6 +155,47 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
     assert audit_event is not None
     assert audit_event.details["agent_id"] == str(agent.id)
     assert audit_event.details["schedule_type"] == "cron"
+    assert audit_event.details["side_effect_policy"] == "allow"
+
+
+async def test_update_schedule_audits_effective_side_effect_policy_transition(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=workspace, user=user)
+    schedule = await _create_schedule(db_session, workspace=workspace, user=user, agent=agent)
+    await db_session.commit()
+
+    response = await db_async_client.patch(
+        f"/api/v1/schedules/{schedule.id}",
+        headers=headers,
+        json={
+            "execution_params": {
+                "temperature": 0,
+                "envelope": {"side_effect_policy": "allow"},
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    audit_event = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == AuditAction.UPDATE.value,
+            AuditEvent.resource_type == AuditResourceType.AGENT_SCHEDULE.value,
+            AuditEvent.resource_id == str(schedule.id),
+        )
+    )
+    assert audit_event is not None
+    assert audit_event.details["changed_fields"] == [
+        "execution_params",
+        "side_effect_policy",
+    ]
+    assert audit_event.details["side_effect_policy"] == {
+        "old": "require_approval",
+        "new": "allow",
+    }
+    assert "execution_params" not in audit_event.details
 
 
 @pytest.mark.parametrize(
@@ -187,6 +234,32 @@ async def test_create_schedule_rejects_invalid_payloads(
     )
 
     assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_create_schedule_rejects_malformed_nested_policy_with_422(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=workspace, user=user)
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        "/api/v1/schedules/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "schedule_type": "interval",
+            "interval_minutes": 15,
+            "default_prompt": "Run this.",
+            "execution_params": {
+                "envelope": {"side_effect_policy": ["allow"]},
+            },
+        },
+    )
+
+    assert response.status_code == 422
     assert response.headers["content-type"].startswith("application/problem+json")
 
 

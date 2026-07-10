@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError, NotFoundError
+from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import CONVERSATION_SOURCE_SCHEDULED, Conversation
@@ -20,6 +21,7 @@ from services.agent_schedules.runs import (
     RUN_STATUS_RUNNING,
     mark_run_terminal_failure_and_disable_schedule,
 )
+from services.agent_schedules.schemas import schedule_side_effect_policy
 from services.conversations.naming import fallback_conversation_title
 from utils.dates import normalize_utc_datetime
 
@@ -248,6 +250,12 @@ async def _ensure_agent_run(
             "schedule_id": str(schedule.id),
             "schedule_run_id": str(schedule_run.id),
             "scheduled_for": schedule_run.scheduled_for.isoformat(),
+            "envelope": {
+                "side_effect_policy": schedule_side_effect_policy(
+                    schedule.execution_params,
+                    default=settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY,
+                ),
+            },
         },
     )
     await link_schedule_run(db, schedule_run, run)

@@ -15,6 +15,7 @@ from services.agents.runtime.context import RuntimeDeps
 
 ToolPolicy = Literal["auto", "approval"]
 ToolEffect = Literal["read", "write"]
+ToolEffectScope = Literal["internal", "external"]
 ToolKind = Literal["function", "capability"]
 ToolFieldFormat = Literal["text", "multiline", "markdown", "bytes", "datetime", "boolean"]
 
@@ -24,6 +25,9 @@ VALID_TOOL_POLICIES = frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
 TOOL_EFFECT_READ: ToolEffect = "read"
 TOOL_EFFECT_WRITE: ToolEffect = "write"
 VALID_TOOL_EFFECTS = frozenset({TOOL_EFFECT_READ, TOOL_EFFECT_WRITE})
+TOOL_EFFECT_SCOPE_INTERNAL: ToolEffectScope = "internal"
+TOOL_EFFECT_SCOPE_EXTERNAL: ToolEffectScope = "external"
+VALID_TOOL_EFFECT_SCOPES = frozenset({TOOL_EFFECT_SCOPE_INTERNAL, TOOL_EFFECT_SCOPE_EXTERNAL})
 TOOL_KIND_FUNCTION: ToolKind = "function"
 TOOL_KIND_CAPABILITY: ToolKind = "capability"
 VALID_TOOL_KINDS = frozenset({TOOL_KIND_FUNCTION, TOOL_KIND_CAPABILITY})
@@ -85,6 +89,7 @@ class RuntimeToolDefinition:
     label: str = ""
     kind: ToolKind = TOOL_KIND_FUNCTION
     effect: ToolEffect = TOOL_EFFECT_READ
+    effect_scope: ToolEffectScope = TOOL_EFFECT_SCOPE_INTERNAL
     takes_ctx: bool = False
     default_policy: ToolPolicy = TOOL_POLICY_AUTO
     supports_auto: bool = True
@@ -93,6 +98,7 @@ class RuntimeToolDefinition:
     max_retries: int | None = None
     args_validator: Callable[..., Any] | None = None
     defer_loading: bool = False
+    effect_scope_resolver: Callable[[dict[str, Any]], ToolEffectScope] | None = None
     output_model: type[BaseModel] | None = None
     """Declared output contract, enforced by the tool dispatch layer."""
     capability_factory: Callable[[], Any] | None = None
@@ -163,6 +169,15 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool kind must be function or capability")
     if definition.effect not in VALID_TOOL_EFFECTS:
         raise RuntimeError("Runtime tool effect must be read or write")
+    if definition.effect_scope not in VALID_TOOL_EFFECT_SCOPES:
+        raise RuntimeError("Runtime tool effect scope must be internal or external")
+    if (
+        definition.effect == TOOL_EFFECT_READ
+        and definition.effect_scope != TOOL_EFFECT_SCOPE_INTERNAL
+    ):
+        raise RuntimeError("Read runtime tools must use internal effect scope")
+    if definition.effect == TOOL_EFFECT_READ and definition.effect_scope_resolver is not None:
+        raise RuntimeError("Read runtime tools cannot provide an effect scope resolver")
     if definition.supported_model_providers is not None:
         for provider in definition.supported_model_providers:
             if not _TOOL_PROVIDER_PATTERN.fullmatch(provider):
@@ -191,6 +206,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
             raise RuntimeError("Capability runtime tools cannot set function retries")
         if definition.args_validator is not None:
             raise RuntimeError("Capability runtime tools cannot set an args validator")
+        if definition.effect_scope_resolver is not None:
+            raise RuntimeError("Capability runtime tools cannot set an effect scope resolver")
         if definition.output_model is not None:
             raise RuntimeError("Capability runtime tools cannot set an output model")
         if definition.supports_approval:

@@ -107,6 +107,13 @@ Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
 workspace-scoped cancel route + audit, local task cancellation, heartbeat
 cancel-detection, shielded cancellation finalization, cancelled tool audit
 records, and a web Stop control.
+Plan 054 was executed 2026-07-09 as the run-envelope enforcement slice:
+runtime tools now distinguish internal/external write scope, scheduled runs
+stamp a server-minted side-effect grant (`require_approval` by default,
+explicit `allow` via schedule execution params), delegated children inherit
+the parent grant at mint time, and dispatch suspends unapproved external
+writes under `require_approval` while preserving explicit scheduled write
+allowance.
 
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
@@ -173,7 +180,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 051 | Chat artifact cards, versions UI, and share links | P2 | L | 050, 030 (soft: 035) | TODO |
 | 052 | Action-driven homepage redesign | P2 | M | - | TODO |
 | 053 | Cooperative run cancellation (kill switch; amended by 073) | P1 | M | - (before 041) | DONE |
-| 054 | Run envelope enforcement — principal-derived side-effect policy | P1 | M | 025, 026 (hard: before 041) | TODO |
+| 054 | Run envelope enforcement — principal-derived side-effect policy | P1 | M | 025, 026 (hard: before 041) | DONE |
 | 055 | Agent behavior eval harness (Gate G5) | P1 | L | - (soft: 053, 054 add scenarios) | TODO |
 | 056 | Context compaction — watermark summaries + token-aware budgets | P1 | L | 013, 018, 030 (hard: before 048/049) | TODO |
 | 057 | Parallel delegation fan-out (breadth, not depth) | P2 | M | 054, 055 (soft: 053) | TODO |
@@ -600,8 +607,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - `040` reuses the existing `AgentSchedule.active_context` JSONB column
   (no schedule migration) and unhides it in the `021` routes and `022`
   form; one pinned schedule route test flips.
-- `041` has a hard Gate G1 pre-flight now satisfied by `014` (OTel) being
-  DONE; `053` is DONE and `054` still binds before `041` under the G1 extension. The
+- `041` has a hard Gate G1 pre-flight now satisfied by `014` (OTel),
+  `053` (cooperative cancellation), and `054` (run-envelope enforcement) being
+  DONE under the G1 extension. The
   registry name pattern forbids dots, so provider tools are snake_case
   (`gmail_search_messages`, …). Google Ads spend ops are `approval` with
   `supports_auto=False`, enforced by the existing `025` write-time and
@@ -660,10 +668,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   under `asyncio.shield`, emits terminal `run.status`/`done`, and records
   cancelled tool-call audit rows. The web composer uses the server cancel
   route for Stop instead of local stream abort.
-- `054` finding worth knowing before executing: `build_run_envelope` sets
-  only `principal`; `side_effect_policy="allow"` / `max_delegation_depth=1`
-  are constants for every run, and `check_envelope` tests only `deny` —
-  the `require_approval` policy value has no enforcement branch anywhere.
+- `054` marked DONE 2026-07-09: `RuntimeToolDefinition` now exposes
+  `effect_scope` and optional call-argument scope resolution, so mixed tools
+  such as `write_file` treat scratch writes as internal and durable writes as
+  external. Scheduled runs stamp their server-minted envelope policy in run
+  metadata at preparation time (`require_approval` by default; explicit
+  `allow` via schedule execution params and the schedules form), delegated
+  children inherit the parent policy, and dispatch raises
+  `ApprovalRequired` for unapproved external writes under `require_approval`
+  while preserving `deny` behavior and explicit scheduled write allowance.
 - `055`: `pydantic-evals 2.1.0` is already installed via the pydantic-ai
   meta-package — the graded layer adds no dependency. Scenario tests are
   ordinary pytest under `tests/scenarios/`; `evals/` must never be

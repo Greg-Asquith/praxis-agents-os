@@ -17,6 +17,7 @@ from services.agents.runtime.staged_tool_content import (
     resolve_staged_write_content,
 )
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_AUTO,
     ToolFieldPresentation,
@@ -45,6 +46,7 @@ class WriteFileOutput(BaseModel):
     label="Write file",
     description="Write UTF-8 text to scratch automatically, or create/edit a durable file after approval.",
     effect=TOOL_EFFECT_WRITE,
+    effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
     default_policy=TOOL_POLICY_AUTO,
     supports_auto=True,
     supports_approval=True,

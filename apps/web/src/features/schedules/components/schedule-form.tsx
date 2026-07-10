@@ -231,6 +231,24 @@ export function ScheduleForm(props: ScheduleFormProps) {
               </FieldDescription>
             </div>
           </Field>
+
+          <Field orientation="horizontal">
+            <input
+              checked={state.externalWritesAllowed}
+              className="border-input text-primary focus-visible:ring-ring/50 mt-0.5 size-4 rounded border"
+              id="schedule-external-writes"
+              onChange={(event) => {
+                setField("externalWritesAllowed", event.currentTarget.checked)
+              }}
+              type="checkbox"
+            />
+            <div className="flex min-w-0 flex-col gap-1">
+              <FieldLabel htmlFor="schedule-external-writes">Allow external writes</FieldLabel>
+              <FieldDescription>
+                Use for schedules expected to update connected apps or permanent workspace files.
+              </FieldDescription>
+            </div>
+          </Field>
         </FieldGroup>
       </ScheduleFormSection>
 

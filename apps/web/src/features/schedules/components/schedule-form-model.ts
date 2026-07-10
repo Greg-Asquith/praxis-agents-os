@@ -2,6 +2,7 @@
 
 import type {
   AgentSchedule,
+  ScheduleExecutionParams,
   ScheduleCreateRequest,
   SchedulePreviewRequest,
   ScheduleType,
@@ -28,6 +29,8 @@ export type ScheduleFormState = {
   agentId: string
   cronExpression: string
   defaultPrompt: string
+  executionParams: ScheduleExecutionParams | null
+  externalWritesAllowed: boolean
   intervalMinutes: string
   isActive: boolean
   runOnceAt: string
@@ -47,6 +50,8 @@ export function initialScheduleFormState(schedule: AgentSchedule | null): Schedu
     agentId: schedule?.agent_id ?? "",
     cronExpression: schedule?.cron_expression ?? DEFAULT_CRON_EXPRESSION,
     defaultPrompt: schedule?.default_prompt ?? "",
+    executionParams: schedule?.execution_params ?? null,
+    externalWritesAllowed: scheduleSideEffectPolicy(schedule?.execution_params) === "allow",
     intervalMinutes: schedule?.interval_minutes ? String(schedule.interval_minutes) : "60",
     isActive: schedule?.is_active ?? true,
     runOnceAt: schedule?.run_once_at
@@ -170,7 +175,7 @@ export function buildSchedulePayload(
   const basePayload = {
     ...timingPayload,
     default_prompt: state.defaultPrompt.trim(),
-    execution_params: null,
+    execution_params: buildExecutionParams(state),
     is_active: state.isActive,
   }
 
@@ -189,12 +194,41 @@ export function isScheduleFormDirty(current: ScheduleFormState, initial: Schedul
     current.agentId !== initial.agentId ||
     current.cronExpression !== initial.cronExpression ||
     current.defaultPrompt !== initial.defaultPrompt ||
+    current.externalWritesAllowed !== initial.externalWritesAllowed ||
     current.intervalMinutes !== initial.intervalMinutes ||
     current.isActive !== initial.isActive ||
     current.runOnceAt !== initial.runOnceAt ||
     current.scheduleType !== initial.scheduleType ||
     current.timezone !== initial.timezone
   )
+}
+
+function buildExecutionParams(state: ScheduleFormState): ScheduleExecutionParams | null {
+  const existingPolicy = scheduleSideEffectPolicy(state.executionParams)
+  const params: ScheduleExecutionParams = {
+    ...(state.executionParams ?? {}),
+  }
+  const envelope = {
+    ...(state.executionParams?.envelope ?? {}),
+  }
+
+  if (state.externalWritesAllowed) {
+    envelope.side_effect_policy = "allow"
+  } else if (existingPolicy === "allow") {
+    delete envelope.side_effect_policy
+  }
+
+  if (Object.keys(envelope).length > 0) {
+    params.envelope = envelope
+  } else {
+    delete params.envelope
+  }
+
+  return Object.keys(params).length > 0 ? params : null
+}
+
+function scheduleSideEffectPolicy(executionParams: ScheduleExecutionParams | null | undefined) {
+  return executionParams?.envelope?.side_effect_policy
 }
 
 function buildScheduleTimingPayload(state: ScheduleFormState): ScheduleTimingPayload | string {

@@ -129,6 +129,9 @@ async def delegate_to_agent(
                 "caller_agent_id": str(ctx.deps.agent.id),
                 "target_agent_id": str(target.id),
                 "audit_context": (ctx.deps.run.metadata_json or {}).get("audit_context"),
+                "envelope": {
+                    "side_effect_policy": ctx.deps.envelope.side_effect_policy,
+                },
             },
         )
         await session.commit()

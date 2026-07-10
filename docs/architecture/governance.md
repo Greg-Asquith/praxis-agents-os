@@ -65,9 +65,14 @@ point, per-agent `tool_policies`); this section is the policy law:
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. [default — confirm at review]
-- Non-interactive principals: scheduled runs pause on approval (026
-  decision, *(enforced today)*); delegated runs inherit the parent
-  envelope's cap *(enforced today: 026 envelopes)*.
+- Non-interactive principals: scheduled runs stamp a server-minted
+  side-effect grant at run preparation time; the default is
+  `require_approval`, and schedules may explicitly opt into `allow` when
+  they are expected to perform external writes. Unapproved external writes
+  under `require_approval` pause through the normal approval flow, while
+  internal writes continue automatically. Delegated runs inherit the
+  parent's side-effect grant and delegation cap at child-run creation.
+  [implemented: plan 054]
 
 ## 3. Retention & Deletion
 
@@ -153,6 +158,7 @@ used by invites). Email stays out until a digest exists. All rows
 | 031/032 (files) | §1, §3 (files), §4 (storage counter) |
 | 034 (scratch + file tools) | §2, §3 (scratch) |
 | 037–039 (integrations core) | §1, §3 (credentials/resources), §4 (retries), §5, §6 |
+| 054 (run envelopes) | §2 (non-interactive side-effect grants) |
 | 041 (first providers) | §2 (spend rule) |
 | 043–046 (KB) | §1, §3 (KB), §4 (embedding budget), §2 (KB writes) |
 | 048–049 (memory) | §1, §2, §3 (memories) |

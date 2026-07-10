@@ -75,6 +75,7 @@ def test_web_search_catalog_entry_is_native_function_tool() -> None:
     assert entry.provider == "native"
     assert entry.kind == "function"
     assert entry.effect == "read"
+    assert entry.effect_scope == "internal"
     assert entry.default_policy == "approval"
     assert entry.supported_policies == ["approval", "auto"]
     assert definition.supports_approval is True

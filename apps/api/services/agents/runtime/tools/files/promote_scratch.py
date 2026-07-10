@@ -10,6 +10,7 @@ from pydantic_ai import ModelRetry, RunContext
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_APPROVAL,
     ToolFieldPresentation,
@@ -34,6 +35,7 @@ class PromoteScratchOutput(BaseModel):
     label="Promote scratch",
     description="Promote one scratch entry to a durable editable file and delete the scratch entry.",
     effect=TOOL_EFFECT_WRITE,
+    effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
     default_policy=TOOL_POLICY_APPROVAL,
     supports_auto=True,
     supports_approval=True,
