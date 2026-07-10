@@ -6,6 +6,20 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
+> **Amendment (2026-07-07, plan 075 — prompt-injection threat model)**:
+> this plan's framing markers, forgery sanitization, and standing block
+> are recorded as the reference defense in
+> `docs/architecture/threat-model.md` §2(f)/§3. Two deltas: (1) the
+> behavioral layer in decision 8 / the maintenance notes is re-pointed —
+> the live "model does not follow the injection" eval is a **named
+> deliverable of 055's graded eval layer** (injection-resistance
+> category), not 045's deterministic harness; whichever of 046/055 lands
+> second wires the 045 injection fixtures into `evals/` cases exercising
+> `search_knowledge`/`read_document`, and that wiring is a done
+> criterion, not a note. (2) When `frame_untrusted_kb_content` gains its
+> second consumer, hoist it to the shared home named in threat-model §3
+> so 048/056/059 reuse one marker vocabulary.
+>
 > **Sibling pre-flight (run before Step 1)**: this plan was written in
 > parallel with plans 043 (embeddings), 044 (KB models + ingestion), and 045
 > (hybrid search + eval harness) against a dictated cross-plan contract

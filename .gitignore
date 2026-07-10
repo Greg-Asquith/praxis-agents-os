@@ -130,3 +130,4 @@ docs/*
 docs/architecture/*
 !docs/architecture/governance.md
 !docs/architecture/integration-packaging.md
+!docs/architecture/threat-model.md

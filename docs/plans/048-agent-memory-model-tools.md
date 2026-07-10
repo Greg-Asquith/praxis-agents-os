@@ -6,6 +6,19 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
+> **Amendment (2026-07-07, plan 075 — prompt-injection threat model)**:
+> memory is threat-model.md §2(a) — a persistence channel where injected
+> instructions saved during one run return verbatim through search in
+> later runs. Three deltas: (1) `search_memory` results frame stored
+> content with the shared untrusted-content markers (threat-model §3) —
+> memory content is agent-authored under possibly-hostile inputs, not
+> trusted text; (2) provenance is surfaced at read time — search results
+> carry `source`/`created_by` so the model can weigh a
+> scheduled-run-written note against a user-stated fact; (3) Step 8
+> gains `test_memory_adversarial_content.py` over the shared fixtures
+> (threat-model §4): hostile titles/content round-trip save→search with
+> markers intact and forged markers neutralized.
+>
 > **Gate pre-flights (run before Step 1)**:
 > - **G2** — plan 018 is DONE (verified 2026-07-06): the prompt assembler
 >   exists at `services/agents/runtime/prompt.py` (`PromptBlock`,

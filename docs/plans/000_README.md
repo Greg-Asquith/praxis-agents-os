@@ -125,6 +125,12 @@ note: it fixed the verification-first receipt surface, bounded payload and
 dedup contract, provider event postures, and the scheduled-equivalent envelope
 law for unattended event runs; it amended 037/041 and reserved plan 079 for
 the receipt spine plus Airtable webhooks. Plan 077 moved to `plans/complete/`.
+Plan 075 was executed 2026-07-10 as the prompt-injection threat-model design
+note: `docs/architecture/threat-model.md` defines the shared framing and
+adversarial-fixture standard, Gate G6 is active, and binding amendments were
+added to 046/048/049/055/056/059. Those plans remain TODO and own the code,
+fixtures, deterministic tests, and graded eval cases. Plan 075 moved to
+`plans/complete/`.
 
 Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
 workspace-scoped cancel route + audit, local task cancellation, heartbeat
@@ -231,7 +237,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 072 | Sandbox egress verification (amendment to 059) | P1 | S | 059, 054 (binds before 059 executes) | TODO |
 | 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (completed before 053 executed) | DONE |
 | 074 | Integration & KB plan consistency sweep (amendments to 038/039/042/043/044/045) | P1 | S-M | 038/039/042/043/044/045 (binds before Phase 4a/4b) | DONE |
-| 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
+| 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | DONE |
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | DONE |
 | 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | DONE |
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
@@ -653,6 +659,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   reuse them) and records the hybrid-engine decision `048` consumes:
   shared `services/retrieval/` parts + the written RRF SQL shape, not a
   parameterized multi-table engine.
+- `075` is DONE and activates Gate G6 through
+  `docs/architecture/threat-model.md`: 046/048/049/056/059 own
+  deterministic framing and adversarial-fixture tests for their channels;
+  055 owns the opt-in behavioral injection-resistance category. New
+  model-visible untrusted content must add a threat-model channel row and
+  shared-fixture coverage before shipping.
 - `GET /api/v1/kb/documents` (list) is owned by `046` (assigned at the
   2026-07-06 reconciliation; `045` deliberately ships only search +
   get-document); `047` consumes it.

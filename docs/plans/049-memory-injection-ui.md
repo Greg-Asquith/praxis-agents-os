@@ -6,6 +6,21 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
+> **Amendment (2026-07-07, plan 075 — prompt-injection threat model)**:
+> core-memory rendering is threat-model.md §2(b) — content interpolated
+> into the system prompt is the highest-authority laundering target.
+> Three deltas to the Step 1 formatter and Step 4 tests: (1) rendered
+> title/content are escaped per threat-model §3 — text mimicking the
+> block's own header or line format (e.g. a title of `## Instructions`)
+> must not be renderable as additional lines or headers; (2) stored
+> provenance is surfaced in the rendered line (e.g. an `agent-written` /
+> `user-written` tag) **or** the rejection of that default is recorded in
+> threat-model §2(b) with rationale — decision 4 currently strips at
+> render what 048 deliberately stores; (3) Step 4 gains a red-team
+> rendering test: hostile memory fixtures (shared set, §4) render inert,
+> with byte-level assertions that fixture text cannot escape its line,
+> forge the `## Memory` header, or impersonate the `memory_policy` block.
+>
 > **Gate pre-flights (run before Step 1)**:
 > - **048 is landed**: `agent_memories` exists, the four memory tools are in
 >   the registry, and `services/memories/` exposes the Step-4 seams 048's

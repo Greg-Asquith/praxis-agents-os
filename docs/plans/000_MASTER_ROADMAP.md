@@ -169,13 +169,13 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   complete before 041 ships agent-callable integration tools — a run that cannot be
   stopped, or an unattended run whose side-effect grant equals an
   interactive one, must not hold money-spending tools.
-- **G6 (untrusted content needs a threat model — reserved)**: defined and
-  registered by plan 075 when it executes. Shape: no plan that feeds model
-  context from a new untrusted-content source (integration-fetched
-  content, KB documents, memory content, history summaries, file-driven
-  code generation) ships without the threat-model doc listing the channel
-  and adversarial fixtures exercising it. 075 must complete before
-  041/046/048 execute.
+- **G6 (untrusted content is framed and fixture-tested)**: no plan that
+  feeds model context from a new untrusted-content source (retrieval,
+  memory, summaries, integration-fetched content, file/tool text) ships
+  unless `docs/architecture/threat-model.md` lists the channel and
+  adversarial fixtures exercise it. Deterministic tests pin sanitization
+  mechanics; behavioral resistance rides 055's graded eval layer. Binds
+  041/046/048/049/056/059 and every later content source.
 
 ## 4. The Roadmap
 
@@ -404,8 +404,9 @@ migration.
 | 073 | Cancellation terminal hardening: shield terminal persistence against double-cancel, tier-2 dedupe of already-cancelled tasks, `cancelled` disposition on the interrupted dispatch audit row. **DONE 2026-07-09.** Amends 053. | P1 | Complete. |
 | 074 | Consistency sweep: scheduled re-discovery job for permission staleness (039), `top_k`/CTE-limit cross-check (045), deliberate truncate-only `text-embedding-3-large` registry posture (043), connection-rename route reconciliation (042↔038), IP-pinned connects for DNS-rebinding TOCTOU (044). **DONE 2026-07-10.** Amends 038/039/042/043/044/045. | P1 | Complete. |
 
-Adjacent additions from the same review, not in Lane B: 075 (threat-model
-design note, registers Gate G6, before 041/046/048), 076 (**DONE
+Adjacent additions from the same review, not in Lane B: 075 (**DONE
+2026-07-10** — threat-model design note, registered Gate G6 and amended
+046/048/049/055/056/059), 076 (**DONE
 2026-07-10** — bounded tool results + calibrated token estimation), and 077
 (**DONE 2026-07-10** — inbound integration events design note covering
 webhooks/verification/event-triggered runs; reserves the seam in 037/041
@@ -455,13 +456,13 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 → {037–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → {037–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).
 
 Lane B placement rationale: each amendment lands immediately before the
-plan it binds — 073 before 053 (both done), 067/068/074/077 (done) and 075
+plan it binds — 073 before 053 (both done), 067/068/074/077/075 (done)
 before the Phase 4a/4b fork they gate, 079 after its 037–041 substrate,
 071 before 048, 069
 before 049, 070 before 050, 072 before 059. 076 is done; it landed after

@@ -6,6 +6,19 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
+> **Amendment (2026-07-07, plan 075 — prompt-injection threat model)**:
+> the decision-4 dataset sketch gains a fifth category, **injection
+> resistance** — cases that feed hostile content through real channel
+> tools (045's fixture docs via `search_knowledge`, a hostile memory via
+> `search_memory`, a hostile pre-compaction span) and grade that the
+> model does not comply, does not encode data into outbound tool
+> parameters, and reports the attempt. This category is the named home of
+> behavioral injection resistance platform-wide (threat-model.md §4):
+> live LLM calls are blocked in tests, so resistance is graded here —
+> opt-in, never CI. Channel cases land as their plans land (046/048/056
+> amendments each add theirs); the category and its first KB-backed cases
+> are this plan's deliverable.
+>
 > **Drift check (run first)**:
 > `git diff --stat c2f08cc..HEAD -- apps/api/services/agents/runtime/ apps/api/tests/ apps/api/pyproject.toml makefiles/`
 > Compare the "Current state" excerpts against live code; treat a mismatch

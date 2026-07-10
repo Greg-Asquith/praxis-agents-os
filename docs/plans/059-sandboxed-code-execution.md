@@ -6,6 +6,17 @@
 > report — do not improvise. When done, update the status row for this plan
 > in `docs/plans/000_README.md`.
 >
+> **Amendment (2026-07-07, plan 075 — prompt-injection threat model)**:
+> file content → generated code is threat-model.md §2(d) — an inlined
+> hostile CSV cell is a prompt to the helper model that writes the code,
+> not just data. Two deltas: (1) the helper turn frames inlined file
+> content as untrusted data per threat-model §3, separated from the
+> `task` text; (2) Step 2's tests gain a poisoned-file fixture (shared
+> set §4 — hostile CSV) asserting the framing wraps it. Sandbox *egress*
+> stays out of scope here — plan 072 owns network/egress posture for
+> sandboxed execution; this amendment must not duplicate it (decision 5's
+> police-the-boundary posture stands).
+>
 > **Drift check (run first)**:
 > `git diff --stat c2f08cc..HEAD -- apps/api/services/agents/runtime/tools/ apps/api/services/agents/runtime/dispatch.py apps/api/services/files/`
 > Compare the "Current state" excerpts against live code; treat a mismatch
