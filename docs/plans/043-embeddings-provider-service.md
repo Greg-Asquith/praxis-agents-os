@@ -20,6 +20,10 @@
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
+>
+> **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
+> 2026-07-07)" block at the end of this file amends this plan; where it
+> conflicts with the body above, the amendment wins.
 
 ## Status
 
@@ -658,3 +662,20 @@ Stop and report back (do not improvise) if:
   under concurrency), that metering happens in `embed_texts` and not in
   providers, that error details never contain input text, and that no
   test constructs a networked provider.
+
+## Amendment (plan 074, 2026-07-07): 3-large registry posture
+
+Where this block conflicts with the body above, this block wins.
+
+**New decision 10.** `text-embedding-3-large` stays in the catalog, and
+its entry gains a comment stating the posture: with
+`EMBEDDINGS_DIMENSIONS` capped at `le=1024` and 044's collection fixed at
+`HALFVEC(1024)`, its native 3072 dims are unreachable by design — it is
+only ever used Matryoshka-truncated via the API `dimensions` param
+(`supports_dimensions=True`; Step 4 already sends it), which is safe and
+deliberate: 3-large truncated to 1024 outperforms 3-small at 1024, so
+the entry is a quality knob needing no schema change. Kept rather than
+dropped for exactly that reason. **Step 7 delta** (`test_registry.py`):
+every catalog entry must be usable under the settings bounds —
+`supports_dimensions is True` or `512 <= native_dimensions <= 1024` — so
+a future non-Matryoshka large model cannot be registered unstorable.

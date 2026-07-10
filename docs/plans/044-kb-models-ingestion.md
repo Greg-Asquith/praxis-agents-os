@@ -28,6 +28,10 @@
 > (plans 030/043 land first); verify they match the contracted shapes named
 > in "Current state". For any other in-scope file, compare the excerpts
 > against live code; on a mismatch, treat it as a STOP condition.
+>
+> **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
+> 2026-07-07)" block at the end of this file amends this plan; where it
+> conflicts with the body above, the amendment wins.
 
 ## Status
 
@@ -803,3 +807,27 @@ Stop and report back (do not improvise) if:
   ingest handler (status stamping must survive the re-raise), the SSRF
   resolver checks (every redirect hop re-validated), and that no job
   payload carries document text (030's payload discipline — ids only).
+
+## Amendment (plan 074, 2026-07-07): pin connects to vetted IPs
+
+Where this block conflicts with the body above, this block wins.
+
+**New decision 13.** Decision 9's fetch validates resolved addresses
+pre-flight, but nothing binds the connect to a vetted address — the OS
+resolver can return a private IP at connect time (DNS-rebinding TOCTOU).
+`fetch_url` must therefore **connect to an address it validated**:
+resolve once, `ipaddress`-check every result, then open the connection to
+one of those exact IPs (custom httpx transport pinning the resolved
+address) while preserving the original hostname for the `Host` header and
+TLS SNI — for the initial request AND every redirect hop (each hop
+re-resolves, re-validates, re-pins). This matches 046's requirement that
+the fetcher "re-checks resolved IPs at fetch time … to defeat DNS
+rebinding" / "resolved addresses at connect time" — 044 ships the
+fetcher, so the mechanism lands here.
+
+**Step deltas**: Step 3's `fetch_url` spec gains the pinning clause.
+**Test-plan delta** (`test_fetch_url.py`): assert via a recording
+transport that the connected address is one the validator approved — for
+the first request and after a redirect — so a resolver that flips public
+→ private between validation and connect can never reach the private
+address. The existing rejection cases stand unchanged.

@@ -21,6 +21,10 @@
 > Any other in-scope file changing means: compare the "Current state"
 > excerpts against the live code before proceeding; on a mismatch, treat
 > it as a STOP condition.
+>
+> **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
+> 2026-07-07)" block at the end of this file amends this plan; where it
+> conflicts with the body above, the amendment wins.
 
 > **Amendment (2026-07-07, plan 061 — provider packaging)**: this plan
 > additionally lands the frontend packaging seams from
@@ -672,3 +676,14 @@ Stop and report back (do not improvise) if:
   the api-key dialog clearing the key on *error* paths too, and that
   role gating never *grants* anything the server would deny (it only
   hides).
+
+## Amendment (plan 074, 2026-07-07): rename route is real
+
+The endpoint-table row "Rename connection label |
+`PATCH /integrations/connections/{id}` | 038" was a phantom — 038's route
+table shipped no such operation. Plan 074's companion amendment to 038
+adds it, so the row stands as written; reconcile it against 038's landed
+route at pre-flight like every other row. Decision 4's inline rename and
+Step 2's `rename-connection.ts` are unchanged. If 038 executed WITHOUT
+its 074 amendment, this row is a structural gap — STOP per the existing
+pre-flight rule rather than shipping rename UI against a missing route.

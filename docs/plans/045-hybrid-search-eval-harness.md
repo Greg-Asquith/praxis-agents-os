@@ -34,6 +34,10 @@
 > the contracted shapes in "Current state". For `routes/` and
 > `core/dependencies.py`, compare excerpts; on a mismatch, treat it as a
 > STOP condition.
+>
+> **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
+> 2026-07-07)" block at the end of this file amends this plan; where it
+> conflicts with the body above, the amendment wins.
 
 ## Status
 
@@ -700,3 +704,24 @@ Stop and report back (do not improvise) if:
   privacy-as-404 behavior in `get_document` (no existence oracle), and
   that no test weakens an isolation/privacy assertion to make ranking
   pass.
+
+## Amendment (plan 074, 2026-07-07): top_k vs CTE limit
+
+Where this block conflicts with the body above, this block wins.
+
+**New decision 12.** As written, `KB_SEARCH_TOP_K_MAX = 50` exceeds
+`KB_SEARCH_CTE_LIMIT = 40`: in `lexical_fallback` mode the candidate pool
+is exactly one CTE, so any accepted top_k in (40, 50] silently
+under-fills; in hybrid mode 50 is reachable only when the two lists
+overlap by fewer than 30 ids. The cap must never promise more than the
+pool guarantees. Fix: Step 2's default becomes
+`KB_SEARCH_CTE_LIMIT: int = 50`, and `KBSettingsMixin` gains a
+`model_validator(mode="after")` requiring
+`KB_SEARCH_CTE_LIMIT >= KB_SEARCH_TOP_K_MAX` so the pair can never
+regress silently. **Step 6/test delta**: a settings test pins the
+validator (49/50 rejected, 50/50 accepted); a harness case asserts a
+`top_k = KB_SEARCH_TOP_K_MAX` lexical-fallback search over a >50-chunk
+corpus returns `top_k` rows. Gate G4 note: this corrects a written
+default before the harness exists — not ranking tuning; the tuning
+protocol does not apply. Any FURTHER change to either value follows the
+protocol as usual.

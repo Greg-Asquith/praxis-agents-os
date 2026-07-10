@@ -21,6 +21,10 @@
 > 030/037/038); verify them against those plans' contracts rather than
 > treating the diff as drift. Any OTHER in-scope change since `0cbbb39` is a
 > STOP-grade mismatch.
+>
+> **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
+> 2026-07-07)" block at the end of this file amends this plan; where it
+> conflicts with the body above, the amendment wins.
 
 > **Amendment (2026-07-07, plan 061 — provider packaging)**: per
 > `docs/architecture/integration-packaging.md`, the fake provider lives at
@@ -580,3 +584,37 @@ Stop and report back (do not improvise) if:
   `on_enter(needs_reauth)` hook not firing on same-status no-ops, and that
   `enqueue_discovery` passes no `initiated_by_user_id` (decision 6's
   double-notification guard).
+
+## Amendment (plan 074, 2026-07-07): periodic re-discovery
+
+Where this block conflicts with the body above, this block wins.
+
+**New decision 11.** One new self-rescheduling kind,
+`integrations.rediscover_stale` (the `integrations.sweep_stale` pattern):
+each pass calls `enqueue_discovery` for every non-deleted
+`requires_discovery` connection in
+`{active, needs_resource_selection, degraded}` whose newest **succeeded**
+discovery run is older than `INTEGRATIONS_REDISCOVERY_INTERVAL_SECONDS`
+(new decision-10 setting, default 86400). `needs_reauth`/`revoked`/
+`auth_pending` are skipped (auth first); `error` stays manual-retry-only.
+030's in-flight dedup prevents double-enqueue; the decision-3 diff makes
+re-runs idempotent. Rationale: 040 gates write fan-out on
+`writable`/`permissions_metadata` fail-closed and 041 derives those from
+provider role checks — an upstream permission revoke must flip
+`writable=false` without a human pressing re-discover. Notification
+semantics unchanged: decision 6 applies as written (`needs_reauth` on
+transition only; `discovery_failed` only after the final retry; no
+`initiated_by_user_id` on the enqueue).
+
+**Step deltas**: Step 1 adds the setting; Step 4 adds the handler beside
+`sweep_stale.py`, bootstrapped at the same `ensure_integrations_sweep_job`
+call site; the kind smoke (and its done criterion) becomes
+`['integrations.discover_resources', 'integrations.rediscover_stale',
+'integrations.sweep_stale']`. **Test-plan delta**
+(`test_rediscover_stale.py`, DB): a connection with a `writable=true`
+resource and a succeeded run aged past the interval, fake provider now
+reporting `writable=false` → one sweep pass enqueues discovery (no
+initiator) and the run flips the resource row to `writable=false` — the
+value 040's `write_allowed` computation reads at resolution time (040
+owns the gate-side test). Also pin: fresh-run connections not enqueued;
+`needs_reauth`/`revoked` skipped; an in-flight discovery not duplicated.

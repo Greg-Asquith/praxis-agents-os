@@ -113,6 +113,13 @@ root, purpose-separated HKDF subkeys, queryable key ids, and a re-encryption
 sweep; Google Ads' developer token becomes `SecretStr`; artifact view URLs
 gain a purpose-derived key and versioned signature scheme. The amended plans
 remain TODO and own the implementation. Plan 068 moved to `plans/complete/`.
+Plan 074 was executed 2026-07-10 as the integration/KB consistency sweep:
+038/042 now agree on a connection-label rename route, 039 requires periodic
+permission re-discovery, 043 documents truncate-only use of
+`text-embedding-3-large`, 044 pins URL-fetch connects to vetted IPs, and 045
+keeps its candidate pool at least as large as its accepted `top_k`. The six
+amended plans remain TODO and own the implementation. Plan 074 moved to
+`plans/complete/`.
 
 Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
 workspace-scoped cancel route + audit, local task cancellation, heartbeat
@@ -218,7 +225,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 071 | Memory dedup contradiction resolution (amendment to 048) | P1 | S-M | 048 (binds before it executes) | TODO |
 | 072 | Sandbox egress verification (amendment to 059) | P1 | S | 059, 054 (binds before 059 executes) | TODO |
 | 073 | Cancellation terminal hardening (amendment to 053) | P1 | S | 053 (completed before 053 executed) | DONE |
-| 074 | Integration & KB plan consistency sweep (amendments to 039/042/043/044/045) | P1 | S-M | 039/042/043/044/045 (binds before Phase 4a/4b) | TODO |
+| 074 | Integration & KB plan consistency sweep (amendments to 038/039/042/043/044/045) | P1 | S-M | 038/039/042/043/044/045 (binds before Phase 4a/4b) | DONE |
 | 075 | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6) | P1 | M | 029; binds before 041/046/048 execute | TODO |
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | DONE |
 | 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | TODO |

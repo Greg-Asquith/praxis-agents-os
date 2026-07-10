@@ -17,6 +17,10 @@
 > Steps 1/2/3/7; where it conflicts with the body above, the amendment
 > wins.
 >
+> **Amendment (plan 074) pre-flight**: the "Amendment (plan 074,
+> 2026-07-07)" block at the end of this file amends this plan; where it
+> conflicts with the body above, the amendment wins.
+>
 > **Drift check (run first)**:
 > `git diff --stat 0cbbb39..HEAD -- apps/api/routes/ apps/api/services/integrations/ apps/api/services/secrets/ apps/api/services/auth/oauth/ apps/api/core/auth/oauth_providers/ apps/api/middleware/csrf.py apps/api/core/rate_limiting.py apps/api/core/settings/ apps/api/core/dependencies.py`
 > If any in-scope file changed since this plan was written, compare the
@@ -674,3 +678,22 @@ session-bound (decision 1/2).
 
 039's sweep should purge expired `integration_oauth_states` rows
 alongside stale `auth_pending` connections (inert until then).
+
+## Amendment (plan 074, 2026-07-07): connection label rename
+
+Where this block conflicts with the body above, this block wins.
+
+**New decision 18** (13–17 are plan 067's). D3 makes the per-connection
+label a required, user-set value; 042 builds inline rename on it. Add
+`rename_connection.py` (service op + route file):
+`PATCH /integrations/connections/{connection_id}` with body `{label}`
+(non-empty, same schema rule as connect), auth `require_editor` +
+`require_connection_mutation_allowed` (the test/refresh ownership rule —
+label surgery is not credential surgery). Audits one UPDATE on
+`INTEGRATION_CONNECTION` with old/new label; no status transition, no
+credential access.
+
+**Step deltas**: Step 4's table gains the row and its verify line becomes
+"lists all ten paths"; Step 6's audit sweep covers rename; Step 7 adds:
+rename happy path + audit row, blank label 400, non-owner member 403 on a
+user-scoped connection, read_only 403.
