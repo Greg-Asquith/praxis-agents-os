@@ -27,6 +27,7 @@
 - **Category**: Lane B — best-practice amendments (067–074, added
   2026-07-07)
 - **Planned at**: working tree at commit `c770a1c`, 2026-07-07
+- **Completed**: 2026-07-10
 
 ## Decisions taken
 
@@ -265,16 +266,16 @@ amendment's Step 7 deltas and land with 038's execution.
 
 ## Done criteria
 
-- [ ] `docs/plans/038-integration-oauth-connect-flows.md` ends with the
+- [x] `docs/plans/038-integration-oauth-connect-flows.md` ends with the
       "Amendment (plan 067, 2026-07-07)" block, pasted verbatim
-- [ ] 038's executor-instructions blockquote carries the plan 067
+- [x] 038's executor-instructions blockquote carries the plan 067
       pre-flight pointer line
-- [ ] `git diff docs/plans/038-*.md` shows only the pointer line and
+- [x] `git diff docs/plans/038-*.md` shows only the pointer line and
       the appended block — no other body edits
-- [ ] `docs/plans/000_README.md` row for 067 added and 038's amendment
+- [x] `docs/plans/000_README.md` row for 067 added and 038's amendment
       noted; 038's row itself stays TODO
-- [ ] No code, migration, or test files changed
-      (`git status --porcelain` shows only the two plan docs)
+- [x] No code, migration, or test files changed; roadmap bookkeeping and
+      the required move to `plans/complete/` are the only additional changes
 
 ## STOP conditions
 

@@ -12,6 +12,11 @@
 > entry) and §5 (api-key connect exception, rotation re-test). Re-read those
 > sections; the note wins over this plan.
 >
+> **Amendment (plan 067) pre-flight**: the "Amendment (plan 067,
+> 2026-07-07)" block at the end of this file amends decisions 1/9 and
+> Steps 1/2/3/7; where it conflicts with the body above, the amendment
+> wins.
+>
 > **Drift check (run first)**:
 > `git diff --stat 0cbbb39..HEAD -- apps/api/routes/ apps/api/services/integrations/ apps/api/services/secrets/ apps/api/services/auth/oauth/ apps/api/core/auth/oauth_providers/ apps/api/middleware/csrf.py apps/api/core/rate_limiting.py apps/api/core/settings/ apps/api/core/dependencies.py`
 > If any in-scope file changed since this plan was written, compare the
@@ -586,3 +591,86 @@ Stop and report back (do not improvise) if:
   a real one (`pending:` prefix), SecretStr handling in
   `connect_api_key` (no `repr` leaks), and that both callback outcomes are
   redirects, never JSON.
+
+## Amendment (plan 067, 2026-07-07): PKCE + single-use state
+
+Written before this plan executed; where this block conflicts with the
+body above, this block wins. Grounding: RFC 9700 (OAuth 2.0 Security
+BCP) and OAuth 2.1 require PKCE (S256) on authorization-code flows
+including confidential clients, and require state/code replay defenses.
+Both matter doubly here because the callback is deliberately not
+session-bound (decision 1/2).
+
+### New decisions
+
+13. **PKCE S256 on every authorization-code connect.**
+    `start_oauth_connect` generates a `code_verifier` per RFC 7636
+    (43–128 chars from a CSPRNG) and sends
+    `code_challenge=BASE64URL(SHA256(verifier))` +
+    `code_challenge_method=S256` on the authorization URL;
+    `exchange_authorization_code` sends the `code_verifier` in the token
+    POST. Applies to the Google family AND the fake provider (which must
+    verify challenge↔verifier so tests pin the relation). Any future
+    OAuth-mode provider (e.g. Airtable, whose OAuth requires PKCE)
+    inherits this unconditionally.
+14. **Server-side pending-OAuth-state row, single-use.** New table
+    `integration_oauth_states`: `jti` (PK, from the state JWT),
+    `connection_id`, `code_verifier` (encrypted at rest with the same
+    symmetric primitive 037 uses for token columns — reuse its helper;
+    if 037 delivered no reusable helper, record the deviation and the
+    fallback in the PR description), `created_at`, `expires_at` (same
+    TTL as the JWT). Created in `start_oauth_connect`'s existing
+    transaction; consumed in `complete_oauth_callback` by a single
+    atomic `DELETE ... WHERE jti = :jti RETURNING ...` BEFORE the token
+    exchange. No row (expired, swept, or replayed) → the existing
+    invalid-state path: `IntegrationAuthError` +
+    `INTEGRATION_OAUTH_STATE_INVALID` security event + error redirect.
+    This amends decision 1's "no server-side state row"; the signed JWT
+    stays (authenticity, claims, cross-flow `type` pinning) and its
+    `jti` — previously log-correlation only — becomes the row key.
+15. **Verifier-in-JWT rejected.** The state transits the browser and
+    the JWT is signed, not encrypted; an attacker who steals state+code
+    would also hold the verifier, defeating PKCE. The verifier never
+    leaves the server.
+16. **One migration allowed.** This supersedes "Any Alembic migration —
+    037 owns the schema; if you need a column, STOP" and the
+    "no new migration in this plan" done criterion, for exactly the
+    `integration_oauth_states` table, on the same Alembic
+    branch/version-path 037 used for the integration tables. Anything
+    beyond that table remains a STOP.
+17. **`INTEGRATIONS_OAUTH_REDIRECT_URI` must be `https` outside
+    `ENVIRONMENT=local`** — enforced in the production-safety
+    `model_validator` (`core/settings/__init__.py`, the
+    `local_fs`/`console` pattern); empty remains allowed (provider
+    disabled). This amends Step 1's "No production-safety validator
+    change".
+
+### Step deltas
+
+- **Step 1**: add the decision 17 validator clause + a settings test.
+- **Step 2**: unchanged shape; note in `utils.py` that `jti` keys the
+  pending row (decision 14).
+- **Step 3**: `start_oauth_connect` mints verifier/challenge and
+  persists the pending row in its transaction; `build_authorization_url`
+  gains `code_challenge`/`code_challenge_method=S256`;
+  `exchange_authorization_code` gains `code_verifier`;
+  `complete_oauth_callback` consumes the row first (decision 14). Fake
+  provider verifies the S256 relation and rejects a wrong verifier.
+- **New step (before Step 1)**: the `integration_oauth_states`
+  migration per decision 16; `uv run alembic check` clean afterwards.
+- **Step 7 / test plan additions**: authorization URL carries
+  `code_challenge` + `method=S256`; the fake exchange fails on a
+  mismatched verifier and succeeds on the real one; **replay** — a
+  second callback with the same valid state → error redirect, security
+  event, no second credential, connection state unchanged; expired
+  pending row → same rejection even with a not-yet-expired JWT;
+  validator test — non-local env + `http://` redirect URI raises.
+- **Done criteria deltas**: replace the "(no new migration in this
+  plan)" criterion with "exactly one migration: `integration_oauth_states`";
+  add "[ ] state replay rejected (test green)" and "[ ] PKCE pinned on
+  auth URL + token exchange (tests green)".
+
+### Maintenance
+
+039's sweep should purge expired `integration_oauth_states` rows
+alongside stale `auth_pending` connections (inert until then).

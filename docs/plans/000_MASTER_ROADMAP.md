@@ -69,6 +69,10 @@ Plan 076 was completed 2026-07-10 and moved to `docs/plans/complete/`;
 free-text tool results are now bounded deterministically at dispatch,
 structured results remain intact and observable, and plan 056 consumes the
 shared model-calibrated token estimator.
+Plan 067 was completed 2026-07-10 and moved to `docs/plans/complete/`;
+its amendment makes PKCE S256 mandatory for integration authorization-code
+flows, adds atomically consumed server-side pending state, and requires
+HTTPS redirect URIs outside local development before plan 038 executes.
 
 ---
 
@@ -380,7 +384,7 @@ migration.
 
 | Plan | Scope | Priority | When |
 |------|-------|----------|------|
-| 067 | OAuth PKCE (S256) + single-use state via a server-side pending-state row; https redirect-URI enforcement outside local. Amends 038. | P1 | Before 038 |
+| 067 | OAuth PKCE (S256) + single-use state via a server-side pending-state row; https redirect-URI enforcement outside local. **DONE 2026-07-10.** Amends 038. | P1 | Complete. |
 | 068 | Credential encryption posture: root key through the secrets-provider seam, HKDF purpose-separated subkeys (fingerprints, artifact view URLs), re-encryption sweep job so rotation actually retires keys, `SecretStr` for the Ads developer token. Amends 037/041/050. | P1 | Before 037 |
 | 069 | Memory block ordering determinism: rank on stored confidence, not wall-clock-decayed `effective_confidence` — decay-crossing reorders silently bust the prompt-cache prefix 049 exists to protect; two-`now` byte-identity test. Amends 049. | P1 | Before 049 |
 | 070 | Artifact CSP: drop the general-purpose CDN whitelist (jsdelivr/unpkg serve every npm package — arbitrary script one URL away, and `connect-src 'none'` does not block self-navigation exfil); v1 artifacts are self-contained, self-hosted vetted bundles are the named follow-up. Amends 050. | P1 | Before 050 |
@@ -439,13 +443,13 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
+067 (DONE) → 068 → 074 → 077 → 075 → {037–042 ∥ 043–047 ∥ 055} → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).
 
 Lane B placement rationale: each amendment lands immediately before the
-plan it binds — 073 before 053 (both done), 067/068/074/077/075
+plan it binds — 073 before 053 (both done), 067 (done) and 068/074/077/075
 batched before the Phase 4a/4b fork they all gate, 071 before 048, 069
 before 049, 070 before 050, 072 before 059. 076 is done; it landed after
 054 and before 056, whose pressure math consumes its calibrated estimator.
