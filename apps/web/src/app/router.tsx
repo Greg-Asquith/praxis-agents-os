@@ -256,6 +256,15 @@ const oauthLinkCallbackRoute = createRoute({
   ),
 })
 
+const integrationOauthCallbackRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/integrations/oauth/callback",
+  component: lazyRouteComponent(
+    () => import("@/features/integrations/routes/oauth-callback-route"),
+    "IntegrationOAuthCallbackRoute"
+  ),
+})
+
 const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute, oauthLoginCallbackRoute]),
   appRoute.addChildren([
@@ -277,6 +286,7 @@ const routeTree = rootRoute.addChildren([
     workspaceSettingsRoute,
     profileRoute,
     oauthLinkCallbackRoute,
+    integrationOauthCallbackRoute,
   ]),
 ])
 

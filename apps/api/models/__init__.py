@@ -21,6 +21,7 @@ from models.integrations import (  # noqa: F401
     ExternalCredential,
     IntegrationConnection,
     IntegrationDiscoveryRun,
+    IntegrationOAuthState,
     IntegrationResource,
 )
 from models.jobs import Job  # noqa: F401

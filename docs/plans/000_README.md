@@ -188,6 +188,22 @@ Secret Manager, Azure Key Vault, and AWS Secrets Manager in production. No
 routes, discovery execution, real provider operations, or UI were added; those
 remain with 038–042. Plan 037 moved to `plans/complete/`.
 
+Plan 038 was executed 2026-07-10 as the integration connection surface: nine
+paths expose ten operations for provider listing, OAuth/API-key connect,
+callback, metadata reads, rename, test, refresh, and revoke. OAuth uses PKCE
+S256 plus signed and server-side single-use state. Gmail and Google Ads own
+separate OAuth settings beside their provider code and require distinct Google
+Cloud projects/client IDs; shared provider credentials are rejected at load.
+API-key values are immediately replaced by versioned secret references, and
+RBAC, ownership, audit, replay, CSRF, scope filtering, duplicate-principal, and
+crypto-shred behavior are covered by the API suite. Plan 038 moved to
+`plans/complete/`. Post-completion review additionally owner-scoped duplicate
+warnings, kept personal connections owner-only, made failed OAuth callbacks
+retryable and auditable without discarding prior credentials, added callback
+row-lock revalidation, and paginated connection listing. A 2026-07-13
+correction moved the provider redirect to the frontend and replaced the
+browser-facing API GET with an authenticated, CSRF-protected JSON POST.
+
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
@@ -237,7 +253,7 @@ integrations, files, knowledge base, memory, artifacts).
 | 036 | Multimodal chat input over Files | P1 | L | 031, 032, C02 | DONE |
 | C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | DONE |
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | DONE |
-| 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | TODO |
+| 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | DONE |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |
 | 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO |

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from uuid import UUID
 
-from pydantic_ai import DeferredToolResults
+from pydantic_ai import Agent as PydanticAgent, DeferredToolResults
 from pydantic_ai.messages import ModelMessage, UserContent
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
@@ -151,23 +151,25 @@ async def execute_run_with_builders(
         )
         built_agent = prepared.built_agent
 
-        async with built_agent.runtime_agent.agent.run_stream_events(
-            prepared.user_prompt,
-            deps=prepared.deps,
-            message_history=built_agent.history,
-            deferred_tool_results=deferred_tool_results,
-            conversation_id=str(conversation.id),
-            usage_limits=built_agent.runtime_agent.usage_limits,
-            usage=usage,
-        ) as stream:
-            terminal_result = await consume_stream(
-                stream,
+        # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
+        with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
+            async with built_agent.runtime_agent.agent.run_stream_events(
+                prepared.user_prompt,
                 deps=prepared.deps,
-                skills=skills,
-                run=run,
+                message_history=built_agent.history,
                 deferred_tool_results=deferred_tool_results,
-                event_sink=event_sink,
-            )
+                conversation_id=str(conversation.id),
+                usage_limits=built_agent.runtime_agent.usage_limits,
+                usage=usage,
+            ) as stream:
+                terminal_result = await consume_stream(
+                    stream,
+                    deps=prepared.deps,
+                    skills=skills,
+                    run=run,
+                    deferred_tool_results=deferred_tool_results,
+                    event_sink=event_sink,
+                )
 
         if terminal_result is None:
             raise RuntimeError("Pydantic AI stream ended without a terminal result")

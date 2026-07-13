@@ -4,12 +4,16 @@ import { useMemo } from "react"
 import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ApprovalControls } from "@/features/conversations/components/approval-controls"
+import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
+import { ApprovalSubmitBar } from "@/features/conversations/components/approval-submit-bar"
+import { AssistantMessageShell } from "@/features/conversations/components/message-shell"
 import {
   AssistantLiveActivityRow,
   AssistantTurnRow,
   MessageRow,
 } from "@/features/conversations/components/message-row"
+import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
+import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
 import type {
   AgentRun,
   AgentRunResumeDecision,
@@ -91,24 +95,41 @@ export function MessageList({
     () => buildLiveToolActivities(streamToolCalls, streamApprovals),
     [streamToolCalls, streamApprovals]
   )
-  const approvalIds = useMemo(
-    () => new Set(approvals.map((approval) => approval.tool_call_id)),
-    [approvals]
-  )
-  const visibleLiveToolActivities = useMemo(
-    () =>
-      liveToolActivities.filter(
-        (activity) => !(approvalIds.has(activity.id) && activity.status === "awaiting_approval")
-      ),
-    [approvalIds, liveToolActivities]
-  )
-  const hasInlineApprovals = approvals.length > 0 || isApprovalLoading || Boolean(approvalError)
+  const isAwaitingApproval = activeRun?.status === "awaiting_approval"
+  const inlineApprovals = useInlineApprovals({
+    approvals,
+    enabled: isAwaitingApproval,
+    isSubmitting: isApprovalSubmitting,
+    onSubmit: onApprovalSubmit,
+  })
+  // Approvals whose tool call is not in the transcript yet (for example while the paused run's messages are still refetching) fall back to standalone rows.
+  const orphanApprovalActivities = useMemo(() => {
+    if (!isAwaitingApproval) {
+      return []
+    }
+    const renderedAwaitingIds = new Set(
+      [...parsedMessages.flatMap((message) => message.toolActivities), ...liveToolActivities]
+        .filter((activity) => activity.status === "awaiting_approval")
+        .map((activity) => activity.id)
+    )
+    return approvals
+      .filter((approval) => !renderedAwaitingIds.has(approval.tool_call_id))
+      .map(orphanApprovalActivity)
+  }, [approvals, isAwaitingApproval, liveToolActivities, parsedMessages])
+  const hasInlineApprovals =
+    isAwaitingApproval && (approvals.length > 0 || isApprovalLoading || Boolean(approvalError))
+  const showApprovalBar =
+    isAwaitingApproval &&
+    approvals.length > 0 &&
+    (approvals.length > 1 ||
+      inlineApprovals.summary.denied > 0 ||
+      inlineApprovals.formError !== null)
   const hasMessages =
     parsedMessages.length > 0 ||
     visiblePendingUserMessages.length > 0 ||
     hasInlineApprovals ||
     (shouldShowStream &&
-      (isStreaming || streamMessages.length > 0 || visibleLiveToolActivities.length > 0))
+      (isStreaming || streamMessages.length > 0 || liveToolActivities.length > 0))
 
   if (!hasMessages) {
     return (
@@ -125,45 +146,66 @@ export function MessageList({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      {renderItems.map((item) => (
-        <TranscriptRenderItem key={item.id} assistantLabel={assistantLabel} item={item} />
-      ))}
+    <ApprovalDecisionContext value={inlineApprovals.resolveApprovalControls}>
+      <div className="flex min-w-0 flex-col gap-6">
+        {renderItems.map((item) => (
+          <TranscriptRenderItem key={item.id} assistantLabel={assistantLabel} item={item} />
+        ))}
 
-      {visiblePendingUserMessages.map((message) => (
-        <MessageRow key={message.clientMessageId} pendingMessage={message} />
-      ))}
+        {visiblePendingUserMessages.map((message) => (
+          <MessageRow key={message.clientMessageId} pendingMessage={message} />
+        ))}
 
-      {shouldShowStream &&
-        (isStreaming || streamMessages.length > 0 || visibleLiveToolActivities.length > 0) && (
-          <AssistantLiveActivityRow
-            assistantLabel={assistantLabel}
-            isStreaming={isStreaming}
-            messages={streamMessages}
-            toolActivities={visibleLiveToolActivities}
+        {shouldShowStream &&
+          (isStreaming || streamMessages.length > 0 || liveToolActivities.length > 0) && (
+            <AssistantLiveActivityRow
+              assistantLabel={assistantLabel}
+              isStreaming={isStreaming}
+              messages={streamMessages}
+              toolActivities={liveToolActivities}
+            />
+          )}
+
+        {orphanApprovalActivities.length > 0 && (
+          <AssistantMessageShell createdAt={null} label={assistantLabel}>
+            {orphanApprovalActivities.map((activity) => (
+              <ToolCallRow activity={activity} key={activity.id} />
+            ))}
+          </AssistantMessageShell>
+        )}
+
+        {isAwaitingApproval && approvalError && (
+          <div className="pl-10">
+            <Alert variant="destructive">
+              <AlertTitle>Approval state unavailable</AlertTitle>
+              <AlertDescription>{approvalError}</AlertDescription>
+            </Alert>
+          </div>
+        )}
+
+        {isAwaitingApproval && isApprovalLoading && approvals.length === 0 && (
+          <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
+        )}
+
+        {showApprovalBar && (
+          <ApprovalSubmitBar
+            error={inlineApprovals.formError}
+            isSubmitting={isApprovalSubmitting}
+            onSubmit={inlineApprovals.submitStaged}
+            summary={inlineApprovals.summary}
           />
         )}
 
-      {hasInlineApprovals && (
-        <ApprovalControls
-          approvals={approvals}
-          assistantLabel={assistantLabel}
-          error={approvalError}
-          isLoading={isApprovalLoading}
-          isSubmitting={isApprovalSubmitting}
-          onSubmit={onApprovalSubmit}
-        />
-      )}
-
-      {streamError && (
-        <div className="w-full px-1 py-2">
-          <Alert variant="destructive">
-            <AlertTitle>Stream failed</AlertTitle>
-            <AlertDescription>{streamError}</AlertDescription>
-          </Alert>
-        </div>
-      )}
-    </div>
+        {streamError && (
+          <div className="w-full px-1 py-2">
+            <Alert variant="destructive">
+              <AlertTitle>Stream failed</AlertTitle>
+              <AlertDescription>{streamError}</AlertDescription>
+            </Alert>
+          </div>
+        )}
+      </div>
+    </ApprovalDecisionContext>
   )
 }
 
@@ -186,6 +228,24 @@ function TranscriptRenderItem({
   }
 
   return <MessageRow assistantLabel={assistantLabel} message={item.message} />
+}
+
+function orphanApprovalActivity(approval: PendingToolApproval): ToolActivity {
+  const args = normalizeToolArgs(approval.args)
+  const activity: ToolActivity = {
+    id: approval.tool_call_id,
+    kind: "approval",
+    status: "awaiting_approval",
+    name: approval.name,
+    args,
+  }
+  const delegate = approval.delegation
+    ? delegationDetailsForPendingApproval(approval.delegation, args)
+    : delegationDetailsForToolActivity(approval.name, args)
+  if (delegate) {
+    activity.delegate = delegate
+  }
+  return activity
 }
 
 function buildLiveToolActivities(

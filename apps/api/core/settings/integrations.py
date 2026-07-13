@@ -1,6 +1,6 @@
 # apps/api/core/settings/integrations.py
 
-"""Integration engine and credential-vault settings."""
+"""Shared integration-engine and credential-vault settings."""
 
 from pydantic import Field
 
@@ -10,6 +10,8 @@ class IntegrationsSettingsMixin:
         default_factory=list,
         description="Integration provider packages imported at process startup.",
     )
+    INTEGRATIONS_OAUTH_REDIRECT_URI: str = ""
+    INTEGRATIONS_OAUTH_STATE_TTL_MINUTES: int = Field(default=10, gt=0)
     INTEGRATIONS_TOKEN_REFRESH_LEEWAY_SECONDS: int = Field(
         default=120,
         gt=0,

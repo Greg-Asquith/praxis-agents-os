@@ -2,14 +2,14 @@
 
 > **Executor instructions**: This is an amendment plan in the 061 mold —
 > its deliverable is a clearly-marked amendment block appended to
-> `docs/plans/038-integration-oauth-connect-flows.md`, not code. The code
+> `docs/plans/complete/038-integration-oauth-connect-flows.md`, not code. The code
 > lands when 038 executes. The full amendment text is drafted verbatim in
 > the "Amendment text" section below; paste it, add the one-line pointer,
 > and reconcile — do not redesign. When done, update the status row in
 > `docs/plans/000_README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat c770a1c..HEAD -- docs/plans/038-integration-oauth-connect-flows.md apps/api/services/auth/oauth/utils.py apps/api/core/settings/ apps/api/middleware/csrf.py`
+> `git diff --stat c770a1c..HEAD -- docs/plans/complete/038-integration-oauth-connect-flows.md apps/api/services/auth/oauth/utils.py apps/api/core/settings/ apps/api/middleware/csrf.py`
 > and `ls apps/api/routes/integrations 2>/dev/null`. If the 038 plan file
 > changed, re-verify the "Current state" quotes below against its live
 > text before pasting. If `routes/integrations/` exists or 038's README
@@ -80,7 +80,7 @@ advisory.
 
 ## Current state
 
-All quotes verified against `docs/plans/038-integration-oauth-connect-flows.md`
+All quotes verified against `docs/plans/complete/038-integration-oauth-connect-flows.md`
 at `c770a1c` (2026-07-07). 038 is TODO in `000_README.md` (row 124).
 
 - **No PKCE anywhere in 038.** Step 3's `build_authorization_url` param
@@ -112,14 +112,14 @@ at `c770a1c` (2026-07-07). 038 is TODO in `000_README.md` (row 124).
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
 | 038 unexecuted | `ls apps/api/routes/integrations 2>/dev/null` | no such directory |
-| Amendment landed | `grep -c "Amendment (plan 067" docs/plans/038-integration-oauth-connect-flows.md` | `2` (pointer + block) |
+| Amendment landed | `grep -c "Amendment (plan 067" docs/plans/complete/038-integration-oauth-connect-flows.md` | `2` (pointer + block) |
 | Doc-only diff | `git status --porcelain` | only the two plan docs + this file's README row |
 
 ## Scope
 
 **In scope:**
 
-- `docs/plans/038-integration-oauth-connect-flows.md` — append the
+- `docs/plans/complete/038-integration-oauth-connect-flows.md` — append the
   amendment block; add one pointer line to the executor-instructions
   blockquote
 - `docs/plans/000_README.md` — add the 067 row; note the 038 amendment
@@ -266,7 +266,7 @@ amendment's Step 7 deltas and land with 038's execution.
 
 ## Done criteria
 
-- [x] `docs/plans/038-integration-oauth-connect-flows.md` ends with the
+- [x] `docs/plans/complete/038-integration-oauth-connect-flows.md` ends with the
       "Amendment (plan 067, 2026-07-07)" block, pasted verbatim
 - [x] 038's executor-instructions blockquote carries the plan 067
       pre-flight pointer line

@@ -25,6 +25,7 @@
 
 ## Status
 
+- **Status**: DONE 2026-07-10
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH (a browser-facing OAuth surface plus an api-key intake
@@ -71,7 +72,7 @@
    `DELETE ... WHERE jti = :jti RETURNING ...` BEFORE the token exchange.
    No row (expired, swept, or replayed) → the invalid-state path:
    `IntegrationAuthError` + `INTEGRATION_OAUTH_STATE_INVALID` security
-   event + error redirect. The signed JWT stays (authenticity, claims,
+   event + typed problem response. The signed JWT stays (authenticity, claims,
    cross-flow `type` pinning); its `jti` is the row key. The verifier is
    encrypted at rest under a dedicated HKDF purpose string
    `praxis:oauth-pkce-verifier:v1`, derived with `derive_purpose_key`
@@ -81,27 +82,21 @@
    verifier never rides the JWT: the state transits the browser signed
    but not encrypted, and a stolen state+code must not include the
    verifier.
-4. **The callback is an API-side browser-redirected GET** —
-   `GET /api/v1/integrations/oauth/callback` — unlike the login flow,
-   where the SPA receives the redirect and POSTs the code back. Rationale:
-   the connection row, credential write, scope filtering, and status
-   transition are one server-side transaction, and a single registered
-   provider redirect URI on the API keeps console configuration
-   SPA-independent. Both outcomes are 302s to the frontend, never JSON:
-   success redirects to `FRONTEND_URL + next_path` with
-   `connection_id=<uuid>` and `status=<post-callback status>` query
-   params appended; failure redirects with `integration_error=<code>`.
-   042's OAuth-return alert consumes exactly these params — this is a
-   pinned contract.
-5. **CSRF posture — no exempt-list change.** `CSRFMiddleware` only
-   enforces `POST/PUT/PATCH/DELETE` (`middleware/csrf.py:64-69`
-   `_should_enforce_csrf`), so the GET callback is structurally outside
-   CSRF enforcement and needs no entry in `exempt_paths` (`csrf.py:43-58`).
-   Its anti-forgery guarantee is the signed state blob plus the
-   single-use row — the OAuth `state` parameter is precisely a CSRF token
-   for this flow. Every mutating integration route is an ordinary SPA
-   `fetch` carrying `X-CSRF-Token` and stays fully enforced. A reviewer
-   seeing `exempt_paths` touched should reject the PR.
+4. **The provider returns to the frontend, which completes through JSON** —
+   the registered provider redirect is
+   `<FRONTEND_URL>/integrations/oauth/callback`, matching the established
+   login/link OAuth architecture. That frontend route POSTs `{code, state,
+   error}` to `POST /api/v1/integrations/oauth/callback`; the API performs the
+   connection row, credential write, scope filtering, and status transition
+   in the same service transaction as before, then returns the connection and
+   validated `next_path`. The browser never navigates to an API GET endpoint.
+5. **CSRF posture — no exempt-list change.** The callback POST is an ordinary
+   authenticated SPA request carrying `X-CSRF-Token`, so it stays fully
+   protected by `CSRFMiddleware`. The route also requires editor access and
+   binds the signed state to the authenticated user and active workspace
+   before consuming it. The signed, single-use OAuth state remains the
+   provider-flow anti-forgery guarantee. A reviewer seeing `exempt_paths`
+   touched should reject the PR.
 6. **Rate limiting fail-closed on the browser-facing pair.** OAuth start
    (per user) and callback (per client IP via `get_client_ip`) go through
    the Postgres-backed limiter (`core/rate_limiting.py:68
@@ -114,10 +109,13 @@
    (`require_editor`, `core/dependencies.py:268`); workspace-scoped
    connect/revoke and ALL api-key entry = admin+ (`require_owner`,
    line 267 — MANAGER_ROLES is owner+admin). Additionally, a user-owned
-   connection may only be mutated by its `owner_user_id` (or a workspace
-   admin acting where it was connected) — ownership check in the service
-   op (`require_connection_mutation_allowed` helper), role check in the
-   route dependency.
+   connection may only be mutated by its `owner_user_id`; workspace admins
+   control workspace-owned connections but gain no implicit control over a
+   member's personal connections. User-owned connections deliberately carry
+   no workspace provenance, so an "admin where connected" exception cannot
+   be enforced safely. Ownership is checked in the service op
+   (`require_connection_mutation_allowed` helper), with the baseline role
+   check in the route dependency.
 8. **The connection row is created at initiate time** in `auth_pending`,
    with its required `label` (D3) captured up front. `credential_id` is
    NOT NULL with a unique-per-live-connection index
@@ -143,18 +141,34 @@
     `core/auth/oauth_providers/google.py:33-43`); persisted
     `granted_scopes` are the **intersection** of the token response
     `scope` field with the manifest's requested scopes — never whatever
-    extra the user granted.
-11. **Separate OAuth clients for integrations.** New settings
-    `INTEGRATIONS_GOOGLE_CLIENT_ID` / `INTEGRATIONS_GOOGLE_CLIENT_SECRET`
-    / `INTEGRATIONS_OAUTH_REDIRECT_URI` — NOT the login client
-    (`GOOGLE_OAUTH_CLIENT_ID`, `core/settings/auth.py:27-32`). Login and
-    integration consent screens have different scopes, brand verification
-    requirements, and blast radius; local dev may set both to the same
-    values. `INTEGRATIONS_OAUTH_REDIRECT_URI` must be `https` outside
-    `ENVIRONMENT=local` — enforced in the production-safety
-    `model_validator` (`core/settings/__init__.py:58`, the
-    `local_fs`/`console` pattern at 66-70); empty remains allowed
-    (provider unconfigured).
+    extra the user granted. Both Google manifests include `openid email`
+    because callback completion resolves the stable Google `sub` through the
+    documented OIDC userinfo endpoint; provider API scopes alone do not
+    authorize that identity call.
+11. **Every Google service has an isolated OAuth application and Google
+    Cloud project.** Gmail uses provider-owned `GMAIL_OAUTH_CLIENT_ID` /
+    `GMAIL_OAUTH_CLIENT_SECRET`; Google Ads uses provider-owned
+    `GOOGLE_ADS_OAUTH_CLIENT_ID` / `GOOGLE_ADS_OAUTH_CLIENT_SECRET`.
+    These are also separate from the login client (`GOOGLE_OAUTH_CLIENT_ID`,
+    `core/settings/auth.py:27-32`). Merely creating multiple client IDs in
+    one Google Cloud project is insufficient: Google token revocation removes
+    every scope granted to that project for the user and invalidates tokens
+    across the project's clients. Separate projects preserve honest
+    per-service connect, reauthorize, and revoke semantics. Reusing a client
+    ID between enabled OAuth providers is a fail-fast configuration error in
+    the loader; local development is not exempt.
+
+    Provider credentials do **not** live on the global `Settings` model or in
+    `core/settings/integrations.py`. Each provider package owns a small
+    `BaseSettings` object in `apps/api/integrations/<key>/settings.py` and
+    exposes an `OAuthClientConfig` resolver through
+    `IntegrationProviderPlugin`. This keeps optional provider variables with
+    the service code and prevents the global settings mixin growing one field
+    per third-party provider. Only shared orchestration settings remain in
+    core: `INTEGRATIONS_OAUTH_REDIRECT_URI` and
+    `INTEGRATIONS_OAUTH_STATE_TTL_MINUTES`. The common redirect URI may be
+    registered in every isolated project and must be `https` outside
+    `ENVIRONMENT=local`; empty remains allowed (provider unconfigured).
 12. **Enablement vs configuration are two separate gates.** As delivered
     by 037, a provider EXISTS only if its package is named in
     `INTEGRATIONS_ENABLED_PROVIDERS` (the loader,
@@ -162,8 +176,8 @@
     `registry.py:279-286`; the manifest carries no per-provider enable
     flag). This plan adds the CONFIGURED dimension: `list_providers`
     reports each loaded manifest with a `configured` boolean derived from
-    settings (Google-family → `INTEGRATIONS_GOOGLE_CLIENT_ID` and
-    `INTEGRATIONS_OAUTH_REDIRECT_URI` non-empty; api-key providers are
+    settings (OAuth → that provider's client ID/secret plus the shared
+    `INTEGRATIONS_OAUTH_REDIRECT_URI` are non-empty; api-key providers are
     always configured), and `start_oauth_connect` rejects an
     unconfigured provider with `IntegrationValidationError`. 042 renders
     unconfigured providers muted; 041 extends the same idea to tool
@@ -184,9 +198,10 @@
     `revoke_credential` (crypto-shred) and transition to `revoked`.
 15. **Duplicate-principal warning, never a block** (D3): the callback
     result and the connection detail payload include
-    `duplicate_of_connection_ids` from `find_duplicate_principals` so
-    042 can warn; connecting the same Gmail account twice under two
-    labels is a supported flow.
+    `duplicate_of_connection_ids` from `find_duplicate_principals`, scoped to
+    the same `owner_user_id` or `owner_workspace_id`, so 042 can warn without
+    disclosing connection identifiers across owners; connecting the same
+    Gmail account twice under two labels is a supported flow.
 16. **Rename is a first-class route** (D3 label editing):
     `PATCH /integrations/connections/{connection_id}` with body
     `{label}` (non-empty, same schema rule as connect), auth
@@ -278,8 +293,11 @@ present.
   - `integrations/{gmail,google_ads,airtable}/__init__.py` — data-only
     `PROVIDER: IntegrationProviderPlugin` packages (manifests only;
     `discover_resources=None`). gmail: oauth/user-scope/2 scopes;
-    google_ads: oauth/workspace/adwords scope/`requires_discovery`;
-    airtable: api_key/workspace/`required_form_fields=("api_key",)`.
+    google_ads: oauth/workspace/adwords scope; airtable:
+    api_key/workspace/`required_form_fields=("api_key",)`. Per 037's
+    completion decision, all three advertise `requires_discovery=False`
+    until 041 lands each real discovery callable; authenticated connections
+    therefore become `active` in this plan.
   - Settings: `core/settings/integrations.py` —
     `INTEGRATIONS_ENABLED_PROVIDERS: list[str] = []`, token-refresh
     leeway, HTTP timeout/retry knobs, `CREDENTIAL_MASTER_KEY_SECRET_NAME`,
@@ -345,7 +363,7 @@ present.
 | Migration sanity | `uv run alembic check` | clean after Step 1 (exactly one new migration: `integration_oauth_states`) |
 | New tests | `TEST_DATABASE_URL=... uv run pytest tests/routes/integrations tests/services/integrations -q` | all pass |
 | Full API tests | `TEST_DATABASE_URL=... uv run pytest -q` | all pass |
-| Route smoke | `uv run python -c "from routes import api_router; print(sorted({r.path for r in api_router.routes if '/integrations' in r.path}))"` | the ten Step 5 paths |
+| Route smoke | inspect `main.app.openapi()["paths"]` for `/integrations` | nine distinct Step 5 paths and ten operations (GET/PATCH share detail) |
 
 ## Scope
 
@@ -354,12 +372,17 @@ present.
 - `apps/api/alembic/versions/core/0014_*.py` (create —
   `integration_oauth_states`, decision 3) + `models/integrations.py`
   (add the model) + `models/__init__.py`
-- `apps/api/core/settings/integrations.py` (extend — decision 11
-  settings: `INTEGRATIONS_GOOGLE_CLIENT_ID: str = ""`,
-  `INTEGRATIONS_GOOGLE_CLIENT_SECRET: SecretStr = SecretStr("")`,
-  `INTEGRATIONS_OAUTH_REDIRECT_URI: str = ""`,
+- `apps/api/core/settings/integrations.py` (extend with shared settings only —
+  decision 11: `INTEGRATIONS_OAUTH_REDIRECT_URI: str = ""`,
   `INTEGRATIONS_OAUTH_STATE_TTL_MINUTES: int = 10`) +
   `core/settings/__init__.py` (decision 11 validator clause)
+- `apps/api/integrations/gmail/settings.py` and
+  `apps/api/integrations/google_ads/settings.py` (create — provider-owned
+  client IDs/secrets) + both provider package `__init__.py` files (expose
+  their OAuth config resolver)
+- `apps/api/services/integrations/plugin.py` (extend with the secret-safe
+  `OAuthClientConfig` contribution) + `loader.py` (validate the contribution
+  and reject reused non-empty client IDs)
 - `apps/api/services/integrations/oauth/` (create): `__init__.py`,
   `utils.py` (state mint/verify, verifier encrypt/decrypt),
   `build_authorization_url.py`, `exchange_authorization_code.py`,
@@ -378,6 +401,11 @@ present.
   `INTEGRATION_OAUTH_STATE_INVALID = "integration_oauth_state_invalid"`)
 - `apps/api/tests/routes/integrations/` (create),
   `apps/api/tests/services/integrations/test_oauth_state.py` (create)
+- `apps/api/pyproject.toml` (`testpaths = ["tests"]`; required so service
+  operations named `test_connection.py` are not collected as test modules) +
+  relocation of the integration import-law test to `tests/contract/`
+- `apps/api/.env.example` (document shared callback/state settings and the
+  distinct provider-owned Gmail/Google Ads client variables)
 
 **Out of scope (do NOT touch):**
 
@@ -417,13 +445,17 @@ check` clean; downgrade/upgrade round-trips.
 
 ### Step 2: Settings + validator + configured flag
 
-Add the decision 11 fields to `IntegrationsSettingsMixin`. Extend the
+Add only the shared decision 11 fields to `IntegrationsSettingsMixin`; add
+provider-specific `BaseSettings` objects beside the Gmail and Google Ads
+provider code and expose them through the plugin contract. Extend the
 production-safety `model_validator` (`core/settings/__init__.py:58`,
 following the local-only pattern at 66-70): non-local +
 `INTEGRATIONS_OAUTH_REDIRECT_URI` set + not `https://` → raise. Add the
 decision 12 `configured` helper where the manifest view op can reach it
-(service-level `utils.py`, driven by settings + `auth_modes` — no
-manifest schema change).
+(service-level `utils.py`, driven by the provider's OAuth config + shared
+redirect URI + `auth_modes` — no manifest schema change). The provider loader
+must fail when enabled configured OAuth providers return the same non-empty
+client ID.
 
 **Verify**: settings import prints defaults; validator test — non-local
 env + `http://` redirect URI raises; ruff exit 0.
@@ -469,8 +501,9 @@ generic manifest-driven; `gmail`/`google_ads` share the Google endpoints
 `core/auth/oauth_providers/google.py:28-31`); `airtable` has no OAuth
 mode in v1:
 
-- `build_authorization_url.py` — Google family:
-  `client_id=INTEGRATIONS_GOOGLE_CLIENT_ID`,
+- `build_authorization_url.py` — resolve endpoints and credentials from the
+  provider plugin (`gmail` → `GMAIL_OAUTH_CLIENT_ID`; `google_ads` →
+  `GOOGLE_ADS_OAUTH_CLIENT_ID`), then use that provider's `client_id`,
   `redirect_uri=INTEGRATIONS_OAUTH_REDIRECT_URI`, `response_type=code`,
   `scope=" ".join(manifest.oauth_scopes)`, `state=<blob>`,
   `code_challenge` + `code_challenge_method=S256` (decision 2),
@@ -482,7 +515,7 @@ mode in v1:
   (`core/auth/oauth_providers/retrying.py:28-49`: 200-with-error and
   missing access_token are failures).
 - `fetch_external_principal.py` — stable external principal id + label
-  for fingerprinting: Google userinfo `sub`/`email` for gmail; for
+  for fingerprinting: Google OIDC userinfo `sub`/`email` for gmail; for
   google_ads, the authenticating Google identity at connect time (the
   MCC/account hierarchy is discovery data, 039/041).
 
@@ -509,9 +542,12 @@ file):
   `store_oauth_credential` and swap `credential_id` (delete the stub);
   compute `duplicate_of_connection_ids`; transition per decision 13
   with the `# discovery enqueue seam — plan 039` comment; audit UPDATE
-  with scopes + fingerprint (no tokens). On provider `error` query
-  param or exchange failure: audit FAILURE, record the security event,
-  leave `auth_pending`, redirect with `integration_error=<code>`.
+  with scopes + fingerprint (no tokens). Before installing tokens, row-lock
+  and revalidate the connection and expected credential so concurrent revoke
+  cannot be overwritten. On a provider `error` from the callback body or an exchange failure:
+  audit FAILURE, record the security event, transition to retryable
+  `needs_reauth`, retain the previous credential during reauthorization, and
+  return a typed problem response for the frontend to render.
 - `connect_api_key.py` (decision 9) — admin+ only; schema with `label`,
   `provider_key`, and exactly one of `api_key: SecretStr | None` /
   `secret_reference` (XOR). Raw path:
@@ -524,8 +560,9 @@ file):
   the acting workspace + user-owned rows for the requesting user; detail
   includes the credential **metadata** block for admin+ only (expiry,
   scopes, fingerprint, last refresh — never values or resolved
-  references; member view omits the block); includes
-  `duplicate_of_connection_ids`.
+  references; member view omits the block); includes owner-scoped
+  `duplicate_of_connection_ids`. The list route is offset paginated and
+  batch-loads credentials rather than querying per row.
 - `rename_connection.py` — decision 16.
 - `test_connection.py` — resolves a working credential
   (`ensure_fresh_credential` with the manifest-driven refresh callable
@@ -554,16 +591,17 @@ prefix `/integrations`, registered in `routes/__init__.py` between
 | `list_connections.py` | `GET /integrations/connections` | `require_read` |
 | `get_connection.py` | `GET /integrations/connections/{connection_id}` | `require_read` (credential metadata admin+ only) |
 | `start_oauth_connect.py` | `POST /integrations/connections/oauth/start` | `require_editor`; workspace-scoped providers additionally admin+ (service check) |
-| `oauth_callback.py` | `GET /integrations/oauth/callback?code&state[&error]` | **no session dependency** — identity from the signed state; rate-limited; returns `RedirectResponse` |
+| `oauth_callback.py` | `POST /integrations/oauth/callback` with `{code, state, error}` | `require_editor`; authenticated user/workspace must match signed state; CSRF-protected; rate-limited; returns JSON |
 | `connect_api_key.py` | `POST /integrations/connections/api-key` | `require_owner` (admin+) |
 | `rename_connection.py` | `PATCH /integrations/connections/{connection_id}` | `require_editor` + ownership rule |
 | `test_connection.py` | `POST /integrations/connections/{connection_id}/test` | `require_editor` + ownership rule |
 | `refresh_connection.py` | `POST /integrations/connections/{connection_id}/refresh` | `require_editor` + ownership rule |
 | `revoke_connection.py` | `POST /integrations/connections/{connection_id}/revoke` | `require_editor` + ownership rule (user-scoped own; workspace-scoped admin+) |
 
-Route modules stay thin: parse, call the service op, return the schema.
-The callback route wraps the service in the redirect contract
-(decision 4): success and failure BOTH end in a 302.
+Route modules stay thin: parse, call the service op, return the schema. The
+frontend callback route owns browser navigation. The API callback returns the
+completed connection plus its validated `next_path`; typed failures use the
+normal RFC 7807 response layer.
 
 **Verify**: route smoke lists all ten paths; existing route tests still
 green (`uv run pytest tests/routes -q`).
@@ -611,15 +649,15 @@ authorize/token/userinfo endpoints mocked with `httpx2.MockTransport`):
   `auth_pending` with label + pending state row; callback with valid
   state → credential stored encrypted, scopes filtered to the manifest
   set (mocked token response grants a superset; assert intersection
-  persisted), status per decision 13, 302 to
-  `FRONTEND_URL + next_path` **with `connection_id` and `status`
-  params**; authorization URL contains `include_granted_scopes=false`
-  AND `code_challenge`/`method=S256`; the mocked token exchange fails
+  persisted), status per decision 13, JSON containing the completed connection
+  and validated `next_path`; authorization URL contains `include_granted_scopes=false`
+  AND the provider-specific client ID AND `code_challenge`/`method=S256`;
+  a separate Google Ads assertion pins its distinct client ID; the mocked token exchange fails
   on a mismatched verifier and succeeds on the correct one (PKCE
   relation pinned); **replay** — a second callback with the same valid
-  state → error redirect, security event, no second credential; expired
+  state → typed error, security event, no second credential; expired
   pending row → same rejection even with an unexpired JWT; tampered
-  state → error redirect, no credential, security event row; second
+  state → typed error, no credential, security event row; second
   connect of the same principal under a new label succeeds AND reports
   the sibling in `duplicate_of_connection_ids` (D3).
 - `test_api_key_connect.py`: **api-key-never-stored** — connect with a
@@ -639,9 +677,9 @@ authorize/token/userinfo endpoints mocked with `httpx2.MockTransport`):
   user-scoped connect, cannot start workspace-scoped (403), cannot
   enter api keys (403); read_only can list but not mutate; a non-owner
   member cannot revoke/rename another user's user-scoped connection;
-  **CSRF posture** — POST routes without `X-CSRF-Token` under a session
-  cookie → 403 from the middleware, while the GET callback succeeds
-  with no CSRF token; and a source-level assertion that
+  **CSRF posture** — POST routes, including the callback, without
+  `X-CSRF-Token` under a session cookie → 403 from the middleware; a callback
+  with a valid session-bound token reaches the route; and a source-level assertion that
   `middleware/csrf.py` `exempt_paths` contains no `/integrations` entry.
 
 **Verify**: `TEST_DATABASE_URL=... uv run pytest
@@ -658,29 +696,69 @@ log**, **persisted scopes ⊆ requested scopes** and
 `include_granted_scopes=false`, **multi-connection with
 duplicate-principal warning, never a block** (D3), **crypto-shred on
 revoke regardless of provider-side failure**, and **CSRF enforcement
-untouched**.
+untouched**. Provider-configuration tests pin that Gmail and Google Ads
+resolve different client IDs/secrets and that the loader rejects a shared ID.
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0; `uv run alembic check` clean with
+- [x] `uv run ruff check .` exits 0; `uv run alembic check` clean with
       exactly one new migration (`integration_oauth_states`)
-- [ ] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite)
-- [ ] Route smoke lists exactly the ten Step 5 paths
-- [ ] `git diff middleware/csrf.py` is empty (decision 5)
-- [ ] State replay rejected and PKCE pinned on auth URL + token exchange
+- [x] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite)
+- [x] Route smoke lists nine distinct paths and exactly ten Step 5 operations
+- [x] `git diff middleware/csrf.py` is empty (decision 5)
+- [x] Gmail and Google Ads use provider-owned settings and distinct client IDs;
+      duplicate enabled OAuth client IDs fail at startup; the global settings
+      model contains neither provider's OAuth credentials
+- [x] State replay rejected and PKCE pinned on auth URL + token exchange
       (tests green)
-- [ ] Grep shows `get_secret_value` under
+- [x] Grep shows `get_secret_value` under
       `services/integrations/connections/` only at the write_secret call
       site
-- [ ] `docs/architecture/governance.md` updated: §1 rows "Connect/revoke
+- [x] `docs/architecture/governance.md` updated: §1 rows "Connect/revoke
       own user-scoped integrations (037–038)", "Connect/revoke
       workspace-scoped integrations (037–038)", "Enter API keys / secret
       references (037)" → `[implemented: plan 038]`; §5 api-key-connect
       exception bullet and rotation re-test bullet → `[implemented: plan
       038]`; §1 credential-metadata row → `[implemented (API): plan 038]`
       (042 owns the UI half)
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `git status` shows no modified files outside the reconciled in-scope list
+- [x] `docs/plans/000_README.md` status row updated
+
+## Completion notes (2026-07-10)
+
+- Added `core_0014` for `integration_oauth_states`; Alembic reported no
+  drift and the migration downgraded to `core_0013` and upgraded cleanly.
+- Added ten FastAPI operations across nine paths. OAuth callbacks are completed
+  by an authenticated frontend POST, PKCE verifiers use a purpose-derived key,
+  state rows are consumed
+  before provider exchange, and ownership/provider claims are rebound to the
+  pending connection before tokens are accepted.
+- Gmail and Google Ads use provider-owned `BaseSettings` objects and distinct
+  OAuth client credentials. Operationally they require distinct Google Cloud
+  projects because revocation is project-wide; the provider loader rejects a
+  reused configured client ID.
+- API-key intake retains only a rendered secret reference; authorized metadata
+  responses may return that reference but never resolve it. Remote OAuth revoke
+  is best effort and local token crypto-shredding is guaranteed.
+- Verification: Ruff passed; 97 focused integration/settings tests passed;
+  the full API suite passed (`676 passed`); OpenAPI reported nine paths and ten
+  operations; `middleware/csrf.py` remained unchanged.
+- A focused frontend callback route now receives the provider redirect and
+  completes through the authenticated API POST; no broader integrations UI or
+  agent-runtime changes were required. Code Mode was not added: this plan is an
+  HTTP authentication/lifecycle slice and has no sandboxed agent-written Python
+  workload.
+- Post-completion review hardened the delivered surface: Google connects now
+  request the OIDC identity scopes their userinfo call requires; duplicate
+  warnings are owner-scoped; workspace admins cannot mutate personal
+  connections; reauthorization retains the previous credential until success;
+  callback failure is audited and retryable; callback writes revalidate under
+  a row lock; identity-test auth failures durably mark `needs_reauth`; and
+  connection listing is paginated with batched credential loading.
+- A 2026-07-13 contract correction aligned integration OAuth with login/link
+  OAuth: providers now return to the web app, which completes through an
+  authenticated, CSRF-protected API POST. The obsolete API GET browser surface
+  was removed, and callback state is bound to the current user and workspace.
 
 ## STOP conditions
 
@@ -708,7 +786,7 @@ Stop and report back (do not improvise) if:
 
 ## Maintenance notes
 
-- **Consumers**: 039 replaces the `# discovery enqueue seam — plan 039`
+- **Consumers**: 039 replaces the named resource-discovery enqueue seam
   comments with `enqueue_discovery(...)` and owns everything after
   `discovery_pending`; its sweep also purges expired
   `integration_oauth_states` rows and stale `auth_pending` connections.
@@ -718,9 +796,9 @@ Stop and report back (do not improvise) if:
   connect dialogs (label required — D3), inline rename, the
   re-authenticate CTA (start with `connection_id`), and the
   duplicate-principal warning.
-- **Redirect URI discipline**: `INTEGRATIONS_OAUTH_REDIRECT_URI` must
-  exactly match the provider console value; the callback never accepts
-  a caller-supplied redirect (state carries only a relative
+- **Redirect URI discipline**: `INTEGRATIONS_OAUTH_REDIRECT_URI` must exactly
+  match the frontend callback URL registered in the provider console; the API
+  never accepts a caller-supplied redirect (state carries only a relative
   `next_path`) — keep it that way.
 - **Provider registries stay separate**: login providers
   (`core/auth/oauth_providers/`) authenticate humans; the integrations
@@ -728,8 +806,9 @@ Stop and report back (do not improvise) if:
   a login client mint integration credentials (different client ids,
   decision 11).
 - Reviewers should scrutinize: the callback's transaction boundaries
-  (pending-row consume + credential swap + status transition commit
-  atomically or roll back to `auth_pending`), the stub-credential
+  (pending state is consumed in its own committed transaction before provider
+  exchange so a failed exchange cannot replay; credential swap + status
+  transition then commit atomically or roll back to `auth_pending`), the stub-credential
   fingerprint never colliding with a real one (`pending:` prefix),
   SecretStr handling in `connect_api_key` (no `repr` leaks), the
   verifier never appearing in the JWT or logs, and that both callback

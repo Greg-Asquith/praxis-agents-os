@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.integration import IntegrationNotFoundError
 from models.integrations import ExternalCredential, IntegrationConnection
 from services.audit_events import AuditAction, AuditResourceType
-from services.integrations.connections import transition_connection_status
+from services.integrations.connections.transition_connection_status import (
+    transition_connection_status,
+)
 from services.integrations.domain import CONNECTION_STATUS_REVOKED
 from services.integrations.utils import record_integration_audit
 
@@ -19,6 +21,7 @@ async def revoke_credential(
     db: AsyncSession,
     *,
     credential_id: UUID,
+    connection_audit_action: AuditAction = AuditAction.UPDATE,
 ) -> ExternalCredential:
     credential = await db.scalar(
         select(ExternalCredential)
@@ -43,6 +46,7 @@ async def revoke_credential(
             connection,
             CONNECTION_STATUS_REVOKED,
             reason="credential_revoked",
+            audit_action=connection_audit_action,
         )
     await db.flush()
     await record_integration_audit(

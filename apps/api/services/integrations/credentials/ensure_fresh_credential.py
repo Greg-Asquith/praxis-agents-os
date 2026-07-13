@@ -36,6 +36,7 @@ async def ensure_fresh_credential(
     *,
     credential_id: UUID,
     refresh_token: RefreshTokenFn | None = None,
+    force: bool = False,
 ) -> ExternalCredential:
     """Return a usable credential from an isolated, row-locked transaction.
 
@@ -63,7 +64,7 @@ async def ensure_fresh_credential(
                 provider_key=credential.provider_key,
                 operation="ensure_fresh_credential",
             )
-        if not _needs_refresh(credential):
+        if not force and not _needs_refresh(credential):
             await refresh_db.commit()
             return credential
 

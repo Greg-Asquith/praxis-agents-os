@@ -18,6 +18,7 @@ depends on against the installed pydantic-ai version (currently 2.1.0):
 - ALLOW_MODEL_REQUESTS=False does not break TestModel-based tests.
 """
 
+import asyncio
 import json
 
 import pytest
@@ -29,7 +30,14 @@ from pydantic_ai import (
     ToolDenied,
     models as pai_models,
 )
-from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 pytestmark = pytest.mark.asyncio
@@ -195,6 +203,53 @@ async def test_deferred_results_resume_denied_path() -> None:
     # the run completes; the denial does not surface as a deleted result
     assert not isinstance(resumed.output, DeferredToolRequests)
     assert "deleted" not in json.dumps(resumed.output)
+
+
+def _build_overlap_probe_agent() -> tuple[Agent, dict[str, int]]:
+    """Two slow tools called in one model response, tracking concurrent execution."""
+
+    def two_calls_then_done(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[ToolCallPart(tool_name="slow_one"), ToolCallPart(tool_name="slow_two")]
+            )
+        return ModelResponse(parts=[TextPart(content="done")])
+
+    agent = Agent(FunctionModel(two_calls_then_done), name="spike-sequential")
+    gauge = {"active": 0, "max_active": 0}
+
+    async def probe() -> str:
+        gauge["active"] += 1
+        gauge["max_active"] = max(gauge["max_active"], gauge["active"])
+        await asyncio.sleep(0.01)
+        gauge["active"] -= 1
+        return "ok"
+
+    @agent.tool_plain(name="slow_one")
+    async def slow_one() -> str:
+        return await probe()
+
+    @agent.tool_plain(name="slow_two")
+    async def slow_two() -> str:
+        return await probe()
+
+    return agent, gauge
+
+
+async def test_parallel_tool_calls_overlap_by_default() -> None:
+    """Default mode runs same-response tool calls concurrently; sharing one
+    AsyncSession across tools is only safe under the sequential guard below."""
+    agent, gauge = _build_overlap_probe_agent()
+    await agent.run("go")
+    assert gauge["max_active"] == 2
+
+
+async def test_sequential_mode_serializes_parallel_tool_calls() -> None:
+    """The execute_run guard: sequential mode never overlaps tool execution."""
+    agent, gauge = _build_overlap_probe_agent()
+    with Agent.parallel_tool_call_execution_mode("sequential"):
+        await agent.run("go")
+    assert gauge["max_active"] == 1
 
 
 async def test_test_model_runs_under_allow_model_requests_guard(

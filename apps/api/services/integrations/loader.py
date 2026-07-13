@@ -6,11 +6,12 @@ import importlib
 
 from core.settings import settings
 from services.integrations.manifest import register_provider_manifest
-from services.integrations.plugin import IntegrationProviderPlugin
+from services.integrations.plugin import IntegrationProviderPlugin, register_provider_plugin
 
 
 def load_enabled_providers() -> None:
     """Import and register every provider named by the single boot allowlist."""
+    oauth_client_owners: dict[str, str] = {}
     for key in settings.INTEGRATIONS_ENABLED_PROVIDERS:
         try:
             module = importlib.import_module(f"integrations.{key}")
@@ -22,6 +23,17 @@ def load_enabled_providers() -> None:
         if not isinstance(plugin, IntegrationProviderPlugin):
             raise TypeError(f"Integration provider package '{key}' has no valid PROVIDER")
         _validate_plugin(plugin, expected_key=key)
+        if plugin.oauth_config is not None:
+            client_id = plugin.oauth_config().client_id.strip()
+            previous_owner = oauth_client_owners.get(client_id) if client_id else None
+            if previous_owner is not None:
+                raise RuntimeError(
+                    "OAuth integration providers must use isolated client IDs: "
+                    f"{previous_owner} and {key} share one"
+                )
+            if client_id:
+                oauth_client_owners[client_id] = key
+        register_provider_plugin(plugin)
         register_provider_manifest(plugin.manifest)
 
         if plugin.tool_definitions:
@@ -41,6 +53,10 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
     if manifest.requires_discovery and plugin.discover_resources is None:
         raise RuntimeError(
             f"Discoverable integration provider '{expected_key}' must implement discovery"
+        )
+    if "oauth" in manifest.auth_modes and plugin.oauth_config is None:
+        raise RuntimeError(
+            f"OAuth integration provider '{expected_key}' must own its OAuth configuration"
         )
     if plugin.tool_definitions:
         from services.agents.runtime.tools.contract import validate_definition

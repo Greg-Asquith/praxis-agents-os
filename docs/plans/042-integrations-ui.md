@@ -84,13 +84,11 @@
 6. **OAuth connect flow**: a mutation POSTs
    `/integrations/connections/oauth/start` → response carries the
    authorize URL → `window.location.assign(url)` (full-page redirect;
-   SPA state is rebuilt on return). The backend callback redirects to
-   `/integrations?connection_id=<uuid>&status=<status>` on success
-   (failure: `integration_error=<code>`) — pinned by 038 decision 4.
-   The route reads/validates those search params via TanStack Router
-   search-param parsing, shows a success/error `Alert`, invalidates
-   connection queries, and immediately `navigate({ replace: true })`s
-   the params away so refresh doesn't replay the toast.
+   SPA state is rebuilt on return). The provider returns to the frontend
+   `/integrations/oauth/callback` route, which POSTs `{code, state, error}`
+   to the API callback and navigates to the validated `next_path` on success.
+   It shows an error `Alert` when completion fails and never sends the browser
+   to an API GET endpoint — pinned by 038 decision 4.
 7. **One status-rendering map for the 8-state machine** (`auth_pending,
    discovery_pending, needs_resource_selection, active, degraded,
    error, revoked, needs_reauth`), in
@@ -639,9 +637,9 @@ Stop and report back (do not improvise) if:
   capabilities you report.
 - 040 is unimplemented when you reach Steps 7–8 — land Steps 1–6 as the
   first slice and report; do NOT stub context endpoints in the frontend.
-- 038's OAuth callback does not redirect with the pinned
-  `connection_id`/`status` (or `integration_error`) search params — the
-  decision-6 flow needs rework, not a workaround.
+- 038's OAuth callback does not accept the frontend POST or return the
+  completed connection plus validated `next_path` — the decision-6 flow needs
+  rework, not a workaround.
 - Any integration endpoint returns a secret value or full token — a
   backend defect (governance §5); report it, never render or cache it.
 - The connection status values differ from the 8-state machine —

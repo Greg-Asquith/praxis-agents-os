@@ -4,7 +4,7 @@ import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/con
 import { normalizeOptionalText } from "@/lib/format"
 
 export type LocalApprovalDecision =
-  | { decision: "pending"; message: ""; overrideArgs: "" }
+  | { decision: "pending"; message: ""; overrideArgs: string }
   | { decision: "approved"; message: ""; overrideArgs: string }
   | { decision: "denied"; message: string; overrideArgs: "" }
 
@@ -27,7 +27,7 @@ export function approveDecision(decision: LocalApprovalDecision): LocalApprovalD
   return {
     decision: "approved",
     message: "",
-    overrideArgs: decision.decision === "approved" ? decision.overrideArgs : "",
+    overrideArgs: decision.decision === "denied" ? "" : decision.overrideArgs,
   }
 }
 
@@ -37,6 +37,15 @@ export function denyDecision(decision: LocalApprovalDecision): LocalApprovalDeci
     message: decision.decision === "denied" ? decision.message : "",
     overrideArgs: "",
   }
+}
+
+export function shouldAutoSubmitDecisions(
+  previous: LocalApprovalDecision,
+  next: LocalApprovalDecision,
+  summary: ApprovalDecisionSummary
+): boolean {
+  const isNewApproval = next.decision === "approved" && previous.decision !== "approved"
+  return isNewApproval && summary.allDecided && summary.denied === 0
 }
 
 export function buildResumeDecisions(

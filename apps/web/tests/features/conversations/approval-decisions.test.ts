@@ -5,6 +5,7 @@ import {
   approveDecision,
   buildResumeDecisions,
   denyDecision,
+  shouldAutoSubmitDecisions,
   summarizeApprovalDecisions,
   type LocalApprovalDecisionMap,
 } from "@/features/conversations/approval-decisions"
@@ -29,11 +30,18 @@ const approvals: PendingToolApproval[] = [
 ]
 
 describe("approval decision helpers", () => {
-  it("approves decisions while preserving only existing override args", () => {
+  it("approves decisions while preserving pending or approved override args", () => {
     expect(approveDecision(DEFAULT_APPROVAL_DECISION)).toEqual({
       decision: "approved",
       message: "",
       overrideArgs: "",
+    })
+    expect(
+      approveDecision({ decision: "pending", message: "", overrideArgs: '{"ok":true}' })
+    ).toEqual({
+      decision: "approved",
+      message: "",
+      overrideArgs: '{"ok":true}',
     })
     expect(
       approveDecision({ decision: "approved", message: "", overrideArgs: '{"ok":true}' })
@@ -89,6 +97,47 @@ describe("approval decision helpers", () => {
       denied: 1,
       pending: 0,
     })
+  })
+
+  it("auto-submits only when a new approval completes an all-approved set", () => {
+    const pending = DEFAULT_APPROVAL_DECISION
+    const approved = { decision: "approved", message: "", overrideArgs: "" } as const
+    const allApproved = { allDecided: true, approved: 2, denied: 0, pending: 0 }
+
+    expect(shouldAutoSubmitDecisions(pending, approved, allApproved)).toBe(true)
+    // Editing override args on an already approved decision must not re-submit.
+    expect(shouldAutoSubmitDecisions(approved, approved, allApproved)).toBe(false)
+    // A denial in the set requires the explicit send action.
+    expect(
+      shouldAutoSubmitDecisions(pending, approved, {
+        allDecided: true,
+        approved: 1,
+        denied: 1,
+        pending: 0,
+      })
+    ).toBe(false)
+    // Undecided requests remain.
+    expect(
+      shouldAutoSubmitDecisions(pending, approved, {
+        allDecided: false,
+        approved: 1,
+        denied: 0,
+        pending: 1,
+      })
+    ).toBe(false)
+    // Denying never auto-submits.
+    expect(
+      shouldAutoSubmitDecisions(
+        pending,
+        { decision: "denied", message: "", overrideArgs: "" },
+        {
+          allDecided: true,
+          approved: 0,
+          denied: 1,
+          pending: 0,
+        }
+      )
+    ).toBe(false)
   })
 
   it("builds resume payloads and validates pending or invalid overrides", () => {

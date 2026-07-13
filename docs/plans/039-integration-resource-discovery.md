@@ -176,8 +176,11 @@ Recorded so they are not re-proposed; full history in
 
 ## Why this matters
 
-038 leaves discovery-requiring connections parked in `discovery_pending`
-with an honest seam comment. This plan makes the status machine real:
+038 leaves a conditional discovery-enqueue seam, while the shipped manifests
+remain `requires_discovery=False` until their real callables land in 041.
+Connections authenticated before then are honestly `active`; after 041 flips
+the manifests, the periodic re-discovery pass picks them up. This plan makes
+that status machine real:
 connections flow to `needs_resource_selection`/`active` driven by what
 the provider actually returned, users pick which sub-entities (Google
 Ads accounts under an MCC, Airtable bases — D4) agents may touch,

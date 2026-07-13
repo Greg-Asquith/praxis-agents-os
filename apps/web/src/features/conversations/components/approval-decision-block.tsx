@@ -46,12 +46,12 @@ export function ApprovalDecisionBlock({
             controls.onDecisionChange(denyDecision(controls.decision))
           }}
         />
-        {controls.decision.decision === "approved" ? (
+        {controls.decision.decision !== "denied" ? (
           <ApprovalOverrideInputField
             id={`${activity.id}-override`}
             onChange={(overrideArgs) => {
               controls.onDecisionChange({
-                decision: "approved",
+                decision: controls.decision.decision === "approved" ? "approved" : "pending",
                 message: "",
                 overrideArgs,
               })

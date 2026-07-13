@@ -155,6 +155,22 @@ class IntegrationConnection(BaseModel):
     )
 
 
+class IntegrationOAuthState(Base, TimestampMixin):
+    """Single-use server-side state for an integration OAuth handshake."""
+
+    __tablename__ = "integration_oauth_states"
+
+    jti = Column(String(64), primary_key=True)
+    connection_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_connections.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_verifier_encrypted = Column(Text, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class IntegrationResource(BaseModel):
     """Provider resource discovered beneath an integration connection."""
 

@@ -32,6 +32,7 @@ class SecurityEventType(StrEnum):
     AUTH_TOTP_VERIFIED = "auth_totp_verified"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     CSRF_VALIDATION_FAILED = "csrf_validation_failed"
+    INTEGRATION_OAUTH_STATE_INVALID = "integration_oauth_state_invalid"
     WORKSPACE_MEMBERSHIP_CREATED = "workspace_membership_created"
     WORKSPACE_MEMBERSHIP_UPDATED = "workspace_membership_updated"
     WORKSPACE_MEMBERSHIP_DELETED = "workspace_membership_deleted"

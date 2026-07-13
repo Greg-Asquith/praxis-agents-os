@@ -1,9 +1,9 @@
 // apps/web/src/features/conversations/components/tool-call-row.tsx
 
-import {
-  ApprovalDecisionBlock,
-  type ToolApprovalDecisionControls,
-} from "@/features/conversations/components/approval-decision-block"
+import { use } from "react"
+
+import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
+import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import {
@@ -37,24 +37,20 @@ import type { ToolUi } from "@/features/tools/types"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 
 type ToolCallRowProps = {
-  approvalDecision?: ToolApprovalDecisionControls
   activity: ToolActivity
   compact?: boolean
   defaultOpen?: boolean
 }
 
-export function ToolCallRow({
-  activity,
-  approvalDecision,
-  compact = false,
-  defaultOpen = false,
-}: ToolCallRowProps) {
+export function ToolCallRow({ activity, compact = false, defaultOpen = false }: ToolCallRowProps) {
   const presentationFor = useToolPresentations()
+  const approvalDecision = use(ApprovalDecisionContext)(activity) ?? undefined
+  const shouldOpen = defaultOpen || approvalDecision !== undefined
   const customRow = renderCustomToolCallRow({
     activity,
     ...(approvalDecision ? { approvalDecision } : {}),
     compact,
-    defaultOpen,
+    defaultOpen: shouldOpen,
   })
   if (customRow) {
     return customRow
@@ -99,7 +95,7 @@ export function ToolCallRow({
   return (
     <ToolActivityRowShell
       compact={compact}
-      defaultOpen={defaultOpen}
+      defaultOpen={shouldOpen}
       expandable={expandable}
       header={header}
     >

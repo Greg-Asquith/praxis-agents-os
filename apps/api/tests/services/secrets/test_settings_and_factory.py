@@ -51,6 +51,20 @@ def test_local_master_keys_cannot_leave_local() -> None:
         )
 
 
+def test_non_local_integration_oauth_redirect_requires_https() -> None:
+    with pytest.raises(ValueError, match="INTEGRATIONS_OAUTH_REDIRECT_URI must use HTTPS"):
+        _production_settings(
+            SECRET_PROVIDER="aws_secrets_manager",  # noqa: S106 - provider selector
+            CREDENTIAL_MASTER_KEYS=None,
+            INTEGRATIONS_OAUTH_REDIRECT_URI="http://api.example.test/callback",
+        )
+
+
+def test_local_integration_oauth_redirect_may_use_http() -> None:
+    resolved = Settings(INTEGRATIONS_OAUTH_REDIRECT_URI="http://localhost:8000/callback")
+    assert resolved.INTEGRATIONS_OAUTH_REDIRECT_URI.startswith("http://")
+
+
 def test_factory_supports_all_four_backends(monkeypatch) -> None:
     cases = {
         "local": "LocalSecretsProvider",

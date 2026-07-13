@@ -35,11 +35,11 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Mutate others' schedules *(enforced today: 021 owner-or-admin)* | — | — | ✓ | ✓ |
 | Upload/edit/delete files (031–032) *(enforced today: 032, `services/files` access gates)* | — | ✓ | ✓ | ✓ |
 | Hard-delete / purge files (032) *(enforced today: 032, `require_file_purge_access`)* | — | — | ✓ | ✓ |
-| Connect/revoke own user-scoped integrations (037–038) | — | ✓ | ✓ | ✓ |
-| Connect/revoke workspace-scoped integrations (037–038) | — | — | ✓ | ✓ |
+| Connect/revoke own user-scoped integrations (037–038) *[implemented: plan 038]* | — | ✓ | ✓ | ✓ |
+| Connect/revoke workspace-scoped integrations (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Select integration resources / edit context groups (039–040) | — | ✓ | ✓ | ✓ |
-| View credential metadata — never secret values (037/042) | — | — | ✓ | ✓ |
-| Enter API keys / secret references (037) | — | — | ✓ | ✓ |
+| View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
+| Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Create/edit KB documents (044/046) | — | ✓ | ✓ | ✓ |
 | Delete workspace-scope memories (049) | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) | — | ✓ | ✓ | ✓ |
@@ -133,13 +133,13 @@ enforcement second**. Each counter names the plan that adds it. All values
   [implemented: plan 037]
 - The API accepts **references only** (`{provider, name, version}`). A raw
   secret value in a request body is a validation error — except the
-  deliberate api-key connect flow (037), which immediately writes the value
+  deliberate api-key connect flow (037–038), which immediately writes the value
   to the manager and stores only the reference. [references-only storage
-  implemented: plan 037; api-key HTTP flow pending plan 038]
+  implemented: plan 037; api-key HTTP flow implemented: plan 038]
 - Only OAuth tokens are stored (encrypted) in Postgres; everything else is
   a reference resolved at call time. [implemented: plan 037]
 - Rotation = new secret version + connection re-test; the old version stays
-  readable until the new one is confirmed. [default — confirm at review]
+  readable until the new one is confirmed. [implemented: plan 038]
 - Entry rights per §1 (admin+). [default — confirm at review]
 - Audited events: reference create/update/delete and every **resolve
   failure** — never secret values, and no audit on successful resolves (too

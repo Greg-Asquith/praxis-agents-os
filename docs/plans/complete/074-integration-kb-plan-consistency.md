@@ -9,7 +9,7 @@
 > row in `docs/plans/000_README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat c770a1c..HEAD -- docs/plans/038-integration-oauth-connect-flows.md docs/plans/039-integration-resource-discovery.md docs/plans/042-integrations-ui.md docs/plans/043-embeddings-provider-service.md docs/plans/044-kb-models-ingestion.md docs/plans/045-hybrid-search-eval-harness.md`
+> `git diff --stat c770a1c..HEAD -- docs/plans/complete/038-integration-oauth-connect-flows.md docs/plans/039-integration-resource-discovery.md docs/plans/042-integrations-ui.md docs/plans/043-embeddings-provider-service.md docs/plans/044-kb-models-ingestion.md docs/plans/045-hybrid-search-eval-harness.md`
 > plus the execution probes
 > `ls apps/api/services/integrations/discovery apps/api/services/embeddings apps/api/services/kb apps/api/routes/kb apps/web/src/features/integrations 2>/dev/null`
 > (all must be absent) and the five README rows (all TODO). If a target's
@@ -120,7 +120,7 @@ exists.
 
 - `docs/plans/{039,042,043,044,045}-*.md` — append the amendment blocks;
   add one pointer line each to the executor-instructions blockquote
-- `docs/plans/038-integration-oauth-connect-flows.md` — the companion
+- `docs/plans/complete/038-integration-oauth-connect-flows.md` — the companion
   rename-route block (decision 2) + pointer line
 - `docs/plans/000_README.md` — add the 074 row; note the amendments
 

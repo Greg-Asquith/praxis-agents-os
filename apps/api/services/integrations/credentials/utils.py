@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.integration import IntegrationError
 from models.integrations import ExternalCredential, IntegrationConnection
 from services.audit_events import AuditAction, AuditResourceType, AuditStatus
-from services.integrations.connections import transition_connection_status
+from services.integrations.connections.transition_connection_status import (
+    transition_connection_status,
+)
 from services.integrations.domain import CONNECTION_STATUS_NEEDS_REAUTH
 from services.integrations.utils import record_integration_audit
 

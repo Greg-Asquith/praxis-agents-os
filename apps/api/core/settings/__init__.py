@@ -90,6 +90,15 @@ class Settings(
             raise ValueError("CREDENTIAL_MASTER_KEYS is only allowed when ENVIRONMENT=local")
 
         if (
+            self.ENVIRONMENT != "local"
+            and self.INTEGRATIONS_OAUTH_REDIRECT_URI
+            and not self.INTEGRATIONS_OAUTH_REDIRECT_URI.startswith("https://")
+        ):
+            raise ValueError(
+                "INTEGRATIONS_OAUTH_REDIRECT_URI must use HTTPS outside local environments"
+            )
+
+        if (
             self.METRICS_ENABLED
             and not self.METRICS_TOKEN
             and self.ENVIRONMENT not in {"local", "development"}

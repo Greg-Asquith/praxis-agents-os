@@ -89,15 +89,22 @@ async def test_secret_reference_store_rejects_oauth_mode_before_database_write(
 async def test_duplicate_principal_detection_warns_without_blocking(db_session) -> None:
     first = await _stored(db_session, principal="same-principal")
     second = await _stored(db_session, principal="same-principal")
+    cross_workspace = await _stored(db_session, principal="same-principal")
     first_connection = await _connection(db_session, first)
     second_connection = await _connection(db_session, second)
+    cross_workspace_connection = await _connection(db_session, cross_workspace)
+    second_connection.owner_workspace_id = first_connection.owner_workspace_id
+    await db_session.flush()
     duplicates = await find_duplicate_principals(
         db_session,
         provider_key="test_provider",
         principal_fingerprint=first.principal_fingerprint,
+        owner_user_id=None,
+        owner_workspace_id=first_connection.owner_workspace_id,
         exclude_credential_id=first.id,
     )
     assert duplicates == [second_connection.id]
+    assert cross_workspace_connection.id not in duplicates
     assert first_connection.id != second_connection.id
 
 

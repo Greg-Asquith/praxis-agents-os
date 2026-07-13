@@ -150,18 +150,20 @@
    and what changed" must be answerable from audit alone. Never message
    bodies, query results, or tokens in audit details. Provider packages
    call this one function; they never write audit rows their own way.
-9. **Provider settings, env-gated availability**: extend
-   `core/settings/integrations.py` with
+9. **Provider settings, env-gated availability**: extend the provider-owned
+   `apps/api/integrations/google_ads/settings.py` object from 038 with
    `GOOGLE_ADS_DEVELOPER_TOKEN: SecretStr | None = None` (SecretStr per
    the `ANTHROPIC_API_KEY` precedent — the client reads it via
    `.get_secret_value()` for the `developer-token` header; the value
    must never appear in logs, audit details, or exception context),
-   `GOOGLE_ADS_LOGIN_CUSTOMER_ID: str | None = None`, and
-   `INTEGRATION_REPORT_MAX_ROWS: int = 1000`. Availability gating:
+   `GOOGLE_ADS_LOGIN_CUSTOMER_ID: str | None = None`. Keep the genuinely
+   shared `INTEGRATION_REPORT_MAX_ROWS: int = 1000` in
+   `core/settings/integrations.py`. Availability gating:
    `permissions.is_tool_allowed` (`tools/permissions.py:8-15` — the stub
    seam 040 deliberately left) returns `False` for integration-provider
-   tools whose required settings are absent (gmail →
-   `INTEGRATIONS_GOOGLE_CLIENT_ID`; google_ads → that AND the developer
+   tools whose required settings are absent (gmail → provider-owned
+   `GMAIL_OAUTH_CLIENT_ID`; google_ads → provider-owned
+   `GOOGLE_ADS_OAUTH_CLIENT_ID` AND the developer
    token; airtable → always available once enabled). Keep it tiny and
    data-driven. This composes with 038's `configured` flag on
    `list_providers`; there is no manifest-level enable flag (enablement
@@ -233,7 +235,8 @@ Recorded so they are not re-proposed; full history in
   `apps/api/integrations/<key>/` (decision 13); nothing is registered
   through the registry's side-effect import block.
 - **`GOOGLE_ADS_DEVELOPER_TOKEN: str | None`** — plan 068 typed it
-  `SecretStr | None` (decision 9).
+  `SecretStr | None` (decision 9); it remains in the Google Ads provider
+  settings object, not the global integration settings mixin.
 - **Manifest entries "created env-gated in the 037 manifest module"** —
   manifests live inside the provider packages (delivered); there is no
   central manifest data and no `is_provider_enabled`. Step 2 edits the
@@ -419,8 +422,11 @@ Edit the three package manifests in place:
   `requires_discovery=True` (decision 6 — one implicit mailbox resource
   still flows through discovery so Gmail shares the context/fan-out
   shape).
-- `google_ads`: shipped shape already matches; confirm.
-- `airtable`: add the connect-form help text naming the required PAT
+- `google_ads`: flip `requires_discovery=True` alongside its real discovery
+  callable. The 037 completion decision deliberately left it false while
+  `discover_resources=None`.
+- `airtable`: flip `requires_discovery=True` alongside its real discovery
+  callable, and add the connect-form help text naming the required PAT
   scopes (decision 5) via the manifest metadata surface agreed with 038
   (extend `IntegrationProviderManifest` with an optional
   `connect_help: str = ""` field if 038 did not already — a data-only

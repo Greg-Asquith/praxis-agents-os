@@ -427,6 +427,24 @@ def _build_rate_limit_error(result: "RateLimitResult") -> RateLimitError:
     )
 
 
+async def enforce_rate_limit(
+    *,
+    subject_ip: str,
+    endpoint: str,
+    custom_limit: int,
+    custom_window: int,
+) -> None:
+    """Apply one explicit fail-closed rate limit outside a generic dependency."""
+    result = await rate_limiter.check_rate_limit(
+        ip=subject_ip,
+        endpoint=endpoint,
+        custom_limit=custom_limit,
+        custom_window=custom_window,
+    )
+    if not result.allowed:
+        raise _build_rate_limit_error(result)
+
+
 def require_rate_limit(
     limit_type: str = "requests_per_minute",
     custom_limit: int | None = None,
