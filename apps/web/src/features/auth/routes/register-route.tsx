@@ -45,7 +45,7 @@ export function RegisterRoute() {
 
   return (
     <AuthCard
-      title="Create account"
+      title="Create Account"
       description="Start with a personal workspace. You can add more later."
       footer={
         <span>
@@ -53,14 +53,14 @@ export function RegisterRoute() {
         </span>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
         <OAuthLoginProviders />
 
         <form onSubmit={handleSubmit}>
           <FieldGroup>
             {formError && (
               <Alert variant="destructive">
-                <AlertTitle>Registration failed</AlertTitle>
+                <AlertTitle>Registration Failed</AlertTitle>
                 <AlertDescription>{formError}</AlertDescription>
               </Alert>
             )}
@@ -100,7 +100,7 @@ export function RegisterRoute() {
               <FieldDescription>Use at least 8 characters.</FieldDescription>
             </Field>
 
-            <Button className="w-full" disabled={registerMutation.isPending} type="submit">
+            <Button className="h-10 w-full" disabled={registerMutation.isPending} type="submit">
               <UserPlusIcon data-icon="inline-start" />
               {registerMutation.isPending ? "Creating Account" : "Create Account"}
             </Button>

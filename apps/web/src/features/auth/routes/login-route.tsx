@@ -56,7 +56,7 @@ export function LoginRoute() {
         </span>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
         <OAuthLoginProviders />
 
         <form onSubmit={handleSubmit}>
@@ -102,7 +102,7 @@ export function LoginRoute() {
             </Field>
 
             <Field>
-              <Button className="w-full" disabled={loginMutation.isPending} type="submit">
+              <Button className="h-10 w-full" disabled={loginMutation.isPending} type="submit">
                 <LogInIcon data-icon="inline-start" />
                 {loginMutation.isPending ? "Signing In" : "Sign In"}
               </Button>

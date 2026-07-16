@@ -21,9 +21,9 @@ type AuthCardProps = {
 
 export function AuthCard({ title, description, footer, children }: AuthCardProps) {
   return (
-    <Card className="shadow-xs">
+    <Card className="shadow-xs [--card-spacing:--spacing(6)]">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-xl">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>{children}</CardContent>

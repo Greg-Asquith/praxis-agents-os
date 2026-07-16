@@ -57,18 +57,18 @@ export function OAuthLoginProviders() {
     <div className="flex flex-col gap-4">
       {error && (
         <Alert variant="destructive">
-          <AlertTitle>Provider sign in failed</AlertTitle>
+          <AlertTitle>Provider Sign In Failed</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <div className="grid gap-2">
+      <div className="grid gap-2.5">
         {providers.map((provider) => {
           const showOpeningState =
             showPendingFeedback && pendingProvider === provider.name && startLoginMutation.isPending
           return (
             <Button
-              className="w-full"
+              className="h-10 w-full"
               disabled={showPendingFeedback}
               key={provider.name}
               onClick={() => {
@@ -86,7 +86,7 @@ export function OAuthLoginProviders() {
         })}
       </div>
 
-      <FieldSeparator>or</FieldSeparator>
+      <FieldSeparator className="my-0">or</FieldSeparator>
     </div>
   )
 }

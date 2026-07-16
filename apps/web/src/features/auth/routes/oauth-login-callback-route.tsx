@@ -14,7 +14,7 @@ export function OAuthLoginCallbackRoute() {
 
   return (
     <AuthCard
-      title="Completing sign in"
+      title="Completing Sign In"
       description="Finishing the provider sign-in flow."
       footer={
         <Button
@@ -29,12 +29,12 @@ export function OAuthLoginCallbackRoute() {
     >
       {error ? (
         <Alert variant="destructive">
-          <AlertTitle>Sign in failed</AlertTitle>
+          <AlertTitle>Sign In Failed</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : twoFactorPending ? (
         <Alert>
-          <AlertTitle>Two-step verification required</AlertTitle>
+          <AlertTitle>Two-Step Verification Required</AlertTitle>
           <AlertDescription>
             Your sign-in was accepted. Entering a verification code will be available with account
             security settings.
