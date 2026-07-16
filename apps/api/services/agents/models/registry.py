@@ -20,6 +20,33 @@ _CATALOG: tuple[ModelInfo, ...] = (
     # OpenAI (GPT-5.x family; reasoning + vision across the line)
     ModelInfo(
         provider=PROVIDER_OPENAI,
+        model="gpt-5.6-sol",
+        display_name="GPT-5.6 Sol",
+        context_window=1_050_000,
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-5.6-terra",
+        display_name="GPT-5.6 Terra",
+        context_window=1_050_000,
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-5.6-luna",
+        display_name="GPT-5.6 Luna",
+        context_window=1_050_000,
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
         model="gpt-5.5",
         display_name="GPT-5.5",
         context_window=1_000_000,
@@ -39,7 +66,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ModelInfo(
         provider=PROVIDER_OPENAI,
         model="gpt-5.4-mini",
-        display_name="GPT-5.4 mini",
+        display_name="GPT-5.4 Mini",
         context_window=1_000_000,
         chars_per_token=4.0,
         supports_thinking=True,
@@ -48,7 +75,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ModelInfo(
         provider=PROVIDER_OPENAI,
         model="gpt-5.4-nano",
-        display_name="GPT-5.4 nano",
+        display_name="GPT-5.4 Nano",
         context_window=1_000_000,
         chars_per_token=4.0,
         supports_vision=True,
@@ -138,7 +165,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ModelInfo(
         provider=PROVIDER_GOOGLE,
         model="gemini-3.1-flash-lite",
-        display_name="Gemini 3.1 Flash-Lite",
+        display_name="Gemini 3.1 Flash Lite",
         context_window=1_000_000,
         chars_per_token=4.0,
         supports_vision=True,
