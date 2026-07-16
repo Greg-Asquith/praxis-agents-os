@@ -1,8 +1,13 @@
 // apps/web/src/features/conversations/routes/conversation-route.tsx
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useParams } from "@tanstack/react-router"
-import { useQueryClient, useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query"
+import {
+  useQueryClient,
+  useSuspenseQueries,
+  useSuspenseQuery,
+  type Query,
+} from "@tanstack/react-query"
 import { ArrowDownIcon, LockKeyholeIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -11,6 +16,7 @@ import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { MessageList } from "@/features/conversations/components/message-list"
+import { conversationHealPollInterval } from "@/features/conversations/conversation-heal-polling"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
@@ -18,10 +24,10 @@ import { conversationsQueryKeys } from "@/features/conversations/api/list-conver
 import { useAgentRunApprovalStateQuery } from "@/features/conversations/api/get-approval-state"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
-import { useConversationHealLoop } from "@/features/conversations/hooks/use-conversation-heal-loop"
 import { useConversationReadReceipt } from "@/features/conversations/hooks/use-conversation-read-receipt"
 import { useConversationRunState } from "@/features/conversations/hooks/use-conversation-run-state"
 import { conversationAgentLabel } from "@/features/conversations/format"
+import { pendingMessagesForConversation } from "@/features/conversations/message-parts"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
 import {
   EMPTY_CONVERSATION_MESSAGES,
@@ -31,6 +37,7 @@ import type {
   AgentRunResumeDecision,
   Conversation,
   ConversationActiveRunResponse,
+  ConversationMessagesResponse,
 } from "@/features/conversations/types"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
@@ -64,7 +71,7 @@ function ConversationDetail({
   conversationId: string
 }) {
   const queryClient = useQueryClient()
-  const { clearPersistedPendingMessages, pendingUserMessages, stream } = useConversationWorkspace()
+  const { pendingUserMessages, stream } = useConversationWorkspace()
   const [submittingApprovalRunId, setSubmittingApprovalRunId] = useState<string | null>(null)
   const isLiveStreamConversation = stream.conversationId === conversationId
   const streamActiveRun = streamActiveRunFromState({
@@ -77,18 +84,48 @@ function ConversationDetail({
     isLiveStreamConversation && streamActiveRun !== undefined
       ? ({ active_run: streamActiveRun } satisfies ConversationActiveRunResponse)
       : undefined
-  const messagesQuery = useSuspenseQuery({
-    ...conversationMessagesQueryOptions(conversationId),
-    ...(isLiveStreamConversation ? { initialData: EMPTY_CONVERSATION_MESSAGES } : {}),
+  const messagesOptions = conversationMessagesQueryOptions(conversationId)
+  const activeRunOptions = conversationActiveRunQueryOptions(conversationId)
+  const activeRunQueryKey = conversationsQueryKeys.activeRun(conversationId)
+  const [messagesQuery, activeRunQuery] = useSuspenseQueries({
+    queries: [
+      {
+        ...messagesOptions,
+        ...(isLiveStreamConversation ? { initialData: EMPTY_CONVERSATION_MESSAGES } : {}),
+        refetchInterval: (
+          query: Query<
+            ConversationMessagesResponse,
+            Error,
+            ConversationMessagesResponse,
+            ReturnType<typeof conversationsQueryKeys.messages>
+          >
+        ) => {
+          const activeRunState =
+            queryClient.getQueryState<ConversationActiveRunResponse>(activeRunQueryKey)
+          return conversationHealPollInterval(
+            streamActiveRun?.status ?? activeRunState?.data?.active_run?.status,
+            query.state.error ?? activeRunState?.error ?? null
+          )
+        },
+      },
+      {
+        ...activeRunOptions,
+        ...(initialActiveRun ? { initialData: initialActiveRun } : {}),
+        refetchInterval: (
+          query: Query<
+            ConversationActiveRunResponse,
+            Error,
+            ConversationActiveRunResponse,
+            typeof activeRunQueryKey
+          >
+        ) => conversationHealPollInterval(query.state.data?.active_run?.status, query.state.error),
+      },
+    ],
   })
-  const activeRunQuery = useSuspenseQuery({
-    ...conversationActiveRunQueryOptions(conversationId),
-    ...(initialActiveRun ? { initialData: initialActiveRun } : {}),
-  })
+  const activeRun = streamActiveRun ?? activeRunQuery.data.active_run
   const [agentQuery, modelCatalogQuery] = useSuspenseQueries({
     queries: [agentQueryOptions(conversation.active_agent_id ?? ""), modelCatalogQueryOptions()],
   })
-  const activeRun = streamActiveRun ?? activeRunQuery.data.active_run
   const activeRunId = activeRun?.id ?? null
   const activeRunStatus = activeRun?.status ?? null
   const shouldLoadApprovalState = activeRunStatus === "awaiting_approval"
@@ -113,18 +150,20 @@ function ConversationDetail({
     stream,
     submittingApprovalRunId,
   })
-  useConversationHealLoop(conversationId, activeRun)
+  const visiblePendingUserMessages = pendingMessagesForConversation(
+    pendingUserMessages,
+    conversationId,
+    messagesQuery.data.messages,
+    shouldRenderStream ? stream.conversationId : null
+  )
   const { handleScroll, isAwayFromBottom, scrollRef, scrollToBottom } = useConversationAutoScroll({
     approvalCount: pendingApprovals.length,
     messageCount: messagesQuery.data.messages.length,
-    pendingMessageCount: pendingUserMessages.length,
+    pendingMessageCount: visiblePendingUserMessages.length,
     streamMessages,
     streamToolCount: streamToolCalls.length,
   })
 
-  useEffect(() => {
-    clearPersistedPendingMessages(messagesQuery.data.messages)
-  }, [clearPersistedPendingMessages, messagesQuery.data.messages])
   useConversationReadReceipt({
     conversationId,
     unread: conversation.unread,
@@ -181,7 +220,7 @@ function ConversationDetail({
               messages={messagesQuery.data.messages}
               onApprovalSubmit={handleApprovalSubmit}
               pendingDelegations={pendingDelegations}
-              pendingUserMessages={pendingUserMessages}
+              pendingUserMessages={visiblePendingUserMessages}
               streamApprovals={visibleStreamApprovals}
               streamConversationId={shouldRenderStream ? stream.conversationId : null}
               streamError={streamError}

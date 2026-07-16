@@ -20,15 +20,31 @@ export type OAuthCallbackInput = {
   state: string
 }
 
-export function readOauthCallback(storageKey: string): OAuthCallbackSnapshot {
-  const params = new URLSearchParams(window.location.search)
-  const state = params.get("state")
+export type OAuthCallbackSearch = {
+  code?: string
+  error?: string
+  state?: string
+}
+
+export function validateOAuthCallbackSearch(search: Record<string, unknown>): OAuthCallbackSearch {
+  return {
+    ...(typeof search["code"] === "string" ? { code: search["code"] } : {}),
+    ...(typeof search["error"] === "string" ? { error: search["error"] } : {}),
+    ...(typeof search["state"] === "string" ? { state: search["state"] } : {}),
+  }
+}
+
+export function readOauthCallback(
+  storageKey: string,
+  search: OAuthCallbackSearch
+): OAuthCallbackSnapshot {
+  const state = search.state ?? null
   const storedProvider = normalize(window.sessionStorage.getItem(storageKey))
 
   return {
-    code: params.get("code"),
+    code: search.code ?? null,
     provider: storedProvider ?? providerFromState(state),
-    providerError: params.get("error"),
+    providerError: search.error ?? null,
     state,
   }
 }

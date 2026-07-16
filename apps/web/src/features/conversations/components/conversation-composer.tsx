@@ -165,6 +165,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
           },
         })
       }
+      removePendingUserMessage(clientMessageId)
     } catch (submitError) {
       removePendingUserMessage(clientMessageId)
       setPrompt(promptText)

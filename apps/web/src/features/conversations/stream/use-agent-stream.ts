@@ -16,6 +16,7 @@ import type {
 import {
   agentStreamReducer,
   initialAgentStreamState,
+  type AgentStreamAction,
 } from "@/features/conversations/stream/reducer"
 import { parseSseStream } from "@/features/conversations/stream/sse"
 import {
@@ -47,12 +48,12 @@ const STREAMING_STATUSES = new Set(["pending", "running"])
 export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions = {}) {
   const queryClient = useQueryClient()
   const abortControllerRef = useRef<AbortController | null>(null)
-  const [state, dispatch] = useReducer(agentStreamReducer, initialAgentStreamState)
-  const stateRef = useRef(state)
-
-  useEffect(() => {
-    stateRef.current = state
-  }, [state])
+  const [state, reducerDispatch] = useReducer(agentStreamReducer, initialAgentStreamState)
+  const stateRef = useRef(initialAgentStreamState)
+  const dispatch = useCallback((action: AgentStreamAction) => {
+    stateRef.current = agentStreamReducer(stateRef.current, action)
+    reducerDispatch(action)
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -137,7 +138,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
         }
       }
     },
-    [onConversationCreated, queryClient]
+    [dispatch, onConversationCreated, queryClient]
   )
 
   const sendFirstMessage = useCallback(
@@ -165,7 +166,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
 
   const reset = useCallback(() => {
     dispatch({ type: "reset" })
-  }, [])
+  }, [dispatch])
 
   return {
     ...state,

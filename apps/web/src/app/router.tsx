@@ -11,8 +11,13 @@ import {
 } from "@tanstack/react-router"
 
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
+import { validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
+import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callback-loader"
+import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
+import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
+import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
 import { ErrorRoute } from "@/routes/error-route"
 import { NotFoundRoute } from "@/routes/not-found"
 import { PendingRoute } from "@/routes/pending"
@@ -58,6 +63,11 @@ const registerRoute = createRoute({
 const oauthLoginCallbackRoute = createRoute({
   getParentRoute: () => authRoute,
   path: OAUTH_LOGIN_CALLBACK_PATH,
+  validateSearch: validateOAuthCallbackSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) =>
+    loadOAuthLoginCallback({ queryClient: context.queryClient, search: deps }),
+  staleTime: Infinity,
   component: lazyRouteComponent(
     () => import("@/features/auth/routes/oauth-login-callback-route"),
     "OAuthLoginCallbackRoute"
@@ -98,6 +108,10 @@ const acceptInvitationRoute = createRoute({
   path: "/invitations/accept",
   validateSearch: (search): { token?: string } =>
     typeof search["token"] === "string" ? { token: search["token"] } : {},
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) =>
+    loadAcceptInvitation({ queryClient: context.queryClient, token: deps.token }),
+  staleTime: Infinity,
   component: lazyRouteComponent(
     () => import("@/features/workspaces/routes/accept-invitation-route"),
     "AcceptInvitationRoute"
@@ -250,6 +264,11 @@ const profileRoute = createRoute({
 const oauthLinkCallbackRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/oauth/link/callback",
+  validateSearch: validateOAuthCallbackSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) =>
+    loadOAuthLinkCallback({ queryClient: context.queryClient, search: deps }),
+  staleTime: Infinity,
   component: lazyRouteComponent(
     () => import("@/features/auth/routes/oauth-link-callback-route"),
     "OAuthLinkCallbackRoute"
@@ -259,6 +278,10 @@ const oauthLinkCallbackRoute = createRoute({
 const integrationOauthCallbackRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/integrations/oauth/callback",
+  validateSearch: validateOAuthCallbackSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }) => loadIntegrationOAuthCallback(deps),
+  staleTime: Infinity,
   component: lazyRouteComponent(
     () => import("@/features/integrations/routes/oauth-callback-route"),
     "IntegrationOAuthCallbackRoute"

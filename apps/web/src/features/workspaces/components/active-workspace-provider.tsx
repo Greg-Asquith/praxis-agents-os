@@ -1,6 +1,6 @@
 // apps/web/src/features/workspaces/components/active-workspace-provider.tsx
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
@@ -17,12 +17,20 @@ function readStoredSlug() {
     return null
   }
 
-  return window.localStorage.getItem(STORAGE_KEY)
+  try {
+    return window.localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
 }
 
 function storeSlug(slug: string) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(STORAGE_KEY, slug)
+    try {
+      window.localStorage.setItem(STORAGE_KEY, slug)
+    } catch {
+      return
+    }
   }
 }
 
@@ -54,12 +62,6 @@ export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
   // Sync the request-layer slug during render, not in an effect, so requests fired by children (including suspense reads) always carry the resolved workspace before the first one goes out.
   setActiveWorkspaceSlug(activeWorkspace?.slug ?? null)
 
-  useEffect(() => {
-    if (activeWorkspace) {
-      storeSlug(activeWorkspace.slug)
-    }
-  }, [activeWorkspace])
-
   const setWorkspaceBySlug = useCallback(
     (slug: string) => {
       const nextWorkspace = workspaces.find((workspace) => workspace.slug === slug)
@@ -68,6 +70,7 @@ export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
         return
       }
 
+      storeSlug(slug)
       void updateCurrentUser({ default_workspace_id: nextWorkspace.id }).catch(() => undefined)
     },
     [updateCurrentUser, workspaces]

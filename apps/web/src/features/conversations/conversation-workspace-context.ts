@@ -2,7 +2,7 @@
 
 import { createContext, use } from "react"
 
-import type { Conversation, ConversationMessage } from "@/features/conversations/types"
+import type { Conversation } from "@/features/conversations/types"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
 import type { useAgentStream } from "@/features/conversations/stream/use-agent-stream"
 
@@ -13,7 +13,6 @@ export type ConversationWorkspaceContextValue = {
   pendingUserMessages: PendingUserMessage[]
   addPendingUserMessage: (message: PendingUserMessage) => void
   removePendingUserMessage: (clientMessageId: string) => void
-  clearPersistedPendingMessages: (messages: ConversationMessage[]) => void
   stream: AgentStreamControls
 }
 

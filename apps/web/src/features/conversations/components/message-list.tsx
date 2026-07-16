@@ -35,7 +35,6 @@ import {
   delegationDetailsForPendingApproval,
   mergeDelegationDetails,
   normalizeToolArgs,
-  pendingMessagesForConversation,
   type ConversationRenderItem,
   type PendingUserMessage,
   type ToolActivity,
@@ -87,12 +86,7 @@ export function MessageList({
     [messages, activeRun?.status, pendingDelegations]
   )
   const renderItems = useMemo(() => groupConversationRenderItems(parsedMessages), [parsedMessages])
-  const visiblePendingUserMessages = pendingMessagesForConversation(
-    pendingUserMessages,
-    conversationId,
-    messages,
-    streamConversationId
-  )
+  const visiblePendingUserMessages = pendingUserMessages
   const shouldShowStream = streamConversationId === conversationId
   const liveToolActivities = useMemo(
     () => buildLiveToolActivities(streamToolCalls, streamApprovals),

@@ -256,7 +256,13 @@ desktop/mobile component preserved. UI-013 changed the shared button primitive
 to normal-weight text and standardized action labels, pending labels, and
 icon-only accessible names in Title Case on 2026-07-16; it moved to
 `docs/plans/complete/frontend-ui-013-button-labels.md` without changing action
-behavior, component structure, or backend contracts.
+behavior, component structure, or backend contracts. UI-014 moved four
+single-use callback actions into route loaders, moved run healing into TanStack
+Query polling, derived optimistic-message visibility during render, and reduced
+the frontend to five externally synchronized `useEffect` call sites on
+2026-07-16; it moved to
+`docs/plans/complete/frontend-ui-014-remove-unneeded-effects.md` without backend
+or agent-runtime changes.
 
 ## Execution Order & Status
 

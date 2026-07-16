@@ -288,8 +288,12 @@ calendar age on 2026-07-16, preserving full timestamp metadata and the shared
 desktop/mobile conversation row without backend or API changes. UI-013 changed
 the shared button primitive to normal-weight text and standardized action,
 pending, and icon-only accessible labels in Title Case on 2026-07-16 without
-changing interactions or backend contracts. The completed visual-refinement
-plans live under `docs/plans/complete/` with the `frontend-ui-` filename prefix.
+changing interactions or backend contracts. UI-014 completed the frontend
+effect audit on 2026-07-16: route-entry actions now use loaders, dropped-stream
+healing uses query polling, pending-message handoff is render-derived, and only
+five effects remain for external synchronization or cleanup. The completed
+visual-refinement plans live under `docs/plans/complete/` with the
+`frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

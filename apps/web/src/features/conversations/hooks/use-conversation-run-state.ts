@@ -99,6 +99,7 @@ export function useConversationRunState({
     [activeRunId, recoveredDelegations, streamApprovals, streamRunId]
   )
 
+  // Reconcile shared stream state after server persistence or an approval transition settles it.
   useEffect(() => {
     if (streamConversationId !== conversationId) {
       return

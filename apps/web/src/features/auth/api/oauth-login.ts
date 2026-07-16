@@ -1,8 +1,7 @@
 // apps/web/src/features/auth/api/oauth-login.ts
 
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation } from "@tanstack/react-query"
 
-import { currentUserQueryKey, currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
 import type { AuthResponse, OAuthAuthorizationUrlResponse } from "@/features/auth/types"
 import { apiRequest } from "@/lib/api/client"
@@ -34,7 +33,7 @@ async function startOauthLogin(provider: string) {
   })
 }
 
-async function completeOauthLogin({ provider, code, state }: CompleteOauthLoginInput) {
+export async function completeOauthLogin({ provider, code, state }: CompleteOauthLoginInput) {
   return apiRequest<AuthResponse>(`/auth/oauth/${provider}/callback`, {
     body: { ...oauthRedirectPayload(), code, state },
     method: "POST",
@@ -43,20 +42,4 @@ async function completeOauthLogin({ provider, code, state }: CompleteOauthLoginI
 
 export function useStartOauthLoginMutation() {
   return useMutation({ mutationFn: startOauthLogin })
-}
-
-export function useCompleteOauthLoginMutation() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: completeOauthLogin,
-    onSuccess: (response) => {
-      if (response.user) {
-        queryClient.setQueryData(currentUserQueryKey, response.user)
-      }
-      void queryClient.invalidateQueries({
-        queryKey: currentUserQueryOptions().queryKey,
-      })
-    },
-  })
 }

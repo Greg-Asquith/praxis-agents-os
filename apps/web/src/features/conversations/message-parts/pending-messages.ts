@@ -3,7 +3,7 @@
 import type { PendingUserMessage } from "@/features/conversations/message-parts/types"
 import type { ConversationMessage } from "@/features/conversations/types"
 
-export function persistedClientMessageIds(messages: ConversationMessage[]) {
+function persistedClientMessageIds(messages: ConversationMessage[]) {
   return new Set(
     messages
       .map((message) => message.client_message_id)

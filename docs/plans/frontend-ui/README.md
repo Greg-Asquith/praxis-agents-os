@@ -70,7 +70,12 @@ Functional, but visibly unstyled.
 | 011 | De-card pages: plain content surfaces | P1 | M | 001, 002, 007 | DONE |
 | 012 | Sidebar conversation rows: compact datetime | P2 | S | 010 | DONE |
 | 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | DONE |
-| 014 | Remove unneeded useEffects | P2 | M | — | TODO |
+| 014 | Remove unneeded useEffects | P2 | M | — | DONE |
+| 015 | Form kit: shared sections, action bar, alerts | P1 | M | 011, 013 | TODO |
+| 016 | Skill form: create wizard (builds shell) & edit clarity | P1 | M | 015 | TODO |
+| 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | TODO |
+| 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | TODO |
+| 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -107,6 +112,17 @@ Dependency notes:
   visual one. No hard dependencies, but do not run it concurrently
   with 012/013 — it touches the same conversation-route and callback
   files 013 sweeps.
+- 015–018 (the forms series, written 2026-07-16 against the tree at
+  `9d597e1` with 013 applied) run strictly after 013's commit lands.
+  015 is the foundation and runs alone against the form files; 016
+  builds the wizard shell on the smallest form (skills) and must
+  precede 017/018, which touch disjoint feature directories and may
+  run in parallel worktrees.
+- 019 (written 2026-07-16 at `75da3b5`) is independent of 014–018 —
+  the files feature directory is disjoint from everything they touch,
+  so it can run in a parallel worktree at any point after 013. It is
+  the first plan in the series with a backend step (widening the
+  preview grant), so its gate includes the `apps/api` checks.
 
 ## Shared rules for every plan
 
@@ -190,6 +206,34 @@ Dependency notes:
   render, persistence in event handlers, polling in the query layer.
   Plan 014's audit table records the five justified survivors; new
   effects need the same justification.
+- **The target user is not necessarily technical** (maintainer,
+  2026-07-16; plans 015–018). Abstract complexity away wherever
+  possible: plain-language copy states outcomes rather than mechanisms,
+  anything with a safe default stays out of create flows, and expert
+  fields sit behind a collapsed Advanced disclosure. This constraint
+  applies to all future UI work, not just the forms series.
+- **Create flows are wizards; edit flows are sectioned pages**
+  (maintainer, 2026-07-16; plans 015–018). Creating an Agent, Skill, or
+  Schedule walks a stepped wizard (plain-question step titles, one
+  primary action per screen, optional steps skippable, review before
+  commit where the stakes warrant it). Editing keeps a single page of
+  well-spaced card sections with a sticky action bar. Both are built on
+  the shared kit in `src/components/forms/` — new entity forms use it
+  rather than hand-rolling scaffolding.
+- **Detail surfaces are centered modals, not side sheets** (maintainer,
+  2026-07-16; plan 019). The file detail "sheet" (a Dialog dressed as a
+  right-hand panel) becomes a standard centered modal; new detail
+  surfaces follow suit. And previews lead: for visually renderable
+  files (images, video, PDF, HTML, text) the content shows inline at
+  the top of the modal — never behind a tab — while technical metadata
+  (revision UUIDs, content hashes) hides behind a closed "Technical
+  details" disclosure or disappears when inapplicable to the file type.
+- **Previews are passive and unaudited; opens/downloads are audited**
+  (recorded 2026-07-16; plan 019 extends an existing backend decision).
+  The preview grant skips the file-read audit event by design; plan 019
+  widens which categories can be previewed (image → +video +PDF)
+  without changing that split. Do not add audit events to previews or
+  remove them from downloads.
 
 ## Considered and rejected (do not re-propose)
 

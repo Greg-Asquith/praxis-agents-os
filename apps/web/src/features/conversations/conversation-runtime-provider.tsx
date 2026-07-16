@@ -8,13 +8,9 @@ import {
   ConversationWorkspaceContext,
   type ConversationWorkspaceContextValue,
 } from "@/features/conversations/conversation-workspace-context"
-import {
-  persistedClientMessageIds,
-  type PendingUserMessage,
-} from "@/features/conversations/message-parts"
+import type { PendingUserMessage } from "@/features/conversations/message-parts"
 import { sortConversations } from "@/features/conversations/sort"
 import { useAgentStream } from "@/features/conversations/stream/use-agent-stream"
-import type { ConversationMessage } from "@/features/conversations/types"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 
 export function ConversationRuntimeProvider({ children }: { children: ReactNode }) {
@@ -42,17 +38,6 @@ function ConversationRuntimeScope({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  const clearPersistedPendingMessages = useCallback((messages: ConversationMessage[]) => {
-    const persistedClientIds = persistedClientMessageIds(messages)
-    if (persistedClientIds.size === 0) {
-      return
-    }
-
-    setPendingUserMessages((current) =>
-      current.filter((message) => !persistedClientIds.has(message.clientMessageId))
-    )
-  }, [])
-
   const handleConversationCreated = useCallback(
     (createdConversationId: string) => {
       void navigate({
@@ -71,20 +56,12 @@ function ConversationRuntimeScope({ children }: { children: ReactNode }) {
   const contextValue: ConversationWorkspaceContextValue = useMemo(
     () => ({
       addPendingUserMessage,
-      clearPersistedPendingMessages,
       conversations,
       pendingUserMessages,
       removePendingUserMessage,
       stream,
     }),
-    [
-      addPendingUserMessage,
-      clearPersistedPendingMessages,
-      conversations,
-      pendingUserMessages,
-      removePendingUserMessage,
-      stream,
-    ]
+    [addPendingUserMessage, conversations, pendingUserMessages, removePendingUserMessage, stream]
   )
 
   return (

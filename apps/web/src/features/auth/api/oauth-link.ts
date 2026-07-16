@@ -1,9 +1,8 @@
 // apps/web/src/features/auth/api/oauth-link.ts
 
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation } from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
-import { identitiesQueryKey } from "@/features/auth/api/get-identities"
 import type { IdentitiesResponse, OAuthAuthorizationUrlResponse } from "@/features/auth/types"
 
 // Provider name stashed before an OAuth link redirect so the callback route
@@ -23,7 +22,7 @@ type CompleteOauthLinkInput = {
   state: string
 }
 
-async function completeOauthLink({ provider, code, state }: CompleteOauthLinkInput) {
+export async function completeOauthLink({ provider, code, state }: CompleteOauthLinkInput) {
   return apiRequest<IdentitiesResponse>(`/auth/oauth/${provider}/link/callback`, {
     body: { code, state },
     method: "POST",
@@ -32,15 +31,4 @@ async function completeOauthLink({ provider, code, state }: CompleteOauthLinkInp
 
 export function useStartOauthLinkMutation() {
   return useMutation({ mutationFn: startOauthLink })
-}
-
-export function useCompleteOauthLinkMutation() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: completeOauthLink,
-    onSuccess: (identities) => {
-      queryClient.setQueryData(identitiesQueryKey, identities)
-    },
-  })
 }
