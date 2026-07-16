@@ -213,7 +213,9 @@ ordering below. Its UI-001 design-token foundation was executed 2026-07-16
 using the established Praxis charcoal/cream/amber/teal brand palette; the
 completed plan moved to
 `docs/plans/complete/frontend-ui-001-design-tokens.md`. UI-002 through UI-007
-remain TODO in the track-local status table.
+were sequenced next; UI-002 was completed 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-002-app-shell-sidebar.md`. UI-003 through
+UI-007 remain TODO in the track-local status table.
 
 ## Execution Order & Status
 

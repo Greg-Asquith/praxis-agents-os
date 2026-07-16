@@ -1,12 +1,7 @@
 // apps/web/src/components/shell/sidebar-conversations.tsx
 
 import { Link } from "@tanstack/react-router"
-import {
-  CircleIcon,
-  MessageSquarePlusIcon,
-  MessageSquareTextIcon,
-  ShieldAlertIcon,
-} from "lucide-react"
+import { MessageSquarePlusIcon, MessageSquareTextIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { conversationAgentLabel } from "@/features/conversations/format"
@@ -90,12 +85,12 @@ function ConversationRow({
       <span className="flex shrink-0 items-center gap-1 pt-0.5">
         {conversation.needs_approval && (
           <span aria-label="Needs approval" title="Needs approval">
-            <ShieldAlertIcon className="text-destructive size-3.5" />
+            <ShieldAlertIcon className="text-warning size-3.5" />
           </span>
         )}
         {conversation.unread && (
           <span aria-label="Unread" title="Unread">
-            <CircleIcon className="text-primary size-2 fill-current" />
+            <span aria-hidden className="bg-primary block size-2 rounded-full" />
           </span>
         )}
         <span className="text-muted-foreground text-[0.7rem] leading-4">

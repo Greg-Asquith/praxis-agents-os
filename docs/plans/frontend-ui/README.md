@@ -58,7 +58,7 @@ Functional, but visibly unstyled.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001 | Design tokens & primitive polish | P1 | M | — | DONE |
-| 002 | App shell: inset canvas (visual only) | P1 | M | 001 | TODO |
+| 002 | App shell: inset canvas (visual only) | P1 | M | 001 | DONE |
 | 003 | Agent identity (deterministic colored icons) | P1 | S | 001 | TODO |
 | 004 | Conversation surface: transcript & message styling | P1 | M | 001, 003 | TODO |
 | 005 | Tool rows & approval styling | P1 | M | 001, 004 | TODO |

@@ -24,6 +24,7 @@ already exist.
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW-MEDIUM — the shell wraps every authenticated screen; the
@@ -131,3 +132,20 @@ components, different finish.
 - The conversation route's scroll behavior cannot survive the canvas
   wrapper without changes to the route itself beyond classNames — stop
   and report.
+
+## Execution record
+
+- The authenticated shell and Suspense fallback now share the same responsive
+  structure: a warm sidebar backdrop, desktop inset canvas, full-bleed mobile
+  canvas, and a fixed layout header inside the canvas.
+- Navigation configuration, sidebar sections, workspace-switcher placement,
+  and conversation route code were left unchanged. Conversation detail routes
+  retain the shell's existing `overflow-hidden` contract.
+- The brand chip uses the amber token treatment, pending approvals use the
+  warning token, and unread indicators continue to use the primary token.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 79 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build.
+- Interactive browser QA was not run at the maintainer's direction after the
+  browser-control integration failed to initialize. Responsive and dark-mode
+  behavior were verified through the shared semantic-token and breakpoint
+  classes plus the production build.

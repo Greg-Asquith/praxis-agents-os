@@ -38,8 +38,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [logoutMutation, navigate])
 
   return (
-    <div className="bg-background text-foreground h-dvh overflow-hidden md:grid md:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="bg-sidebar text-sidebar-foreground hidden h-dvh min-h-0 border-r md:flex md:flex-col">
+    <div className="bg-sidebar text-foreground h-dvh overflow-hidden md:grid md:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="bg-sidebar text-sidebar-foreground hidden h-dvh min-h-0 md:flex md:flex-col">
         <SidebarHeader />
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
@@ -54,33 +54,35 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SidebarFooter user={user} onSignOut={signOut} />
       </aside>
 
-      <div className="flex h-dvh min-h-0 min-w-0 flex-col">
-        <header className="bg-background/95 sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b px-4 backdrop-blur md:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <MobileMenu
-              onSignOut={signOut}
-              setWorkspaceBySlug={setWorkspaceBySlug}
-              workspace={workspace}
-              workspaces={workspaces}
-            />
-            <AppBreadcrumbs conversations={conversationsData.conversations} pathname={pathname} />
-          </div>
-          <div className="hidden shrink-0 md:block">
-            <WorkspaceSwitcher
-              setWorkspaceBySlug={setWorkspaceBySlug}
-              workspace={workspace}
-              workspaces={workspaces}
-            />
-          </div>
-        </header>
-        <main
-          className={cn(
-            "min-h-0 min-w-0 flex-1",
-            isConversationWorkspaceRoute ? "overflow-hidden" : "overflow-y-auto p-4 md:p-6"
-          )}
-        >
-          {children}
-        </main>
+      <div className="flex h-dvh min-h-0 min-w-0 flex-col p-0 md:p-2 md:pl-0">
+        <div className="bg-background border-border/60 flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 shadow-none md:rounded-xl md:border md:shadow-sm">
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <MobileMenu
+                onSignOut={signOut}
+                setWorkspaceBySlug={setWorkspaceBySlug}
+                workspace={workspace}
+                workspaces={workspaces}
+              />
+              <AppBreadcrumbs conversations={conversationsData.conversations} pathname={pathname} />
+            </div>
+            <div className="hidden shrink-0 md:block">
+              <WorkspaceSwitcher
+                setWorkspaceBySlug={setWorkspaceBySlug}
+                workspace={workspace}
+                workspaces={workspaces}
+              />
+            </div>
+          </header>
+          <main
+            className={cn(
+              "min-h-0 min-w-0 flex-1",
+              isConversationWorkspaceRoute ? "overflow-hidden" : "overflow-y-auto px-6 py-5"
+            )}
+          >
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )

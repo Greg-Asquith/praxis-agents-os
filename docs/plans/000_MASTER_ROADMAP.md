@@ -255,9 +255,11 @@ foundation on 2026-07-16: charcoal/cream surfaces, amber actions, teal links,
 semantic success/warning colors, dark-mode parity, and shared button/badge
 polish. The original blue-primary proposal was rejected during maintainer
 visual review in favor of the established palette published at
-`praxis-agents.ai`. UI-002 through UI-007 remain sequenced in that track;
-the completed UI-001 plan lives at
-`docs/plans/complete/frontend-ui-001-design-tokens.md`.
+`praxis-agents.ai`. UI-002 landed the responsive inset app canvas and sidebar
+finish on 2026-07-16 without changing navigation or workspace-switcher
+placement. UI-003 through UI-007 remain sequenced in that track; the completed
+plans live at `docs/plans/complete/frontend-ui-001-design-tokens.md` and
+`docs/plans/complete/frontend-ui-002-app-shell-sidebar.md`.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 
