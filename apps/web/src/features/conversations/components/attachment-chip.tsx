@@ -13,7 +13,7 @@ export function AttachmentChip({
   onRemove: () => void
 }) {
   return (
-    <div className="bg-muted/50 flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-xs">
+    <div className="bg-muted/60 flex max-w-full items-center gap-2 rounded-lg border-0 px-2 py-1 text-xs">
       {attachment.status === "uploading" ? (
         <Loader2Icon className="text-muted-foreground size-3.5 animate-spin" />
       ) : (

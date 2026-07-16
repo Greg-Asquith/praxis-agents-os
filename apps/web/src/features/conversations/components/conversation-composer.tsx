@@ -9,10 +9,9 @@ import {
   type SyntheticEvent,
 } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { CircleStopIcon, Loader2Icon, PaperclipIcon, SendIcon, UploadCloudIcon } from "lucide-react"
+import { ArrowUpIcon, CircleStopIcon, Loader2Icon, PlusIcon, UploadCloudIcon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
   Select,
   SelectContent,
@@ -22,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { formatAgentModel } from "@/features/agents/components/agent-model-label"
 import { agentSelectLabel } from "@/features/agents/components/agent-select-format"
 import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
@@ -52,7 +52,8 @@ type ConversationComposerProps =
   | {
       mode: "turn"
       agents?: never
-      modelCatalog?: never
+      agent: Agent
+      modelCatalog: ModelCatalogResponse
       conversationId: string
       disabledReason?: string | null
     }
@@ -83,6 +84,11 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
   const promptText = prompt.trim()
   const effectiveSelectedAgentId = selectedAgentId ?? activeAgents[0]?.id ?? ""
+  const selectedAgent = activeAgents.find((agent) => agent.id === effectiveSelectedAgentId)
+  const composerAgent = props.mode === "create" ? selectedAgent : props.agent
+  const selectedModelLabel = composerAgent
+    ? formatAgentModel(composerAgent, props.modelCatalog)
+    : null
   const isCreateWithoutAgent = props.mode === "create" && activeAgents.length === 0
   const isCurrentStreamBlocking =
     props.mode === "create"
@@ -288,56 +294,26 @@ export function ConversationComposer(props: ConversationComposerProps) {
   }
 
   return (
-    <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
-      <FieldGroup className="gap-3">
-        {props.mode === "create" && (
-          <Field data-disabled={activeAgents.length === 0 || isCurrentStreamBlocking}>
-            <FieldLabel htmlFor="conversation-agent">Agent</FieldLabel>
-            <Select
-              disabled={activeAgents.length === 0 || isCurrentStreamBlocking}
-              onValueChange={(value) => {
-                setSelectedAgentId(value)
-              }}
-              value={effectiveSelectedAgentId}
-            >
-              <SelectTrigger id="conversation-agent" size="sm" className="w-full">
-                <SelectValue placeholder="Select an agent" />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectGroup>
-                  {activeAgents.length === 0 ? (
-                    <SelectItem value="" disabled>
-                      No active agents
-                    </SelectItem>
-                  ) : (
-                    activeAgents.map((agent) => {
-                      const secondary = formatAgentModel(agent, props.modelCatalog)
-                      return (
-                        <SelectItem
-                          key={agent.id}
-                          label={agentSelectLabel(agent, secondary)}
-                          value={agent.id}
-                        >
-                          <AgentSelectItem agent={agent} secondary={secondary} />
-                        </SelectItem>
-                      )
-                    })
-                  )}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
+    <form className="flex flex-col gap-2" onSubmit={handleSubmit}>
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>{canStopStream ? "Run not stopped" : "Message not sent"}</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>{canStopStream ? "Run not stopped" : "Message not sent"}</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+      <div
+        className={cn(
+          "bg-card focus-within:border-ring/60 focus-within:ring-ring/20 relative rounded-2xl border shadow-xs transition-[border-color,box-shadow] focus-within:ring-3",
+          isDraggingFiles && "border-ring ring-ring/40 ring-3"
         )}
-
+        onDragEnter={handlePromptDragEnter}
+        onDragLeave={handlePromptDragLeave}
+        onDragOver={handlePromptDragOver}
+        onDrop={handlePromptDrop}
+      >
         {attachments.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
             {attachments.map((attachment) => (
               <AttachmentChip
                 attachment={attachment}
@@ -352,107 +328,178 @@ export function ConversationComposer(props: ConversationComposerProps) {
           </div>
         ) : null}
 
-        <Field data-disabled={Boolean(inputDisabledReason)}>
-          <FieldLabel className="sr-only" htmlFor="conversation-prompt">
-            {props.mode === "create" ? "First message" : "Message"}
-          </FieldLabel>
-          <div
-            className={cn(
-              "relative rounded-lg transition-shadow",
-              isDraggingFiles && "ring-ring/40 ring-3"
-            )}
-            onDragEnter={handlePromptDragEnter}
-            onDragLeave={handlePromptDragLeave}
-            onDragOver={handlePromptDragOver}
-            onDrop={handlePromptDrop}
-          >
-            <Textarea
-              id="conversation-prompt"
-              aria-label={props.mode === "create" ? "First message" : "Message"}
-              className={cn(
-                "max-h-52 min-h-12 resize-y",
-                isDraggingFiles && "border-ring bg-muted/30"
-              )}
-              disabled={Boolean(inputDisabledReason)}
-              onChange={(event) => {
-                setPrompt(event.currentTarget.value)
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                inputDisabledReason ??
-                (props.mode === "create"
-                  ? "Start with a focused prompt for the selected agent."
-                  : "Send a follow-up prompt.")
-              }
-              value={prompt}
-            />
-            {isDraggingFiles ? (
-              <div
-                aria-hidden="true"
-                className="border-ring/70 bg-background/80 text-foreground pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border border-dashed backdrop-blur-[1px]"
-              >
-                <div className="bg-background flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium shadow-sm">
-                  <UploadCloudIcon className="text-muted-foreground size-4" />
-                  Drop files to attach
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </Field>
+        <label className="sr-only" htmlFor="conversation-prompt">
+          {props.mode === "create" ? "First message" : "Message"}
+        </label>
+        <Textarea
+          id="conversation-prompt"
+          aria-description="Enter sends. Shift+Enter adds a line."
+          className="max-h-52 min-h-11 resize-none rounded-2xl border-0 bg-transparent px-4 py-2.5 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+          disabled={Boolean(inputDisabledReason)}
+          onChange={(event) => {
+            setPrompt(event.currentTarget.value)
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            inputDisabledReason ??
+            (props.mode === "create"
+              ? "Start with a focused prompt for the selected agent."
+              : "Send a follow-up prompt.")
+          }
+          rows={1}
+          value={prompt}
+        />
 
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <FieldDescription className="truncate text-xs">
-            {sendDisabledReason ?? "Enter sends, Shift+Enter adds a line."}
-          </FieldDescription>
-          <div className="flex shrink-0 items-center gap-2">
-            <input
-              accept={chatAttachmentAcceptValue()}
-              aria-label="Attach files"
-              className="sr-only"
-              id={attachmentInputId}
-              multiple
-              onChange={(event) => {
-                handleAttachmentFiles(event.currentTarget.files)
+        <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2">
+          <input
+            accept={chatAttachmentAcceptValue()}
+            aria-label="Attach files"
+            className="sr-only"
+            id={attachmentInputId}
+            multiple
+            onChange={(event) => {
+              handleAttachmentFiles(event.currentTarget.files)
+            }}
+            ref={attachmentInputRef}
+            type="file"
+          />
+          <Button
+            aria-label="Attach files"
+            disabled={Boolean(inputDisabledReason) || attachments.length >= MAX_CHAT_ATTACHMENTS}
+            onClick={() => {
+              attachmentInputRef.current?.click()
+            }}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <PlusIcon className="size-4" />
+          </Button>
+
+          {props.mode === "create" ? (
+            <Select
+              disabled={activeAgents.length === 0 || isCurrentStreamBlocking}
+              onValueChange={(value) => {
+                setSelectedAgentId(value)
               }}
-              ref={attachmentInputRef}
-              type="file"
-            />
+              value={effectiveSelectedAgentId}
+            >
+              <SelectTrigger
+                aria-label="Agent"
+                className="hover:bg-muted max-w-48 gap-1.5 border-0 px-2 shadow-none focus-visible:border-transparent"
+                id="conversation-agent"
+                size="sm"
+              >
+                <SelectValue placeholder="Select an agent">
+                  {() =>
+                    selectedAgent ? (
+                      <>
+                        <AgentIdentityIcon
+                          agentId={selectedAgent.id}
+                          decorative
+                          name={selectedAgent.name}
+                          size="sm"
+                        />
+                        <span className="truncate">{selectedAgent.name}</span>
+                      </>
+                    ) : (
+                      "No active agents"
+                    )
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start" className="max-w-[calc(100vw-2rem)] min-w-72">
+                <SelectGroup>
+                  {activeAgents.length === 0 ? (
+                    <SelectItem value="" disabled>
+                      No active agents
+                    </SelectItem>
+                  ) : (
+                    activeAgents.map((agent) => {
+                      const secondary = formatAgentModel(agent, props.modelCatalog)
+                      return (
+                        <SelectItem
+                          className="cursor-pointer"
+                          key={agent.id}
+                          label={agentSelectLabel(agent, secondary)}
+                          value={agent.id}
+                        >
+                          <AgentSelectItem agent={agent} secondary={secondary} />
+                        </SelectItem>
+                      )
+                    })
+                  )}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="flex min-w-0 items-center gap-1.5 px-2 text-sm">
+              <AgentIdentityIcon
+                agentId={props.agent.id}
+                decorative
+                name={props.agent.name}
+                size="sm"
+              />
+              <span className="max-w-48 truncate">{props.agent.name}</span>
+            </div>
+          )}
+
+          <span className="min-w-0 flex-1" />
+          {selectedModelLabel ? (
+            <span className="text-muted-foreground mr-2 max-w-[40%] truncate text-xs">
+              {selectedModelLabel}
+            </span>
+          ) : null}
+
+          {canStopStream ? (
             <Button
-              aria-label="Attach files"
-              disabled={Boolean(inputDisabledReason) || attachments.length >= MAX_CHAT_ATTACHMENTS}
+              aria-label="Stop"
+              className="rounded-full"
+              disabled={cancelRunMutation.isPending}
               onClick={() => {
-                attachmentInputRef.current?.click()
+                void handleStopRun()
               }}
               size="icon"
+              title="Stop the current run"
               type="button"
-              variant="ghost"
+              variant="outline"
             >
-              <PaperclipIcon />
+              {cancelRunMutation.isPending ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : (
+                <CircleStopIcon className="size-4" />
+              )}
             </Button>
-            {canStopStream ? (
-              <Button
-                disabled={cancelRunMutation.isPending}
-                onClick={() => {
-                  void handleStopRun()
-                }}
-                type="button"
-                variant="outline"
-              >
-                {cancelRunMutation.isPending ? (
-                  <Loader2Icon data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <CircleStopIcon data-icon="inline-start" />
-                )}
-                Stop
-              </Button>
-            ) : null}
-            <Button disabled={isDisabled} type="submit">
-              <SendIcon data-icon="inline-start" />
-              Send
+          ) : (
+            <Button
+              aria-label="Send"
+              className="rounded-full"
+              disabled={isDisabled}
+              size="icon"
+              title="Send message (Enter)"
+              type="submit"
+            >
+              <ArrowUpIcon className="size-4" />
             </Button>
-          </div>
+          )}
         </div>
-      </FieldGroup>
+
+        {isDraggingFiles ? (
+          <div
+            aria-hidden="true"
+            className="border-ring/70 bg-background/80 text-foreground pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl border border-dashed backdrop-blur-[1px]"
+          >
+            <div className="bg-background flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium shadow-sm">
+              <UploadCloudIcon className="text-muted-foreground size-4" />
+              Drop files to attach
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <p className="text-muted-foreground text-center text-xs">
+        Agents can make mistakes. Review important results.
+      </p>
     </form>
   )
 }

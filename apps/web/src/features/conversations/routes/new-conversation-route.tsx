@@ -66,9 +66,8 @@ export function NewConversationRoute() {
         </div>
       </div>
 
-      <Separator />
       <footer className="shrink-0">
-        <div className="mx-auto w-full max-w-5xl px-4 py-3">
+        <div className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4">
           <ConversationComposer
             mode="create"
             agents={agentsData.agents}

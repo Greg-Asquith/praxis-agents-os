@@ -146,3 +146,27 @@ rounded-lg`; keep spinner/remove behavior.
   in turn mode instead (decision 2), and note it; do not add fetches.
 - Any submit/upload/stop handler would need behavioral change to fit the
   layout — stop and report.
+
+## Execution record
+
+- Completed 2026-07-16 as a compact floating card with a one-row resting
+  textarea, inline attachments, a create-mode identity picker, a single
+  circular send/stop slot, and the planned disclaimer. Existing submit,
+  keyboard, upload, drag/drop, optimistic rollback, and cancellation handlers
+  remain unchanged.
+- Maintainer screenshot QA tightened the initial card height, widened the agent
+  popup independently from its compact trigger, preserved the identity glyph
+  color in highlighted options, added model/action spacing, and removed the
+  redundant footer separator so the composer reads as one floating surface.
+- Maintainer QA also superseded the original turn-mode omission fallback:
+  existing conversations now retain a read-only agent identity and configured
+  provider/model label. The existing agent-detail and model-catalog query
+  options are issued together through TanStack Query; no backend or API
+  contract changed.
+- Attachment chips use the shared muted surface, both route footers align to
+  `max-w-4xl`, and read-only delegated transcripts retain their lock footer and
+  structural separator.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 85 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build. Automated
+  browser verification was not run at the maintainer's direction; iterative
+  maintainer screenshot QA covered the editable light-theme surface.

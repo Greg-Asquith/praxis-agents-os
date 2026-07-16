@@ -62,7 +62,7 @@ Functional, but visibly unstyled.
 | 003 | Agent identity (deterministic colored icons) | P1 | S | 001 | DONE |
 | 004 | Conversation surface: transcript & message styling | P1 | M | 001, 003 | DONE |
 | 005 | Tool rows & approval styling | P1 | M | 001, 004 | DONE |
-| 006 | Composer redesign | P1 | M | 001, 003 | TODO |
+| 006 | Composer redesign | P1 | M | 001, 003 | DONE |
 | 007 | Pages & states polish (dashboard, lists, auth, empty) | P2 | M | 001, 002, 003 | TODO |
 | 008 | Typography: Inter replaces Geist | P1 | S | — | TODO |
 | 009 | Sidebar declutter & user menu redesign | P1 | S | 001 | TODO |

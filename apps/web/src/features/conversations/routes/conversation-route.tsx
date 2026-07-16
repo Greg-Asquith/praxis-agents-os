@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "@tanstack/react-router"
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+import { useQueryClient, useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query"
 import { ArrowDownIcon, LockKeyholeIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { MessageList } from "@/features/conversations/components/message-list"
@@ -31,6 +32,7 @@ import type {
   Conversation,
   ConversationActiveRunResponse,
 } from "@/features/conversations/types"
+import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { getErrorMessage } from "@/lib/api/errors"
 
@@ -82,6 +84,9 @@ function ConversationDetail({
   const activeRunQuery = useSuspenseQuery({
     ...conversationActiveRunQueryOptions(conversationId),
     ...(initialActiveRun ? { initialData: initialActiveRun } : {}),
+  })
+  const [agentQuery, modelCatalogQuery] = useSuspenseQueries({
+    queries: [agentQueryOptions(conversation.active_agent_id ?? ""), modelCatalogQueryOptions()],
   })
   const activeRun = streamActiveRun ?? activeRunQuery.data.active_run
   const activeRunId = activeRun?.id ?? null
@@ -199,9 +204,9 @@ function ConversationDetail({
         ) : null}
       </div>
 
-      <Separator className="shrink-0" />
       {isReadOnlyTranscript ? (
         <footer className="shrink-0">
+          <Separator />
           <div className="mx-auto flex w-full max-w-4xl items-center gap-2 px-6 py-3 text-sm">
             <LockKeyholeIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="text-muted-foreground">Read-only delegated transcript</span>
@@ -209,9 +214,11 @@ function ConversationDetail({
         </footer>
       ) : (
         <footer className="max-h-[45%] shrink-0 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 py-3">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 pt-2 pb-4">
             <ConversationComposer
+              agent={agentQuery.data}
               mode="turn"
+              modelCatalog={modelCatalogQuery.data}
               conversationId={conversationId}
               disabledReason={composerDisabledReason}
             />

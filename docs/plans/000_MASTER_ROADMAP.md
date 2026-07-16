@@ -265,8 +265,12 @@ calmer markdown/thinking states, and reader-respecting live auto-scroll. UI-005
 landed the inline tool-row and approval polish on 2026-07-16: shared threaded
 details, semantic status colors, calm approval cards, and consistent
 Approve/Decline copy without changing deferred-decision payloads or batching.
-UI-006 through UI-008 remain sequenced in that track; the completed plans live
-under `docs/plans/complete/` with the `frontend-ui-` filename prefix.
+UI-006 landed the floating conversation composer on 2026-07-16: compact
+attachment and agent controls, persistent turn context, resolved model labels,
+and a single send/stop action slot without changing message, upload, or
+cancellation behavior. UI-007 through UI-010 remain sequenced in that track;
+the completed plans live under `docs/plans/complete/` with the `frontend-ui-`
+filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

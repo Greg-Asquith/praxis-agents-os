@@ -222,8 +222,11 @@ and message-styling pass on 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-004-conversation-surface.md`. UI-005 completed
 the inline tool-row and approval-styling pass on 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-005-tool-rows-approvals.md`; deferred-decision
-state and API payload semantics remain unchanged. UI-006 through UI-008 remain
-TODO in the track-local status table.
+state and API payload semantics remain unchanged. UI-006 completed the floating
+composer redesign on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-006-composer.md`; submit, upload, drag/drop, and
+run-cancellation behavior remain unchanged. UI-007 through UI-010 remain TODO in
+the track-local status table.
 
 ## Execution Order & Status
 

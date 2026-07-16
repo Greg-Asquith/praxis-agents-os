@@ -11,7 +11,7 @@ async function listModelCatalog() {
   return apiRequest<ModelCatalogResponse>("/models/catalog")
 }
 
-function modelCatalogQueryOptions() {
+export function modelCatalogQueryOptions() {
   return queryOptions({
     queryKey: modelCatalogQueryKey,
     queryFn: listModelCatalog,
