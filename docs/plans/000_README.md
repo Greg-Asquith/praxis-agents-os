@@ -217,8 +217,10 @@ completed 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-002-app-shell-sidebar.md` and
 `docs/plans/complete/frontend-ui-003-agent-identity.md`. UI-003 adds one
 client-derived, themed identity system across agent pickers, lists, and the
-configure header without changing the agent API. UI-004 through UI-008 remain
-TODO in the track-local status table.
+configure header without changing the agent API. UI-004 completed the transcript
+and message-styling pass on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-004-conversation-surface.md`. UI-005 through
+UI-008 remain TODO in the track-local status table.
 
 ## Execution Order & Status
 

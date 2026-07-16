@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react"
 import { useParams } from "@tanstack/react-router"
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
-import { LockKeyholeIcon } from "lucide-react"
+import { ArrowDownIcon, LockKeyholeIcon } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
@@ -108,7 +109,7 @@ function ConversationDetail({
     submittingApprovalRunId,
   })
   useConversationHealLoop(conversationId, activeRun)
-  const scrollRef = useConversationAutoScroll({
+  const { handleScroll, isAwayFromBottom, scrollRef, scrollToBottom } = useConversationAutoScroll({
     approvalCount: pendingApprovals.length,
     messageCount: messagesQuery.data.messages.length,
     pendingMessageCount: pendingUserMessages.length,
@@ -128,7 +129,9 @@ function ConversationDetail({
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
   const assistantLabel = conversationAgentLabel(conversation, "Agent")
+  const assistantAgentId = activeRun?.agent_id ?? conversation.active_agent_id ?? "unassigned-agent"
   const isReadOnlyTranscript = conversation.source === "delegated"
+  const showScrollToBottom = shouldRenderStream && stream.isStreaming && isAwayFromBottom
 
   async function handleApprovalSubmit(decisions: AgentRunResumeDecision[]) {
     if (!activeRun) {
@@ -157,41 +160,56 @@ function ConversationDetail({
       </div>
       <Separator className="shrink-0" />
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-4 py-4 pb-6">
-          <MessageList
-            activeRun={activeRun}
-            approvalError={approvalError}
-            approvals={pendingApprovals}
-            assistantLabel={assistantLabel}
-            conversationId={conversationId}
-            isApprovalLoading={approvalStateQuery.isLoading}
-            isApprovalSubmitting={isResumingRun}
-            isStreaming={shouldRenderStream && stream.isStreaming}
-            messages={messagesQuery.data.messages}
-            onApprovalSubmit={handleApprovalSubmit}
-            pendingDelegations={pendingDelegations}
-            pendingUserMessages={pendingUserMessages}
-            streamApprovals={visibleStreamApprovals}
-            streamConversationId={shouldRenderStream ? stream.conversationId : null}
-            streamError={streamError}
-            streamMessages={streamMessages}
-            streamToolCalls={streamToolCalls}
-          />
+      <div className="relative min-h-0 flex-1">
+        <div ref={scrollRef} className="h-full overflow-y-auto" onScroll={handleScroll}>
+          <div className="mx-auto w-full max-w-4xl px-6 py-6 pb-8">
+            <MessageList
+              activeRun={activeRun}
+              approvalError={approvalError}
+              approvals={pendingApprovals}
+              assistantAgentId={assistantAgentId}
+              assistantLabel={assistantLabel}
+              conversationId={conversationId}
+              isApprovalLoading={approvalStateQuery.isLoading}
+              isApprovalSubmitting={isResumingRun}
+              isStreaming={shouldRenderStream && stream.isStreaming}
+              messages={messagesQuery.data.messages}
+              onApprovalSubmit={handleApprovalSubmit}
+              pendingDelegations={pendingDelegations}
+              pendingUserMessages={pendingUserMessages}
+              streamApprovals={visibleStreamApprovals}
+              streamConversationId={shouldRenderStream ? stream.conversationId : null}
+              streamError={streamError}
+              streamMessages={streamMessages}
+              streamToolCalls={streamToolCalls}
+            />
+          </div>
         </div>
+        {showScrollToBottom ? (
+          <Button
+            aria-label="Scroll to latest message"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-sm"
+            size="icon"
+            type="button"
+            variant="outline"
+            onClick={scrollToBottom}
+          >
+            <ArrowDownIcon className="size-4" />
+          </Button>
+        ) : null}
       </div>
 
       <Separator className="shrink-0" />
       {isReadOnlyTranscript ? (
         <footer className="shrink-0">
-          <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-4 py-3 text-sm">
+          <div className="mx-auto flex w-full max-w-4xl items-center gap-2 px-6 py-3 text-sm">
             <LockKeyholeIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="text-muted-foreground">Read-only delegated transcript</span>
           </div>
         </footer>
       ) : (
         <footer className="max-h-[45%] shrink-0 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 py-3">
             <ConversationComposer
               mode="turn"
               conversationId={conversationId}

@@ -13,7 +13,8 @@
 - **Risk**: MEDIUM — submit, stop, attachment upload, and drag-drop flows
   all live here; the restyle must keep every handler and state intact.
 - **Depends on**: 001 (tokens), 003 (agent identity for the create-mode
-  picker). Coordinates with 004 on the shared `max-w-3xl` column.
+  picker). Coordinates with 004 on the shared `max-w-4xl` column (widened
+  from the original 48rem target after maintainer QA of a real transcript).
 
 ## Goal
 
@@ -98,7 +99,7 @@ they are (overlay radius follows the card: `rounded-2xl`). `resize-y` →
 `resize-none`: manual resize fights the card look; `max-h-52` still caps
 growth. The route footers (`conversation-route.tsx:193-194`,
 `new-conversation-route.tsx`) drop to `pb-4 pt-2` so the card floats near
-the canvas bottom edge, column `max-w-3xl` matching plan 004.
+the canvas bottom edge, column `max-w-4xl` matching plan 004.
 
 ### 2. Send / stop slot
 

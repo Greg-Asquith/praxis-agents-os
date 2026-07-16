@@ -20,12 +20,14 @@ import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
 
 type MessageRowProps =
   | {
+      assistantAgentId: string
       assistantLabel?: string
       message: ParsedConversationMessage
       pendingMessage?: never
       streaming?: boolean
     }
   | {
+      assistantAgentId: string
       assistantLabel?: string
       message?: never
       pendingMessage: PendingUserMessage
@@ -33,6 +35,7 @@ type MessageRowProps =
     }
 
 export function MessageRow({
+  assistantAgentId,
   assistantLabel = "Agent",
   message,
   pendingMessage,
@@ -59,6 +62,7 @@ export function MessageRow({
   if (message.role === "assistant") {
     return (
       <AssistantMessageShell
+        agentId={assistantAgentId}
         createdAt={message.createdAt}
         label={assistantLabel}
         streaming={streaming}
@@ -76,11 +80,13 @@ export function MessageRow({
 }
 
 export function AssistantLiveActivityRow({
+  assistantAgentId,
   assistantLabel = "Agent",
   isStreaming,
   messages,
   toolActivities,
 }: {
+  assistantAgentId: string
   assistantLabel?: string
   isStreaming: boolean
   messages: ChatMessageDraft[]
@@ -90,7 +96,12 @@ export function AssistantLiveActivityRow({
   const textMessages = messages.filter((message) => message.channel !== "thinking")
 
   return (
-    <AssistantMessageShell createdAt={null} label={assistantLabel} streaming={isStreaming}>
+    <AssistantMessageShell
+      agentId={assistantAgentId}
+      createdAt={null}
+      label={assistantLabel}
+      streaming={isStreaming}
+    >
       {toolActivities.map((activity) => (
         <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
       ))}
@@ -98,18 +109,22 @@ export function AssistantLiveActivityRow({
       {messages.length > 0 ? (
         textMessages.map((message) => <LiveMessageDraft key={message.id} message={message} />)
       ) : (
-        <p className="text-muted-foreground text-sm">Working...</p>
+        <p className="text-muted-foreground animate-pulse text-sm motion-reduce:animate-none">
+          Thinking…
+        </p>
       )}
     </AssistantMessageShell>
   )
 }
 
 export function AssistantTurnRow({
+  assistantAgentId,
   assistantLabel = "Agent",
   createdAt,
   messages,
   toolActivities,
 }: {
+  assistantAgentId: string
   assistantLabel?: string
   createdAt: string
   messages: ParsedConversationMessage[]
@@ -118,7 +133,7 @@ export function AssistantTurnRow({
   const thinkingContent = persistedThinkingContent(messages)
 
   return (
-    <AssistantMessageShell createdAt={createdAt} label={assistantLabel}>
+    <AssistantMessageShell agentId={assistantAgentId} createdAt={createdAt} label={assistantLabel}>
       {toolActivities.map((activity, index) => (
         <ToolCallRow key={`${activity.id}:${activity.kind}:${String(index)}`} activity={activity} />
       ))}
@@ -136,7 +151,13 @@ export function AssistantTurnRow({
 function LiveMessageDraft({ message }: { message: ChatMessageDraft }) {
   return (
     <div>
-      <MessageMarkdown content={message.text || "Working..."} />
+      {message.text ? (
+        <MessageMarkdown content={message.text} />
+      ) : (
+        <p className="text-muted-foreground animate-pulse text-sm motion-reduce:animate-none">
+          Thinking…
+        </p>
+      )}
       <span className="sr-only">{message.id}</span>
     </div>
   )
@@ -216,9 +237,9 @@ function ThinkingBlock({ content, idPrefix }: { content: string[]; idPrefix: str
     <details className="group/thinking min-w-0">
       <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium">
         <ChevronRightIcon className="size-3.5 transition-transform group-open/thinking:rotate-90" />
-        View Thoughts
+        Thinking
       </summary>
-      <div className="text-muted-foreground border-border/70 mt-2 ml-1.5 border-l pl-3 italic">
+      <div className="text-muted-foreground border-border mt-2 ml-1.5 border-l pl-3 text-sm italic">
         {content.map((thought, index) => (
           <MessageMarkdown key={`${idPrefix}:${String(index)}`} content={thought} />
         ))}
@@ -282,7 +303,7 @@ function hasPersistedTurnContent(message: ParsedConversationMessage) {
 function liveThinkingContent(messages: ChatMessageDraft[]) {
   return messages
     .filter((message) => message.channel === "thinking")
-    .map((message) => message.text || (message.status === "streaming" ? "Working..." : ""))
+    .map((message) => message.text || (message.status === "streaming" ? "Thinking…" : ""))
     .filter((content) => content.length > 0)
 }
 

@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/hooks/use-conversation-auto-scroll.ts
 
-import { useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler } from "react"
 
 import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
 
@@ -18,6 +18,8 @@ export function useConversationAutoScroll({
   streamToolCount: number
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const shouldPinToBottomRef = useRef(true)
+  const [isAwayFromBottom, setIsAwayFromBottom] = useState(false)
   const streamTextSignature = useMemo(
     () => streamMessages.map((message) => `${message.id}:${String(message.text.length)}`).join("|"),
     [streamMessages]
@@ -29,8 +31,27 @@ export function useConversationAutoScroll({
       return
     }
 
-    element.scrollTo({ top: element.scrollHeight })
+    if (shouldPinToBottomRef.current) {
+      element.scrollTo({ top: element.scrollHeight })
+    }
   }, [approvalCount, messageCount, pendingMessageCount, streamTextSignature, streamToolCount])
 
-  return scrollRef
+  const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>((event) => {
+    const element = event.currentTarget
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+    shouldPinToBottomRef.current = distanceFromBottom < 80
+    setIsAwayFromBottom(distanceFromBottom > 300)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    const element = scrollRef.current
+    if (!element) {
+      return
+    }
+    shouldPinToBottomRef.current = true
+    setIsAwayFromBottom(false)
+    element.scrollTo({ top: element.scrollHeight })
+  }, [])
+
+  return { handleScroll, isAwayFromBottom, scrollRef, scrollToBottom }
 }

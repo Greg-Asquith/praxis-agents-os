@@ -199,7 +199,7 @@ function markdownComponents(): Components {
       </ol>
     ),
     p: ({ children, ...props }) => (
-      <p className="mb-1 wrap-break-word last:mb-0" {...props}>
+      <p className="mb-3 wrap-break-word last:mb-0" {...props}>
         {children}
       </p>
     ),
@@ -269,7 +269,7 @@ function MarkdownCodeBlock({ code, language }: { code: string; language: string 
           {copied ? <CheckIcon /> : <CopyIcon />}
         </Button>
       </div>
-      <pre className="bg-background max-w-full overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">
+      <pre className="bg-muted/40 max-w-full overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">
         <code>{code}</code>
       </pre>
     </div>

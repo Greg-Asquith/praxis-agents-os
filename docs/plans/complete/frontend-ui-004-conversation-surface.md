@@ -13,6 +13,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM — the transcript is the core product surface and has
@@ -52,9 +53,10 @@ All under `src/features/conversations/components/` unless noted.
 
 ## Decisions taken
 
-1. **Narrow the transcript column to `max-w-3xl`** (48rem) with `px-6`.
-   The reference's readable measure is ~70ch; `max-w-5xl` prose lines are
-   too long. The composer column (plan 006) must use the same width —
+1. **Set the transcript column to `max-w-4xl`** (56rem) with `px-6`.
+   The original 48rem target proved too narrow against a real tool-heavy
+   transcript during maintainer QA; 56rem preserves readable prose while
+   giving operational rows enough room. The composer column (plan 006) must use the same width —
    coordinate the shared classname (put it on the two inner columns; do
    not invent a layout component for two call sites).
 2. **Assistant turns lose the per-message avatar.** The reference shows
@@ -73,7 +75,7 @@ All under `src/features/conversations/components/` unless noted.
 
 ### 1. Column + rhythm
 
-- `conversation-route.tsx:161`: inner column → `mx-auto w-full max-w-3xl
+- `conversation-route.tsx:161`: inner column → `mx-auto w-full max-w-4xl
   px-6 py-6 pb-8`. Same for the composer footer inner column (lines
   193–194) — keep them visually flush.
 - `message-list.tsx:150`: `gap-6` → `gap-7`; user-turn-to-assistant-turn
@@ -154,3 +156,22 @@ it and note it as pending.
 - The grouping logic (`groupConversationRenderItems`) would need to change
   to achieve the turn-header treatment — stop; the header must come from
   render-time data already present.
+
+## Execution record
+
+- Completed 2026-07-16 without touching the SSE parser, protocol, reducer, or
+  assistant-turn grouping. The conversation's existing active-agent id and
+  label now feed the shared deterministic `AgentIdentityIcon`.
+- User turns are compact right-aligned bubbles with hover-revealed timestamps;
+  assistant turns use a slim identity header and full-width prose. Markdown,
+  code blocks, thinking labels, reduced-motion streaming placeholders, empty
+  copy, and transcript rhythm now match the refined surface vocabulary.
+- Auto-scroll remains pinned while the reader is at the bottom, stops fighting
+  an intentional scroll-up, and exposes an icon-only return control once a live
+  stream is more than 300px below the viewport.
+- Maintainer visual QA of a real light-theme, tool-heavy transcript found the
+  planned 48rem column too narrow. The final surface uses 56rem (`max-w-4xl`),
+  and plan 006 was corrected to keep the composer aligned. All new colors use
+  semantic tokens, so the same component styling carries into dark mode.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 81 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build.

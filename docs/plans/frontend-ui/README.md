@@ -60,7 +60,7 @@ Functional, but visibly unstyled.
 | 001 | Design tokens & primitive polish | P1 | M | — | DONE |
 | 002 | App shell: inset canvas (visual only) | P1 | M | 001 | DONE |
 | 003 | Agent identity (deterministic colored icons) | P1 | S | 001 | DONE |
-| 004 | Conversation surface: transcript & message styling | P1 | M | 001, 003 | TODO |
+| 004 | Conversation surface: transcript & message styling | P1 | M | 001, 003 | DONE |
 | 005 | Tool rows & approval styling | P1 | M | 001, 004 | TODO |
 | 006 | Composer redesign | P1 | M | 001, 003 | TODO |
 | 007 | Pages & states polish (dashboard, lists, auth, empty) | P2 | M | 001, 002, 003 | TODO |

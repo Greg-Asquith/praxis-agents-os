@@ -46,6 +46,7 @@ type MessageListProps = {
   activeRun: AgentRun | null
   approvalError: string | null
   approvals: PendingToolApproval[]
+  assistantAgentId: string
   assistantLabel: string
   isApprovalLoading: boolean
   isApprovalSubmitting: boolean
@@ -66,6 +67,7 @@ export function MessageList({
   activeRun,
   approvalError,
   approvals,
+  assistantAgentId,
   pendingDelegations,
   assistantLabel,
   isApprovalLoading,
@@ -147,18 +149,28 @@ export function MessageList({
 
   return (
     <ApprovalDecisionContext value={inlineApprovals.resolveApprovalControls}>
-      <div className="flex min-w-0 flex-col gap-6">
+      <div className="flex min-w-0 flex-col gap-7">
         {renderItems.map((item) => (
-          <TranscriptRenderItem key={item.id} assistantLabel={assistantLabel} item={item} />
+          <TranscriptRenderItem
+            key={item.id}
+            assistantAgentId={assistantAgentId}
+            assistantLabel={assistantLabel}
+            item={item}
+          />
         ))}
 
         {visiblePendingUserMessages.map((message) => (
-          <MessageRow key={message.clientMessageId} pendingMessage={message} />
+          <MessageRow
+            key={message.clientMessageId}
+            assistantAgentId={assistantAgentId}
+            pendingMessage={message}
+          />
         ))}
 
         {shouldShowStream &&
           (isStreaming || streamMessages.length > 0 || liveToolActivities.length > 0) && (
             <AssistantLiveActivityRow
+              assistantAgentId={assistantAgentId}
               assistantLabel={assistantLabel}
               isStreaming={isStreaming}
               messages={streamMessages}
@@ -167,7 +179,7 @@ export function MessageList({
           )}
 
         {orphanApprovalActivities.length > 0 && (
-          <AssistantMessageShell createdAt={null} label={assistantLabel}>
+          <AssistantMessageShell agentId={assistantAgentId} createdAt={null} label={assistantLabel}>
             {orphanApprovalActivities.map((activity) => (
               <ToolCallRow activity={activity} key={activity.id} />
             ))}
@@ -210,15 +222,18 @@ export function MessageList({
 }
 
 function TranscriptRenderItem({
+  assistantAgentId,
   assistantLabel,
   item,
 }: {
+  assistantAgentId: string
   assistantLabel: string
   item: ConversationRenderItem
 }) {
   if (item.kind === "assistant-turn") {
     return (
       <AssistantTurnRow
+        assistantAgentId={assistantAgentId}
         assistantLabel={assistantLabel}
         createdAt={item.createdAt}
         messages={item.messages}
@@ -227,7 +242,13 @@ function TranscriptRenderItem({
     )
   }
 
-  return <MessageRow assistantLabel={assistantLabel} message={item.message} />
+  return (
+    <MessageRow
+      assistantAgentId={assistantAgentId}
+      assistantLabel={assistantLabel}
+      message={item.message}
+    />
+  )
 }
 
 function orphanApprovalActivity(approval: PendingToolApproval): ToolActivity {

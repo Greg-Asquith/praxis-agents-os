@@ -259,9 +259,11 @@ visual review in favor of the established palette published at
 finish on 2026-07-16 without changing navigation or workspace-switcher
 placement. UI-003 landed deterministic, client-derived agent identity icons on
 2026-07-16 across agent pickers, desktop/mobile lists, and the configure header;
-the API contract remains unchanged. UI-004 through UI-008 remain sequenced in
-that track; the completed plans live under `docs/plans/complete/` with the
-`frontend-ui-` filename prefix.
+the API contract remains unchanged. UI-004 landed the refined conversation
+transcript on 2026-07-16: agent-identified assistant turns, compact user bubbles,
+calmer markdown/thinking states, and reader-respecting live auto-scroll. UI-005
+through UI-008 remain sequenced in that track; the completed plans live under
+`docs/plans/complete/` with the `frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

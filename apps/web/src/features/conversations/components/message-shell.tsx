@@ -1,12 +1,10 @@
 // apps/web/src/features/conversations/components/message-shell.tsx
 
 import type { ReactNode } from "react"
-import { BotIcon } from "lucide-react"
-import { useSuspenseQuery } from "@tanstack/react-query"
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
-import { formatTime, initials } from "@/lib/format"
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
+import { formatTime } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 export function UserMessageShell({
   children,
@@ -17,22 +15,21 @@ export function UserMessageShell({
   createdAt: string
   pending?: boolean
 }) {
-  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
-  const name = user.display_name ?? user.email
-
   return (
     <div className="group/message flex justify-end px-1">
-      <div className="flex max-w-[min(42rem,86%)] flex-col items-end gap-1.5">
-        <div className="text-muted-foreground flex items-center gap-2 text-xs">
-          {pending && <span>Sending</span>}
-          <time>{formatTime(createdAt)}</time>
-          <Avatar size="sm">
-            {user.avatar_url && <AvatarImage src={user.avatar_url} alt={name} />}
-            <AvatarFallback>{initials(name)}</AvatarFallback>
-          </Avatar>
-        </div>
-        <div className="bg-muted text-foreground rounded-2xl px-4 py-2.5 text-sm leading-relaxed">
+      <div className="flex max-w-[min(38rem,90%)] flex-col items-end gap-1.5">
+        <div className="bg-muted text-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed">
           {children}
+        </div>
+        <div
+          className={cn(
+            "text-muted-foreground flex items-center gap-1.5 text-xs transition-opacity group-hover/message:opacity-100",
+            pending ? "opacity-100" : "opacity-0"
+          )}
+        >
+          {pending ? <span>Sending</span> : null}
+          {pending ? <span aria-hidden="true">·</span> : null}
+          <time>{formatTime(createdAt)}</time>
         </div>
       </div>
     </div>
@@ -40,11 +37,13 @@ export function UserMessageShell({
 }
 
 export function AssistantMessageShell({
+  agentId,
   children,
   createdAt,
   label = "Agent",
   streaming,
 }: {
+  agentId: string
   children: ReactNode
   createdAt: string | null
   label?: string
@@ -52,18 +51,18 @@ export function AssistantMessageShell({
 }) {
   return (
     <div className="group/message flex w-full justify-start px-1">
-      <div className="flex w-full gap-3">
-        <div className="bg-muted text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full">
-          <BotIcon className="size-3.5" />
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <div className="flex w-full min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <AgentIdentityIcon agentId={agentId} decorative name={label} size="sm" />
+          <span className="truncate text-sm font-medium">{label}</span>
           <div className="flex min-w-0 items-center gap-2 text-xs">
-            <span className="truncate font-medium">{label}</span>
             {createdAt && <time className="text-muted-foreground">{formatTime(createdAt)}</time>}
-            {streaming && <span className="bg-foreground/70 size-1.5 animate-pulse rounded-full" />}
+            {streaming ? (
+              <span className="bg-primary size-1.5 animate-pulse rounded-full motion-reduce:animate-none" />
+            ) : null}
           </div>
-          <div className="flex min-w-0 flex-col gap-3">{children}</div>
         </div>
+        <div className="flex min-w-0 flex-col gap-3">{children}</div>
       </div>
     </div>
   )
