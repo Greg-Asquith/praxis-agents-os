@@ -64,13 +64,13 @@ export function SchedulePreviewPanel({ state }: { state: ScheduleFormState }) {
       ) : null}
 
       {!previewPayload && !previewError ? (
-        <p className="text-muted-foreground rounded-md border border-dashed p-4 text-sm">
+        <p className="bg-muted/30 text-muted-foreground rounded-lg p-4 text-sm">
           Complete the timing fields to preview upcoming runs.
         </p>
       ) : null}
 
       {previewPayload && !previewError && nextRuns.length === 0 && !isPending ? (
-        <p className="text-muted-foreground rounded-md border border-dashed p-4 text-sm">
+        <p className="bg-muted/30 text-muted-foreground rounded-lg p-4 text-sm">
           Preview upcoming runs before saving this schedule.
         </p>
       ) : null}

@@ -1,16 +1,12 @@
 // apps/web/src/features/files/routes/files-route.tsx
 
 import { useNavigate, useRouterState } from "@tanstack/react-router"
-import { FileTextIcon, HardDriveIcon, Loader2Icon } from "lucide-react"
-
+import { PageHeader } from "@/components/shell/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { MetricCard } from "@/components/ui/metric-card"
 import { useFilesQuery } from "@/features/files/api/list-files"
 import { FileDetailSheet } from "@/features/files/components/file-detail-sheet"
 import { FileUploadButton } from "@/features/files/components/file-upload-button"
 import { FilesTable } from "@/features/files/components/files-table"
-import type { WorkspaceFile } from "@/features/files/types"
-import { formatBytes, pluralize } from "@/lib/format"
 
 type FilesSearch = {
   fileId?: string
@@ -22,7 +18,7 @@ export function FilesRoute() {
     select: (state): FilesSearch => state.location.search,
   })
   const navigate = useNavigate()
-  const metrics = fileMetrics(data.files)
+  const hasFiles = data.files.length > 0
 
   function setOpenFile(fileId: string | null) {
     void navigate({
@@ -33,31 +29,11 @@ export function FilesRoute() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="flex min-w-0 flex-col gap-2">
-          <p className="text-muted-foreground text-sm font-medium">Workspace</p>
-          <h1 className="font-heading text-2xl font-semibold tracking-normal">Files</h1>
-        </div>
-        <FileUploadButton />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard
-          description={`${String(data.total)} ${pluralize(data.total, "file")} in this workspace`}
-          icon={<FileTextIcon className="size-4" />}
-          title="Total files"
-        />
-        <MetricCard
-          description={`${formatBytes(metrics.totalBytes)} stored across current revisions`}
-          icon={<HardDriveIcon className="size-4" />}
-          title="Current size"
-        />
-        <MetricCard
-          description={`${String(metrics.inFlight)} ${pluralize(metrics.inFlight, "file")} pending or processing`}
-          icon={<Loader2Icon className="size-4" />}
-          title="Processing"
-        />
-      </div>
+      <PageHeader
+        actions={hasFiles ? <FileUploadButton /> : null}
+        description="Upload, inspect, and restore durable files shared with agents."
+        title="Files"
+      />
 
       <Card>
         <CardHeader>
@@ -69,6 +45,7 @@ export function FilesRoute() {
         <CardContent>
           <FilesTable
             files={data.files}
+            emptyAction={<FileUploadButton />}
             onOpenFile={(fileId) => {
               setOpenFile(fileId)
             }}
@@ -83,18 +60,5 @@ export function FilesRoute() {
         }}
       />
     </div>
-  )
-}
-
-function fileMetrics(files: WorkspaceFile[]) {
-  return files.reduce(
-    (metrics, file) => {
-      metrics.totalBytes += file.size_bytes
-      if (file.processing_status === "pending" || file.processing_status === "processing") {
-        metrics.inFlight += 1
-      }
-      return metrics
-    },
-    { inFlight: 0, totalBytes: 0 }
   )
 }

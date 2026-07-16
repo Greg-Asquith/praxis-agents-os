@@ -99,7 +99,6 @@ export function NewSkillRoute() {
           Skills
         </Button>
         <div className="flex flex-col gap-2">
-          <p className="text-muted-foreground text-sm font-medium">Agent runtime</p>
           <h1 className="font-heading text-2xl font-semibold tracking-normal">New skill</h1>
           <p className="text-muted-foreground max-w-3xl text-sm">
             Package reusable instructions and reference documents agents can activate on demand.

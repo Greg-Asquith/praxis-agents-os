@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW — page-level styling on non-streaming surfaces.
@@ -132,3 +133,32 @@ reads as a dropzone.
   surface — keep that card, note it, continue.
 - The page-header extraction fights the dependency-cruiser layering in
   both candidate locations — stop and report rather than editing rules.
+
+## Execution record
+
+- A shared `PageHeader` now provides one title-and-description structure for
+  dashboard, list, workspace settings, and profile routes. Maintainer review
+  removed the proposed eyebrow treatment everywhere, including the remaining
+  create, invitation, auth, and not-found surfaces.
+- Maintainer screenshot review also rejected the metric-card bands as
+  redundant. Summary cards were removed from dashboard, list, and detail
+  pages, and the now-unused `MetricCard` primitive and derived metric work were
+  deleted. The dashboard's lower scaffold-information row was removed because
+  every fact remains available on its dedicated workspace, agent, or profile
+  surface.
+- Dashboard and conversation panels now use the shared `Card` vocabulary.
+  Agent, skill, file, schedule, conversation, and run badges use the shared
+  success, warning, destructive, outline, and secondary status language.
+- Empty states use a quiet filled surface instead of dashed borders, retain a
+  clear one-sentence explanation, and expose an in-context action wherever the
+  user can create or upload the missing resource. Dashed styling remains only
+  on actual drop targets and unsupported-content diagnostics.
+- The auth split uses the warm sidebar surface, consistent Praxis mark, direct
+  product copy, and a lightly elevated auth card. Shared table headers and row
+  hovers now use the compact muted treatment specified by this plan.
+- No backend, FastAPI, Pydantic AI, runtime, provider, API-contract, query-key,
+  or mutation behavior changed. `pnpm check` passed on 2026-07-16: typecheck,
+  ESLint, 85 Vitest tests, Prettier, Knip, dependency-cruiser, and the
+  production build. Browser automation was not used at the maintainer's
+  direction; responsive and theme behavior were verified through semantic
+  tokens, breakpoint classes, static source review, and the production build.

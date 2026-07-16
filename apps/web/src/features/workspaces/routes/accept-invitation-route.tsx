@@ -78,8 +78,7 @@ export function AcceptInvitationRoute() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-      <div className="flex min-w-0 flex-col gap-2">
-        <p className="text-muted-foreground text-sm font-medium">Workspace</p>
+      <div className="min-w-0">
         <h1 className="font-heading text-2xl font-semibold tracking-normal">Invitation</h1>
       </div>
 

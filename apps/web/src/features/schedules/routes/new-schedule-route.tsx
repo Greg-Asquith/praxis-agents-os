@@ -27,7 +27,6 @@ export function NewScheduleRoute() {
           Schedules
         </Button>
         <div className="flex flex-col gap-2">
-          <p className="text-muted-foreground text-sm font-medium">Automation</p>
           <h1 className="font-heading text-2xl font-semibold tracking-normal">New schedule</h1>
         </div>
       </div>

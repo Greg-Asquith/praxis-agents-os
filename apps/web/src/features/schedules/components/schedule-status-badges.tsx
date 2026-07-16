@@ -9,7 +9,7 @@ import { titleCaseToken } from "@/lib/format"
 export function ScheduleStatusBadges({ schedule }: { schedule: AgentSchedule }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Badge variant={schedule.is_active ? "default" : "outline"}>
+      <Badge variant={schedule.is_active ? "success" : "outline"}>
         {schedule.is_active ? "Active" : "Paused"}
       </Badge>
       <ScheduleHealthBadge health={schedule.health} />
@@ -23,11 +23,11 @@ function ScheduleHealthBadge({ health }: { health: ScheduleHealth }) {
   }
 
   if (health === "retrying") {
-    return <Badge variant="secondary">Retrying</Badge>
+    return <Badge variant="warning">Retrying</Badge>
   }
 
   if (health === "cancelled") {
-    return <Badge variant="ghost">Cancelled</Badge>
+    return <Badge variant="destructive">Cancelled</Badge>
   }
 
   return <Badge variant="outline">Healthy</Badge>
@@ -36,7 +36,7 @@ function ScheduleHealthBadge({ health }: { health: ScheduleHealth }) {
 export function ScheduleRunStatusBadge({ status }: { status: ScheduleRunStatus }) {
   if (status === "awaiting_approval") {
     return (
-      <Badge variant="secondary">
+      <Badge variant="warning">
         <ShieldAlertIcon data-icon="inline-start" />
         Awaiting approval
       </Badge>
@@ -48,14 +48,14 @@ export function ScheduleRunStatusBadge({ status }: { status: ScheduleRunStatus }
   }
 
   if (status === "retryable_failed") {
-    return <Badge variant="secondary">{scheduleRunStatusLabel(status)}</Badge>
+    return <Badge variant="warning">{scheduleRunStatusLabel(status)}</Badge>
   }
 
   if (status === "completed") {
-    return <Badge>{scheduleRunStatusLabel(status)}</Badge>
+    return <Badge variant="success">{scheduleRunStatusLabel(status)}</Badge>
   }
 
-  return <Badge variant="outline">{scheduleRunStatusLabel(status)}</Badge>
+  return <Badge variant="secondary">{scheduleRunStatusLabel(status)}</Badge>
 }
 
 function scheduleRunStatusLabel(status: ScheduleRunStatus) {

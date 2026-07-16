@@ -8,7 +8,7 @@ import type { FileProcessingStatus } from "@/features/files/types"
 
 export function FileStatusBadge({ status }: { status: FileProcessingStatus }) {
   if (status === "ready") {
-    return <Badge variant="outline">Ready</Badge>
+    return <Badge variant="success">Ready</Badge>
   }
 
   if (status === "error") {

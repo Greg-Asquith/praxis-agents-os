@@ -38,7 +38,7 @@ export function AgentsTable({
     return (
       <EmptyState
         action={
-          <Button variant="secondary" render={<Link to="/agents/new" />}>
+          <Button render={<Link to="/agents/new" />}>
             <PlusIcon data-icon="inline-start" />
             New agent
           </Button>

@@ -29,7 +29,6 @@ export function NewAgentRoute() {
           Agents
         </Button>
         <div className="flex flex-col gap-2">
-          <p className="text-muted-foreground text-sm font-medium">Agent runtime</p>
           <h1 className="font-heading text-2xl font-semibold tracking-normal">New agent</h1>
           <p className="text-muted-foreground max-w-3xl text-sm">
             Define the agent identity, model, runtime limits, tools, and delegation boundary.

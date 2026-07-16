@@ -1,6 +1,6 @@
 // apps/web/src/features/files/components/files-table.ts
 
-import { useState, type KeyboardEvent } from "react"
+import { useState, type KeyboardEvent, type ReactNode } from "react"
 import {
   DownloadIcon,
   ExternalLinkIcon,
@@ -46,9 +46,11 @@ import { getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, relativeDateTime } from "@/lib/format"
 
 export function FilesTable({
+  emptyAction,
   files,
   onOpenFile,
 }: {
+  emptyAction?: ReactNode
   files: WorkspaceFile[]
   onOpenFile: (fileId: string) => void
 }) {
@@ -99,6 +101,7 @@ export function FilesTable({
   if (files.length === 0) {
     return (
       <EmptyState
+        action={emptyAction}
         description="Upload files agents and teammates can read, revise, and reuse in this workspace."
         icon={<FileTextIcon className="size-5" />}
         size="compact"

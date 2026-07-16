@@ -206,7 +206,7 @@ export function AgentToolsSection({
               </div>
             ) : null}
             {resultCount === 0 ? (
-              <div className="rounded-md border border-dashed p-6 text-center">
+              <div className="bg-muted/30 rounded-lg p-6 text-center">
                 <p className="font-medium">No tools found</p>
                 <p className="text-muted-foreground mt-1 text-sm">
                   Adjust the search or provider filter.

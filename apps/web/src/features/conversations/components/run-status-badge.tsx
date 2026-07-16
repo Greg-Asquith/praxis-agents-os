@@ -10,8 +10,12 @@ export function RunStatusBadge({ status }: { status: AgentRunStatus }) {
   }
 
   if (status === "awaiting_approval") {
-    return <Badge variant="secondary">{runStatusLabel(status)}</Badge>
+    return <Badge variant="warning">{runStatusLabel(status)}</Badge>
   }
 
-  return <Badge>{runStatusLabel(status)}</Badge>
+  if (status === "completed") {
+    return <Badge variant="success">{runStatusLabel(status)}</Badge>
+  }
+
+  return <Badge variant="secondary">{runStatusLabel(status)}</Badge>
 }

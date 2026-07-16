@@ -42,7 +42,7 @@ export function SchedulesTable({
     return (
       <EmptyState
         action={
-          <Button variant="secondary" render={<Link to="/schedules/new" />}>
+          <Button render={<Link to="/schedules/new" />}>
             <PlusIcon data-icon="inline-start" />
             New schedule
           </Button>

@@ -2,20 +2,12 @@
 
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import {
-  ArrowLeftIcon,
-  BotIcon,
-  ClockIcon,
-  NetworkIcon,
-  Trash2Icon,
-  WrenchIcon,
-} from "lucide-react"
+import { ArrowLeftIcon, Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { MetricCard } from "@/components/ui/metric-card"
 import { useDeleteAgentMutation } from "@/features/agents/api/delete-agent"
 import { useAgentQuery } from "@/features/agents/api/get-agent"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
@@ -23,11 +15,9 @@ import { useUpdateAgentMutation } from "@/features/agents/api/update-agent"
 import { AgentForm } from "@/features/agents/components/agent-form"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { AgentStatusBadges } from "@/features/agents/components/agent-status-badges"
-import { formatAgentModel } from "@/features/agents/components/agent-model-label"
 import type { AgentUpdateRequest } from "@/features/agents/types"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatDateTime, pluralize } from "@/lib/format"
 
 export function AgentDetailRoute() {
   const navigate = useNavigate()
@@ -104,35 +94,6 @@ export function AgentDetailRoute() {
           onOpenChange={setDeleteDialogOpen}
           open={deleteDialogOpen}
           title="Delete Agent?"
-        />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          description={formatAgentModel(agent, modelCatalog)}
-          icon={<BotIcon className="size-4" />}
-          title="Model"
-        />
-        <MetricCard
-          description={`${String(agent.tool_names.length)} ${pluralize(
-            agent.tool_names.length,
-            "tool"
-          )} configured`}
-          icon={<WrenchIcon className="size-4" />}
-          title="Tools"
-        />
-        <MetricCard
-          description={`${String(agent.allowed_agent_ids.length)} ${pluralize(
-            agent.allowed_agent_ids.length,
-            "sub-agent"
-          )} allowed`}
-          icon={<NetworkIcon className="size-4" />}
-          title="Delegation"
-        />
-        <MetricCard
-          description={formatDateTime(agent.last_used_at)}
-          icon={<ClockIcon className="size-4" />}
-          title="Last used"
         />
       </div>
 

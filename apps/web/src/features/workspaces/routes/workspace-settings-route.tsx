@@ -1,5 +1,6 @@
 // apps/web/src/features/workspaces/routes/workspace-settings-route.tsx
 
+import { PageHeader } from "@/components/shell/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AuditSettingsPanel } from "@/features/audit/components/audit-settings-panel"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
@@ -15,12 +16,11 @@ export function WorkspaceSettingsRoute() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="flex flex-col gap-2">
-          <h1 className="font-heading text-2xl font-semibold tracking-normal">{workspace.name}</h1>
-        </div>
-        <WorkspaceRoleBadge role={workspace.current_user_role} />
-      </div>
+      <PageHeader
+        actions={<WorkspaceRoleBadge role={workspace.current_user_role} />}
+        description="Manage workspace details, members, invitations, and audit history."
+        title="Workspace settings"
+      />
 
       <Tabs defaultValue="details">
         <TabsList variant="line">

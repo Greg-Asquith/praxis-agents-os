@@ -2,15 +2,7 @@
 
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import {
-  ArrowLeftIcon,
-  CalendarClockIcon,
-  HistoryIcon,
-  PauseIcon,
-  PlayIcon,
-  RotateCcwIcon,
-  Trash2Icon,
-} from "lucide-react"
+import { ArrowLeftIcon, PauseIcon, PlayIcon, RotateCcwIcon, Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -24,7 +16,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { MetricCard } from "@/components/ui/metric-card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { useDeleteScheduleMutation } from "@/features/schedules/api/delete-schedule"
@@ -36,14 +27,9 @@ import { useUpdateScheduleMutation } from "@/features/schedules/api/update-sched
 import { ScheduleForm } from "@/features/schedules/components/schedule-form"
 import { ScheduleRunHistory } from "@/features/schedules/components/schedule-run-history"
 import { ScheduleStatusBadges } from "@/features/schedules/components/schedule-status-badges"
-import {
-  formatScheduleCadence,
-  formatScheduleNextRun,
-  scheduleTitle,
-} from "@/features/schedules/format"
+import { formatScheduleCadence, scheduleTitle } from "@/features/schedules/format"
 import type { ScheduleUpdateRequest } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatDateTime } from "@/lib/format"
 
 export function ScheduleDetailRoute() {
   const navigate = useNavigate()
@@ -183,24 +169,6 @@ export function ScheduleDetailRoute() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard
-          description={formatScheduleCadence(schedule)}
-          icon={<CalendarClockIcon className="size-4" />}
-          title="Cadence"
-        />
-        <MetricCard
-          description={formatScheduleNextRun(schedule)}
-          icon={<RotateCcwIcon className="size-4" />}
-          title="Next run"
-        />
-        <MetricCard
-          description={formatDateTime(schedule.last_run_at)}
-          icon={<HistoryIcon className="size-4" />}
-          title="Last run"
-        />
       </div>
 
       {actionError ? (

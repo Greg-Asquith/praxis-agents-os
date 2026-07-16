@@ -225,8 +225,13 @@ the inline tool-row and approval-styling pass on 2026-07-16 and moved to
 state and API payload semantics remain unchanged. UI-006 completed the floating
 composer redesign on 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-006-composer.md`; submit, upload, drag/drop, and
-run-cancellation behavior remain unchanged. UI-007 through UI-010 remain TODO in
-the track-local status table.
+run-cancellation behavior remain unchanged. UI-007 completed the non-chat page
+and state polish on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-007-pages-polish.md`; shared title/description
+headers, card vocabulary, semantic statuses, filled empty states, auth polish,
+and compact tables shipped without backend or API changes. Maintainer review
+removed eyebrow labels and redundant metric-card bands across list and detail
+pages. UI-008 through UI-010 remain TODO in the track-local status table.
 
 ## Execution Order & Status
 

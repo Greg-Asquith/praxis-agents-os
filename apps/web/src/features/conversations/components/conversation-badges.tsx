@@ -39,7 +39,7 @@ export function ConversationBadges({
   return (
     <div className={cn("flex shrink-0 flex-wrap justify-end gap-1", className)}>
       {showApprovalBadge && (
-        <Badge variant="secondary">
+        <Badge variant="warning">
           <ShieldAlertIcon data-icon="inline-start" />
           Approval
         </Badge>

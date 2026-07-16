@@ -2,6 +2,7 @@
 
 import { Suspense } from "react"
 
+import { PageHeader } from "@/components/shell/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PasswordForm } from "@/features/auth/components/password-form"
 import { ProfileForm } from "@/features/auth/components/profile-form"
@@ -11,12 +12,10 @@ import { TwoFactorSection } from "@/features/auth/components/two-factor-section"
 export function ProfileRoute() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-2xl font-semibold tracking-normal">Profile Settings</h1>
-        <p className="text-muted-foreground text-sm">
-          Manage your account details, password, and security.
-        </p>
-      </div>
+      <PageHeader
+        description="Manage your account details, password, and security."
+        title="Profile settings"
+      />
 
       <ProfileForm />
 

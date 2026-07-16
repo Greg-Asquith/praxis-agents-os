@@ -28,7 +28,7 @@ export function SkillsTable({ skills }: { skills: Skill[] }) {
     return (
       <EmptyState
         action={
-          <Button variant="secondary" render={<Link to="/skills/new" />}>
+          <Button render={<Link to="/skills/new" />}>
             <PlusIcon data-icon="inline-start" />
             New skill
           </Button>
@@ -158,7 +158,7 @@ function SkillMobileRow({ skill }: { skill: Skill }) {
 function SkillStatusBadges({ skill }: { skill: Skill }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Badge variant={skill.is_active ? "default" : "secondary"}>
+      <Badge variant={skill.is_active ? "success" : "outline"}>
         {skill.is_active ? "Active" : "Inactive"}
       </Badge>
       {skill.is_favorite ? <Badge variant="outline">Favorite</Badge> : null}

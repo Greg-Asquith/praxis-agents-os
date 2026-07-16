@@ -21,7 +21,7 @@ type AuthCardProps = {
 
 export function AuthCard({ title, description, footer, children }: AuthCardProps) {
   return (
-    <Card>
+    <Card className="shadow-xs">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -34,7 +34,7 @@ export function AuthCard({ title, description, footer, children }: AuthCardProps
 
 export function AuthLink({ to, children }: { to: "/login" | "/register"; children: ReactNode }) {
   return (
-    <Link to={to} className="text-foreground font-medium underline-offset-4 hover:underline">
+    <Link to={to} className="text-link font-medium underline-offset-4 hover:underline">
       {children}
     </Link>
   )

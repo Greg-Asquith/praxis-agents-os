@@ -121,7 +121,7 @@ export function AgentSkillsSection({
 
         <div className="flex flex-col gap-2">
           {selectedSkills.length === 0 ? (
-            <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
+            <p className="bg-muted/30 text-muted-foreground rounded-lg p-3 text-sm">
               This agent has no attached skills.
             </p>
           ) : (

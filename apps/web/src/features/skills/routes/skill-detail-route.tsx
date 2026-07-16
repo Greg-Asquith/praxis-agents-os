@@ -2,13 +2,12 @@
 
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { ArrowLeftIcon, ClockIcon, FileTextIcon, SparklesIcon, Trash2Icon } from "lucide-react"
+import { ArrowLeftIcon, Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { MetricCard } from "@/components/ui/metric-card"
 import { useDeleteSkillMutation } from "@/features/skills/api/delete-skill"
 import { useSkillQuery } from "@/features/skills/api/get-skill"
 import { useUpdateSkillMutation } from "@/features/skills/api/update-skill"
@@ -17,7 +16,6 @@ import { SkillForm } from "@/features/skills/components/skill-form"
 import { skillDisplayName } from "@/features/skills/format"
 import type { SkillUpdateRequest } from "@/features/skills/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatDateTime, pluralize } from "@/lib/format"
 
 export function SkillDetailRoute() {
   const navigate = useNavigate()
@@ -29,7 +27,6 @@ export function SkillDetailRoute() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [saved, setSaved] = useState(false)
-  const documentCount = Object.keys(skill.documentation_refs).length
 
   async function handleUpdateSkill(payload: SkillUpdateRequest) {
     setDeleteError(null)
@@ -61,7 +58,7 @@ export function SkillDetailRoute() {
           </Button>
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={skill.is_active ? "default" : "secondary"}>
+              <Badge variant={skill.is_active ? "success" : "outline"}>
                 {skill.is_active ? "Active" : "Inactive"}
               </Badge>
               {skill.is_favorite ? <Badge variant="outline">Favorite</Badge> : null}
@@ -92,24 +89,6 @@ export function SkillDetailRoute() {
           onOpenChange={setDeleteDialogOpen}
           open={deleteDialogOpen}
           title="Delete skill?"
-        />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard
-          description={skill.name}
-          icon={<SparklesIcon className="size-4" />}
-          title="Identifier"
-        />
-        <MetricCard
-          description={`${String(documentCount)} ${pluralize(documentCount, "document")} uploaded`}
-          icon={<FileTextIcon className="size-4" />}
-          title="Documents"
-        />
-        <MetricCard
-          description={formatDateTime(skill.last_used_at)}
-          icon={<ClockIcon className="size-4" />}
-          title="Last used"
         />
       </div>
 

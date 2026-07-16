@@ -7,9 +7,9 @@ import { appConfig } from "@/config/app"
 export function AuthLayoutRoute() {
   return (
     <main className="bg-background grid min-h-screen lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,0.55fr)]">
-      <section className="bg-muted/30 hidden border-r p-8 lg:flex lg:flex-col lg:justify-between">
+      <section className="bg-sidebar hidden border-r p-8 lg:flex lg:flex-col lg:justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-foreground text-background flex size-8 items-center justify-center rounded-lg text-sm font-semibold">
+          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-lg text-sm font-semibold">
             P
           </div>
           <span className="font-heading text-sm font-medium">{appConfig.name}</span>

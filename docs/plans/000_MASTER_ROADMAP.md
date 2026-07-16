@@ -268,9 +268,13 @@ Approve/Decline copy without changing deferred-decision payloads or batching.
 UI-006 landed the floating conversation composer on 2026-07-16: compact
 attachment and agent controls, persistent turn context, resolved model labels,
 and a single send/stop action slot without changing message, upload, or
-cancellation behavior. UI-007 through UI-010 remain sequenced in that track;
-the completed plans live under `docs/plans/complete/` with the `frontend-ui-`
-filename prefix.
+cancellation behavior. UI-007 landed the non-chat page and state polish on
+2026-07-16: shared title/description headers, consistent cards and semantic
+statuses, filled action-oriented empty states, direct auth copy, and compact
+tables. Maintainer review removed eyebrow labels and redundant metric-card
+bands across list and detail pages. UI-008 through UI-010 remain sequenced in
+that track; the completed plans live under `docs/plans/complete/` with the
+`frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 
