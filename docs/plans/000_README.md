@@ -239,7 +239,11 @@ the primary sidebar to its five work sections on 2026-07-16, moved Workspaces
 and Workspace Settings into the redesigned identity-rich user menu, preserved
 both destinations in the interim mobile menu, and moved to
 `docs/plans/complete/frontend-ui-009-sidebar-declutter-user-menu.md`. UI-010
-remains TODO in the track-local status table.
+replaced the mobile dropdown with the shared sidebar composition in a modal
+drawer on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-010-mobile-shell.md`; mobile now shares the
+workspace switcher, navigation, conversation states, and identity-rich user
+menu without changing the desktop shell or API behavior.
 
 ## Execution Order & Status
 

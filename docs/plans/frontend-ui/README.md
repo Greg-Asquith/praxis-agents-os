@@ -66,7 +66,7 @@ Functional, but visibly unstyled.
 | 007 | Pages & states polish (dashboard, lists, auth, empty) | P2 | M | 001, 002, 003 | DONE |
 | 008 | Typography: Inter replaces Geist | P1 | S | — | DONE |
 | 009 | Sidebar declutter & user menu redesign | P1 | S | 001 | DONE |
-| 010 | Mobile shell: drawer sidebar | P1 | M | 002, 009 | TODO |
+| 010 | Mobile shell: drawer sidebar | P1 | M | 002, 009 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)

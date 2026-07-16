@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="bg-sidebar text-sidebar-foreground hidden h-dvh min-h-0 md:flex md:flex-col">
         <SidebarHeader />
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 border-t p-3">
           <PrimaryNavigation pathname={pathname} workspaceRole={workspace.current_user_role} />
           <Separator />
           <SidebarConversations
@@ -59,8 +59,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <header className="flex h-16 shrink-0 items-center gap-3 border-b px-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <MobileMenu
+                conversations={conversationsData.conversations}
                 onSignOut={signOut}
+                pathname={pathname}
                 setWorkspaceBySlug={setWorkspaceBySlug}
+                user={user}
                 workspace={workspace}
                 workspaces={workspaces}
               />

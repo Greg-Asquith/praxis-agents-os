@@ -14,14 +14,19 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { WorkspaceIcon } from "@/features/workspaces/components/workspace-icon"
 import type { Workspace } from "@/features/workspaces/types"
+import { cn } from "@/lib/utils"
 
 export function WorkspaceSwitcher({
   align = "end",
+  className,
+  contentClassName,
   setWorkspaceBySlug,
   workspace,
   workspaces,
 }: {
   align?: "start" | "end"
+  className?: string
+  contentClassName?: string
   setWorkspaceBySlug: (slug: string) => void
   workspace: Workspace
   workspaces: Workspace[]
@@ -32,13 +37,15 @@ export function WorkspaceSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" className="h-9 w-56 justify-start gap-2 px-3" />}
+        render={
+          <Button variant="ghost" className={cn("h-9 w-56 justify-start gap-2 px-3", className)} />
+        }
       >
         <WorkspaceIcon size="sm" workspace={workspace} />
         <span className="min-w-0 truncate text-sm font-medium">{workspace.name}</span>
         <ChevronDownIcon data-icon="inline-end" className="text-muted-foreground ml-auto" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-56">
+      <DropdownMenuContent align={align} className={cn("w-56", contentClassName)}>
         <DropdownMenuGroup>
           <DropdownMenuLabel>Switch Workspace</DropdownMenuLabel>
           {personalWorkspaces.length > 0 && (

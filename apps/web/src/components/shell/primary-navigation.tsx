@@ -6,9 +6,11 @@ import { navigationItemsForRole } from "@/config/navigation"
 import { cn } from "@/lib/utils"
 
 export function PrimaryNavigation({
+  density = "default",
   pathname,
   workspaceRole,
 }: {
+  density?: "comfortable" | "default"
   pathname: string
   workspaceRole: string | null
 }) {
@@ -21,7 +23,10 @@ export function PrimaryNavigation({
           return (
             <span
               key={item.label}
-              className="text-muted-foreground flex h-8 items-center gap-2 rounded-lg px-2 text-sm opacity-60"
+              className={cn(
+                "text-muted-foreground flex items-center gap-2 rounded-lg px-2 text-sm opacity-60",
+                density === "comfortable" ? "h-11" : "h-8"
+              )}
             >
               <Icon className="size-4" />
               {item.label}
@@ -36,7 +41,8 @@ export function PrimaryNavigation({
             key={item.label}
             to={item.to}
             className={cn(
-              "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex h-8 items-center gap-2 rounded-lg px-2 text-sm transition-colors",
+              "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex items-center gap-2 rounded-lg px-2 text-sm transition-colors",
+              density === "comfortable" ? "h-11" : "h-8",
               isActive && "bg-sidebar-accent text-sidebar-accent-foreground"
             )}
           >

@@ -277,8 +277,11 @@ Inter variable family on 2026-07-16 while preserving the shared sans/heading
 token seam; the production build emits Inter assets only. UI-009 landed the
 decluttered five-section primary sidebar and redesigned identity-rich user menu
 on 2026-07-16, with Workspaces and Workspace Settings retained on desktop and
-mobile. UI-010 remains sequenced next in that track; completed plans live under
-`docs/plans/complete/` with the `frontend-ui-` filename prefix.
+mobile. UI-010 replaced the mobile dropdown with a Base UI modal drawer on
+2026-07-16, reusing the desktop sidebar composition and adding the mobile-only
+workspace switcher placement without changing the desktop shell. The completed
+visual-refinement plans live under `docs/plans/complete/` with the
+`frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM — introduces one new primitive (sheet/drawer) and
