@@ -207,6 +207,14 @@ browser-facing API GET with an authenticated, CSRF-protected JSON POST.
 `DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
+The auxiliary frontend visual-refinement track lives in
+`docs/plans/frontend-ui/README.md` and does not change the numbered product
+ordering below. Its UI-001 design-token foundation was executed 2026-07-16
+using the established Praxis charcoal/cream/amber/teal brand palette; the
+completed plan moved to
+`docs/plans/complete/frontend-ui-001-design-tokens.md`. UI-002 through UI-007
+remain TODO in the track-local status table.
+
 ## Execution Order & Status
 
 | Plan | Title | Priority | Effort | Depends on | Status |

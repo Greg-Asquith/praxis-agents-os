@@ -28,7 +28,7 @@ export function SkillsTable({ skills }: { skills: Skill[] }) {
     return (
       <EmptyState
         action={
-          <Button render={<Link to="/skills/new" />}>
+          <Button variant="secondary" render={<Link to="/skills/new" />}>
             <PlusIcon data-icon="inline-start" />
             New skill
           </Button>

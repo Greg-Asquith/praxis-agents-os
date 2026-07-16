@@ -247,6 +247,18 @@ Not a numbered plan; a checklist chore:
 | 023 | Audit & security log read API + viewer UI: workspace-scoped audit list with action/resource/status/actor/date filters, event detail drawer, security event list; owner/admin-only. Backend write/query services already exist. **DONE 2026-07-03; viewer lives in Workspace Settings → Audit log.** | P1 |
 | 024 | Workspace default & invite UX: persist active workspace to `users.default_workspace_id` on switch, accept pending invites after sign-in, copy-invite-URL/code buttons, personal-vs-team switcher behavior. **DONE 2026-07-07.** | P2 |
 
+### Frontend visual refinement track (auxiliary, added 2026-07-16)
+
+The visual-only track in `docs/plans/frontend-ui/` follows the product roadmap
+without changing its feature ordering. UI-001 landed the Praxis brand token
+foundation on 2026-07-16: charcoal/cream surfaces, amber actions, teal links,
+semantic success/warning colors, dark-mode parity, and shared button/badge
+polish. The original blue-primary proposal was rejected during maintainer
+visual review in favor of the established palette published at
+`praxis-agents.ai`. UI-002 through UI-007 remain sequenced in that track;
+the completed UI-001 plan lives at
+`docs/plans/complete/frontend-ui-001-design-tokens.md`.
+
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 
 | Plan | Scope |

@@ -157,7 +157,7 @@ export function HomeRoute() {
             emptyState={
               <EmptyState
                 action={
-                  <Button render={<Link to="/conversations/new" />}>
+                  <Button variant="secondary" render={<Link to="/conversations/new" />}>
                     <MessageSquarePlusIcon data-icon="inline-start" />
                     New Conversation
                   </Button>

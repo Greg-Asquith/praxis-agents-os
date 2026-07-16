@@ -97,7 +97,7 @@ function markdownComponents(): Components {
       const isExternal = typeof href === "string" && /^https?:\/\//i.test(href)
       return (
         <a
-          className="text-primary wrap-break-word underline underline-offset-2 hover:opacity-80"
+          className="text-link hover:text-primary wrap-break-word underline underline-offset-2"
           href={href}
           rel={isExternal ? "noopener noreferrer" : undefined}
           target={isExternal ? "_blank" : undefined}
