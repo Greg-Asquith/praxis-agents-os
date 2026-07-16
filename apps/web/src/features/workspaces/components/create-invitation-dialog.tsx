@@ -112,7 +112,7 @@ export function CreateInvitationDialog() {
               <Alert>
                 <AlertTitle>Invitation created</AlertTitle>
                 <AlertDescription>
-                  Share this token with the invitee if email delivery is not configured.
+                  Share this token with the invitee if the email doesn't arrive.
                 </AlertDescription>
               </Alert>
             )}

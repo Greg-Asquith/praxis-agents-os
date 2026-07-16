@@ -65,7 +65,6 @@ export function HomeRoute() {
               />
             }
             showRunStatus
-            sourceVisibility="none"
           />
         </DashboardPanel>
 
@@ -98,7 +97,6 @@ export function HomeRoute() {
               />
             }
             showRunStatus
-            sourceVisibility="always"
           />
         </DashboardPanel>
       </section>

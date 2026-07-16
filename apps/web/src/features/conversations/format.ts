@@ -1,13 +1,7 @@
 // apps/web/src/features/conversations/format.ts
 
 import type { AgentRunStatus, Conversation } from "@/features/conversations/types"
-import { titleCaseToken } from "@/lib/format"
-
-const SOURCE_LABELS: Record<string, string> = {
-  delegated: "Delegated",
-  direct: "Direct",
-  scheduled: "Scheduled",
-}
+import { isRecord } from "@/lib/guards"
 
 const RUN_STATUS_LABELS: Record<AgentRunStatus, string> = {
   awaiting_approval: "Waiting for approval",
@@ -31,12 +25,24 @@ export function conversationAgentLabel(conversation: Conversation, fallbackLabel
   return fallbackLabel
 }
 
-export function sourceLabel(source: string) {
-  return SOURCE_LABELS[source] ?? titleCaseToken(source, "Unknown")
-}
-
 export function runStatusLabel(status: AgentRunStatus) {
   return RUN_STATUS_LABELS[status]
+}
+
+export function conversationScheduleContext(metadata: Record<string, unknown> | null) {
+  if (!isRecord(metadata)) {
+    return null
+  }
+
+  const schedule = metadata["schedule"]
+  if (!isRecord(schedule)) {
+    return null
+  }
+
+  return {
+    scheduleId: typeof schedule["schedule_id"] === "string" ? schedule["schedule_id"] : null,
+    scheduledFor: typeof schedule["scheduled_for"] === "string" ? schedule["scheduled_for"] : null,
+  }
 }
 
 export function supportIdentifier(value: string | null | undefined) {

@@ -3,7 +3,6 @@
 import { CircleDashedIcon, MessageSquarePlusIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
@@ -19,22 +18,21 @@ export function NewConversationRoute() {
   return (
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <header className="shrink-0">
-        <div className="mx-auto flex w-full max-w-5xl flex-col justify-between gap-3 px-4 py-4 md:flex-row md:items-start">
-          <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Direct</Badge>
-              {stream.isStreaming && (
-                <Badge variant="secondary">
-                  <CircleDashedIcon className="animate-spin" data-icon="inline-start" />
-                  Starting
-                </Badge>
-              )}
-            </div>
-            <h1 className="font-heading text-xl font-semibold">New Conversation</h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {activeAgentCount} active {activeAgentCount === 1 ? "agent" : "agents"} available.
-            </p>
-          </div>
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-2 gap-y-1 px-4 py-3">
+          <h1 className="font-heading text-base font-medium">New Conversation</h1>
+          <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm">
+            <span aria-hidden="true">·</span>
+            <span>
+              {activeAgentCount} {activeAgentCount === 1 ? "agent" : "agents"} available
+            </span>
+            {stream.isStreaming ? (
+              <span className="flex items-center gap-1">
+                <span aria-hidden="true">·</span>
+                <CircleDashedIcon aria-hidden="true" className="size-3.5 animate-spin" />
+                Starting
+              </span>
+            ) : null}
+          </p>
         </div>
       </header>
 

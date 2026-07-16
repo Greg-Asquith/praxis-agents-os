@@ -2,13 +2,15 @@
 
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
-import { ClockIcon, MessageSquareTextIcon } from "lucide-react"
+import {
+  CalendarClockIcon,
+  ClockIcon,
+  CornerDownRightIcon,
+  MessageSquareTextIcon,
+} from "lucide-react"
 
 import { EmptyState } from "@/components/ui/empty-state"
-import {
-  ConversationBadges,
-  type ConversationSourceVisibility,
-} from "@/features/conversations/components/conversation-badges"
+import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
 import { conversationAgentLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
@@ -19,7 +21,6 @@ type ConversationListProps = {
   emptyState?: ReactNode
   selectedConversationId?: string | null
   showRunStatus?: boolean
-  sourceVisibility?: ConversationSourceVisibility
 }
 
 export function ConversationList({
@@ -27,7 +28,6 @@ export function ConversationList({
   emptyState,
   selectedConversationId,
   showRunStatus = false,
-  sourceVisibility = "non-direct",
 }: ConversationListProps) {
   if (conversations.length === 0) {
     return (
@@ -69,12 +69,23 @@ export function ConversationList({
               <ConversationBadges
                 conversation={conversation}
                 runStatus={showRunStatus ? conversation.active_run_status : null}
-                sourceVisibility={sourceVisibility}
               />
             </div>
             <div className="text-muted-foreground flex items-center gap-1 text-xs">
-              <ClockIcon className="size-3" />
-              {formatDateTime(conversation.last_message_at ?? conversation.updated_at)}
+              <ClockIcon aria-hidden="true" className="size-3" />
+              <span>{formatDateTime(conversation.last_message_at ?? conversation.updated_at)}</span>
+              {conversation.source === "scheduled" ? (
+                <>
+                  <CalendarClockIcon aria-hidden="true" className="ml-1 size-3" />
+                  <span className="sr-only">Scheduled</span>
+                </>
+              ) : null}
+              {conversation.source === "delegated" ? (
+                <>
+                  <CornerDownRightIcon aria-hidden="true" className="ml-1 size-3" />
+                  <span className="sr-only">Delegated</span>
+                </>
+              ) : null}
             </div>
           </Link>
         )

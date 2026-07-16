@@ -1,103 +1,71 @@
 // apps/web/src/features/conversations/components/conversation-detail-header.tsx
 
+import { CalendarClockIcon, CornerDownRightIcon } from "lucide-react"
+
+import { Badge } from "@/components/ui/badge"
 import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
-import { conversationAgentLabel, supportIdentifier } from "@/features/conversations/format"
+import { conversationScheduleContext } from "@/features/conversations/format"
 import type { AgentRun, Conversation } from "@/features/conversations/types"
 import { formatDateTime } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
 
 export function ConversationDetailHeader({
   activeRun,
   conversation,
+  scheduleLabel,
 }: {
   activeRun: AgentRun | null
   conversation: Conversation
+  scheduleLabel: string | null
 }) {
   const scheduleContext =
-    conversation.source === "scheduled" ? getScheduleContext(conversation.metadata) : null
+    conversation.source === "scheduled" ? conversationScheduleContext(conversation.metadata) : null
   const displayedRunStatus = activeRun?.status ?? conversation.active_run_status
   const showApprovalBadge =
     conversation.needs_approval && displayedRunStatus !== "awaiting_approval"
+  const lastActivityAt = conversation.last_message_at ?? conversation.updated_at
 
   return (
-    <header className="flex flex-col gap-3 p-4">
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-        <div className="min-w-0">
+    <header className="px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <h2 className="font-heading min-w-0 truncate text-base font-medium">
+            {conversation.title ?? "Untitled conversation"}
+          </h2>
+          {scheduleContext ? (
+            <Badge className="max-w-56 shrink-0" variant="outline">
+              <CalendarClockIcon aria-hidden="true" data-icon="inline-start" />
+              <span className="truncate">Schedule{scheduleLabel ? ` - ${scheduleLabel}` : ""}</span>
+            </Badge>
+          ) : null}
+          {conversation.source === "delegated" ? (
+            <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+              <CornerDownRightIcon aria-hidden="true" className="size-3.5" />
+              Started by another agent
+            </span>
+          ) : null}
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <ConversationBadges
-            className="mb-2 justify-start gap-2"
+            className="gap-1"
             conversation={conversation}
             runStatus={displayedRunStatus}
             showApproval={showApprovalBadge}
-            sourceVisibility="non-direct"
           />
-          <h2 className="font-heading truncate text-xl font-semibold">
-            {conversation.title ?? "Untitled conversation"}
-          </h2>
-          <p className="text-muted-foreground mt-1 truncate text-sm">
-            {conversationAgentLabel(conversation, "No active agent")}
-          </p>
-          {scheduleContext && (
-            <div className="text-muted-foreground mt-1 text-xs">
-              <p className="truncate">{scheduleContext.label}</p>
-              {scheduleContext.supportDetails.length > 0 && (
-                <details className="mt-1">
-                  <summary className="hover:text-foreground cursor-pointer">
-                    Support details
-                  </summary>
-                  <dl className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                    {scheduleContext.supportDetails.map((detail) => (
-                      <div className="flex min-w-0 gap-1" key={detail.label}>
-                        <dt>{detail.label}</dt>
-                        <dd className="font-mono">{detail.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </details>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="text-muted-foreground shrink-0 text-left text-xs md:text-right">
-          <p>Last Updated</p>
-          <p className="text-foreground">
-            {formatDateTime(conversation.last_message_at ?? conversation.updated_at)}
-          </p>
+          <div className="text-muted-foreground text-right text-xs">
+            {scheduleContext?.scheduledFor ? (
+              <p>
+                Ran:{" "}
+                <span className="text-foreground">
+                  {formatDateTime(scheduleContext.scheduledFor)}
+                </span>
+              </p>
+            ) : null}
+            <p>
+              Updated: <span className="text-foreground">{formatDateTime(lastActivityAt)}</span>
+            </p>
+          </div>
         </div>
       </div>
     </header>
   )
-}
-
-function getScheduleContext(metadata: Record<string, unknown> | null) {
-  if (!isRecord(metadata)) {
-    return null
-  }
-
-  const schedule = metadata["schedule"]
-  if (!isRecord(schedule)) {
-    return null
-  }
-
-  const scheduledFor =
-    typeof schedule["scheduled_for"] === "string"
-      ? `Scheduled for ${formatDateTime(schedule["scheduled_for"])}`
-      : "Scheduled conversation"
-  const supportDetails = [
-    supportMetadataPart("Schedule", schedule["schedule_id"]),
-    supportMetadataPart("Run", schedule["schedule_run_id"]),
-  ].filter((part): part is { label: string; value: string } => part !== null)
-
-  return {
-    label: scheduledFor,
-    supportDetails,
-  }
-}
-
-function supportMetadataPart(label: string, value: unknown) {
-  if (typeof value !== "string" || value.length === 0) {
-    return null
-  }
-
-  const identifier = supportIdentifier(value)
-  return identifier ? { label, value: identifier } : null
 }

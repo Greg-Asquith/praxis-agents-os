@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useParams } from "@tanstack/react-router"
 import {
+  useQuery,
   useQueryClient,
   useSuspenseQueries,
   useSuspenseQuery,
@@ -26,7 +27,10 @@ import { conversationMessagesQueryOptions } from "@/features/conversations/api/l
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
 import { useConversationReadReceipt } from "@/features/conversations/hooks/use-conversation-read-receipt"
 import { useConversationRunState } from "@/features/conversations/hooks/use-conversation-run-state"
-import { conversationAgentLabel } from "@/features/conversations/format"
+import {
+  conversationAgentLabel,
+  conversationScheduleContext,
+} from "@/features/conversations/format"
 import { pendingMessagesForConversation } from "@/features/conversations/message-parts"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
 import {
@@ -40,6 +44,8 @@ import type {
   ConversationMessagesResponse,
 } from "@/features/conversations/types"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
+import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
+import { scheduleTitle } from "@/features/schedules/format"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { getErrorMessage } from "@/lib/api/errors"
 
@@ -71,6 +77,12 @@ function ConversationDetail({
   conversationId: string
 }) {
   const queryClient = useQueryClient()
+  const scheduleContext =
+    conversation.source === "scheduled" ? conversationScheduleContext(conversation.metadata) : null
+  const scheduleQuery = useQuery({
+    ...scheduleQueryOptions(scheduleContext?.scheduleId ?? ""),
+    enabled: scheduleContext?.scheduleId !== null && scheduleContext !== null,
+  })
   const { pendingUserMessages, stream } = useConversationWorkspace()
   const [submittingApprovalRunId, setSubmittingApprovalRunId] = useState<string | null>(null)
   const isLiveStreamConversation = stream.conversationId === conversationId
@@ -200,7 +212,11 @@ function ConversationDetail({
   return (
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <div className="shrink-0">
-        <ConversationDetailHeader activeRun={activeRun} conversation={conversation} />
+        <ConversationDetailHeader
+          activeRun={activeRun}
+          conversation={conversation}
+          scheduleLabel={scheduleQuery.data ? scheduleTitle(scheduleQuery.data) : null}
+        />
       </div>
       <Separator className="shrink-0" />
 
