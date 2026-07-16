@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   formatBytes,
+  formatCompactDate,
   formatDateTime,
   initials,
   normalize,
@@ -55,5 +56,37 @@ describe("format helpers", () => {
   it("keeps date formatting assertions locale-independent", () => {
     expect(formatDateTime(null)).toBe("Never")
     expect(formatDateTime("2026-07-07T10:00:00.000Z")).not.toBe("")
+  })
+
+  it("formats compact dates by local calendar age", () => {
+    const now = new Date(2026, 6, 16, 12)
+    const today = new Date(2026, 6, 16, 17, 21)
+    const thisYear = new Date(2026, 6, 7, 10)
+    const priorYear = new Date(2025, 11, 31, 23, 50)
+
+    expect(formatCompactDate(null, now)).toBe("Never")
+    expect(formatCompactDate(undefined, now)).toBe("Never")
+    expect(formatCompactDate(today.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(today)
+    )
+    expect(formatCompactDate(thisYear.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(thisYear)
+    )
+    expect(formatCompactDate(priorYear.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }).format(priorYear)
+    )
+  })
+
+  it("formats yesterday at 23:50 as a date instead of a time", () => {
+    const now = new Date(2026, 6, 16, 0, 10)
+    const yesterday = new Date(2026, 6, 15, 23, 50)
+
+    expect(formatCompactDate(yesterday.toISOString(), now)).toBe(
+      new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(yesterday)
+    )
   })
 })

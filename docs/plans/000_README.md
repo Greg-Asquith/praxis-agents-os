@@ -247,7 +247,12 @@ menu without changing the desktop shell or API behavior. UI-011 removed
 redundant list-page card wrappers, flattened dashboard sections, and changed
 the shared mobile table presentation to divider-separated rows on 2026-07-16;
 it moved to `docs/plans/complete/frontend-ui-011-decard-pages.md` without
-backend, API, routing, or data changes.
+backend, API, routing, or data changes. UI-012 moved sidebar conversation
+timestamps onto the agent meta line and formats them by local calendar age on
+2026-07-16; it moved to
+`docs/plans/complete/frontend-ui-012-sidebar-conversation-rows.md` with the
+existing full timestamp, approval/unread states, API contract, and shared
+desktop/mobile component preserved.
 
 ## Execution Order & Status
 

@@ -6,7 +6,7 @@ import { MessageSquarePlusIcon, MessageSquareTextIcon, ShieldAlertIcon } from "l
 import { Button } from "@/components/ui/button"
 import { conversationAgentLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
-import { formatDateTime } from "@/lib/format"
+import { formatCompactDate, formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type SidebarConversationsProps = {
@@ -65,6 +65,8 @@ function ConversationRow({
   conversation: Conversation
   isSelected: boolean
 }) {
+  const lastActivityAt = conversation.last_message_at ?? conversation.updated_at
+
   return (
     <Link
       to="/conversations/$conversationId"
@@ -75,26 +77,33 @@ function ConversationRow({
       )}
     >
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">
-          {conversation.title ?? "Untitled conversation"}
-        </span>
-        <span className="text-muted-foreground block truncate text-xs">
-          {conversationAgentLabel(conversation)}
-        </span>
-      </span>
-      <span className="flex shrink-0 items-center gap-1 pt-0.5">
-        {conversation.needs_approval && (
-          <span aria-label="Needs approval" title="Needs approval">
-            <ShieldAlertIcon className="text-warning size-3.5" />
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {conversation.title ?? "Untitled conversation"}
           </span>
-        )}
-        {conversation.unread && (
-          <span aria-label="Unread" title="Unread">
-            <span aria-hidden className="bg-primary block size-2 rounded-full" />
+          <span className="flex shrink-0 items-center gap-1">
+            {conversation.needs_approval && (
+              <span aria-label="Needs approval" title="Needs approval">
+                <ShieldAlertIcon className="text-warning size-3.5" />
+              </span>
+            )}
+            {conversation.unread && (
+              <span aria-label="Unread" title="Unread">
+                <span aria-hidden className="bg-primary block size-2 rounded-full" />
+              </span>
+            )}
           </span>
-        )}
-        <span className="text-muted-foreground text-[0.7rem] leading-4">
-          {formatDateTime(conversation.last_message_at ?? conversation.updated_at)}
+        </span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+            {conversationAgentLabel(conversation)}
+          </span>
+          <span
+            className="text-muted-foreground shrink-0 text-[0.7rem] leading-4 whitespace-nowrap"
+            title={formatDateTime(lastActivityAt)}
+          >
+            {formatCompactDate(lastActivityAt)}
+          </span>
         </span>
       </span>
     </Link>

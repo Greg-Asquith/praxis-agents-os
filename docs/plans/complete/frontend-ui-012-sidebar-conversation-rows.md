@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Written**: 2026-07-16 (anchors verified at `d1c4a89`)
+- **Completed**: 2026-07-16
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW — one shell component plus one new format helper with
@@ -118,3 +118,22 @@ needed.
 - The compact format proves ambiguous in real data in some locale
   (e.g. a locale where the short-month form still overflows) — stop and
   report rather than inventing a custom non-Intl format.
+
+## Execution record
+
+- Added a locale-aware compact date formatter with module-level `Intl`
+  formatters. It distinguishes today, the current calendar year, and prior
+  years by local date parts; null and undefined retain the existing `Never`
+  convention.
+- Reworked the shared sidebar conversation row into two stacked lines. Titles
+  now use the width left by the approval/unread indicators, while the agent and
+  compact timestamp share the meta line. The full timestamp remains available
+  through the datetime span's `title` attribute.
+- Added locale- and timezone-independent unit coverage for null, undefined,
+  same-day, same-year, prior-year, and yesterday-at-23:50 behavior.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 91 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build. Browser use was
+  excluded at the maintainer's direction; desktop/mobile reuse, both semantic
+  themes, selected-row classes, truncation constraints, full-timestamp hover
+  metadata, and indicator labels were verified through source inspection of
+  the single component shared by the desktop sidebar and mobile drawer.

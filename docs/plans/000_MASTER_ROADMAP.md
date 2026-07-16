@@ -282,7 +282,10 @@ mobile. UI-010 replaced the mobile dropdown with a Base UI modal drawer on
 workspace switcher placement without changing the desktop shell. The completed
 UI-011 pass removed redundant list-page card wrappers, flattened dashboard
 sections, and changed all shared mobile table rows to plain divider-separated
-content on 2026-07-16 without changing backend or data behavior. The completed
+content on 2026-07-16 without changing backend or data behavior. UI-012 moved
+sidebar conversation timestamps to the meta line and compacted them by local
+calendar age on 2026-07-16, preserving full timestamp metadata and the shared
+desktop/mobile conversation row without backend or API changes. The completed
 visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

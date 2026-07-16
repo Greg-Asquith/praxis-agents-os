@@ -1,5 +1,19 @@
 // apps/web/src/lib/format.ts
 
+const COMPACT_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+})
+const COMPACT_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  day: "numeric",
+  month: "short",
+})
+const COMPACT_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+})
+
 export function formatDateTime(
   value: string | null | undefined,
   dateStyle: "medium" | "full" | "long" | "short" | undefined = "medium",
@@ -13,6 +27,30 @@ export function formatDateTime(
     dateStyle: dateStyle,
     timeStyle: timeStyle,
   }).format(new Date(value))
+}
+
+export function formatCompactDate(
+  value: string | null | undefined,
+  now: Date = new Date()
+): string {
+  if (!value) {
+    return "Never"
+  }
+
+  const date = new Date(value)
+  if (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  ) {
+    return COMPACT_TIME_FORMATTER.format(date)
+  }
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return COMPACT_MONTH_DAY_FORMATTER.format(date)
+  }
+
+  return COMPACT_DATE_FORMATTER.format(date)
 }
 
 export function formatDateTimeInTimeZone(value: string | null | undefined, timezone: string) {

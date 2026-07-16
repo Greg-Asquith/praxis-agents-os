@@ -68,8 +68,9 @@ Functional, but visibly unstyled.
 | 009 | Sidebar declutter & user menu redesign | P1 | S | 001 | DONE |
 | 010 | Mobile shell: drawer sidebar | P1 | M | 002, 009 | DONE |
 | 011 | De-card pages: plain content surfaces | P1 | M | 001, 002, 007 | DONE |
-| 012 | Sidebar conversation rows: compact datetime | P2 | S | 010 | TODO |
+| 012 | Sidebar conversation rows: compact datetime | P2 | S | 010 | DONE |
 | 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | TODO |
+| 014 | Remove unneeded useEffects | P2 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -102,6 +103,10 @@ Dependency notes:
   run it after 010 so the row work happens once.
 - 013 sweeps action-label literals across files 010 adds and 011
   deletes — run it last, after 010–012, so it sweeps final copy.
+- 014 (written 2026-07-16 at `b011664`) is a code-health plan, not a
+  visual one. No hard dependencies, but do not run it concurrently
+  with 012/013 — it touches the same conversation-route and callback
+  files 013 sweeps.
 
 ## Shared rules for every plan
 
@@ -178,6 +183,13 @@ Dependency notes:
   This settles the sentence-case/Title Case split — plan 009's
   "sentence-cased" phrasing for menu items is superseded (those labels
   were already Title Case in practice).
+- **`useEffect` is reserved for external-system sync** (maintainer,
+  2026-07-16; plan 014). Effects exist only to synchronize with
+  systems outside React — connections, the DOM, timer cleanup. Data
+  fetching on navigation goes in route loaders, derived state in
+  render, persistence in event handlers, polling in the query layer.
+  Plan 014's audit table records the five justified survivors; new
+  effects need the same justification.
 
 ## Considered and rejected (do not re-propose)
 
