@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW — additive component, no data changes.
@@ -101,3 +102,20 @@ if `from-(--agent-color)` is unsupported, fall back to plain
   time) — if so, stop: the plan should consume it, not shadow it.
 - Tailwind rejects both the arbitrary-value CSS-var gradient and the
   `style` fallback for some reason — report rather than inlining hex.
+
+## Execution record
+
+- The live frontend and backend agent contracts still expose no icon, color,
+  or avatar field, so the implementation remains entirely client-derived with
+  no API or persistence changes.
+- A shared FNV-1a helper maps agent ids into eight themed hues. One
+  `AgentIdentityIcon` component now serves the shared agent picker, desktop and
+  mobile agent lists, and the agent configure header; conversation turns remain
+  reserved for plan 004.
+- The live Tailwind 4 build accepts the CSS-variable gradient syntax. Static
+  contrast calculation found that the suggested 85% light gradient diluted the
+  green, teal, and sky entries below 3:1, so the light gradient uses 95% and the
+  dark palette uses `L=0.62`; the resulting worst case is 3.1:1.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 81 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build. Interactive
+  browser QA was not run at the maintainer's direction.

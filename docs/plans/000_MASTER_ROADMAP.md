@@ -257,9 +257,11 @@ polish. The original blue-primary proposal was rejected during maintainer
 visual review in favor of the established palette published at
 `praxis-agents.ai`. UI-002 landed the responsive inset app canvas and sidebar
 finish on 2026-07-16 without changing navigation or workspace-switcher
-placement. UI-003 through UI-007 remain sequenced in that track; the completed
-plans live at `docs/plans/complete/frontend-ui-001-design-tokens.md` and
-`docs/plans/complete/frontend-ui-002-app-shell-sidebar.md`.
+placement. UI-003 landed deterministic, client-derived agent identity icons on
+2026-07-16 across agent pickers, desktop/mobile lists, and the configure header;
+the API contract remains unchanged. UI-004 through UI-008 remain sequenced in
+that track; the completed plans live under `docs/plans/complete/` with the
+`frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

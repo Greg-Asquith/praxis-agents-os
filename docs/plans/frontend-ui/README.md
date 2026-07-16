@@ -59,11 +59,12 @@ Functional, but visibly unstyled.
 |------|-------|----------|--------|------------|--------|
 | 001 | Design tokens & primitive polish | P1 | M | — | DONE |
 | 002 | App shell: inset canvas (visual only) | P1 | M | 001 | DONE |
-| 003 | Agent identity (deterministic colored icons) | P1 | S | 001 | TODO |
+| 003 | Agent identity (deterministic colored icons) | P1 | S | 001 | DONE |
 | 004 | Conversation surface: transcript & message styling | P1 | M | 001, 003 | TODO |
 | 005 | Tool rows & approval styling | P1 | M | 001, 004 | TODO |
 | 006 | Composer redesign | P1 | M | 001, 003 | TODO |
 | 007 | Pages & states polish (dashboard, lists, auth, empty) | P2 | M | 001, 002, 003 | TODO |
+| 008 | Typography: Inter replaces Geist | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -82,6 +83,8 @@ Dependency notes:
 - 003 is small and unblocks per-agent identity in 004 (turn labels) and
   006 (agent picker); land it early.
 - 007 sweeps whatever the earlier plans did not touch; run it last.
+- 008 (font swap) is independent of everything; land it early so the
+  remaining plans' visual QA happens in the final typeface.
 
 ## Shared rules for every plan
 
@@ -117,8 +120,12 @@ Dependency notes:
   CTA, approve-submit). Links use the separate brand-teal `--link` token.
   A proposed blue primary was rejected by the maintainer on 2026-07-16 after
   visual review because it did not match the established brand.
-- **Geist stays.** The reference look is achievable with Geist Variable;
-  no font change, no marketing-serif experiments.
+- **Inter replaces Geist** (maintainer, 2026-07-16; plan 008 — supersedes
+  the earlier "Geist stays" decision). The reference's face is Styrene B,
+  which is commercial; Inter is the closest open-licensed match, and
+  Geist's geometric character read too "developer tool". Still one family
+  for everything — `--font-heading` keeps aliasing `--font-sans`, no
+  marketing-serif experiments.
 - **Agent identity is client-derived** (deterministic hue from agent id) —
   no backend/schema change in this plan set. A persisted per-agent
   icon/color field is a possible follow-up vertical, out of scope here.

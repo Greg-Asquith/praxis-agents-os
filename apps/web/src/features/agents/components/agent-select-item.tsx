@@ -1,5 +1,6 @@
 // apps/web/src/features/agents/components/agent-select-item.tsx
 
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { agentSelectSecondary } from "@/features/agents/components/agent-select-format"
 import type { Agent } from "@/features/agents/types"
 
@@ -7,11 +8,14 @@ export function AgentSelectItem({ agent, secondary }: { agent: Agent; secondary?
   const description = secondary ?? agentSelectSecondary(agent)
 
   return (
-    <span className="flex min-w-0 flex-col">
-      <span className="truncate">{agent.name}</span>
-      {description ? (
-        <span className="text-muted-foreground truncate text-xs">{description}</span>
-      ) : null}
+    <span className="flex min-w-0 items-center gap-2">
+      <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="sm" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{agent.name}</span>
+        {description ? (
+          <span className="text-muted-foreground truncate text-xs">{description}</span>
+        ) : null}
+      </span>
     </span>
   )
 }

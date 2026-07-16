@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { countApprovalPolicyTools } from "@/features/agents/agent-metrics"
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { AgentStatusBadges } from "@/features/agents/components/agent-status-badges"
 import { formatAgentModel } from "@/features/agents/components/agent-model-label"
 import type { Agent } from "@/features/agents/types"
@@ -79,14 +80,17 @@ export function AgentsTable({
               return (
                 <TableRow key={agent.id}>
                   <TableCell>
-                    <div className="flex min-w-56 flex-col gap-1">
-                      <span className="font-medium">{agent.name}</span>
-                      <span className="text-muted-foreground text-xs">{agent.slug}</span>
-                      {agent.description && (
-                        <span className="text-muted-foreground max-w-md truncate text-xs">
-                          {agent.description}
-                        </span>
-                      )}
+                    <div className="flex min-w-56 items-start gap-2.5">
+                      <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} />
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="font-medium">{agent.name}</span>
+                        <span className="text-muted-foreground text-xs">{agent.slug}</span>
+                        {agent.description && (
+                          <span className="text-muted-foreground max-w-md truncate text-xs">
+                            {agent.description}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -139,9 +143,12 @@ function AgentMobileRow({
     <ResponsiveListItem>
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{agent.name}</p>
-            <p className="text-muted-foreground truncate text-xs">{agent.slug}</p>
+          <div className="flex min-w-0 items-start gap-2.5">
+            <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} />
+            <div className="min-w-0">
+              <p className="truncate font-medium">{agent.name}</p>
+              <p className="text-muted-foreground truncate text-xs">{agent.slug}</p>
+            </div>
           </div>
           <AgentStatusBadges agent={agent} />
         </div>

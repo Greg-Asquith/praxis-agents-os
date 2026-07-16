@@ -212,10 +212,13 @@ The auxiliary frontend visual-refinement track lives in
 ordering below. Its UI-001 design-token foundation was executed 2026-07-16
 using the established Praxis charcoal/cream/amber/teal brand palette; the
 completed plan moved to
-`docs/plans/complete/frontend-ui-001-design-tokens.md`. UI-002 through UI-007
-were sequenced next; UI-002 was completed 2026-07-16 and moved to
-`docs/plans/complete/frontend-ui-002-app-shell-sidebar.md`. UI-003 through
-UI-007 remain TODO in the track-local status table.
+`docs/plans/complete/frontend-ui-001-design-tokens.md`. UI-002 and UI-003 were
+completed 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-002-app-shell-sidebar.md` and
+`docs/plans/complete/frontend-ui-003-agent-identity.md`. UI-003 adds one
+client-derived, themed identity system across agent pickers, lists, and the
+configure header without changing the agent API. UI-004 through UI-008 remain
+TODO in the track-local status table.
 
 ## Execution Order & Status
 

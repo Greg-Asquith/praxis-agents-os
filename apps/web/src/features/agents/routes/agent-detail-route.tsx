@@ -21,6 +21,7 @@ import { useAgentQuery } from "@/features/agents/api/get-agent"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { useUpdateAgentMutation } from "@/features/agents/api/update-agent"
 import { AgentForm } from "@/features/agents/components/agent-form"
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { AgentStatusBadges } from "@/features/agents/components/agent-status-badges"
 import { formatAgentModel } from "@/features/agents/components/agent-model-label"
 import type { AgentUpdateRequest } from "@/features/agents/types"
@@ -74,7 +75,10 @@ export function AgentDetailRoute() {
               <AgentStatusBadges agent={agent} />
               <Badge variant="outline">{agent.slug}</Badge>
             </div>
-            <h1 className="font-heading text-2xl font-semibold tracking-normal">{agent.name}</h1>
+            <div className="flex items-center gap-3">
+              <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="lg" />
+              <h1 className="font-heading text-2xl font-semibold tracking-normal">{agent.name}</h1>
+            </div>
             <p className="text-muted-foreground max-w-3xl text-sm">
               {agent.description ?? "No description has been set for this agent."}
             </p>
