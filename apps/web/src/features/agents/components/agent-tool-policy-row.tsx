@@ -51,7 +51,7 @@ export function AgentToolPolicyRow({
           <button
             aria-checked={mode === value}
             className={cn(
-              "focus-visible:ring-ring/50 inline-flex h-7 items-center justify-center rounded-[4px] px-2.5 text-xs font-medium transition-colors hover:cursor-pointer focus-visible:ring-[3px] focus-visible:outline-1",
+              "focus-visible:ring-ring/50 inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-xs font-medium transition-colors hover:cursor-pointer focus-visible:ring-[3px] focus-visible:outline-1",
               mode === value
                 ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground"

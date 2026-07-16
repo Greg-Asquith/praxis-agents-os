@@ -13,7 +13,7 @@ export function WorkspacesRoute() {
     <div className="flex flex-col gap-6">
       <PageHeader
         actions={hasWorkspaces ? <CreateWorkspaceDialog /> : null}
-        description="Separate access, audit records, and agent configuration."
+        description="Create and manage workspaces with separate access and audit records."
         title="Workspaces"
       />
 

@@ -25,7 +25,7 @@ export function AgentsRoute() {
             </Button>
           ) : null
         }
-        description="Configure agents, models, tools, delegation, and approval policies."
+        description="Create and manage the agents that work in this workspace."
         title="Agents"
       />
 

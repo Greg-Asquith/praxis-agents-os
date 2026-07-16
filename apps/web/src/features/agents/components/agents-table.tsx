@@ -1,7 +1,7 @@
 // apps/web/src/features/agents/components/agents-table.tsx
 
 import { Link } from "@tanstack/react-router"
-import { BotIcon, PlusIcon, Settings2Icon } from "lucide-react"
+import { BotIcon, PencilIcon, PlusIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,7 +43,7 @@ export function AgentsTable({
             New Agent
           </Button>
         }
-        description="Create the first workspace agent to start conversations and configure approval policies."
+        description="Create the first agent to start conversations in this workspace."
         icon={<BotIcon className="size-5" />}
         size="compact"
         title="No agents yet"
@@ -66,7 +66,7 @@ export function AgentsTable({
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Model</TableHead>
-              <TableHead>Runtime</TableHead>
+              <TableHead>Tools</TableHead>
               <TableHead>Updated</TableHead>
               <TableHead>
                 <span className="sr-only">Actions</span>
@@ -97,16 +97,10 @@ export function AgentsTable({
                   </TableCell>
                   <TableCell>{formatAgentModel(agent, modelCatalog)}</TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant="outline">
-                        {agent.tool_names.length} {pluralize(agent.tool_names.length, "tool")}
-                      </Badge>
-                      {approvalPolicyTools > 0 && (
-                        <Badge variant="secondary">
-                          {approvalPolicyTools} approval {pluralize(approvalPolicyTools, "gate")}
-                        </Badge>
-                      )}
-                    </div>
+                    <AgentToolsSummary
+                      approvalCount={approvalPolicyTools}
+                      toolCount={agent.tool_names.length}
+                    />
                   </TableCell>
                   <TableCell>{formatDateTime(agent.updated_at)}</TableCell>
                   <TableCell className="text-right">
@@ -115,8 +109,8 @@ export function AgentsTable({
                       variant="outline"
                       render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
                     >
-                      <Settings2Icon data-icon="inline-start" />
-                      Configure
+                      <PencilIcon data-icon="inline-start" />
+                      Edit
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -161,17 +155,11 @@ function AgentMobileRow({
           <ResponsiveListMeta label="Model">
             {formatAgentModel(agent, modelCatalog)}
           </ResponsiveListMeta>
-          <ResponsiveListMeta label="Runtime">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline">
-                {agent.tool_names.length} {pluralize(agent.tool_names.length, "tool")}
-              </Badge>
-              {approvalPolicyTools > 0 && (
-                <Badge variant="secondary">
-                  {approvalPolicyTools} approval {pluralize(approvalPolicyTools, "gate")}
-                </Badge>
-              )}
-            </div>
+          <ResponsiveListMeta label="Tools">
+            <AgentToolsSummary
+              approvalCount={approvalPolicyTools}
+              toolCount={agent.tool_names.length}
+            />
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Updated">
             {formatDateTime(agent.updated_at)}
@@ -183,10 +171,35 @@ function AgentMobileRow({
           variant="outline"
           render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
         >
-          <Settings2Icon data-icon="inline-start" />
-          Configure
+          <PencilIcon data-icon="inline-start" />
+          Edit
         </Button>
       </div>
     </ResponsiveListItem>
+  )
+}
+
+function AgentToolsSummary({
+  approvalCount,
+  toolCount,
+}: {
+  approvalCount: number
+  toolCount: number
+}) {
+  if (toolCount === 0) {
+    return <span className="text-muted-foreground text-sm">No tools</span>
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Badge variant="outline">
+        {toolCount} {pluralize(toolCount, "tool")}
+      </Badge>
+      {approvalCount > 0 ? (
+        <Badge variant="secondary">
+          {approvalCount} {approvalCount === 1 ? "needs" : "need"} approval
+        </Badge>
+      ) : null}
+    </div>
   )
 }

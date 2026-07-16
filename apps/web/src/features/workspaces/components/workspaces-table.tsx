@@ -34,7 +34,7 @@ export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
     return (
       <EmptyState
         action={<CreateWorkspaceDialog />}
-        description="Create a workspace to separate access, audit records, and agent configuration."
+        description="Create a workspace to separate access and audit records for a team."
         icon={<BriefcaseBusinessIcon className="size-5" />}
         size="compact"
         title="No workspaces yet"

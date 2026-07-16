@@ -176,8 +176,10 @@ export function AgentToolsSection({
                 <div className="bg-muted/30 border-b px-3 py-2">
                   <p className="text-sm font-medium">Unavailable</p>
                   <p className="text-muted-foreground text-xs">
-                    {unavailableToolNames.length} configured{" "}
-                    {unavailableToolNames.length === 1 ? "tool" : "tools"}
+                    {unavailableToolNames.length} selected{" "}
+                    {unavailableToolNames.length === 1
+                      ? "tool is currently unavailable"
+                      : "tools are currently unavailable"}
                   </p>
                 </div>
                 <div className="divide-y">

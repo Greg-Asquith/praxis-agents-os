@@ -1,7 +1,7 @@
 // apps/web/src/features/skills/components/skills-table.tsx
 
 import { Link } from "@tanstack/react-router"
-import { PlusIcon, Settings2Icon, SparklesIcon } from "lucide-react"
+import { PencilIcon, PlusIcon, SparklesIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -101,8 +101,8 @@ export function SkillsTable({ skills }: { skills: Skill[] }) {
                       variant="outline"
                       render={<Link to="/skills/$skillId" params={{ skillId: skill.id }} />}
                     >
-                      <Settings2Icon data-icon="inline-start" />
-                      Configure
+                      <PencilIcon data-icon="inline-start" />
+                      Edit
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -147,8 +147,8 @@ function SkillMobileRow({ skill }: { skill: Skill }) {
           variant="outline"
           render={<Link to="/skills/$skillId" params={{ skillId: skill.id }} />}
         >
-          <Settings2Icon data-icon="inline-start" />
-          Configure
+          <PencilIcon data-icon="inline-start" />
+          Edit
         </Button>
       </div>
     </ResponsiveListItem>
