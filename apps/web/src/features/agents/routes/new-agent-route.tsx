@@ -17,8 +17,8 @@ export function NewAgentRoute() {
   const createAgentMutation = useCreateAgentMutation()
 
   async function handleCreateAgent(payload: AgentCreateRequest) {
-    const agent = await createAgentMutation.mutateAsync(payload)
-    await navigate({ to: "/agents/$agentId", params: { agentId: agent.id } })
+    await createAgentMutation.mutateAsync(payload)
+    await navigate({ to: "/agents" })
   }
 
   return (
@@ -39,7 +39,6 @@ export function NewAgentRoute() {
       <AgentForm
         agents={agentsData.agents}
         cancelLabel="Cancel"
-        cancelTo="/agents"
         isSubmitting={createAgentMutation.isPending}
         mode="create"
         modelCatalog={modelCatalog}

@@ -79,7 +79,6 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
     modelSettings: { temperature: 0.1 },
     name: "  Launch planner  ",
     skillIds: ["skill-1"],
-    slug: "launch-planner",
     thinking: "low",
     toolModes: {
       read_file: "auto",
@@ -105,7 +104,6 @@ describe("initialAgentFormState", () => {
       modelSettings: {},
       name: "",
       skillIds: [],
-      slug: "",
       thinking: "Default",
       toolModes: {
         read_file: "off",
@@ -129,7 +127,6 @@ describe("initialAgentFormState", () => {
       modelSettings: { temperature: 0.2, thinking: "high" },
       name: "Planner",
       skillIds: ["skill-1"],
-      slug: "planner",
       thinking: "high",
       toolModes: {
         read_file: "approval",
@@ -143,8 +140,7 @@ describe("initialAgentFormState", () => {
 describe("validateAgentFormState", () => {
   it("returns entries for required fields and invalid max steps", () => {
     const entries = validateAgentFormState(
-      validState({ instructions: " ", maxSteps: "101.5", name: "" }),
-      "create"
+      validState({ instructions: " ", maxSteps: "101.5", name: "" })
     )
 
     expect(entries).toEqual([
@@ -166,16 +162,8 @@ describe("validateAgentFormState", () => {
     ])
   })
 
-  it("requires slugs for existing agents", () => {
-    expect(validateAgentFormState(validState({ slug: " " }), "edit")).toContainEqual({
-      fieldId: "agent-slug",
-      label: "Slug",
-      message: "Slug is required for existing agents.",
-    })
-  })
-
   it("accepts valid state", () => {
-    expect(validateAgentFormState(validState(), "create")).toEqual([])
+    expect(validateAgentFormState(validState())).toEqual([])
   })
 })
 
@@ -194,7 +182,6 @@ describe("buildAgentPayload", () => {
       model_settings: { temperature: 0.1, thinking: "low" },
       name: "Launch planner",
       skill_ids: ["skill-1"],
-      slug: "launch-planner",
       tool_names: ["read_file", "send_email"],
       tool_policies: {
         read_file: "auto",
@@ -203,14 +190,11 @@ describe("buildAgentPayload", () => {
     })
   })
 
-  it("builds edit payloads and requires an edit slug", () => {
-    expect(buildAgentPayload(validState({ slug: "" }), "edit")).toBe(
-      "Slug is required for existing agents."
-    )
-    expect(buildAgentPayload(validState({ slug: "edited-agent" }), "edit")).toMatchObject({
+  it("builds edit payloads without exposing or changing the system slug", () => {
+    expect(buildAgentPayload(validState(), "edit")).toMatchObject({
       name: "Launch planner",
-      slug: "edited-agent",
     })
+    expect(buildAgentPayload(validState(), "edit")).not.toHaveProperty("slug")
   })
 
   it("returns the first validation error string for invalid state", () => {

@@ -1,8 +1,8 @@
 // apps/web/src/features/agents/routes/agent-detail-route.tsx
 
 import { useState } from "react"
-import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { ArrowLeftIcon, Trash2Icon } from "lucide-react"
+import { useNavigate, useParams } from "@tanstack/react-router"
+import { Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +14,6 @@ import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { useUpdateAgentMutation } from "@/features/agents/api/update-agent"
 import { AgentForm } from "@/features/agents/components/agent-form"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
-import { AgentStatusBadges } from "@/features/agents/components/agent-status-badges"
 import type { AgentUpdateRequest } from "@/features/agents/types"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -30,18 +29,15 @@ export function AgentDetailRoute() {
   const deleteAgentMutation = useDeleteAgentMutation()
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [saved, setSaved] = useState(false)
 
   async function handleUpdateAgent(payload: AgentUpdateRequest) {
     setDeleteError(null)
-    setSaved(false)
     await updateAgentMutation.mutateAsync({ agentId: agent.id, payload })
-    setSaved(true)
+    await navigate({ to: "/agents" })
   }
 
   async function handleDeleteAgent() {
     setDeleteError(null)
-    setSaved(false)
 
     try {
       await deleteAgentMutation.mutateAsync(agent.id)
@@ -55,19 +51,13 @@ export function AgentDetailRoute() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="flex min-w-0 flex-col gap-3">
-          <Button className="w-fit" size="sm" variant="outline" render={<Link to="/agents" />}>
-            <ArrowLeftIcon data-icon="inline-start" />
-            Agents
-          </Button>
-          <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 items-start gap-3">
+          <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="lg" />
+          <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <AgentStatusBadges agent={agent} />
-              <Badge variant="outline">{agent.slug}</Badge>
-            </div>
-            <div className="flex items-center gap-3">
-              <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="lg" />
               <h1 className="font-heading text-2xl font-semibold tracking-normal">{agent.name}</h1>
+              {agent.is_favorite ? <Badge variant="secondary">Favorite</Badge> : null}
+              {!agent.is_active ? <Badge variant="outline">Inactive</Badge> : null}
             </div>
             <p className="text-muted-foreground max-w-3xl text-sm">
               {agent.description ?? "No description has been set for this agent."}
@@ -103,12 +93,6 @@ export function AgentDetailRoute() {
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       )}
-      {saved && (
-        <Alert>
-          <AlertTitle>Agent updated</AlertTitle>
-          <AlertDescription>Your changes have been saved.</AlertDescription>
-        </Alert>
-      )}
 
       <div className="mx-auto w-full max-w-5xl">
         <AgentForm
@@ -116,15 +100,9 @@ export function AgentDetailRoute() {
           agent={agent}
           agents={agentsData.agents}
           cancelLabel="Back to Agents"
-          cancelTo="/agents"
           isSubmitting={updateAgentMutation.isPending}
           mode="edit"
           modelCatalog={modelCatalog}
-          onChange={() => {
-            if (saved) {
-              setSaved(false)
-            }
-          }}
           onSubmit={handleUpdateAgent}
         />
       </div>

@@ -301,7 +301,14 @@ validation, payload builders, deferred-capability contract, document upload
 pipeline, and backend remained unchanged. A same-day follow-up fixed the
 final-step transition's accidental native submit and added rendered-Markdown
 document previews using the existing API; completed creation now returns to the
-Skills list, as does completed editing, with no redundant success banner. The
+Skills list, as does completed editing, with no redundant success banner. UI-017
+converted Agent creation to four gated steps and Agent editing to five on
+2026-07-16, with focused model, tool, collaboration, and availability sections.
+It preserves the existing validation, payload, tool-policy, skill, delegation,
+and runtime contracts; successful saves return to the Agents list and the detail
+header no longer duplicates routine status or navigation. Maintainer follow-up
+placed Skills with identity/instructions, reserved Collaboration for delegation,
+and removed system-managed slugs from all rendered agent surfaces. The
 completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

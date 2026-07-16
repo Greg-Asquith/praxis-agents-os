@@ -275,7 +275,16 @@ runtime capability semantics remain unchanged. A same-day follow-up corrected
 the final-step transition's accidental native submit, aligned document upload
 controls, and added rendered-Markdown previews through the existing document
 content endpoint. Completed creation and editing now return to the Skills list,
-and editing no longer leaves behind a redundant success banner.
+and editing no longer leaves behind a redundant success banner. UI-017 converted
+Agent creation to four gated steps and Agent editing to five steps on 2026-07-16,
+split model, tools, collaboration, and availability into focused sections, and
+moved to `docs/plans/complete/frontend-ui-017-agent-form-wizard.md`. Existing
+validation, payload, tool-policy, skill, and delegation semantics remain shared;
+successful create/edit returns to the Agents list, and the detail page no longer
+shows duplicate navigation, routine Active status, or a saved banner. A
+maintainer follow-up moved Skills beside identity/instructions, made delegation
+the sole optional Collaboration decision, removed system-managed slugs from all
+user-facing agent surfaces, and simplified the tool-policy summary.
 
 ## Execution Order & Status
 

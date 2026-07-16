@@ -1,17 +1,10 @@
 // apps/web/src/features/agents/components/agent-tools-section.tsx
 
-import { useCallback, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { SearchIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field"
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -47,7 +40,7 @@ export function AgentToolsSection({
 }) {
   const [search, setSearch] = useState("")
   const [providerFilter, setProviderFilter] = useState(ALL_TOOL_PROVIDERS_VALUE)
-  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(() => new Set())
+  const [providerOpenOverrides, setProviderOpenOverrides] = useState<Record<string, boolean>>({})
   const normalizedSearch = search.trim().toLowerCase()
   const providerOptions = useMemo(() => providerFilterOptions(toolCatalog), [toolCatalog])
   const filteredCatalog = useMemo(
@@ -77,50 +70,41 @@ export function AgentToolsSection({
     [allUnavailableToolNames, normalizedSearch, providerFilter]
   )
   const enabledCount = Object.values(state.toolModes).filter((mode) => mode !== "off").length
-  const providerCount = providerOptions.length - 1
+  const approvalCount = Object.values(state.toolModes).filter((mode) => mode === "approval").length
   const resultCount =
     filteredCatalog.length +
     (providerFilter === ALL_TOOL_PROVIDERS_VALUE ||
     providerFilter === UNAVAILABLE_TOOL_PROVIDER_VALUE
       ? unavailableToolNames.length
       : 0)
+  const totalToolCount = toolCatalog.length + allUnavailableToolNames.length
+  const hasActiveFilter = normalizedSearch.length > 0 || providerFilter !== ALL_TOOL_PROVIDERS_VALUE
   const compactCatalog = toolCatalog.length <= 12
-  const toggleProvider = useCallback((provider: string) => {
-    setExpandedProviders((current) => {
-      const next = new Set(current)
-      if (next.has(provider)) {
-        next.delete(provider)
-      } else {
-        next.add(provider)
-      }
-      return next
-    })
-  }, [])
-
   return (
     <FormSection
-      description="Choose which runtime tools are available and which ones require approval."
+      description="Tools let an agent read information or take actions in connected systems. Approval means a person confirms each use before it runs. You can change this later."
       eyebrow="Tools"
       title="Tools and approval policy"
     >
       <FieldGroup>
         <FieldSet>
-          <FieldLegend>Runtime tools</FieldLegend>
+          <FieldLegend>Choose tools</FieldLegend>
+          <p className="text-muted-foreground text-sm">
+            {enabledCount === 0 ? (
+              "No tools enabled yet. Turn on only what this agent needs."
+            ) : (
+              <>
+                <span className="text-foreground font-medium">
+                  {enabledCount} {enabledCount === 1 ? "tool" : "tools"} enabled
+                </span>
+                <span aria-hidden="true"> · </span>
+                {approvalCount === 0
+                  ? "No approvals required"
+                  : `${String(approvalCount)} ${approvalCount === 1 ? "requires" : "require"} approval`}
+              </>
+            )}
+          </p>
           <div className="grid gap-4">
-            <div className="bg-muted/30 grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                <span>
-                  <span className="font-medium">{enabledCount}</span> enabled
-                </span>
-                <span className="text-muted-foreground">
-                  {providerCount} {providerCount === 1 ? "provider" : "providers"}
-                </span>
-                <span className="text-muted-foreground">
-                  {toolCatalog.length} {toolCatalog.length === 1 ? "tool" : "tools"}
-                </span>
-              </div>
-              <span className="text-muted-foreground text-sm">{resultCount} shown</span>
-            </div>
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
               <Field>
                 <FieldLabel htmlFor="agent-tool-search">Search tools</FieldLabel>
@@ -165,17 +149,25 @@ export function AgentToolsSection({
                 </Select>
               </Field>
             </div>
+            {hasActiveFilter ? (
+              <p aria-live="polite" className="text-muted-foreground -mt-1 text-right text-xs">
+                Showing {resultCount} of {totalToolCount} {totalToolCount === 1 ? "tool" : "tools"}
+              </p>
+            ) : null}
             {toolGroups.map((group) => (
               <AgentToolProviderGroup
                 key={group.provider}
                 group={group}
                 compactCatalog={compactCatalog}
-                expanded={expandedProviders.has(group.provider)}
                 forceOpen={normalizedSearch.length > 0}
+                openOverride={providerOpenOverrides[group.provider]}
                 toolModes={state.toolModes}
                 onModeChange={onToolModeChange}
-                onToggle={() => {
-                  toggleProvider(group.provider)
+                onOpenChange={(open) => {
+                  setProviderOpenOverrides((current) => ({
+                    ...current,
+                    [group.provider]: open,
+                  }))
                 }}
               />
             ))}
@@ -214,9 +206,6 @@ export function AgentToolsSection({
               </div>
             ) : null}
           </div>
-          <FieldDescription>
-            Approval mode pauses a run and requires a human decision before the tool executes.
-          </FieldDescription>
         </FieldSet>
       </FieldGroup>
     </FormSection>

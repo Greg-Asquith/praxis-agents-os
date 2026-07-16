@@ -1,9 +1,11 @@
 // apps/web/src/features/agents/components/agent-form.tsx
 
-import { useMemo, useState, type SyntheticEvent } from "react"
+import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
 
-import { FormActionBar } from "@/components/forms/form-action-bar"
 import { FormAlerts } from "@/components/forms/form-alerts"
+import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
+import { AgentAvailabilitySection } from "@/features/agents/components/agent-availability-section"
+import { AgentDelegationSection } from "@/features/agents/components/agent-delegation-section"
 import {
   buildAgentPayload,
   buildModelOptions,
@@ -12,10 +14,17 @@ import {
   validateAgentFormState,
   type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
-import { AgentDelegationSection } from "@/features/agents/components/agent-delegation-section"
+import {
+  AGENT_CREATE_STEPS,
+  AGENT_EDIT_STEPS,
+  agentValidationEntriesForStep,
+  stepForAgentField,
+  type AgentWizardStepId,
+} from "@/features/agents/components/agent-form-wizard-config"
+import { AgentModelSection } from "@/features/agents/components/agent-model-section"
 import { AgentProfileSection } from "@/features/agents/components/agent-profile-section"
-import { AgentRuntimeSection } from "@/features/agents/components/agent-runtime-section"
 import { AgentSkillsSection } from "@/features/agents/components/agent-skills-section"
+import { AgentToolsSection } from "@/features/agents/components/agent-tools-section"
 import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { Agent, AgentCreateRequest, AgentUpdateRequest } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
@@ -29,7 +38,6 @@ type AgentFormProps =
       mode: "create"
       agents: Agent[]
       cancelLabel: string
-      cancelTo: "/agents"
       isSubmitting: boolean
       modelCatalog: ModelCatalogResponse
       onSubmit: (payload: AgentCreateRequest) => Promise<void>
@@ -39,14 +47,14 @@ type AgentFormProps =
       agent: Agent
       agents: Agent[]
       cancelLabel: string
-      cancelTo: "/agents"
       isSubmitting: boolean
       modelCatalog: ModelCatalogResponse
-      onChange?: () => void
       onSubmit: (payload: AgentUpdateRequest) => Promise<void>
     }
 
 export function AgentForm(props: AgentFormProps) {
+  const formId = useId()
+  const wizardNavigationRef = useRef<FormWizardNavigation<AgentWizardStepId>>(null)
   const agent = props.mode === "edit" ? props.agent : null
   const { data: toolCatalog } = useToolCatalogQuery()
   const { data: skillsData } = useSkillsQuery({ limit: 100 })
@@ -56,7 +64,8 @@ export function AgentForm(props: AgentFormProps) {
   )
   const [state, setState] = useState<AgentFormState>(() => initialState)
   const [formError, setFormError] = useState<string | null>(null)
-  const [showValidation, setShowValidation] = useState(false)
+  const [validationStep, setValidationStep] = useState<AgentWizardStepId | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const modelOptions = useMemo(
     () => buildModelOptions(props.modelCatalog, agent),
     [agent, props.modelCatalog]
@@ -64,23 +73,13 @@ export function AgentForm(props: AgentFormProps) {
   const selectedModelOption =
     modelOptions.find((option) => option.value === state.modelSelection) ?? modelOptions[0]
   const isDirty = props.mode === "edit" ? isAgentFormDirty(state, initialState) : true
-  const validationEntries = useMemo(
-    () => (showValidation ? validateAgentFormState(state, props.mode) : []),
-    [props.mode, showValidation, state]
-  )
-  const fieldErrors = useMemo(() => buildFieldErrors(validationEntries), [validationEntries])
+  const fullValidationEntries = useMemo(() => validateAgentFormState(state), [state])
 
   function setField<K extends keyof AgentFormState>(field: K, value: AgentFormState[K]) {
-    if (props.mode === "edit") {
-      props.onChange?.()
-    }
     setState((current) => ({ ...current, [field]: value }))
   }
 
   function setToolMode(toolName: string, mode: RuntimeToolMode) {
-    if (props.mode === "edit") {
-      props.onChange?.()
-    }
     setState((current) => ({
       ...current,
       toolModes: { ...current.toolModes, [toolName]: mode },
@@ -91,13 +90,21 @@ export function AgentForm(props: AgentFormProps) {
     event.preventDefault()
     setFormError(null)
 
-    const nextValidationEntries = validateAgentFormState(state, props.mode)
+    const nextValidationEntries = validateAgentFormState(state)
     if (nextValidationEntries.length > 0) {
-      setShowValidation(true)
+      const earliestStep = stepForAgentField(nextValidationEntries[0]?.fieldId)
+      if (
+        earliestStep === "model" &&
+        nextValidationEntries.some((entry) => entry.fieldId === "agent-max-steps")
+      ) {
+        setAdvancedOpen(true)
+      }
+      setValidationStep(earliestStep)
+      wizardNavigationRef.current?.goToStep(earliestStep)
       return
     }
 
-    setShowValidation(false)
+    setValidationStep(null)
 
     try {
       if (props.mode === "create") {
@@ -120,69 +127,116 @@ export function AgentForm(props: AgentFormProps) {
     }
   }
 
+  function validateStep(stepId: AgentWizardStepId) {
+    const stepValidationEntries = agentValidationEntriesForStep(fullValidationEntries, stepId)
+    if (
+      stepId === "model" &&
+      stepValidationEntries.some((entry) => entry.fieldId === "agent-max-steps")
+    ) {
+      setAdvancedOpen(true)
+    }
+    setValidationStep(stepId)
+    return stepValidationEntries.length === 0
+  }
+
   return (
     <form
-      className="flex flex-col gap-6"
+      id={formId}
       noValidate
       onSubmit={(event) => {
         void handleSubmit(event)
       }}
     >
-      <FormAlerts
-        error={formError}
-        errorTitle="Agent not saved"
-        validationEntries={validationEntries}
-      />
-
-      <AgentProfileSection
-        fieldErrors={{
-          instructions: fieldErrors["agent-instructions"],
-          name: fieldErrors["agent-name"],
-        }}
-        setField={setField}
-        state={state}
-      />
-      <AgentRuntimeSection
-        fieldErrors={{
-          maxSteps: fieldErrors["agent-max-steps"],
-          modelSelection: fieldErrors["agent-model"],
-        }}
-        modelOptions={modelOptions}
-        selectedModelOption={selectedModelOption}
-        setField={setField}
-        setToolMode={setToolMode}
-        state={state}
-        toolCatalog={toolCatalog.tools}
-      />
-      <AgentDelegationSection
-        agents={props.agents}
-        allowedAgentIds={state.allowedAgentIds}
-        currentAgentId={agent?.id ?? null}
-        onAllowedAgentIdsChange={(allowedAgentIds) => {
-          setField("allowedAgentIds", allowedAgentIds)
-        }}
-      />
-      <AgentSkillsSection
-        setField={setField}
-        skillIds={state.skillIds}
-        skills={skillsData.skills}
-      />
-
-      <FormActionBar
+      <FormWizard
         cancelLabel={props.cancelLabel}
-        cancelTo={props.cancelTo}
-        disableSubmit={props.isSubmitting || (props.mode === "edit" && !isDirty)}
+        cancelTo="/agents"
+        disableSubmit={props.mode === "edit" && !isDirty}
+        form={formId}
         isSubmitting={props.isSubmitting}
+        navigationRef={wizardNavigationRef}
         pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
-        stateMessage={
-          props.mode === "edit"
-            ? isDirty
-              ? "Unsaved changes"
-              : "No unsaved changes"
-            : "Ready to create when required fields are complete"
-        }
+        steps={props.mode === "create" ? AGENT_CREATE_STEPS : AGENT_EDIT_STEPS}
         submitLabel={props.mode === "create" ? "Create Agent" : "Save Changes"}
-      />
+        validateStep={validateStep}
+      >
+        {(activeStepId) => {
+          const validationEntries =
+            validationStep === activeStepId
+              ? agentValidationEntriesForStep(fullValidationEntries, activeStepId)
+              : []
+          const fieldErrors = buildFieldErrors(validationEntries)
+
+          return (
+            <div className="flex flex-col gap-6">
+              <FormAlerts
+                error={formError}
+                errorTitle="Agent not saved"
+                validationEntries={validationEntries}
+              />
+              {activeStepId === "profile" ? (
+                <div className="flex flex-col gap-6">
+                  <AgentProfileSection
+                    fieldErrors={{
+                      instructions: fieldErrors["agent-instructions"],
+                      name: fieldErrors["agent-name"],
+                    }}
+                    setField={setField}
+                    state={state}
+                  />
+                  <AgentSkillsSection
+                    setField={setField}
+                    skillIds={state.skillIds}
+                    skills={skillsData.skills}
+                  />
+                </div>
+              ) : null}
+              {activeStepId === "model" ? (
+                <AgentModelSection
+                  advancedOpen={advancedOpen}
+                  fieldErrors={{
+                    maxSteps: fieldErrors["agent-max-steps"],
+                    modelSelection: fieldErrors["agent-model"],
+                  }}
+                  modelOptions={modelOptions}
+                  onAdvancedOpenChange={setAdvancedOpen}
+                  selectedModelLabel={selectedModelOption?.label ?? "Workspace default"}
+                  setField={setField}
+                  state={state}
+                />
+              ) : null}
+              {activeStepId === "tools" ? (
+                <AgentToolsSection
+                  onToolModeChange={setToolMode}
+                  state={state}
+                  toolCatalog={toolCatalog.tools}
+                />
+              ) : null}
+              {activeStepId === "collaboration" ? (
+                <AgentDelegationSection
+                  agents={props.agents}
+                  allowedAgentIds={state.allowedAgentIds}
+                  currentAgentId={agent?.id ?? null}
+                  onAllowedAgentIdsChange={(allowedAgentIds) => {
+                    setField("allowedAgentIds", allowedAgentIds)
+                  }}
+                />
+              ) : null}
+              {activeStepId === "availability" && props.mode === "edit" ? (
+                <AgentAvailabilitySection
+                  isActive={state.isActive}
+                  isFavorite={state.isFavorite}
+                  onActiveChange={(isActive) => {
+                    setField("isActive", isActive)
+                  }}
+                  onFavoriteChange={(isFavorite) => {
+                    setField("isFavorite", isFavorite)
+                  }}
+                />
+              ) : null}
+            </div>
+          )
+        }}
+      </FormWizard>
     </form>
   )
 }

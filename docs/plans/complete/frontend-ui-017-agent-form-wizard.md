@@ -8,6 +8,18 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
+- **Verification**: `cd apps/web && pnpm check` passed (23 test files,
+  116 tests); `git diff --check` passed. Browser automation was intentionally
+  not used per maintainer instruction.
+- **Implementation note**: Maintainer review simplified model choices to
+  human-readable names with the workspace default selected for new agents and
+  requested wrapped, vertically centered wizard labels. The shared wizard
+  received that narrowly scoped presentation refinement; validation,
+  navigation, and submit behavior are unchanged. Skills now sit with identity
+  and instructions on the Profile step; the optional Collaboration step is
+  reserved for delegation. Agent slugs are now entirely system-managed and
+  absent from user-facing forms, headers, lists, and pickers.
 - **Updated**: 2026-07-16 (reconciled with completed plan 016 and the current
   working tree based on `01104f7`)
 - **Priority**: P1
@@ -222,15 +234,15 @@ maintainer requests it):
 
 ## Done criteria
 
-- [ ] Create is a four-step wizard; edit is a five-step wizard.
-- [ ] Existing validation/payload/tool/delegation behavior is reused, not forked.
-- [ ] Next never submits; only the final primary action mutates.
-- [ ] Final validation routes to the earliest invalid step.
-- [ ] Successful create and edit both return to `/agents`.
-- [ ] Edit has no saved banner, duplicate top back button, or routine Active
+- [x] Create is a four-step wizard; edit is a five-step wizard.
+- [x] Existing validation/payload/tool/delegation behavior is reused, not forked.
+- [x] Next never submits; only the final primary action mutates.
+- [x] Final validation routes to the earliest invalid step.
+- [x] Successful create and edit both return to `/agents`.
+- [x] Edit has no saved banner, duplicate top back button, or routine Active
       badge row.
-- [ ] Agent form orchestration and focused sections are split cleanly.
-- [ ] Focused wizard-configuration tests and full `pnpm check` pass.
+- [x] Agent form orchestration and focused sections are split cleanly.
+- [x] Focused wizard-configuration tests and full `pnpm check` pass.
 
 ## STOP conditions
 

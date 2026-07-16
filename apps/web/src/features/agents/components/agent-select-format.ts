@@ -3,7 +3,7 @@
 import type { Agent } from "@/features/agents/types"
 
 export function agentSelectSecondary(agent: Agent) {
-  return agent.description ?? agent.slug
+  return agent.description
 }
 
 export function agentSelectLabel(agent: Agent, secondary = agentSelectSecondary(agent)) {

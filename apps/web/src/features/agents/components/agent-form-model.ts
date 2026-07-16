@@ -73,7 +73,6 @@ export type AgentFormState = {
   modelSettings: Record<string, unknown>
   name: string
   skillIds: string[]
-  slug: string
   thinking: ThinkingSelection
   toolModes: Record<string, RuntimeToolMode>
 }
@@ -86,9 +85,7 @@ export type AgentFormFieldSetter = <K extends keyof AgentFormState>(
 ) => void
 
 export type ModelOption = {
-  description: string
   label: string
-  supportsThinking: boolean | null
   value: string
 }
 
@@ -114,7 +111,6 @@ export function initialAgentFormState(
     modelSettings: { ...(agent?.model_settings ?? {}) },
     name: agent?.name ?? "",
     skillIds: agent?.skill_ids ?? [],
-    slug: agent?.slug ?? "",
     thinking: thinkingSelectionFromSettings(agent?.model_settings ?? null),
     toolModes: initialToolModes(toolCatalog, agent),
   }
@@ -130,16 +126,10 @@ export function buildModelOptions(
       label: catalog.defaults.agent_model
         ? `Workspace default (${modelDisplayName(catalog, catalog.defaults.agent_model) ?? catalog.defaults.agent_model})`
         : "Workspace default",
-      description: "Use the backend default configured for agent runs.",
-      supportsThinking: null,
     },
     ...catalog.models.map((model) => ({
       value: model.id,
       label: modelDisplayName(catalog, model.id) ?? model.id,
-      description: `${model.context_window.toLocaleString()} token context${
-        model.supports_tools ? " · tools" : ""
-      }${model.supports_thinking ? " · thinking" : ""}`,
-      supportsThinking: model.supports_thinking,
     })),
   ]
 
@@ -151,8 +141,6 @@ export function buildModelOptions(
     options.splice(1, 0, {
       value: currentSelection,
       label: `Current override (${currentSelection})`,
-      description: "This saved model is not present in the configured catalog response.",
-      supportsThinking: null,
     })
   }
 
@@ -166,11 +154,11 @@ export function buildAgentPayload(
 export function buildAgentPayload(state: AgentFormState, mode: "edit"): AgentUpdateRequest | string
 export function buildAgentPayload(
   state: AgentFormState,
-  mode: "create" | "edit"
+  _mode: "create" | "edit"
 ): AgentCreateRequest | AgentUpdateRequest | string {
   const name = state.name.trim()
   const instructions = state.instructions.trim()
-  const validationEntries = validateAgentFormState(state, mode)
+  const validationEntries = validateAgentFormState(state)
   const maxSteps = parseMaxSteps(state.maxSteps)
   const modelSelection = parseModelSelection(state.modelSelection, state.azureDeployment)
 
@@ -204,28 +192,10 @@ export function buildAgentPayload(
     tool_policies: toolPayload.tool_policies,
   }
 
-  if (mode === "create") {
-    return {
-      ...basePayload,
-      slug: optionalText(state.slug),
-    }
-  }
-
-  const slug = state.slug.trim()
-  if (!slug) {
-    return "Slug is required for existing agents."
-  }
-
-  return {
-    ...basePayload,
-    slug,
-  }
+  return basePayload
 }
 
-export function validateAgentFormState(
-  state: AgentFormState,
-  mode: "create" | "edit"
-): AgentFormValidationEntry[] {
+export function validateAgentFormState(state: AgentFormState): AgentFormValidationEntry[] {
   const entries: AgentFormValidationEntry[] = []
 
   if (!state.name.trim()) {
@@ -233,14 +203,6 @@ export function validateAgentFormState(
       fieldId: "agent-name",
       label: "Name",
       message: "Name is required.",
-    })
-  }
-
-  if (mode === "edit" && !state.slug.trim()) {
-    entries.push({
-      fieldId: "agent-slug",
-      label: "Slug",
-      message: "Slug is required for existing agents.",
     })
   }
 
@@ -276,7 +238,6 @@ export function validateAgentFormState(
 export function isAgentFormDirty(current: AgentFormState, initial: AgentFormState) {
   return (
     current.name !== initial.name ||
-    current.slug !== initial.slug ||
     current.description !== initial.description ||
     current.instructions !== initial.instructions ||
     current.modelSelection !== initial.modelSelection ||

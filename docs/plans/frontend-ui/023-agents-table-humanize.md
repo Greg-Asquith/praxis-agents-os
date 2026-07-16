@@ -1,4 +1,4 @@
-# Plan 023: Agents table — drop the slug, retire "Runtime"
+# Plan 023: Agents table — retire "Runtime"
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving on. If
@@ -8,6 +8,9 @@
 
 ## Status
 
+- **Updated**: 2026-07-16 after the UI-017 follow-up removed system-managed
+  slugs from every user-facing agent surface. This plan now owns only the
+  remaining Runtime-to-Tools language change.
 - **Written**: 2026-07-16 (anchors verified against the live tree at
   `01104f7`)
 - **Priority**: P2
@@ -18,11 +21,10 @@
 
 ## Goal
 
-The agents list stops speaking developer. The `slug` disappears from the
-table (it is an API identifier; users address agents by name), and the
-"Runtime" column header — which no target user will parse — is replaced
-by the thing the cell actually answers: what the agent is allowed to do,
-in words.
+The agents list stops speaking developer. The "Runtime" column header — which
+no target user will parse — is replaced by the thing the cell actually
+answers: what the agent is allowed to do, in words. Slug removal already landed
+as part of the UI-017 maintainer follow-up.
 
 ## Current state (verified 2026-07-16 at `01104f7`)
 
@@ -30,25 +32,23 @@ All in `features/agents/components/agents-table.tsx`:
 
 - Desktop table headers `Name / Status / Model / Runtime / Updated /
   (actions)` (lines 66-73).
-- The name cell stacks name, slug (line 87), and description (88-92).
+- The name cell stacks name and optional description; slug has already been
+  removed.
 - The "Runtime" cell (lines 100-111) renders two badges from
   `agent.tool_names.length` and `countApprovalPolicyTools(agent)`:
   `"{n} tools"` (outline) and `"{n} approval gates"` (secondary).
-- The mobile row repeats the slug (line 150) and a "Runtime" meta label
-  (line 166) with the same badges (167-176).
+- The mobile row has no slug and retains a "Runtime" meta label with the same
+  badges.
 
-The slug is still shown on the agent detail page and used in
-workspace-scoped query keys — those are out of scope; only the list
-presentation changes.
+The slug remains in API data and internal identifiers only. It must not return
+to rendered copy.
 
 ## Steps
 
-### 1. Remove the slug from the list
+### 1. Preserve completed slug removal
 
-Delete the slug line from the desktop name cell (line 87) and the
-mobile row (line 150). The name cell becomes name + optional
-description; the mobile row name block loses its second line (keep the
-favorite/description structure of the surrounding rows intact).
+No implementation work remains here. Confirm the desktop and mobile rows still
+render name plus optional description without exposing the system slug.
 
 ### 2. "Runtime" → "Tools", in words
 
@@ -72,8 +72,5 @@ favorite/description structure of the surrounding rows intact).
 
 ## STOP conditions
 
-- Removing the slug leaves two agents visually indistinguishable in a
-  real workspace (identical names) — stop and note it; de-duplication
-  is a naming/product question, not a table-layout fix.
-- Anything else in the app reads the slug **from this component** —
-  stop and report (nothing should; it is display-only here).
+- Any user-facing slug has returned — stop and remove the regression; slugs are
+  system-managed identifiers.

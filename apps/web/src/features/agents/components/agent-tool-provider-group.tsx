@@ -15,23 +15,23 @@ import { cn } from "@/lib/utils"
 
 export function AgentToolProviderGroup({
   compactCatalog,
-  expanded,
   forceOpen,
   group,
   onModeChange,
-  onToggle,
+  onOpenChange,
+  openOverride,
   toolModes,
 }: {
   compactCatalog: boolean
-  expanded: boolean
   forceOpen: boolean
   group: ToolGroup
   onModeChange: (toolName: string, mode: RuntimeToolMode) => void
-  onToggle: () => void
+  onOpenChange: (open: boolean) => void
+  openOverride: boolean | undefined
   toolModes: AgentFormState["toolModes"]
 }) {
   const activeCount = group.tools.filter((tool) => (toolModes[tool.name] ?? "off") !== "off").length
-  const open = forceOpen || expanded || activeCount > 0 || compactCatalog
+  const open = openOverride ?? (forceOpen || activeCount > 0 || compactCatalog)
   const providerLabel = titleCaseToken(group.provider, group.provider)
 
   return (
@@ -42,7 +42,9 @@ export function AgentToolProviderGroup({
           "bg-muted/30 hover:bg-muted/50 flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:cursor-pointer",
           open ? "border-b" : ""
         )}
-        onClick={onToggle}
+        onClick={() => {
+          onOpenChange(!open)
+        }}
         type="button"
       >
         <div className="flex min-w-0 items-center gap-2">

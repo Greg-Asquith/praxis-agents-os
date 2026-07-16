@@ -188,7 +188,7 @@ function WizardProgress<StepId extends string>({
               <span className="min-w-0 text-left">
                 <span
                   className={cn(
-                    "block truncate text-sm",
+                    "block text-sm leading-snug whitespace-normal",
                     isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
                   )}
                 >
@@ -202,11 +202,11 @@ function WizardProgress<StepId extends string>({
           )
 
           return (
-            <li className="flex min-w-0 flex-1 items-center last:flex-none" key={step.id}>
+            <li className="flex min-w-0 flex-1 items-center" key={step.id}>
               {isComplete ? (
                 <button
                   aria-label={`Return to ${step.title}`}
-                  className="focus-visible:ring-ring flex min-w-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                  className="focus-visible:ring-ring flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                   onClick={() => {
                     onPreviousStep(step.id)
                   }}
@@ -217,7 +217,7 @@ function WizardProgress<StepId extends string>({
               ) : (
                 <div
                   aria-current={isCurrent ? "step" : undefined}
-                  className="flex min-w-0 items-center gap-2"
+                  className="flex min-w-0 items-center gap-2.5"
                 >
                   {content}
                 </div>

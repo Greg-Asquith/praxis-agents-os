@@ -77,8 +77,8 @@ export function AgentDelegationSection({
 
   return (
     <FormSection
-      description="Choose active workspace agents this agent can call during a run."
-      eyebrow="Delegation"
+      description="Let this agent hand work to other agents during a run."
+      eyebrow="Optional"
       title="Can delegate to"
     >
       <FieldGroup>
@@ -103,10 +103,10 @@ export function AgentDelegationSection({
                   {availableDelegateAgents.map((candidate) => (
                     <SelectItem
                       key={candidate.id}
-                      label={agentSelectLabel(candidate, candidate.slug)}
+                      label={agentSelectLabel(candidate)}
                       value={candidate.id}
                     >
-                      <AgentSelectItem agent={candidate} secondary={candidate.slug} />
+                      <AgentSelectItem agent={candidate} />
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -136,7 +136,10 @@ export function AgentDelegationSection({
             selectedDelegateAgents.map(({ agent: selectedAgent, id }) => {
               const label = selectedAgent?.name ?? "Unavailable agent"
               const description =
-                selectedAgent?.slug ?? "This agent is no longer available in the current list."
+                selectedAgent?.description ??
+                (selectedAgent
+                  ? "Available for delegated work."
+                  : "This agent is no longer available in the current list.")
 
               return (
                 <div

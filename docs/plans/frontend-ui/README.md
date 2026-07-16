@@ -73,13 +73,13 @@ Functional, but visibly unstyled.
 | 014 | Remove unneeded useEffects | P2 | M | — | DONE |
 | 015 | Form kit: shared sections, action bar, alerts | P1 | M | 011, 013 | DONE |
 | 016 | Skill form: create wizard (builds shell) & edit wizard | P1 | M | 015 | DONE |
-| 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | TODO |
+| 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | DONE |
 | 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | TODO |
 | 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | TODO |
 | 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | TODO |
 | 021 | Conversation headers: compact banner, source without pills | P1 | M | — | TODO |
 | 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | TODO |
-| 023 | Agents table: drop the slug, retire "Runtime" | P2 | S | — | TODO |
+| 023 | Agents table: retire "Runtime" | P2 | S | — | TODO |
 | 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
@@ -280,8 +280,9 @@ Dependency notes:
   universal correction path. This bars raw-JSON editing surfaces from
   all future UI, not just approvals.
 - **List columns speak user language** (maintainer direction,
-  2026-07-16; plans 023–024). Identifiers users didn't choose (slugs)
-  stay out of list surfaces; "Runtime" becomes "Tools" with counts in
+  2026-07-16; plans 017, 023–024). Identifiers users didn't choose (slugs)
+  are entirely system-managed and never appear in user-facing surfaces;
+  "Runtime" becomes "Tools" with counts in
   words ("2 need approval"); row actions on user-created entities say
   **Edit** (pencil icon), with plan 013's "Save Changes" for the commit.
   "Configure" (and user-facing "configured") is retired from copy;

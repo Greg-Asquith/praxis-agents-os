@@ -69,8 +69,8 @@ export function AgentSkillsSection({
 
   return (
     <FormSection
-      description="Attach active workspace skills this agent can activate during a run."
-      eyebrow="Skills"
+      description="Optionally give this agent reusable instructions and reference material from workspace skills."
+      eyebrow="Optional"
       title="Attached skills"
     >
       <FieldGroup>

@@ -84,7 +84,6 @@ export function AgentsTable({
                       <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} />
                       <div className="flex min-w-0 flex-col gap-1">
                         <span className="font-medium">{agent.name}</span>
-                        <span className="text-muted-foreground text-xs">{agent.slug}</span>
                         {agent.description && (
                           <span className="text-muted-foreground max-w-md truncate text-xs">
                             {agent.description}
@@ -147,7 +146,6 @@ function AgentMobileRow({
             <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} />
             <div className="min-w-0">
               <p className="truncate font-medium">{agent.name}</p>
-              <p className="text-muted-foreground truncate text-xs">{agent.slug}</p>
             </div>
           </div>
           <AgentStatusBadges agent={agent} />
