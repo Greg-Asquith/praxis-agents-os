@@ -115,7 +115,7 @@ export function FilesTable({
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
       <ConfirmDialog
         confirmIcon={<Trash2Icon data-icon="inline-start" />}
-        confirmLabel="Delete file"
+        confirmLabel="Delete File"
         confirmPendingLabel="Deleting"
         description={
           fileToDelete ? `This deletes ${fileToDelete.name}.` : "This deletes the selected file."
@@ -160,7 +160,7 @@ export function FilesTable({
           <TableBody>
             {files.map((file) => (
               <TableRow
-                aria-label={`Open details for ${file.name}`}
+                aria-label={`Open Details for ${file.name}`}
                 className="hover:bg-muted/50 focus-visible:ring-ring cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
                 key={file.id}
                 onClick={() => {

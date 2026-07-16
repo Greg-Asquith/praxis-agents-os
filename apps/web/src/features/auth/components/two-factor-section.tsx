@@ -225,7 +225,7 @@ export function TwoFactorSection() {
               type="submit"
               variant="destructive"
             >
-              {disableMutation.isPending ? "Turning off" : "Confirm turn off"}
+              {disableMutation.isPending ? "Turning Off" : "Confirm Turn Off"}
             </Button>
             <Button
               onClick={() => {

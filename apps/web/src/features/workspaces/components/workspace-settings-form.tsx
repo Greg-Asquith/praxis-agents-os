@@ -185,7 +185,7 @@ export function WorkspaceSettingsForm() {
                 </div>
                 {workspace.icon_url && (
                   <Button
-                    aria-label="Remove workspace icon"
+                    aria-label="Remove Workspace Icon"
                     disabled={!canManage || isSaving}
                     onClick={() => {
                       void handleDeleteIcon()
@@ -203,7 +203,7 @@ export function WorkspaceSettingsForm() {
         </CardContent>
         <CardFooter className="justify-between gap-3">
           <Button disabled={!canManage || isSaving} type="submit">
-            {isSaving ? "Saving" : "Save changes"}
+            {isSaving ? "Saving" : "Save Changes"}
           </Button>
           {canDelete && (
             <Button
@@ -220,7 +220,7 @@ export function WorkspaceSettingsForm() {
       </form>
       <ConfirmDialog
         confirmIcon={<Trash2Icon data-icon="inline-start" />}
-        confirmLabel="Delete workspace"
+        confirmLabel="Delete Workspace"
         confirmPendingLabel="Deleting"
         description={
           nextWorkspace

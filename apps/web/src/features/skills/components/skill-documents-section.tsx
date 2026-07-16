@@ -222,7 +222,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
         )}
         <ConfirmDialog
           confirmIcon={<Trash2Icon data-icon="inline-start" />}
-          confirmLabel="Delete document"
+          confirmLabel="Delete Document"
           confirmPendingLabel="Deleting"
           description={
             documentToDelete

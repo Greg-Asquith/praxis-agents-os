@@ -27,7 +27,7 @@ export const MarkdownTable = memo(function MarkdownTable({ children }: { childre
       {hasContent && (
         <div className="flex items-center justify-end gap-1 pb-1.5">
           <Button
-            aria-label={copied ? "Copied table" : "Copy table"}
+            aria-label={copied ? "Copied Table" : "Copy Table"}
             size="icon-xs"
             type="button"
             variant="ghost"
@@ -36,7 +36,7 @@ export const MarkdownTable = memo(function MarkdownTable({ children }: { childre
             {copied ? <CheckIcon /> : <CopyIcon />}
           </Button>
           <Button
-            aria-label="Download table CSV"
+            aria-label="Download Table CSV"
             size="icon-xs"
             type="button"
             variant="ghost"

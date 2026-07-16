@@ -21,7 +21,7 @@ export function AgentsRoute() {
           hasAgents ? (
             <Button render={<Link to="/agents/new" />}>
               <PlusIcon data-icon="inline-start" />
-              New agent
+              New Agent
             </Button>
           ) : null
         }

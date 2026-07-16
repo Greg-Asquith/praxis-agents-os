@@ -122,7 +122,7 @@ export function NewSkillRoute() {
               type="button"
             >
               <ArrowRightIcon data-icon="inline-start" />
-              Continue to skill
+              Continue to Skill
             </Button>
           </AlertDescription>
         </Alert>

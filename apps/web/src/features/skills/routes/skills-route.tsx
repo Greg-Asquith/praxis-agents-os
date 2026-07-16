@@ -19,7 +19,7 @@ export function SkillsRoute() {
           hasSkills ? (
             <Button render={<Link to="/skills/new" />}>
               <PlusIcon data-icon="inline-start" />
-              New skill
+              New Skill
             </Button>
           ) : null
         }

@@ -134,7 +134,7 @@ export function CreateInvitationDialog() {
                     ) : (
                       <CopyIcon data-icon="inline-start" />
                     )}
-                    {copyCode.copied ? "Copied code" : "Copy code"}
+                    {copyCode.copied ? "Copied Code" : "Copy Code"}
                   </Button>
                   <Button
                     size="sm"
@@ -149,7 +149,7 @@ export function CreateInvitationDialog() {
                     ) : (
                       <CopyIcon data-icon="inline-start" />
                     )}
-                    {copyLink.copied ? "Copied link" : "Copy link"}
+                    {copyLink.copied ? "Copied Link" : "Copy Link"}
                   </Button>
                 </div>
               </Field>
@@ -216,7 +216,7 @@ export function CreateInvitationDialog() {
             form="create-invitation-form"
             type="submit"
           >
-            {createInvitationMutation.isPending ? "Creating" : "Create invite"}
+            {createInvitationMutation.isPending ? "Creating" : "Create Invite"}
           </Button>
         </DialogFooter>
       </DialogContent>

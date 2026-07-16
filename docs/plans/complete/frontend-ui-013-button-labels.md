@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Written**: 2026-07-16 (anchors verified at `d1c4a89`)
 - **Priority**: P2
 - **Effort**: S

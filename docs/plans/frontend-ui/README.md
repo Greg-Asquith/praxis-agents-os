@@ -69,7 +69,7 @@ Functional, but visibly unstyled.
 | 010 | Mobile shell: drawer sidebar | P1 | M | 002, 009 | DONE |
 | 011 | De-card pages: plain content surfaces | P1 | M | 001, 002, 007 | DONE |
 | 012 | Sidebar conversation rows: compact datetime | P2 | S | 010 | DONE |
-| 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | TODO |
+| 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | DONE |
 | 014 | Remove unneeded useEffects | P2 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |

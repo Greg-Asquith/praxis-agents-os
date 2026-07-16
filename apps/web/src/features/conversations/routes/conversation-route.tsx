@@ -192,7 +192,7 @@ function ConversationDetail({
         </div>
         {showScrollToBottom ? (
           <Button
-            aria-label="Scroll to latest message"
+            aria-label="Scroll to Latest Message"
             className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-sm"
             size="icon"
             type="button"

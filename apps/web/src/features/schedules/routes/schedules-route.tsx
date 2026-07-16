@@ -21,7 +21,7 @@ export function SchedulesRoute() {
           hasSchedules ? (
             <Button render={<Link to="/schedules/new" />}>
               <PlusIcon data-icon="inline-start" />
-              New schedule
+              New Schedule
             </Button>
           ) : null
         }

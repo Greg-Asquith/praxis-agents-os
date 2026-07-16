@@ -77,11 +77,11 @@ export function SkillDetailRoute() {
           variant="destructive"
         >
           <Trash2Icon data-icon="inline-start" />
-          {deleteSkillMutation.isPending ? "Deleting" : "Delete skill"}
+          {deleteSkillMutation.isPending ? "Deleting" : "Delete Skill"}
         </Button>
         <ConfirmDialog
           confirmIcon={<Trash2Icon data-icon="inline-start" />}
-          confirmLabel="Delete skill"
+          confirmLabel="Delete Skill"
           confirmPendingLabel="Deleting"
           description={`This removes ${skill.name} and its uploaded reference documents from the workspace.`}
           isPending={deleteSkillMutation.isPending}
@@ -108,7 +108,7 @@ export function SkillDetailRoute() {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         <SkillForm
           key={`${skill.id}:${skill.updated_at}`}
-          cancelLabel="Back to skills"
+          cancelLabel="Back to Skills"
           isSubmitting={updateSkillMutation.isPending}
           mode="edit"
           onChange={() => {

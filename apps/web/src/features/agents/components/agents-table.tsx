@@ -40,7 +40,7 @@ export function AgentsTable({
         action={
           <Button render={<Link to="/agents/new" />}>
             <PlusIcon data-icon="inline-start" />
-            New agent
+            New Agent
           </Button>
         }
         description="Create the first workspace agent to start conversations and configure approval policies."

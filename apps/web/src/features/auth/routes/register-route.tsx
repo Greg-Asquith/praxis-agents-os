@@ -49,7 +49,7 @@ export function RegisterRoute() {
       description="Start with a personal workspace. You can add more later."
       footer={
         <span>
-          Already have an account? <AuthLink to="/login">Sign in</AuthLink>
+          Already have an account? <AuthLink to="/login">Sign In</AuthLink>
         </span>
       }
     >
@@ -102,7 +102,7 @@ export function RegisterRoute() {
 
             <Button className="w-full" disabled={registerMutation.isPending} type="submit">
               <UserPlusIcon data-icon="inline-start" />
-              {registerMutation.isPending ? "Creating account" : "Create account"}
+              {registerMutation.isPending ? "Creating Account" : "Create Account"}
             </Button>
           </FieldGroup>
         </form>

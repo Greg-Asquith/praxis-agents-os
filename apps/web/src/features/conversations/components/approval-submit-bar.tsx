@@ -35,7 +35,7 @@ export function ApprovalSubmitBar({
         ) : null}
         <Button disabled={isSubmitting || !summary.allDecided} onClick={onSubmit} size="sm">
           <ShieldCheckIcon data-icon="inline-start" />
-          {isSubmitting ? "Sending decisions" : "Send decisions"}
+          {isSubmitting ? "Sending Decisions" : "Send Decisions"}
         </Button>
       </div>
     </div>

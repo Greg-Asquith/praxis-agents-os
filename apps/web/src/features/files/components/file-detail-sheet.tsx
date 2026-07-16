@@ -162,7 +162,7 @@ function FileDetailDialog({ fileId, onClose }: { fileId: string; onClose: () => 
       </Dialog>
       <ConfirmDialog
         confirmIcon={<Trash2Icon data-icon="inline-start" />}
-        confirmLabel="Delete file"
+        confirmLabel="Delete File"
         confirmPendingLabel="Deleting"
         description={`This deletes ${file.name}.`}
         isPending={deleteMutation.isPending}

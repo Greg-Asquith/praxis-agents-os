@@ -52,7 +52,7 @@ export function SchedulePreviewPanel({ state }: { state: ScheduleFormState }) {
           variant="outline"
         >
           <ListChecksIcon data-icon="inline-start" />
-          {isPending ? "Previewing" : "Preview next runs"}
+          {isPending ? "Previewing" : "Preview Next Runs"}
         </Button>
       </div>
 

@@ -34,7 +34,7 @@ export function HomeRoute() {
         actions={
           <Button render={<Link to="/conversations/new" />}>
             <MessageSquarePlusIcon data-icon="inline-start" />
-            New conversation
+            New Conversation
           </Button>
         }
         description="Live agent state, approvals, and recent workspace conversations."
@@ -88,7 +88,7 @@ export function HomeRoute() {
                 action={
                   <Button variant="secondary" render={<Link to="/conversations/new" />}>
                     <MessageSquarePlusIcon data-icon="inline-start" />
-                    New conversation
+                    New Conversation
                   </Button>
                 }
                 description="Start a blank chat and choose an active agent."

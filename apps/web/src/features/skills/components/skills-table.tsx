@@ -30,7 +30,7 @@ export function SkillsTable({ skills }: { skills: Skill[] }) {
         action={
           <Button render={<Link to="/skills/new" />}>
             <PlusIcon data-icon="inline-start" />
-            New skill
+            New Skill
           </Button>
         }
         description="Create a skill to package instructions and reference documents your agents can activate on demand."

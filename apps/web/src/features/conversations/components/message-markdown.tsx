@@ -260,7 +260,7 @@ function MarkdownCodeBlock({ code, language }: { code: string; language: string 
       <div className="bg-muted/60 flex items-center justify-between gap-3 border-b px-3 py-1.5">
         <span className="text-muted-foreground font-mono text-xs">{language}</span>
         <Button
-          aria-label={copied ? "Copied code" : "Copy code"}
+          aria-label={copied ? "Copied Code" : "Copy Code"}
           size="icon-xs"
           type="button"
           variant="ghost"

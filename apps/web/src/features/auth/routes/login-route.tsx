@@ -104,7 +104,7 @@ export function LoginRoute() {
             <Field>
               <Button className="w-full" disabled={loginMutation.isPending} type="submit">
                 <LogInIcon data-icon="inline-start" />
-                {loginMutation.isPending ? "Signing In" : "Sign in"}
+                {loginMutation.isPending ? "Signing In" : "Sign In"}
               </Button>
               <FieldError />
             </Field>

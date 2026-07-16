@@ -138,7 +138,7 @@ export function ScheduleDetailRoute() {
             variant="outline"
           >
             <RotateCcwIcon data-icon="inline-start" />
-            {runScheduleNowMutation.isPending ? "Starting" : "Run now"}
+            {runScheduleNowMutation.isPending ? "Starting" : "Run Now"}
           </Button>
           <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
             <DialogTrigger render={<Button variant="destructive" />}>
@@ -163,7 +163,7 @@ export function ScheduleDetailRoute() {
                   variant="destructive"
                 >
                   <Trash2Icon data-icon="inline-start" />
-                  {deleteScheduleMutation.isPending ? "Deleting" : "Delete schedule"}
+                  {deleteScheduleMutation.isPending ? "Deleting" : "Delete Schedule"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -194,7 +194,7 @@ export function ScheduleDetailRoute() {
             <ScheduleForm
               key={`${schedule.id}:${schedule.updated_at}`}
               agents={agentsData.agents}
-              cancelLabel="Back to schedules"
+              cancelLabel="Back to Schedules"
               isSubmitting={updateScheduleMutation.isPending}
               mode="edit"
               onChange={() => {

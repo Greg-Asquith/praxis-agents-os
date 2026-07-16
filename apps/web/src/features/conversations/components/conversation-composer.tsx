@@ -353,7 +353,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
         <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2">
           <input
             accept={chatAttachmentAcceptValue()}
-            aria-label="Attach files"
+            aria-label="Attach Files"
             className="sr-only"
             id={attachmentInputId}
             multiple
@@ -364,7 +364,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
             type="file"
           />
           <Button
-            aria-label="Attach files"
+            aria-label="Attach Files"
             disabled={Boolean(inputDisabledReason) || attachments.length >= MAX_CHAT_ATTACHMENTS}
             onClick={() => {
               attachmentInputRef.current?.click()
@@ -460,7 +460,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
                 void handleStopRun()
               }}
               size="icon"
-              title="Stop the current run"
+              title="Stop the Current Run"
               type="button"
               variant="outline"
             >
@@ -476,7 +476,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
               className="rounded-full"
               disabled={isDisabled}
               size="icon"
-              title="Send message (Enter)"
+              title="Send Message (Enter)"
               type="submit"
             >
               <ArrowUpIcon className="size-4" />

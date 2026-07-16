@@ -82,7 +82,7 @@ export function AgentDetailRoute() {
           variant="destructive"
         >
           <Trash2Icon data-icon="inline-start" />
-          {deleteAgentMutation.isPending ? "Deleting" : "Delete agent"}
+          {deleteAgentMutation.isPending ? "Deleting" : "Delete Agent"}
         </Button>
         <ConfirmDialog
           confirmIcon={<Trash2Icon data-icon="inline-start" />}
@@ -115,7 +115,7 @@ export function AgentDetailRoute() {
           key={`${agent.id}:${agent.updated_at}`}
           agent={agent}
           agents={agentsData.agents}
-          cancelLabel="Back to agents"
+          cancelLabel="Back to Agents"
           cancelTo="/agents"
           isSubmitting={updateAgentMutation.isPending}
           mode="edit"

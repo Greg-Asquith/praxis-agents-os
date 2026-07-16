@@ -252,7 +252,11 @@ timestamps onto the agent meta line and formats them by local calendar age on
 2026-07-16; it moved to
 `docs/plans/complete/frontend-ui-012-sidebar-conversation-rows.md` with the
 existing full timestamp, approval/unread states, API contract, and shared
-desktop/mobile component preserved.
+desktop/mobile component preserved. UI-013 changed the shared button primitive
+to normal-weight text and standardized action labels, pending labels, and
+icon-only accessible names in Title Case on 2026-07-16; it moved to
+`docs/plans/complete/frontend-ui-013-button-labels.md` without changing action
+behavior, component structure, or backend contracts.
 
 ## Execution Order & Status
 

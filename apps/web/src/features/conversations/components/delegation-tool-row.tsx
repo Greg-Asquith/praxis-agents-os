@@ -133,7 +133,7 @@ function DelegationMetadata({
           to="/conversations/$conversationId"
         >
           <ExternalLinkIcon data-icon="inline-start" />
-          Open transcript
+          Open Transcript
         </Link>
       ) : null}
       {runId ? (

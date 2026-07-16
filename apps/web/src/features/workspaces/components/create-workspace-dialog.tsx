@@ -53,7 +53,7 @@ export function CreateWorkspaceDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button />}>
         <PlusIcon data-icon="inline-start" />
-        New workspace
+        New Workspace
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

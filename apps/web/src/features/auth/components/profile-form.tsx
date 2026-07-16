@@ -151,7 +151,7 @@ export function ProfileForm() {
                 </div>
                 {user.avatar_url && (
                   <Button
-                    aria-label="Remove avatar"
+                    aria-label="Remove Avatar"
                     disabled={isPending}
                     onClick={() => {
                       void handleDeleteAvatar()

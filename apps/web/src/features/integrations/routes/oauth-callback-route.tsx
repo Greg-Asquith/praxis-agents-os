@@ -79,7 +79,7 @@ export function IntegrationOAuthCallbackRoute() {
             }}
             variant="outline"
           >
-            Back to home
+            Back to Home
           </Button>
         </>
       ) : (

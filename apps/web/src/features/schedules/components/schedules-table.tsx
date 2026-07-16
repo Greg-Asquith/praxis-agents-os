@@ -44,7 +44,7 @@ export function SchedulesTable({
         action={
           <Button render={<Link to="/schedules/new" />}>
             <PlusIcon data-icon="inline-start" />
-            New schedule
+            New Schedule
           </Button>
         }
         description="Create a schedule to run an agent on a cron, interval, or one-time cadence."

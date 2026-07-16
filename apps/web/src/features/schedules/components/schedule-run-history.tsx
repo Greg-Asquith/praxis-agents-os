@@ -168,7 +168,7 @@ function ConversationLink({
       }
     >
       <MessageSquareIcon data-icon="inline-start" />
-      {awaitingApproval ? "Review in conversation" : "Open conversation"}
+      {awaitingApproval ? "Review in Conversation" : "Open Conversation"}
     </Button>
   )
 }

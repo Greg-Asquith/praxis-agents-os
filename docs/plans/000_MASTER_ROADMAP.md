@@ -285,9 +285,11 @@ sections, and changed all shared mobile table rows to plain divider-separated
 content on 2026-07-16 without changing backend or data behavior. UI-012 moved
 sidebar conversation timestamps to the meta line and compacted them by local
 calendar age on 2026-07-16, preserving full timestamp metadata and the shared
-desktop/mobile conversation row without backend or API changes. The completed
-visual-refinement plans live under `docs/plans/complete/` with the
-`frontend-ui-` filename prefix.
+desktop/mobile conversation row without backend or API changes. UI-013 changed
+the shared button primitive to normal-weight text and standardized action,
+pending, and icon-only accessible labels in Title Case on 2026-07-16 without
+changing interactions or backend contracts. The completed visual-refinement
+plans live under `docs/plans/complete/` with the `frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

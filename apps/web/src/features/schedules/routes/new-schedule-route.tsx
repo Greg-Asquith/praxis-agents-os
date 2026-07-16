@@ -34,7 +34,7 @@ export function NewScheduleRoute() {
       <div className="mx-auto w-full max-w-5xl">
         <ScheduleForm
           agents={agentsData.agents}
-          cancelLabel="Back to schedules"
+          cancelLabel="Back to Schedules"
           isSubmitting={createScheduleMutation.isPending}
           mode="create"
           onSubmit={handleCreateSchedule}

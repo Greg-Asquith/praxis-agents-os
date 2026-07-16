@@ -195,7 +195,7 @@ function AuditEventMobileRow({
           type="button"
           variant="outline"
         >
-          View details
+          View Details
         </Button>
       </div>
     </ResponsiveListItem>

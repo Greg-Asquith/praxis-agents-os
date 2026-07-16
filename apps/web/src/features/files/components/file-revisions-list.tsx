@@ -79,7 +79,7 @@ export function FileRevisionsList({
       </div>
       <ConfirmDialog
         confirmIcon={<RotateCcwIcon data-icon="inline-start" />}
-        confirmLabel="Restore revision"
+        confirmLabel="Restore Revision"
         confirmPendingLabel="Restoring"
         description={
           revisionToRestore

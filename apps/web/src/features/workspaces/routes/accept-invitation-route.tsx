@@ -122,7 +122,7 @@ export function AcceptInvitationRoute() {
                 setWorkspaceBySlug(result.workspace.slug)
               }}
             >
-              Switch to this workspace
+              Switch to This Workspace
             </Button>
           ) : null}
         </CardContent>

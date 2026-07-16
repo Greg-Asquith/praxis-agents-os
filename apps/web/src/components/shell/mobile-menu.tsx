@@ -56,7 +56,7 @@ function MobileMenuDrawer({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button variant="outline" size="icon" aria-label="Open menu" />}>
+      <SheetTrigger render={<Button variant="outline" size="icon" aria-label="Open Menu" />}>
         <MenuIcon />
       </SheetTrigger>
       <SheetContent
@@ -81,7 +81,7 @@ function MobileMenuDrawer({
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Close menu"
+                aria-label="Close Menu"
                 className="absolute top-3 right-3"
               />
             }

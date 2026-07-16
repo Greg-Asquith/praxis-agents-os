@@ -63,7 +63,7 @@ export function FileUploadButton() {
     <div className="flex min-w-0 flex-col items-start gap-2 md:items-end">
       <input
         accept={workspaceFileAcceptValue()}
-        aria-label="Choose files to upload"
+        aria-label="Choose Files to Upload"
         className="sr-only"
         id={inputId}
         multiple
@@ -75,7 +75,7 @@ export function FileUploadButton() {
         type="file"
       />
       <label className="sr-only" htmlFor={inputId}>
-        Choose files to upload
+        Choose Files to Upload
       </label>
       <Button
         disabled={isUploading}
@@ -85,7 +85,7 @@ export function FileUploadButton() {
         type="button"
       >
         <UploadIcon data-icon="inline-start" />
-        {isUploading ? "Uploading" : "Upload files"}
+        {isUploading ? "Uploading" : "Upload Files"}
       </Button>
       {error ? (
         <Alert className="max-w-sm" variant="destructive">

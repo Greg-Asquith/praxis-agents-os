@@ -80,7 +80,7 @@ export function OAuthLoginProviders() {
               <OAuthProviderIcon provider={provider.icon || provider.name} />
               {showOpeningState
                 ? `Opening ${provider.display_name}`
-                : `Continue with ${provider.display_name}`}
+                : `Continue With ${provider.display_name}`}
             </Button>
           )
         })}
