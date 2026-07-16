@@ -89,7 +89,7 @@ function withStableKeys(items: TodoToolItem[]) {
 
 function TodoItemIcon({ status }: { status: TodoToolItem["status"] }) {
   if (status === "completed") {
-    return <CheckCircle2Icon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
+    return <CheckCircle2Icon className="text-success mt-0.5 size-3.5 shrink-0" />
   }
   if (status === "in_progress") {
     return <CircleDotIcon className="text-primary mt-0.5 size-3.5 shrink-0" />

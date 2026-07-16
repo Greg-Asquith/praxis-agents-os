@@ -24,7 +24,7 @@ export function ActivityStatusIcon({
 }) {
   const className = cn(
     "size-3.5 shrink-0",
-    status === "failed" || status === "denied" ? "text-destructive" : "text-muted-foreground",
+    statusColor(status),
     status === "running" && "animate-spin"
   )
 
@@ -57,14 +57,18 @@ export function ActivityStatusSuffix({
     return null
   }
 
-  return (
-    <span
-      className={cn(
-        "shrink-0 text-xs",
-        status === "failed" || status === "denied" ? "text-destructive" : "text-muted-foreground"
-      )}
-    >
-      {suffix}
-    </span>
-  )
+  return <span className={cn("shrink-0 text-xs", statusColor(status))}>{suffix}</span>
+}
+
+function statusColor(status: ActivityStatus) {
+  if (status === "awaiting_approval") {
+    return "text-warning"
+  }
+  if (status === "completed") {
+    return "text-success"
+  }
+  if (status === "failed" || status === "denied") {
+    return "text-destructive"
+  }
+  return "text-muted-foreground"
 }

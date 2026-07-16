@@ -142,7 +142,7 @@ describe("approval decision helpers", () => {
 
   it("builds resume payloads and validates pending or invalid overrides", () => {
     expect(buildResumeDecisions(approvals, {})).toBe(
-      "Choose approve or deny for every tool request."
+      "Choose approve or decline for every tool request."
     )
     expect(
       buildResumeDecisions(approvals.slice(0, 1), {

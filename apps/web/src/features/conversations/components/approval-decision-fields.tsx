@@ -13,7 +13,7 @@ export function ApprovalOverrideInputField({
   value: string
 }) {
   return (
-    <details className="bg-muted/30 rounded-md p-3">
+    <details className="bg-muted/40 rounded-md p-3">
       <summary className="hover:text-foreground cursor-pointer text-sm font-medium">
         Advanced: Edit the Request
       </summary>
@@ -29,7 +29,7 @@ export function ApprovalOverrideInputField({
           value={value}
         />
         <FieldDescription>
-          Leave blank to allow the request exactly as the agent sent it.
+          Leave blank to approve the request exactly as the agent sent it.
         </FieldDescription>
       </Field>
     </details>

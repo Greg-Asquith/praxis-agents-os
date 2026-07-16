@@ -27,6 +27,7 @@ import type {
   ToolCallState,
 } from "@/features/conversations/stream/reducer"
 import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skill-activation"
+import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"
 import {
   groupConversationRenderItems,
   parseConversationMessages,
@@ -97,6 +98,17 @@ export function MessageList({
     () => buildLiveToolActivities(streamToolCalls, streamApprovals),
     [streamToolCalls, streamApprovals]
   )
+  const hasRunningTranscriptTool = parsedMessages.some((message) =>
+    message.toolActivities.some((activity) => activity.status === "running")
+  )
+  const showLiveActivity =
+    shouldShowStream &&
+    shouldShowLiveActivity({
+      hasRunningTranscriptTool,
+      isStreaming,
+      liveMessageCount: streamMessages.length,
+      liveToolActivityCount: liveToolActivities.length,
+    })
   const isAwaitingApproval = activeRun?.status === "awaiting_approval"
   const inlineApprovals = useInlineApprovals({
     approvals,
@@ -120,18 +132,12 @@ export function MessageList({
   }, [approvals, isAwaitingApproval, liveToolActivities, parsedMessages])
   const hasInlineApprovals =
     isAwaitingApproval && (approvals.length > 0 || isApprovalLoading || Boolean(approvalError))
-  const showApprovalBar =
-    isAwaitingApproval &&
-    approvals.length > 0 &&
-    (approvals.length > 1 ||
-      inlineApprovals.summary.denied > 0 ||
-      inlineApprovals.formError !== null)
+  const showApprovalBar = isAwaitingApproval && approvals.length > 0
   const hasMessages =
     parsedMessages.length > 0 ||
     visiblePendingUserMessages.length > 0 ||
     hasInlineApprovals ||
-    (shouldShowStream &&
-      (isStreaming || streamMessages.length > 0 || liveToolActivities.length > 0))
+    showLiveActivity
 
   if (!hasMessages) {
     return (
@@ -167,16 +173,15 @@ export function MessageList({
           />
         ))}
 
-        {shouldShowStream &&
-          (isStreaming || streamMessages.length > 0 || liveToolActivities.length > 0) && (
-            <AssistantLiveActivityRow
-              assistantAgentId={assistantAgentId}
-              assistantLabel={assistantLabel}
-              isStreaming={isStreaming}
-              messages={streamMessages}
-              toolActivities={liveToolActivities}
-            />
-          )}
+        {showLiveActivity && (
+          <AssistantLiveActivityRow
+            assistantAgentId={assistantAgentId}
+            assistantLabel={assistantLabel}
+            isStreaming={isStreaming}
+            messages={streamMessages}
+            toolActivities={liveToolActivities}
+          />
+        )}
 
         {orphanApprovalActivities.length > 0 && (
           <AssistantMessageShell agentId={assistantAgentId} createdAt={null} label={assistantLabel}>

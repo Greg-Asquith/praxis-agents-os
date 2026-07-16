@@ -1,7 +1,5 @@
 // apps/web/src/features/conversations/components/approval-decision-buttons.tsx
 
-import { CheckIcon, XIcon } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
 import type { LocalApprovalDecision } from "@/features/conversations/approval-decisions"
 
@@ -21,30 +19,28 @@ export function ApprovalDecisionButtons({
   return (
     <div
       aria-label={`Decision for ${label}`}
-      className="grid w-full min-w-0 grid-cols-2 gap-2 md:w-56"
+      className="flex w-full min-w-0 items-center justify-end gap-1 sm:w-auto"
       role="group"
     >
-      <Button
-        aria-pressed={decision === "approved"}
-        disabled={disabled}
-        onClick={onApprove}
-        size="sm"
-        type="button"
-        variant={decision === "approved" ? "default" : "outline"}
-      >
-        <CheckIcon data-icon="inline-start" />
-        Allow
-      </Button>
       <Button
         aria-pressed={decision === "denied"}
         disabled={disabled}
         onClick={onDeny}
         size="sm"
         type="button"
-        variant={decision === "denied" ? "destructive" : "outline"}
+        variant={decision === "denied" ? "secondary" : "ghost"}
       >
-        <XIcon data-icon="inline-start" />
-        Deny
+        Decline
+      </Button>
+      <Button
+        aria-pressed={decision === "approved"}
+        disabled={disabled}
+        onClick={onApprove}
+        size="sm"
+        type="button"
+        variant={decision === "approved" ? "default" : "secondary"}
+      >
+        Approve
       </Button>
     </div>
   )

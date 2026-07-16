@@ -6,7 +6,7 @@ type DelegationStatus = DelegationToolActivity["status"]
 
 const TOOL_VERBS: Partial<Record<ToolActivity["status"], string>> = {
   awaiting_approval: "Requested",
-  denied: "Denied",
+  denied: "Declined",
   running: "Running",
 }
 
@@ -16,15 +16,15 @@ const DELEGATION_VERBS: Partial<Record<DelegationStatus, string>> = {
 }
 
 const TOOL_SUFFIXES: Partial<Record<ToolActivity["status"], string>> = {
-  awaiting_approval: "· waiting",
-  denied: "· denied",
-  failed: "· failed",
+  awaiting_approval: "· Waiting",
+  denied: "· Declined",
+  failed: "· Failed",
 }
 
 const DELEGATION_SUFFIXES: Partial<Record<DelegationStatus, string>> = {
-  awaiting_approval: "· waiting",
-  failed: "· failed",
-  unknown: "· unknown",
+  awaiting_approval: "· Waiting",
+  failed: "· Failed",
+  unknown: "· Unknown",
 }
 
 export function toolActivityVerb(activity: ToolActivity) {
@@ -45,10 +45,10 @@ export function delegationStatusSuffix(status: DelegationStatus) {
 
 function decisionSuffix(activity: ToolActivity) {
   if (activity.decision === "approved") {
-    return "· allowed"
+    return "· approved"
   }
   if (activity.decision === "denied") {
-    return "· denied"
+    return "· declined"
   }
   return null
 }

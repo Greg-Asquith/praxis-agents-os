@@ -19,24 +19,24 @@ export function ApprovalSubmitBar({
   summary: ApprovalDecisionSummary
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 pl-10">
+    <div className="border-border/60 ml-6 flex min-w-0 flex-col gap-2 border-l pl-3">
       {error ? (
         <Alert variant="destructive">
           <AlertTitle>Run not resumed</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <Button disabled={isSubmitting || !summary.allDecided} onClick={onSubmit} size="sm">
-          <ShieldCheckIcon data-icon="inline-start" />
-          {isSubmitting ? "Sending Decisions" : "Send Decisions"}
-        </Button>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
         {summary.pending > 0 ? (
-          <span className="text-muted-foreground text-sm">
+          <span className="text-muted-foreground text-xs">
             {String(summary.pending)} {pluralize(summary.pending, "request")} still{" "}
             {summary.pending === 1 ? "needs" : "need"} a decision.
           </span>
         ) : null}
+        <Button disabled={isSubmitting || !summary.allDecided} onClick={onSubmit} size="sm">
+          <ShieldCheckIcon data-icon="inline-start" />
+          {isSubmitting ? "Sending decisions" : "Send decisions"}
+        </Button>
       </div>
     </div>
   )

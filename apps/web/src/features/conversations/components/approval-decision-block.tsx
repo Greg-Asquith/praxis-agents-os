@@ -11,6 +11,7 @@ import {
   ApprovalOverrideInputField,
 } from "@/features/conversations/components/approval-decision-fields"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import { cn } from "@/lib/utils"
 
 export type ToolApprovalDecisionControls = {
   decision: LocalApprovalDecision
@@ -30,22 +31,29 @@ export function ApprovalDecisionBlock({
   prompt?: string
 }) {
   return (
-    <div className="border-border/70 bg-muted/20 min-w-0 rounded-md border px-3 py-3">
-      <p className="text-foreground mb-3 text-sm">
-        {prompt ?? `The agent is asking to use ${label}.`}
-      </p>
+    <div
+      className={cn(
+        "bg-card min-w-0 rounded-lg border px-4 py-3 shadow-xs",
+        activity.status === "awaiting_approval" && "border-warning/40"
+      )}
+    >
       <div className="flex min-w-0 flex-col gap-3">
-        <ApprovalDecisionButtons
-          decision={controls.decision.decision}
-          disabled={controls.disabled ?? false}
-          label={label}
-          onApprove={() => {
-            controls.onDecisionChange(approveDecision(controls.decision))
-          }}
-          onDeny={() => {
-            controls.onDecisionChange(denyDecision(controls.decision))
-          }}
-        />
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <p className="text-foreground min-w-0 flex-1 text-sm">
+            {prompt ?? `The agent is asking to use ${label}.`}
+          </p>
+          <ApprovalDecisionButtons
+            decision={controls.decision.decision}
+            disabled={controls.disabled ?? false}
+            label={label}
+            onApprove={() => {
+              controls.onDecisionChange(approveDecision(controls.decision))
+            }}
+            onDeny={() => {
+              controls.onDecisionChange(denyDecision(controls.decision))
+            }}
+          />
+        </div>
         {controls.decision.decision !== "denied" ? (
           <ApprovalOverrideInputField
             id={`${activity.id}-override`}

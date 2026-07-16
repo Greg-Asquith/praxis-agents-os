@@ -59,7 +59,7 @@ export function buildResumeDecisions(
     const effectiveDecision = decision ?? DEFAULT_APPROVAL_DECISION
 
     if (effectiveDecision.decision === "pending") {
-      return "Choose approve or deny for every tool request."
+      return "Choose approve or decline for every tool request."
     }
 
     if (effectiveDecision.decision === "denied") {

@@ -61,10 +61,12 @@ Functional, but visibly unstyled.
 | 002 | App shell: inset canvas (visual only) | P1 | M | 001 | DONE |
 | 003 | Agent identity (deterministic colored icons) | P1 | S | 001 | DONE |
 | 004 | Conversation surface: transcript & message styling | P1 | M | 001, 003 | DONE |
-| 005 | Tool rows & approval styling | P1 | M | 001, 004 | TODO |
+| 005 | Tool rows & approval styling | P1 | M | 001, 004 | DONE |
 | 006 | Composer redesign | P1 | M | 001, 003 | TODO |
 | 007 | Pages & states polish (dashboard, lists, auth, empty) | P2 | M | 001, 002, 003 | TODO |
 | 008 | Typography: Inter replaces Geist | P1 | S | — | TODO |
+| 009 | Sidebar declutter & user menu redesign | P1 | S | 001 | TODO |
+| 010 | Mobile shell: drawer sidebar | P1 | M | 002, 009 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -85,6 +87,11 @@ Dependency notes:
 - 007 sweeps whatever the earlier plans did not touch; run it last.
 - 008 (font swap) is independent of everything; land it early so the
   remaining plans' visual QA happens in the final typeface.
+- 009 touches only nav config + the sidebar footer; it can run in
+  parallel with 004–008 but must land before 010, which builds the
+  mobile drawer around the final menu contents.
+- 010 replaces `mobile-menu.tsx` and adds the sheet primitive; nothing
+  else depends on it — safe to run last alongside 007.
 
 ## Shared rules for every plan
 
@@ -129,9 +136,14 @@ Dependency notes:
 - **Agent identity is client-derived** (deterministic hue from agent id) —
   no backend/schema change in this plan set. A persisted per-agent
   icon/color field is a possible follow-up vertical, out of scope here.
-- **The sidebar menu does not change** (maintainer, 2026-07-16). Same
-  items, same order, same sections, workspace switcher stays in the header
-  row. Plan 002 restyles the shell's shape and finish only.
+- **The sidebar nav slims to the five work sections** — Home, Agents,
+  Skills, Files, Schedules. Workspaces and Settings (relabeled "Workspace
+  Settings") move into the user menu (maintainer, 2026-07-16; plan 009 —
+  amends the earlier "sidebar menu does not change" decision, which
+  otherwise stands: no new sections, no reordering, and the workspace
+  switcher stays in the header row on desktop). The mobile drawer (plan
+  010) is the one exception on switcher placement: mobile has no header
+  switcher, so the drawer hosts it.
 - **No model picker in the composer.** The reference shows one, but in
   this product the model is bound to the agent. The composer shows the
   resolved model as a muted label (plan 006); changing the binding is an

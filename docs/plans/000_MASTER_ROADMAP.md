@@ -262,8 +262,11 @@ placement. UI-003 landed deterministic, client-derived agent identity icons on
 the API contract remains unchanged. UI-004 landed the refined conversation
 transcript on 2026-07-16: agent-identified assistant turns, compact user bubbles,
 calmer markdown/thinking states, and reader-respecting live auto-scroll. UI-005
-through UI-008 remain sequenced in that track; the completed plans live under
-`docs/plans/complete/` with the `frontend-ui-` filename prefix.
+landed the inline tool-row and approval polish on 2026-07-16: shared threaded
+details, semantic status colors, calm approval cards, and consistent
+Approve/Decline copy without changing deferred-decision payloads or batching.
+UI-006 through UI-008 remain sequenced in that track; the completed plans live
+under `docs/plans/complete/` with the `frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)
 

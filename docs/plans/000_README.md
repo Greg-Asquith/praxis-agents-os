@@ -219,8 +219,11 @@ completed 2026-07-16 and moved to
 client-derived, themed identity system across agent pickers, lists, and the
 configure header without changing the agent API. UI-004 completed the transcript
 and message-styling pass on 2026-07-16 and moved to
-`docs/plans/complete/frontend-ui-004-conversation-surface.md`. UI-005 through
-UI-008 remain TODO in the track-local status table.
+`docs/plans/complete/frontend-ui-004-conversation-surface.md`. UI-005 completed
+the inline tool-row and approval-styling pass on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-005-tool-rows-approvals.md`; deferred-decision
+state and API payload semantics remain unchanged. UI-006 through UI-008 remain
+TODO in the track-local status table.
 
 ## Execution Order & Status
 

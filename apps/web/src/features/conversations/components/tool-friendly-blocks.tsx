@@ -17,7 +17,7 @@ export function ToolFieldList({ fields }: { fields: ResolvedToolField[] }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {inlineFields.length > 0 ? (
-        <dl className="bg-muted/30 grid min-w-0 grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md px-3 py-2">
+        <dl className="bg-muted/40 grid min-w-0 grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md px-3 py-2">
           {inlineFields.map((field) => (
             <InlineField field={field} key={field.key} />
           ))}
@@ -39,7 +39,7 @@ export function TechnicalDetails({ args, result }: { args: unknown; result: unkn
 
   return (
     <details className="group/technical min-w-0">
-      <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1 text-xs">
+      <summary className="text-muted-foreground hover:bg-muted/60 hover:text-foreground -mx-1.5 flex cursor-pointer list-none items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors">
         <ChevronRightIcon className="size-3 transition-transform group-open/technical:rotate-90" />
         Technical details
       </summary>
@@ -71,11 +71,11 @@ function BlockField({ field }: { field: ResolvedToolField }) {
     <div className="min-w-0">
       <p className="text-muted-foreground mb-1 text-xs font-medium">{field.label}</p>
       {field.format === "markdown" ? (
-        <div className="bg-muted/30 rounded-md px-3 py-2 text-sm">
+        <div className="bg-muted/40 rounded-md px-3 py-2 text-sm">
           <MessageMarkdown content={field.value} />
         </div>
       ) : (
-        <pre className="bg-muted/50 max-h-80 overflow-auto rounded-md p-2 text-xs leading-relaxed whitespace-pre-wrap">
+        <pre className="bg-muted/40 max-h-80 overflow-auto rounded-md p-2 text-xs leading-relaxed whitespace-pre-wrap">
           {field.value}
         </pre>
       )}

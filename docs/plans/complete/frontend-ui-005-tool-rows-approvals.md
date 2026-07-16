@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM — approvals are a high-risk product flow (they gate
@@ -152,3 +153,30 @@ their mono treatment.
 - Backend or tests depend on the literal strings "Allow"/"Deny" crossing
   the wire (check what the mutation sends — it should send enum values,
   not labels). If labels leak into the payload, stop and report.
+
+## Execution record
+
+- The shared row shell now gives every expandable tool presenter the same
+  clickable hover surface and bordered detail thread. Delegation, skills,
+  todos, file tools, and the generic presenter inherit the treatment without
+  presenter-specific layout forks.
+- Approval cards use the warning edge, responsive prompt/action layout, and
+  quiet Decline plus decisive Approve controls from the design target. The
+  submit bar is aligned to the same thread and renders consistently for both
+  single and multiple pending sets.
+- Tool status icons and suffixes now share the semantic warning, success,
+  destructive, and muted vocabulary. User-facing decision copy consistently
+  says Approve/Decline and Approved/Declined; the wire contract remains the
+  existing `approved`/`denied` enums, and no handler, state shape, SSE, or API
+  code changed.
+- Field, result, and technical-detail surfaces now use one `bg-muted/40`
+  treatment, while completed todo items use the shared success color and
+  delegation metadata keeps its compact mono chips.
+- Maintainer QA caught a redundant empty live assistant shell beneath an
+  already-running transcript tool. Live activity visibility now suppresses
+  that duplicate while retaining the initial Thinking state and every stream
+  that has text or tool activity.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 85 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build. Automated
+  browser QA was not run at the maintainer's direction; maintainer screenshot
+  QA identified the redundant live shell fixed above.
