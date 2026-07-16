@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW — nav config + one shell component; no routes or data
@@ -137,3 +138,23 @@ this is a two-line bridge, not a redesign.
 - Anything outside `navigation.ts`'s two consumers turns out to depend on
   Workspaces/Settings being in `mainNavigation` (e.g. an active-state or
   layout assumption) — stop and report before working around it.
+
+## Execution record
+
+- The shared primary navigation now contains only Home, Agents, Skills, Files,
+  and Schedules for every role; a focused regression test protects that exact
+  set while preserving the existing role-filter seam.
+- The desktop footer trigger now has the standard menu affordance and persistent
+  sidebar-token open state. Its upward-opening, anchor-width menu reuses one
+  identity component for matching trigger/header truncation and exposes Profile
+  Settings, Workspaces, Workspace Settings, and Sign Out in the planned order.
+- The existing mobile dropdown includes the two moved destinations as a bridge
+  until UI-010 replaces it. Both destination routes and their breadcrumbs remain
+  registered; no routing, API, backend, or agent-runtime behavior changed.
+- Base UI's installed trigger and positioner contracts confirm
+  `data-popup-open`, `--anchor-width`, and top-side placement. `pnpm check`
+  passed on 2026-07-16: typecheck, ESLint, 89 Vitest tests, Prettier, Knip,
+  dependency-cruiser, and the production build. Browser-based verification was
+  not run at the maintainer's direction; responsive, theme, focus, truncation,
+  and placement behavior were checked through the primitive contract, shared
+  semantic classes, source review, and the production build.

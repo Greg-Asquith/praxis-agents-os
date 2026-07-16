@@ -6,9 +6,7 @@ import {
   FilesIcon,
   LayoutDashboardIcon,
   type LucideIcon,
-  SettingsIcon,
   SparklesIcon,
-  UsersIcon,
 } from "lucide-react"
 
 type NavigationItem =
@@ -56,18 +54,6 @@ const mainNavigation: NavigationItem[] = [
     label: "Schedules",
     to: "/schedules",
     icon: CalendarClockIcon,
-    disabled: false,
-  },
-  {
-    label: "Workspaces",
-    to: "/workspaces",
-    icon: UsersIcon,
-    disabled: false,
-  },
-  {
-    label: "Settings",
-    to: "/workspace-settings",
-    icon: SettingsIcon,
     disabled: false,
   },
 ] as const

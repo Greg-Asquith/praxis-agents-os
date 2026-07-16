@@ -4,7 +4,7 @@ import { appConfig } from "@/config/app"
 
 export function SidebarHeader() {
   return (
-    <div className="flex h-14 shrink-0 items-center gap-3 px-4">
+    <div className="flex h-16 shrink-0 items-center gap-3 px-4">
       <div className="flex min-w-0 items-center gap-3 px-1">
         <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-lg text-sm font-semibold">
           P

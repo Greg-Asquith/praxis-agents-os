@@ -6,7 +6,9 @@ import {
   MenuIcon,
   MessageSquarePlusIcon,
   MessagesSquareIcon,
+  SettingsIcon,
   UserIcon,
+  UsersIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -99,6 +101,15 @@ export function MobileMenu({
               <UserIcon />
               Profile Settings
             </DropdownMenuItem>
+            <DropdownMenuItem render={<Link to="/workspaces" />}>
+              <UsersIcon />
+              Workspaces
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link to="/workspace-settings" />}>
+              <SettingsIcon />
+              Workspace Settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onSignOut}>
               <LogOutIcon />
               Sign Out

@@ -274,8 +274,10 @@ statuses, filled action-oriented empty states, direct auth copy, and compact
 tables. Maintainer review removed eyebrow labels and redundant metric-card
 bands across list and detail pages. UI-008 replaced Geist with the self-hosted
 Inter variable family on 2026-07-16 while preserving the shared sans/heading
-token seam; the production build emits Inter assets only. UI-009 and UI-010
-remain sequenced in that track; completed plans live under
+token seam; the production build emits Inter assets only. UI-009 landed the
+decluttered five-section primary sidebar and redesigned identity-rich user menu
+on 2026-07-16, with Workspaces and Workspace Settings retained on desktop and
+mobile. UI-010 remains sequenced next in that track; completed plans live under
 `docs/plans/complete/` with the `frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)

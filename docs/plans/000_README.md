@@ -234,8 +234,12 @@ removed eyebrow labels and redundant metric-card bands across list and detail
 pages. UI-008 replaced Geist with the self-hosted Inter variable family on
 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-008-typography-inter.md`; the shared
-sans/heading token seam and backend/API behavior are unchanged. UI-009 and
-UI-010 remain TODO in the track-local status table.
+sans/heading token seam and backend/API behavior are unchanged. UI-009 slimmed
+the primary sidebar to its five work sections on 2026-07-16, moved Workspaces
+and Workspace Settings into the redesigned identity-rich user menu, preserved
+both destinations in the interim mobile menu, and moved to
+`docs/plans/complete/frontend-ui-009-sidebar-declutter-user-menu.md`. UI-010
+remains TODO in the track-local status table.
 
 ## Execution Order & Status
 
