@@ -7,14 +7,6 @@ import { InboxIcon, MessageSquarePlusIcon, MessageSquareTextIcon } from "lucide-
 
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { conversationsQueryOptions } from "@/features/conversations/api/list-conversations"
 import { ConversationList } from "@/features/conversations/components/conversation-list"
@@ -126,13 +118,15 @@ function DashboardPanel({
   title: string
 }) {
   return (
-    <Card className="min-w-0" size="sm">
-      <CardHeader className="border-b">
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-        {action ? <CardAction>{action}</CardAction> : null}
-      </CardHeader>
-      <CardContent className="px-2 md:px-3">{children}</CardContent>
-    </Card>
+    <section className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h2 className="text-sm font-medium">{title}</h2>
+          <p className="text-muted-foreground text-xs">{description}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   )
 }

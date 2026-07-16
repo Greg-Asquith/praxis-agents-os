@@ -1,11 +1,9 @@
 // apps/web/src/features/workspaces/routes/workspaces-route.tsx
 
 import { PageHeader } from "@/components/shell/page-header"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CreateWorkspaceDialog } from "@/features/workspaces/components/create-workspace-dialog"
 import { WorkspacesTable } from "@/features/workspaces/components/workspaces-table"
 import { useWorkspacesQuery } from "@/features/workspaces/api/list-workspaces"
-import { pluralize } from "@/lib/format"
 
 export function WorkspacesRoute() {
   const { data } = useWorkspacesQuery()
@@ -19,19 +17,7 @@ export function WorkspacesRoute() {
         title="Workspaces"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {data.total} {pluralize(data.total, "workspace")}
-          </CardTitle>
-          <CardDescription>
-            Workspaces separate access, audit records, and agent configuration.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <WorkspacesTable workspaces={data.workspaces} />
-        </CardContent>
-      </Card>
+      <WorkspacesTable workspaces={data.workspaces} />
     </div>
   )
 }

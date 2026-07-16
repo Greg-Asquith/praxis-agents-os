@@ -243,7 +243,11 @@ replaced the mobile dropdown with the shared sidebar composition in a modal
 drawer on 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-010-mobile-shell.md`; mobile now shares the
 workspace switcher, navigation, conversation states, and identity-rich user
-menu without changing the desktop shell or API behavior.
+menu without changing the desktop shell or API behavior. UI-011 removed
+redundant list-page card wrappers, flattened dashboard sections, and changed
+the shared mobile table presentation to divider-separated rows on 2026-07-16;
+it moved to `docs/plans/complete/frontend-ui-011-decard-pages.md` without
+backend, API, routing, or data changes.
 
 ## Execution Order & Status
 

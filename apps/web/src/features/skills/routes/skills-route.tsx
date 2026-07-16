@@ -5,7 +5,6 @@ import { PlusIcon } from "lucide-react"
 
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useSkillsQuery } from "@/features/skills/api/list-skills"
 import { SkillsTable } from "@/features/skills/components/skills-table"
 
@@ -28,17 +27,7 @@ export function SkillsRoute() {
         title="Skills"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workspace skills</CardTitle>
-          <CardDescription>
-            Create reusable instruction packages and reference documents for agents.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SkillsTable skills={data.skills} />
-        </CardContent>
-      </Card>
+      <SkillsTable skills={data.skills} />
     </div>
   )
 }

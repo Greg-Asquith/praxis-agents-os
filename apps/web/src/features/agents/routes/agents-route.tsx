@@ -5,7 +5,6 @@ import { PlusIcon } from "lucide-react"
 
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { AgentsTable } from "@/features/agents/components/agents-table"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
@@ -30,17 +29,7 @@ export function AgentsRoute() {
         title="Agents"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workspace agents</CardTitle>
-          <CardDescription>
-            Configure active agents, model overrides, delegation, and tool approval policies.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AgentsTable agents={agentsData.agents} modelCatalog={modelCatalog} />
-        </CardContent>
-      </Card>
+      <AgentsTable agents={agentsData.agents} modelCatalog={modelCatalog} />
     </div>
   )
 }

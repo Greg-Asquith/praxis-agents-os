@@ -9,7 +9,7 @@ function ResponsiveList({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="responsive-list"
       role="list"
-      className={cn("flex flex-col gap-3 md:hidden", className)}
+      className={cn("divide-y md:hidden", className)}
       {...props}
     />
   )
@@ -21,7 +21,7 @@ function ResponsiveListItem({ className, ...props }: React.ComponentProps<"div">
       data-slot="responsive-list-item"
       role="listitem"
       className={cn(
-        "bg-card text-card-foreground rounded-lg border p-3 text-sm [contain-intrinsic-size:auto_96px] [content-visibility:auto]",
+        "py-3 text-sm [contain-intrinsic-size:auto_96px] [content-visibility:auto]",
         className
       )}
       {...props}

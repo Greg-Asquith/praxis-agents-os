@@ -67,6 +67,9 @@ Functional, but visibly unstyled.
 | 008 | Typography: Inter replaces Geist | P1 | S | — | DONE |
 | 009 | Sidebar declutter & user menu redesign | P1 | S | 001 | DONE |
 | 010 | Mobile shell: drawer sidebar | P1 | M | 002, 009 | DONE |
+| 011 | De-card pages: plain content surfaces | P1 | M | 001, 002, 007 | DONE |
+| 012 | Sidebar conversation rows: compact datetime | P2 | S | 010 | TODO |
+| 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -90,8 +93,15 @@ Dependency notes:
 - 009 touches only nav config + the sidebar footer; it can run in
   parallel with 004–008 but must land before 010, which builds the
   mobile drawer around the final menu contents.
-- 010 replaces `mobile-menu.tsx` and adds the sheet primitive; nothing
-  else depends on it — safe to run last alongside 007.
+- 010 replaces `mobile-menu.tsx` and adds the sheet primitive; 012 and
+  013 now depend on it — land it before them.
+- 011 (plans written 2026-07-16 at `d1c4a89`) touches route/feature
+  files only, disjoint from 010's shell files — safe in parallel
+  with 010.
+- 012 restyles the sidebar conversation rows that 010's drawer reuses;
+  run it after 010 so the row work happens once.
+- 013 sweeps action-label literals across files 010 adds and 011
+  deletes — run it last, after 010–012, so it sweeps final copy.
 
 ## Shared rules for every plan
 
@@ -151,6 +161,23 @@ Dependency notes:
 - **Native `<details>` collapsibles stay** for tool rows / thinking /
   technical details. They work, they are accessible, and restyling them is
   cheaper and less risky than swapping in a JS accordion.
+- **Pages render content plainly — wrapper cards die** (maintainer,
+  2026-07-16; plan 011). The `PageHeader` is a page's only title; the
+  per-page `Card` whose header restated it is removed, and the mobile
+  `ResponsiveListItem` boxes flatten to divider-separated rows (the
+  card-in-card fix). `Card` remains for genuinely grouping surfaces:
+  auth, dialogs, detail-page form sections.
+- **List datetimes stay, compact** (maintainer, 2026-07-16; plan 012).
+  Sidebar conversation rows keep an absolute timestamp — moved to the
+  meta line and shortened by age (time today, "16 Jul" this year, full
+  date beyond) — rather than being dropped or made relative.
+- **Action labels are Title Case; button text is normal weight**
+  (maintainer, 2026-07-16; plan 013). `font-medium` in the button
+  primitive read as bold in Inter; buttons drop to `font-normal`, and
+  every action label ("New Schedule", "Save Changes") uses Title Case.
+  This settles the sentence-case/Title Case split — plan 009's
+  "sentence-cased" phrasing for menu items is superseded (those labels
+  were already Title Case in practice).
 
 ## Considered and rejected (do not re-propose)
 

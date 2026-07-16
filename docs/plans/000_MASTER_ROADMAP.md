@@ -280,6 +280,9 @@ on 2026-07-16, with Workspaces and Workspace Settings retained on desktop and
 mobile. UI-010 replaced the mobile dropdown with a Base UI modal drawer on
 2026-07-16, reusing the desktop sidebar composition and adding the mobile-only
 workspace switcher placement without changing the desktop shell. The completed
+UI-011 pass removed redundant list-page card wrappers, flattened dashboard
+sections, and changed all shared mobile table rows to plain divider-separated
+content on 2026-07-16 without changing backend or data behavior. The completed
 visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

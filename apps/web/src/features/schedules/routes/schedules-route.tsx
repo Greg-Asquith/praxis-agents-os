@@ -5,7 +5,6 @@ import { PlusIcon } from "lucide-react"
 
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { useSchedulesQuery } from "@/features/schedules/api/list-schedules"
 import { SchedulesTable } from "@/features/schedules/components/schedules-table"
@@ -30,17 +29,7 @@ export function SchedulesRoute() {
         title="Schedules"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workspace schedules</CardTitle>
-          <CardDescription>
-            Create and monitor unattended agent runs across this workspace.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SchedulesTable agents={agentsData.agents} schedules={schedulesData.items} />
-        </CardContent>
-      </Card>
+      <SchedulesTable agents={agentsData.agents} schedules={schedulesData.items} />
     </div>
   )
 }
