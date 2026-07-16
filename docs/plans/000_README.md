@@ -231,7 +231,11 @@ and state polish on 2026-07-16 and moved to
 headers, card vocabulary, semantic statuses, filled empty states, auth polish,
 and compact tables shipped without backend or API changes. Maintainer review
 removed eyebrow labels and redundant metric-card bands across list and detail
-pages. UI-008 through UI-010 remain TODO in the track-local status table.
+pages. UI-008 replaced Geist with the self-hosted Inter variable family on
+2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-008-typography-inter.md`; the shared
+sans/heading token seam and backend/API behavior are unchanged. UI-009 and
+UI-010 remain TODO in the track-local status table.
 
 ## Execution Order & Status
 

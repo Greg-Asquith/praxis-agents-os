@@ -60,3 +60,20 @@ is building (maintainer decision, 2026-07-16).
 - Any file references "Geist" outside `index.css`/`package.json`
   (`git grep -i geist` first) — reconcile those sites in this plan, not
   ad hoc.
+
+## Execution record
+
+- `@fontsource-variable/inter` replaces `@fontsource-variable/geist` in the
+  package manifest and lockfile. The app imports Inter from Fontsource and
+  sets `--font-sans` to `"Inter Variable", sans-serif`; `--font-heading`
+  continues to alias the shared sans token and the mono stack is unchanged.
+- No application source or dependency record retains Geist. Historical plan
+  documents keep the name only where they record the former state and the
+  typography decision.
+- `pnpm check` passed on 2026-07-16: typecheck, ESLint, 85 Vitest tests,
+  Prettier, Knip, dependency-cruiser, and the production build. The build
+  emitted Inter variable-font assets for every bundled subset and no Geist
+  asset or missing-import warning.
+- Browser-based visual QA was not run at the maintainer's direction. The
+  change remains confined to the existing global typography token, and both
+  themes consume that same token without per-component overrides.
