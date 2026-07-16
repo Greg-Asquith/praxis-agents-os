@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Written**: 2026-07-16 (anchors verified against the live tree at
   `9d597e1` with plan 013's then-uncommitted label sweep applied — land
   013's commit before starting)

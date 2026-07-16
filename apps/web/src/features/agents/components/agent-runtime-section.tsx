@@ -1,6 +1,7 @@
 // apps/web/src/features/agents/components/agent-runtime-section.tsx
 
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { FormSection } from "@/components/forms/form-section"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -18,7 +19,6 @@ import {
   type AgentFormState,
   type ModelOption,
 } from "@/features/agents/components/agent-form-model"
-import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 import { AgentToolsSection } from "@/features/agents/components/agent-tools-section"
 import type { ToolCatalogEntry } from "@/features/tools/types"
 
@@ -44,7 +44,7 @@ export function AgentRuntimeSection({
 
   return (
     <>
-      <AgentFormSection
+      <FormSection
         description="Choose the model override and thinking behavior for this agent."
         eyebrow="Model"
         title="Model selection"
@@ -135,9 +135,9 @@ export function AgentRuntimeSection({
             ) : null}
           </div>
         </FieldGroup>
-      </AgentFormSection>
+      </FormSection>
 
-      <AgentFormSection
+      <FormSection
         description="Set the run budget and whether this agent appears as active or favored."
         eyebrow="Runtime limits"
         title="Step budget and availability"
@@ -203,7 +203,7 @@ export function AgentRuntimeSection({
             </Field>
           </div>
         </FieldGroup>
-      </AgentFormSection>
+      </FormSection>
 
       <AgentToolsSection state={state} toolCatalog={toolCatalog} onToolModeChange={setToolMode} />
     </>

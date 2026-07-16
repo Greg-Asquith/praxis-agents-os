@@ -291,8 +291,11 @@ pending, and icon-only accessible labels in Title Case on 2026-07-16 without
 changing interactions or backend contracts. UI-014 completed the frontend
 effect audit on 2026-07-16: route-entry actions now use loaders, dropped-stream
 healing uses query polling, pending-message handoff is render-derived, and only
-five effects remain for external synchronization or cleanup. The completed
-visual-refinement plans live under `docs/plans/complete/` with the
+five effects remain for external synchronization or cleanup. UI-015 introduced
+the shared form-section, form-alert, and sticky-action components used by Agent,
+Skill, and Schedule forms on 2026-07-16, with airier section spacing and no
+validation, payload, submission, backend, or runtime behavior changes. The
+completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)

@@ -1,10 +1,11 @@
 // apps/web/src/features/skills/components/skill-form.tsx
 
 import { useId, useMemo, useState, type ReactNode, type SyntheticEvent } from "react"
-import { Link } from "@tanstack/react-router"
-import { CheckIcon, FileTextIcon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react"
+import { FileTextIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { FormActionBar } from "@/components/forms/form-action-bar"
+import { FormAlerts } from "@/components/forms/form-alerts"
+import { FormSection } from "@/components/forms/form-section"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -24,7 +25,6 @@ import {
   validateSkillFormState,
   type SkillFormState,
 } from "@/features/skills/components/skill-form-model"
-import { SkillFormSection } from "@/features/skills/components/skill-form-section"
 import type { Skill, SkillCreateRequest, SkillUpdateRequest } from "@/features/skills/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { buildFieldErrors } from "@/lib/forms"
@@ -114,38 +114,22 @@ export function SkillForm(props: SkillFormProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-6"
         id={formId}
         noValidate
         onSubmit={(event) => {
           void handleSubmit(event)
         }}
       >
-        {formError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Skill not saved</AlertTitle>
-            <AlertDescription>{formError}</AlertDescription>
-          </Alert>
-        ) : null}
+        <FormAlerts
+          error={formError}
+          errorTitle="Skill not saved"
+          validationEntries={validationEntries}
+        />
 
-        {validationEntries.length > 0 ? (
-          <Alert variant="destructive">
-            <AlertTitle>Review required fields</AlertTitle>
-            <AlertDescription>
-              <ul className="flex list-disc flex-col gap-1 pl-4">
-                {validationEntries.map((entry) => (
-                  <li key={entry.fieldId}>
-                    <a href={`#${entry.fieldId}`}>{entry.label}</a>: {entry.message}
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <SkillFormSection
+        <FormSection
           description="Define the compact catalog entry agents see before they activate this skill."
           eyebrow="Identity"
           title="Skill identity"
@@ -191,9 +175,9 @@ export function SkillForm(props: SkillFormProps) {
               <FieldError>{fieldErrors["skill-description"]}</FieldError>
             </Field>
           </FieldGroup>
-        </SkillFormSection>
+        </FormSection>
 
-        <SkillFormSection
+        <FormSection
           description="Write the runbook that loads only after the agent activates this skill."
           eyebrow="Instructions"
           title="Activation instructions"
@@ -218,7 +202,7 @@ export function SkillForm(props: SkillFormProps) {
               <FieldError>{fieldErrors["skill-instructions"]}</FieldError>
             </Field>
           </FieldGroup>
-        </SkillFormSection>
+        </FormSection>
 
         {props.mode === "create" ? (
           <PendingSkillDocumentsSection
@@ -227,7 +211,7 @@ export function SkillForm(props: SkillFormProps) {
           />
         ) : null}
 
-        <SkillFormSection
+        <FormSection
           description="Control whether the skill is assignable and easy to find."
           eyebrow="State"
           title="Availability"
@@ -273,51 +257,27 @@ export function SkillForm(props: SkillFormProps) {
               </Select>
             </Field>
           </FieldGroup>
-        </SkillFormSection>
+        </FormSection>
       </form>
 
       {props.children}
 
-      <div className="bg-background/95 sticky -bottom-6 z-10 -mx-4 border-t px-4 py-3 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur md:-mx-6 md:px-6">
-        <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-muted-foreground text-sm">
-            {props.mode === "edit"
-              ? isDirty
-                ? "Unsaved changes"
-                : "No unsaved changes"
-              : "Ready to create when required fields are complete"}
-          </p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button
-              className="w-full sm:w-auto"
-              disabled={props.isSubmitting}
-              render={<Link to="/skills" />}
-              type="button"
-              variant="outline"
-            >
-              {props.cancelLabel}
-            </Button>
-            <Button
-              className="w-full sm:w-auto"
-              disabled={props.isSubmitting || (props.mode === "edit" && !isDirty)}
-              form={formId}
-              type="submit"
-            >
-              {props.isSubmitting ? (
-                <>
-                  <SaveIcon data-icon="inline-start" />
-                  {props.mode === "create" ? "Creating" : "Saving"}
-                </>
-              ) : (
-                <>
-                  <CheckIcon data-icon="inline-start" />
-                  {props.mode === "create" ? "Create Skill" : "Save Changes"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <FormActionBar
+        cancelLabel={props.cancelLabel}
+        cancelTo="/skills"
+        disableSubmit={props.isSubmitting || (props.mode === "edit" && !isDirty)}
+        form={formId}
+        isSubmitting={props.isSubmitting}
+        pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
+        stateMessage={
+          props.mode === "edit"
+            ? isDirty
+              ? "Unsaved changes"
+              : "No unsaved changes"
+            : "Ready to create when required fields are complete"
+        }
+        submitLabel={props.mode === "create" ? "Create Skill" : "Save Changes"}
+      />
     </div>
   )
 }
@@ -369,7 +329,7 @@ function PendingSkillDocumentsSection({
   }
 
   return (
-    <SkillFormSection
+    <FormSection
       description="Add reference files now; they upload after the skill is created."
       eyebrow="Documents"
       title="Reference documents"
@@ -445,6 +405,6 @@ function PendingSkillDocumentsSection({
           )}
         </div>
       </FieldGroup>
-    </SkillFormSection>
+    </FormSection>
   )
 }

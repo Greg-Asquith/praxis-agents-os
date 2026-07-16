@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { PlusIcon, XIcon } from "lucide-react"
 
+import { FormSection } from "@/components/forms/form-section"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
@@ -17,7 +18,6 @@ import {
   NO_AGENT_SELECTION,
   type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
-import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 import { agentSelectLabel } from "@/features/agents/components/agent-select-format"
 import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
@@ -76,7 +76,7 @@ export function AgentDelegationSection({
   }
 
   return (
-    <AgentFormSection
+    <FormSection
       description="Choose active workspace agents this agent can call during a run."
       eyebrow="Delegation"
       title="Can delegate to"
@@ -164,6 +164,6 @@ export function AgentDelegationSection({
           )}
         </div>
       </FieldGroup>
-    </AgentFormSection>
+    </FormSection>
   )
 }

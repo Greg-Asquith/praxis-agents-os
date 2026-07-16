@@ -1,13 +1,13 @@
 // apps/web/src/features/agents/components/agent-profile-section.tsx
 
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { FormSection } from "@/components/forms/form-section"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import type {
   AgentFormFieldSetter,
   AgentFormState,
 } from "@/features/agents/components/agent-form-model"
-import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 
 export function AgentProfileSection({
   fieldErrors,
@@ -19,7 +19,7 @@ export function AgentProfileSection({
   state: AgentFormState
 }) {
   return (
-    <AgentFormSection
+    <FormSection
       description="Name the agent and write the instructions it should follow during workspace runs."
       eyebrow="Identity"
       title="Name, description, and instructions"
@@ -72,6 +72,6 @@ export function AgentProfileSection({
           <FieldError>{fieldErrors.instructions}</FieldError>
         </Field>
       </FieldGroup>
-    </AgentFormSection>
+    </FormSection>
   )
 }

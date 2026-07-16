@@ -1,11 +1,11 @@
 // apps/web/src/features/schedules/components/schedule-form.tsx
 
 import { useMemo, useState, type SyntheticEvent } from "react"
-import { Link } from "@tanstack/react-router"
-import { BotIcon, CheckIcon, SaveIcon } from "lucide-react"
+import { BotIcon } from "lucide-react"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
+import { FormActionBar } from "@/components/forms/form-action-bar"
+import { FormAlerts } from "@/components/forms/form-alerts"
+import { FormSection } from "@/components/forms/form-section"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
   Select,
@@ -27,7 +27,6 @@ import {
   validateScheduleFormState,
   type ScheduleFormState,
 } from "@/features/schedules/components/schedule-form-model"
-import { ScheduleFormSection } from "@/features/schedules/components/schedule-form-section"
 import { SchedulePreviewPanel } from "@/features/schedules/components/schedule-preview-panel"
 import { ScheduleTimingSection } from "@/features/schedules/components/schedule-timing-section"
 import type {
@@ -112,35 +111,19 @@ export function ScheduleForm(props: ScheduleFormProps) {
 
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-6"
       noValidate
       onSubmit={(event) => {
         void handleSubmit(event)
       }}
     >
-      {formError ? (
-        <Alert variant="destructive">
-          <AlertTitle>Schedule not saved</AlertTitle>
-          <AlertDescription>{formError}</AlertDescription>
-        </Alert>
-      ) : null}
+      <FormAlerts
+        error={formError}
+        errorTitle="Schedule not saved"
+        validationEntries={validationEntries}
+      />
 
-      {validationEntries.length > 0 ? (
-        <Alert variant="destructive">
-          <AlertTitle>Review required fields</AlertTitle>
-          <AlertDescription>
-            <ul className="flex list-disc flex-col gap-1 pl-4">
-              {validationEntries.map((entry) => (
-                <li key={entry.fieldId}>
-                  <a href={`#${entry.fieldId}`}>{entry.label}</a>: {entry.message}
-                </li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <ScheduleFormSection
+      <FormSection
         description="Choose the agent and prompt that will be used whenever this schedule fires."
         eyebrow="Run"
         icon={<BotIcon className="size-4" />}
@@ -250,7 +233,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
             </div>
           </Field>
         </FieldGroup>
-      </ScheduleFormSection>
+      </FormSection>
 
       <ScheduleTimingSection
         fieldErrors={{
@@ -265,45 +248,21 @@ export function ScheduleForm(props: ScheduleFormProps) {
 
       <SchedulePreviewPanel state={state} />
 
-      <div className="bg-background/95 sticky -bottom-6 z-10 -mx-4 border-t px-4 py-3 shadow-[0_-12px_32px_rgba(15,23,42,0.08)] backdrop-blur md:-mx-6 md:px-6">
-        <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-muted-foreground text-sm">
-            {props.mode === "edit"
-              ? isDirty
-                ? "Unsaved changes"
-                : "No unsaved changes"
-              : "Ready to create when required fields are complete"}
-          </p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button
-              className="w-full sm:w-auto"
-              disabled={props.isSubmitting}
-              render={<Link to="/schedules" />}
-              type="button"
-              variant="outline"
-            >
-              {props.cancelLabel}
-            </Button>
-            <Button
-              className="w-full sm:w-auto"
-              disabled={props.isSubmitting || (props.mode === "edit" && !isDirty)}
-              type="submit"
-            >
-              {props.isSubmitting ? (
-                <>
-                  <SaveIcon data-icon="inline-start" />
-                  {props.mode === "create" ? "Creating" : "Saving"}
-                </>
-              ) : (
-                <>
-                  <CheckIcon data-icon="inline-start" />
-                  {props.mode === "create" ? "Create Schedule" : "Save Changes"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <FormActionBar
+        cancelLabel={props.cancelLabel}
+        cancelTo="/schedules"
+        disableSubmit={props.isSubmitting || (props.mode === "edit" && !isDirty)}
+        isSubmitting={props.isSubmitting}
+        pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
+        stateMessage={
+          props.mode === "edit"
+            ? isDirty
+              ? "Unsaved changes"
+              : "No unsaved changes"
+            : "Ready to create when required fields are complete"
+        }
+        submitLabel={props.mode === "create" ? "Create Schedule" : "Save Changes"}
+      />
     </form>
   )
 }

@@ -3,6 +3,7 @@
 import { useState, type SyntheticEvent } from "react"
 import { DownloadIcon, FileTextIcon, PlusIcon, Trash2Icon, UploadIcon } from "lucide-react"
 
+import { FormSection } from "@/components/forms/form-section"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -30,7 +31,6 @@ import {
   useDeleteSkillDocumentMutation,
   useSkillDocumentsQuery,
 } from "@/features/skills/api/skill-documents"
-import { SkillFormSection } from "@/features/skills/components/skill-form-section"
 import type { SkillDocument } from "@/features/skills/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -132,7 +132,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
   }
 
   return (
-    <SkillFormSection
+    <FormSection
       description="Manage the reference files agents can read after activating this skill."
       eyebrow="Documents"
       title="Reference documents"
@@ -240,7 +240,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
           title="Delete document?"
         />
       </div>
-    </SkillFormSection>
+    </FormSection>
   )
 }
 

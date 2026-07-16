@@ -262,7 +262,11 @@ Query polling, derived optimistic-message visibility during render, and reduced
 the frontend to five externally synchronized `useEffect` call sites on
 2026-07-16; it moved to
 `docs/plans/complete/frontend-ui-014-remove-unneeded-effects.md` without backend
-or agent-runtime changes.
+or agent-runtime changes. UI-015 consolidated the Agent, Skill, and Schedule
+form sections, alerts, and sticky action bars into the shared form kit on
+2026-07-16, increased section spacing for scanability, and moved to
+`docs/plans/complete/frontend-ui-015-form-kit.md` without changing validation,
+payloads, submission behavior, backend contracts, or agent runtime behavior.
 
 ## Execution Order & Status
 

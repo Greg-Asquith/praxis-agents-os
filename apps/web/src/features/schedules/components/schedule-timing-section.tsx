@@ -2,6 +2,7 @@
 
 import { ClockIcon } from "lucide-react"
 
+import { FormSection } from "@/components/forms/form-section"
 import { FieldGroup } from "@/components/ui/field"
 import type {
   ScheduleFormFieldSetter,
@@ -9,7 +10,6 @@ import type {
 } from "@/features/schedules/components/schedule-form-model"
 import { ScheduleCadenceField } from "@/features/schedules/components/schedule-cadence-field"
 import { ScheduleCronFields } from "@/features/schedules/components/schedule-cron-fields"
-import { ScheduleFormSection } from "@/features/schedules/components/schedule-form-section"
 import { ScheduleIntervalFields } from "@/features/schedules/components/schedule-interval-fields"
 import { ScheduleOnceFields } from "@/features/schedules/components/schedule-once-fields"
 import { ScheduleTimezoneField } from "@/features/schedules/components/schedule-timezone-field"
@@ -29,7 +29,7 @@ export function ScheduleTimingSection({
   state: ScheduleFormState
 }) {
   return (
-    <ScheduleFormSection
+    <FormSection
       description="Choose a common cadence or build a custom recurring pattern without technical syntax."
       eyebrow="Cadence"
       icon={<ClockIcon className="size-4" />}
@@ -68,6 +68,6 @@ export function ScheduleTimingSection({
           />
         ) : null}
       </FieldGroup>
-    </ScheduleFormSection>
+    </FormSection>
   )
 }

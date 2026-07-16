@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { PlusIcon, XIcon } from "lucide-react"
 
+import { FormSection } from "@/components/forms/form-section"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
@@ -17,7 +18,6 @@ import type {
   AgentFormFieldSetter,
   AgentFormState,
 } from "@/features/agents/components/agent-form-model"
-import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 import { skillDisplayName } from "@/features/skills/format"
 import type { Skill } from "@/features/skills/types"
 
@@ -68,7 +68,7 @@ export function AgentSkillsSection({
   }
 
   return (
-    <AgentFormSection
+    <FormSection
       description="Attach active workspace skills this agent can activate during a run."
       eyebrow="Skills"
       title="Attached skills"
@@ -156,6 +156,6 @@ export function AgentSkillsSection({
           )}
         </div>
       </FieldGroup>
-    </AgentFormSection>
+    </FormSection>
   )
 }

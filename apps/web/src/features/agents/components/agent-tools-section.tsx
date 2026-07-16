@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { SearchIcon } from "lucide-react"
 
+import { FormSection } from "@/components/forms/form-section"
 import {
   Field,
   FieldDescription,
@@ -22,7 +23,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { AgentFormState } from "@/features/agents/components/agent-form-model"
-import { AgentFormSection } from "@/features/agents/components/agent-form-section"
 import {
   ALL_TOOL_PROVIDERS_VALUE,
   UNAVAILABLE_TOOL_PROVIDER_VALUE,
@@ -98,7 +98,7 @@ export function AgentToolsSection({
   }, [])
 
   return (
-    <AgentFormSection
+    <FormSection
       description="Choose which runtime tools are available and which ones require approval."
       eyebrow="Tools"
       title="Tools and approval policy"
@@ -219,6 +219,6 @@ export function AgentToolsSection({
           </FieldDescription>
         </FieldSet>
       </FieldGroup>
-    </AgentFormSection>
+    </FormSection>
   )
 }

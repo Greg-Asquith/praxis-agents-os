@@ -2,6 +2,8 @@
 
 import { useMemo, useState, type SyntheticEvent } from "react"
 
+import { FormActionBar } from "@/components/forms/form-action-bar"
+import { FormAlerts } from "@/components/forms/form-alerts"
 import {
   buildAgentPayload,
   buildModelOptions,
@@ -11,7 +13,6 @@ import {
   type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
 import { AgentDelegationSection } from "@/features/agents/components/agent-delegation-section"
-import { AgentFormShell } from "@/features/agents/components/agent-form-shell"
 import { AgentProfileSection } from "@/features/agents/components/agent-profile-section"
 import { AgentRuntimeSection } from "@/features/agents/components/agent-runtime-section"
 import { AgentSkillsSection } from "@/features/agents/components/agent-skills-section"
@@ -121,57 +122,67 @@ export function AgentForm(props: AgentFormProps) {
 
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-6"
       noValidate
       onSubmit={(event) => {
         void handleSubmit(event)
       }}
     >
-      <AgentFormShell
+      <FormAlerts
+        error={formError}
+        errorTitle="Agent not saved"
+        validationEntries={validationEntries}
+      />
+
+      <AgentProfileSection
+        fieldErrors={{
+          instructions: fieldErrors["agent-instructions"],
+          name: fieldErrors["agent-name"],
+        }}
+        setField={setField}
+        state={state}
+      />
+      <AgentRuntimeSection
+        fieldErrors={{
+          maxSteps: fieldErrors["agent-max-steps"],
+          modelSelection: fieldErrors["agent-model"],
+        }}
+        modelOptions={modelOptions}
+        selectedModelOption={selectedModelOption}
+        setField={setField}
+        setToolMode={setToolMode}
+        state={state}
+        toolCatalog={toolCatalog.tools}
+      />
+      <AgentDelegationSection
+        agents={props.agents}
+        allowedAgentIds={state.allowedAgentIds}
+        currentAgentId={agent?.id ?? null}
+        onAllowedAgentIdsChange={(allowedAgentIds) => {
+          setField("allowedAgentIds", allowedAgentIds)
+        }}
+      />
+      <AgentSkillsSection
+        setField={setField}
+        skillIds={state.skillIds}
+        skills={skillsData.skills}
+      />
+
+      <FormActionBar
         cancelLabel={props.cancelLabel}
         cancelTo={props.cancelTo}
-        formError={formError}
-        isDirty={isDirty}
+        disableSubmit={props.isSubmitting || (props.mode === "edit" && !isDirty)}
         isSubmitting={props.isSubmitting}
-        mode={props.mode}
         pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
+        stateMessage={
+          props.mode === "edit"
+            ? isDirty
+              ? "Unsaved changes"
+              : "No unsaved changes"
+            : "Ready to create when required fields are complete"
+        }
         submitLabel={props.mode === "create" ? "Create Agent" : "Save Changes"}
-        validationEntries={validationEntries}
-      >
-        <AgentProfileSection
-          fieldErrors={{
-            instructions: fieldErrors["agent-instructions"],
-            name: fieldErrors["agent-name"],
-          }}
-          setField={setField}
-          state={state}
-        />
-        <AgentRuntimeSection
-          fieldErrors={{
-            maxSteps: fieldErrors["agent-max-steps"],
-            modelSelection: fieldErrors["agent-model"],
-          }}
-          modelOptions={modelOptions}
-          selectedModelOption={selectedModelOption}
-          setField={setField}
-          setToolMode={setToolMode}
-          state={state}
-          toolCatalog={toolCatalog.tools}
-        />
-        <AgentDelegationSection
-          agents={props.agents}
-          allowedAgentIds={state.allowedAgentIds}
-          currentAgentId={agent?.id ?? null}
-          onAllowedAgentIdsChange={(allowedAgentIds) => {
-            setField("allowedAgentIds", allowedAgentIds)
-          }}
-        />
-        <AgentSkillsSection
-          setField={setField}
-          skillIds={state.skillIds}
-          skills={skillsData.skills}
-        />
-      </AgentFormShell>
+      />
     </form>
   )
 }

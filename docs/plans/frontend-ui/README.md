@@ -71,11 +71,12 @@ Functional, but visibly unstyled.
 | 012 | Sidebar conversation rows: compact datetime | P2 | S | 010 | DONE |
 | 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | DONE |
 | 014 | Remove unneeded useEffects | P2 | M | — | DONE |
-| 015 | Form kit: shared sections, action bar, alerts | P1 | M | 011, 013 | TODO |
+| 015 | Form kit: shared sections, action bar, alerts | P1 | M | 011, 013 | DONE |
 | 016 | Skill form: create wizard (builds shell) & edit clarity | P1 | M | 015 | TODO |
 | 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | TODO |
 | 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | TODO |
 | 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | TODO |
+| 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -123,6 +124,10 @@ Dependency notes:
   so it can run in a parallel worktree at any point after 013. It is
   the first plan in the series with a backend step (widening the
   preview grant), so its gate includes the `apps/api` checks.
+- 020 (written 2026-07-16 at `75da3b5`) touches only the auth screens
+  and can run in parallel with 015–019. Its copy pass grazes the two
+  OAuth callback routes that 014's in-flight work modified — land
+  014's commit first, or skip those two files (the plan says how).
 
 ## Shared rules for every plan
 
@@ -234,6 +239,14 @@ Dependency notes:
   widens which categories can be previewed (image → +video +PDF)
   without changing that split. Do not add audit events to previews or
   remove them from downloads.
+- **Brand art is built from tokens — CSS gradients + inline SVG, no
+  raster assets** (recorded 2026-07-16; plan 020). Decorative
+  compositions (the auth brand panel, any future empty-state art)
+  derive from the existing semantic tokens — including the
+  `--agent-1…8` identity hues — via `color-mix` and inline SVG, so
+  they follow both themes for free and keep the one-file theming
+  contract. A generated/raster image is a maintainer-approval
+  exception, never a default.
 
 ## Considered and rejected (do not re-propose)
 
