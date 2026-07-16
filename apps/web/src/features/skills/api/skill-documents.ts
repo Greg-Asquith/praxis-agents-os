@@ -78,9 +78,12 @@ export function useConfirmSkillDocumentUploadMutation() {
 
   return useMutation({
     mutationFn: confirmSkillDocumentUpload,
-    onSuccess: async (_document, { skillId }) => {
+    onSuccess: async (document, { skillId }) => {
       await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.detail(skillId) })
       await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.documents(skillId) })
+      await queryClient.invalidateQueries({
+        queryKey: skillsQueryKeys.documentMarkdown(skillId, document.name),
+      })
       await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.lists() })
     },
   })
@@ -91,9 +94,12 @@ export function useDeleteSkillDocumentMutation() {
 
   return useMutation({
     mutationFn: deleteSkillDocument,
-    onSuccess: async (_result, { skillId }) => {
+    onSuccess: async (_result, { documentName, skillId }) => {
       await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.detail(skillId) })
       await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.documents(skillId) })
+      await queryClient.invalidateQueries({
+        queryKey: skillsQueryKeys.documentMarkdown(skillId, documentName),
+      })
       await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.lists() })
     },
   })

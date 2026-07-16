@@ -11,7 +11,8 @@ import {
   useConfirmSkillDocumentUploadMutation,
   useCreateSkillDocumentUploadMutation,
 } from "@/features/skills/api/skill-documents"
-import { SkillForm, type PendingSkillDocumentUpload } from "@/features/skills/components/skill-form"
+import { SkillForm } from "@/features/skills/components/skill-form"
+import type { PendingSkillDocumentUpload } from "@/features/skills/components/pending-skill-document-model"
 import type { SkillCreateRequest } from "@/features/skills/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -25,7 +26,6 @@ export function NewSkillRoute() {
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false)
   const [postCreateWarning, setPostCreateWarning] = useState<{
     message: string
-    skillId: string
   } | null>(null)
   const isSubmitting =
     createSkillMutation.isPending ||
@@ -53,11 +53,11 @@ export function NewSkillRoute() {
     }
 
     if (warningMessage) {
-      setPostCreateWarning({ message: warningMessage, skillId: skill.id })
+      setPostCreateWarning({ message: warningMessage })
       return
     }
 
-    await navigate({ to: "/skills/$skillId", params: { skillId: skill.id } })
+    await navigate({ to: "/skills" })
   }
 
   async function uploadPendingDocuments(skillId: string, documents: PendingSkillDocumentUpload[]) {
@@ -114,15 +114,12 @@ export function NewSkillRoute() {
             <Button
               className="w-fit"
               onClick={() => {
-                void navigate({
-                  to: "/skills/$skillId",
-                  params: { skillId: postCreateWarning.skillId },
-                })
+                void navigate({ to: "/skills" })
               }}
               type="button"
             >
               <ArrowRightIcon data-icon="inline-start" />
-              Continue to Skill
+              Continue to Skills
             </Button>
           </AlertDescription>
         </Alert>

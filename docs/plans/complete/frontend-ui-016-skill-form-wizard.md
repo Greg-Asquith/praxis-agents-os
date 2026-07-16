@@ -1,4 +1,4 @@
-# Plan 016: Skill form — create wizard (builds the shell) & edit clarity
+# Plan 016: Skill form — create wizard (builds the shell) & edit wizard
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving on. If
@@ -8,6 +8,16 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
+- **Verification**: `cd apps/web && pnpm check` passed (22 test files,
+  113 tests). Browser verification was intentionally not run per maintainer
+  instruction.
+- **Follow-up**: 2026-07-16 — prevented the Next-to-final-step button swap
+  from triggering the create form's default submit action, aligned both
+  document upload layouts, and added a centered rendered-Markdown preview for
+  ready skill documents using the existing converted-document endpoint.
+  Successful creation and editing now return to the Skills list rather than
+  reopening an edit wizard; the obsolete edit-success banner was removed.
 - **Written**: 2026-07-16 (anchors verified against the live tree at
   `9d597e1` with plan 013 applied)
 - **Priority**: P1
@@ -23,8 +33,9 @@
 
 Skill creation becomes a **three-step wizard** that a non-technical user
 can walk through without meeting a single concept they don't need yet.
-Skill editing stays a single sectioned page (015 already gave it air)
-and gets a plain-language copy pass.
+Following maintainer feedback during implementation, skill editing uses the
+same wizard language rather than dropping back to a long sectioned page:
+Identity, Instructions, Documents, then Availability and Save.
 
 Design language for every wizard in this series (016–018):
 
@@ -72,7 +83,9 @@ the form component — the shell never learns entity rules.
   whether advancing is allowed), `onSubmit`-through-native-form (the
   final step's primary button is `type="submit"` for the surrounding
   `<form>`), `isSubmitting`, `submitLabel`, `pendingLabel`,
-  `cancelLabel`, `cancelTo`.
+  `cancelLabel`, `cancelTo`. It also accepts an optional native form id and
+  final-submit disable flag so edit flows can keep nested document-upload
+  forms valid while targeting the skill-save form.
 - **Step gating**: the shell owns the active index. Next calls
   `validateStep`; Back always works; clicking a *previous* step in the
   progress header jumps back; forward jumps only happen through Next.
@@ -99,8 +112,7 @@ the form component — the shell never learns entity rules.
 
 ### 2. Convert skill create to the wizard
 
-In `skill-form.tsx` (create mode only — the edit branch keeps the
-single-page layout):
+In `skill-form.tsx` create mode:
 
 1. **"What does this skill do?"** — Name + Description
    (`skill-name`, `skill-description`). Keep the existing descriptions;
@@ -118,14 +130,20 @@ defaults new skills to active and not-favorite; those are post-creation
 concerns. The post-create upload and warning flow in
 `new-skill-route.tsx` is untouched.
 
-### 3. Edit-page clarity pass
+### 3. Convert skill editing to the wizard
 
-Edit mode keeps its sections (Identity, Instructions, Documents,
-Availability) on the 015 kit. Copy pass for the non-technical reader:
-section descriptions state outcomes, not mechanisms — e.g. Availability
-becomes "Control whether agents can be given this skill"; Status/
-Favorite field descriptions say what changes for the user, one short
-sentence each. No structural change.
+Maintainer feedback superseded the original single-page edit direction after
+the create flow was exercised. Edit mode uses four steps: Identity,
+Instructions, Reference documents, and Availability. Documents is an
+intermediate step with its independent upload form; Save Changes appears only
+on Availability and targets the separate native skill-save form, avoiding
+nested forms. The edit copy states outcomes rather than mechanisms —
+Availability becomes "Control whether agents can be given this skill", and
+Status/Favorite descriptions say what changes for the user in one short
+sentence each.
+
+The former 450-line component was split into focused identity, instructions,
+availability, pending-document, and wizard-configuration modules.
 
 ### 4. Verify
 
@@ -138,8 +156,9 @@ sentence each. No structural change.
     upload after create; the upload-failure warning path still renders.
   - Progress header: markers/labels correct, back-jump via header works,
     mobile compresses to "Step n of 3".
-  - Edit: unchanged behavior — dirty gating, save, documents section,
-    "Skill updated" alert on the route.
+  - Edit: all four steps retain state; Documents advances to Availability
+    without saving; dirty gating, Save Changes, document uploads, and the
+    "Skill updated" alert on the route remain intact.
   - Keyboard-only pass through the whole wizard; focus visible on every
     control.
 

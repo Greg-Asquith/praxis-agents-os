@@ -72,11 +72,15 @@ Functional, but visibly unstyled.
 | 013 | Button text: normal weight, Title Case actions | P2 | S | 010, 011, 012 | DONE |
 | 014 | Remove unneeded useEffects | P2 | M | — | DONE |
 | 015 | Form kit: shared sections, action bar, alerts | P1 | M | 011, 013 | DONE |
-| 016 | Skill form: create wizard (builds shell) & edit clarity | P1 | M | 015 | TODO |
+| 016 | Skill form: create wizard (builds shell) & edit wizard | P1 | M | 015 | DONE |
 | 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | TODO |
 | 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | TODO |
 | 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | TODO |
 | 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | TODO |
+| 021 | Conversation headers: compact banner, source without pills | P1 | M | — | TODO |
+| 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | TODO |
+| 023 | Agents table: drop the slug, retire "Runtime" | P2 | S | — | TODO |
+| 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -128,6 +132,15 @@ Dependency notes:
   and can run in parallel with 015–019. Its copy pass grazes the two
   OAuth callback routes that 014's in-flight work modified — land
   014's commit first, or skip those two files (the plan says how).
+- 021–024 (written 2026-07-16 at `01104f7`) are independent of the
+  outstanding 017–020 (disjoint files) and may run in parallel
+  worktrees with them. Within the set: 021 (conversation headers) and
+  022 (approvals) both live in `features/conversations/` but in
+  disjoint files — parallel is fine, sequential is simpler. 023 must
+  land before 024, which sweeps copy through the same
+  `agents-table.tsx`. 022 is the second plan with a backend step (the
+  `editable` field-presentation flag), so its gate includes the
+  `apps/api` checks.
 
 ## Shared rules for every plan
 
@@ -217,14 +230,17 @@ Dependency notes:
   anything with a safe default stays out of create flows, and expert
   fields sit behind a collapsed Advanced disclosure. This constraint
   applies to all future UI work, not just the forms series.
-- **Create flows are wizards; edit flows are sectioned pages**
+- **Create flows are wizards; edit flows are sectioned pages by default**
   (maintainer, 2026-07-16; plans 015–018). Creating an Agent, Skill, or
   Schedule walks a stepped wizard (plain-question step titles, one
   primary action per screen, optional steps skippable, review before
   commit where the stakes warrant it). Editing keeps a single page of
-  well-spaced card sections with a sticky action bar. Both are built on
-  the shared kit in `src/components/forms/` — new entity forms use it
-  rather than hand-rolling scaffolding.
+  well-spaced card sections with a sticky action bar by default. UI-016
+  established a maintainer-directed exception for Skills: editing also uses
+  the wizard so Documents remains an intermediate step and the final save
+  happens on Availability. Both patterns are built on the shared kit in
+  `src/components/forms/` — new entity forms use it rather than hand-rolling
+  scaffolding.
 - **Detail surfaces are centered modals, not side sheets** (maintainer,
   2026-07-16; plan 019). The file detail "sheet" (a Dialog dressed as a
   right-hand panel) becomes a standard centered modal; new detail
@@ -247,6 +263,29 @@ Dependency notes:
   they follow both themes for free and keep the one-file theming
   contract. A generated/raster image is a maintainer-approval
   exception, never a default.
+- **Conversation source is stated in words, never as a badge pill**
+  (maintainer direction, 2026-07-16; plan 021). The Direct/Scheduled
+  pills read as clutter. Direct is the default and goes unmarked;
+  scheduled and delegated conversations get a quiet icon + plain-language
+  meta fragment ("Runs from a schedule", "Started by another agent").
+  Approval, Unread, and run-status badges stay — they carry state, not
+  taxonomy.
+- **Users never see or edit JSON — anywhere** (maintainer direction,
+  2026-07-16; plan 022). The approval "Advanced: Edit the Request" JSON
+  textarea is deleted, not restyled. Editability is a per-field flag a
+  tool declares on its server-side presentation (`editable` on
+  `ToolFieldPresentation`); flagged fields render as ordinary labeled,
+  pre-filled inputs in the approval block. Tools with nothing flagged
+  offer approve/decline only — Decline + "tell the agent why" is the
+  universal correction path. This bars raw-JSON editing surfaces from
+  all future UI, not just approvals.
+- **List columns speak user language** (maintainer direction,
+  2026-07-16; plans 023–024). Identifiers users didn't choose (slugs)
+  stay out of list surfaces; "Runtime" becomes "Tools" with counts in
+  words ("2 need approval"); row actions on user-created entities say
+  **Edit** (pencil icon), with plan 013's "Save Changes" for the commit.
+  "Configure" (and user-facing "configured") is retired from copy;
+  "Update" stays an API term.
 
 ## Considered and rejected (do not re-propose)
 

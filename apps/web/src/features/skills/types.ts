@@ -68,6 +68,12 @@ export type SkillDocumentsListResponse = {
   total: number
 }
 
+export type SkillDocumentMarkdownResponse = {
+  content: string
+  name: string
+  truncated: boolean
+}
+
 export type SignedDownload = {
   ref: {
     bucket: "public" | "private"

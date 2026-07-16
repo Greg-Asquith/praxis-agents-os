@@ -1,8 +1,8 @@
 // apps/web/src/features/skills/routes/skill-detail-route.tsx
 
 import { useState } from "react"
-import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { ArrowLeftIcon, Trash2Icon } from "lucide-react"
+import { useNavigate, useParams } from "@tanstack/react-router"
+import { Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -26,18 +26,15 @@ export function SkillDetailRoute() {
   const deleteSkillMutation = useDeleteSkillMutation()
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [saved, setSaved] = useState(false)
 
   async function handleUpdateSkill(payload: SkillUpdateRequest) {
     setDeleteError(null)
-    setSaved(false)
     await updateSkillMutation.mutateAsync({ payload, skillId: skill.id })
-    setSaved(true)
+    await navigate({ to: "/skills" })
   }
 
   async function handleDeleteSkill() {
     setDeleteError(null)
-    setSaved(false)
 
     try {
       await deleteSkillMutation.mutateAsync(skill.id)
@@ -52,20 +49,14 @@ export function SkillDetailRoute() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="flex min-w-0 flex-col gap-3">
-          <Button className="w-fit" size="sm" variant="outline" render={<Link to="/skills" />}>
-            <ArrowLeftIcon data-icon="inline-start" />
-            Skills
-          </Button>
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={skill.is_active ? "success" : "outline"}>
-                {skill.is_active ? "Active" : "Inactive"}
-              </Badge>
+              <h1 className="font-heading text-2xl font-semibold tracking-normal">
+                {skillDisplayName(skill)}
+              </h1>
+              {!skill.is_active ? <Badge variant="outline">Inactive</Badge> : null}
               {skill.is_favorite ? <Badge variant="outline">Favorite</Badge> : null}
             </div>
-            <h1 className="font-heading text-2xl font-semibold tracking-normal">
-              {skillDisplayName(skill)}
-            </h1>
             <p className="text-muted-foreground max-w-3xl text-sm">{skill.description}</p>
           </div>
         </div>
@@ -98,24 +89,12 @@ export function SkillDetailRoute() {
           <AlertDescription>{deleteError}</AlertDescription>
         </Alert>
       ) : null}
-      {saved ? (
-        <Alert>
-          <AlertTitle>Skill updated</AlertTitle>
-          <AlertDescription>Your changes have been saved.</AlertDescription>
-        </Alert>
-      ) : null}
-
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         <SkillForm
           key={`${skill.id}:${skill.updated_at}`}
           cancelLabel="Back to Skills"
           isSubmitting={updateSkillMutation.isPending}
           mode="edit"
-          onChange={() => {
-            if (saved) {
-              setSaved(false)
-            }
-          }}
           onSubmit={handleUpdateSkill}
           skill={skill}
         >

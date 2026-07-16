@@ -1,29 +1,15 @@
 // apps/web/src/features/skills/components/skill-documents-section.tsx
 
 import { useState, type SyntheticEvent } from "react"
-import { DownloadIcon, FileTextIcon, PlusIcon, Trash2Icon, UploadIcon } from "lucide-react"
+import { FileTextIcon, PlusIcon, Trash2Icon, UploadIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import {
-  ResponsiveList,
-  ResponsiveListItem,
-  ResponsiveListMeta,
-} from "@/components/ui/responsive-list"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   createSkillDocumentDownload,
   useConfirmSkillDocumentUploadMutation,
@@ -31,11 +17,12 @@ import {
   useDeleteSkillDocumentMutation,
   useSkillDocumentsQuery,
 } from "@/features/skills/api/skill-documents"
+import { SkillDocumentPreviewModal } from "@/features/skills/components/skill-document-preview-modal"
+import { SkillDocumentsList } from "@/features/skills/components/skill-documents-list"
 import type { SkillDocument } from "@/features/skills/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { contentTypeForFile } from "@/lib/file"
-import { formatBytes, formatDateTime } from "@/lib/format"
 
 const DOCUMENT_NAME_PATTERN = /^[a-z0-9]+(_[a-z0-9]+)*$/
 
@@ -50,6 +37,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [documentToDelete, setDocumentToDelete] = useState<SkillDocument | null>(null)
+  const [documentToPreview, setDocumentToPreview] = useState<SkillDocument | null>(null)
   const isUploading = createUploadMutation.isPending || confirmUploadMutation.isPending
 
   async function handleUpload(event: SyntheticEvent<HTMLFormElement>) {
@@ -107,12 +95,6 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
     }
   }
 
-  function handleDelete(document: SkillDocument) {
-    setError(null)
-    setMessage(null)
-    setDocumentToDelete(document)
-  }
-
   async function confirmDeleteDocument() {
     if (!documentToDelete) {
       return
@@ -152,12 +134,12 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
         ) : null}
 
         <form
-          className="rounded-md border p-3"
+          className="bg-muted/20 rounded-lg border p-4"
           onSubmit={(event) => {
             void handleUpload(event)
           }}
         >
-          <FieldGroup className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] lg:items-end">
+          <FieldGroup className="grid gap-x-4 gap-y-3 lg:grid-cols-[minmax(12rem,0.8fr)_minmax(16rem,1.2fr)_auto] lg:items-start">
             <Field>
               <FieldLabel htmlFor="skill-document-name">Document name</FieldLabel>
               <Input
@@ -168,7 +150,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
                 placeholder="api_reference"
                 value={documentName}
               />
-              <FieldDescription>Semantic name the agent uses, e.g. api_reference.</FieldDescription>
+              <FieldDescription>Lowercase name agents use to find this file.</FieldDescription>
             </Field>
 
             <Field>
@@ -185,7 +167,7 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
               <FieldDescription>{file ? file.name : "PDF, DOCX, TXT, or MD."}</FieldDescription>
             </Field>
 
-            <Button disabled={isUploading} type="submit">
+            <Button className="w-full lg:mt-7 lg:w-auto" disabled={isUploading} type="submit">
               {isUploading ? (
                 <>
                   <UploadIcon data-icon="inline-start" />
@@ -209,17 +191,31 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
             title="No documents"
           />
         ) : (
-          <DocumentsList
+          <SkillDocumentsList
             documents={data.documents}
             isDeleting={deleteDocumentMutation.isPending}
             onDelete={(document) => {
-              handleDelete(document)
+              setError(null)
+              setMessage(null)
+              setDocumentToDelete(document)
             }}
             onDownload={(document) => {
               void handleDownload(document)
             }}
+            onPreview={setDocumentToPreview}
           />
         )}
+
+        <SkillDocumentPreviewModal
+          document={documentToPreview}
+          onClose={() => {
+            setDocumentToPreview(null)
+          }}
+          onDownload={(document) => {
+            void handleDownload(document)
+          }}
+          skillId={skillId}
+        />
         <ConfirmDialog
           confirmIcon={<Trash2Icon data-icon="inline-start" />}
           confirmLabel="Delete Document"
@@ -241,162 +237,5 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
         />
       </div>
     </FormSection>
-  )
-}
-
-function DocumentsList({
-  documents,
-  isDeleting,
-  onDelete,
-  onDownload,
-}: {
-  documents: SkillDocument[]
-  isDeleting: boolean
-  onDelete: (document: SkillDocument) => void
-  onDownload: (document: SkillDocument) => void
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <ResponsiveList>
-        {documents.map((document) => (
-          <DocumentMobileRow
-            document={document}
-            isDeleting={isDeleting}
-            key={document.name}
-            onDelete={onDelete}
-            onDownload={onDownload}
-          />
-        ))}
-      </ResponsiveList>
-
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>File</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {documents.map((document) => (
-              <TableRow key={document.name}>
-                <TableCell className="font-medium">{document.name}</TableCell>
-                <TableCell>
-                  <span className="text-muted-foreground block max-w-xs truncate text-sm">
-                    {document.filename}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <DocumentStatusBadge document={document} />
-                </TableCell>
-                <TableCell>{formatBytes(document.size_bytes)}</TableCell>
-                <TableCell>{formatDateTime(document.updated_at)}</TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      onClick={() => {
-                        onDownload(document)
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <DownloadIcon data-icon="inline-start" />
-                      Download
-                    </Button>
-                    <Button
-                      disabled={isDeleting}
-                      onClick={() => {
-                        onDelete(document)
-                      }}
-                      size="icon-sm"
-                      type="button"
-                      variant="outline"
-                      aria-label={`Delete ${document.name}`}
-                    >
-                      <Trash2Icon />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  )
-}
-
-function DocumentMobileRow({
-  document,
-  isDeleting,
-  onDelete,
-  onDownload,
-}: {
-  document: SkillDocument
-  isDeleting: boolean
-  onDelete: (document: SkillDocument) => void
-  onDownload: (document: SkillDocument) => void
-}) {
-  return (
-    <ResponsiveListItem>
-      <div className="flex min-w-0 flex-col gap-3">
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{document.name}</p>
-            <p className="text-muted-foreground truncate text-xs">{document.filename}</p>
-          </div>
-          <DocumentStatusBadge document={document} />
-        </div>
-
-        <dl className="grid gap-3 sm:grid-cols-2">
-          <ResponsiveListMeta label="Size">{formatBytes(document.size_bytes)}</ResponsiveListMeta>
-          <ResponsiveListMeta label="Updated">
-            {formatDateTime(document.updated_at)}
-          </ResponsiveListMeta>
-        </dl>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Button
-            onClick={() => {
-              onDownload(document)
-            }}
-            type="button"
-            variant="outline"
-          >
-            <DownloadIcon data-icon="inline-start" />
-            Download
-          </Button>
-          <Button
-            disabled={isDeleting}
-            onClick={() => {
-              onDelete(document)
-            }}
-            type="button"
-            variant="outline"
-          >
-            <Trash2Icon data-icon="inline-start" />
-            Delete
-          </Button>
-        </div>
-      </div>
-    </ResponsiveListItem>
-  )
-}
-
-function DocumentStatusBadge({ document }: { document: SkillDocument }) {
-  return (
-    <Badge
-      title={document.status === "failed" ? (document.error ?? "Conversion failed") : undefined}
-      variant={document.status === "ready" ? "default" : "destructive"}
-    >
-      {document.status === "ready" ? "Ready" : "Failed"}
-    </Badge>
   )
 }

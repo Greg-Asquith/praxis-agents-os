@@ -294,7 +294,14 @@ healing uses query polling, pending-message handoff is render-derived, and only
 five effects remain for external synchronization or cleanup. UI-015 introduced
 the shared form-section, form-alert, and sticky-action components used by Agent,
 Skill, and Schedule forms on 2026-07-16, with airier section spacing and no
-validation, payload, submission, backend, or runtime behavior changes. The
+validation, payload, submission, backend, or runtime behavior changes. UI-016
+landed the shared responsive wizard shell and converted Skill creation to three
+gated steps and Skill editing to four steps on 2026-07-16. The existing skill
+validation, payload builders, deferred-capability contract, document upload
+pipeline, and backend remained unchanged. A same-day follow-up fixed the
+final-step transition's accidental native submit and added rendered-Markdown
+document previews using the existing API; completed creation now returns to the
+Skills list, as does completed editing, with no redundant success banner. The
 completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

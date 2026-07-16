@@ -17,6 +17,8 @@ const baseSkillsQueryKeys = createWorkspaceScopedQueryKeys("skills")
 export const skillsQueryKeys = {
   ...baseSkillsQueryKeys,
   documents: (skillId: string) => [...baseSkillsQueryKeys.detail(skillId), "documents"] as const,
+  documentMarkdown: (skillId: string, documentName: string) =>
+    [...baseSkillsQueryKeys.detail(skillId), "documents", documentName, "markdown"] as const,
 }
 
 async function listSkills({

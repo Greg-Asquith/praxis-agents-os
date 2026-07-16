@@ -267,6 +267,15 @@ form sections, alerts, and sticky action bars into the shared form kit on
 2026-07-16, increased section spacing for scanability, and moved to
 `docs/plans/complete/frontend-ui-015-form-kit.md` without changing validation,
 payloads, submission behavior, backend contracts, or agent runtime behavior.
+UI-016 added the shared responsive wizard shell on 2026-07-16, converted Skill
+creation to three gated steps and Skill editing to four steps, and moved to
+`docs/plans/complete/frontend-ui-016-skill-form-wizard.md`. Existing validation,
+payload construction, document upload behavior, backend contracts, and deferred
+runtime capability semantics remain unchanged. A same-day follow-up corrected
+the final-step transition's accidental native submit, aligned document upload
+controls, and added rendered-Markdown previews through the existing document
+content endpoint. Completed creation and editing now return to the Skills list,
+and editing no longer leaves behind a redundant success banner.
 
 ## Execution Order & Status
 
