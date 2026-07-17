@@ -4,7 +4,7 @@ import {
   DEFAULT_CRON_EXPRESSION,
   type ScheduleFormState,
 } from "@/features/schedules/components/schedule-form-model"
-import { formatScheduleFormCadence } from "@/features/schedules/components/schedule-form-review-format"
+import { formatScheduleFormCadence } from "@/features/schedules/format"
 
 function formState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormState {
   return {

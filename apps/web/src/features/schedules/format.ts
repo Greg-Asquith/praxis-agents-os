@@ -28,7 +28,7 @@ export function formatScheduleCadence(schedule: AgentSchedule) {
   })
 }
 
-export function formatScheduleCadenceValues({
+function formatScheduleCadenceValues({
   cronExpression,
   intervalMinutes,
   runOnceAt,
