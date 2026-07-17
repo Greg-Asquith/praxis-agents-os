@@ -366,6 +366,14 @@ Maintainer review widened the card, made long editable values multiline, and
 removed generic Technical Details from conversation tool UI. Thinking now stays
 as the first collapsed turn-level disclosure; UI-030 orders the visible
 text/tool timeline beneath it.
+UI-028 completed the live tool lifecycle on 2026-07-17: generic running tools
+now render on the shared activity-card shell with argument wells, isolated
+live-only elapsed timers, and reduced-motion-safe shimmer; completed calls
+settle into compact result-first rows with short outcome metrics and URL
+actions. Live failures use default-open plain-language recovery framing,
+running delegations share the elapsed suffix, and pinned transcript scrolling
+tracks the card-to-row status transition without changing SSE, persistence,
+Pydantic AI, approval, or custom-presenter contracts.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

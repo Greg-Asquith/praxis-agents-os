@@ -360,6 +360,16 @@ semantics. Maintainer review widened the card, made long values multiline, and
 removed the generic Technical Details disclosure from conversation tool UI.
 Thinking now stays as the first, collapsed turn-level disclosure above tool
 activity; UI-030 will order the visible text/tool timeline beneath it.
+UI-028 completed the live activity and outcome lifecycle on 2026-07-17 and
+moved to `docs/plans/complete/frontend-ui-028-live-activity-outcomes.md`.
+Generic live tools now use the shared card shell with argument wells, isolated
+elapsed timers, and reduced-motion-safe status shimmer; completed calls settle
+into compact result-first rows with short outcome metrics and URL actions.
+Live failures open with plain-language recovery framing, historical/compact
+rows never fabricate timing, running delegations share the elapsed suffix, and
+pinned auto-scroll follows card-to-row status transitions without pulling a
+reader who scrolled away. The SSE, persistence, Pydantic AI, approval, and
+custom-presenter contracts are unchanged.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

@@ -173,7 +173,7 @@ function ConversationDetail({
     messageCount: messagesQuery.data.messages.length,
     pendingMessageCount: visiblePendingUserMessages.length,
     streamMessages,
-    streamToolCount: streamToolCalls.length,
+    streamToolCalls,
   })
 
   useConversationReadReceipt({

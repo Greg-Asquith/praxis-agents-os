@@ -2,20 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler } from "react"
 
-import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
+import type { ChatMessageDraft, ToolCallState } from "@/features/conversations/stream/reducer"
 
 export function useConversationAutoScroll({
   approvalCount,
   messageCount,
   pendingMessageCount,
   streamMessages,
-  streamToolCount,
+  streamToolCalls,
 }: {
   approvalCount: number
   messageCount: number
   pendingMessageCount: number
   streamMessages: ChatMessageDraft[]
-  streamToolCount: number
+  streamToolCalls: ToolCallState[]
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldPinToBottomRef = useRef(true)
@@ -23,6 +23,11 @@ export function useConversationAutoScroll({
   const streamTextSignature = useMemo(
     () => streamMessages.map((message) => `${message.id}:${String(message.text.length)}`).join("|"),
     [streamMessages]
+  )
+  const streamToolSignature = useMemo(
+    () =>
+      streamToolCalls.map((toolCall) => `${toolCall.tool_call_id}:${toolCall.status}`).join("|"),
+    [streamToolCalls]
   )
 
   useEffect(() => {
@@ -34,7 +39,7 @@ export function useConversationAutoScroll({
     if (shouldPinToBottomRef.current) {
       element.scrollTo({ top: element.scrollHeight })
     }
-  }, [approvalCount, messageCount, pendingMessageCount, streamTextSignature, streamToolCount])
+  }, [approvalCount, messageCount, pendingMessageCount, streamTextSignature, streamToolSignature])
 
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>((event) => {
     const element = event.currentTarget

@@ -26,6 +26,24 @@ describe("ToolField", () => {
     expect(html).not.toContain(">https://")
   })
 
+  it("renders result URLs as compact outline actions", () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolField, {
+        field: {
+          key: "file_url",
+          label: "File",
+          value: "https://praxis-agents.ai/files/report.pdf",
+          format: "url",
+        },
+        urlAction: true,
+      })
+    )
+
+    expect(html).toContain("Open File")
+    expect(html).toContain('href="https://praxis-agents.ai/files/report.pdf"')
+    expect(html).toContain('target="_blank"')
+  })
+
   it("renders resolved list items as wrapping chips", () => {
     const html = renderToStaticMarkup(
       createElement(ToolField, {

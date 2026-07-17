@@ -9,6 +9,7 @@ import {
   humanizeKey,
   resolveToolTemplate,
   resolveUiFields,
+  shortOutcomeMetric,
   toolUiApprovalPrompt,
 } from "@/features/conversations/tool-ui"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -130,6 +131,22 @@ describe("resolveUiFields", () => {
     ])
     expect(resolveUiFields(fields, { link: "javascript:alert(1)" })).toEqual([])
     expect(resolveUiFields(fields, { link: "not a URL" })).toEqual([])
+  })
+})
+
+describe("shortOutcomeMetric", () => {
+  it("returns only a short first resolved result", () => {
+    expect(
+      shortOutcomeMetric([
+        { key: "answer", label: "Answer", value: "  Found   3 files  ", format: "text" },
+      ])
+    ).toBe("Found 3 files")
+    expect(
+      shortOutcomeMetric([
+        { key: "answer", label: "Answer", value: "x".repeat(41), format: "text" },
+      ])
+    ).toBeNull()
+    expect(shortOutcomeMetric([])).toBeNull()
   })
 })
 

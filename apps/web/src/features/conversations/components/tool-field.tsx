@@ -1,7 +1,9 @@
 // apps/web/src/features/conversations/components/tool-field.tsx
 
 import { useId, type ReactNode } from "react"
+import { ExternalLinkIcon } from "lucide-react"
 
+import { buttonVariants } from "@/components/ui/button"
 import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
 import type { ResolvedToolField } from "@/features/conversations/tool-ui"
 import { truncateText } from "@/lib/format"
@@ -19,7 +21,15 @@ export const toolFieldLabelClass = "text-foreground/75 text-xs leading-4 font-me
 export const toolFieldWellClass =
   "min-h-8 w-full min-w-0 rounded-lg border px-2.5 py-1 text-sm leading-relaxed"
 
-export function ToolField({ children, field }: { children?: ReactNode; field: ResolvedToolField }) {
+export function ToolField({
+  children,
+  field,
+  urlAction = false,
+}: {
+  children?: ReactNode
+  field: ResolvedToolField
+  urlAction?: boolean
+}) {
   const labelId = useId()
   const hasCustomContent = children !== undefined
   const spansFullWidth =
@@ -42,13 +52,19 @@ export function ToolField({ children, field }: { children?: ReactNode; field: Re
         )}
         data-slot="tool-field-well"
       >
-        {hasCustomContent ? children : <ToolFieldValue field={field} />}
+        {hasCustomContent ? children : <ToolFieldValue field={field} urlAction={urlAction} />}
       </div>
     </div>
   )
 }
 
-export function ToolFieldGrid({ fields }: { fields: ResolvedToolField[] }) {
+export function ToolFieldGrid({
+  fields,
+  urlActions = false,
+}: {
+  fields: ResolvedToolField[]
+  urlActions?: boolean
+}) {
   if (fields.length === 0) {
     return null
   }
@@ -56,14 +72,28 @@ export function ToolFieldGrid({ fields }: { fields: ResolvedToolField[] }) {
   return (
     <div className="grid min-w-0 gap-3 sm:grid-cols-2">
       {fields.map((field) => (
-        <ToolField field={field} key={field.key} />
+        <ToolField field={field} key={field.key} urlAction={urlActions} />
       ))}
     </div>
   )
 }
 
-function ToolFieldValue({ field }: { field: ResolvedToolField }) {
+function ToolFieldValue({ field, urlAction }: { field: ResolvedToolField; urlAction: boolean }) {
   if (field.format === "url") {
+    if (urlAction) {
+      return (
+        <a
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+          href={field.value}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <ExternalLinkIcon data-icon="inline-start" />
+          Open {field.label}
+        </a>
+      )
+    }
+
     return (
       <a
         className="text-link hover:text-primary focus-visible:ring-ring/50 inline-block max-w-full rounded-sm underline underline-offset-2 outline-none focus-visible:ring-3"

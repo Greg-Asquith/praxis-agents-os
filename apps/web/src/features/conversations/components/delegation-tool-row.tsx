@@ -32,6 +32,7 @@ type DelegationToolRowProps = {
   approvalDecision?: ToolApprovalDecisionControls
   compact: boolean
   defaultOpen: boolean
+  live: boolean
 }
 
 export function DelegationToolRow({
@@ -39,6 +40,7 @@ export function DelegationToolRow({
   approvalDecision,
   compact,
   defaultOpen,
+  live,
 }: DelegationToolRowProps) {
   const toolLabelFor = useToolLabels()
   const delegate = activity.delegate
@@ -71,6 +73,7 @@ export function DelegationToolRow({
       }
       suffix={
         <ActivityStatusSuffix
+          liveRunning={live && delegate.status === "running"}
           status={delegate.status}
           suffix={delegationStatusSuffix(delegate.status)}
         />
@@ -135,7 +138,7 @@ export function DelegationToolRow({
         />
       ) : null}
       {delegate.error ? (
-        <div className="**:data-[slot=tool-field-label]:text-destructive **:data-[slot=tool-field-well]:border-destructive/40` **:data-[slot=tool-field-well]:bg-destructive/5">
+        <div className="**:data-[slot=tool-field-label]:text-destructive **:data-[slot=tool-field-well]:border-destructive/40 **:data-[slot=tool-field-well]:bg-destructive/5">
           <ToolField
             field={{ key: "error", label: "Error", value: delegate.error, format: "multiline" }}
           />

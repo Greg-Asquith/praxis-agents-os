@@ -1,12 +1,14 @@
 // apps/web/src/features/conversations/components/tool-call-row.tsx
 
 import { use } from "react"
+import { WrenchIcon } from "lucide-react"
 
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
+import { ToolSurfaceCard } from "@/features/conversations/components/tool-surface-card"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -25,6 +27,7 @@ import {
   autoUiFields,
   friendlyResultText,
   resolveUiFields,
+  shortOutcomeMetric,
   toolUiApprovalPrompt,
   toolUiStatusLabel,
 } from "@/features/conversations/tool-ui"
@@ -36,17 +39,25 @@ type ToolCallRowProps = {
   activity: ToolActivity
   compact?: boolean
   defaultOpen?: boolean
+  live?: boolean
 }
 
-export function ToolCallRow({ activity, compact = false, defaultOpen = false }: ToolCallRowProps) {
+export function ToolCallRow({
+  activity,
+  compact = false,
+  defaultOpen = false,
+  live = false,
+}: ToolCallRowProps) {
   const presentationFor = useToolPresentations()
   const approvalDecision = use(ApprovalDecisionContext)(activity) ?? undefined
-  const shouldOpen = defaultOpen || approvalDecision !== undefined
+  const shouldOpen =
+    defaultOpen || approvalDecision !== undefined || (live && activity.status === "failed")
   const customRow = renderCustomToolCallRow({
     activity,
     ...(approvalDecision ? { approvalDecision } : {}),
     compact,
     defaultOpen: shouldOpen,
+    live,
   })
   if (customRow) {
     return customRow
@@ -59,7 +70,8 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
 
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
-  const expandable = hasArgs || hasResult || approvalDecision !== undefined
+  const expandable =
+    hasArgs || hasResult || approvalDecision !== undefined || activity.status === "failed"
 
   const argFields = ui?.arg_fields.length
     ? resolveUiFields(ui.arg_fields, activity.args)
@@ -67,6 +79,10 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
   const resultFields = ui?.result_fields.length
     ? resolveUiFields(ui.result_fields, activity.result)
     : []
+  const outcomeMetric =
+    activity.status === "completed" && ui?.result_fields[0]
+      ? shortOutcomeMetric(resolveUiFields([ui.result_fields[0]], activity.result))
+      : null
   const resultText = resultFields.length === 0 ? friendlyResultText(activity.result) : null
   const approvalPrompt = ui
     ? (toolUiApprovalPrompt(ui, activity) ?? fallbackApprovalPrompt(title))
@@ -88,6 +104,16 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
     )
   }
 
+  if (live && !compact && activity.status === "running") {
+    return (
+      <RunningToolCard
+        argFields={argFields}
+        headline={headlineForActivity(activity, title, ui)}
+        iconToken={ui?.icon ?? null}
+      />
+    )
+  }
+
   const header = (
     <ToolActivityRowHeader
       expandable={expandable}
@@ -98,7 +124,13 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
           <span className="min-w-0 truncate">{headlineForActivity(activity, title, ui)}</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={
+        <ActivityStatusSuffix
+          liveRunning={live && activity.status === "running"}
+          status={activity.status}
+          suffix={outcomeMetric ?? toolStatusSuffix(activity)}
+        />
+      }
       supportLabel={supportLabel}
     />
   )
@@ -110,14 +142,87 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
       expandable={expandable}
       header={header}
     >
-      <ToolFieldGrid fields={argFields} />
-      <ToolFieldGrid fields={resultFields} />
-      {resultText ? (
-        <ToolField
-          field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
-        />
-      ) : null}
+      {activity.status === "completed" ? (
+        <>
+          <ToolFieldGrid fields={resultFields} urlActions />
+          {resultText ? (
+            <ToolField
+              field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
+            />
+          ) : null}
+          <ToolFieldGrid fields={argFields} />
+        </>
+      ) : activity.status === "failed" ? (
+        <>
+          <FailedToolContent resultText={friendlyResultText(activity.result)} />
+          <ToolFieldGrid fields={argFields} />
+        </>
+      ) : (
+        <>
+          <ToolFieldGrid fields={argFields} />
+          <ToolFieldGrid fields={resultFields} />
+          {resultText ? (
+            <ToolField
+              field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
+            />
+          ) : null}
+        </>
+      )}
     </ToolActivityRowShell>
+  )
+}
+
+function RunningToolCard({
+  argFields,
+  headline,
+  iconToken,
+}: {
+  argFields: ReturnType<typeof resolveUiFields>
+  headline: string
+  iconToken: string | null
+}) {
+  return (
+    <ToolSurfaceCard
+      ariaLabel={`${headline}, in progress`}
+      header={
+        <div className="flex min-w-0 items-center gap-2 pt-1">
+          <ActivityStatusIcon fallbackIcon="tool" status="running" />
+          <h3 className="tool-activity-shimmer min-w-0 flex-1 truncate text-sm font-medium">
+            {headline}
+          </h3>
+          <ActivityStatusSuffix liveRunning status="running" suffix={null} />
+        </div>
+      }
+      icon={
+        iconToken && iconToken !== "tool" ? (
+          <ToolUiIcon token={iconToken} />
+        ) : (
+          <WrenchIcon className="size-4" />
+        )
+      }
+    >
+      <ToolFieldGrid fields={argFields} />
+    </ToolSurfaceCard>
+  )
+}
+
+function FailedToolContent({ resultText }: { resultText: string | null }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <p className="text-muted-foreground text-sm">The agent saw this error and can adjust.</p>
+      {resultText ? (
+        <div className="**:data-[slot=tool-field-label]:text-destructive **:data-[slot=tool-field-well]:border-destructive/40 **:data-[slot=tool-field-well]:bg-destructive/5">
+          <ToolField
+            field={{
+              key: "error",
+              label: "What went wrong",
+              value: resultText,
+              format: "multiline",
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
   )
 }
 

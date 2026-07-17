@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-17
 - **Written**: 2026-07-17, anchors verified against the working tree at
   `19ace81` with plan 022 applied. Part of the tool-surface series —
   see the series preamble in plan 025. Scope per maintainer direction
@@ -23,6 +24,34 @@
   billboards.
 - **Depends on**: 026 (field wells), 027 (card shell — reused here).
   Web-only.
+
+## Completed implementation
+
+- Added a live-only activity card on the shared approval-card shell for generic
+  running tools, with declared argument wells, the existing status spinner, a
+  reduced-motion-safe status shimmer, and an elapsed timer isolated to a leaf
+  component so the transcript does not re-render every second. Running
+  delegations share the elapsed suffix; historical and compact contexts remain
+  rows with no fabricated timing.
+- Made completed generic calls outcome-first: declared result fields and
+  friendly result text precede arguments, the first declared short result is a
+  right-aligned collapsed metric, and URL results gain small outline actions
+  such as “Open File.” Finished calls never retain the live elapsed suffix.
+- Added the plain-language failed-call treatment with live default-open
+  behavior, “What went wrong” styling for friendly error text, and framing that
+  remains useful when no safe result text exists. Raw technical details remain
+  absent from conversation tool UI.
+- Kept pinned transcripts at the bottom when a live card settles into a compact
+  row by including tool status transitions in the existing auto-scroll external
+  synchronization, while preserving the current do-not-pull behavior once the
+  reader scrolls away. Custom file, skill, and todo presenters remain untouched
+  for UI-029/UI-031 as required by this plan's STOP conditions.
+- Verification passed: full frontend `pnpm check` with 34 test files and 158
+  tests, typecheck, zero-warning lint, formatting, dead-code analysis,
+  dependency-cruiser, and production build. Focused server-rendered coverage
+  proves the live card, timer suffix boundary, outcome ordering and metric,
+  URL action, and both friendly-error paths. Browser verification was
+  intentionally not used per maintainer instruction.
 
 ## Goal
 

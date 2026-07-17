@@ -43,7 +43,7 @@ export function ToolActivityRowHeader({
         />
       ) : null}
       {icon}
-      <span className="min-w-0 truncate">
+      <span className="min-w-0 flex-1 truncate">
         <span className="text-foreground font-medium">{label}</span>
         {supportLabel && (
           <span className="text-muted-foreground ml-1.5 font-mono text-xs">{supportLabel}</span>

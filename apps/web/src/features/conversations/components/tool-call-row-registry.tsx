@@ -41,6 +41,7 @@ type ToolRowPresenterProps = {
   approvalDecision?: ToolApprovalDecisionControls
   compact: boolean
   defaultOpen: boolean
+  live: boolean
 }
 
 type ToolRowPresenter = {
@@ -53,12 +54,13 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   {
     key: "delegation",
     matches: (activity) => Boolean(activity.delegate),
-    render: ({ activity, approvalDecision, compact, defaultOpen }) => (
+    render: ({ activity, approvalDecision, compact, defaultOpen, live }) => (
       <DelegationToolRow
         activity={activity}
         {...(approvalDecision ? { approvalDecision } : {})}
         compact={compact}
         defaultOpen={defaultOpen}
+        live={live}
       />
     ),
   },

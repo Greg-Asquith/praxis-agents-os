@@ -67,6 +67,9 @@ describe("assistant turn content order", () => {
     )
 
     expect(html.indexOf("Thinking")).toBeLessThan(html.indexOf("web_search"))
+    expect(html).toContain("in progress")
+    expect(html).toContain("0s")
+    expect(html.indexOf("<details")).toBeLessThan(html.indexOf("<section"))
   })
 })
 

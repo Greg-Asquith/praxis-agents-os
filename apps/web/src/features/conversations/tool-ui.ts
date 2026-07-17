@@ -114,6 +114,11 @@ export function friendlyResultText(result: unknown): string | null {
   return truncateText(trimmed, 2000, "…")
 }
 
+export function shortOutcomeMetric(fields: ResolvedToolField[], maxLength = 40): string | null {
+  const value = fields[0]?.value.replace(/\s+/g, " ").trim()
+  return value && value.length <= maxLength ? value : null
+}
+
 export function humanizeKey(key: string): string {
   const spaced = key
     .replace(/[_-]+/g, " ")

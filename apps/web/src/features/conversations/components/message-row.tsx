@@ -104,7 +104,7 @@ export function AssistantLiveActivityRow({
     >
       <ThinkingBlock content={thinkingContent} idPrefix="live-assistant-turn:thinking" />
       {toolActivities.map((activity) => (
-        <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
+        <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} live />
       ))}
       {messages.length > 0 ? (
         textMessages.map((message) => <LiveMessageDraft key={message.id} message={message} />)

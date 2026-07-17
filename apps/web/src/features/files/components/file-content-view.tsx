@@ -27,11 +27,11 @@ export function FileContentView({ content, name, mediaType, className }: FileCon
   }
 
   if (kind === "html") {
-    // sandbox="" renders the markup with scripts, forms, and same-origin access disabled.
+    // Keep previews on an opaque origin while allowing interactive HTML to run.
     return (
       <iframe
         className={cn("h-80 w-full rounded-md border bg-white", className)}
-        sandbox=""
+        sandbox="allow-scripts"
         srcDoc={content}
         title={name ?? "HTML preview"}
       />

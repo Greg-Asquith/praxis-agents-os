@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 
 import type { DelegationToolActivity, ToolActivity } from "@/features/conversations/message-parts"
+import { useElapsedSeconds } from "@/features/conversations/hooks/use-elapsed-seconds"
 import { cn } from "@/lib/utils"
 
 type ActivityStatus = ToolActivity["status"] | DelegationToolActivity["status"]
@@ -47,17 +48,30 @@ export function ActivityStatusIcon({
 }
 
 export function ActivityStatusSuffix({
+  liveRunning = false,
   status,
   suffix,
 }: {
+  liveRunning?: boolean
   status: ActivityStatus
   suffix: string | null
 }) {
-  if (!suffix) {
+  if (!suffix && !liveRunning) {
     return null
   }
 
-  return <span className={cn("shrink-0 text-xs", statusColor(status))}>{suffix}</span>
+  return (
+    <span className={cn("ml-auto shrink-0 text-right text-xs", statusColor(status))}>
+      {suffix}
+      {liveRunning ? <ElapsedSeconds running={status === "running"} /> : null}
+    </span>
+  )
+}
+
+function ElapsedSeconds({ running }: { running: boolean }) {
+  const elapsedSeconds = useElapsedSeconds(running)
+
+  return <span> · {String(elapsedSeconds)}s</span>
 }
 
 function statusColor(status: ActivityStatus) {
