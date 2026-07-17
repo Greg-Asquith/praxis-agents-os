@@ -17,10 +17,10 @@ export function SchedulePreviewPanel({ preview }: { preview: SchedulePreviewView
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="font-heading flex items-center gap-2 text-lg font-semibold tracking-normal">
             <ListChecksIcon className="size-4" />
-            Fire-time preview
+            Run-time preview
           </h2>
           <p className="text-muted-foreground text-sm">
-            The next five times this schedule would fire with the current timing settings.
+            The next five times this schedule would run with the current timing settings.
           </p>
         </div>
         <Button
