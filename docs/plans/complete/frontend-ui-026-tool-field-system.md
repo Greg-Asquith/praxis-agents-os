@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-17
 - **Written**: 2026-07-17, anchors verified against the working tree at
   `19ace81` with plan 022 applied. Part of the tool-surface series —
   see the series preamble in plan 025 and
@@ -19,6 +20,26 @@
   used by all of them) — QA must cover each row type in both themes.
 - **Depends on**: 025 (needs `url`/`list` formats and the extended
   `ToolUiField`). Web-only.
+
+## Completed implementation
+
+- Added one accessible `ToolField`/`ToolFieldGrid` vocabulary for declared,
+  automatic, free-text, and delegation values, with responsive two-column
+  density and full-width block content.
+- Added semantic-token wells for plain and long text, rendered Markdown,
+  safe external URL links with compact labels, wrapping list chips with a
+  text fallback, and custom interactive children for later entity views.
+- Replaced the generic row's `<dl>`/`<pre>` mixture and delegation text
+  blocks while leaving custom file/skill/todo presenters and the JSON-only
+  Technical details disclosure in their planned follow-up scopes.
+- Aligned editable approval labels and shadcn Input/Textarea geometry with
+  the shared field system and wired server-declared placeholders.
+- Verification passed: full frontend `pnpm check` with 30 test files and 146
+  tests, lint, formatting, dead-code analysis, dependency-cruiser,
+  typecheck, and production build; focused server-rendered tests cover URL,
+  list/chip fallback, Markdown, long values, custom content, and responsive
+  flow. Browser automation was intentionally not used per maintainer
+  instruction.
 
 ## Goal
 

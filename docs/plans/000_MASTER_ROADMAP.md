@@ -349,6 +349,13 @@ the API to the React client. Import-time invariants preserve string-only
 editing and display-only result fields; Web Search proves the populated
 contract while existing declarations retain serialized defaults. Rendering is
 intentionally left to UI-026–UI-028.
+UI-026 completed the one-field-system foundation on 2026-07-17: generic tool
+and delegation arguments/results now use accessible labeled wells with
+responsive two-column density, full-width block content, Markdown, safe URL
+links, wrapping list chips, scroll-capped long values, and a custom-content seam
+for later entity views. Approval inputs share the same label/control geometry
+and declared placeholders; Technical details remains the only JSON surface,
+while custom file/skill/todo presenters stay deferred to UI-029/UI-031.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

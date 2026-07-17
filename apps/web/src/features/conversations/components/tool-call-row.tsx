@@ -4,12 +4,9 @@ import { use } from "react"
 
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
-import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
-import {
-  TechnicalDetails,
-  ToolFieldList,
-} from "@/features/conversations/components/tool-friendly-blocks"
+import { TechnicalDetails } from "@/features/conversations/components/tool-friendly-blocks"
 import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
 import {
   ToolActivityRowHeader,
@@ -105,7 +102,7 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
       expandable={expandable}
       header={header}
     >
-      <ToolFieldList fields={readOnlyArgFields} />
+      <ToolFieldGrid fields={readOnlyArgFields} />
       {approvalDecision ? (
         <ApprovalDecisionBlock
           activity={activity}
@@ -115,8 +112,12 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
           prompt={approvalPrompt}
         />
       ) : null}
-      <ToolFieldList fields={resultFields} />
-      {resultText ? <TextBlock label="Result" value={resultText} /> : null}
+      <ToolFieldGrid fields={resultFields} />
+      {resultText ? (
+        <ToolField
+          field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
+        />
+      ) : null}
       <TechnicalDetails args={normalizedArgs} result={activity.result} />
     </ToolActivityRowShell>
   )

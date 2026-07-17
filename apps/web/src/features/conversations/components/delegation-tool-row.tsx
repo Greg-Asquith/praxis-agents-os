@@ -8,7 +8,7 @@ import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
 } from "@/features/conversations/components/approval-decision-block"
-import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { ToolField } from "@/features/conversations/components/tool-field"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -86,25 +86,50 @@ export function DelegationToolRow({
       expandable={expandable}
       header={header}
     >
-      {delegate.taskPreview ? <TextBlock label="Task" value={delegate.taskPreview} /> : null}
-      {approvalDecision ? <TextBlock label="Tool" value={toolLabel} /> : null}
+      {delegate.taskPreview ? (
+        <ToolField
+          field={{
+            key: "task",
+            label: "Task",
+            value: delegate.taskPreview,
+            format: "multiline",
+          }}
+        />
+      ) : null}
+      {approvalDecision ? (
+        <ToolField field={{ key: "tool", label: "Tool", value: toolLabel, format: "text" }} />
+      ) : null}
       {approvalDecision ? (
         <ApprovalDecisionBlock activity={activity} controls={approvalDecision} label={toolLabel} />
       ) : null}
       {delegate.output ? (
-        <TextBlock
-          label="Result"
-          value={delegate.truncated ? `${delegate.output}\n...` : delegate.output}
+        <ToolField
+          field={{
+            key: "result",
+            label: "Result",
+            value: delegate.truncated ? `${delegate.output}\n...` : delegate.output,
+            format: "multiline",
+          }}
         />
       ) : null}
-      {delegate.error ? <TextBlock label="Error" value={delegate.error} /> : null}
+      {delegate.error ? (
+        <div className="**:data-[slot=tool-field-label]:text-destructive **:data-[slot=tool-field-well]:border-destructive/40` **:data-[slot=tool-field-well]:bg-destructive/5">
+          <ToolField
+            field={{ key: "error", label: "Error", value: delegate.error, format: "multiline" }}
+          />
+        </div>
+      ) : null}
       {delegate.pendingApprovalCount > 0 ? (
-        <TextBlock
-          label="Approval"
-          value={`${String(delegate.pendingApprovalCount)} pending ${pluralize(
-            delegate.pendingApprovalCount,
-            "request"
-          )}`}
+        <ToolField
+          field={{
+            key: "approval",
+            label: "Approval",
+            value: `${String(delegate.pendingApprovalCount)} pending ${pluralize(
+              delegate.pendingApprovalCount,
+              "request"
+            )}`,
+            format: "text",
+          }}
         />
       ) : null}
       {delegate.conversationId !== null || delegate.runId !== null ? (

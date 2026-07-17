@@ -105,7 +105,7 @@ Functional, but visibly unstyled.
 | 023 | Agents table: retire "Runtime" | P2 | S | — | DONE |
 | 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | DONE |
 | 025 | Tool presentation contract v2 | P1 | M | 022 | DONE |
-| 026 | One tool field system: labeled wells | P1 | M | 025 | TODO |
+| 026 | One tool field system: labeled wells | P1 | M | 025 | DONE |
 | 027 | Approval card: form-first, one-click | P1 | L | 025, 026 | TODO |
 | 028 | Live activity card & outcome rows | P1 | L | 026, 027 | TODO |
 | 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | TODO |

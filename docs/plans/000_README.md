@@ -341,6 +341,15 @@ editing string-only, result fields read-only and primary, and all additions
 default cleanly for existing tools. Web Search is the proof declaration with
 "Approve & Search" and a query placeholder; rendering remains deferred to
 UI-026–UI-028.
+UI-026 completed the unified tool-field renderer on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-026-tool-field-system.md`. Generic tool and
+delegation rows now render arguments and outcomes as one accessible labeled-well
+system with responsive density, Markdown, safe URL links, wrapping list chips,
+scroll-capped long values, and a custom-content seam for later interactive
+entity views. Editable approval fields share the same label/control geometry
+and consume server-declared placeholders; Technical details remains the sole
+JSON surface, and custom file/skill/todo presenters remain scoped to UI-029 and
+UI-031.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

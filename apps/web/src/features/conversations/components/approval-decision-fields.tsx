@@ -2,12 +2,17 @@
 
 import type { ChangeEvent } from "react"
 
-import { Field, FieldLabel } from "@/components/ui/field"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  toolFieldLabelClass,
+  toolFieldWellClass,
+} from "@/features/conversations/components/tool-field"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { ToolUiField } from "@/features/tools/types"
 import { isRecord } from "@/lib/guards"
+import { cn } from "@/lib/utils"
 
 export function ApprovalEditableFields({
   activityId,
@@ -30,7 +35,7 @@ export function ApprovalEditableFields({
   }
 
   return (
-    <div className="grid gap-3">
+    <FieldGroup className="gap-3">
       {fields.map((field) => {
         const originalValue = record[field.key]
         if (typeof originalValue !== "string") {
@@ -43,20 +48,23 @@ export function ApprovalEditableFields({
           onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
             onChange(field.key, event.currentTarget.value)
           },
+          placeholder: field.placeholder || undefined,
           value: edits[field.key] ?? originalValue,
         }
         return (
-          <Field key={field.key}>
-            <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
+          <Field className="gap-1" data-disabled={disabled} key={field.key}>
+            <FieldLabel className={toolFieldLabelClass} htmlFor={id}>
+              {field.label}
+            </FieldLabel>
             {field.format === "multiline" ? (
-              <Textarea className="min-h-20" {...inputProps} />
+              <Textarea className={cn(toolFieldWellClass, "min-h-20")} {...inputProps} />
             ) : (
-              <Input {...inputProps} />
+              <Input className={toolFieldWellClass} {...inputProps} />
             )}
           </Field>
         )
       })}
-    </div>
+    </FieldGroup>
   )
 }
 
