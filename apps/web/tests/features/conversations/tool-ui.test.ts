@@ -10,6 +10,18 @@ import {
   resolveToolTemplate,
   resolveUiFields,
 } from "@/features/conversations/tool-ui"
+import type { ToolUiField } from "@/features/tools/types"
+
+function uiField(field: Pick<ToolUiField, "key" | "label"> & Partial<ToolUiField>): ToolUiField {
+  return {
+    format: "text",
+    editable: false,
+    placeholder: "",
+    options: [],
+    secondary: false,
+    ...field,
+  }
+}
 
 describe("resolveToolTemplate", () => {
   it("fills placeholders from the first source that has the key", () => {
@@ -41,9 +53,9 @@ describe("resolveUiFields", () => {
   it("resolves declared fields and drops missing ones", () => {
     const fields = resolveUiFields(
       [
-        { key: "name", label: "File name", format: "text", editable: false },
-        { key: "missing", label: "Missing", format: "text", editable: false },
-        { key: "confirmed", label: "Confirmed", format: "boolean", editable: false },
+        uiField({ key: "name", label: "File name" }),
+        uiField({ key: "missing", label: "Missing" }),
+        uiField({ key: "confirmed", label: "Confirmed", format: "boolean" }),
       ],
       { name: "report.md", confirmed: true }
     )
@@ -55,18 +67,49 @@ describe("resolveUiFields", () => {
 
   it("parses JSON string sources", () => {
     const fields = resolveUiFields(
-      [{ key: "query", label: "Search", format: "text", editable: true }],
+      [uiField({ key: "query", label: "Search", editable: true })],
       JSON.stringify({ query: "praxis" })
     )
     expect(fields).toEqual([{ key: "query", label: "Search", value: "praxis", format: "text" }])
+  })
+
+  it("resolves scalar lists with display text and individual items", () => {
+    const fields = resolveUiFields([uiField({ key: "items", label: "Items", format: "list" })], {
+      items: ["alpha", 2, "gamma"],
+    })
+
+    expect(fields).toEqual([
+      {
+        key: "items",
+        label: "Items",
+        value: "alpha, 2, gamma",
+        format: "list",
+        items: ["alpha", "2", "gamma"],
+      },
+    ])
+  })
+
+  it("accepts only HTTP URLs", () => {
+    const fields = [uiField({ key: "link", label: "Link", format: "url" })]
+
+    expect(resolveUiFields(fields, { link: "https://praxis-agents.ai/docs" })).toEqual([
+      {
+        key: "link",
+        label: "Link",
+        value: "https://praxis-agents.ai/docs",
+        format: "url",
+      },
+    ])
+    expect(resolveUiFields(fields, { link: "javascript:alert(1)" })).toEqual([])
+    expect(resolveUiFields(fields, { link: "not a URL" })).toEqual([])
   })
 })
 
 describe("editableUiFields", () => {
   const fields = [
-    { key: "query", label: "Search", format: "text", editable: true },
-    { key: "provider", label: "Provider", format: "text", editable: false },
-    { key: "limit", label: "Limit", format: "text", editable: true },
+    uiField({ key: "query", label: "Search", editable: true }),
+    uiField({ key: "provider", label: "Provider" }),
+    uiField({ key: "limit", label: "Limit", editable: true }),
   ] as const
 
   it("returns only editable fields backed by string arguments", () => {

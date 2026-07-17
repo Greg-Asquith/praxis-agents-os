@@ -100,8 +100,14 @@ class WebSearchOutput(BaseModel):
         failed_label="Couldn't Search the Web",
         approval_title="Search the Web",
         approval_prompt="The agent wants to search the web for {query}.",
+        approve_label="Approve & Search",
         arg_fields=(
-            ToolFieldPresentation(key="query", label="Search", editable=True),
+            ToolFieldPresentation(
+                key="query",
+                label="Search",
+                editable=True,
+                placeholder="What should the agent search for?",
+            ),
             ToolFieldPresentation(key="model_provider", label="Search provider"),
         ),
         result_fields=(ToolFieldPresentation(key="answer", label="Answer", format="markdown"),),

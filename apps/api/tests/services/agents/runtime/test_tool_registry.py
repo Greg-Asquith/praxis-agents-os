@@ -159,14 +159,111 @@ def test_validate_definition_rejects_editable_result_fields() -> None:
         function=_noop,
         description="Result fields are display-only.",
         presentation=ToolPresentation(
-            result_fields=(
-                ToolFieldPresentation(key="result", label="Result", editable=True),
-            )
+            result_fields=(ToolFieldPresentation(key="result", label="Result", editable=True),)
         ),
     )
 
     with pytest.raises(RuntimeError, match="result presentation fields cannot be editable"):
         validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    ("field", "error"),
+    [
+        (
+            ToolFieldPresentation(key="choice", label="Choice", options=("One", "Two")),
+            "options and placeholders require editable fields",
+        ),
+        (
+            ToolFieldPresentation(key="hint", label="Hint", placeholder="Enter a value"),
+            "options and placeholders require editable fields",
+        ),
+        (
+            ToolFieldPresentation(
+                key="choice",
+                label="Choice",
+                editable=True,
+                options=("One", "   "),
+            ),
+            "options must not be blank",
+        ),
+        (
+            ToolFieldPresentation(
+                key="choice",
+                label="Choice",
+                editable=True,
+                options=("One", " One "),
+            ),
+            "options must be unique",
+        ),
+        (
+            ToolFieldPresentation(
+                key="body",
+                label="Body",
+                format="markdown",
+                editable=True,
+            ),
+            "must use text or multiline format",
+        ),
+    ],
+)
+def test_validate_definition_rejects_invalid_field_presentation(
+    field: ToolFieldPresentation,
+    error: str,
+) -> None:
+    definition = RuntimeToolDefinition(
+        name="bad_field_presentation",
+        function=_noop,
+        description="Invalid field presentation.",
+        presentation=ToolPresentation(arg_fields=(field,)),
+    )
+
+    with pytest.raises(RuntimeError, match=error):
+        validate_definition(definition)
+
+
+def test_validate_definition_rejects_secondary_result_fields() -> None:
+    definition = RuntimeToolDefinition(
+        name="bad_secondary_result",
+        function=_noop,
+        description="Result fields are never secondary.",
+        presentation=ToolPresentation(
+            result_fields=(
+                ToolFieldPresentation(key="result", label="Result", secondary=True),
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="result presentation fields cannot be secondary"):
+        validate_definition(definition)
+
+
+def test_validate_definition_rejects_blank_approve_label() -> None:
+    definition = RuntimeToolDefinition(
+        name="bad_approve_label",
+        function=_noop,
+        description="Approval labels must carry an action.",
+        presentation=ToolPresentation(approve_label="   "),
+    )
+
+    with pytest.raises(RuntimeError, match="approve label must not be blank"):
+        validate_definition(definition)
+
+
+def test_validate_definition_accepts_url_and_list_result_fields() -> None:
+    definition = RuntimeToolDefinition(
+        name="rich_results",
+        function=_noop,
+        description="Rich display-only results.",
+        presentation=ToolPresentation(
+            result_fields=(
+                ToolFieldPresentation(key="link", label="Link", format="url"),
+                ToolFieldPresentation(key="items", label="Items", format="list"),
+            )
+        ),
+    )
+
+    validate_definition(definition)
 
 
 def test_allowed_policies_and_tool_build_reject_unsupported_policy() -> None:

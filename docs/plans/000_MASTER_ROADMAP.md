@@ -342,6 +342,13 @@ UI-024 completed the edit-language sweep on 2026-07-16: Agent, Skill, and
 Schedule row actions now use Edit with pencil icons, while related agent,
 invitation, and workspace copy states user-visible outcomes without changing
 API identifiers, routing, or runtime behavior.
+UI-025 completed the additive tool presentation contract v2 on 2026-07-17:
+typed field placeholders, closed options, secondary placement, URL/list
+formats, and approval action labels now flow from the runtime registry through
+the API to the React client. Import-time invariants preserve string-only
+editing and display-only result fields; Web Search proves the populated
+contract while existing declarations retain serialized defaults. Rendering is
+intentionally left to UI-026–UI-028.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

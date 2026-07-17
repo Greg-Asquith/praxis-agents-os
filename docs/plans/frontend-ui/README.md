@@ -43,6 +43,29 @@ Out-of-the-box the product should look like this while remaining themable:
 every color decision goes through the semantic tokens in `src/index.css`, so
 a downstream theme is still a one-file change.
 
+## The tool-surface target (added 2026-07-17)
+
+`reference-tool-card.png` in this directory is the second reference: a
+Gmail send request rendered as a miniature mail composer — labeled
+To/Subject/Message fields editable in place, an "Add Cc/Bcc" affordance,
+one primary "Approve & Send". As with `reference.png`, we adopt the
+*theory*, not the colors: **a tool call is a miniature app surface
+through its whole lifecycle**, keeping the user informed, in control,
+and collaborating in real time. Plans 025–031 are that series; five
+threads run through all of them:
+
+1. **Surfaces, not log lines** — the entire tool process, auto-run
+   tools included, not just approvals.
+2. **One click decides** — no staged decisions, no second submit
+   button, ever.
+3. **One field system** — every value, editable or not, renders as a
+   labeled field-shaped well.
+4. **Outcomes are interactive** — results are working mini-views of
+   real product entities (a files list you can open, rename, download),
+   reusing the product's real modals and mutations.
+5. **In place, in order** — a tool call renders exactly where it
+   happened in the turn, between the text written before and after it.
+
 ## What the current UI is (for contrast)
 
 Fully monochrome grayscale oklch tokens (`--primary` is near-black; the only
@@ -81,6 +104,13 @@ Functional, but visibly unstyled.
 | 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | DONE |
 | 023 | Agents table: retire "Runtime" | P2 | S | — | DONE |
 | 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | DONE |
+| 025 | Tool presentation contract v2 | P1 | M | 022 | DONE |
+| 026 | One tool field system: labeled wells | P1 | M | 025 | TODO |
+| 027 | Approval card: form-first, one-click | P1 | L | 025, 026 | TODO |
+| 028 | Live activity card & outcome rows | P1 | L | 026, 027 | TODO |
+| 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | TODO |
+| 030 | In-place tool calls: ordered turns | P1 | L | — | TODO |
+| 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -132,6 +162,17 @@ Dependency notes:
   and can run in parallel with 015–019. Its copy pass grazes the two
   OAuth callback routes that 014's in-flight work modified — land
   014's commit first, or skip those two files (the plan says how).
+- 025–031 (the tool-surface series, written 2026-07-17 against the
+  working tree at `19ace81` with plan 022's changes applied) run after
+  022's commit lands. 025 is backend-first and runs alone; 026 builds
+  the field renderer on it; 027 (approval card + one-click flow) and
+  028 (live/outcome states) both touch `tool-call-row.tsx` and the
+  card shell — run them sequentially, 027 first. 030 (in-place
+  ordering) touches the parser/reducer/`message-row.tsx`, disjoint
+  from 025/026 but overlapping 027/028's row rendering — run it
+  before 027, or coordinate carefully. 029 needs 026's shells and
+  028's outcome-row shape. 031 is the closing sweep and runs last,
+  after everything.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
   outstanding 017–020 (disjoint files) and may run in parallel
   worktrees with them. Within the set: 021 (conversation headers) and
@@ -287,6 +328,48 @@ Dependency notes:
   **Edit** (pencil icon), with plan 013's "Save Changes" for the commit.
   "Configure" (and user-facing "configured") is retired from copy;
   "Update" stays an API term.
+
+- **Tool calls are surfaces through their whole lifecycle**
+  (maintainer direction, 2026-07-17; plans 025–031). A live card while
+  running (arg fields visible, moving status, elapsed time), a
+  form-first card when a decision is needed, a compact outcome-first
+  row when finished. Auto-run tools get the treatment too — this is
+  the entire tool process, not an approvals feature.
+- **Approval decisions are one click** (maintainer direction,
+  2026-07-17; plan 027 — supersedes plan 022's staged-decisions +
+  "Send Decisions" bar, which is deleted, not restyled). "Approve &
+  {verb}" commits and submits; Decline is a single confirm with the
+  optional note; decided cards lock. No second button layer anywhere.
+- **One field system for tool values** (2026-07-17; plan 026). Every
+  argument and result renders as a labeled field-shaped well — real
+  inputs when editable, wells when not — one geometry, no
+  `<dl>`/`<pre>`/input mixture. The JSON "Technical details"
+  disclosure remains the only non-field surface.
+- **Tool outcomes are interactive working views** (maintainer
+  direction, 2026-07-17; plan 029). Entity-bearing results (files
+  today) render as miniature versions of their product surface with
+  real actions — open the detail modal, rename, download — always by
+  reusing the owning feature's components, queries, and mutations,
+  never by re-implementing them. External integrations (e.g. Google
+  Drive) adopt the same presenter pattern when they land, shipping
+  their actions with the integration vertical — nothing speculative
+  before then.
+- **Tool calls render in place, in order** (maintainer direction,
+  2026-07-17; plan 030). Turns are an ordered timeline of text,
+  thinking, and tool surfaces in the sequence they actually happened —
+  never regrouped by kind. Order is reconstructed client-side from the
+  already-ordered payloads; no protocol change.
+- **Liveness needs no protocol changes** (recorded 2026-07-17; plan
+  028). Tool args arrive whole in one stream event, so there is no
+  "watch the agent type" animation to build — liveness is motion on
+  the status line, visible fields, and a client-measured elapsed
+  count, live-run only. Do not propose arg-delta streaming for UI
+  effect.
+- **No per-provider brand logos on tool surfaces** (recorded
+  2026-07-17; plan 025). The reference's Gmail "M" is not adopted: the
+  semantic icon token set is the extension point, keeping the
+  tokens-only theming contract; new tokens arrive with the tools that
+  need them.
 
 ## Considered and rejected (do not re-propose)
 

@@ -17,7 +17,16 @@ ToolPolicy = Literal["auto", "approval"]
 ToolEffect = Literal["read", "write"]
 ToolEffectScope = Literal["internal", "external"]
 ToolKind = Literal["function", "capability"]
-ToolFieldFormat = Literal["text", "multiline", "markdown", "bytes", "datetime", "boolean"]
+ToolFieldFormat = Literal[
+    "text",
+    "multiline",
+    "markdown",
+    "bytes",
+    "datetime",
+    "boolean",
+    "url",
+    "list",
+]
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
 TOOL_POLICY_APPROVAL: ToolPolicy = "approval"
@@ -34,7 +43,7 @@ VALID_TOOL_KINDS = frozenset({TOOL_KIND_FUNCTION, TOOL_KIND_CAPABILITY})
 _TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 VALID_TOOL_FIELD_FORMATS = frozenset(
-    {"text", "multiline", "markdown", "bytes", "datetime", "boolean"}
+    {"text", "multiline", "markdown", "bytes", "datetime", "boolean", "url", "list"}
 )
 # Semantic icon tokens the web client maps to concrete icons.
 VALID_TOOL_ICONS = frozenset(
@@ -63,6 +72,9 @@ class ToolFieldPresentation:
     label: str
     format: ToolFieldFormat = "text"
     editable: bool = False
+    placeholder: str = ""
+    options: tuple[str, ...] = ()
+    secondary: bool = False
 
 
 @dataclass(frozen=True)
@@ -75,6 +87,7 @@ class ToolPresentation:
     failed_label: str = ""
     approval_title: str = ""
     approval_prompt: str = ""
+    approve_label: str = ""
     arg_fields: tuple[ToolFieldPresentation, ...] = ()
     result_fields: tuple[ToolFieldPresentation, ...] = ()
 
@@ -240,6 +253,8 @@ def _validate_presentation(presentation: ToolPresentation) -> None:
         raise RuntimeError(
             f"Runtime tool presentation icon must be one of the known tokens, got {presentation.icon!r}"
         )
+    if presentation.approve_label and not presentation.approve_label.strip():
+        raise RuntimeError("Runtime tool presentation approve label must not be blank")
     for field in (*presentation.arg_fields, *presentation.result_fields):
         if not field.key.strip():
             raise RuntimeError("Runtime tool presentation field keys must not be blank")
@@ -249,5 +264,21 @@ def _validate_presentation(presentation: ToolPresentation) -> None:
             raise RuntimeError(
                 f"Runtime tool presentation field format must be one of the known formats, got {field.format!r}"
             )
-    if any(field.editable for field in presentation.result_fields):
-        raise RuntimeError("Runtime tool result presentation fields cannot be editable")
+        if field.editable and field.format not in {"text", "multiline"}:
+            raise RuntimeError(
+                "Editable runtime tool presentation fields must use text or multiline format"
+            )
+        if (field.options or field.placeholder) and not field.editable:
+            raise RuntimeError(
+                "Runtime tool presentation field options and placeholders require editable fields"
+            )
+        normalized_options = [option.strip() for option in field.options]
+        if any(not option for option in normalized_options):
+            raise RuntimeError("Runtime tool presentation field options must not be blank")
+        if len(normalized_options) != len(set(normalized_options)):
+            raise RuntimeError("Runtime tool presentation field options must be unique")
+    for field in presentation.result_fields:
+        if field.editable:
+            raise RuntimeError("Runtime tool result presentation fields cannot be editable")
+        if field.secondary:
+            raise RuntimeError("Runtime tool result presentation fields cannot be secondary")

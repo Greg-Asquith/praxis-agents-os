@@ -15,6 +15,7 @@ export type ResolvedToolField = {
   label: string
   value: string
   format: ToolUiFieldFormat
+  items?: string[]
 }
 
 export function toolUiStatusLabel(ui: ToolUi, activity: ToolActivity): string | null {
@@ -54,7 +55,9 @@ export function resolveUiFields(fields: ToolUiField[], source: unknown): Resolve
   for (const field of fields) {
     const value = displayValue(record[field.key], field.format)
     if (value !== null) {
-      resolved.push({ key: field.key, label: field.label, value, format: field.format })
+      const baseField = { key: field.key, label: field.label, value, format: field.format }
+      const items = field.format === "list" ? listItems(record[field.key]) : null
+      resolved.push(items === null ? baseField : { ...baseField, items })
     }
   }
   return resolved
@@ -152,7 +155,40 @@ function displayValue(value: unknown, format: ToolUiFieldFormat): string | null 
   if (format === "boolean") {
     return value === true ? "Yes" : value === false ? "No" : null
   }
+  if (format === "url") {
+    return safeHttpUrl(value)
+  }
+  if (format === "list") {
+    const items = listItems(value)
+    return items && items.length > 0 ? items.join(", ") : null
+  }
   return scalarDisplayValue(value)
+}
+
+function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null
+  }
+  const normalized = value.trim()
+  if (!normalized) {
+    return null
+  }
+  try {
+    const url = new URL(normalized)
+    return url.protocol === "http:" || url.protocol === "https:" ? normalized : null
+  } catch {
+    return null
+  }
+}
+
+function listItems(value: unknown): string[] | null {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === "string" || typeof item === "number")
+  ) {
+    return null
+  }
+  return value.map(String)
 }
 
 function scalarDisplayValue(value: unknown): string | null {

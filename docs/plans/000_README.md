@@ -332,6 +332,15 @@ Schedule row actions now say Edit and use pencil icons on desktop and mobile;
 related agent, invitation, and workspace copy now describes user-visible
 outcomes without exposing configure/configured language. API identifiers and
 runtime behavior are unchanged.
+UI-025 completed the tool presentation contract v2 on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-025-tool-presentation-contract-v2.md`.
+Presentation fields now declare placeholders, closed options, and secondary
+placement; presentations declare approval action labels; URL and scalar-list
+results resolve through typed client formats. Import-time validation keeps
+editing string-only, result fields read-only and primary, and all additions
+default cleanly for existing tools. Web Search is the proof declaration with
+"Approve & Search" and a query placeholder; rendering remains deferred to
+UI-026–UI-028.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

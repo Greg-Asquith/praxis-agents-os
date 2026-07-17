@@ -93,6 +93,14 @@ async def test_tool_presentations_route_returns_every_registry_tool(
     assert names == sorted(names)
     assert "web_search" in names
     assert "write_file" in names  # non-configurable tools are included
+    for entry in body["tools"]:
+        if entry["name"] == "web_search":
+            continue
+        assert entry["ui"]["approve_label"] == ""
+        for field in (*entry["ui"]["arg_fields"], *entry["ui"]["result_fields"]):
+            assert field["placeholder"] == ""
+            assert field["options"] == []
+            assert field["secondary"] is False
     write_file_entry = next(tool for tool in body["tools"] if tool["name"] == "write_file")
     assert write_file_entry["label"] == "Write file"
     assert write_file_entry["effect"] == "write"
@@ -102,13 +110,25 @@ async def test_tool_presentations_route_returns_every_registry_tool(
     assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {"name", "content"}
     assert all(field["editable"] is False for field in write_file_entry["ui"]["arg_fields"])
     web_search_entry = next(tool for tool in body["tools"] if tool["name"] == "web_search")
+    assert web_search_entry["ui"]["approve_label"] == "Approve & Search"
     assert web_search_entry["ui"]["arg_fields"] == [
-        {"key": "query", "label": "Search", "format": "text", "editable": True},
+        {
+            "key": "query",
+            "label": "Search",
+            "format": "text",
+            "editable": True,
+            "placeholder": "What should the agent search for?",
+            "options": [],
+            "secondary": False,
+        },
         {
             "key": "model_provider",
             "label": "Search provider",
             "format": "text",
             "editable": False,
+            "placeholder": "",
+            "options": [],
+            "secondary": False,
         },
     ]
     assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])

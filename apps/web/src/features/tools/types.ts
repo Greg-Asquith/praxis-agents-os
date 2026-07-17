@@ -22,13 +22,17 @@ export type ToolCatalogResponse = {
   tools: ToolCatalogEntry[]
 }
 
-export type ToolUiFieldFormat = "text" | "multiline" | "markdown" | "bytes" | "datetime" | "boolean"
+export type ToolUiFieldFormat =
+  "text" | "multiline" | "markdown" | "bytes" | "datetime" | "boolean" | "url" | "list"
 
 export type ToolUiField = {
   key: string
   label: string
   format: ToolUiFieldFormat
   editable: boolean
+  placeholder: string
+  options: string[]
+  secondary: boolean
 }
 
 export type ToolUi = {
@@ -38,6 +42,7 @@ export type ToolUi = {
   failed_label: string
   approval_title: string
   approval_prompt: string
+  approve_label: string
   arg_fields: ToolUiField[]
   result_fields: ToolUiField[]
 }

@@ -12,6 +12,9 @@ class ToolFieldPresentationRead(BaseModel):
     label: str
     format: str
     editable: bool
+    placeholder: str
+    options: list[str]
+    secondary: bool
 
 
 class ToolPresentationRead(BaseModel):
@@ -21,6 +24,7 @@ class ToolPresentationRead(BaseModel):
     failed_label: str
     approval_title: str
     approval_prompt: str
+    approve_label: str
     arg_fields: list[ToolFieldPresentationRead]
     result_fields: list[ToolFieldPresentationRead]
 
@@ -33,12 +37,16 @@ class ToolPresentationRead(BaseModel):
             failed_label=presentation.failed_label,
             approval_title=presentation.approval_title,
             approval_prompt=presentation.approval_prompt,
+            approve_label=presentation.approve_label,
             arg_fields=[
                 ToolFieldPresentationRead(
                     key=field.key,
                     label=field.label,
                     format=field.format,
                     editable=field.editable,
+                    placeholder=field.placeholder,
+                    options=list(field.options),
+                    secondary=field.secondary,
                 )
                 for field in presentation.arg_fields
             ],
@@ -48,6 +56,9 @@ class ToolPresentationRead(BaseModel):
                     label=field.label,
                     format=field.format,
                     editable=field.editable,
+                    placeholder=field.placeholder,
+                    options=list(field.options),
+                    secondary=field.secondary,
                 )
                 for field in presentation.result_fields
             ],
