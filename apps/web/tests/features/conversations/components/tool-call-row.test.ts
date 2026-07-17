@@ -97,6 +97,36 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).toContain("The agent saw this error and can adjust.")
     expect(html).not.toContain("What went wrong")
   })
+
+  it("renders file outcomes as actionable entity rows inside the shared field well", () => {
+    const html = renderRow({
+      id: "files-1",
+      kind: "result",
+      name: "list_files",
+      status: "completed",
+      result: {
+        files: [
+          {
+            id: "file-1",
+            name: "Quarterly plan.pdf",
+            category: "ingestible_document",
+            media_type: "application/pdf",
+            processing_status: "ready",
+            size_bytes: 4096,
+            updated_at: "2026-07-17T12:00:00Z",
+          },
+        ],
+        scratch: [],
+        total: 1,
+      },
+    })
+
+    expect(html).toContain("Files · 1")
+    expect(html).toContain('data-slot="tool-field-well"')
+    expect(html).toContain('aria-label="View details for Quarterly plan.pdf"')
+    expect(html).toContain('aria-label="Actions for Quarterly plan.pdf"')
+    expect(html).toContain("4.0 KB")
+  })
 })
 
 function renderRow(activity: ToolActivity, live = false) {

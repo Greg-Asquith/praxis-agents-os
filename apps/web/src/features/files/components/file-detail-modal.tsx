@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDeleteFileMutation } from "@/features/files/api/delete-file"
-import { useFileQuery } from "@/features/files/api/get-file"
+import { fileQueryOptions } from "@/features/files/api/get-file"
 import { useRevisionContentQuery } from "@/features/files/api/get-revision-content"
 import { useFileRevisionsQuery } from "@/features/files/api/list-file-revisions"
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
@@ -28,39 +28,71 @@ import { RenameFileDialog } from "@/features/files/components/rename-file-dialog
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { fileCategoryLabel } from "@/features/files/format"
 import type { WorkspaceFile } from "@/features/files/types"
-import { getErrorMessage } from "@/lib/api/errors"
+import { ApiError, getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, formatDateTime } from "@/lib/format"
 
 export function FileDetailModal({
   fileId,
-  initialFile,
-  onClose,
+  initialFile = null,
+  open,
+  onOpenChange,
 }: {
   fileId: string | null
-  initialFile: WorkspaceFile | null
-  onClose: () => void
+  initialFile?: WorkspaceFile | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  if (!fileId) {
+  if (!open || !fileId) {
     return null
   }
 
-  return (
-    <Suspense fallback={<FileDetailLoadingDialog onClose={onClose} />}>
-      <FileDetailDialog fileId={fileId} initialFile={initialFile} onClose={onClose} />
-    </Suspense>
-  )
+  return <FileDetailQuery fileId={fileId} initialFile={initialFile} onOpenChange={onOpenChange} />
 }
 
-function FileDetailDialog({
+function FileDetailQuery({
   fileId,
   initialFile,
-  onClose,
+  onOpenChange,
 }: {
   fileId: string
   initialFile: WorkspaceFile | null
-  onClose: () => void
+  onOpenChange: (open: boolean) => void
 }) {
-  const { data: file } = useFileQuery(fileId, initialFile ?? undefined)
+  const fileQuery = useQuery({
+    ...fileQueryOptions(fileId),
+    ...(initialFile ? { initialData: initialFile } : {}),
+    refetchOnMount: "always",
+    staleTime: 0,
+  })
+
+  if (fileQuery.isPending) {
+    return <FileDetailLoadingDialog onOpenChange={onOpenChange} />
+  }
+  if (fileQuery.error && !fileQuery.isFetching) {
+    return (
+      <FileDetailErrorDialog
+        error={fileQuery.error}
+        onOpenChange={onOpenChange}
+        onRetry={() => {
+          void fileQuery.refetch()
+        }}
+      />
+    )
+  }
+  if (!fileQuery.data) {
+    return <FileDetailLoadingDialog onOpenChange={onOpenChange} />
+  }
+
+  return <FileDetailDialog file={fileQuery.data} onOpenChange={onOpenChange} />
+}
+
+function FileDetailDialog({
+  file,
+  onOpenChange,
+}: {
+  file: WorkspaceFile
+  onOpenChange: (open: boolean) => void
+}) {
   const deleteMutation = useDeleteFileMutation()
   const [error, setError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -81,7 +113,7 @@ function FileDetailDialog({
     try {
       await deleteMutation.mutateAsync({ fileId: file.id })
       setDeleteDialogOpen(false)
-      onClose()
+      onOpenChange(false)
     } catch (deleteError) {
       setError(getErrorMessage(deleteError))
       setDeleteDialogOpen(false)
@@ -93,9 +125,7 @@ function FileDetailDialog({
       <Dialog
         open
         onOpenChange={(open) => {
-          if (!open) {
-            onClose()
-          }
+          onOpenChange(open)
         }}
       >
         <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl">
@@ -201,16 +231,9 @@ function FileDetailDialog({
   )
 }
 
-function FileDetailLoadingDialog({ onClose }: { onClose: () => void }) {
+function FileDetailLoadingDialog({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) {
-          onClose()
-        }
-      }}
-    >
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogHeader className="border-b p-5 pr-12">
           <Skeleton className="h-6 w-24" />
@@ -221,6 +244,51 @@ function FileDetailLoadingDialog({ onClose }: { onClose: () => void }) {
           <PreviewSkeleton />
           <Skeleton className="h-20 w-full rounded-lg" />
         </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function FileDetailErrorDialog({
+  error,
+  onOpenChange,
+  onRetry,
+}: {
+  error: Error
+  onOpenChange: (open: boolean) => void
+  onRetry: () => void
+}) {
+  const missing = error instanceof ApiError && error.status === 404
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {missing ? "File No Longer Available" : "File Couldn’t Be Loaded"}
+          </DialogTitle>
+          <DialogDescription>
+            {missing
+              ? "This file may have been deleted since the agent used it."
+              : getErrorMessage(error)}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              onOpenChange(false)
+            }}
+            type="button"
+            variant="outline"
+          >
+            Close
+          </Button>
+          {missing ? null : (
+            <Button onClick={onRetry} type="button">
+              Try Again
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

@@ -374,6 +374,13 @@ actions. Live failures use default-open plain-language recovery framing,
 running delegations share the elapsed suffix, and pinned transcript scrolling
 tracks the card-to-row status transition without changing SSE, persistence,
 Pydantic AI, approval, or custom-presenter contracts.
+UI-029 completed interactive file outcomes on 2026-07-17: List Files now
+renders compact thumbnail rows inside the shared field system, while every
+durable file-bearing result opens the shared live-detail modal and reuses the
+Files feature's rename and audited download operations. Transcript labels stay
+historical after mutations, stale/deleted files resolve to a contained modal
+state, scratch drafts remain display-only, and no API, permission, audit,
+runtime, or protocol contract changed.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

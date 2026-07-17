@@ -3,7 +3,7 @@
 import type { AssetUploadGrant, SignedUpload } from "@/features/storage/types"
 
 export type FileContractCategory =
-  "editable_text" | "ingestible_document" | "image" | "video" | "audio"
+  "editable_text" | "ingestible_document" | "image" | "video" | "audio" | "html"
 
 export type FileProcessingStatus = "pending" | "processing" | "ready" | "error"
 

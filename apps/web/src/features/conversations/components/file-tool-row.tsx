@@ -1,21 +1,27 @@
 // apps/web/src/features/conversations/components/file-tool-row.tsx
 
-import { FileIcon, FilePlus2Icon, FilesIcon, ImageIcon, SearchIcon } from "lucide-react"
+import {
+  FileIcon,
+  FilePlus2Icon,
+  FilesIcon,
+  FileTextIcon,
+  ImageIcon,
+  SearchIcon,
+} from "lucide-react"
 
-import { FileCard } from "@/features/files/components/file-card"
 import { FileContentView } from "@/features/files/components/file-content-view"
 import {
   type ReadFileContentToolResult,
   type ReadFileImageToolResult,
   type ReadFileStatusToolResult,
   type ReadFileUrlToolResult,
-  fileCardFromReadContentResult,
-  fileCardFromReadImageResult,
-  fileCardFromReadStatusResult,
-  fileCardFromPromoteResult,
-  fileCardFromRuntimeFile,
-  fileCardFromReadUrlResult,
-  fileCardFromWriteResult,
+  fileEntityFromReadContentResult,
+  fileEntityFromReadImageResult,
+  fileEntityFromReadStatusResult,
+  fileEntityFromPromoteResult,
+  fileEntityFromRuntimeFile,
+  fileEntityFromReadUrlResult,
+  fileEntityFromWriteResult,
   listFilesResult,
   LIST_FILES_TOOL_NAME,
   PROMOTE_SCRATCH_TOOL_NAME,
@@ -29,6 +35,8 @@ import {
   writeFileContentArg,
   writeFileResult,
 } from "@/features/conversations/file-tools"
+import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
+import { ToolField } from "@/features/conversations/components/tool-field"
 import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import {
   ToolActivityRowHeader,
@@ -91,33 +99,50 @@ function ListFilesRow({ activity, compact, defaultOpen }: FileToolRowProps) {
 
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <TextBlock
-        label="Summary"
-        value={`${String(result.files.length)} workspace files · ${String(
-          result.scratch.length
-        )} drafts · ${String(result.total)} total files`}
-      />
-      {result.files.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-muted-foreground text-xs font-medium">Files</p>
-          {result.files.map((file) => (
-            <FileCard key={file.id} file={fileCardFromRuntimeFile(file)} />
-          ))}
-        </div>
-      ) : null}
+      <ToolField
+        field={{
+          key: "files",
+          label: `Files · ${String(result.files.length)}`,
+          value: "",
+          format: "text",
+        }}
+      >
+        {result.files.length > 0 ? (
+          <div className="divide-border -my-1 divide-y">
+            {result.files.map((file) => (
+              <FileEntityRow file={fileEntityFromRuntimeFile(file)} key={file.id} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground py-1 text-xs">No workspace files found.</p>
+        )}
+      </ToolField>
       {result.scratch.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-muted-foreground text-xs font-medium">Drafts</p>
-          {result.scratch.map((entry) => (
-            <TextBlock
-              key={entry.name}
-              label={entry.name}
-              value={`${formatBytes(entry.content_bytes)} · kept until ${formatDateTime(
-                entry.expires_at
-              )}`}
-            />
-          ))}
-        </div>
+        <ToolField
+          field={{
+            key: "drafts",
+            label: `Drafts · ${String(result.scratch.length)}`,
+            value: "",
+            format: "text",
+          }}
+        >
+          <div className="divide-border -my-1 divide-y">
+            {result.scratch.map((entry) => (
+              <div className="flex min-w-0 items-center gap-2.5 px-1.5 py-2" key={entry.name}>
+                <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border">
+                  <FileTextIcon className="size-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{entry.name}</span>
+                  <span className="text-muted-foreground block truncate text-xs">
+                    {formatBytes(entry.content_bytes)} · Updated {formatDateTime(entry.updated_at)}{" "}
+                    · Kept until {formatDateTime(entry.expires_at)}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </ToolField>
       ) : null}
     </ToolActivityRowShell>
   )
@@ -129,7 +154,7 @@ function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
     return null
   }
 
-  const file = fileCardFromWriteResult(result)
+  const file = fileEntityFromWriteResult(result)
   const isScratch = result.destination === "scratch"
   const scratchContent = isScratch ? writeFileContentArg(activity.args) : null
   const label = isScratch ? `Drafted "${result.name}"` : "Wrote File"
@@ -156,7 +181,7 @@ function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
       expandable={expandable}
       header={header}
     >
-      {file ? <FileCard file={file} /> : null}
+      {file ? <FileOutcomeField file={file} /> : null}
       {isScratch ? (
         <TextBlock
           label="Draft"
@@ -195,7 +220,7 @@ function PromoteScratchRow({ activity, compact, defaultOpen }: FileToolRowProps)
 
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileCard file={fileCardFromPromoteResult(result)} />
+      <FileOutcomeField file={fileEntityFromPromoteResult(result)} />
     </ToolActivityRowShell>
   )
 }
@@ -243,7 +268,7 @@ function ReadFileUrlRow({
 
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileCard file={fileCardFromReadUrlResult(result)} />
+      <FileOutcomeField file={fileEntityFromReadUrlResult(result)} />
       <TextBlock label="Link expiry" value={formatDateTime(result.expires_at)} />
     </ToolActivityRowShell>
   )
@@ -255,7 +280,7 @@ function ReadFileContentRow({
   defaultOpen,
   result,
 }: FileToolRowProps & { result: ReadFileContentToolResult }) {
-  const file = fileCardFromReadContentResult(result)
+  const file = fileEntityFromReadContentResult(result)
   const isScratch = result.kind === "scratch" || (!result.file_id && Boolean(result.name))
   const label = isScratch
     ? result.name
@@ -279,7 +304,7 @@ function ReadFileContentRow({
 
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      {file ? <FileCard file={file} /> : null}
+      {file ? <FileOutcomeField file={file} /> : null}
       {isScratch && result.name ? (
         <TextBlock
           label="Draft"
@@ -327,7 +352,7 @@ function ReadFileStatusRow({
 
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileCard file={fileCardFromReadStatusResult(result)} />
+      <FileOutcomeField file={fileEntityFromReadStatusResult(result)} />
       <TextBlock label="Status" value={`${result.status}: ${result.message}`} />
     </ToolActivityRowShell>
   )
@@ -356,7 +381,7 @@ function ReadFileImageRow({
 
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileCard file={fileCardFromReadImageResult(result)} />
+      <FileOutcomeField file={fileEntityFromReadImageResult(result)} />
       <TextBlock label="Result" value="Image bytes were passed to the model." />
     </ToolActivityRowShell>
   )
@@ -378,5 +403,13 @@ function ContentBlock({
       <p className="text-muted-foreground mb-1 text-xs font-medium">{label}</p>
       <FileContentView content={value} mediaType={mediaType ?? null} name={name ?? null} />
     </div>
+  )
+}
+
+function FileOutcomeField({ file }: { file: Parameters<typeof FileEntityRow>[0]["file"] }) {
+  return (
+    <ToolField field={{ key: "file", label: "File", value: "", format: "text" }}>
+      <FileEntityRow file={file} />
+    </ToolField>
   )
 }

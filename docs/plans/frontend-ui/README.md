@@ -108,7 +108,7 @@ Functional, but visibly unstyled.
 | 026 | One tool field system: labeled wells | P1 | M | 025 | DONE |
 | 027 | Approval card: form-first, one-click | P1 | L | 025, 026 | DONE |
 | 028 | Live activity card & outcome rows | P1 | L | 026, 027 | DONE |
-| 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | TODO |
+| 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | DONE |
 | 030 | In-place tool calls: ordered turns | P1 | L | — | TODO |
 | 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | TODO |
 

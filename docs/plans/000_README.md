@@ -370,6 +370,14 @@ rows never fabricate timing, running delegations share the elapsed suffix, and
 pinned auto-scroll follows card-to-row status transitions without pulling a
 reader who scrolled away. The SSE, persistence, Pydantic AI, approval, and
 custom-presenter contracts are unchanged.
+UI-029 completed interactive file outcomes on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-029-interactive-outcomes.md`. List Files now
+renders compact thumbnail rows inside the shared field system, and every
+durable file-bearing tool result opens the shared live-detail modal with the
+Files feature's existing rename and audited download operations. Transcript
+labels remain historical after mutations; stale or deleted files stay
+contained in the modal; drafts remain display-only. No endpoint, permission,
+audit, Pydantic AI, runtime, or protocol contract changed.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

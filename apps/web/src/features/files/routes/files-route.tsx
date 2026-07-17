@@ -98,8 +98,11 @@ export function FilesRoute() {
       <FileDetailModal
         fileId={search.fileId ?? null}
         initialFile={selectedFile}
-        onClose={() => {
-          setOpenFile(null)
+        open={Boolean(search.fileId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOpenFile(null)
+          }
         }}
       />
     </div>
