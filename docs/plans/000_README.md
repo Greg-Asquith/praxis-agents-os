@@ -284,7 +284,40 @@ successful create/edit returns to the Agents list, and the detail page no longer
 shows duplicate navigation, routine Active status, or a saved banner. A
 maintainer follow-up moved Skills beside identity/instructions, made delegation
 the sole optional Collaboration decision, removed system-managed slugs from all
-user-facing agent surfaces, and simplified the tool-policy summary.
+user-facing agent surfaces, and simplified the tool-policy summary. UI-018
+converted Schedule creation and editing to the same three-step wizard on
+2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-018-schedule-form-wizard.md`. Existing cadence,
+timezone, preview, validation, payload, worker, and runtime semantics remain
+shared; successful saves return to the Schedules list, while the detail page
+retains its operational actions and run history without duplicate navigation or
+a saved banner. A maintainer follow-up replaced the redundant cadence-derived
+"Name" with a persisted, user-authored schedule name across the core migration,
+API contract, form, list, detail, breadcrumb, and scheduled-conversation label;
+legacy rows remain honestly unnamed until edited. UI-020
+completed the auth-surface polish on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-020-login-page.md`: desktop auth routes now
+have a static, token-driven agent-orbit composition, mobile retains the shared
+brand mark, and auth-only card spacing and controls are roomier without changing
+authentication, OAuth, or two-factor behavior. UI-021 compacted new and existing
+conversation headers on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-021-conversation-header-compact.md`. Generic
+Direct/Scheduled pills and their visibility API are gone; list rows retain
+accessible source icons, while scheduled detail headers show the linked cadence
+beside the title and right-align Ran/Updated timestamps without exposing support
+identifiers.
+UI-023 replaced the developer-facing Runtime column with a plain-language Tools
+summary on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-023-agents-table-humanize.md`. Desktop and
+mobile lists now distinguish no tools, singular/plural tool counts, and how many
+tools need approval while keeping system-managed agent slugs out of rendered
+copy; agent APIs and runtime behavior are unchanged.
+UI-024 completed the edit-language sweep on 2026-07-16 and moved to
+`docs/plans/complete/frontend-ui-024-edit-language-sweep.md`. Agent, Skill, and
+Schedule row actions now say Edit and use pencil icons on desktop and mobile;
+related agent, invitation, and workspace copy now describes user-visible
+outcomes without exposing configure/configured language. API identifiers and
+runtime behavior are unchanged.
 
 ## Execution Order & Status
 

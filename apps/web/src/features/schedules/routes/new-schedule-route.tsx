@@ -15,8 +15,8 @@ export function NewScheduleRoute() {
   const createScheduleMutation = useCreateScheduleMutation()
 
   async function handleCreateSchedule(payload: ScheduleCreateRequest) {
-    const schedule = await createScheduleMutation.mutateAsync(payload)
-    await navigate({ to: "/schedules/$scheduleId", params: { scheduleId: schedule.id } })
+    await createScheduleMutation.mutateAsync(payload)
+    await navigate({ to: "/schedules" })
   }
 
   return (

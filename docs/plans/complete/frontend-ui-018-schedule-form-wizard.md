@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Updated**: 2026-07-16 (reconciled with completed plan 016 and the current
   working tree based on `01104f7`)
 - **Priority**: P1
@@ -27,6 +28,10 @@ review/options step. Successful creation and editing return to `/schedules`.
 The detail page retains its operational actions and Run history tab but loses
 the redundant saved banner and duplicate top-level back button.
 
+Schedule names are user-authored and persisted. The Run step collects the name,
+Review confirms it, and list/detail/breadcrumb/conversation surfaces use it as
+the title while cadence remains separate timing information.
+
 Carry forward every relevant implementation lesson from plan 016:
 
 - Reuse `src/components/forms/form-wizard.tsx`; do not create another stepper.
@@ -43,6 +48,25 @@ Carry forward every relevant implementation lesson from plan 016:
   not in a separate vertical row.
 - Split the 268-line form into focused run, options/review, and wizard-config
   modules instead of making `schedule-form.tsx` larger.
+
+### Completion amendment: persisted names
+
+After the original wizard passed its UI-only gate, maintainer review identified
+that the existing "Name" display was generated from cadence and duplicated the
+adjacent Cadence column. The follow-up explicitly widened this plan across the
+database and schedule API:
+
+- a nullable `agent_schedules.name` column preserves existing rows without
+  fabricating names from prompts or timing;
+- new API-created schedules require a trimmed name of at most 255 characters;
+- legacy rows read as "Unnamed schedule" until edited, and the edit wizard
+  requires a real name before saving;
+- schedule titles now use the persisted name everywhere, while cadence
+  formatting is used only for timing information.
+
+This amendment supersedes the original backend/API exclusion only for the
+persisted name field. Worker execution, cadence, preview, and runtime semantics
+remain unchanged.
 
 ## Current state (verified 2026-07-16)
 
@@ -73,6 +97,7 @@ Carry forward every relevant implementation lesson from plan 016:
 
 **In scope**:
 
+- the nullable core migration and Schedule model/request/read/service name seam
 - `apps/web/src/features/schedules/components/schedule-form.tsx`
 - focused Schedule form review/options/config/format helpers under the same
   feature
@@ -84,8 +109,8 @@ Carry forward every relevant implementation lesson from plan 016:
 **Out of scope**:
 
 - changes to `src/components/forms/form-wizard.tsx`
-- API/backend scheduling semantics, preview endpoint behavior, worker behavior,
-  timezone/cadence contracts, mutation hooks, or run history
+- API/backend scheduling semantics beyond the persisted name field, preview
+  endpoint behavior, worker behavior, timezone/cadence contracts, or run history
 - replacing the cadence cards, cron builder, or preview panel
 - changing Pause/Enable, Run Now, Delete, or tab behavior
 - introducing a form/schema library or duplicating validation/format rules
@@ -97,8 +122,8 @@ Carry forward every relevant implementation lesson from plan 016:
 Create `schedule-form-wizard-config.ts` following the Skill pattern. Both create
 and edit use the same three typed steps:
 
-1. `run` — **"What should run?"**; owns `schedule-agent` and
-   `schedule-prompt`.
+1. `run` — **"What should run?"**; owns `schedule-name`, `schedule-agent`,
+   and `schedule-prompt`.
 2. `timing` — **"When should it run?"**; owns `schedule-timezone`,
    `schedule-cron`, `schedule-interval`, and `schedule-once`.
 3. `review` — **"Review and options"**; no validation fieldIds; final submit.
@@ -126,6 +151,7 @@ this outcome copy:
 
 The Review step shows read-only rows for:
 
+- schedule name
 - selected agent name/identity
 - prompt
 - cadence in plain language
@@ -193,8 +219,9 @@ warnings or errors.
 
 - `cd apps/web && pnpm check` passes.
 - `git diff --check` passes.
-- Confirm no backend, worker, API contract, mutation hook, run-history, or
-  shared-wizard changes entered the diff.
+- Confirm backend/API changes are limited to the persisted name seam and that no
+  worker, preview, mutation-hook, run-history, or shared-wizard changes entered
+  the diff.
 
 Maintainer QA checklist (do not use automated browser tooling unless the
 maintainer requests it):
@@ -215,17 +242,19 @@ maintainer requests it):
 
 ## Done criteria
 
-- [ ] Create and edit both use the same three-step wizard structure.
-- [ ] Timing never auto-saves/submits when Review is first entered.
-- [ ] Existing validation, cadence, timezone, preview, and payload behavior is
+- [x] Create and edit both use the same three-step wizard structure.
+- [x] Timing never auto-saves/submits when Review is first entered.
+- [x] Existing validation, cadence, timezone, preview, and payload behavior is
       reused rather than forked.
-- [ ] Review has human-readable agent, prompt, cadence, timezone, preview, and
+- [x] Review has human-readable agent, prompt, cadence, timezone, preview, and
       options without fake schedule objects or duplicated format rules.
-- [ ] Successful create and edit both return to `/schedules`.
-- [ ] Edit has no saved banner, duplicate top back button, or separate status
+- [x] Schedule names are user-authored, persisted, validated, and used for every
+      title surface; legacy rows remain explicitly unnamed until edited.
+- [x] Successful create and edit both return to `/schedules`.
+- [x] Edit has no saved banner, duplicate top back button, or separate status
       row.
-- [ ] The form is decomposed into focused orchestration/config/section modules.
-- [ ] Focused wizard/format tests and full `pnpm check` pass.
+- [x] The form is decomposed into focused orchestration/config/section modules.
+- [x] Focused wizard/format tests and full `pnpm check` pass.
 
 ## STOP conditions
 

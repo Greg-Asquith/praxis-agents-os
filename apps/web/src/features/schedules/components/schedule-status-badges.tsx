@@ -17,7 +17,7 @@ export function ScheduleStatusBadges({ schedule }: { schedule: AgentSchedule }) 
   )
 }
 
-function ScheduleHealthBadge({ health }: { health: ScheduleHealth }) {
+export function ScheduleHealthBadge({ health }: { health: ScheduleHealth }) {
   if (health === "needs_attention") {
     return <Badge variant="destructive">Needs attention</Badge>
   }

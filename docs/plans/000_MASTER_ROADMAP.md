@@ -308,8 +308,27 @@ It preserves the existing validation, payload, tool-policy, skill, delegation,
 and runtime contracts; successful saves return to the Agents list and the detail
 header no longer duplicates routine status or navigation. Maintainer follow-up
 placed Skills with identity/instructions, reserved Collaboration for delegation,
-and removed system-managed slugs from all rendered agent surfaces. The
-completed visual-refinement plans live under `docs/plans/complete/` with the
+and removed system-managed slugs from all rendered agent surfaces. UI-018
+converted Schedule creation and editing to a shared three-step wizard on
+2026-07-16, preserving cadence, timezone, preview, payload, worker, and runtime
+semantics while returning successful saves to the Schedules list. Maintainer
+follow-up added persisted, user-authored schedule names across the core schema,
+API, form, and every schedule-title surface; legacy rows remain explicitly
+unnamed until edited. UI-020 added
+a static, theme-token-driven agent-orbit composition to desktop auth screens,
+preserved the shared brand mark on mobile, and gave auth-only cards and controls
+more room without changing authentication behavior. UI-021 compacted conversation
+headers, removed generic source pills, retained accessible scheduled/delegated
+icons in lists, and gives scheduled detail headers a cadence badge plus
+right-aligned Ran/Updated timestamps without changing conversation or runtime
+semantics. UI-023 renamed the agent list's Runtime column to Tools on 2026-07-16
+and humanized its responsive summaries for zero, singular/plural, and
+approval-gated tool counts without changing agent APIs or runtime behavior.
+UI-024 completed the edit-language sweep on 2026-07-16: Agent, Skill, and
+Schedule row actions now use Edit with pencil icons, while related agent,
+invitation, and workspace copy states user-visible outcomes without changing
+API identifiers, routing, or runtime behavior.
+Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 
 ### Phase 1 — Tool Registry (the spine; donor Phase A)

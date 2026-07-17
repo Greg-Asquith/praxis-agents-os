@@ -1,8 +1,8 @@
 // apps/web/src/features/schedules/routes/schedule-detail-route.tsx
 
 import { useState } from "react"
-import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { ArrowLeftIcon, PauseIcon, PlayIcon, RotateCcwIcon, Trash2Icon } from "lucide-react"
+import { useNavigate, useParams } from "@tanstack/react-router"
+import { PauseIcon, PlayIcon, RotateCcwIcon, Trash2Icon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -43,20 +43,17 @@ export function ScheduleDetailRoute() {
   const enableScheduleMutation = useEnableScheduleMutation()
   const runScheduleNowMutation = useRunScheduleNowMutation()
   const [actionError, setActionError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const agent = agentsData.agents.find((item) => item.id === schedule.agent_id) ?? null
 
   async function handleUpdateSchedule(payload: ScheduleUpdateRequest) {
     setActionError(null)
-    setSaved(false)
     await updateScheduleMutation.mutateAsync({ scheduleId: schedule.id, payload })
-    setSaved(true)
+    await navigate({ to: "/schedules" })
   }
 
   async function handlePauseOrEnable() {
     setActionError(null)
-    setSaved(false)
     try {
       if (schedule.is_active) {
         await pauseScheduleMutation.mutateAsync(schedule.id)
@@ -70,7 +67,6 @@ export function ScheduleDetailRoute() {
 
   async function handleRunNow() {
     setActionError(null)
-    setSaved(false)
     try {
       await runScheduleNowMutation.mutateAsync(schedule.id)
     } catch (error) {
@@ -80,7 +76,6 @@ export function ScheduleDetailRoute() {
 
   async function handleDelete() {
     setActionError(null)
-    setSaved(false)
     try {
       await deleteScheduleMutation.mutateAsync(schedule.id)
       await navigate({ to: "/schedules" })
@@ -95,20 +90,16 @@ export function ScheduleDetailRoute() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="flex min-w-0 flex-col gap-3">
-          <Button className="w-fit" size="sm" variant="outline" render={<Link to="/schedules" />}>
-            <ArrowLeftIcon data-icon="inline-start" />
-            Schedules
-          </Button>
-          <div className="flex flex-col gap-2">
-            <ScheduleStatusBadges schedule={schedule} />
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h1 className="font-heading text-2xl font-semibold tracking-normal">
               {scheduleTitle(schedule)}
             </h1>
-            <p className="text-muted-foreground max-w-3xl text-sm">
-              {agent?.name ?? "Unknown agent"} runs {formatScheduleCadence(schedule)}.
-            </p>
+            <ScheduleStatusBadges schedule={schedule} />
           </div>
+          <p className="text-muted-foreground max-w-3xl text-sm">
+            {agent?.name ?? "Unknown agent"} runs {formatScheduleCadence(schedule)}.
+          </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row md:justify-end">
           <Button
@@ -177,13 +168,6 @@ export function ScheduleDetailRoute() {
           <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       ) : null}
-      {saved ? (
-        <Alert>
-          <AlertTitle>Schedule updated</AlertTitle>
-          <AlertDescription>Your changes have been saved.</AlertDescription>
-        </Alert>
-      ) : null}
-
       <Tabs defaultValue="settings">
         <TabsList variant="line">
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -197,11 +181,6 @@ export function ScheduleDetailRoute() {
               cancelLabel="Back to Schedules"
               isSubmitting={updateScheduleMutation.isPending}
               mode="edit"
-              onChange={() => {
-                if (saved) {
-                  setSaved(false)
-                }
-              }}
               onSubmit={handleUpdateSchedule}
               schedule={schedule}
             />

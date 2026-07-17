@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Written**: 2026-07-16 (anchors verified against the live tree at
   `01104f7`)
 - **Priority**: P2
@@ -16,6 +17,18 @@
 - **Depends on**: 023 (touches the same `agents-table.tsx`; land 023
   first so this sweep runs over final content). Grazes files 021/022
   do not touch — safe in parallel with those.
+
+## Completed implementation
+
+- Agent, Skill, and Schedule list actions now say **Edit** and use the pencil
+  icon on desktop and mobile.
+- Agent page, empty-state, unavailable-tool, invitation, and workspace copy now
+  states user-visible outcomes without user-facing configure/configured language.
+- The newer agent wizard had already replaced the stale model-copy anchors with
+  plain-language model choices, so no model-selection behavior changed.
+- Remaining `configur` matches are limited to environment/API identifiers and an
+  internal comment. `pnpm check` and `git diff --check` passed. Browser
+  automation was intentionally not used per maintainer instruction.
 
 ## Goal
 

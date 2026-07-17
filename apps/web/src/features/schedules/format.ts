@@ -2,37 +2,54 @@
 
 import cronstrue from "cronstrue"
 
-import type { AgentSchedule } from "@/features/schedules/types"
-import { formatDateTime, formatDateTimeInTimeZone, pluralize } from "@/lib/format"
+import type { AgentSchedule, ScheduleType } from "@/features/schedules/types"
+import { formatDateTime, formatDateTimeInTimeZone } from "@/lib/format"
+
+import {
+  buildSchedulePreviewPayload,
+  type ScheduleFormState,
+} from "@/features/schedules/components/schedule-form-model"
 
 export function scheduleTitle(schedule: AgentSchedule) {
-  if (schedule.schedule_type === "cron") {
-    return formatCronExpression(schedule.cron_expression)
+  const name = schedule.name?.trim()
+  if (!name) {
+    return "Unnamed schedule"
   }
-
-  if (schedule.schedule_type === "interval") {
-    const interval = schedule.interval_minutes ?? 0
-    return `Every ${String(interval)} ${pluralize(interval, "minute")}`
-  }
-
-  return schedule.run_once_at
-    ? `Once ${formatDateTimeInTimeZone(schedule.run_once_at, schedule.timezone)}`
-    : "One-time schedule"
+  return name
 }
 
 export function formatScheduleCadence(schedule: AgentSchedule) {
-  if (schedule.schedule_type === "cron") {
-    return formatCronExpression(schedule.cron_expression)
+  return formatScheduleCadenceValues({
+    cronExpression: schedule.cron_expression,
+    intervalMinutes: schedule.interval_minutes,
+    runOnceAt: schedule.run_once_at,
+    scheduleType: schedule.schedule_type,
+    timezone: schedule.timezone,
+  })
+}
+
+export function formatScheduleCadenceValues({
+  cronExpression,
+  intervalMinutes,
+  runOnceAt,
+  scheduleType,
+  timezone,
+}: {
+  cronExpression: string | null | undefined
+  intervalMinutes: number | null | undefined
+  runOnceAt: string | null | undefined
+  scheduleType: ScheduleType
+  timezone: string
+}) {
+  if (scheduleType === "cron") {
+    return formatCronExpression(cronExpression)
   }
 
-  if (schedule.schedule_type === "interval") {
-    const interval = schedule.interval_minutes ?? 0
-    return `Every ${String(interval)} min`
+  if (scheduleType === "interval") {
+    return `Every ${String(intervalMinutes ?? 0)} min`
   }
 
-  return schedule.run_once_at
-    ? `Once at ${formatDateTimeInTimeZone(schedule.run_once_at, schedule.timezone)}`
-    : "Once"
+  return runOnceAt ? `Once at ${formatDateTimeInTimeZone(runOnceAt, timezone)}` : "Once"
 }
 
 export function formatScheduleNextRun(schedule: AgentSchedule) {
@@ -98,4 +115,19 @@ export function formatIntervalMinutes(minutes: number | null | undefined) {
     return hours === 1 ? "Every hour" : `Every ${String(hours)} hours`
   }
   return `Every ${String(hours)}h ${String(remainingMinutes)}m`
+}
+
+export function formatScheduleFormCadence(state: ScheduleFormState) {
+  const timing = buildSchedulePreviewPayload(state)
+  if (!timing) {
+    return "Timing needs attention"
+  }
+
+  return formatScheduleCadenceValues({
+    cronExpression: timing.cron_expression,
+    intervalMinutes: timing.interval_minutes,
+    runOnceAt: timing.run_once_at,
+    scheduleType: timing.schedule_type,
+    timezone: timing.timezone ?? state.timezone,
+  })
 }

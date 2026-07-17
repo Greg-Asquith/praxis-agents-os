@@ -74,13 +74,13 @@ Functional, but visibly unstyled.
 | 015 | Form kit: shared sections, action bar, alerts | P1 | M | 011, 013 | DONE |
 | 016 | Skill form: create wizard (builds shell) & edit wizard | P1 | M | 015 | DONE |
 | 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | DONE |
-| 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | TODO |
+| 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | DONE |
 | 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | TODO |
-| 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | TODO |
-| 021 | Conversation headers: compact banner, source without pills | P1 | M | — | TODO |
+| 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | DONE |
+| 021 | Conversation headers: compact banner, source without pills | P1 | M | — | DONE |
 | 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | TODO |
-| 023 | Agents table: retire "Runtime" | P2 | S | — | TODO |
-| 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | TODO |
+| 023 | Agents table: retire "Runtime" | P2 | S | — | DONE |
+| 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -263,13 +263,13 @@ Dependency notes:
   they follow both themes for free and keep the one-file theming
   contract. A generated/raster image is a maintainer-approval
   exception, never a default.
-- **Conversation source is stated in words, never as a badge pill**
-  (maintainer direction, 2026-07-16; plan 021). The Direct/Scheduled
-  pills read as clutter. Direct is the default and goes unmarked;
-  scheduled and delegated conversations get a quiet icon + plain-language
-  meta fragment ("Runs from a schedule", "Started by another agent").
-  Approval, Unread, and run-status badges stay — they carry state, not
-  taxonomy.
+- **Conversation source avoids generic taxonomy pills** (maintainer direction,
+  2026-07-16; plan 021). Direct is the default and goes unmarked; list rows use
+  quiet scheduled/delegated icons, and delegated detail headers say "Started by
+  another agent." Scheduled detail headers use one named context badge beside
+  the title (`Schedule - {cadence}`), not a generic "Scheduled" pill, and keep
+  right-aligned Ran/Updated timestamps. Approval, Unread, and run-status badges
+  stay because they carry state.
 - **Users never see or edit JSON — anywhere** (maintainer direction,
   2026-07-16; plan 022). The approval "Advanced: Edit the Request" JSON
   textarea is deleted, not restyled. Editability is a per-field flag a

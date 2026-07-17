@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Updated**: 2026-07-16 after the UI-017 follow-up removed system-managed
   slugs from every user-facing agent surface. This plan now owns only the
   remaining Runtime-to-Tools language change.
@@ -18,6 +19,17 @@
 - **Risk**: LOW — one component, display only.
 - **Depends on**: nothing outstanding. Must land **before** 024, which
   sweeps action labels through this same file.
+
+## Completed implementation
+
+- Desktop and mobile list labels now say "Tools" instead of "Runtime".
+- A shared responsive summary renders singular/plural tool counts, plain-language
+  approval counts ("1 needs approval" / "2 need approval"), and muted "No
+  tools" copy for agents without tools.
+- Agent names and optional descriptions remain the only rendered identity copy;
+  system-managed slugs remain absent.
+- `pnpm check` passed. Browser-based manual QA was not run because the executor
+  was explicitly instructed not to use browser verification.
 
 ## Goal
 

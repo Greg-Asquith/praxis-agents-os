@@ -45,6 +45,7 @@ export type AgentSchedule = {
   agent_id: string
   user_id: string
   workspace_id: string
+  name: string | null
   schedule_type: ScheduleType
   cron_expression: string | null
   interval_minutes: number | null
@@ -77,6 +78,7 @@ export type ScheduleRunsListResponse = {
 
 export type ScheduleCreateRequest = {
   agent_id: string
+  name: string
   schedule_type: ScheduleType
   cron_expression?: string | null
   interval_minutes?: number | null

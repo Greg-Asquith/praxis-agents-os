@@ -1,24 +1,9 @@
 // apps/web/src/features/schedules/components/schedule-form.tsx
 
-import { useMemo, useState, type SyntheticEvent } from "react"
-import { BotIcon } from "lucide-react"
+import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
 
-import { FormActionBar } from "@/components/forms/form-action-bar"
 import { FormAlerts } from "@/components/forms/form-alerts"
-import { FormSection } from "@/components/forms/form-section"
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { agentSelectLabel } from "@/features/agents/components/agent-select-format"
-import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
+import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
 import type { Agent } from "@/features/agents/types"
 import {
   buildSchedulePayload,
@@ -27,8 +12,18 @@ import {
   validateScheduleFormState,
   type ScheduleFormState,
 } from "@/features/schedules/components/schedule-form-model"
+import {
+  SCHEDULE_CREATE_STEPS,
+  SCHEDULE_EDIT_STEPS,
+  scheduleValidationEntriesForStep,
+  stepForScheduleField,
+  type ScheduleWizardStepId,
+} from "@/features/schedules/components/schedule-form-wizard-config"
 import { SchedulePreviewPanel } from "@/features/schedules/components/schedule-preview-panel"
+import { ScheduleReviewSection } from "@/features/schedules/components/schedule-review-section"
+import { ScheduleRunSection } from "@/features/schedules/components/schedule-run-section"
 import { ScheduleTimingSection } from "@/features/schedules/components/schedule-timing-section"
+import { useSchedulePreview } from "@/features/schedules/components/use-schedule-preview"
 import type {
   AgentSchedule,
   ScheduleCreateRequest,
@@ -50,29 +45,24 @@ type ScheduleFormProps =
       cancelLabel: string
       isSubmitting: boolean
       mode: "edit"
-      onChange?: () => void
       onSubmit: (payload: ScheduleUpdateRequest) => Promise<void>
       schedule: AgentSchedule
     }
 
 export function ScheduleForm(props: ScheduleFormProps) {
+  const formId = useId()
+  const wizardNavigationRef = useRef<FormWizardNavigation<ScheduleWizardStepId>>(null)
   const schedule = props.mode === "edit" ? props.schedule : null
   const initialState = useMemo(() => initialScheduleFormState(schedule), [schedule])
   const [state, setState] = useState<ScheduleFormState>(() => initialState)
   const [formError, setFormError] = useState<string | null>(null)
-  const [showValidation, setShowValidation] = useState(false)
-  const validationEntries = useMemo(
-    () => (showValidation ? validateScheduleFormState(state) : []),
-    [showValidation, state]
-  )
-  const fieldErrors = useMemo(() => buildFieldErrors(validationEntries), [validationEntries])
+  const [validationStep, setValidationStep] = useState<ScheduleWizardStepId | null>(null)
+  const fullValidationEntries = useMemo(() => validateScheduleFormState(state), [state])
+  const preview = useSchedulePreview(state)
   const isDirty = props.mode === "edit" ? isScheduleFormDirty(state, initialState) : true
   const selectedAgent = props.agents.find((agent) => agent.id === state.agentId) ?? null
 
   function setField<K extends keyof ScheduleFormState>(field: K, value: ScheduleFormState[K]) {
-    if (props.mode === "edit") {
-      props.onChange?.()
-    }
     setState((current) => ({ ...current, [field]: value }))
   }
 
@@ -82,11 +72,13 @@ export function ScheduleForm(props: ScheduleFormProps) {
 
     const nextValidationEntries = validateScheduleFormState(state)
     if (nextValidationEntries.length > 0) {
-      setShowValidation(true)
+      const earliestStep = stepForScheduleField(nextValidationEntries[0]?.fieldId)
+      setValidationStep(earliestStep)
+      wizardNavigationRef.current?.goToStep(earliestStep)
       return
     }
 
-    setShowValidation(false)
+    setValidationStep(null)
 
     try {
       if (props.mode === "create") {
@@ -109,160 +101,86 @@ export function ScheduleForm(props: ScheduleFormProps) {
     }
   }
 
+  function validateStep(stepId: ScheduleWizardStepId) {
+    const stepValidationEntries = scheduleValidationEntriesForStep(fullValidationEntries, stepId)
+    setValidationStep(stepId)
+    return stepValidationEntries.length === 0
+  }
+
   return (
     <form
-      className="flex flex-col gap-6"
+      id={formId}
       noValidate
       onSubmit={(event) => {
         void handleSubmit(event)
       }}
     >
-      <FormAlerts
-        error={formError}
-        errorTitle="Schedule not saved"
-        validationEntries={validationEntries}
-      />
-
-      <FormSection
-        description="Choose the agent and prompt that will be used whenever this schedule fires."
-        eyebrow="Run"
-        icon={<BotIcon className="size-4" />}
-        title="Agent and prompt"
-      >
-        <FieldGroup>
-          <Field
-            data-disabled={props.mode === "edit" || props.agents.length === 0}
-            data-invalid={fieldErrors["schedule-agent"] ? true : undefined}
-          >
-            <FieldLabel htmlFor="schedule-agent">Agent</FieldLabel>
-            <Select
-              disabled={props.mode === "edit" || props.agents.length === 0}
-              onValueChange={(value) => {
-                if (value !== null) {
-                  setField("agentId", value)
-                }
-              }}
-              value={state.agentId}
-            >
-              <SelectTrigger
-                aria-invalid={fieldErrors["schedule-agent"] ? true : undefined}
-                className="w-full"
-                id="schedule-agent"
-              >
-                <SelectValue placeholder="Select an agent" />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectLabel>Workspace agents</SelectLabel>
-                  {props.agents.length === 0 ? (
-                    <SelectItem value="" disabled>
-                      No active agents
-                    </SelectItem>
-                  ) : (
-                    props.agents.map((agent) => (
-                      <SelectItem key={agent.id} label={agentSelectLabel(agent)} value={agent.id}>
-                        <AgentSelectItem agent={agent} />
-                      </SelectItem>
-                    ))
-                  )}
-                  {!selectedAgent && props.mode === "edit" && state.agentId ? (
-                    <SelectItem value={state.agentId} disabled>
-                      Assigned agent unavailable
-                    </SelectItem>
-                  ) : null}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            {props.mode === "edit" ? (
-              <FieldDescription>Existing schedules keep their original agent.</FieldDescription>
-            ) : null}
-            <FieldError>{fieldErrors["schedule-agent"]}</FieldError>
-          </Field>
-
-          <Field data-invalid={fieldErrors["schedule-prompt"] ? true : undefined}>
-            <FieldLabel htmlFor="schedule-prompt">Prompt</FieldLabel>
-            <Textarea
-              aria-invalid={fieldErrors["schedule-prompt"] ? true : undefined}
-              className="min-h-36 scroll-mt-20"
-              id="schedule-prompt"
-              onChange={(event) => {
-                setField("defaultPrompt", event.currentTarget.value)
-              }}
-              required
-              value={state.defaultPrompt}
-            />
-            <FieldDescription>
-              This prompt starts every run created from the schedule.
-            </FieldDescription>
-            <FieldError>{fieldErrors["schedule-prompt"]}</FieldError>
-          </Field>
-
-          <Field orientation="horizontal">
-            <input
-              checked={state.isActive}
-              className="border-input text-primary focus-visible:ring-ring/50 mt-0.5 size-4 rounded border"
-              id="schedule-active"
-              onChange={(event) => {
-                setField("isActive", event.currentTarget.checked)
-              }}
-              type="checkbox"
-            />
-            <div className="flex min-w-0 flex-col gap-1">
-              <FieldLabel htmlFor="schedule-active">Active</FieldLabel>
-              <FieldDescription>
-                Active schedules can be claimed by the worker when their next run is due.
-              </FieldDescription>
-            </div>
-          </Field>
-
-          <Field orientation="horizontal">
-            <input
-              checked={state.externalWritesAllowed}
-              className="border-input text-primary focus-visible:ring-ring/50 mt-0.5 size-4 rounded border"
-              id="schedule-external-writes"
-              onChange={(event) => {
-                setField("externalWritesAllowed", event.currentTarget.checked)
-              }}
-              type="checkbox"
-            />
-            <div className="flex min-w-0 flex-col gap-1">
-              <FieldLabel htmlFor="schedule-external-writes">Allow external writes</FieldLabel>
-              <FieldDescription>
-                Use for schedules expected to update connected apps or permanent workspace files.
-              </FieldDescription>
-            </div>
-          </Field>
-        </FieldGroup>
-      </FormSection>
-
-      <ScheduleTimingSection
-        fieldErrors={{
-          cron: fieldErrors["schedule-cron"],
-          interval: fieldErrors["schedule-interval"],
-          once: fieldErrors["schedule-once"],
-          timezone: fieldErrors["schedule-timezone"],
-        }}
-        setField={setField}
-        state={state}
-      />
-
-      <SchedulePreviewPanel state={state} />
-
-      <FormActionBar
+      <FormWizard
         cancelLabel={props.cancelLabel}
         cancelTo="/schedules"
-        disableSubmit={props.isSubmitting || (props.mode === "edit" && !isDirty)}
+        disableSubmit={props.mode === "edit" && !isDirty}
         isSubmitting={props.isSubmitting}
+        navigationRef={wizardNavigationRef}
         pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
-        stateMessage={
-          props.mode === "edit"
-            ? isDirty
-              ? "Unsaved changes"
-              : "No unsaved changes"
-            : "Ready to create when required fields are complete"
-        }
+        steps={props.mode === "create" ? SCHEDULE_CREATE_STEPS : SCHEDULE_EDIT_STEPS}
         submitLabel={props.mode === "create" ? "Create Schedule" : "Save Changes"}
-      />
+        validateStep={validateStep}
+      >
+        {(activeStepId) => {
+          const validationEntries =
+            validationStep === activeStepId
+              ? scheduleValidationEntriesForStep(fullValidationEntries, activeStepId)
+              : []
+          const fieldErrors = buildFieldErrors(validationEntries)
+
+          return (
+            <div className="flex flex-col gap-6">
+              <FormAlerts
+                error={formError}
+                errorTitle="Schedule not saved"
+                validationEntries={validationEntries}
+              />
+              {activeStepId === "run" ? (
+                <ScheduleRunSection
+                  agents={props.agents}
+                  fieldErrors={{
+                    agent: fieldErrors["schedule-agent"],
+                    name: fieldErrors["schedule-name"],
+                    prompt: fieldErrors["schedule-prompt"],
+                  }}
+                  mode={props.mode}
+                  selectedAgent={selectedAgent}
+                  setField={setField}
+                  state={state}
+                />
+              ) : null}
+              {activeStepId === "timing" ? (
+                <>
+                  <ScheduleTimingSection
+                    fieldErrors={{
+                      cron: fieldErrors["schedule-cron"],
+                      interval: fieldErrors["schedule-interval"],
+                      once: fieldErrors["schedule-once"],
+                      timezone: fieldErrors["schedule-timezone"],
+                    }}
+                    setField={setField}
+                    state={state}
+                  />
+                  <SchedulePreviewPanel preview={preview} />
+                </>
+              ) : null}
+              {activeStepId === "review" ? (
+                <ScheduleReviewSection
+                  preview={preview}
+                  selectedAgent={selectedAgent}
+                  setField={setField}
+                  state={state}
+                />
+              ) : null}
+            </div>
+          )
+        }}
+      </FormWizard>
     </form>
   )
 }

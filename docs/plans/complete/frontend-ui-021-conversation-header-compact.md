@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-16
 - **Written**: 2026-07-16 (anchors verified against the live tree at
   `01104f7`)
 - **Priority**: P1
@@ -18,14 +19,30 @@
 - **Depends on**: nothing outstanding (004/012 are DONE). Independent of
   016–020; safe in a parallel worktree.
 
+## Completed implementation
+
+- New-conversation and detail banners use compact `py-3`, `text-base` headers.
+- Generic Direct/Scheduled source pills and the `sourceVisibility` API were
+  removed. Scheduled/delegated list rows retain accessible source icons;
+  delegated detail headers use plain language.
+- Maintainer follow-up replaced scheduled support identifiers with a named
+  `Schedule - {cadence}` context badge beside the title. The cadence comes from
+  the existing Schedule query/formatter, so schedule wording is not duplicated.
+- The redundant agent label and Support details disclosure were removed from the
+  detail header. Scheduled details show right-aligned `Ran:` and `Updated:`
+  timestamps; other conversations show right-aligned `Updated:`.
+- `pnpm check` and `git diff --check` passed. Focused conversation/format tests
+  cover schedule metadata extraction. Browser automation was intentionally not
+  used per maintainer instruction.
+
 ## Goal
 
 The conversation banner shrinks to a single compact row, and the
-Direct/Scheduled **badge pills disappear**. Source is still specified —
-the maintainer wants it stated, just not as chrome — so non-direct
-conversations get a quiet plain-language meta line instead. Direct
-conversations are simply unmarked: direct is the default way a
-conversation exists, and labeling the default is noise.
+generic Direct/Scheduled **badge pills disappear**. Source is still specified:
+scheduled list rows use an accessible icon and scheduled detail headers show a
+named schedule-context badge; delegated conversations use a quiet icon and
+plain-language label. Direct conversations are simply unmarked because direct
+is the default way a conversation exists.
 
 ## Current state (verified 2026-07-16 at `01104f7`)
 
@@ -59,17 +76,17 @@ conversation exists, and labeling the default is noise.
 
 ## Design decisions (this plan)
 
-- **No source pills anywhere.** `ConversationSourceVisibility` and the
-  source branch of `ConversationBadges` are deleted, not hidden.
+- **No generic source pills.** `ConversationSourceVisibility` and the source
+  branch of `ConversationBadges` are deleted, not hidden. The named schedule
+  context beside a detail title is entity context, not a Scheduled taxonomy
+  pill.
 - **Direct is unmarked.** Nothing in the UI says "Direct".
-- **Non-direct sources read as a sentence, not a label.** A muted
-  meta-line fragment with a small lucide icon:
-  - scheduled → `CalendarClockIcon` + "Runs from a schedule" (detail
-    header extends this with the existing scheduled-for datetime).
-  - delegated → `CornerDownRightIcon` + "Started by another agent".
-- **Headers are one row.** Title drops from `text-xl` to `text-base
-  font-medium`; everything else becomes inline muted meta on the same
-  row (wrapping on mobile is fine; stacking by design is not).
+- **Non-direct sources remain explicit.** Lists use accessible icons; delegated
+  detail headers say "Started by another agent"; scheduled details use
+  `CalendarClockIcon` inside `Schedule - {cadence}`.
+- **Headers are compact.** Title drops from `text-xl` to `text-base
+  font-medium`; schedule context stays beside it, while status and timestamps
+  align right and may wrap beneath on narrow screens.
 
 ## Steps
 
@@ -92,19 +109,15 @@ In `new-conversation-route.tsx`:
 
 In `conversation-detail-header.tsx`:
 
-- Single flex row: truncating title at `text-base font-medium`, then an
-  inline muted meta group: agent label (`conversationAgentLabel`), a
-  `·` separator, and "Updated {formatCompactDate(...)}" — replacing the
-  two-line "Last Updated" block (lines 60-65). Keep the full
-  `formatDateTime` value as a `title` attribute on the compact date.
+- Single wrapping flex row: truncating title at `text-base font-medium`, with a
+  named `Schedule - {cadence}` badge beside it for scheduled conversations.
+  Do not repeat the agent name already shown by the composer.
 - Badges shrink to the ones that carry state: keep the Approval pill and
   `RunStatusBadge` (right-aligned in the same row); the source pill goes
   away with step 3.
-- Scheduled conversations: the schedule context (lines 39-58) joins the
-  meta group as `CalendarClockIcon` + the existing "Scheduled for {…}"
-  label. The "Support details" `<details>` disclosure stays (collapsed,
-  technical, already correct) — place it as a second, conditional line
-  under the row; it is the one legitimate second line.
+- Scheduled conversations: resolve the existing schedule by metadata ID and
+  reuse `scheduleTitle` for the badge. Show the scheduled time as right-aligned
+  `Ran:` above `Updated:`. Remove the support-ID disclosure entirely.
 - Delegated conversations (`conversation.source === "delegated"`): meta
   fragment `CornerDownRightIcon` + "Started by another agent".
 - Header padding tightens from `p-4` to `px-4 py-3`.
@@ -133,11 +146,11 @@ In `conversation-detail-header.tsx`:
 - Manual QA against `pnpm dev`, both themes, desktop + mobile:
   - New-conversation page: header is one compact row, no badges; the
     saved vertical space goes to the content area.
-  - A direct conversation: one-row header, no source marker, compact
-    updated time with full datetime on hover.
-  - A scheduled conversation: meta line reads as a sentence with the
-    calendar icon; "Support details" still expands; approval and
-    run-status badges still appear when a run is waiting.
+  - A direct conversation: one-row header, no source marker, right-aligned
+    updated time.
+  - A scheduled conversation: the cadence badge sits beside the title; Ran and
+    Updated align right; approval and run-status badges still appear when a run
+    is waiting; no support identifiers are exposed.
   - Sidebar + home lists: no pills; scheduled rows show the icon; VoiceOver
     (or devtools accessibility tree) exposes the sr-only source label.
   - Long titles truncate without pushing the badges off-row.

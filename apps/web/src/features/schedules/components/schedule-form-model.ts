@@ -33,6 +33,7 @@ export type ScheduleFormState = {
   externalWritesAllowed: boolean
   intervalMinutes: string
   isActive: boolean
+  name: string
   runOnceAt: string
   scheduleType: ScheduleType
   timezone: string
@@ -54,6 +55,7 @@ export function initialScheduleFormState(schedule: AgentSchedule | null): Schedu
     externalWritesAllowed: scheduleSideEffectPolicy(schedule?.execution_params) === "allow",
     intervalMinutes: schedule?.interval_minutes ? String(schedule.interval_minutes) : "60",
     isActive: schedule?.is_active ?? true,
+    name: schedule?.name ?? "",
     runOnceAt: schedule?.run_once_at
       ? toDateTimeLocalValue(schedule.run_once_at, schedule.timezone)
       : "",
@@ -64,6 +66,20 @@ export function initialScheduleFormState(schedule: AgentSchedule | null): Schedu
 
 export function validateScheduleFormState(state: ScheduleFormState): ScheduleFormValidationEntry[] {
   const entries: ScheduleFormValidationEntry[] = []
+
+  if (!state.name.trim()) {
+    entries.push({
+      fieldId: "schedule-name",
+      label: "Name",
+      message: "Name is required.",
+    })
+  } else if (state.name.trim().length > 255) {
+    entries.push({
+      fieldId: "schedule-name",
+      label: "Name",
+      message: "Name must be 255 characters or fewer.",
+    })
+  }
 
   if (!state.agentId) {
     entries.push({
@@ -177,6 +193,7 @@ export function buildSchedulePayload(
     default_prompt: state.defaultPrompt.trim(),
     execution_params: buildExecutionParams(state),
     is_active: state.isActive,
+    name: state.name.trim(),
   }
 
   if (mode === "create") {
@@ -197,6 +214,7 @@ export function isScheduleFormDirty(current: ScheduleFormState, initial: Schedul
     current.externalWritesAllowed !== initial.externalWritesAllowed ||
     current.intervalMinutes !== initial.intervalMinutes ||
     current.isActive !== initial.isActive ||
+    current.name !== initial.name ||
     current.runOnceAt !== initial.runOnceAt ||
     current.scheduleType !== initial.scheduleType ||
     current.timezone !== initial.timezone

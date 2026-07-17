@@ -20,6 +20,7 @@ function validState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormSta
     externalWritesAllowed: false,
     intervalMinutes: "60",
     isActive: true,
+    name: "  Weekly launch report  ",
     runOnceAt: "",
     scheduleType: "cron",
     timezone: "UTC",
@@ -32,6 +33,7 @@ const schedule: AgentSchedule = {
   agent_id: "agent-1",
   user_id: "user-1",
   workspace_id: "workspace-1",
+  name: "One-time report",
   schedule_type: "once",
   cron_expression: null,
   interval_minutes: null,
@@ -58,6 +60,7 @@ describe("initialScheduleFormState", () => {
       externalWritesAllowed: false,
       intervalMinutes: "60",
       isActive: true,
+      name: "",
       runOnceAt: "",
       scheduleType: "cron",
       timezone: "UTC",
@@ -73,6 +76,7 @@ describe("initialScheduleFormState", () => {
       externalWritesAllowed: false,
       intervalMinutes: "60",
       isActive: false,
+      name: "One-time report",
       runOnceAt: "2027-07-01T09:30",
       scheduleType: "once",
       timezone: "Europe/London",
@@ -88,10 +92,16 @@ describe("validateScheduleFormState", () => {
           agentId: "",
           cronExpression: "",
           defaultPrompt: " ",
+          name: " ",
           timezone: "",
         })
       )
     ).toEqual([
+      {
+        fieldId: "schedule-name",
+        label: "Name",
+        message: "Name is required.",
+      },
       {
         fieldId: "schedule-agent",
         label: "Agent",
@@ -141,6 +151,7 @@ describe("buildSchedulePayload", () => {
   it("builds create and edit cron payloads", () => {
     expect(buildSchedulePayload(validState(), "create")).toEqual({
       agent_id: "agent-1",
+      name: "Weekly launch report",
       schedule_type: "cron",
       cron_expression: DEFAULT_CRON_EXPRESSION,
       interval_minutes: null,
@@ -151,6 +162,7 @@ describe("buildSchedulePayload", () => {
       is_active: true,
     })
     expect(buildSchedulePayload(validState({ cronExpression: "*/15 * * * *" }), "edit")).toEqual({
+      name: "Weekly launch report",
       schedule_type: "cron",
       cron_expression: "*/15 * * * *",
       interval_minutes: null,
@@ -279,5 +291,6 @@ describe("isScheduleFormDirty", () => {
 
     expect(isScheduleFormDirty(initial, initial)).toBe(false)
     expect(isScheduleFormDirty({ ...initial, timezone: "UTC" }, initial)).toBe(true)
+    expect(isScheduleFormDirty({ ...initial, name: "Renamed report" }, initial)).toBe(true)
   })
 })

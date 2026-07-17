@@ -10,7 +10,7 @@ export async function getSchedule(scheduleId: string) {
   return apiRequest<AgentSchedule>(`/schedules/${scheduleId}`)
 }
 
-function scheduleQueryOptions(scheduleId: string) {
+export function scheduleQueryOptions(scheduleId: string) {
   return queryOptions({
     queryKey: schedulesQueryKeys.detail(scheduleId),
     queryFn: () => getSchedule(scheduleId),
