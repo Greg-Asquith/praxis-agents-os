@@ -7,11 +7,14 @@ import {
 } from "@/features/conversations/approval-decisions"
 import { ApprovalDecisionButtons } from "@/features/conversations/components/approval-decision-buttons"
 import {
+  ApprovalEditableFields,
   ApprovalDenialMessageField,
-  ApprovalOverrideInputField,
 } from "@/features/conversations/components/approval-decision-fields"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import type { ToolUiField } from "@/features/tools/types"
 import { cn } from "@/lib/utils"
+
+const NO_EDITABLE_FIELDS: ToolUiField[] = []
 
 export type ToolApprovalDecisionControls = {
   decision: LocalApprovalDecision
@@ -22,11 +25,13 @@ export type ToolApprovalDecisionControls = {
 export function ApprovalDecisionBlock({
   activity,
   controls,
+  editableFields = NO_EDITABLE_FIELDS,
   label,
   prompt,
 }: {
   activity: ToolActivity
   controls: ToolApprovalDecisionControls
+  editableFields?: ToolUiField[]
   label: string
   prompt?: string
 }) {
@@ -55,16 +60,19 @@ export function ApprovalDecisionBlock({
           />
         </div>
         {controls.decision.decision !== "denied" ? (
-          <ApprovalOverrideInputField
-            id={`${activity.id}-override`}
-            onChange={(overrideArgs) => {
+          <ApprovalEditableFields
+            activityId={activity.id}
+            args={activity.args}
+            disabled={controls.disabled ?? false}
+            edits={controls.decision.edits}
+            fields={editableFields}
+            onChange={(key, value) => {
               controls.onDecisionChange({
                 decision: controls.decision.decision === "approved" ? "approved" : "pending",
+                edits: { ...controls.decision.edits, [key]: value },
                 message: "",
-                overrideArgs,
               })
             }}
-            value={controls.decision.overrideArgs}
           />
         ) : null}
         {controls.decision.decision === "denied" ? (
@@ -73,8 +81,8 @@ export function ApprovalDecisionBlock({
             onChange={(message) => {
               controls.onDecisionChange({
                 decision: "denied",
+                edits: {},
                 message,
-                overrideArgs: "",
               })
             }}
             value={controls.decision.message}

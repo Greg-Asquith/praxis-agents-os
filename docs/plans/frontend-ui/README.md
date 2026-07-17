@@ -78,7 +78,7 @@ Functional, but visibly unstyled.
 | 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | DONE |
 | 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | DONE |
 | 021 | Conversation headers: compact banner, source without pills | P1 | M | — | DONE |
-| 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | TODO |
+| 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | DONE |
 | 023 | Agents table: retire "Runtime" | P2 | S | — | DONE |
 | 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | DONE |
 

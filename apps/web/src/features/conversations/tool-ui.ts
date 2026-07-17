@@ -3,7 +3,8 @@
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { ToolUi, ToolUiField, ToolUiFieldFormat } from "@/features/tools/types"
-import { formatBytes, formatDateTime } from "@/lib/format"
+import { formatBytes, formatDateTime, truncateText } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 
 const TEMPLATE_VALUE_LIMIT = 64
 const AUTO_FIELD_LIMIT = 6
@@ -39,14 +40,14 @@ export function resolveToolTemplate(template: string, sources: unknown[]): strin
       missing.push(key)
       return ""
     }
-    return truncate(value, TEMPLATE_VALUE_LIMIT)
+    return truncateText(value, TEMPLATE_VALUE_LIMIT, "…")
   })
   return missing.length > 0 ? null : resolved
 }
 
 export function resolveUiFields(fields: ToolUiField[], source: unknown): ResolvedToolField[] {
-  const record = asRecord(normalizeToolArgs(source))
-  if (!record) {
+  const record = normalizeToolArgs(source)
+  if (!isRecord(record)) {
     return []
   }
   const resolved: ResolvedToolField[] = []
@@ -59,14 +60,21 @@ export function resolveUiFields(fields: ToolUiField[], source: unknown): Resolve
   return resolved
 }
 
+export function editableUiFields(fields: ToolUiField[], source: unknown): ToolUiField[] {
+  const record = normalizeToolArgs(source)
+  if (!isRecord(record)) {
+    return []
+  }
+  return fields.filter((field) => field.editable && typeof record[field.key] === "string")
+}
+
 export function autoUiFields(source: unknown): ResolvedToolField[] {
   const normalized = normalizeToolArgs(source)
-  const record = asRecord(normalized)
-  if (!record) {
+  if (!isRecord(normalized)) {
     return []
   }
   const resolved: ResolvedToolField[] = []
-  for (const [key, raw] of Object.entries(record)) {
+  for (const [key, raw] of Object.entries(normalized)) {
     if (resolved.length >= AUTO_FIELD_LIMIT) {
       break
     }
@@ -75,7 +83,7 @@ export function autoUiFields(source: unknown): ResolvedToolField[] {
       resolved.push({
         key,
         label: humanizeKey(key),
-        value: truncate(value, AUTO_VALUE_LIMIT),
+        value: truncateText(value, AUTO_VALUE_LIMIT, "…"),
         format: "text",
       })
     }
@@ -91,7 +99,7 @@ export function friendlyResultText(result: unknown): string | null {
   if (!trimmed || trimmed.startsWith("{") || trimmed.startsWith("[")) {
     return null
   }
-  return truncate(trimmed, 2000)
+  return truncateText(trimmed, 2000, "…")
 }
 
 export function humanizeKey(key: string): string {
@@ -120,11 +128,10 @@ function statusTemplate(ui: ToolUi, status: ToolActivity["status"]): string {
 
 function lookupTemplateValue(key: string, sources: unknown[]): string | null {
   for (const source of sources) {
-    const record = asRecord(source)
-    if (!record) {
+    if (!isRecord(source)) {
       continue
     }
-    const value = scalarDisplayValue(record[key])
+    const value = scalarDisplayValue(source[key])
     if (value !== null) {
       return value
     }
@@ -159,15 +166,4 @@ function scalarDisplayValue(value: unknown): string | null {
     return value ? "Yes" : "No"
   }
   return null
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null
-  }
-  return value as Record<string, unknown>
-}
-
-function truncate(value: string, limit: number): string {
-  return value.length > limit ? `${value.slice(0, limit)}…` : value
 }

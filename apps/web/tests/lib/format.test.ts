@@ -10,7 +10,7 @@ import {
   pluralize,
   titleCaseToken,
   titleFromSegment,
-  truncateForPreview,
+  truncateText,
 } from "@/lib/format"
 
 describe("format helpers", () => {
@@ -47,10 +47,10 @@ describe("format helpers", () => {
     expect(normalizeOptionalText(undefined)).toBeNull()
   })
 
-  it("truncates previews only over the limit", () => {
-    expect(truncateForPreview(null, 5)).toBeNull()
-    expect(truncateForPreview("short", 5)).toBe("short")
-    expect(truncateForPreview("longer", 4)).toBe("long...")
+  it("truncates text only over the limit", () => {
+    expect(truncateText("short", 5)).toBe("short")
+    expect(truncateText("longer", 4)).toBe("long...")
+    expect(truncateText("longer", 4, "…")).toBe("long…")
   })
 
   it("keeps date formatting assertions locale-independent", () => {

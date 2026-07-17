@@ -1,12 +1,14 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
+import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import { normalizeOptionalText } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 
 export type LocalApprovalDecision =
-  | { decision: "pending"; message: ""; overrideArgs: string }
-  | { decision: "approved"; message: ""; overrideArgs: string }
-  | { decision: "denied"; message: string; overrideArgs: "" }
+  | { decision: "pending"; message: ""; edits: Record<string, string> }
+  | { decision: "approved"; message: ""; edits: Record<string, string> }
+  | { decision: "denied"; message: string; edits: Record<string, string> }
 
 export type LocalApprovalDecisionMap = Record<string, LocalApprovalDecision>
 
@@ -20,14 +22,14 @@ export type ApprovalDecisionSummary = {
 export const DEFAULT_APPROVAL_DECISION: LocalApprovalDecision = {
   decision: "pending",
   message: "",
-  overrideArgs: "",
+  edits: {},
 }
 
 export function approveDecision(decision: LocalApprovalDecision): LocalApprovalDecision {
   return {
     decision: "approved",
     message: "",
-    overrideArgs: decision.decision === "denied" ? "" : decision.overrideArgs,
+    edits: decision.decision === "denied" ? {} : decision.edits,
   }
 }
 
@@ -35,7 +37,7 @@ export function denyDecision(decision: LocalApprovalDecision): LocalApprovalDeci
   return {
     decision: "denied",
     message: decision.decision === "denied" ? decision.message : "",
-    overrideArgs: "",
+    edits: {},
   }
 }
 
@@ -71,14 +73,14 @@ export function buildResumeDecisions(
       continue
     }
 
-    const overrideArgs = parseOverrideArgs(effectiveDecision.overrideArgs)
-    if (typeof overrideArgs === "string") {
-      return overrideArgs
+    const mergedArgs = buildMergedArgs(approval.args, effectiveDecision.edits)
+    if (typeof mergedArgs === "string") {
+      return mergedArgs
     }
 
     payload.push({
       decision: "approved",
-      override_args: overrideArgs,
+      override_args: mergedArgs,
       tool_call_id: approval.tool_call_id,
     })
   }
@@ -113,19 +115,36 @@ export function summarizeApprovalDecisions(
   }
 }
 
-function parseOverrideArgs(value: string): Record<string, unknown> | null | string {
-  const trimmed = value.trim()
-  if (!trimmed) {
+function buildMergedArgs(
+  original: unknown,
+  edits: Record<string, string>
+): Record<string, unknown> | null | string {
+  const editEntries = Object.entries(edits)
+  if (editEntries.length === 0) {
     return null
   }
 
-  try {
-    const parsed = JSON.parse(trimmed) as unknown
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return "Override args must be a JSON object."
-    }
-    return parsed as Record<string, unknown>
-  } catch {
-    return "Override args must be valid JSON."
+  const originalArgs = normalizeToolArgs(original)
+  if (!isRecord(originalArgs)) {
+    return "This request can no longer be edited. Refresh and try again."
   }
+
+  const changedEntries: [string, string][] = []
+  for (const [key, edit] of editEntries) {
+    const originalValue = originalArgs[key]
+    if (typeof originalValue !== "string") {
+      return "This request can no longer be edited. Refresh and try again."
+    }
+
+    const trimmedEdit = edit.trim()
+    const trimmedOriginal = originalValue.trim()
+    if (trimmedEdit === trimmedOriginal || (!trimmedEdit && trimmedOriginal)) {
+      continue
+    }
+    changedEntries.push([key, trimmedEdit])
+  }
+
+  return changedEntries.length > 0
+    ? { ...originalArgs, ...Object.fromEntries(changedEntries) }
+    : null
 }

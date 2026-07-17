@@ -11,6 +11,7 @@ class ToolFieldPresentationRead(BaseModel):
     key: str
     label: str
     format: str
+    editable: bool
 
 
 class ToolPresentationRead(BaseModel):
@@ -33,11 +34,21 @@ class ToolPresentationRead(BaseModel):
             approval_title=presentation.approval_title,
             approval_prompt=presentation.approval_prompt,
             arg_fields=[
-                ToolFieldPresentationRead(key=field.key, label=field.label, format=field.format)
+                ToolFieldPresentationRead(
+                    key=field.key,
+                    label=field.label,
+                    format=field.format,
+                    editable=field.editable,
+                )
                 for field in presentation.arg_fields
             ],
             result_fields=[
-                ToolFieldPresentationRead(key=field.key, label=field.label, format=field.format)
+                ToolFieldPresentationRead(
+                    key=field.key,
+                    label=field.label,
+                    format=field.format,
+                    editable=field.editable,
+                )
                 for field in presentation.result_fields
             ],
         )

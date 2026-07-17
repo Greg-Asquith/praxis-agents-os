@@ -162,9 +162,9 @@ export function normalizeOptionalText(value: string | null | undefined) {
   return normalized || null
 }
 
-export function truncateForPreview(value: string | null, limit: number) {
-  if (value === null || value.length <= limit) {
+export function truncateText(value: string, limit: number, suffix = "...") {
+  if (value.length <= limit) {
     return value
   }
-  return `${value.slice(0, limit)}...`
+  return `${value.slice(0, limit)}${suffix}`
 }

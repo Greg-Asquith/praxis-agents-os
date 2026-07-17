@@ -8,7 +8,7 @@ import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
 } from "@/features/conversations/components/approval-decision-block"
-import { JsonBlock, TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -88,9 +88,6 @@ export function DelegationToolRow({
     >
       {delegate.taskPreview ? <TextBlock label="Task" value={delegate.taskPreview} /> : null}
       {approvalDecision ? <TextBlock label="Tool" value={toolLabel} /> : null}
-      {approvalDecision && activity.args !== undefined && activity.args !== null ? (
-        <JsonBlock label="Input" value={activity.args} />
-      ) : null}
       {approvalDecision ? (
         <ApprovalDecisionBlock activity={activity} controls={approvalDecision} label={toolLabel} />
       ) : null}

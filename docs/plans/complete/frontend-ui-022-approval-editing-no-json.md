@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-17
 - **Written**: 2026-07-16 (anchors verified against the live tree at
   `01104f7`)
 - **Priority**: P1
@@ -20,6 +21,24 @@
   minus the JSON box.
 - **Depends on**: 005 (DONE). Includes an `apps/api` step — the gate
   covers both apps. Independent of 016–021.
+
+## Completed implementation
+
+- Runtime tool field presentations now expose an `editable` flag. Validation
+  keeps result fields display-only, and Web Search marks only its string query
+  as editable.
+- Approval decisions store per-field string edits. Changed values are trimmed
+  and merged into the complete original argument object; unchanged or
+  whitespace-only edits send no override, and declining clears every edit.
+- Awaiting Web Search approvals show the query once as a labeled, pre-filled
+  input. Other arguments stay read-only, tools without editable fields retain
+  Approve/Decline only, and delegation approvals no longer expose raw input.
+- The JSON editor, disclosure, parsing, and JSON-specific validation copy were
+  removed. The shared `isRecord` guard validates unknown tool payloads without
+  duplicating local record helpers.
+- `pnpm check`, `uv run ruff check .`, and the database-backed `make api-test`
+  gate passed (698 API tests). Browser automation was intentionally not used
+  per maintainer instruction.
 
 ## Goal
 

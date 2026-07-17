@@ -17,6 +17,8 @@ from services.agents.runtime.tools.contract import (
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
+    ToolFieldPresentation,
+    ToolPresentation,
     validate_definition,
 )
 from services.agents.runtime.tools.registry import (
@@ -148,6 +150,22 @@ def test_validate_definition_rejects_invalid_invariants(
     definition: RuntimeToolDefinition,
 ) -> None:
     with pytest.raises(RuntimeError):
+        validate_definition(definition)
+
+
+def test_validate_definition_rejects_editable_result_fields() -> None:
+    definition = RuntimeToolDefinition(
+        name="bad_editable_result",
+        function=_noop,
+        description="Result fields are display-only.",
+        presentation=ToolPresentation(
+            result_fields=(
+                ToolFieldPresentation(key="result", label="Result", editable=True),
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="result presentation fields cannot be editable"):
         validate_definition(definition)
 
 

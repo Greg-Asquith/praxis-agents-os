@@ -330,7 +330,12 @@ more room without changing authentication behavior. UI-021 compacted conversatio
 headers, removed generic source pills, retained accessible scheduled/delegated
 icons in lists, and gives scheduled detail headers a cadence badge plus
 right-aligned Ran/Updated timestamps without changing conversation or runtime
-semantics. UI-023 renamed the agent list's Runtime column to Tools on 2026-07-16
+semantics. UI-022 replaced approval JSON editing on 2026-07-17 with
+server-declared, string-only editable fields rendered as labeled controls.
+Changed values resume with a full merged argument object; unchanged approvals
+send no override, while tools without editable fields and delegated approvals
+retain the plain Approve/Decline correction path. UI-023 renamed the agent
+list's Runtime column to Tools on 2026-07-16
 and humanized its responsive summaries for zero, singular/plural, and
 approval-gated tool counts without changing agent APIs or runtime behavior.
 UI-024 completed the edit-language sweep on 2026-07-16: Agent, Skill, and

@@ -62,6 +62,7 @@ class ToolFieldPresentation:
     key: str
     label: str
     format: ToolFieldFormat = "text"
+    editable: bool = False
 
 
 @dataclass(frozen=True)
@@ -248,3 +249,5 @@ def _validate_presentation(presentation: ToolPresentation) -> None:
             raise RuntimeError(
                 f"Runtime tool presentation field format must be one of the known formats, got {field.format!r}"
             )
+    if any(field.editable for field in presentation.result_fields):
+        raise RuntimeError("Runtime tool result presentation fields cannot be editable")

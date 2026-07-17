@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table"
 import type { AuditEvent } from "@/features/audit/types"
 import { useToolLabels } from "@/features/tools/use-tool-labels"
-import { formatDateTime, titleCaseToken, truncateForPreview } from "@/lib/format"
+import { formatDateTime, titleCaseToken, truncateText } from "@/lib/format"
 
 export function AuditEventsTable({
   events,
@@ -131,7 +131,7 @@ export function AuditEventsTable({
                 </TableCell>
                 <TableCell>
                   <span className="block max-w-72 truncate">
-                    {truncateForPreview(event.summary, 120)}
+                    {truncateText(event.summary, 120)}
                   </span>
                 </TableCell>
               </TableRow>

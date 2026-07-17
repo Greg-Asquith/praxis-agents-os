@@ -100,6 +100,18 @@ async def test_tool_presentations_route_returns_every_registry_tool(
     assert write_file_entry["ui"]["running_label"] == "Writing {name}"
     assert write_file_entry["ui"]["approval_prompt"]
     assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {"name", "content"}
+    assert all(field["editable"] is False for field in write_file_entry["ui"]["arg_fields"])
+    web_search_entry = next(tool for tool in body["tools"] if tool["name"] == "web_search")
+    assert web_search_entry["ui"]["arg_fields"] == [
+        {"key": "query", "label": "Search", "format": "text", "editable": True},
+        {
+            "key": "model_provider",
+            "label": "Search provider",
+            "format": "text",
+            "editable": False,
+        },
+    ]
+    assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])
     read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
     assert read_todos_entry["ui"]["icon"] == "list-todo"
 

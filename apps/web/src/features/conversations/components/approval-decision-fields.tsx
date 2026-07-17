@@ -1,38 +1,62 @@
 // apps/web/src/features/conversations/components/approval-decision-fields.tsx
 
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
-import { Textarea } from "@/components/ui/textarea"
+import type { ChangeEvent } from "react"
 
-export function ApprovalOverrideInputField({
-  id,
+import { Field, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { normalizeToolArgs } from "@/features/conversations/message-parts"
+import type { ToolUiField } from "@/features/tools/types"
+import { isRecord } from "@/lib/guards"
+
+export function ApprovalEditableFields({
+  activityId,
+  args,
+  disabled,
+  edits,
+  fields,
   onChange,
-  value,
 }: {
-  id: string
-  onChange: (value: string) => void
-  value: string
+  activityId: string
+  args: unknown
+  disabled: boolean
+  edits: Record<string, string>
+  fields: ToolUiField[]
+  onChange: (key: string, value: string) => void
 }) {
+  const record = normalizeToolArgs(args)
+  if (!isRecord(record) || fields.length === 0) {
+    return null
+  }
+
   return (
-    <details className="bg-muted/40 rounded-md p-3">
-      <summary className="hover:text-foreground cursor-pointer text-sm font-medium">
-        Advanced: Edit the Request
-      </summary>
-      <Field className="mt-3">
-        <FieldLabel htmlFor={id}>Edited Request (JSON)</FieldLabel>
-        <Textarea
-          className="min-h-24 font-mono text-xs"
-          id={id}
-          onChange={(event) => {
-            onChange(event.currentTarget.value)
-          }}
-          placeholder="Optional JSON object"
-          value={value}
-        />
-        <FieldDescription>
-          Leave blank to approve the request exactly as the agent sent it.
-        </FieldDescription>
-      </Field>
-    </details>
+    <div className="grid gap-3">
+      {fields.map((field) => {
+        const originalValue = record[field.key]
+        if (typeof originalValue !== "string") {
+          return null
+        }
+        const id = `${activityId}-${field.key}-edit`
+        const inputProps = {
+          disabled,
+          id,
+          onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+            onChange(field.key, event.currentTarget.value)
+          },
+          value: edits[field.key] ?? originalValue,
+        }
+        return (
+          <Field key={field.key}>
+            <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
+            {field.format === "multiline" ? (
+              <Textarea className="min-h-20" {...inputProps} />
+            ) : (
+              <Input {...inputProps} />
+            )}
+          </Field>
+        )
+      })}
+    </div>
   )
 }
 
@@ -54,7 +78,7 @@ export function ApprovalDenialMessageField({
         onChange={(event) => {
           onChange(event.currentTarget.value)
         }}
-        placeholder="For example: use the draft folder instead"
+        placeholder="For example: search for UK pricing instead"
         value={value}
       />
     </Field>

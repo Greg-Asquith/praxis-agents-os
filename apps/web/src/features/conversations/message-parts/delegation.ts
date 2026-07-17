@@ -3,7 +3,7 @@
 import type { PendingDelegatedApproval } from "@/features/conversations/types"
 import type { DelegationToolActivity } from "@/features/conversations/message-parts/types"
 import { normalizeToolArgs } from "@/features/conversations/message-parts/utils"
-import { truncateForPreview } from "@/lib/format"
+import { truncateText } from "@/lib/format"
 import { isRecord, optionalString } from "@/lib/guards"
 
 const DELEGATION_TASK_PREVIEW_LIMIT = 500
@@ -23,15 +23,13 @@ export function delegationDetailsForToolActivity(
   const resultRecord = isRecord(result) ? result : null
   const pendingApprovals = resultRecord?.["pending_approvals"]
   const pendingApprovalCount = Array.isArray(pendingApprovals) ? pendingApprovals.length : 0
+  const task = optionalString(argRecord?.["task"])
 
   return {
     status: delegationStatus(resultRecord?.["status"]) ?? "running",
     agentId: optionalString(resultRecord?.["agent_id"]) ?? optionalString(argRecord?.["agent_id"]),
     agentName: optionalString(resultRecord?.["agent_name"]),
-    taskPreview: truncateForPreview(
-      optionalString(argRecord?.["task"]),
-      DELEGATION_TASK_PREVIEW_LIMIT
-    ),
+    taskPreview: task === null ? null : truncateText(task, DELEGATION_TASK_PREVIEW_LIMIT),
     output: optionalString(resultRecord?.["output"]),
     error: optionalString(resultRecord?.["error"]),
     runId: optionalString(resultRecord?.["run_id"]),
@@ -47,15 +45,13 @@ export function delegationDetailsForPendingApproval(
 ): DelegationToolActivity {
   const normalizedArgs = normalizeToolArgs(args)
   const argRecord = isRecord(normalizedArgs) ? normalizedArgs : null
+  const task = optionalString(argRecord?.["task"])
 
   return {
     status: "awaiting_approval",
     agentId: delegation.child_agent_id,
     agentName: delegation.child_agent_name,
-    taskPreview: truncateForPreview(
-      optionalString(argRecord?.["task"]),
-      DELEGATION_TASK_PREVIEW_LIMIT
-    ),
+    taskPreview: task === null ? null : truncateText(task, DELEGATION_TASK_PREVIEW_LIMIT),
     output: null,
     error: null,
     runId: delegation.child_run_id,

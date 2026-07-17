@@ -28,6 +28,7 @@ export type ToolUiField = {
   key: string
   label: string
   format: ToolUiFieldFormat
+  editable: boolean
 }
 
 export type ToolUi = {

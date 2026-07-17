@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   autoUiFields,
+  editableUiFields,
   friendlyResultText,
   humanizeKey,
   resolveToolTemplate,
@@ -40,9 +41,9 @@ describe("resolveUiFields", () => {
   it("resolves declared fields and drops missing ones", () => {
     const fields = resolveUiFields(
       [
-        { key: "name", label: "File name", format: "text" },
-        { key: "missing", label: "Missing", format: "text" },
-        { key: "confirmed", label: "Confirmed", format: "boolean" },
+        { key: "name", label: "File name", format: "text", editable: false },
+        { key: "missing", label: "Missing", format: "text", editable: false },
+        { key: "confirmed", label: "Confirmed", format: "boolean", editable: false },
       ],
       { name: "report.md", confirmed: true }
     )
@@ -54,10 +55,28 @@ describe("resolveUiFields", () => {
 
   it("parses JSON string sources", () => {
     const fields = resolveUiFields(
-      [{ key: "query", label: "Search", format: "text" }],
+      [{ key: "query", label: "Search", format: "text", editable: true }],
       JSON.stringify({ query: "praxis" })
     )
     expect(fields).toEqual([{ key: "query", label: "Search", value: "praxis", format: "text" }])
+  })
+})
+
+describe("editableUiFields", () => {
+  const fields = [
+    { key: "query", label: "Search", format: "text", editable: true },
+    { key: "provider", label: "Provider", format: "text", editable: false },
+    { key: "limit", label: "Limit", format: "text", editable: true },
+  ] as const
+
+  it("returns only editable fields backed by string arguments", () => {
+    expect(
+      editableUiFields([...fields], { query: "Praxis", provider: "openai", limit: 10 })
+    ).toEqual([fields[0]])
+  })
+
+  it("returns no fields for non-record arguments", () => {
+    expect(editableUiFields([...fields], "not structured")).toEqual([])
   })
 })
 

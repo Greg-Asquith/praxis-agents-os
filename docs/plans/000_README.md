@@ -313,6 +313,13 @@ Direct/Scheduled pills and their visibility API are gone; list rows retain
 accessible source icons, while scheduled detail headers show the linked cadence
 beside the title and right-align Ran/Updated timestamps without exposing support
 identifiers.
+UI-022 completed approval editing on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-022-approval-editing-no-json.md`. Runtime tool
+presentations now declare string fields that users may edit; Web Search exposes
+its query as a labeled, pre-filled input. Changed values resume with the full
+original argument object merged on the client, unchanged input sends no
+override, and tools without editable fields retain Approve/Decline without a
+raw JSON surface.
 UI-023 replaced the developer-facing Runtime column with a plain-language Tools
 summary on 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-023-agents-table-humanize.md`. Desktop and

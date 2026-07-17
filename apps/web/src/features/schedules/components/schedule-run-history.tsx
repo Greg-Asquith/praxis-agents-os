@@ -23,7 +23,7 @@ import { useScheduleRunsQuery } from "@/features/schedules/api/list-schedule-run
 import { ScheduleRunStatusBadge } from "@/features/schedules/components/schedule-status-badges"
 import type { AgentScheduleRun } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatDateTime, pluralize, truncateForPreview } from "@/lib/format"
+import { formatDateTime, pluralize, truncateText } from "@/lib/format"
 
 export function ScheduleRunHistory({ scheduleId }: { scheduleId: string }) {
   const runsQuery = useScheduleRunsQuery(scheduleId, { limit: 100 })
@@ -137,7 +137,7 @@ function RunError({ run }: { run: AgentScheduleRun }) {
   return (
     <span className="text-muted-foreground">
       {run.last_error_code ? `${run.last_error_code}: ` : null}
-      {truncateForPreview(run.last_error_message ?? "", 96)}
+      {truncateText(run.last_error_message ?? "", 96)}
     </span>
   )
 }

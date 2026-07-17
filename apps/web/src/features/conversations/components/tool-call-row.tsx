@@ -28,6 +28,7 @@ import type { ToolActivity } from "@/features/conversations/message-parts"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import {
   autoUiFields,
+  editableUiFields,
   friendlyResultText,
   resolveUiFields,
   toolUiApprovalPrompt,
@@ -69,6 +70,11 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
   const argFields = ui?.arg_fields.length
     ? resolveUiFields(ui.arg_fields, activity.args)
     : autoUiFields(activity.args)
+  const editableFields = approvalDecision
+    ? editableUiFields(ui?.arg_fields ?? [], activity.args)
+    : []
+  const editableFieldKeys = new Set(editableFields.map((field) => field.key))
+  const readOnlyArgFields = argFields.filter((field) => !editableFieldKeys.has(field.key))
   const resultFields = ui?.result_fields.length
     ? resolveUiFields(ui.result_fields, activity.result)
     : []
@@ -99,11 +105,12 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
       expandable={expandable}
       header={header}
     >
-      <ToolFieldList fields={argFields} />
+      <ToolFieldList fields={readOnlyArgFields} />
       {approvalDecision ? (
         <ApprovalDecisionBlock
           activity={activity}
           controls={approvalDecision}
+          editableFields={editableFields}
           label={title}
           prompt={approvalPrompt}
         />
