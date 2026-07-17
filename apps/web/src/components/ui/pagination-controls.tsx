@@ -3,6 +3,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 type PaginationControlsProps = {
+  disabled?: boolean
   limit: number
   offset: number
   onPageChange: (offset: number) => void
@@ -10,6 +11,7 @@ type PaginationControlsProps = {
 }
 
 export function PaginationControls({
+  disabled = false,
   limit,
   offset,
   onPageChange,
@@ -27,7 +29,7 @@ export function PaginationControls({
       </p>
       <div className="flex items-center gap-2">
         <Button
-          disabled={!hasPrevious}
+          disabled={disabled || !hasPrevious}
           onClick={() => {
             onPageChange(Math.max(0, offset - limit))
           }}
@@ -39,7 +41,7 @@ export function PaginationControls({
           Previous
         </Button>
         <Button
-          disabled={!hasNext}
+          disabled={disabled || !hasNext}
           onClick={() => {
             onPageChange(offset + limit)
           }}

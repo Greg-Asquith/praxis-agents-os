@@ -2,7 +2,13 @@
 
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
-import type { FileContractCategory, FileListResponse, FileProcessingStatus } from "../types"
+import type {
+  FileContractCategory,
+  FileListResponse,
+  FileProcessingStatus,
+  FileSortDirection,
+  FileSortField,
+} from "../types"
 import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
 
@@ -11,6 +17,8 @@ export type ListFilesParams = {
   limit?: number
   offset?: number
   search?: string
+  sortBy?: FileSortField
+  sortDirection?: FileSortDirection
 }
 
 const baseFilesQueryKeys = createWorkspaceScopedQueryKeys("files")
@@ -25,13 +33,22 @@ export const filesQueryKeys = {
   revisions: (fileId: string) => [...filesQueryKeys.detail(fileId), "revisions"] as const,
 }
 
-async function listFiles({ category, limit = 100, offset = 0, search }: ListFilesParams = {}) {
+async function listFiles({
+  category,
+  limit = 50,
+  offset = 0,
+  search,
+  sortBy = "updated_at",
+  sortDirection = "desc",
+}: ListFilesParams = {}) {
   return apiRequest<FileListResponse>("/files/", {
     query: {
       category,
       limit,
       offset,
       search,
+      sort_by: sortBy,
+      sort_direction: sortDirection,
     },
   })
 }

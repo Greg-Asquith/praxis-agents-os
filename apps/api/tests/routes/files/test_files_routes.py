@@ -92,6 +92,75 @@ async def _upload_and_confirm_file(
     return confirm_response.json()
 
 
+async def test_file_routes_list_supports_sorting_and_pagination(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+    for filename, content in (
+        ("zeta.txt", b"z"),
+        ("alpha.txt", b"aa"),
+        ("middle.txt", b"mmm"),
+    ):
+        await _upload_and_confirm_file(
+            db_async_client,
+            headers=headers,
+            filename=filename,
+            content=content,
+        )
+
+    name_response = await db_async_client.get(
+        "/api/v1/files/",
+        headers=headers,
+        params={
+            "limit": 2,
+            "offset": 1,
+            "sort_by": "name",
+            "sort_direction": "asc",
+        },
+    )
+    assert name_response.status_code == 200
+    assert name_response.json()["total"] == 3
+    assert [file["name"] for file in name_response.json()["files"]] == [
+        "middle.txt",
+        "zeta.txt",
+    ]
+
+    size_response = await db_async_client.get(
+        "/api/v1/files/",
+        headers=headers,
+        params={"sort_by": "size_bytes", "sort_direction": "desc"},
+    )
+    assert size_response.status_code == 200
+    assert [file["name"] for file in size_response.json()["files"]] == [
+        "middle.txt",
+        "alpha.txt",
+        "zeta.txt",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "field"),
+    [
+        ({"sort_by": "content_hash"}, "sort_by"),
+        ({"sort_direction": "down"}, "sort_direction"),
+    ],
+)
+async def test_file_routes_list_rejects_unknown_sort_options(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    query: dict[str, str],
+    field: str,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+
+    response = await db_async_client.get("/api/v1/files/", headers=headers, params=query)
+
+    assert response.status_code == 400
+    assert response.json()["field"] == field
+
+
 async def test_file_routes_read_revision_content_for_editable_revisions(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -245,9 +314,7 @@ async def test_file_preview_route_returns_inline_media_url_without_read_audit(
         headers=headers,
     )
     assert document_preview_response.status_code == 400
-    assert document_preview_response.headers["content-type"].startswith(
-        "application/problem+json"
-    )
+    assert document_preview_response.headers["content-type"].startswith("application/problem+json")
     assert document_preview_response.json()["field"] == "file_id"
 
 

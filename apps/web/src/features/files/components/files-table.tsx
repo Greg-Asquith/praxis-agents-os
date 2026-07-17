@@ -2,6 +2,10 @@
 
 import { useState, type KeyboardEvent, type ReactNode } from "react"
 import {
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  CheckIcon,
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
@@ -16,11 +20,14 @@ import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/ui/empty-state"
+import { PaginationControls } from "@/components/ui/pagination-controls"
 import {
   ResponsiveList,
   ResponsiveListItem,
@@ -40,18 +47,52 @@ import { FileThumbnail } from "@/features/files/components/file-thumbnail"
 import { RenameFileDialog } from "@/features/files/components/rename-file-dialog"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { fileTypeLabel } from "@/features/files/format"
-import type { WorkspaceFile } from "@/features/files/types"
+import type { FileSortDirection, FileSortField, WorkspaceFile } from "@/features/files/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatBytes, relativeDateTime } from "@/lib/format"
+import { formatBytes, formatCompactDate, formatDateTime, relativeDateTime } from "@/lib/format"
+
+const SORT_LABELS: Record<FileSortField, string> = {
+  created_at: "Created",
+  extension: "Type",
+  name: "Name",
+  processing_status: "Status",
+  size_bytes: "Size",
+  updated_at: "Updated",
+}
+
+const SORT_FIELDS: FileSortField[] = [
+  "name",
+  "extension",
+  "size_bytes",
+  "processing_status",
+  "created_at",
+  "updated_at",
+]
 
 export function FilesTable({
   emptyAction,
   files,
+  isChangingView,
+  limit,
+  offset,
+  onPageChange,
   onOpenFile,
+  onSortChange,
+  sortBy,
+  sortDirection,
+  total,
 }: {
   emptyAction?: ReactNode
   files: WorkspaceFile[]
+  isChangingView: boolean
+  limit: number
+  offset: number
+  onPageChange: (offset: number) => void
   onOpenFile: (fileId: string) => void
+  onSortChange: (sortBy: FileSortField, direction: FileSortDirection) => void
+  sortBy: FileSortField
+  sortDirection: FileSortDirection
+  total: number
 }) {
   const deleteMutation = useDeleteFileMutation()
   const [error, setError] = useState<string | null>(null)
@@ -98,7 +139,7 @@ export function FilesTable({
     onOpenFile(fileId)
   }
 
-  if (files.length === 0) {
+  if (files.length === 0 && total === 0) {
     return (
       <EmptyState
         action={emptyAction}
@@ -111,7 +152,7 @@ export function FilesTable({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div aria-busy={isChangingView} className="flex flex-col gap-3">
       {error ? <p className="text-destructive text-sm">{error}</p> : null}
       <ConfirmDialog
         confirmIcon={<Trash2Icon data-icon="inline-start" />}
@@ -138,7 +179,13 @@ export function FilesTable({
           }
         }}
       />
-      <ResponsiveList>
+      <MobileSortMenu
+        disabled={isChangingView}
+        onSortChange={onSortChange}
+        sortBy={sortBy}
+        sortDirection={sortDirection}
+      />
+      <ResponsiveList className={isChangingView ? "opacity-60" : undefined}>
         {files.map((file) => (
           <FileMobileRow
             file={file}
@@ -155,17 +202,48 @@ export function FilesTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Updated</TableHead>
+              <SortableTableHead
+                direction={sortDirection}
+                field="name"
+                onSortChange={onSortChange}
+                sortBy={sortBy}
+              />
+              <SortableTableHead
+                direction={sortDirection}
+                field="extension"
+                onSortChange={onSortChange}
+                sortBy={sortBy}
+              />
+              <SortableTableHead
+                direction={sortDirection}
+                field="size_bytes"
+                onSortChange={onSortChange}
+                sortBy={sortBy}
+              />
+              <SortableTableHead
+                direction={sortDirection}
+                field="processing_status"
+                onSortChange={onSortChange}
+                sortBy={sortBy}
+              />
+              <SortableTableHead
+                direction={sortDirection}
+                field="created_at"
+                onSortChange={onSortChange}
+                sortBy={sortBy}
+              />
+              <SortableTableHead
+                direction={sortDirection}
+                field="updated_at"
+                onSortChange={onSortChange}
+                sortBy={sortBy}
+              />
               <TableHead>
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className={isChangingView ? "opacity-60" : undefined}>
             {files.map((file) => (
               <TableRow
                 aria-label={`Open Details for ${file.name}`}
@@ -197,7 +275,12 @@ export function FilesTable({
                 <TableCell>
                   <FileStatusBadge status={file.processing_status} />
                 </TableCell>
-                <TableCell>{relativeDateTime(file.updated_at)}</TableCell>
+                <TableCell title={formatDateTime(file.created_at)}>
+                  {formatCompactDate(file.created_at)}
+                </TableCell>
+                <TableCell title={formatDateTime(file.updated_at)}>
+                  {formatCompactDate(file.updated_at)}
+                </TableCell>
                 <TableCell
                   className="text-right"
                   onClick={(event) => {
@@ -217,8 +300,118 @@ export function FilesTable({
           </TableBody>
         </Table>
       </div>
+      <PaginationControls
+        disabled={isChangingView}
+        limit={limit}
+        offset={offset}
+        onPageChange={onPageChange}
+        total={total}
+      />
     </div>
   )
+}
+
+function SortableTableHead({
+  direction,
+  field,
+  onSortChange,
+  sortBy,
+}: {
+  direction: FileSortDirection
+  field: FileSortField
+  onSortChange: (field: FileSortField, direction: FileSortDirection) => void
+  sortBy: FileSortField
+}) {
+  const isActive = sortBy === field
+  const ariaSort = isActive ? (direction === "asc" ? "ascending" : "descending") : "none"
+  const SortIcon = isActive ? (direction === "asc" ? ArrowUpIcon : ArrowDownIcon) : ArrowUpDownIcon
+
+  return (
+    <TableHead aria-sort={ariaSort}>
+      <Button
+        className="-ml-2"
+        onClick={() => {
+          onSortChange(
+            field,
+            isActive ? (direction === "asc" ? "desc" : "asc") : defaultDirection(field)
+          )
+        }}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        {SORT_LABELS[field]}
+        <SortIcon data-icon="inline-end" />
+      </Button>
+    </TableHead>
+  )
+}
+
+function MobileSortMenu({
+  disabled,
+  onSortChange,
+  sortBy,
+  sortDirection,
+}: {
+  disabled: boolean
+  onSortChange: (field: FileSortField, direction: FileSortDirection) => void
+  sortBy: FileSortField
+  sortDirection: FileSortDirection
+}) {
+  return (
+    <div className="flex justify-end md:hidden">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button disabled={disabled} size="sm" type="button" variant="outline">
+              <ArrowUpDownIcon data-icon="inline-start" />
+              Sort: {SORT_LABELS[sortBy]}
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+            {SORT_FIELDS.map((field) => (
+              <DropdownMenuItem
+                key={field}
+                onClick={() => {
+                  onSortChange(field, field === sortBy ? sortDirection : defaultDirection(field))
+                }}
+              >
+                {SORT_LABELS[field]}
+                {sortBy === field ? <CheckIcon className="ml-auto" /> : null}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Direction</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => {
+                onSortChange(sortBy, "asc")
+              }}
+            >
+              Ascending
+              {sortDirection === "asc" ? <CheckIcon className="ml-auto" /> : null}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                onSortChange(sortBy, "desc")
+              }}
+            >
+              Descending
+              {sortDirection === "desc" ? <CheckIcon className="ml-auto" /> : null}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+function defaultDirection(field: FileSortField): FileSortDirection {
+  return field === "name" || field === "extension" || field === "processing_status" ? "asc" : "desc"
 }
 
 function FileMobileRow({
@@ -252,6 +445,9 @@ function FileMobileRow({
             <Badge variant="outline">{fileTypeLabel(file)}</Badge>
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Size">{formatBytes(file.size_bytes)}</ResponsiveListMeta>
+          <ResponsiveListMeta label="Created">
+            {relativeDateTime(file.created_at)}
+          </ResponsiveListMeta>
           <ResponsiveListMeta label="Updated">
             {relativeDateTime(file.updated_at)}
           </ResponsiveListMeta>

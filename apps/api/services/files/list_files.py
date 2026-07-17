@@ -12,6 +12,15 @@ from services.files.contract import FileCategory
 from services.files.domain import FileListResponse
 from services.files.utils import file_to_read
 
+_SORT_COLUMNS = {
+    "created_at": File.created_at,
+    "extension": File.extension,
+    "name": File.name,
+    "processing_status": File.processing_status,
+    "size_bytes": File.size_bytes,
+    "updated_at": File.updated_at,
+}
+
 
 async def list_files(
     db: AsyncSession,
@@ -19,6 +28,8 @@ async def list_files(
     workspace: Workspace,
     category: str | None = None,
     search: str | None = None,
+    sort_by: str = "updated_at",
+    sort_direction: str = "desc",
     limit: int = 50,
     offset: int = 0,
 ) -> FileListResponse:
@@ -45,10 +56,14 @@ async def list_files(
         stmt = stmt.where(File.name.ilike(pattern, escape="\\"))
         count_stmt = count_stmt.where(File.name.ilike(pattern, escape="\\"))
 
-    files = (
-        await db.scalars(
-            stmt.order_by(File.created_at.desc(), File.id.desc()).limit(limit).offset(offset)
-        )
-    ).all()
+    sort_column = _SORT_COLUMNS.get(sort_by)
+    if sort_column is None:
+        raise AppValidationError("Unknown file sort field", field="sort_by")
+    if sort_direction not in {"asc", "desc"}:
+        raise AppValidationError("Unknown file sort direction", field="sort_direction")
+
+    order = sort_column.asc() if sort_direction == "asc" else sort_column.desc()
+    id_order = File.id.asc() if sort_direction == "asc" else File.id.desc()
+    files = (await db.scalars(stmt.order_by(order, id_order).limit(limit).offset(offset))).all()
     total = await db.scalar(count_stmt)
     return FileListResponse(files=[file_to_read(file) for file in files], total=int(total or 0))

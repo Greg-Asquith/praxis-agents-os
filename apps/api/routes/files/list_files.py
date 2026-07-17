@@ -19,6 +19,8 @@ async def list_files(
     workspace_context: CurrentWorkspaceDep,
     category: Annotated[str | None, Query(max_length=32)] = None,
     search: Annotated[str | None, Query(max_length=255)] = None,
+    sort_by: Annotated[str, Query(max_length=32)] = "updated_at",
+    sort_direction: Annotated[str, Query(max_length=4)] = "desc",
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FileListResponse:
@@ -28,6 +30,8 @@ async def list_files(
         workspace=workspace,
         category=category,
         search=search,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
         limit=limit,
         offset=offset,
     )

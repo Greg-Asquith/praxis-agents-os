@@ -16,6 +16,7 @@ import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants
 import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callback-loader"
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
+import { validateFilesSearch } from "@/features/files/search"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
 import { ErrorRoute } from "@/routes/error-route"
@@ -211,8 +212,7 @@ const skillDetailRoute = createRoute({
 const filesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/files",
-  validateSearch: (search): { fileId?: string } =>
-    typeof search["fileId"] === "string" ? { fileId: search["fileId"] } : {},
+  validateSearch: validateFilesSearch,
   component: lazyRouteComponent(() => import("@/features/files/routes/files-route"), "FilesRoute"),
 })
 

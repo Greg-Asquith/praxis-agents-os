@@ -7,6 +7,11 @@ export type FileContractCategory =
 
 export type FileProcessingStatus = "pending" | "processing" | "ready" | "error"
 
+export type FileSortField =
+  "created_at" | "extension" | "name" | "processing_status" | "size_bytes" | "updated_at"
+
+export type FileSortDirection = "asc" | "desc"
+
 type FileRevisionKind = "create" | "edit" | "replace" | "restore" | "import"
 
 export type WorkspaceFile = {
