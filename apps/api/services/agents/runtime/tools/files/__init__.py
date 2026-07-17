@@ -6,7 +6,9 @@ Pydantic AI 2.1.0 probe findings used by this package:
 - ``ApprovalRequired(metadata: dict[str, Any] | None = None)`` can be raised
   conditionally from a tool body, and ``RunContext.tool_call_approved`` is true
   on approved replay.
-- ``ToolReturn`` accepts ``return_value``, rich ``content``, and metadata.
+- ``ToolReturn`` accepts ``return_value``, rich ``content``, and metadata;
+  multimodal tool-result content belongs in ``return_value`` while ``content``
+  becomes a separate user-prompt part.
 - ``BinaryContent`` is a dataclass constructed with ``data``, ``media_type``,
   ``identifier``, and optional ``vendor_metadata``; its stored field is
   ``_identifier``.

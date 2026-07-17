@@ -13,10 +13,12 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RetryPromptPart,
     TextPart,
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
+    ToolReturnPart,
 )
 from pydantic_core import to_jsonable_python
 
@@ -150,6 +152,13 @@ async def emit_agent_stream_event(
             {
                 "tool_call_id": part.tool_call_id,
                 "name": part.tool_name,
-                "result": to_jsonable_python(part.content),
+                "result": _public_function_tool_result(part),
             },
         )
+
+
+def _public_function_tool_result(part: ToolReturnPart | RetryPromptPart) -> Any:
+    """Return a stream-safe tool result without multimodal transport bytes."""
+    if isinstance(part, ToolReturnPart) and part.files:
+        return part.model_response_object()
+    return to_jsonable_python(part.content)

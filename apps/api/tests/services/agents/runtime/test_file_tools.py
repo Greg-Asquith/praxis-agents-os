@@ -2,18 +2,28 @@
 
 """Tests for runtime file and scratch tools."""
 
+import importlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import ApprovalRequired, DeferredToolRequests, ModelRetry, RunContext, ToolReturn
+from pydantic_ai import (
+    Agent as PydanticAgent,
+    ApprovalRequired,
+    DeferredToolRequests,
+    ModelRetry,
+    RunContext,
+    ToolReturn,
+)
 from pydantic_ai.messages import (
     BinaryContent,
     ModelMessagesTypeAdapter,
+    ModelRequest,
     ModelResponse,
     TextPart,
     ToolCallPart,
+    ToolReturnPart,
 )
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RunUsage
@@ -318,14 +328,186 @@ async def test_read_file_returns_binary_content_for_images(
     read_output = await read_file(_run_context(db_session, context), file_id=image_file.id)
 
     assert isinstance(read_output, ToolReturn)
-    assert read_output.return_value["source"] == "image"
     assert read_output.metadata == {
         "file_id": str(image_file.id),
         "revision_id": str(revision.id),
     }
-    assert isinstance(read_output.content[0], BinaryContent)
-    assert read_output.content[0].data == b"fake-png"
-    assert read_output.content[0].media_type == "image/png"
+    assert read_output.content is None
+    metadata, binary = read_output.return_value
+    assert metadata["source"] == "image"
+    assert isinstance(binary, BinaryContent)
+    assert binary.data == b"fake-png"
+    assert binary.media_type == "image/png"
+
+
+async def test_image_content_reaches_the_post_tool_model_request(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    image_file, _revision = await _persist_image_file(
+        db_session,
+        context=context,
+        content=b"model-visible-png",
+    )
+    observed_returns: list[ToolReturnPart] = []
+
+    def model_function(messages, _info):
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="read_file",
+                        args={"file_id": str(image_file.id)},
+                        tool_call_id="read-image",
+                    )
+                ]
+            )
+        observed_returns.extend(returns)
+        return ModelResponse(parts=[TextPart(content="inspected")])
+
+    agent = PydanticAgent(
+        FunctionModel(model_function, model_name="image-file-handoff-test"),
+        deps_type=RuntimeDeps,
+        tools=[read_file],
+    )
+    result = await agent.run("Inspect the image", deps=_run_context(db_session, context).deps)
+
+    assert result.output == "inspected"
+    [tool_return] = observed_returns
+    assert tool_return.model_response_object()["source"] == "image"
+    [binary] = tool_return.files
+    assert isinstance(binary, BinaryContent)
+    assert binary.data == b"model-visible-png"
+    assert binary.identifier == str(image_file.id)
+
+
+async def test_ready_document_content_reaches_the_post_tool_model_request(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    document, _revision = await _persist_ready_document(
+        db_session,
+        context=context,
+        markdown=b"# Extracted\n\nThe document is model-visible.",
+    )
+    observed_returns: list[ToolReturnPart] = []
+
+    def model_function(messages, _info):
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="read_file",
+                        args={"file_id": str(document.id)},
+                        tool_call_id="read-document",
+                    )
+                ]
+            )
+        observed_returns.extend(returns)
+        return ModelResponse(parts=[TextPart(content="inspected")])
+
+    agent = PydanticAgent(
+        FunctionModel(model_function, model_name="document-file-handoff-test"),
+        deps_type=RuntimeDeps,
+        tools=[read_file],
+    )
+    result = await agent.run("Inspect the document", deps=_run_context(db_session, context).deps)
+
+    assert result.output == "inspected"
+    [tool_return] = observed_returns
+    assert tool_return.content["source"] == "markdown"
+    assert tool_return.content["content"] == "# Extracted\n\nThe document is model-visible."
+    assert "url" not in tool_return.content
+
+
+async def test_image_content_failure_does_not_present_url_as_inspection(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    image_file, _revision = await _persist_image_file(
+        db_session,
+        context=context,
+        content=b"fake-png",
+    )
+    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
+    monkeypatch.setattr(read_file_module, "agent_model_supports_vision", lambda _deps: False)
+
+    with pytest.raises(ModelRetry) as exc_info:
+        await read_file(_run_context(db_session, context), file_id=image_file.id)
+
+    assert str(exc_info.value) == (
+        "The configured model does not support image inspection. "
+        "Use mode='url' only if the user requested a download; a URL will not let this model "
+        "inspect the image."
+    )
+
+
+async def test_unsupported_content_failure_reserves_url_for_download(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    file, _revision = await _persist_image_file(
+        db_session,
+        context=context,
+        content=b"audio-like-content",
+    )
+    file.category = FileCategory.AUDIO.value
+    await db_session.flush()
+
+    with pytest.raises(ModelRetry) as exc_info:
+        await read_file(_run_context(db_session, context), file_id=file.id)
+
+    assert str(exc_info.value) == (
+        "This file type cannot be inspected as content. "
+        "Use mode='url' only if the user requested a download."
+    )
+
+
+async def test_explicit_url_mode_returns_download_only(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    image_file, _revision = await _persist_image_file(
+        db_session,
+        context=context,
+        content=b"fake-png",
+    )
+
+    output = await read_file(
+        _run_context(db_session, context),
+        file_id=image_file.id,
+        mode="url",
+    )
+
+    assert output["mode"] == "url"
+    assert output["file_id"] == str(image_file.id)
+    assert output["category"] == "image"
+    assert output["media_type"] == "image/png"
+    assert output["processing_status"] == "ready"
+    assert output["url"].startswith("http://testserver/")
+    assert output["note"] == (
+        "Share this link with the user only when they need direct download access; it expires."
+    )
 
 
 async def test_promote_scratch_creates_file_and_deletes_scratch(
@@ -521,6 +703,44 @@ async def _persist_image_file(
         private_ref_from_key(revision.object_key),
         content,
         content_type="image/png",
+    )
+    db.add(revision)
+    await db.flush()
+
+    file.current_revision_id = revision.id
+    file.revision_count = 1
+    await db.flush()
+    return file, revision
+
+
+async def _persist_ready_document(
+    db: AsyncSession,
+    *,
+    context: RuntimeFileTestContext,
+    markdown: bytes,
+):
+    file = build_file(
+        workspace=context.workspace,
+        name="brief.pdf",
+        size_bytes=10,
+        content_hash=sha256_hex(b"source-pdf"),
+        processing_status="ready",
+    )
+    db.add(file)
+    await db.flush()
+
+    revision = build_file_revision(
+        file,
+        created_by_agent_id=context.agent.id,
+        size_bytes=10,
+        content_hash=file.content_hash,
+    )
+    revision.markdown_object_key = f"{revision.object_key}.extracted.md"
+    revision.markdown_size_bytes = len(markdown)
+    await get_storage_provider().put_object(
+        private_ref_from_key(revision.markdown_object_key),
+        markdown,
+        content_type="text/markdown",
     )
     db.add(revision)
     await db.flush()

@@ -21,6 +21,7 @@ from pydantic_ai import (
     UsageLimitExceeded,
 )
 from pydantic_ai.messages import (
+    BinaryContent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelRequest,
@@ -275,6 +276,35 @@ async def test_deferred_resume_filter_only_suppresses_deferred_tool_ids() -> Non
         ),
         deferred_tool_call_ids=deferred_tool_call_ids,
     )
+
+
+async def test_rich_tool_result_streams_metadata_without_file_bytes() -> None:
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+    metadata = {"source": "image", "file_id": "file-1", "name": "screen.png"}
+
+    await emit_agent_stream_event(
+        sink,
+        FunctionToolResultEvent(
+            part=ToolReturnPart(
+                tool_name="read_file",
+                tool_call_id="read-image",
+                content=[
+                    metadata,
+                    BinaryContent(
+                        data=b"must-not-enter-sse",
+                        media_type="image/png",
+                        identifier="file-1",
+                    ),
+                ],
+            )
+        ),
+        run_id=str(uuid4()),
+        state=EventTranslationState(),
+    )
+
+    [event] = sink.events
+    assert event.event == EVENT_TOOL_RESULT
+    assert event.data["result"] == metadata
 
 
 async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> None:

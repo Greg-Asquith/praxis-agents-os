@@ -36,7 +36,10 @@ from services.storage.factory import get_storage_provider
     name="read_file",
     provider="core",
     label="Read File",
-    description="Read a workspace file by id or a scratch entry by name in content or signed-url mode.",
+    description=(
+        "Inspect a workspace file by id or a scratch entry by name. "
+        "Use content mode for inspection; use url mode only when the user needs a download."
+    ),
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     timeout=30.0,
@@ -103,9 +106,8 @@ async def read_file(
             filename=file.name,
         )
         return {
+            **file_metadata(file, revision, source="url"),
             "mode": "url",
-            "file_id": str(file.id),
-            "name": file.name,
             "url": download.url,
             "expires_at": download.expires_at.isoformat(),
             "note": "Share this link with the user only when they need direct download access; it expires.",
@@ -139,19 +141,26 @@ async def read_file(
 
     if file.category == FileCategory.IMAGE.value:
         if not agent_model_supports_vision(ctx.deps):
-            raise ModelRetry("This agent model cannot inspect image bytes. Use mode='url'.")
+            raise ModelRetry(
+                "The configured model does not support image inspection. "
+                "Use mode='url' only if the user requested a download; a URL will not let this "
+                "model inspect the image."
+            )
         data = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
         metadata = file_metadata(file, revision, source="image")
         return ToolReturn(
-            return_value=metadata,
-            content=[
+            return_value=[
+                metadata,
                 BinaryContent(
                     data=data,
                     media_type=file.content_type,
                     identifier=str(file.id),
-                )
+                ),
             ],
             metadata={"file_id": str(file.id), "revision_id": str(revision.id)},
         )
 
-    raise ModelRetry("This file type is only available through mode='url'.")
+    raise ModelRetry(
+        "This file type cannot be inspected as content. "
+        "Use mode='url' only if the user requested a download."
+    )

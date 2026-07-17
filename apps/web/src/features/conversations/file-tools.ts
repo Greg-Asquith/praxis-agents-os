@@ -26,10 +26,14 @@ export type PromoteScratchToolResult = {
 }
 
 export type ReadFileUrlToolResult = {
+  category?: FileContractCategory
   expires_at: string
   file_id: string
+  media_type?: string
   mode: "url"
   name: string
+  processing_status?: FileProcessingStatus
+  revision_id?: string
   url: string
 }
 
@@ -200,6 +204,12 @@ export function readFileUrlResult(value: unknown): ReadFileUrlToolResult | null 
     mode: "url",
     name: result["name"],
     url: result["url"],
+    ...(isFileContractCategory(result["category"]) ? { category: result["category"] } : {}),
+    ...(typeof result["media_type"] === "string" ? { media_type: result["media_type"] } : {}),
+    ...(isFileProcessingStatus(result["processing_status"])
+      ? { processing_status: result["processing_status"] }
+      : {}),
+    ...(typeof result["revision_id"] === "string" ? { revision_id: result["revision_id"] } : {}),
   }
 }
 
@@ -318,8 +328,11 @@ export function fileEntityFromPromoteResult(result: PromoteScratchToolResult): F
 
 export function fileEntityFromReadUrlResult(result: ReadFileUrlToolResult): FileEntitySnapshot {
   return {
+    ...(result.category ? { category: result.category } : {}),
+    ...(result.media_type ? { contentType: result.media_type } : {}),
     fileId: result.file_id,
     name: result.name,
+    ...(result.processing_status ? { processingStatus: result.processing_status } : {}),
   }
 }
 
@@ -430,8 +443,15 @@ function runtimeScratchSummary(value: unknown): RuntimeScratchSummary | null {
 }
 
 function unwrapToolReturnValue(value: unknown): unknown {
-  if (!isRecord(value)) {
-    return value
+  let unwrapped = value
+  if (isRecord(value)) {
+    const returnValue = value["return_value"]
+    if (isRecord(returnValue) || Array.isArray(returnValue)) {
+      unwrapped = returnValue
+    }
   }
-  return isRecord(value["return_value"]) ? value["return_value"] : value
+  if (Array.isArray(unwrapped)) {
+    return unwrapped.find((item) => isRecord(item)) ?? unwrapped
+  }
+  return unwrapped
 }

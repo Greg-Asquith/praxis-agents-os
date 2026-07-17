@@ -106,8 +106,12 @@ note in `docs/plans/000_README.md`.
 Plan 081 was added 2026-07-17 after an image-file conversation exposed a
 gap between the landed Files/multimodal substrate and agent behavior: the
 agent requested a signed download URL, then claimed it could not inspect
-the uploaded image. It is a focused Phase 3 reliability follow-up and runs
-before the remaining Phase 4 work.
+the uploaded image. It was completed 2026-07-17 and moved to
+`docs/plans/complete/`: `read_file` is content-first, image bytes travel in
+native multimodal tool results across OpenAI/Anthropic/Google, extracted
+documents stay text-first, URL fallback language is truthful, rich-result
+bytes stay out of SSE, and URL results retain ready-image metadata for the
+existing thumbnail path.
 
 ---
 
@@ -476,7 +480,7 @@ Remaining Phase 3 work resumes after the early cleanup hardening that gates it:
 | 034 | Agent file tools (`list_files`/`read_file`/`write_file`/`promote_scratch`) + scratch model (TTL, size cap, approval-gated promote) + `<available_files>` prompt block via the 018 assembler. **DONE 2026-07-06.** (Donor B5.) |
 | 035 | Files UI: files page, detail sheet with revisions/diff, chat file cards with signed-URL open/download. **DONE 2026-07-06.** (Donor B6.) |
 | 036 | Multimodal input: chat attachments ride Files; images/documents passed to the model via pydantic-ai multimodal input, gated by the file-contract policy. **DONE 2026-07-07.** (From NOTES; new — not in donor roadmap.) |
-| 081 | Agent file-inspection reliability: make `read_file` content-first for agent use, verify that image bytes and extracted document content reach the model across supported providers, reserve signed URLs for explicit user download/fallback, and prevent the agent from claiming it cannot inspect a file that Praxis successfully resolved. Add deterministic runtime/tool-result tests for image and document reads plus the exact URL-only failure mode. **P1; TODO.** (Phase 3 reliability follow-up; plan document to be written before execution.) |
+| 081 | Agent file-inspection reliability: `read_file` is content-first; image bytes and extracted document content reach the model; signed URLs are explicit download/fallback results with complete thumbnail metadata; model-facing failures stay truthful; rich bytes never enter SSE. **DONE 2026-07-17.** |
 
 ### Phase 4a — Integrations (donor Phase C; gates G1, G3; parallel with 4b)
 
@@ -648,7 +652,7 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 → {039–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → {039–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).

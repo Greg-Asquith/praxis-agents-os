@@ -146,9 +146,13 @@ def processing_guidance(file: File) -> str:
     if file.processing_status == "error":
         return (
             f"File processing failed: {file.processing_error or 'no details available'}. "
-            "Use mode='url' if the user needs the original file."
+            "The content cannot be inspected until processing succeeds; use mode='url' only if "
+            "the user requested the original file as a download."
         )
-    return "File processing is not ready yet. Retry later, or use mode='url' for the original file."
+    return (
+        "File processing is not ready yet. Retry content mode later; use mode='url' only if the "
+        "user requested the original file as a download."
+    )
 
 
 def agent_model_supports_vision(deps: RuntimeDeps) -> bool:

@@ -95,7 +95,11 @@ def _render_block(block: PromptBlock) -> str:
 def _render_available_files(files: Sequence[AvailableFile]) -> str:
     if not files:
         return ""
-    instruction = "These workspace files are attached to this conversation. Use read_file with the id to read one."
+    instruction = (
+        "These workspace files are attached to this conversation. "
+        "Use read_file in content mode with the id to inspect one; request url mode only when "
+        "the user needs a download."
+    )
     instruction += " Use list_files to see everything available."
     lines = [
         "<available_files>",

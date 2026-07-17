@@ -438,8 +438,10 @@ multimodal paths already support agent-visible image bytes and extracted
 document content; 081 is the focused reliability follow-up that makes that
 content path the agent default, verifies provider/runtime handoff, keeps
 URLs as an explicit download/fallback path, and adds regression coverage
-for truthful file-read behavior. Its plan document is written before
-execution.
+for truthful file-read behavior. It completed 2026-07-17: images now use
+native multimodal tool returns across all supported providers, extracted
+documents remain content-first, SSE stays metadata-only, and explicit URL
+results retain the file snapshot needed by the existing thumbnail path.
 
 ## Execution Order & Status
 
@@ -530,7 +532,7 @@ execution.
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
 | 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO (plan doc written by the Phase 4a executor once 041 lands) |
 | 080 | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h) | P1 | S-M | binds before Phase 4a/4b execute | DONE |
-| 081 | Make agent file inspection content-first and truthful across images and documents | P1 | M | 034, 036 (before remaining Phase 4 work) | TODO (plan doc not yet written) |
+| 081 | Make agent file inspection content-first and truthful across images and documents | P1 | M | 034, 036 (before remaining Phase 4 work) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
