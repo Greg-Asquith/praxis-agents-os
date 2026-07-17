@@ -32,7 +32,7 @@ class PromoteScratchOutput(BaseModel):
 @runtime_tool(
     name="promote_scratch",
     provider="core",
-    label="Promote scratch",
+    label="Save Draft",
     description="Promote one scratch entry to a durable editable file and delete the scratch entry.",
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -49,15 +49,22 @@ class PromoteScratchOutput(BaseModel):
         running_label="Saving the Draft {scratch_name} as a File",
         completed_label="Saved {name} to Your Files",
         failed_label="Couldn't Save the Draft as a File",
-        approval_title="Save a Draft to your Files",
+        approval_title="Save a Draft to Your Files",
         approval_prompt=(
             "The agent wants to save the draft {scratch_name} as a permanent file "
             "in your workspace."
         ),
+        approve_label="Approve & Save",
         arg_fields=(
             ToolFieldPresentation(key="scratch_name", label="Draft"),
-            ToolFieldPresentation(key="file_name", label="Save as"),
+            ToolFieldPresentation(
+                key="file_name",
+                label="Save As",
+                editable=True,
+                placeholder="Name this file",
+            ),
         ),
+        result_fields=(ToolFieldPresentation(key="name", label="File"),),
     ),
 )
 async def promote_scratch(

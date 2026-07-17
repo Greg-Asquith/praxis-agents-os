@@ -3,7 +3,10 @@
 import type { ReactNode } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/features/conversations/components/approval-decision-block"
-import { DelegationToolRow } from "@/features/conversations/components/delegation-tool-row"
+import {
+  DelegateAgentListRow,
+  DelegationToolRow,
+} from "@/features/conversations/components/delegation-tool-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
@@ -22,6 +25,10 @@ import {
   writeFileResult,
 } from "@/features/conversations/file-tools"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import {
+  LIST_DELEGATE_AGENTS_TOOL_NAME,
+  delegateAgentSummaries,
+} from "@/features/conversations/delegation-agent-list"
 import {
   LOAD_CAPABILITY_TOOL_NAME,
   skillIdFromCapabilityArgs,
@@ -51,6 +58,15 @@ type ToolRowPresenter = {
 }
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  {
+    key: "delegate-agent-list",
+    matches: (activity) =>
+      activity.name === LIST_DELEGATE_AGENTS_TOOL_NAME &&
+      delegateAgentSummaries(activity.result) !== null,
+    render: ({ activity, compact, defaultOpen }) => (
+      <DelegateAgentListRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    ),
+  },
   {
     key: "delegation",
     matches: (activity) => Boolean(activity.delegate),

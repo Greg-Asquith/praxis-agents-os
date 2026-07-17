@@ -2,6 +2,7 @@
 
 import { CheckCircle2Icon, CircleDotIcon, CircleIcon, ListTodoIcon } from "lucide-react"
 
+import { ToolField } from "@/features/conversations/components/tool-field"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -17,6 +18,7 @@ import {
   WRITE_TODOS_TOOL_NAME,
   todoItemsFromActivity,
 } from "@/features/conversations/todo-tools"
+import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type TodoListRowProps = {
@@ -56,23 +58,37 @@ export function TodoListRow({ activity, compact }: TodoListRowProps) {
       expandable={expandable}
       header={header}
     >
-      <ul className="flex min-w-0 flex-col gap-1">
-        {keyedItems.map((item) => (
-          <li key={item.key} className="flex min-w-0 items-start gap-1.5 text-xs leading-relaxed">
-            <TodoItemIcon status={item.status} />
-            <span
-              className={cn(
-                "min-w-0",
-                item.status === "completed" && "text-muted-foreground line-through",
-                item.status === "in_progress" && "text-foreground font-medium",
-                item.status === "pending" && "text-muted-foreground"
-              )}
-            >
-              {item.content}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {items.length > 0 ? (
+        <ToolField
+          field={{
+            key: "plan",
+            label: `Plan · ${String(items.length)} ${pluralize(items.length, "item")}`,
+            value: "",
+            format: "text",
+          }}
+        >
+          <ul className="flex min-w-0 flex-col gap-1">
+            {keyedItems.map((item) => (
+              <li
+                key={item.key}
+                className="flex min-w-0 items-start gap-1.5 text-xs leading-relaxed"
+              >
+                <TodoItemIcon status={item.status} />
+                <span
+                  className={cn(
+                    "min-w-0",
+                    item.status === "completed" && "text-muted-foreground line-through",
+                    item.status === "in_progress" && "text-foreground font-medium",
+                    item.status === "pending" && "text-muted-foreground"
+                  )}
+                >
+                  {item.content}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </ToolField>
+      ) : null}
     </ToolActivityRowShell>
   )
 }

@@ -18,7 +18,7 @@ function activity(overrides: Partial<ToolActivity>): ToolActivity {
 
 describe("tool activity decision copy", () => {
   it("uses approve and decline language for settled decisions", () => {
-    expect(toolStatusSuffix(activity({ decision: "approved" }))).toBe("· approved")
+    expect(toolStatusSuffix(activity({ decision: "approved" }))).toBe("· Approved")
     expect(toolActivityVerb(activity({ status: "denied" }))).toBe("Declined")
     expect(toolStatusSuffix(activity({ decision: "denied", status: "denied" }))).toBe("· Declined")
   })

@@ -386,6 +386,16 @@ while tool results and approvals update the existing row in place. Thinking
 remains one collapsed turn-level disclosure above the visible timeline, legacy
 payloads fall back to grouped text-then-tool rendering, and the SSE and
 persistence contracts remain unchanged.
+UI-031 completed the first-party tool catalog sweep on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-031-tool-catalog-sweep.md`. All runtime tools
+now publish semantic icons and complete lifecycle language; approval-capable
+file and delegation operations declare action-specific verbs and deliberate
+editable fields. File, todo, skill-document, delegation-run, and available-agent
+mini-views now share the common labeled-field shell, with outcome metrics and
+plain-language content replacing byte offsets, raw document JSON, and delegated
+run identifiers. Policy-injected delegation execution and presentation share a
+validated definition without changing approval, dispatch, SSE, or persistence
+semantics.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

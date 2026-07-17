@@ -386,6 +386,14 @@ text and tool surfaces interleave chronologically while completion and approval
 updates remain in place. Thinking stays as the first collapsed turn-level
 disclosure, legacy payloads retain grouped fallback rendering, and no SSE,
 persistence, backend, or runtime contract changed.
+UI-031 completed the first-party tool catalog sweep on 2026-07-17: every
+runtime tool now publishes a semantic icon and full lifecycle copy, approval
+verbs and editable review fields are declared where applicable, and file,
+planning, skill, and delegation mini-views share the same labeled-field shell.
+Policy-injected delegation tools now reuse one validated definition for runtime
+construction and presentation, while transcript surfaces omit byte offsets,
+raw document JSON, and delegated run identifiers. No approval, dispatch, SSE,
+or persistence semantics changed.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

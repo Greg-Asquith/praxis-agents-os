@@ -11,7 +11,11 @@ from pydantic_ai.messages import BinaryContent
 
 from core.exceptions.general import AppValidationError
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, ToolPresentation
+from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_READ,
+    ToolFieldPresentation,
+    ToolPresentation,
+)
 from services.agents.runtime.tools.files.utils import (
     agent_model_supports_vision,
     content_limit,
@@ -31,7 +35,7 @@ from services.storage.factory import get_storage_provider
 @runtime_tool(
     name="read_file",
     provider="core",
-    label="Read file",
+    label="Read File",
     description="Read a workspace file by id or a scratch entry by name in content or signed-url mode.",
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
@@ -40,9 +44,13 @@ from services.storage.factory import get_storage_provider
     auto_mount=True,
     presentation=ToolPresentation(
         icon="file",
-        running_label="Reading File",
-        completed_label="Read File",
-        failed_label="Couldn't Read File",
+        running_label="Reading a File",
+        completed_label="Read a File",
+        failed_label="Couldn't Read the File",
+        arg_fields=(
+            ToolFieldPresentation(key="scratch_name", label="Draft"),
+            ToolFieldPresentation(key="mode", label="Read As", secondary=True),
+        ),
     ),
 )
 async def read_file(

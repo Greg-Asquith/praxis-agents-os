@@ -43,7 +43,7 @@ class WriteFileOutput(BaseModel):
 @runtime_tool(
     name="write_file",
     provider="core",
-    label="Write file",
+    label="Save File",
     description="Write UTF-8 text to scratch automatically, or create/edit a durable file after approval.",
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -57,14 +57,24 @@ class WriteFileOutput(BaseModel):
     auto_mount=True,
     presentation=ToolPresentation(
         icon="file-plus",
-        running_label="Writing {name}",
-        completed_label="Wrote {name}",
-        failed_label="Couldn't Write {name}",
+        running_label="Saving {name}",
+        completed_label="Saved {name}",
+        failed_label="Couldn't Save {name}",
         approval_title="Save a File",
         approval_prompt="The agent wants to save {name} to your workspace files.",
+        approve_label="Approve & Save",
         arg_fields=(
-            ToolFieldPresentation(key="name", label="File name"),
+            ToolFieldPresentation(
+                key="name",
+                label="File Name",
+                editable=True,
+                placeholder="Name this file",
+            ),
             ToolFieldPresentation(key="content", label="Content", format="multiline"),
+        ),
+        result_fields=(
+            ToolFieldPresentation(key="name", label="File"),
+            ToolFieldPresentation(key="bytes_written", label="Size", format="bytes"),
         ),
     ),
 )

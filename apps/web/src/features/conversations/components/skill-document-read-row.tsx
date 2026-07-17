@@ -2,8 +2,8 @@
 
 import { FileTextIcon } from "lucide-react"
 
-import { JsonBlock, TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { ToolField } from "@/features/conversations/components/tool-field"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -64,20 +64,32 @@ function ResultBlock({ status, value }: { status: ToolActivity["status"]; value:
       return <DocumentContentBlock content={documentContentFromResult(value)} />
     }
 
-    return <TextBlock label="Result" value={value} />
+    return (
+      <ToolField field={{ key: "result", label: "What Went Wrong", value, format: "multiline" }} />
+    )
   }
 
-  return <JsonBlock label="Result" value={value} />
+  return (
+    <ToolField
+      field={{
+        key: "result",
+        label: "Result",
+        value: "The document response could not be displayed.",
+        format: "text",
+      }}
+    />
+  )
 }
 
 function DocumentContentBlock({ content }: { content: string }) {
   return (
-    <div className="min-w-0">
-      <p className="text-muted-foreground mb-1 text-xs font-medium">Document content</p>
-      <div className="bg-muted/40 border-border/70 max-h-96 min-w-0 overflow-auto rounded-md border p-3">
+    <ToolField
+      field={{ key: "content", label: "Document Content", value: content, format: "markdown" }}
+    >
+      <div className="max-h-96 min-w-0 overflow-auto py-1">
         <MessageMarkdown content={content} />
       </div>
-    </div>
+    </ToolField>
   )
 }
 

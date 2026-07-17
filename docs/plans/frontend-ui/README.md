@@ -110,7 +110,8 @@ Functional, but visibly unstyled.
 | 028 | Live activity card & outcome rows | P1 | L | 026, 027 | DONE |
 | 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | DONE |
 | 030 | In-place tool calls: ordered turns | P1 | L | — | DONE |
-| 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | TODO |
+| 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | DONE |
+| 032 | Resilient conversation streams across navigation | P1 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -173,6 +174,13 @@ Dependency notes:
   before 027, or coordinate carefully. 029 needs 026's shells and
   028's outcome-row shape. 031 is the closing sweep and runs last,
   after everything.
+- 032 (written 2026-07-17 at `89ac993`) is a correctness plan, not a
+  visual one (precedent: 014): it fixes the diagnosed stream-freeze bug
+  on the `/new` → `/conversations/{id}` transition and hardens the
+  stream lifecycle. No dependencies, but it touches
+  `src/app/router.tsx` (router-wide pending component + loaders) and
+  the conversation stream files — do not run it concurrently with any
+  plan editing those.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
   outstanding 017–020 (disjoint files) and may run in parallel
   worktrees with them. Within the set: 021 (conversation headers) and

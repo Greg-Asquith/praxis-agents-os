@@ -8,7 +8,11 @@ from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, ToolPresentation
+from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_READ,
+    ToolFieldPresentation,
+    ToolPresentation,
+)
 from services.agents.runtime.tools.files.utils import conversation_scope
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import list_files as list_workspace_files
@@ -41,7 +45,7 @@ class ListFilesOutput(BaseModel):
 @runtime_tool(
     name="list_files",
     provider="core",
-    label="List files",
+    label="List Files",
     description="List workspace files and scratch entries readable in the current conversation.",
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
@@ -52,8 +56,15 @@ class ListFilesOutput(BaseModel):
     presentation=ToolPresentation(
         icon="files",
         running_label="Looking Through Files",
-        completed_label="Looked Through Files",
-        failed_label="Couldn't List Files",
+        completed_label="Found {total} Files",
+        failed_label="Couldn't Look Through Files",
+        arg_fields=(
+            ToolFieldPresentation(
+                key="name_contains",
+                label="Matching",
+                secondary=True,
+            ),
+        ),
     ),
 )
 async def list_files(

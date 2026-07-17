@@ -37,7 +37,6 @@ import {
 } from "@/features/conversations/file-tools"
 import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
 import { ToolField } from "@/features/conversations/components/tool-field"
-import { TextBlock } from "@/features/conversations/components/tool-call-content-blocks"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -46,9 +45,8 @@ import {
   ActivityStatusIcon,
   ActivityStatusSuffix,
 } from "@/features/conversations/components/tool-activity-status"
-import { toolStatusSuffix } from "@/features/conversations/components/tool-activity-status-values"
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import { formatBytes, formatDateTime } from "@/lib/format"
+import { formatBytes, formatDateTime, pluralize } from "@/lib/format"
 
 type FileToolRowProps = {
   activity: ToolActivity
@@ -89,10 +87,15 @@ function ListFilesRow({ activity, compact, defaultOpen }: FileToolRowProps) {
       label={
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <FilesIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Listed Files</span>
+          <span className="min-w-0 truncate">Found Files</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={
+        <ActivityStatusSuffix
+          status={activity.status}
+          suffix={`${String(result.total)} ${pluralize(result.total, "file")}`}
+        />
+      }
       supportLabel={null}
     />
   )
@@ -157,7 +160,7 @@ function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
   const file = fileEntityFromWriteResult(result)
   const isScratch = result.destination === "scratch"
   const scratchContent = isScratch ? writeFileContentArg(activity.args) : null
-  const label = isScratch ? `Drafted "${result.name}"` : "Wrote File"
+  const label = isScratch ? `Saved Draft ${result.name}` : `Saved ${result.name} to Your Files`
   const expandable = Boolean(file) || isScratch
   const header = (
     <ToolActivityRowHeader
@@ -169,7 +172,9 @@ function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
           <span className="min-w-0 truncate">{label}</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={
+        <ActivityStatusSuffix status={activity.status} suffix={formatBytes(result.bytes_written)} />
+      }
       supportLabel={null}
     />
   )
@@ -183,11 +188,15 @@ function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
     >
       {file ? <FileOutcomeField file={file} /> : null}
       {isScratch ? (
-        <TextBlock
-          label="Draft"
-          value={`${result.name} · ${formatBytes(result.bytes_written)} · kept until ${
-            result.expires_at ? formatDateTime(result.expires_at) : "later"
-          }`}
+        <ToolField
+          field={{
+            key: "draft",
+            label: "Draft",
+            value: `${result.name} · ${formatBytes(result.bytes_written)} · kept until ${
+              result.expires_at ? formatDateTime(result.expires_at) : "later"
+            }`,
+            format: "text",
+          }}
         />
       ) : null}
       {scratchContent ? (
@@ -210,10 +219,10 @@ function PromoteScratchRow({ activity, compact, defaultOpen }: FileToolRowProps)
       label={
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <FilePlus2Icon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Saved Draft to File</span>
+          <span className="min-w-0 truncate">Saved {result.name} to Your Files</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
       supportLabel={null}
     />
   )
@@ -261,7 +270,7 @@ function ReadFileUrlRow({
           <span className="min-w-0 truncate">Prepared Link</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
       supportLabel={null}
     />
   )
@@ -269,7 +278,14 @@ function ReadFileUrlRow({
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
       <FileOutcomeField file={fileEntityFromReadUrlResult(result)} />
-      <TextBlock label="Link expiry" value={formatDateTime(result.expires_at)} />
+      <ToolField
+        field={{
+          key: "expires_at",
+          label: "Link Available Until",
+          value: formatDateTime(result.expires_at),
+          format: "datetime",
+        }}
+      />
     </ToolActivityRowShell>
   )
 }
@@ -297,7 +313,12 @@ function ReadFileContentRow({
           <span className="min-w-0 truncate">{label}</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={
+        <ActivityStatusSuffix
+          status={activity.status}
+          suffix={formatBytes(result.end_offset - result.offset)}
+        />
+      }
       supportLabel={null}
     />
   )
@@ -306,25 +327,31 @@ function ReadFileContentRow({
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
       {file ? <FileOutcomeField file={file} /> : null}
       {isScratch && result.name ? (
-        <TextBlock
-          label="Draft"
-          value={`${result.name}${result.expires_at ? ` · kept until ${formatDateTime(result.expires_at)}` : ""}`}
+        <ToolField
+          field={{
+            key: "draft",
+            label: "Draft",
+            value: `${result.name}${result.expires_at ? ` · kept until ${formatDateTime(result.expires_at)}` : ""}`,
+            format: "text",
+          }}
         />
       ) : null}
-      <TextBlock
-        label="Byte range"
-        value={`${String(result.offset)}-${String(result.end_offset)} of ${formatBytes(
-          result.total_bytes
-        )}${result.truncated ? " · truncated" : ""}`}
+      <ToolField
+        field={{
+          key: "content_read",
+          label: "Content Read",
+          value: `${formatBytes(result.end_offset - result.offset)} of ${formatBytes(
+            result.total_bytes
+          )}${result.truncated ? " · more available" : ""}`,
+          format: "text",
+        }}
       />
-      {result.source ? <TextBlock label="Source" value={result.source} /> : null}
       <ContentBlock
         label="Content"
         mediaType={result.media_type ?? null}
         name={result.name ?? null}
         value={result.content}
       />
-      {result.hint ? <TextBlock label="Next read" value={result.hint} /> : null}
     </ToolActivityRowShell>
   )
 }
@@ -345,7 +372,7 @@ function ReadFileStatusRow({
           <span className="min-w-0 truncate">Checked File</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
       supportLabel={null}
     />
   )
@@ -353,7 +380,14 @@ function ReadFileStatusRow({
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
       <FileOutcomeField file={fileEntityFromReadStatusResult(result)} />
-      <TextBlock label="Status" value={`${result.status}: ${result.message}`} />
+      <ToolField
+        field={{
+          key: "status",
+          label: "File Status",
+          value: result.message,
+          format: "multiline",
+        }}
+      />
     </ToolActivityRowShell>
   )
 }
@@ -371,10 +405,10 @@ function ReadFileImageRow({
       label={
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <ImageIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Read image</span>
+          <span className="min-w-0 truncate">Read Image</span>
         </span>
       }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={toolStatusSuffix(activity)} />}
+      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
       supportLabel={null}
     />
   )
@@ -382,7 +416,14 @@ function ReadFileImageRow({
   return (
     <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
       <FileOutcomeField file={fileEntityFromReadImageResult(result)} />
-      <TextBlock label="Result" value="Image bytes were passed to the model." />
+      <ToolField
+        field={{
+          key: "result",
+          label: "Result",
+          value: "The image was shared with the agent.",
+          format: "text",
+        }}
+      />
     </ToolActivityRowShell>
   )
 }
@@ -399,10 +440,9 @@ function ContentBlock({
   value: string
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-muted-foreground mb-1 text-xs font-medium">{label}</p>
+    <ToolField field={{ key: "content", label, value, format: "multiline" }}>
       <FileContentView content={value} mediaType={mediaType ?? null} name={name ?? null} />
-    </div>
+    </ToolField>
   )
 }
 

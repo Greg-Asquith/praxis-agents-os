@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { ExternalLinkIcon } from "lucide-react"
 
 import { buttonVariants } from "@/components/ui/button"
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import {
   ApprovalDecisionBlock,
   type ToolApprovalDecisionControls,
@@ -22,6 +23,7 @@ import {
   delegationStatusSuffix,
 } from "@/features/conversations/components/tool-activity-status-values"
 import { supportIdentifier } from "@/features/conversations/format"
+import { delegateAgentSummaries } from "@/features/conversations/delegation-agent-list"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { useToolLabels } from "@/features/tools/use-tool-labels"
 import { pluralize } from "@/lib/format"
@@ -33,6 +35,72 @@ type DelegationToolRowProps = {
   compact: boolean
   defaultOpen: boolean
   live: boolean
+}
+
+export function DelegateAgentListRow({
+  activity,
+  compact,
+  defaultOpen,
+}: Omit<DelegationToolRowProps, "approvalDecision" | "live">) {
+  const agents = delegateAgentSummaries(activity.result)
+  if (!agents) {
+    return null
+  }
+
+  const header = (
+    <ToolActivityRowHeader
+      expandable={agents.length > 0}
+      icon={<ActivityStatusIcon fallbackIcon="delegation" status={activity.status} />}
+      label="Found Available Agents"
+      suffix={
+        <ActivityStatusSuffix
+          status={activity.status}
+          suffix={
+            agents.length > 0
+              ? `${String(agents.length)} ${pluralize(agents.length, "agent")}`
+              : "None Available"
+          }
+        />
+      }
+      supportLabel={null}
+    />
+  )
+
+  return (
+    <ToolActivityRowShell
+      compact={compact}
+      defaultOpen={defaultOpen}
+      expandable={agents.length > 0}
+      header={header}
+    >
+      {agents.length > 0 ? (
+        <ToolField
+          field={{
+            key: "agents",
+            label: `Agents · ${String(agents.length)}`,
+            value: "",
+            format: "text",
+          }}
+        >
+          <div className="divide-border -my-1 divide-y">
+            {agents.map((agent) => (
+              <div className="flex min-w-0 items-center gap-2.5 px-1.5 py-2" key={agent.id}>
+                <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="sm" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{agent.name}</span>
+                  {agent.description ? (
+                    <span className="text-muted-foreground line-clamp-2 block text-xs">
+                      {agent.description}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </ToolField>
+      ) : null}
+    </ToolActivityRowShell>
+  )
 }
 
 export function DelegationToolRow({
@@ -58,7 +126,6 @@ export function DelegationToolRow({
     Boolean(delegate.output) ||
     Boolean(delegate.error) ||
     Boolean(delegate.conversationId) ||
-    Boolean(delegate.runId) ||
     delegate.pendingApprovalCount > 0
   const shouldOpen =
     defaultOpen || delegate.status === "awaiting_approval" || delegate.status === "failed"
@@ -75,7 +142,11 @@ export function DelegationToolRow({
         <ActivityStatusSuffix
           liveRunning={live && delegate.status === "running"}
           status={delegate.status}
-          suffix={delegationStatusSuffix(delegate.status)}
+          suffix={
+            delegate.status === "completed"
+              ? "Task Complete"
+              : delegationStatusSuffix(delegate.status)
+          }
         />
       }
       supportLabel={supportLabel}
@@ -157,23 +228,17 @@ export function DelegationToolRow({
           }}
         />
       ) : null}
-      {delegate.conversationId !== null || delegate.runId !== null ? (
-        <DelegationMetadata conversationId={delegate.conversationId} runId={delegate.runId} />
+      {delegate.conversationId !== null ? (
+        <DelegationMetadata conversationId={delegate.conversationId} />
       ) : null}
     </ToolActivityRowShell>
   )
 }
 
-function DelegationMetadata({
-  conversationId,
-  runId,
-}: {
-  conversationId: string | null
-  runId: string | null
-}) {
+function DelegationMetadata({ conversationId }: { conversationId: string }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {conversationId ? (
+    <ToolField field={{ key: "transcript", label: "Delegated Work", value: "", format: "text" }}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Link
           className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-w-full")}
           params={{ conversationId }}
@@ -182,17 +247,7 @@ function DelegationMetadata({
           <ExternalLinkIcon data-icon="inline-start" />
           Open Transcript
         </Link>
-      ) : null}
-      {runId ? (
-        <span className="text-muted-foreground bg-muted/50 rounded-md px-2 py-1 font-mono text-xs">
-          run {supportIdentifier(runId)}
-        </span>
-      ) : null}
-      {conversationId ? (
-        <span className="text-muted-foreground bg-muted/50 rounded-md px-2 py-1 font-mono text-xs">
-          convo {supportIdentifier(conversationId)}
-        </span>
-      ) : null}
-    </div>
+      </div>
+    </ToolField>
   )
 }

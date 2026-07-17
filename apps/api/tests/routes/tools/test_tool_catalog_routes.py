@@ -79,7 +79,7 @@ async def test_tool_catalog_route_requires_authentication(
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
-async def test_tool_presentations_route_returns_every_registry_tool(
+async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
 ) -> None:
@@ -93,22 +93,33 @@ async def test_tool_presentations_route_returns_every_registry_tool(
     assert names == sorted(names)
     assert "web_search" in names
     assert "write_file" in names  # non-configurable tools are included
+    assert "delegate_to_agent" in names  # policy-injected tools are included
     for entry in body["tools"]:
-        if entry["name"] == "web_search":
+        if entry["name"].startswith("test_"):
             continue
-        assert entry["ui"]["approve_label"] == ""
+        assert entry["ui"]["icon"] != "tool"
+        assert entry["ui"]["running_label"]
+        assert entry["ui"]["completed_label"]
+        assert entry["ui"]["failed_label"]
         for field in (*entry["ui"]["arg_fields"], *entry["ui"]["result_fields"]):
-            assert field["placeholder"] == ""
-            assert field["options"] == []
-            assert field["secondary"] is False
+            if not field["editable"]:
+                assert field["placeholder"] == ""
+                assert field["options"] == []
     write_file_entry = next(tool for tool in body["tools"] if tool["name"] == "write_file")
-    assert write_file_entry["label"] == "Write file"
+    assert write_file_entry["label"] == "Save File"
     assert write_file_entry["effect"] == "write"
     assert write_file_entry["ui"]["icon"] == "file-plus"
-    assert write_file_entry["ui"]["running_label"] == "Writing {name}"
+    assert write_file_entry["ui"]["running_label"] == "Saving {name}"
     assert write_file_entry["ui"]["approval_prompt"]
+    assert write_file_entry["ui"]["approve_label"] == "Approve & Save"
     assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {"name", "content"}
-    assert all(field["editable"] is False for field in write_file_entry["ui"]["arg_fields"])
+    write_file_fields = {field["key"]: field for field in write_file_entry["ui"]["arg_fields"]}
+    assert write_file_fields["name"]["editable"] is True
+    assert write_file_fields["content"]["editable"] is False
+    assert [field["key"] for field in write_file_entry["ui"]["result_fields"]] == [
+        "name",
+        "bytes_written",
+    ]
     web_search_entry = next(tool for tool in body["tools"] if tool["name"] == "web_search")
     assert web_search_entry["ui"]["approve_label"] == "Approve & Search"
     assert web_search_entry["ui"]["arg_fields"] == [
@@ -134,6 +145,9 @@ async def test_tool_presentations_route_returns_every_registry_tool(
     assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])
     read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
     assert read_todos_entry["ui"]["icon"] == "list-todo"
+    delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
+    assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
+    assert delegate_entry["ui"]["arg_fields"][0]["key"] == "task"
 
 
 async def test_tool_presentations_route_requires_authentication(

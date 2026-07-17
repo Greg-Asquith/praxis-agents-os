@@ -45,10 +45,10 @@ export function delegationStatusSuffix(status: DelegationStatus) {
 
 function decisionSuffix(activity: ToolActivity) {
   if (activity.decision === "approved") {
-    return "· approved"
+    return "· Approved"
   }
   if (activity.decision === "denied") {
-    return "· declined"
+    return "· Declined"
   }
   return null
 }

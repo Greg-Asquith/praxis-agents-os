@@ -29,7 +29,7 @@ class TodoItemInput(BaseModel):
 @runtime_tool(
     name="write_todos",
     provider="core",
-    label="Write todo list",
+    label="Update Plan",
     description=(
         "Replace the whole conversation todo list. Keep exactly one item in_progress "
         "while working and keep finished items in the list marked completed; pass an "
@@ -88,7 +88,7 @@ async def write_todos(
 @runtime_tool(
     name="read_todos",
     provider="core",
-    label="Read todo list",
+    label="Read Plan",
     description="Read the current conversation todo list.",
     supports_approval=False,
     takes_ctx=True,

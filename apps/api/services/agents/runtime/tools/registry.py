@@ -223,8 +223,15 @@ def list_allowed_tool_definitions(
 
 
 def list_tool_presentations() -> list[RuntimeToolDefinition]:
-    """Return every registry entry for display metadata, regardless of configurability."""
-    return sorted(RUNTIME_TOOL_CATALOG.values(), key=lambda definition: definition.name)
+    """Return every first-party runtime entry's display metadata."""
+    from services.agents.runtime.delegation.build_delegation_tools import (
+        DELEGATION_TOOL_DEFINITIONS,
+    )
+
+    return sorted(
+        (*RUNTIME_TOOL_CATALOG.values(), *DELEGATION_TOOL_DEFINITIONS),
+        key=lambda definition: definition.name,
+    )
 
 
 def _normalize_tool_names(raw: Any) -> list[str]:
