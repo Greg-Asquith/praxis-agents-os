@@ -123,11 +123,11 @@ async def test_tool_presentations_route_returns_every_registry_tool(
         },
         {
             "key": "model_provider",
-            "label": "Search provider",
+            "label": "Search Provider",
             "format": "text",
-            "editable": False,
+            "editable": True,
             "placeholder": "",
-            "options": [],
+            "options": ["anthropic", "google", "openai"],
             "secondary": False,
         },
     ]

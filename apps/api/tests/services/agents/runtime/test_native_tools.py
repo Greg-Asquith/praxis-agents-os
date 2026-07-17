@@ -110,6 +110,14 @@ def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> Non
         "web_search",
         "test_add_numbers",
     ]
+    web_search_tool = next(tool for tool in tools if tool.name == "web_search")
+    schema = web_search_tool.function_schema.json_schema
+    assert "model_provider" in schema["required"]
+    assert schema["properties"]["model_provider"]["enum"] == [
+        "anthropic",
+        "google",
+        "openai",
+    ]
 
 
 def test_web_search_helper_model_can_differ_from_active_agent_model() -> None:

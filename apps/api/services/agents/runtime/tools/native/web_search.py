@@ -59,7 +59,7 @@ SUPPORTED_NATIVE_SEARCH_PROVIDERS = frozenset(
 DEFAULT_NATIVE_SEARCH_MODELS = {
     PROVIDER_ANTHROPIC: "claude-sonnet-5",
     PROVIDER_GOOGLE: "gemini-3.5-flash",
-    PROVIDER_OPENAI: "gpt-5.4-mini",
+    PROVIDER_OPENAI: "gpt-5.6-luna",
 }
 
 WEB_SEARCH_HELPER_INSTRUCTIONS = """\
@@ -74,7 +74,9 @@ class WebSearchOutput(BaseModel):
 
     query: str
     answer: str
-    model_provider: str = Field(description="Provider used by the helper model.")
+    model_provider: NativeWebSearchProvider = Field(
+        description="Provider used by the helper model."
+    )
     model: str = Field(description="Model used by the helper model.")
 
 
@@ -108,7 +110,12 @@ class WebSearchOutput(BaseModel):
                 editable=True,
                 placeholder="What should the agent search for?",
             ),
-            ToolFieldPresentation(key="model_provider", label="Search provider"),
+            ToolFieldPresentation(
+                key="model_provider",
+                label="Search Provider",
+                editable=True,
+                options=tuple(sorted(SUPPORTED_NATIVE_SEARCH_PROVIDERS)),
+            ),
         ),
         result_fields=(ToolFieldPresentation(key="answer", label="Answer", format="markdown"),),
     ),
@@ -120,15 +127,14 @@ async def web_search(
         Field(description="Search query to send to the native-search helper model."),
     ],
     model_provider: Annotated[
-        NativeWebSearchProvider | None,
+        NativeWebSearchProvider,
         Field(
             description=(
-                "Optional helper model provider. Available providers are "
-                "anthropic, google, and openai. Omit to use the active agent "
-                "model when it supports native search."
+                "Helper model provider. Available providers are anthropic, "
+                "google, and openai."
             ),
         ),
-    ] = None,
+    ],
     model: Annotated[
         str | None,
         Field(
