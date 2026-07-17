@@ -124,6 +124,7 @@ class AgentSchedule(BaseModel):
     )
 
     # Schedule configuration
+    name = Column(String(255), nullable=True)
     schedule_type = Column(String, nullable=False)
     cron_expression = Column(String, nullable=True)
     interval_minutes = Column(Integer, nullable=True)

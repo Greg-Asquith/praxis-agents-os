@@ -29,6 +29,7 @@ from services.agent_schedules.utils import (
     get_schedule_for_workspace,
     normalize_default_prompt,
     normalize_schedule_from_row,
+    normalize_schedule_name,
     set_if_changed,
 )
 from services.audit_events import AuditAction, AuditResourceType
@@ -60,6 +61,9 @@ async def update_schedule(
     if timing_fields:
         config = _normalize_timing_update(schedule, payload, supplied_fields=timing_fields)
         _apply_config(schedule, config, changed_fields)
+
+    if "name" in payload.model_fields_set:
+        set_if_changed(schedule, "name", normalize_schedule_name(payload.name), changed_fields)
 
     if "default_prompt" in payload.model_fields_set:
         set_if_changed(

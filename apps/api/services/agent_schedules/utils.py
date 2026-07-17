@@ -70,6 +70,15 @@ def normalize_default_prompt(value: str | None) -> str:
     return normalized
 
 
+def normalize_schedule_name(value: str | None) -> str:
+    if value is None:
+        raise AppValidationError("name cannot be null", field="name")
+    normalized = value.strip()
+    if not normalized:
+        raise AppValidationError("name must not be blank", field="name")
+    return normalized
+
+
 def normalize_schedule_from_row(
     schedule: AgentSchedule,
     *,

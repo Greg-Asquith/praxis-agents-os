@@ -18,6 +18,7 @@ from services.agent_schedules.schemas import (
 )
 from services.agent_schedules.utils import (
     normalize_default_prompt,
+    normalize_schedule_name,
     require_active_agent_for_schedule,
 )
 from services.audit_events import AuditAction, AuditResourceType
@@ -54,6 +55,7 @@ async def create_schedule(
         agent_id=payload.agent_id,
         user_id=actor.id,
         workspace_id=workspace.id,
+        name=normalize_schedule_name(payload.name),
         schedule_type=config.schedule_type,
         cron_expression=config.cron_expression,
         interval_minutes=config.interval_minutes,
@@ -77,6 +79,7 @@ async def create_schedule(
         actor=actor,
         details={
             "agent_id": str(schedule.agent_id),
+            "name": schedule.name,
             "schedule_type": schedule.schedule_type,
             "timezone": schedule.timezone,
             "is_active": schedule.is_active,

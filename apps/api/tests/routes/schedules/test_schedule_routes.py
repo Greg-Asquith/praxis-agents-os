@@ -80,6 +80,7 @@ async def _create_schedule(
     user: User,
     agent: Agent,
     is_active: bool = True,
+    name: str = "Scheduled report",
     schedule_type: str = "interval",
     next_run_at: datetime | None = None,
     run_once_at: datetime | None = None,
@@ -89,6 +90,7 @@ async def _create_schedule(
         agent_id=agent.id,
         user_id=user.id,
         workspace_id=workspace.id,
+        name=name,
         schedule_type=schedule_type,
         cron_expression="*/15 * * * *" if schedule_type == "cron" else None,
         interval_minutes=15 if schedule_type == "interval" else None,
@@ -116,6 +118,7 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
         headers=headers,
         json={
             "agent_id": str(agent.id),
+            "name": "  Account performance check  ",
             "schedule_type": "cron",
             "cron_expression": "*/5 * * * *",
             "timezone": "UTC",
@@ -132,6 +135,7 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
     assert body["agent_id"] == str(agent.id)
     assert body["workspace_id"] == str(workspace.id)
     assert body["user_id"] == str(user.id)
+    assert body["name"] == "Account performance check"
     assert body["schedule_type"] == "cron"
     assert body["cron_expression"] == "*/5 * * * *"
     assert body["default_prompt"] == "Check account performance."
@@ -154,6 +158,7 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
     )
     assert audit_event is not None
     assert audit_event.details["agent_id"] == str(agent.id)
+    assert audit_event.details["name"] == "Account performance check"
     assert audit_event.details["schedule_type"] == "cron"
     assert audit_event.details["side_effect_policy"] == "allow"
 
@@ -221,6 +226,7 @@ async def test_create_schedule_rejects_invalid_payloads(
 
     request_body = {
         "agent_id": str(agent.id),
+        "name": "Validation schedule",
         "schedule_type": "interval",
         "interval_minutes": 15,
         "default_prompt": "Run this.",
@@ -250,6 +256,7 @@ async def test_create_schedule_rejects_malformed_nested_policy_with_422(
         headers=headers,
         json={
             "agent_id": str(agent.id),
+            "name": "Nested policy schedule",
             "schedule_type": "interval",
             "interval_minutes": 15,
             "default_prompt": "Run this.",
@@ -276,6 +283,7 @@ async def test_create_inactive_schedule_has_no_next_run(
         headers=headers,
         json={
             "agent_id": str(agent.id),
+            "name": "Paused schedule",
             "schedule_type": "interval",
             "interval_minutes": 15,
             "default_prompt": "Run this.",
@@ -305,6 +313,7 @@ async def test_create_schedule_rejects_cross_workspace_agent(
         headers=headers,
         json={
             "agent_id": str(other_agent.id),
+            "name": "Cross-workspace schedule",
             "schedule_type": "interval",
             "interval_minutes": 15,
             "default_prompt": "Run this.",
@@ -344,6 +353,7 @@ async def test_schedule_mutation_authorization_matrix(
         headers=read_only_headers,
         json={
             "agent_id": str(agent.id),
+            "name": "Blocked schedule",
             "schedule_type": "interval",
             "interval_minutes": 15,
             "default_prompt": "Blocked.",
@@ -362,10 +372,11 @@ async def test_schedule_mutation_authorization_matrix(
     admin_update = await db_async_client.patch(
         f"/api/v1/schedules/{schedule.id}",
         headers=admin_headers,
-        json={"default_prompt": "Admin can mutate."},
+        json={"name": "Updated report", "default_prompt": "Admin can mutate."},
     )
     assert admin.id != owner.id
     assert admin_update.status_code == 200
+    assert admin_update.json()["name"] == "Updated report"
     assert admin_update.json()["default_prompt"] == "Admin can mutate."
 
     owner_delete = await db_async_client.delete(

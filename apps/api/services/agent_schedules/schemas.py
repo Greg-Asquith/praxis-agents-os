@@ -77,6 +77,7 @@ class AgentScheduleRead(BaseModel):
     agent_id: UUID
     user_id: UUID
     workspace_id: UUID
+    name: str | None = None
     schedule_type: str
     cron_expression: str | None = None
     interval_minutes: int | None = None
@@ -107,6 +108,7 @@ class AgentScheduleRead(BaseModel):
                 "agent_id": schedule.agent_id,
                 "user_id": schedule.user_id,
                 "workspace_id": schedule.workspace_id,
+                "name": schedule.name,
                 "schedule_type": schedule.schedule_type,
                 "cron_expression": schedule.cron_expression,
                 "interval_minutes": schedule.interval_minutes,
@@ -137,6 +139,7 @@ class AgentScheduleRunsListResponse(OffsetPage):
 
 class AgentScheduleCreateRequest(BaseModel):
     agent_id: UUID
+    name: str = Field(min_length=1, max_length=255)
     schedule_type: str = Field(max_length=32)
     cron_expression: str | None = Field(default=None, max_length=255)
     interval_minutes: int | None = None
@@ -145,6 +148,14 @@ class AgentScheduleCreateRequest(BaseModel):
     default_prompt: str = Field(max_length=20000)
     execution_params: dict[str, Any] | None = None
     is_active: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("must not be blank")
+        return normalized
 
     @field_validator("schedule_type")
     @classmethod
@@ -166,6 +177,7 @@ class AgentScheduleCreateRequest(BaseModel):
 
 
 class AgentScheduleUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
     schedule_type: str | None = Field(default=None, max_length=32)
     cron_expression: str | None = Field(default=None, max_length=255)
     interval_minutes: int | None = None
@@ -174,6 +186,16 @@ class AgentScheduleUpdateRequest(BaseModel):
     default_prompt: str | None = Field(default=None, max_length=20000)
     execution_params: dict[str, Any] | None = None
     is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name_when_present(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("must not be blank")
+        return normalized
 
     @field_validator("schedule_type")
     @classmethod
