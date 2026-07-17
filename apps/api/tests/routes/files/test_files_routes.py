@@ -177,18 +177,29 @@ async def test_file_routes_reject_revision_content_for_non_editable_revisions(
     assert response.json()["content_type"] == "application/pdf"
 
 
-async def test_file_preview_route_returns_inline_image_url_without_read_audit(
+@pytest.mark.parametrize(
+    ("filename", "content_type", "content"),
+    [
+        ("screen.png", "image/png", b"png"),
+        ("clip.mp4", "video/mp4", b"video"),
+        ("report.pdf", "application/pdf", b"%PDF"),
+    ],
+)
+async def test_file_preview_route_returns_inline_media_url_without_read_audit(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     local_storage_settings: None,
+    filename: str,
+    content_type: str,
+    content: bytes,
 ) -> None:
     headers = await _authenticated_workspace(db_session)
     confirmed = await _upload_and_confirm_file(
         db_async_client,
         headers=headers,
-        filename="screen.png",
-        content_type="image/png",
-        content=b"png",
+        filename=filename,
+        content_type=content_type,
+        content=content,
     )
 
     preview_response = await db_async_client.post(
@@ -202,7 +213,17 @@ async def test_file_preview_route_returns_inline_image_url_without_read_audit(
         _relative_url(preview_response.json()["preview"]["url"])
     )
     assert object_response.status_code == 200
-    assert object_response.content == b"png"
+    assert object_response.content == content
+    assert object_response.headers["content-type"] == content_type
+    assert "content-disposition" not in object_response.headers
+    if content_type == "video/mp4":
+        range_response = await db_async_client.get(
+            _relative_url(preview_response.json()["preview"]["url"]),
+            headers={"range": "bytes=0-1"},
+        )
+        assert range_response.status_code == 206
+        assert range_response.content == content[:2]
+        assert range_response.headers["content-range"] == f"bytes 0-1/{len(content)}"
     read_audit = await db_session.scalar(
         select(AuditEvent).where(
             AuditEvent.action == AuditAction.READ.value,
@@ -212,14 +233,22 @@ async def test_file_preview_route_returns_inline_image_url_without_read_audit(
     )
     assert read_audit is None
 
-    text_file = await _upload_and_confirm_file(db_async_client, headers=headers)
-    text_preview_response = await db_async_client.post(
-        f"/api/v1/files/{text_file['id']}/preview",
+    document = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        filename="brief.docx",
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        content=b"docx",
+    )
+    document_preview_response = await db_async_client.post(
+        f"/api/v1/files/{document['id']}/preview",
         headers=headers,
     )
-    assert text_preview_response.status_code == 400
-    assert text_preview_response.headers["content-type"].startswith("application/problem+json")
-    assert text_preview_response.json()["field"] == "file_id"
+    assert document_preview_response.status_code == 400
+    assert document_preview_response.headers["content-type"].startswith(
+        "application/problem+json"
+    )
+    assert document_preview_response.json()["field"] == "file_id"
 
 
 async def test_file_routes_upload_list_download_edit_conflict_and_delete(
@@ -238,6 +267,14 @@ async def test_file_routes_upload_list_download_edit_conflict_and_delete(
     assert usage_response.status_code == 200
     assert usage_response.json()["used_bytes"] == len(b"hello")
 
+    update_response = await db_async_client.patch(
+        f"/api/v1/files/{confirmed['id']}",
+        headers=headers,
+        json={"description": None, "name": "renamed notes.txt"},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "renamed notes.txt"
+
     download_response = await db_async_client.post(
         f"/api/v1/files/{confirmed['id']}/download",
         headers=headers,
@@ -250,7 +287,9 @@ async def test_file_routes_upload_list_download_edit_conflict_and_delete(
     )
     assert object_response.status_code == 200
     assert object_response.content == b"hello"
-    assert object_response.headers["content-disposition"] == 'attachment; filename="notes.txt"'
+    assert object_response.headers["content-disposition"] == (
+        'attachment; filename="renamed notes.txt"'
+    )
     read_audit = await db_session.scalar(
         select(AuditEvent).where(
             AuditEvent.action == AuditAction.READ.value,

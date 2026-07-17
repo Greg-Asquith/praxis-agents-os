@@ -98,6 +98,11 @@ outright: 037–039 ship no fake package or gating, the `oauth_operations`
 seam recorded by 080 is dropped with its only consumer, and contract/
 loader testing moves to a suite-local test provider with transport-mocked
 provider HTTP. Phases 4a and 4b are hand-off ready.
+A 2026-07-17 decomposition pass added binding "Execution slices"
+sections to plans 039–042 and 044–046, splitting each into
+commit-and-review-sized sub-plans (16 slices across the seven plans)
+without changing ordering, scope, decisions, or step numbering; see the
+note in `docs/plans/000_README.md`.
 
 ---
 
@@ -314,7 +319,11 @@ converted Schedule creation and editing to a shared three-step wizard on
 semantics while returning successful saves to the Schedules list. Maintainer
 follow-up added persisted, user-authored schedule names across the core schema,
 API, form, and every schedule-title surface; legacy rows remain explicitly
-unnamed until edited. UI-020 added
+unnamed until edited. UI-019 overhauled Files on 2026-07-17 with cached image
+thumbnails, a centered preview-first detail modal for images, video, PDF, HTML,
+and text, metadata editing, plain-language version history, and resolved actor
+names. Passive preview grants now cover image, video, and PDF while preserving
+the audited Open/Download boundary. UI-020 added
 a static, theme-token-driven agent-orbit composition to desktop auth screens,
 preserved the shared brand mark on mobile, and gave auth-only cards and controls
 more room without changing authentication behavior. UI-021 compacted conversation

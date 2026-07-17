@@ -18,6 +18,9 @@ function fileQueryOptions(fileId: string) {
   })
 }
 
-export function useFileQuery(fileId: string) {
-  return useSuspenseQuery(fileQueryOptions(fileId))
+export function useFileQuery(fileId: string, initialData?: WorkspaceFile) {
+  return useSuspenseQuery({
+    ...fileQueryOptions(fileId),
+    ...(initialData ? { initialData } : {}),
+  })
 }

@@ -335,7 +335,10 @@ export function ConversationComposer(props: ConversationComposerProps) {
         <Textarea
           id="conversation-prompt"
           aria-description="Enter sends. Shift+Enter adds a line."
-          className="max-h-52 min-h-11 resize-none rounded-2xl border-0 bg-transparent px-4 py-2.5 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+          className={cn(
+            "max-h-52 min-h-11 resize-none border-0 bg-transparent px-4 py-2.5 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent",
+            inputDisabledReason ? "rounded-t-2xl rounded-b-none" : "rounded-2xl"
+          )}
           disabled={Boolean(inputDisabledReason)}
           onChange={(event) => {
             setPrompt(event.currentTarget.value)

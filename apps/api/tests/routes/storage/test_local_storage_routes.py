@@ -65,6 +65,32 @@ async def test_local_signed_upload_and_download_routes(
     assert download_response.content == b"stored by signed upload"
     assert download_response.headers["content-type"].startswith("text/plain")
     assert download_response.headers["content-disposition"] == 'attachment; filename="output.txt"'
+    assert download_response.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in download_response.headers["content-security-policy"]
+
+
+async def test_local_inline_pdf_is_frameable_only_by_configured_app_origins(
+    async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    provider = get_local_storage_provider()
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, "files/report.pdf")
+    await provider.put_object(ref, b"%PDF-1.7", content_type="application/pdf")
+
+    preview = await provider.create_signed_download(
+        ref,
+        expires_in=timedelta(minutes=5),
+        force_download=False,
+        filename="report.pdf",
+    )
+    response = await async_client.get(_relative_url(preview.url))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert "x-frame-options" not in response.headers
+    assert response.headers["content-security-policy"].startswith("frame-ancestors ")
+    assert settings.FRONTEND_URL in response.headers["content-security-policy"]
+    assert "frame-ancestors 'none'" not in response.headers["content-security-policy"]
 
 
 async def test_signed_upload_route_uses_active_provider_selection(

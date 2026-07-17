@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-17
 - **Written**: 2026-07-16 (anchors verified against `75da3b5`; the files
   feature is untouched by the in-flight 014 working-tree changes)
 - **Priority**: P1

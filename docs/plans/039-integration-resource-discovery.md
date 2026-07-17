@@ -317,8 +317,50 @@ present. 038 deliverables are consumed-and-verified-at-execution.
 ## Git workflow
 
 - Branch: `advisor/039-integration-resource-discovery`
-- Commit style: `API - Integration Resource Discovery`
+- Commits: one per execution slice (see "Execution slices" below); do
+  not combine slices into one commit.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as two separately committed, separately reviewed
+slices. Boundaries are binding: run the slice's gate green and commit
+before starting the next. Step numbering below is unchanged — each
+slice executes only its listed steps and tests. The plan-level Done
+criteria apply at the end of Slice B; update the `000_README.md` status
+row only then.
+
+### Slice A — Discovery engine, status machine, sweeps (`API - Integration Resource Discovery`)
+
+- **Steps**: 1–5 and 7 (settings + plugin retention, `run_discovery`,
+  `recompute_connection_status`, handlers/enqueue/sweeps/rediscovery,
+  notifications, test-provider fixtures).
+- **Tests (from Step 8)**: `test_run_discovery.py`,
+  `test_recompute_status.py`, `test_discovery_handler.py`,
+  `test_needs_reauth_notification.py`, `test_sweep_stale.py`,
+  `test_rediscover_stale.py`.
+- **Gate**: kind smoke prints the four kinds; worker `--once` exits 0;
+  the listed suites plus an untouched `tests/services/jobs` green; ruff
+  clean.
+- **Review focus**: handler idempotency (two-runs-identical), the
+  final-attempt notification check against 030's
+  claim-increments-attempts semantics, FK-safe sweep deletion order,
+  the `on_enter(needs_reauth)` hook not firing on same-status no-ops.
+- After Slice A, `requires_discovery` connections can reach
+  `needs_resource_selection` with no selection surface — expected until
+  Slice B lands immediately after; do not deploy A alone.
+
+### Slice B — Resource selection + discovery routes (`API - Integration Resource Selection`)
+
+- **Steps**: 6 (the selection/list service ops and the three routes).
+- **Tests (from Step 8)**: `test_resource_routes.py`.
+- **Gate**: route smoke shows the three new paths; full
+  `tests/services/integrations tests/routes/integrations` green; then
+  the plan-level Done criteria checklist.
+- **Review focus**: RBAC (read_only lists, member+ selects, the owner
+  rule on user-scoped connections), replace-set id validation, the
+  added/removed audit diff, `recompute_connection_status` called on
+  every save.
 
 ## Steps
 

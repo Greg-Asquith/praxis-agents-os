@@ -15,7 +15,7 @@ async function listMemberships(workspaceId: string) {
   })
 }
 
-function workspaceMembershipsQueryOptions(workspaceId: string) {
+export function workspaceMembershipsQueryOptions(workspaceId: string) {
   return queryOptions({
     queryKey: workspaceMembershipsQueryKey(workspaceId),
     queryFn: () => listMemberships(workspaceId),

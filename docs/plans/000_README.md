@@ -294,7 +294,14 @@ retains its operational actions and run history without duplicate navigation or
 a saved banner. A maintainer follow-up replaced the redundant cadence-derived
 "Name" with a persisted, user-authored schedule name across the core migration,
 API contract, form, list, detail, breadcrumb, and scheduled-conversation label;
-legacy rows remain honestly unnamed until edited. UI-020
+legacy rows remain honestly unnamed until edited. UI-019 completed the Files
+overhaul on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-019-files-overhaul.md`: image rows now use
+cached signed thumbnails, file details open in a centered preview-first modal,
+images/video/PDF/HTML/text render inline, and technical identifiers stay behind
+a closed disclosure. Files can be renamed with descriptions, version history
+uses resolved teammate/agent names, and passive preview grants now cover image,
+video, and PDF without changing audited Open/Download behavior. UI-020
 completed the auth-surface polish on 2026-07-16 and moved to
 `docs/plans/complete/frontend-ui-020-login-page.md`: desktop auth routes now
 have a static, token-driven agent-orbit composition, mobile retains the shared
@@ -318,6 +325,22 @@ Schedule row actions now say Edit and use pencil icons on desktop and mobile;
 related agent, invitation, and workspace copy now describes user-visible
 outcomes without exposing configure/configured language. API identifiers and
 runtime behavior are unchanged.
+
+A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
+against the commit sizes that have proven reviewable and added a binding
+"Execution slices" section to each of the seven chunkiest: 039 (discovery
+engine / selection routes), 040 (context data layer / runtime resolution
+and injection / schedule contract + selector), 041 (one provider per
+slice — Gmail carries the shared substrate, Google Ads is the isolated
+spend/Gate G1 slice, Airtable closes the catalog), 042 (connections UI /
+context picker), 044 (schema + chunker / ingestion pipeline), 045 (hybrid
+engine + routes / the Gate G4 harness), and 046 (write policy + document
+sources / agent tools + untrusted framing). Slices are commit-and-review
+boundaries only: plan ordering, scope, decisions, step numbering, and
+amendment blocks are unchanged, each slice must pass its own gate before
+the next starts, and a plan's status row flips to DONE only when its
+final slice lands. Plans 043, 047, 055, and 056 were assessed in the same
+pass and left single-slice.
 
 ## Execution Order & Status
 

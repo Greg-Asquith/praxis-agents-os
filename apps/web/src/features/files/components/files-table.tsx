@@ -4,13 +4,10 @@ import { useState, type KeyboardEvent, type ReactNode } from "react"
 import {
   DownloadIcon,
   ExternalLinkIcon,
-  FileIcon,
   FileTextIcon,
-  HeadphonesIcon,
-  ImageIcon,
   MoreHorizontalIcon,
+  PencilIcon,
   Trash2Icon,
-  VideoIcon,
 } from "lucide-react"
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -39,9 +36,11 @@ import {
 } from "@/components/ui/table"
 import { useDeleteFileMutation } from "@/features/files/api/delete-file"
 import { FileStatusBadge } from "@/features/files/components/file-status-badge"
+import { FileThumbnail } from "@/features/files/components/file-thumbnail"
+import { RenameFileDialog } from "@/features/files/components/rename-file-dialog"
 import { openWorkspaceFile } from "@/features/files/file-actions"
-import { fileCategoryLabel } from "@/features/files/format"
-import type { FileContractCategory, WorkspaceFile } from "@/features/files/types"
+import { fileTypeLabel } from "@/features/files/format"
+import type { WorkspaceFile } from "@/features/files/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, relativeDateTime } from "@/lib/format"
 
@@ -57,6 +56,7 @@ export function FilesTable({
   const deleteMutation = useDeleteFileMutation()
   const [error, setError] = useState<string | null>(null)
   const [fileToDelete, setFileToDelete] = useState<WorkspaceFile | null>(null)
+  const [fileToRename, setFileToRename] = useState<WorkspaceFile | null>(null)
 
   async function handleOpen(file: WorkspaceFile, forceDownload: boolean) {
     setError(null)
@@ -130,6 +130,14 @@ export function FilesTable({
         open={fileToDelete !== null}
         title="Delete file?"
       />
+      <RenameFileDialog
+        file={fileToRename}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFileToRename(null)
+          }
+        }}
+      />
       <ResponsiveList>
         {files.map((file) => (
           <FileMobileRow
@@ -173,7 +181,7 @@ export function FilesTable({
               >
                 <TableCell>
                   <div className="flex min-w-56 items-center gap-3">
-                    <FileCategoryIcon category={file.category} />
+                    <FileThumbnail file={file} />
                     <div className="min-w-0">
                       <p className="truncate font-medium">{file.name}</p>
                       {file.description ? (
@@ -183,10 +191,7 @@ export function FilesTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <Badge variant="outline">{fileCategoryLabel(file.category)}</Badge>
-                    <span className="text-muted-foreground text-xs">{file.content_type}</span>
-                  </div>
+                  <Badge variant="outline">{fileTypeLabel(file)}</Badge>
                 </TableCell>
                 <TableCell>{formatBytes(file.size_bytes)}</TableCell>
                 <TableCell>
@@ -204,6 +209,7 @@ export function FilesTable({
                     isDeleting={deleteMutation.isPending}
                     onDelete={handleDelete}
                     onOpen={handleOpen}
+                    onRename={setFileToRename}
                   />
                 </TableCell>
               </TableRow>
@@ -233,10 +239,9 @@ function FileMobileRow({
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <FileCategoryIcon category={file.category} />
+            <FileThumbnail file={file} size="sm" />
             <div className="min-w-0">
               <p className="truncate font-medium">{file.name}</p>
-              <p className="text-muted-foreground truncate text-xs">{file.content_type}</p>
             </div>
           </div>
           <FileStatusBadge status={file.processing_status} />
@@ -244,7 +249,7 @@ function FileMobileRow({
 
         <dl className="grid gap-3 sm:grid-cols-2">
           <ResponsiveListMeta label="Type">
-            <Badge variant="outline">{fileCategoryLabel(file.category)}</Badge>
+            <Badge variant="outline">{fileTypeLabel(file)}</Badge>
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Size">{formatBytes(file.size_bytes)}</ResponsiveListMeta>
           <ResponsiveListMeta label="Updated">
@@ -308,11 +313,13 @@ function FileActions({
   isDeleting,
   onDelete,
   onOpen,
+  onRename,
 }: {
   file: WorkspaceFile
   isDeleting: boolean
   onDelete: (file: WorkspaceFile) => void
   onOpen: (file: WorkspaceFile, forceDownload: boolean) => Promise<void>
+  onRename: (file: WorkspaceFile) => void
 }) {
   return (
     <DropdownMenu>
@@ -340,6 +347,15 @@ function FileActions({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          onClick={() => {
+            onRename(file)
+          }}
+        >
+          <PencilIcon data-icon="inline-start" />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
           disabled={isDeleting}
           onClick={() => {
             onDelete(file)
@@ -352,28 +368,4 @@ function FileActions({
       </DropdownMenuContent>
     </DropdownMenu>
   )
-}
-
-function FileCategoryIcon({ category }: { category: FileContractCategory }) {
-  return (
-    <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border">
-      {iconForCategory(category)}
-    </span>
-  )
-}
-
-function iconForCategory(category: FileContractCategory) {
-  switch (category) {
-    case "editable_text":
-    case "ingestible_document":
-      return <FileTextIcon className="size-4" />
-    case "image":
-      return <ImageIcon className="size-4" />
-    case "video":
-      return <VideoIcon className="size-4" />
-    case "audio":
-      return <HeadphonesIcon className="size-4" />
-    default:
-      return <FileIcon className="size-4" />
-  }
 }

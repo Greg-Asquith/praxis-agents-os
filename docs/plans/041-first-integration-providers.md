@@ -377,9 +377,74 @@ present.
 ## Git workflow
 
 - Branch: `advisor/041-first-integration-providers`
-- Commit style: `API - Gmail, Google Ads & Airtable Providers` (split
-  per provider if landing incrementally: `API - Gmail Provider`, etc.)
+- Commits: one per execution slice (see "Execution slices" below). The
+  per-provider split is binding, not optional — each provider is its
+  own commit and review.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as three separately committed, separately reviewed
+slices — one provider each, with the shared substrate riding the first.
+Boundaries are binding: run the slice's gate green and commit before
+starting the next. Step numbering below is unchanged. The plan-level
+Done criteria apply at the end of Slice C; update the `000_README.md`
+status row only then. Rationale: this is the roadmap's HIGH-risk plan —
+one of these tools spends money — and each provider deserves a review
+that is not diluted by the other two.
+
+### Slice A — Provider substrate + Gmail (`API - Gmail Provider`)
+
+- **Steps**: 0 (both gate pre-flights), 1 (settings + retry-helper
+  audit), 2's gmail manifest completion, 3 (the Gmail package), and
+  Step 6's **shared machinery** —
+  `services/audit_events/integration_events.py` and the
+  `permissions.is_tool_allowed` availability gating — plus the three
+  gmail tool definitions.
+- **Tests (from Step 7)**: `test_gmail_provider.py`,
+  `test_fetched_content_enclosure.py` (the Gate G6 channel (g)
+  deliverable — it ships with the first read tools, in this slice),
+  the `test_import_laws.py` extension, and `test_integration_tools.py`
+  built now with the shared invariants (deny-list schema check,
+  per-entry audit, write gating, decision-1 matrix loop over
+  registered providers).
+- **Gate**: registry smoke lists exactly the three `gmail_*` names;
+  the listed suites green; G1/G6 pre-flight rows quoted in the slice
+  report.
+- **Review focus**: scope-derived write metadata (fail-closed), RFC
+  2822/base64url send construction, the enclosure fixture (forged
+  markers neutralized), and that audit details never contain message
+  bodies.
+
+### Slice B — Google Ads, the spend slice (`API - Google Ads Provider`)
+
+- **Steps**: 2's google_ads manifest completion, 4 (the Google Ads
+  package), and its three tool definitions in Step 6.
+- **Tests (from Step 7)**: `test_google_ads_provider.py` and
+  `tests/services/agents/test_spend_policy.py` — the roadmap's first
+  hard Gate G1 test lands in this slice, in the same commit as the
+  spend lever it pins.
+- **Gate**: `INTEGRATIONS_ENABLED_PROVIDERS='["google_ads"]'` smoke
+  prints `approval False ['approval']` for
+  `google_ads_update_campaign_status`; the listed suites green.
+- **Review focus**: `login-customer-id` selection for MCC children,
+  manager accounts stored non-enabled, the developer token never in
+  logs/audit/exceptions, the mutate partial-failure surfacing, and
+  both spend-policy enforcement layers.
+
+### Slice C — Airtable + catalog closure (`API - Airtable Provider`)
+
+- **Steps**: 2's airtable manifest completion (including the
+  `connect_help` PAT-scope metadata), 5 (the Airtable package), its
+  four tool definitions in Step 6, and the full-catalog closure checks.
+- **Tests (from Step 7)**: `test_airtable_provider.py`; the decision-1
+  matrix loop in `test_integration_tools.py` now covers all 10 tools.
+- **Gate**: registry smoke lists exactly the 10 decision-1 names; then
+  the plan-level Done criteria checklist (import laws, httpx2-only
+  grep, governance flips).
+- **Review focus**: `permissionLevel` → write metadata mapping, the
+  429/Retry-After path, secret-reference-only PAT resolution, and that
+  a fan-out entry's token always comes from its own connection.
 
 ## Steps
 

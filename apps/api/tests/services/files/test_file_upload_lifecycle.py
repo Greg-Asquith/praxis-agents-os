@@ -646,7 +646,7 @@ async def test_create_file_download_records_read_audit_and_defaults_attachment(
     }
 
 
-async def test_create_file_preview_is_image_only_and_does_not_record_read_audit(
+async def test_create_file_preview_is_media_only_and_does_not_record_read_audit(
     db_session: AsyncSession,
     local_storage_settings: None,
 ) -> None:
@@ -687,7 +687,10 @@ async def test_create_file_preview_is_image_only_and_does_not_record_read_audit(
         content_type="text/plain",
         content=b"notes",
     )
-    with pytest.raises(AppValidationError, match="Only image files can be previewed"):
+    with pytest.raises(
+        AppValidationError,
+        match="Previews are available for images, videos, and PDFs",
+    ):
         await create_file_preview(
             db_session,
             workspace=workspace,

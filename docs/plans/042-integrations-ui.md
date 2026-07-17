@@ -352,10 +352,52 @@ Anchors verified 2026-07-10 (post-`edc3abc`).
 ## Git workflow
 
 - Branch: `advisor/042-integrations-ui`
-- Commit style: `Web - Integrations UI` (split as `Web - Integrations
-  Connections UI` / `Web - Active Context Picker` if landing in two
-  slices — Steps 1–6 then 7–8)
+- Commits: one per execution slice (see "Execution slices" below). The
+  two-slice split is binding, not optional.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as two separately committed, separately reviewed
+slices. Boundaries are binding: run the slice's gate green and commit
+before starting the next. Step numbering below is unchanged. The
+plan-level Done criteria apply at the end of Slice B; update the
+`000_README.md` status row only then. The split also matches the
+dependency seam: Slice A needs only landed 038/039; Slice B needs
+040's context routes (the existing STOP condition already anticipates
+this).
+
+### Slice A — Providers, connections, resources (`Web - Integrations Connections UI`)
+
+- **Steps**: 1–6 (types/keys/reads, writes, route shell + router + nav
+  + breadcrumbs + packaging seams, provider catalog + connection list,
+  connect flows, resource selection).
+- **Tests (from Step 9 / decision 17)**: the api-key connect form
+  validation model, the decision-7 status → badge/CTA map (all 8 states
+  + unknown fallback), and the `integrationsQueryKeys` shapes — all of
+  this logic ships in this slice, so its tests do too.
+- **Gate**: `pnpm check` exits 0 with zero warnings (interim knip
+  allowances from Step 1 must be resolved — every shipped api file
+  consumed); manual QA script items 1–5.
+- **Review focus**: secret hygiene (the api-key field cleared on error
+  paths too, nothing cached), invalidation breadth on
+  `update-resource-selection` (four keys), the OAuth return
+  search-param replace (no alert replay), role gating that only hides,
+  never grants.
+
+### Slice B — Context groups + pickers (`Web - Active Context Picker`)
+
+- **Steps**: 7–8 (context groups editor, shared `ContextSelect`,
+  chat-header picker, schedule-form swap) and Step 9's final gate.
+- **Tests**: any decision-17 additions for picker logic; the full
+  static gate.
+- **Gate**: `pnpm check` exits 0 with zero warnings; manual QA script
+  items 6–7; then the plan-level Done criteria checklist.
+- **Review focus**: the conversations→integrations import staying
+  inside the dependency-cruiser rules (restructure, never edit
+  feature-boundary rules), no per-conversation override surface
+  anywhere (040 decision 11), 040's minimal schedule select fully
+  replaced.
 
 ## Steps
 

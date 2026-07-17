@@ -347,9 +347,65 @@ present.
 ## Git workflow
 
 - Branch: `advisor/040-integration-active-context`
-- Commit style: `API - Integration Active Context` for backend commits,
-  `Web - Schedule Active Context Selector` for the Step 9 frontend slice
+- Commits: one per execution slice (see "Execution slices" below); do
+  not combine slices into one commit.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as three separately committed, separately reviewed
+slices. Boundaries are binding: run the slice's gate green and commit
+before starting the next. Step numbering below is unchanged — each
+slice executes only its listed steps and tests. The plan-level Done
+criteria apply at the end of Slice C; update the `000_README.md` status
+row only then. The MEDIUM-HIGH risk in the Status block is concentrated
+in Slice B — it is the only slice that touches the runtime turn path.
+
+### Slice A — Context data layer (`API - Integration Context Selection & Groups`)
+
+- **Steps**: 1–3, plus Step 8's **context routes only** (`GET/PUT/DELETE
+  /integrations/context`, the four context-group routes) — models, core
+  migration, selection/group service ops, route composition.
+- **Tests (from Step 10)**: `test_context_groups.py`,
+  `test_selection_ops.py`, `test_context_routes.py`.
+- **Gate**: migration applies and downgrade round-trips; `uv run alembic
+  check` clean; the listed suites green; ruff clean. No runtime file is
+  touched in this slice.
+- **Review focus**: the XOR CHECK + `(user, workspace)` upsert race
+  (unique-constraint retry, never a 500), cross-workspace ids resolving
+  as 404 without leaking existence, the partial unique group-name index
+  expression matching `__table_args__`.
+
+### Slice B — Runtime resolution, binding, fan-out, injection (`API - Integration Context Runtime`)
+
+- **Steps**: 4–7 (resolution, `IntegrationToolBinding` + import-time
+  law + build-time filtering, fan-out executor, `RuntimeDeps` injection
+  + prompt block).
+- **Tests (from Step 10)**: `test_resolve_active_context.py`,
+  `test_fan_out.py`, `test_context_binding.py`, `test_prompt_block.py`,
+  plus the full `tests/services/agents` regression suite.
+- **Gate**: `TEST_DATABASE_URL=... uv run pytest
+  tests/services/integrations tests/services/agents -q` green; grep
+  shows zero registered tools with `integration_binding`.
+- **Review focus**: the delegated-root walk terminating (bounded by
+  depth), the fail-closed `write_allowed` default, the decision-5 dedup
+  rule, the deny-list import-time guard, and the prompt block rendering
+  the law before the listing so budget truncation never eats the rules.
+
+### Slice C — Schedule contract + minimal selector (`API - Schedule Active Context`, then `Web - Schedule Active Context Selector`)
+
+- **Steps**: Step 8's **schedule-contract half** (create/update/read
+  `active_context`, explicit-null clear) and Step 9 (the minimal 022 UI
+  extension) — two commits, API then Web.
+- **Tests (from Step 10)**: the updated
+  `tests/routes/schedules/test_schedule_routes.py` (including the
+  deliberate line-146 flip); `cd apps/web && pnpm check`.
+- **Gate**: the plan-level Done criteria checklist, including the
+  end-to-end schedule-form round-trip.
+- **Review focus**: the additive schedule contract (all pre-existing
+  schedule tests green with one deliberate flip), the
+  `model_fields_set` explicit-null clear, and the selector storing
+  exactly the decision-2 selection shape.
 
 ## Steps
 

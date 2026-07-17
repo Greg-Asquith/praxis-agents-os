@@ -1,6 +1,6 @@
 # apps/api/services/files/create_file_preview.py
 
-"""Create signed inline preview grants for workspace image files."""
+"""Create signed inline preview grants for workspace media files."""
 
 from datetime import timedelta
 from uuid import UUID
@@ -26,9 +26,12 @@ async def create_file_preview(
     """Create a short-lived inline preview URL without recording a file-read audit event."""
     file = await get_file_for_workspace(db, workspace=workspace, file_id=file_id)
     entry = contract_for_content_type(file.content_type)
-    if entry.category != FileCategory.IMAGE:
+    previewable = entry.category in {FileCategory.IMAGE, FileCategory.VIDEO} or (
+        entry.content_type == "application/pdf"
+    )
+    if not previewable:
         raise AppValidationError(
-            "Only image files can be previewed",
+            "Previews are available for images, videos, and PDFs",
             field="file_id",
             details={"file_id": str(file.id), "content_type": file.content_type},
         )

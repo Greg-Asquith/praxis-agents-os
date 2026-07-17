@@ -3,7 +3,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { PageHeader } from "@/components/shell/page-header"
 import { useFilesQuery } from "@/features/files/api/list-files"
-import { FileDetailSheet } from "@/features/files/components/file-detail-sheet"
+import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { FileUploadButton } from "@/features/files/components/file-upload-button"
 import { FilesTable } from "@/features/files/components/files-table"
 
@@ -18,6 +18,9 @@ export function FilesRoute() {
   })
   const navigate = useNavigate()
   const hasFiles = data.files.length > 0
+  const selectedFile = search.fileId
+    ? (data.files.find((file) => file.id === search.fileId) ?? null)
+    : null
 
   function setOpenFile(fileId: string | null) {
     void navigate({
@@ -42,8 +45,9 @@ export function FilesRoute() {
         }}
       />
 
-      <FileDetailSheet
+      <FileDetailModal
         fileId={search.fileId ?? null}
+        initialFile={selectedFile}
         onClose={() => {
           setOpenFile(null)
         }}

@@ -335,8 +335,60 @@ pre-flight, none of this is in the tree at `0cbbb39`):**
 ## Git workflow
 
 - Branch: `advisor/046-kb-agent-tools-write-policy`
-- Commit style: `API - KB Agent Tools & Write Policy`
+- Commits: one per execution slice (see "Execution slices" below); do
+  not combine slices into one commit.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as two separately committed, separately reviewed
+slices. Boundaries are binding: run the slice's gate green and commit
+before starting the next. Step numbering below is unchanged; the plan
+080 amendment applies to both slices as written. The plan-level Done
+criteria apply at the end of Slice B; update the `000_README.md`
+status row only then. Rationale: this plan contains the platform's two
+distinct HIGH-risk choke points — the write policy and the
+prompt-injection framing — and each deserves a review focused on
+nothing else.
+
+### Slice A — Write policy + document sources (`API - KB Write Policy & Document Sources`)
+
+- **Steps**: 0 (sibling pre-flight), 2 (URL validation), 3 (the
+  write-policy choke point), 4 (the seven document source ops +
+  routes), and Step 8's **§1 flip only** (`[implemented: plan 046]`).
+- **Tests (from Step 7)**: `test_write_policy.py`,
+  `test_document_sources.py`, `test_document_write_routes.py`.
+- **Gate**: OpenAPI lists the seven Step 4 operations; the listed
+  suites green; grep confirms `enforce_kb_write_policy` called by
+  every `services/kb/documents/*` write op; ruff + alembic check
+  clean. No runtime file is touched in this slice.
+- **Review focus**: private-never-shared (no flag combination reaches
+  a shared copy of private content), provenance rules per actor kind,
+  secret patterns never echoing the match, the from-file
+  cross-workspace check, and cross-workspace writes reading as 404,
+  not 403.
+
+### Slice B — Agent tools + untrusted framing (`API - KB Agent Tools`)
+
+- **Steps**: 1 (the amended settings step — only
+  `KB_READ_DOCUMENT_MAX_CHARS`, consumed solely by `read_document`),
+  5 (tools + `frame_untrusted_kb_content`), 6 (the standing prompt
+  block), and Step 8's **§2 deferral annotation**, plus the plan 080
+  eval-wiring done criterion.
+- **Tests (from Step 7)**: `test_kb_tools.py` (framing mechanics
+  against 045's injection fixtures) and the
+  `test_prompt_assembly.py` extension (byte-identical prompt for
+  agents without KB tools).
+- **Gate**: registry sanity lists both tools with `effect="read"`,
+  `default_policy="auto"`; grep confirms no `save_to_knowledge`;
+  `TEST_DATABASE_URL=... uv run pytest tests/services/kb
+  tests/routes/kb tests/services/agents/runtime -q` green; then the
+  plan-level Done criteria checklist.
+- **Review focus**: the marker-forgery regex (attribute-stuffed
+  markers), fixture injection text appearing only inside markers,
+  `range`/`limit` clamps at 045's settings pair, read-side privacy
+  through the acting-user parameter, and the single prompt-assembly
+  call site preserved.
 
 ## Steps
 

@@ -52,16 +52,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
         is_app_frame = _is_app_frame_path(request.url.path)
+        is_pdf_preview = _is_private_pdf_preview(request, response)
+        is_frameable = is_app_frame or is_pdf_preview
 
         # Basic hardening headers
-        if not is_app_frame:
+        if not is_frameable:
             response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault(
             "Permissions-Policy", "geolocation=(), camera=(), microphone=()"
         )
-        if is_app_frame:
+        if is_frameable:
             response.headers.setdefault(
                 "Content-Security-Policy",
                 f"frame-ancestors {self._frame_ancestors}; base-uri 'none'; object-src 'none'",
@@ -78,3 +80,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "max-age=63072000; includeSubDomains; preload",
             )
         return response
+
+
+def _is_private_pdf_preview(request: Request, response: Response) -> bool:
+    """Allow signed inline PDFs to be framed only by configured app origins."""
+    private_storage_prefix = f"{settings.API_V1_PREFIX}/storage/private/"
+    content_type = response.headers.get("Content-Type", "").partition(";")[0].strip().lower()
+    return (
+        request.url.path.startswith(private_storage_prefix)
+        and request.query_params.get("download") != "1"
+        and content_type == "application/pdf"
+    )

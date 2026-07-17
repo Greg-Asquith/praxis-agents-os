@@ -75,7 +75,7 @@ Functional, but visibly unstyled.
 | 016 | Skill form: create wizard (builds shell) & edit wizard | P1 | M | 015 | DONE |
 | 017 | Agent form: create wizard & edit clarity | P1 | L | 016 | DONE |
 | 018 | Schedule form: create wizard & edit clarity | P1 | M | 016 | DONE |
-| 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | TODO |
+| 019 | Files: thumbnails, detail modal with preview, rename | P1 | L | 011, 013 | DONE |
 | 020 | Login page: brand panel art & card breathing room | P2 | M | 013 | DONE |
 | 021 | Conversation headers: compact banner, source without pills | P1 | M | — | DONE |
 | 022 | Approval editing: labeled fields, zero JSON | P1 | L | 005 | TODO |

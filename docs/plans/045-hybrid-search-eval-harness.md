@@ -280,8 +280,54 @@ Verified at `0cbbb39` unless marked as a sibling contract:
 ## Git workflow
 
 - Branch: `advisor/045-hybrid-search-eval-harness`
-- Commit style: `API - KB Hybrid Search & Eval Harness`
+- Commits: one per execution slice (see "Execution slices" below); do
+  not combine slices into one commit.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as two separately committed, separately reviewed
+slices. Boundaries are binding: run the slice's gate green and commit
+before starting the next. Step numbering below is unchanged. The
+plan-level Done criteria apply at the end of Slice B; update the
+`000_README.md` status row only then. Gate G4 discipline across the
+boundary: no ranking constant, CTE limit, or HNSW parameter may change
+between Slice A and Slice B — Gate G4 is satisfied only when Slice B
+lands, and tuning before that point is exactly what the gate forbids.
+
+### Slice A — Hybrid engine + routes (`API - KB Hybrid Search`)
+
+- **Steps**: 1–4 (the retrieval package, search settings including the
+  074-amended `KB_SEARCH_CTE_LIMIT = 50` + validator, `search_chunks`
+  with the 080-amended `is_private`/`private_only` contract,
+  `get_kb_document`, the two routes).
+- **Tests (from Step 6)**: `tests/services/retrieval/test_rrf.py` +
+  `test_reranker.py` (no DB), `tests/services/kb/test_search_chunks.py`
+  + `test_get_document.py`, `tests/routes/kb/` route tests, and the
+  settings-validator pin from the 074 amendment.
+- **Gate**: `uv run pytest tests/services/retrieval -q` green without a
+  DB; `TEST_DATABASE_URL=... uv run pytest tests/services/kb
+  tests/routes/kb tests/contract -q` green; route smoke returns 200.
+- **Review focus**: predicate parity between the two CTEs (any drift is
+  a filter bypass), the `SET LOCAL`/query transaction scoping, NULL
+  array-filter bind handling, privacy-as-404 in `get_document`, and
+  the collection guard in the semantic CTE — verified by reading the
+  final SQL, not just the tests.
+
+### Slice B — The Gate G4 eval harness (`API - KB Retrieval Eval Harness`)
+
+- **Steps**: 5–7 (fixtures + cases, the harness assertion modules, the
+  Gate G4 record).
+- **Tests**: the six `tests/integration/retrieval_eval/` modules,
+  including `test_sql_matches_rrf_spec.py` and the three
+  prompt-injection fixtures with the cross-plan comment naming 046.
+- **Gate**: `TEST_DATABASE_URL=... uv run pytest
+  tests/integration/retrieval_eval -q` green at the written defaults —
+  if cases fail, report actual ranks, do not tune (the existing STOP
+  condition); then the plan-level Done criteria checklist.
+- **Review focus**: seeding through the real pipeline (never raw chunk
+  inserts), the isolation/privacy assertions never weakened to make
+  ranking pass, and injection fixtures round-tripping byte-faithful.
 
 ## Steps
 

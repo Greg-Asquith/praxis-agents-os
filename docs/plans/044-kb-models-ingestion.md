@@ -359,8 +359,61 @@ Verified at `0cbbb39` unless marked as a sibling contract:
 ## Git workflow
 
 - Branch: `advisor/044-kb-models-ingestion`
-- Commit style: `API - KB Models & Ingestion Pipeline`
+- Commits: one per execution slice (see "Execution slices" below); do
+  not combine slices into one commit.
 - Do NOT push or open a PR unless the operator instructed it.
+
+## Execution slices (added 2026-07-17)
+
+This plan lands as two separately committed, separately reviewed
+slices. Boundaries are binding: run the slice's gate green and commit
+before starting the next. Step numbering below is unchanged; the plan
+080 amendment applies to both slices as written. The plan-level Done
+criteria apply at the end of Slice B; update the `000_README.md` status
+row only then. Rationale: the hand-written HNSW/tsvector DDL and the
+offset-invariant chunker deserve a review that is not buried under the
+pipeline, and vice versa.
+
+### Slice A — Schema, settings, chunker, fetch substrate (`API - KB Schema & Chunker`)
+
+- **Steps**: 1–3 (dependency + settings, models + the hand-written
+  core migration, domain + chunker + `services/kb/utils.py` including
+  the SSRF-hardened, IP-pinned `fetch_url` per the plan 074 amendment
+  and the real `get_revision_markdown` seam per the plan 080
+  amendment).
+- **Tests (from Step 7)**: `test_chunking.py` (the substring-invariant
+  module) and `test_fetch_url.py` (including the 074 pinned-connect
+  assertions).
+- **Gate**: `uv run alembic upgrade heads` clean with downgrade
+  round-trip; `uv run alembic check` no pending operations; the
+  index-guard `\d kb_chunks` output pasted into the slice report; the
+  two listed test modules green; ruff clean. No job kind exists yet.
+- **Review focus**: the migration's downgrade dropping every
+  hand-written index/column, fence handling and the overlap-offset
+  interaction in the chunker, and the SSRF resolver checks with every
+  redirect hop re-validated and re-pinned.
+
+### Slice B — Ingestion pipeline (`API - KB Ingestion Pipeline`)
+
+- **Steps**: 4–6 (create/delete service ops, the ingest handler, the
+  annotation helper with its threat-model §2(h) framing + bound, the
+  embed handler, the sweep — all three handlers as thin modules in
+  `services/jobs/handlers/` per the plan 080 amendment).
+- **Tests (from Step 7)**: `test_create_document.py`,
+  `test_ingest_document.py`, `test_embed_chunks.py`,
+  `test_annotation.py` (including the §2(h) deterministic test),
+  `test_sweep_deleted.py`.
+- **Gate**: registry print shows exactly the three kb kinds; worker
+  `--once` exits 0; the listed suites plus
+  `tests/services/jobs tests/services/embeddings` green; then the
+  plan-level Done criteria checklist. Gate G6 note: annotation must
+  not ship in a commit without its framing + bound tests — both live
+  in this slice by construction.
+- **Review focus**: the error-path nested transaction in the ingest
+  handler (status stamping surviving the re-raise), fill-NULLs-only
+  embed idempotency + the dims guard failing loudly, ids-only job
+  payloads, and the annotation prompt's untrusted-data framing with
+  the server-side `context_line` bound.
 
 ## Steps
 

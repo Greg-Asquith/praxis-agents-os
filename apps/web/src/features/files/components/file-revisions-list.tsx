@@ -1,16 +1,20 @@
 // apps/web/src/features/files/components/file-revisions-list.ts
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { useSuspenseQueries } from "@tanstack/react-query"
 import { CheckIcon, RotateCcwIcon } from "lucide-react"
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { agentsQueryOptions } from "@/features/agents/api/list-agents"
 import { useRevisionContentQuery } from "@/features/files/api/get-revision-content"
 import { useRestoreFileRevisionMutation } from "@/features/files/api/restore-file-revision"
 import { RevisionDiff } from "@/features/files/components/revision-diff"
-import { fileRevisionKindLabel, shortHash } from "@/features/files/format"
+import { fileRevisionKindLabel } from "@/features/files/format"
 import type { FileRevision, WorkspaceFile } from "@/features/files/types"
+import { workspaceMembershipsQueryOptions } from "@/features/workspaces/api/list-memberships"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, formatDateTime } from "@/lib/format"
 
@@ -32,6 +36,8 @@ export function FileRevisionsList({
   )
   const [error, setError] = useState<string | null>(null)
   const [revisionToRestore, setRevisionToRestore] = useState<FileRevision | null>(null)
+  const actorLabels = useActorLabels()
+  const canCompare = file.category === "editable_text" && revisions.length > 1
   const baseRevision = revisions.find((revision) => revision.id === baseRevisionId) ?? null
   const compareRevision = revisions.find((revision) => revision.id === compareRevisionId) ?? null
 
@@ -71,7 +77,9 @@ export function FileRevisionsList({
             key={revision.id}
             onRestore={handleRestore}
             revision={revision}
+            actor={actorLabels(revision)}
             baseRevisionId={baseRevisionId}
+            canCompare={canCompare}
             setBaseRevisionId={setBaseRevisionId}
             setCompareRevisionId={setCompareRevisionId}
           />
@@ -79,14 +87,14 @@ export function FileRevisionsList({
       </div>
       <ConfirmDialog
         confirmIcon={<RotateCcwIcon data-icon="inline-start" />}
-        confirmLabel="Restore Revision"
+        confirmLabel="Restore Version"
         confirmPendingLabel="Restoring"
         description={
           revisionToRestore
-            ? `Restore ${file.name} to revision ${String(
+            ? `Restore ${file.name} to version ${String(
                 revisionToRestore.revision_number
-              )}. A new current revision will be added.`
-            : "A new current revision will be added."
+              )}. A new current version will be created.`
+            : "A new current version will be created."
         }
         isPending={restoreMutation.isPending}
         onConfirm={confirmRestoreRevision}
@@ -96,26 +104,24 @@ export function FileRevisionsList({
           }
         }}
         open={revisionToRestore !== null}
-        title="Restore revision?"
+        title="Restore this version?"
         variant="default"
       />
-      {file.category === "editable_text" && baseRevision && compareRevision ? (
+      {canCompare && baseRevision && compareRevision ? (
         <RevisionDiffPanel
           baseRevision={baseRevision}
           compareRevision={compareRevision}
           fileId={file.id}
         />
-      ) : (
-        <div className="bg-muted/40 rounded-md border p-3 text-sm">
-          Text diff is available for editable text files.
-        </div>
-      )}
+      ) : null}
     </div>
   )
 }
 
 function RevisionRow({
+  actor,
   baseRevisionId,
+  canCompare,
   compareRevisionId,
   file,
   isRestoring,
@@ -124,7 +130,9 @@ function RevisionRow({
   setBaseRevisionId,
   setCompareRevisionId,
 }: {
+  actor: string
   baseRevisionId: string | null
+  canCompare: boolean
   compareRevisionId: string | null
   file: WorkspaceFile
   isRestoring: boolean
@@ -141,39 +149,42 @@ function RevisionRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={isCurrentRevision ? "default" : "outline"}>
-              Revision {revision.revision_number}
+              Version {revision.revision_number}
             </Badge>
             <Badge variant="secondary">{fileRevisionKindLabel(revision.revision_kind)}</Badge>
             {isCurrentRevision ? <Badge variant="outline">Current</Badge> : null}
           </div>
           <p className="text-muted-foreground mt-2 text-xs">
-            {actorLabel(revision)} · {formatBytes(revision.size_bytes)} ·{" "}
-            {shortHash(revision.content_hash)} · {formatDateTime(revision.created_at)}
+            {actor} · {formatBytes(revision.size_bytes)} · {formatDateTime(revision.created_at)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={() => {
-              setBaseRevisionId(revision.id)
-            }}
-            size="sm"
-            type="button"
-            variant={baseRevisionId === revision.id ? "default" : "outline"}
-          >
-            {baseRevisionId === revision.id ? <CheckIcon data-icon="inline-start" /> : null}
-            Base
-          </Button>
-          <Button
-            onClick={() => {
-              setCompareRevisionId(revision.id)
-            }}
-            size="sm"
-            type="button"
-            variant={compareRevisionId === revision.id ? "default" : "outline"}
-          >
-            {compareRevisionId === revision.id ? <CheckIcon data-icon="inline-start" /> : null}
-            Compare
-          </Button>
+          {canCompare ? (
+            <>
+              <Button
+                onClick={() => {
+                  setBaseRevisionId(revision.id)
+                }}
+                size="sm"
+                type="button"
+                variant={baseRevisionId === revision.id ? "default" : "outline"}
+              >
+                {baseRevisionId === revision.id ? <CheckIcon data-icon="inline-start" /> : null}
+                Base
+              </Button>
+              <Button
+                onClick={() => {
+                  setCompareRevisionId(revision.id)
+                }}
+                size="sm"
+                type="button"
+                variant={compareRevisionId === revision.id ? "default" : "outline"}
+              >
+                {compareRevisionId === revision.id ? <CheckIcon data-icon="inline-start" /> : null}
+                Compare
+              </Button>
+            </>
+          ) : null}
           {!isCurrentRevision ? (
             <Button
               disabled={isRestoring}
@@ -209,22 +220,51 @@ function RevisionDiffPanel({
   return (
     <RevisionDiff
       leftContent={baseContent.content}
-      leftLabel={`revision ${String(baseRevision.revision_number)}`}
+      leftLabel={`version ${String(baseRevision.revision_number)}`}
       rightContent={compareContent.content}
-      rightLabel={`revision ${String(compareRevision.revision_number)}`}
+      rightLabel={`version ${String(compareRevision.revision_number)}`}
     />
   )
 }
 
-function actorLabel(revision: FileRevision) {
-  if (revision.created_by_system) {
-    return "System"
+function useActorLabels() {
+  const { workspace } = useActiveWorkspace()
+  const [{ data: memberships }, { data: agents }] = useSuspenseQueries({
+    queries: [
+      workspaceMembershipsQueryOptions(workspace.id),
+      agentsQueryOptions({ includeInactive: true, limit: 100 }),
+    ],
+  })
+  const userLabels = useMemo(
+    () =>
+      new Map(
+        memberships.memberships.map((membership) => [
+          membership.user_id,
+          firstNonEmpty([membership.user_display_name, membership.user_email], "A teammate"),
+        ])
+      ),
+    [memberships.memberships]
+  )
+  const agentLabels = useMemo(
+    () =>
+      new Map(agents.agents.map((agent) => [agent.id, firstNonEmpty([agent.name], "An agent")])),
+    [agents.agents]
+  )
+
+  return (revision: FileRevision) => {
+    if (revision.created_by_system) {
+      return "System"
+    }
+    if (revision.created_by_agent_id) {
+      return agentLabels.get(revision.created_by_agent_id) ?? "An agent"
+    }
+    if (revision.created_by_user_id) {
+      return userLabels.get(revision.created_by_user_id) ?? "A teammate"
+    }
+    return "A teammate"
   }
-  if (revision.created_by_agent_id) {
-    return `Agent ${revision.created_by_agent_id.slice(0, 8)}`
-  }
-  if (revision.created_by_user_id) {
-    return `User ${revision.created_by_user_id.slice(0, 8)}`
-  }
-  return "Unknown actor"
+}
+
+function firstNonEmpty(values: (string | null)[], fallback: string) {
+  return values.find((value) => value?.trim())?.trim() ?? fallback
 }

@@ -1,5 +1,42 @@
 // apps/web/src/features/files/format.ts
 
+import type { WorkspaceFile } from "@/features/files/types"
+
+const FILE_TYPE_LABELS: Readonly<Record<string, string>> = {
+  "application/json": "JSON",
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Spreadsheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+  "text/csv": "CSV",
+  "text/html": "HTML",
+  "text/markdown": "Markdown",
+  "text/plain": "Text",
+}
+
+export function fileTypeLabel(
+  file: Pick<WorkspaceFile, "category" | "content_type" | "extension">
+) {
+  const contentType = file.content_type.split(";")[0]?.trim().toLowerCase() ?? ""
+  const exactLabel = FILE_TYPE_LABELS[contentType]
+  if (exactLabel) {
+    return exactLabel
+  }
+
+  if (file.category === "image" || contentType.startsWith("image/")) {
+    return "Image"
+  }
+  if (file.category === "video" || contentType.startsWith("video/")) {
+    return "Video"
+  }
+  if (file.category === "audio" || contentType.startsWith("audio/")) {
+    return "Audio"
+  }
+
+  const extension = file.extension.replace(/^\./, "").trim()
+  return extension ? extension.toUpperCase() : fileCategoryLabel(file.category)
+}
+
 export function fileCategoryLabel(category: string) {
   switch (category) {
     case "editable_text":
@@ -47,8 +84,4 @@ export function fileRevisionKindLabel(kind: string) {
     default:
       return kind.replace(/_/g, " ")
   }
-}
-
-export function shortHash(value: string) {
-  return value.length > 12 ? value.slice(0, 12) : value
 }
