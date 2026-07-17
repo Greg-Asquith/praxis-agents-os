@@ -86,12 +86,14 @@ function ConversationDetail({
   const { pendingUserMessages, stream } = useConversationWorkspace()
   const [submittingApprovalRunId, setSubmittingApprovalRunId] = useState<string | null>(null)
   const isLiveStreamConversation = stream.conversationId === conversationId
-  const streamActiveRun = streamActiveRunFromState({
-    conversation,
-    done: stream.done,
-    runId: stream.runId,
-    status: stream.status,
-  })
+  const streamActiveRun = isLiveStreamConversation
+    ? streamActiveRunFromState({
+        conversation,
+        done: stream.done,
+        runId: stream.runId,
+        status: stream.status,
+      })
+    : undefined
   const initialActiveRun =
     isLiveStreamConversation && streamActiveRun !== undefined
       ? ({ active_run: streamActiveRun } satisfies ConversationActiveRunResponse)

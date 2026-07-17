@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/hooks/use-conversation-auto-scroll.ts
 
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler } from "react"
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type UIEventHandler } from "react"
 
 import type { ChatMessageDraft, ToolCallState } from "@/features/conversations/stream/reducer"
 
@@ -30,7 +30,9 @@ export function useConversationAutoScroll({
     [streamToolCalls]
   )
 
-  useEffect(() => {
+  // Correct the bottom pin before paint so live-to-persisted swaps never expose
+  // the container's transient height; readers who scrolled away remain untouched.
+  useLayoutEffect(() => {
     const element = scrollRef.current
     if (!element) {
       return

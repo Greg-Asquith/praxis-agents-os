@@ -10,18 +10,25 @@ import {
   redirect,
 } from "@tanstack/react-router"
 
+import { agentQueryOptions } from "@/features/agents/api/get-agent"
+import { agentsQueryOptions } from "@/features/agents/api/list-agents"
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
 import { validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
 import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callback-loader"
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
+import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
+import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
+import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
 import { validateFilesSearch } from "@/features/files/search"
+import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
 import { ErrorRoute } from "@/routes/error-route"
 import { NotFoundRoute } from "@/routes/not-found"
 import { PendingRoute } from "@/routes/pending"
+import { RoutePendingFallback } from "@/routes/route-pending"
 
 type RouterContext = {
   queryClient: QueryClient
@@ -140,6 +147,15 @@ const conversationRuntimeRoute = createRoute({
 const newConversationRoute = createRoute({
   getParentRoute: () => conversationRuntimeRoute,
   path: "/conversations/new",
+  pendingMs: Infinity,
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(
+        agentsQueryOptions({ includeInactive: false, limit: 100 })
+      ),
+      context.queryClient.ensureQueryData(modelCatalogQueryOptions()),
+    ])
+  },
   component: lazyRouteComponent(
     () => import("@/features/conversations/routes/new-conversation-route"),
     "NewConversationRoute"
@@ -149,6 +165,20 @@ const newConversationRoute = createRoute({
 const conversationRoute = createRoute({
   getParentRoute: () => conversationRuntimeRoute,
   path: "/conversations/$conversationId",
+  pendingMs: Infinity,
+  loader: async ({ context, params }) => {
+    const conversation = await context.queryClient.ensureQueryData(
+      conversationQueryOptions(params.conversationId)
+    )
+    await Promise.all([
+      context.queryClient.ensureQueryData(conversationMessagesQueryOptions(params.conversationId)),
+      context.queryClient.ensureQueryData(conversationActiveRunQueryOptions(params.conversationId)),
+      context.queryClient.ensureQueryData(modelCatalogQueryOptions()),
+      ...(conversation.active_agent_id
+        ? [context.queryClient.ensureQueryData(agentQueryOptions(conversation.active_agent_id))]
+        : []),
+    ])
+  },
   component: lazyRouteComponent(
     () => import("@/features/conversations/routes/conversation-route"),
     "ConversationRoute"
@@ -316,6 +346,7 @@ const routeTree = rootRoute.addChildren([
 export function createAppRouter(queryClient: QueryClient) {
   return createRouter({
     context: { queryClient },
+    defaultPendingComponent: RoutePendingFallback,
     defaultPreload: "intent",
     routeTree,
   })

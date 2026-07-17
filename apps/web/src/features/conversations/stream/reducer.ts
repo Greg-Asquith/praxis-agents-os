@@ -59,8 +59,8 @@ export type LiveTimelineItem =
 
 export type AgentStreamAction =
   | { type: "start" }
+  | { type: "abort" }
   | { type: "reset" }
-  | { type: "resetSettledRun"; runId: string; conversationId: string }
   | { type: "finishClosedStream" }
   | { type: "event"; event: StreamEvent }
   | { type: "fail"; error: StreamError }
@@ -86,17 +86,13 @@ export function agentStreamReducer(
   switch (action.type) {
     case "start":
       return { ...initialAgentStreamState, status: "pending" }
-    case "reset":
-      return initialAgentStreamState
-    case "resetSettledRun":
-      if (
-        state.runId !== action.runId ||
-        state.conversationId !== action.conversationId ||
-        !state.done
-      ) {
+    case "abort":
+      if (state.status === "idle" || state.done) {
         return state
       }
 
+      return { ...state, done: true }
+    case "reset":
       return initialAgentStreamState
     case "finishClosedStream":
       return { ...state, done: true }

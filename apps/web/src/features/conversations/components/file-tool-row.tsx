@@ -267,7 +267,7 @@ function ReadFileUrlRow({
       label={
         <span className="inline-flex min-w-0 items-center gap-1.5">
           <FileIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Prepared Link</span>
+          <span className="min-w-0 truncate">Loaded File</span>
         </span>
       }
       suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}

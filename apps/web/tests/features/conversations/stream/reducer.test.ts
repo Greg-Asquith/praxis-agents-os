@@ -220,6 +220,69 @@ describe("agentStreamReducer", () => {
     expect(state.error).toBeNull()
   })
 
+  it("finalizes an aborted run without discarding streamed drafts", () => {
+    const runningState = reduceEvents([
+      {
+        event: "message.delta",
+        data: { ...eventWithSeq(1), message_id: "message-1", text: "Partial reply" },
+      },
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "tool-1",
+          name: "web_search",
+          args: { query: "Praxis Agents" },
+        },
+      },
+      {
+        event: "run.status",
+        data: { ...eventWithSeq(3), status: "running" },
+      },
+    ])
+
+    const abortedState = agentStreamReducer(runningState, { type: "abort" })
+
+    expect(abortedState.done).toBe(true)
+    expect(abortedState.status).toBe("running")
+    expect(abortedState.messages).toBe(runningState.messages)
+    expect(abortedState.toolCalls).toBe(runningState.toolCalls)
+  })
+
+  it("leaves idle and already-finished streams unchanged when aborted", () => {
+    expect(agentStreamReducer(initialAgentStreamState, { type: "abort" })).toBe(
+      initialAgentStreamState
+    )
+
+    const finishedState = reduceEvents([
+      {
+        event: "done",
+        data: { ...eventWithSeq(1), status: "completed" },
+      },
+    ])
+
+    expect(agentStreamReducer(finishedState, { type: "abort" })).toBe(finishedState)
+  })
+
+  it("ignores stream events after an abort", () => {
+    const runningState = reduceEvents([
+      {
+        event: "run.status",
+        data: { ...eventWithSeq(1), status: "running" },
+      },
+    ])
+    const abortedState = agentStreamReducer(runningState, { type: "abort" })
+    const nextState = agentStreamReducer(abortedState, {
+      type: "event",
+      event: {
+        event: "message.delta",
+        data: { ...eventWithSeq(2), message_id: "message-1", text: "Too late" },
+      },
+    })
+
+    expect(nextState).toBe(abortedState)
+  })
+
   it("keeps text and tool calls in arrival order while updating results in place", () => {
     const beforeResult = reduceEvents([
       {

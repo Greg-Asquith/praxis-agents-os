@@ -111,7 +111,7 @@ Functional, but visibly unstyled.
 | 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | DONE |
 | 030 | In-place tool calls: ordered turns | P1 | L | — | DONE |
 | 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | DONE |
-| 032 | Resilient conversation streams across navigation | P1 | M | — | TODO |
+| 032 | Resilient conversation streams across navigation | P1 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)

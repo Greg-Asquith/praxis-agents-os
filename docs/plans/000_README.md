@@ -396,6 +396,24 @@ plain-language content replacing byte offsets, raw document JSON, and delegated
 run identifiers. Policy-injected delegation execution and presentation share a
 validated definition without changing approval, dispatch, SSE, or persistence
 semantics.
+UI-032 completed resilient conversation navigation on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-032-resilient-stream-navigation.md`. Client
+aborts now finalize stream state deterministically while retaining partial
+drafts, stream-derived run state is scoped to its conversation, and existing
+TanStack Query options preload conversation data before route commit. A
+router-wide outlet-local pending boundary prevents cold route suspension from
+hiding the workspace-scoped stream provider. No backend, SSE protocol,
+approval payload, or stream-reattach behavior changed; interrupted streams
+degrade to the existing heal polling. A same-day follow-up disabled the
+conversation routes' loader-driven pending timeout so cold preloads keep the
+current conversation visible instead of forcing a minimum-duration skeleton;
+the local Suspense containment boundary remains active. The stream-to-persisted
+turn handoff also moved its existing bottom-pin correction to the pre-paint
+layout phase. Settled drafts remain mounted until the messages query renders a
+persisted assistant response for the same run; the eagerly persisted user
+prompt does not count as the replacement, and query invalidation does not clear
+the stream first. This prevents visible scroll oscillation without changing the
+reader-scroll opt-out.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding
@@ -412,6 +430,16 @@ amendment blocks are unchanged, each slice must pass its own gate before
 the next starts, and a plan's status row flips to DONE only when its
 final slice lands. Plans 043, 047, 055, and 056 were assessed in the same
 pass and left single-slice.
+
+Plan 081 was added 2026-07-17 after a conversation demonstrated that an
+agent could resolve an uploaded image only as a signed download link and
+then tell the user it could not inspect the image. The landed Files and
+multimodal paths already support agent-visible image bytes and extracted
+document content; 081 is the focused reliability follow-up that makes that
+content path the agent default, verifies provider/runtime handoff, keeps
+URLs as an explicit download/fallback path, and adds regression coverage
+for truthful file-read behavior. Its plan document is written before
+execution.
 
 ## Execution Order & Status
 
@@ -502,6 +530,7 @@ pass and left single-slice.
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
 | 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO (plan doc written by the Phase 4a executor once 041 lands) |
 | 080 | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h) | P1 | S-M | binds before Phase 4a/4b execute | DONE |
+| 081 | Make agent file inspection content-first and truthful across images and documents | P1 | M | 034, 036 (before remaining Phase 4 work) | TODO (plan doc not yet written) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

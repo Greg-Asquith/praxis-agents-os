@@ -49,16 +49,14 @@ export function useConversationRunState({
     () => Object.keys(streamApprovalsById).length,
     [streamApprovalsById]
   )
-  const hasPersistedStreamRun = useMemo(
-    () =>
-      streamRunId !== null &&
-      messages.some((message) => message.metadata?.["agent_run_id"] === streamRunId),
+  const hasPersistedStreamResponse = useMemo(
+    () => hasPersistedRunResponse(messages, streamRunId),
     [messages, streamRunId]
   )
   const shouldRenderStream = shouldRenderConversationStream({
     activeRun,
     conversationId,
-    hasPersistedStreamRun,
+    hasPersistedStreamResponse,
     streamConversationId,
     submittingApprovalRunId,
   })
@@ -110,7 +108,7 @@ export function useConversationRunState({
       activeRunId !== null &&
       submittingApprovalRunId !== activeRunId &&
       streamRunId === activeRunId
-    const streamMatchesPersistedSettledRun = activeRunId === null && hasPersistedStreamRun
+    const streamMatchesPersistedSettledRun = activeRunId === null && hasPersistedStreamResponse
 
     if (!streamMatchesPendingApproval && !streamMatchesPersistedSettledRun) {
       return
@@ -128,7 +126,7 @@ export function useConversationRunState({
     activeRunId,
     activeRunStatus,
     conversationId,
-    hasPersistedStreamRun,
+    hasPersistedStreamResponse,
     streamApprovalCount,
     streamConversationId,
     streamIsStreaming,
@@ -203,16 +201,31 @@ function isPendingDelegatedApproval(
   return delegation !== null && delegation !== undefined
 }
 
-function shouldRenderConversationStream({
+export function hasPersistedRunResponse(
+  messages: ConversationMessage[],
+  streamRunId: string | null
+) {
+  // The user prompt is persisted eagerly with this run id. Only an assistant
+  // row proves that query data can replace the visible streamed response.
+  return (
+    streamRunId !== null &&
+    messages.some(
+      (message) =>
+        message.role === "assistant" && message.metadata?.["agent_run_id"] === streamRunId
+    )
+  )
+}
+
+export function shouldRenderConversationStream({
   activeRun,
   conversationId,
-  hasPersistedStreamRun,
+  hasPersistedStreamResponse,
   streamConversationId,
   submittingApprovalRunId,
 }: {
   activeRun: { id: string; status: string } | null
   conversationId: string
-  hasPersistedStreamRun: boolean
+  hasPersistedStreamResponse: boolean
   streamConversationId: string | null
   submittingApprovalRunId: string | null
 }) {
@@ -220,7 +233,7 @@ function shouldRenderConversationStream({
     return false
   }
 
-  if (activeRun === null && hasPersistedStreamRun) {
+  if (activeRun === null && hasPersistedStreamResponse) {
     return false
   }
 

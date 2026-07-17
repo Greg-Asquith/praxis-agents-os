@@ -8,6 +8,29 @@
 
 ## Status
 
+- **Completed**: 2026-07-17. Client aborts now finalize stream state without
+  discarding partial output, stream-derived run state is conversation-scoped,
+  conversation routes preload their suspense data through the existing query
+  options, and every non-root match has an outlet-local pending boundary.
+- **Verification**: `cd apps/web && pnpm check` passed (38 test files,
+  179 tests), including the added abort reducer, persistence handoff, and router
+  coverage; `git diff --check` passed. The installed TanStack Router `Match.tsx`
+  was re-verified to wrap non-root matches in `React.Suspense` when a default
+  pending component is configured. The initial implementation was not tested in
+  a browser because the maintainer explicitly prohibited browser verification;
+  the later scroll diagnosis used the maintainer-provided screen recording.
+- **Follow-up**: 2026-07-17 — conversation routes now opt out of TanStack
+  Router's loader-driven pending timeout. Their loaders still resolve before
+  commit and every match retains its local Suspense boundary, but a cold agent
+  fetch no longer swaps the live conversation for a minimum-500ms skeleton.
+  A focused router configuration test protects this no-flash contract.
+- **Scroll follow-up**: 2026-07-17 — the existing bottom-pin correction now
+  runs in React's pre-paint layout phase, and settled stream content remains
+  mounted until the matching persisted assistant response is renderable. The
+  eagerly persisted user prompt no longer triggers that handoff, and stream
+  cleanup no longer races React Query's observer render. Users pinned to the
+  bottom therefore do not see a transient shorter timeline, while users who
+  intentionally scrolled away remain untouched.
 - **Written**: 2026-07-17, anchors verified against `89ac993`. Unlike most
   of this series this is a correctness plan, not a visual one (precedent:
   plan 014). It fixes a diagnosed production bug and hardens the stream
@@ -44,7 +67,7 @@ The verified failure chain:
    `useSyncExternalStore`. External-store updates de-opt React
    transitions to **synchronous renders**, so if the incoming screen
    suspends, React cannot keep showing the old one.
-3. The incoming screen *can* suspend post-commit: `ConversationDetail`
+3. The incoming screen _can_ suspend post-commit: `ConversationDetail`
    calls `useSuspenseQueries([agentQueryOptions(…), …])`
    (`conversation-route.tsx:138-140`). Conversation, messages, and
    active-run are pre-seeded by `seedStreamQueryCache`, and the router
@@ -57,7 +80,7 @@ The verified failure chain:
    `@tanstack/react-router` `Match.js`, v1.171.13). The only real
    Suspense boundary is the top-level one in `Matches()` — **above**
    `ConversationRuntimeProvider`.
-5. The suspension therefore reverts the *root* boundary to its
+5. The suspension therefore reverts the _root_ boundary to its
    fallback. React 18+ cleans up effects in a tree hidden behind a
    Suspense fallback, which runs `useAgentStream`'s unmount cleanup
    (`use-agent-stream.ts:58-63`) — **aborting the live SSE fetch**.
@@ -106,7 +129,7 @@ stream the same way.
   `isLiveStreamConversation` but `:137`
   (`streamActiveRun ?? activeRunQuery.data.active_run`) and the
   messages `refetchInterval` closure (`:115-121`) do not.
-- Healing that already works when stream state is *not* stuck: 1s
+- Healing that already works when stream state is _not_ stuck: 1s
   heal-polling while a run is `pending`/`running`
   (`conversation-heal-polling.ts`), approval recovery via
   `useAgentRunApprovalStateQuery` when the active run reports
@@ -135,7 +158,7 @@ stream the same way.
   behavior until then. Do not build a reattach endpoint here.
 - **Abort-on-unmount stays.** The provider is keyed by workspace id;
   tearing down the stream on workspace switch is a workspace-isolation
-  property, not an accident. We make aborts *safe*, we do not remove
+  property, not an accident. We make aborts _safe_, we do not remove
   them. Same for navigating out of the conversation area (the runtime
   layout unmounts): the live stream ends by design, the run continues
   server-side, and polling heals the transcript on return.
@@ -148,6 +171,94 @@ stream the same way.
 - **Route-level pending UI is a lightweight, outlet-local fallback** —
   not `AppLayoutFallback`, which paints a full app frame and would nest
   a fake sidebar inside the real one.
+
+## Landed implementation record (authoritative)
+
+This section records the final implementation, including the two same-day
+follow-ups. Where the original execution steps below discuss
+`resetSettledRun` or loader pending timing, this record supersedes them.
+
+### Stream lifecycle and recovery
+
+- `agentStreamReducer` has an `abort` action. It marks an active stream
+  `done: true` without changing the last observed server status or discarding
+  message/tool drafts. Aborting an idle or already-terminal stream is an
+  identity operation, and later events are ignored by the existing terminal
+  event gate.
+- `useAgentStream` dispatches `abort` only when the aborted controller still
+  owns the stream (or cleanup already cleared the controller ref). This prevents
+  an awaiting-approval stream superseded by a new resume stream from finalizing
+  the new stream by mistake.
+- The stream hook invalidates the conversation list/detail/messages/active-run
+  queries after closure but does **not** eagerly clear settled drafts. Rendered
+  query data, rather than completion of an invalidation promise, is the handoff
+  authority.
+- `useConversationRunState` owns settled-state reconciliation. Approval
+  transitions can reconcile against the matching awaiting run; completed turns
+  reconcile only after the messages query contains the matching persisted
+  assistant response.
+- Interrupted streams continue to degrade to the existing one-second heal
+  polling. No reconnect/replay behavior, API endpoint, SSE event, persistence
+  schema, or backend runtime behavior changed.
+
+### Navigation and Suspense containment
+
+- `RoutePendingFallback` is the router-wide default pending component. It gives
+  every non-root match an outlet-local Suspense boundary, so a cold child route
+  cannot hide and unmount the workspace-scoped conversation runtime provider.
+- The conversation detail loader preloads conversation, messages, active run,
+  model catalog, and (when present) active agent data through the existing
+  TanStack Query option factories and `ensureQueryData`. The new-conversation
+  loader preloads agents and the model catalog the same way.
+- Both conversation leaf routes set `pendingMs: Infinity`. Their loaders still
+  resolve before the route commits, while the current conversation remains on
+  screen; they do not enter TanStack Router's minimum-duration loader pending UI.
+  The local Suspense boundary remains available for render-time suspension.
+- Stream-derived active-run state is constructed only when the shared stream's
+  `conversationId` matches the open route. A foreign or interrupted stream can
+  no longer shadow another conversation's persisted active run or approval
+  state.
+
+### Atomic live-to-persisted transcript handoff
+
+The supplied recording showed a two-frame oscillation at turn completion:
+
+1. the live assistant card disappeared, shrinking `scrollHeight` and causing
+   the browser to clamp the viewport upward;
+2. the persisted assistant message rendered on the following update, restoring
+   height and moving the viewport down again.
+
+Two independent races caused that gap. The current turn's user prompt is
+persisted eagerly and carries the same `agent_run_id`, so checking for _any_
+message from the run falsely declared persistence ready. Separately,
+`useAgentStream` cleared settled drafts after awaiting query invalidation, even
+though React Query had not necessarily committed the observer update yet.
+
+The final handoff contract is therefore:
+
+- keep live message/tool drafts mounted after the terminal event;
+- consider the replacement ready only when a persisted message has both
+  `role === "assistant"` and the matching `metadata.agent_run_id`;
+- derive persisted-vs-live visibility in `useConversationRunState`, then clear
+  the now-hidden shared stream state in its reconciliation effect;
+- when the reader is pinned to the bottom, perform the height-dependent scroll
+  correction in `useLayoutEffect`, before paint; preserve the existing opt-out
+  for readers who intentionally scrolled away.
+
+This makes the visual swap atomic without duplicating the live and persisted
+response and without changing scrolling policy.
+
+### Regression coverage
+
+- `tests/features/conversations/stream/reducer.test.ts`: abort preserves partial
+  drafts, idle/terminal aborts are identities, and post-abort events are ignored.
+- `tests/app/router.test.ts`: the router exposes a default pending component and
+  both conversation leaf routes retain `pendingMs: Infinity`.
+- `tests/features/conversations/hooks/use-conversation-run-state.test.ts`: an
+  eagerly persisted user prompt cannot trigger handoff; a matching assistant
+  response can; settled live content remains visible until that response exists.
+- Full frontend gate: 38 test files / 179 tests plus typecheck, ESLint,
+  Prettier, Knip, dependency-cruiser, and production build.
 
 ## Steps
 
@@ -179,22 +290,29 @@ Tests (`tests/features/conversations/stream/reducer.test.ts`):
 
 ```ts
 if (isAbortError(error)) {
-  if (abortControllerRef.current === null || abortControllerRef.current === abortController) {
-    dispatch({ type: "abort" })
+  if (
+    abortControllerRef.current === null ||
+    abortControllerRef.current === abortController
+  ) {
+    dispatch({ type: "abort" });
   }
-  return
+  return;
 }
 ```
 
 The guard matters: when the abort came from the awaiting-approval
-re-entry (`:67-74`), a *new* stream already owns the ref and has
+re-entry (`:67-74`), a _new_ stream already owns the ref and has
 dispatched `start` — the superseded stream must not touch state. When
 the abort came from effect cleanup (Suspense hide or real unmount) the
 ref is already `null` — dispatch: on a hidden-then-revealed tree this
 is exactly the fix, and on a truly unmounted provider it is a no-op.
 
-The `finally` block already runs on this path and already invalidates
-the conversation queries — leave it as is. Do not add reconnect logic.
+The `finally` block still runs on this path and invalidates the conversation
+queries. The first implementation also cleared settled drafts there; the scroll
+follow-up removed that eager reset because an invalidation promise may resolve
+before React Query commits its observer render. Route-level reconciliation now
+owns cleanup after the persisted replacement is renderable. Do not add reconnect
+logic.
 
 Verification: `pnpm test` (reducer suite), then trace the abort path
 manually — temporarily call `stream.abort()` from the console flow in
@@ -222,7 +340,7 @@ route component, and we do not add jsdom for this plan).
 - Add `src/routes/route-pending.tsx`: `RoutePendingFallback`, a minimal
   outlet-local fallback — a centered `Skeleton` block or spinner that
   fills its container (`flex h-full min-h-0 items-center justify-center`),
-  tokens only, no text. It must look sane inside the app canvas *and*
+  tokens only, no text. It must look sane inside the app canvas _and_
   full-screen (it becomes the fallback for layout-level matches too).
 - In `createAppRouter` (`src/app/router.tsx:316-322`) set
   `defaultPendingComponent: RoutePendingFallback`.
@@ -233,10 +351,10 @@ Why this works (verified against `Match.js` in the installed
 `@tanstack/react-router@1.171.13`): a non-root match wraps its component
 in `React.Suspense` when it resolves a pending component; with a
 `defaultPendingComponent` every match resolves one. A suspension inside
-`ConversationRoute` is now caught at the conversation match — *below*
+`ConversationRoute` is now caught at the conversation match — _below_
 `ConversationRuntimeProvider` — and can never hide the provider again.
 
-Known side effect to accept: routes whose *loaders* exceed the router's
+Known side effect to accept: routes whose _loaders_ exceed the router's
 pending thresholds will also show this fallback. That is strictly
 better than the current behavior (blank full-app skeleton).
 
@@ -254,17 +372,25 @@ only compose existing `queryOptions` factories):
   ```ts
   loader: async ({ context, params }) => {
     const conversation = await context.queryClient.ensureQueryData(
-      conversationQueryOptions(params.conversationId)
-    )
+      conversationQueryOptions(params.conversationId),
+    );
     await Promise.all([
-      context.queryClient.ensureQueryData(conversationMessagesQueryOptions(params.conversationId)),
-      context.queryClient.ensureQueryData(conversationActiveRunQueryOptions(params.conversationId)),
+      context.queryClient.ensureQueryData(
+        conversationMessagesQueryOptions(params.conversationId),
+      ),
+      context.queryClient.ensureQueryData(
+        conversationActiveRunQueryOptions(params.conversationId),
+      ),
       context.queryClient.ensureQueryData(modelCatalogQueryOptions()),
       ...(conversation.active_agent_id
-        ? [context.queryClient.ensureQueryData(agentQueryOptions(conversation.active_agent_id))]
+        ? [
+            context.queryClient.ensureQueryData(
+              agentQueryOptions(conversation.active_agent_id),
+            ),
+          ]
         : []),
-    ])
-  }
+    ]);
+  };
   ```
 
   In the live `/new` flow every one of these except the agent is
@@ -281,7 +407,7 @@ components keep reading through their existing hooks); no
 `beforeLoad` changes.
 
 Verification: `pnpm check`; then in the browser confirm (network tab)
-that opening a conversation issues the agent fetch *before* the URL
+that opening a conversation issues the agent fetch _before_ the URL
 content swaps, and that the swap itself no longer flashes any fallback
 once caches are warm.
 
@@ -293,7 +419,7 @@ Needs `make dev` and an agent whose tools require approval.
    send a prompt to an approval-tool agent.
 2. **Before the fix** this intermittently froze: full-app skeleton
    flash during the redirect, `POST /conversations/` shown as
-   *cancelled* in the network tab, composer stuck on "The current turn
+   _cancelled_ in the network tab, composer stuck on "The current turn
    is still running", no approval card, and (dev) a React console
    warning about a component suspending "while responding to
    synchronous input".
@@ -316,14 +442,13 @@ Needs `make dev` and an agent whose tools require approval.
   `wrapInSuspense: true` per route instead, and that choice should be
   made deliberately.
 - If the loader on `conversationRoute` measurably delays opening
-  *cached* conversations (it must resolve synchronously from cache),
+  _cached_ conversations (it must resolve synchronously from cache),
   stop and investigate before shipping.
 - If any test in the existing stream/reducer suites needs its
-  *expectations* changed (rather than new cases added), stop — the
+  _expectations_ changed (rather than new cases added), stop — the
   reducer changes here are strictly additive.
 - If fixing this appears to require a backend change, stop — the wire
-  protocol and endpoints are out of scope; reattach belongs to plan
-  060.
+  protocol and endpoints are out of scope; reattach belongs to plan 060.
 
 ## Considered and rejected (do not re-propose)
 
@@ -347,5 +472,9 @@ Needs `make dev` and an agent whose tools require approval.
 
 - `cd apps/web && pnpm check` — typecheck, eslint (zero warnings),
   vitest, prettier, knip, depcruise, build all green.
-- Manual QA script in step 6 passes in full, both themes.
+- `git diff --check` — green.
+- Automated result: 38 test files, 179 tests.
+- The initial browser/manual QA script was not run by agreement. The subsequent
+  completion-scroll regression was diagnosed from the maintainer-provided screen
+  recording and protected with focused unit coverage.
 - Update the status row in `docs/plans/frontend-ui/README.md`.

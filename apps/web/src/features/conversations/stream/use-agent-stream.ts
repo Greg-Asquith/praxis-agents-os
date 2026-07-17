@@ -78,7 +78,6 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       dispatch({ type: "start" })
 
       let observedConversationId: string | null = null
-      let observedRunId: string | null = null
       let observedDoneStatus: AgentRunStatus | null = null
       let observedConversationCreated = false
       let streamClosedNormally = false
@@ -89,7 +88,6 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
 
         for await (const streamEvent of parseSseStream(response.body)) {
           observedConversationId = streamEvent.data.conversation_id
-          observedRunId = streamEvent.data.run_id
           if (streamEvent.event === "done") {
             observedDoneStatus = streamEvent.data.status
           }
@@ -103,6 +101,9 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
         streamClosedNormally = true
       } catch (error) {
         if (isAbortError(error)) {
+          if (shouldFinalizeAbort(abortControllerRef.current, abortController)) {
+            dispatch({ type: "abort" })
+          }
           return
         }
 
@@ -121,21 +122,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
           conversationId: observedConversationId,
           status: observedDoneStatus,
         })
-        if (
-          observedConversationId !== null &&
-          observedRunId !== null &&
-          shouldClearSettledStream({
-            closedWithoutDone,
-            conversationCreated: observedConversationCreated,
-            status: observedDoneStatus,
-          })
-        ) {
-          dispatch({
-            type: "resetSettledRun",
-            conversationId: observedConversationId,
-            runId: observedRunId,
-          })
-        }
+        // Route reconciliation clears settled drafts after their persisted replacement renders.
       }
     },
     [dispatch, onConversationCreated, queryClient]
@@ -241,25 +228,11 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
 }
 
-function shouldClearSettledStream({
-  closedWithoutDone,
-  conversationCreated,
-  status,
-}: {
-  closedWithoutDone: boolean
-  conversationCreated: boolean
-  status: AgentRunStatus | null
-}) {
-  if (closedWithoutDone) {
-    return true
-  }
-
-  return (
-    status === "awaiting_approval" ||
-    status === "completed" ||
-    status === "cancelled" ||
-    (status === "failed" && conversationCreated)
-  )
+function shouldFinalizeAbort(
+  currentController: AbortController | null,
+  abortedController: AbortController
+) {
+  return currentController === null || currentController === abortedController
 }
 
 function shouldInvalidateConversationDetails(
