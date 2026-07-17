@@ -62,12 +62,8 @@ DELEGATE_TO_AGENT_DEFINITION = RuntimeToolDefinition(
         approval_title="Delegate a Task",
         approval_prompt="The agent wants to delegate this task: {task}",
         approve_label="Approve & Delegate",
-        arg_fields=(
-            ToolFieldPresentation(key="task", label="Task", format="multiline"),
-        ),
-        result_fields=(
-            ToolFieldPresentation(key="output", label="Result", format="multiline"),
-        ),
+        arg_fields=(ToolFieldPresentation(key="task", label="Task", format="multiline"),),
+        result_fields=(ToolFieldPresentation(key="output", label="Result", format="multiline"),),
     ),
 )
 

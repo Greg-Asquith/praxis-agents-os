@@ -130,8 +130,7 @@ async def web_search(
         NativeWebSearchProvider,
         Field(
             description=(
-                "Helper model provider. Available providers are anthropic, "
-                "google, and openai."
+                "Helper model provider. Available providers are anthropic, google, and openai."
             ),
         ),
     ],

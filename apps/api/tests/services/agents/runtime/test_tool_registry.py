@@ -228,9 +228,7 @@ def test_validate_definition_rejects_secondary_result_fields() -> None:
         function=_noop,
         description="Result fields are never secondary.",
         presentation=ToolPresentation(
-            result_fields=(
-                ToolFieldPresentation(key="result", label="Result", secondary=True),
-            )
+            result_fields=(ToolFieldPresentation(key="result", label="Result", secondary=True),)
         ),
     )
 
