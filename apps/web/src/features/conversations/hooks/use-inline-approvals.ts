@@ -1,12 +1,12 @@
 // apps/web/src/features/conversations/hooks/use-inline-approvals.ts
 
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 
 import type { ApprovalDecisionResolver } from "@/features/conversations/approval-decision-context"
 import {
   buildResumeDecisions,
   DEFAULT_APPROVAL_DECISION,
-  shouldAutoSubmitDecisions,
+  shouldSubmitDecisions,
   summarizeApprovalDecisions,
   type LocalApprovalDecision,
   type LocalApprovalDecisionMap,
@@ -28,24 +28,39 @@ export function useInlineApprovals({
 }: UseInlineApprovalsParams) {
   const [decisions, setDecisions] = useState<LocalApprovalDecisionMap>({})
   const [formError, setFormError] = useState<string | null>(null)
+  const [formErrorToolCallId, setFormErrorToolCallId] = useState<string | null>(null)
+  const [submittingToolCallId, setSubmittingToolCallId] = useState<string | null>(null)
+  const submissionInFlight = useRef(false)
   const approvalsById = useMemo(
     () => new Map(approvals.map((approval) => [approval.tool_call_id, approval])),
     [approvals]
   )
   const summary = summarizeApprovalDecisions(approvals, decisions)
 
-  async function submit(decisionMap: LocalApprovalDecisionMap) {
+  async function submit(decisionMap: LocalApprovalDecisionMap, toolCallId: string) {
+    if (submissionInFlight.current) {
+      return
+    }
+    setFormError(null)
+    setFormErrorToolCallId(null)
     const payload = buildResumeDecisions(approvals, decisionMap)
     if (typeof payload === "string") {
       setFormError(payload)
+      setFormErrorToolCallId(toolCallId)
       return
     }
 
+    submissionInFlight.current = true
+    setSubmittingToolCallId(toolCallId)
     try {
       await onSubmit(payload)
       setDecisions({})
     } catch (submitError) {
       setFormError(submitError instanceof Error ? submitError.message : "Approval submit failed.")
+      setFormErrorToolCallId(toolCallId)
+    } finally {
+      submissionInFlight.current = false
+      setSubmittingToolCallId(null)
     }
   }
 
@@ -55,16 +70,10 @@ export function useInlineApprovals({
     const nextDecisions = { ...decisions, [toolCallId]: next }
     setDecisions(nextDecisions)
 
-    // Approving the last undecided request resumes the run immediately; staged
-    // denials wait for the explicit send so the user can add an optional message.
     if (
-      shouldAutoSubmitDecisions(
-        previous,
-        next,
-        summarizeApprovalDecisions(approvals, nextDecisions)
-      )
+      shouldSubmitDecisions(previous, next, summarizeApprovalDecisions(approvals, nextDecisions))
     ) {
-      void submit(nextDecisions)
+      void submit(nextDecisions, toolCallId)
     }
   }
 
@@ -78,19 +87,20 @@ export function useInlineApprovals({
 
     return {
       decision: decisions[activity.id] ?? DEFAULT_APPROVAL_DECISION,
-      disabled: isSubmitting,
+      disabled: isSubmitting || submittingToolCallId !== null,
+      error: formErrorToolCallId === activity.id ? formError : null,
+      pendingCount: summary.pending,
+      submitting: submittingToolCallId === activity.id,
       onDecisionChange: (next) => {
         handleDecisionChange(activity.id, next)
+      },
+      onRetry: () => {
+        void submit(decisions, activity.id)
       },
     }
   }
 
   return {
-    formError,
     resolveApprovalControls,
-    submitStaged: () => {
-      void submit(decisions)
-    },
-    summary,
   }
 }

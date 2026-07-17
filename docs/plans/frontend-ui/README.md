@@ -106,7 +106,7 @@ Functional, but visibly unstyled.
 | 024 | "Configure" dies: Edit language sweep | P2 | S | 023 | DONE |
 | 025 | Tool presentation contract v2 | P1 | M | 022 | DONE |
 | 026 | One tool field system: labeled wells | P1 | M | 025 | DONE |
-| 027 | Approval card: form-first, one-click | P1 | L | 025, 026 | TODO |
+| 027 | Approval card: form-first, one-click | P1 | L | 025, 026 | DONE |
 | 028 | Live activity card & outcome rows | P1 | L | 026, 027 | TODO |
 | 029 | Interactive outcomes: files proof case | P1 | L | 026, 028 | TODO |
 | 030 | In-place tool calls: ordered turns | P1 | L | — | TODO |
@@ -343,8 +343,11 @@ Dependency notes:
 - **One field system for tool values** (2026-07-17; plan 026). Every
   argument and result renders as a labeled field-shaped well — real
   inputs when editable, wells when not — one geometry, no
-  `<dl>`/`<pre>`/input mixture. The JSON "Technical details"
-  disclosure remains the only non-field surface.
+  `<dl>`/`<pre>`/input mixture.
+- **No generic Technical Details in conversation tool UI** (maintainer
+  direction, 2026-07-17; plan 027 correction). Declared user-facing fields are
+  the review surface; raw tool arguments/results remain in runtime data but do
+  not get a generic JSON disclosure in the transcript.
 - **Tool outcomes are interactive working views** (maintainer
   direction, 2026-07-17; plan 029). Entity-bearing results (files
   today) render as miniature versions of their product surface with
@@ -355,10 +358,11 @@ Dependency notes:
   their actions with the integration vertical — nothing speculative
   before then.
 - **Tool calls render in place, in order** (maintainer direction,
-  2026-07-17; plan 030). Turns are an ordered timeline of text,
-  thinking, and tool surfaces in the sequence they actually happened —
-  never regrouped by kind. Order is reconstructed client-side from the
-  already-ordered payloads; no protocol change.
+  2026-07-17; plan 030, corrected during 027 review). Thinking is hidden
+  turn-level reasoning and always renders first in one collapsed disclosure.
+  Beneath it, text and tool surfaces follow the sequence they actually happened
+  in. Order is reconstructed client-side from the already-ordered payloads; no
+  protocol change.
 - **Liveness needs no protocol changes** (recorded 2026-07-17; plan
   028). Tool args arrive whole in one stream event, so there is no
   "watch the agent type" animation to build — liveness is motion on

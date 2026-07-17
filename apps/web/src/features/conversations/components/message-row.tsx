@@ -102,10 +102,10 @@ export function AssistantLiveActivityRow({
       label={assistantLabel}
       streaming={isStreaming}
     >
+      <ThinkingBlock content={thinkingContent} idPrefix="live-assistant-turn:thinking" />
       {toolActivities.map((activity) => (
         <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} />
       ))}
-      <ThinkingBlock content={thinkingContent} idPrefix="live-assistant-turn:thinking" />
       {messages.length > 0 ? (
         textMessages.map((message) => <LiveMessageDraft key={message.id} message={message} />)
       ) : (
@@ -134,13 +134,13 @@ export function AssistantTurnRow({
 
   return (
     <AssistantMessageShell agentId={assistantAgentId} createdAt={createdAt} label={assistantLabel}>
-      {toolActivities.map((activity, index) => (
-        <ToolCallRow key={`${activity.id}:${activity.kind}:${String(index)}`} activity={activity} />
-      ))}
       <ThinkingBlock
         content={thinkingContent}
         idPrefix={`assistant-turn:${messages[0]?.id ?? "unknown"}:thinking`}
       />
+      {toolActivities.map((activity, index) => (
+        <ToolCallRow key={`${activity.id}:${activity.kind}:${String(index)}`} activity={activity} />
+      ))}
       {messages.map((message) => (
         <PersistedAssistantTurnMessage key={message.id} message={message} />
       ))}
@@ -237,7 +237,7 @@ function ThinkingBlock({ content, idPrefix }: { content: string[]; idPrefix: str
     <details className="group/thinking min-w-0">
       <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium">
         <ChevronRightIcon className="size-3.5 transition-transform group-open/thinking:rotate-90" />
-        Thinking
+        Show Thinking
       </summary>
       <div className="text-muted-foreground border-border mt-2 ml-1.5 border-l pl-3 text-sm italic">
         {content.map((thought, index) => (

@@ -354,8 +354,18 @@ and delegation arguments/results now use accessible labeled wells with
 responsive two-column density, full-width block content, Markdown, safe URL
 links, wrapping list chips, scroll-capped long values, and a custom-content seam
 for later entity views. Approval inputs share the same label/control geometry
-and declared placeholders; Technical details remains the only JSON surface,
-while custom file/skill/todo presenters stay deferred to UI-029/UI-031.
+and declared placeholders, while custom file/skill/todo presenters stay
+deferred to UI-029/UI-031.
+UI-027 completed the form-first, one-click approval flow on 2026-07-17:
+approval and delegation requests are always-open cards with declared-order
+fields, action-specific approve labels, a confirmed optional decline note,
+locked decisions, and card-local retry. A complete approval/denial set now
+resumes directly from its final card decision; the staged global submit bar is
+gone, while deferred-tool result and argument-override contracts are unchanged.
+Maintainer review widened the card, made long editable values multiline, and
+removed generic Technical Details from conversation tool UI. Thinking now stays
+as the first collapsed turn-level disclosure; UI-030 orders the visible
+text/tool timeline beneath it.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

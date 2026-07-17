@@ -41,13 +41,13 @@ export function denyDecision(decision: LocalApprovalDecision): LocalApprovalDeci
   }
 }
 
-export function shouldAutoSubmitDecisions(
+export function shouldSubmitDecisions(
   previous: LocalApprovalDecision,
   next: LocalApprovalDecision,
   summary: ApprovalDecisionSummary
 ): boolean {
-  const isNewApproval = next.decision === "approved" && previous.decision !== "approved"
-  return isNewApproval && summary.allDecided && summary.denied === 0
+  const isNewDecision = previous.decision === "pending" && next.decision !== "pending"
+  return isNewDecision && summary.allDecided
 }
 
 export function buildResumeDecisions(

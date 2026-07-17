@@ -79,6 +79,34 @@ export function DelegationToolRow({
     />
   )
 
+  if (approvalDecision) {
+    const approvalFields = [
+      ...(delegate.taskPreview
+        ? [
+            {
+              key: "task",
+              label: "Task",
+              value: delegate.taskPreview,
+              format: "multiline" as const,
+            },
+          ]
+        : []),
+      { key: "tool", label: "Tool", value: toolLabel, format: "text" as const },
+    ]
+    return (
+      <ApprovalDecisionBlock
+        activity={activity}
+        approveLabel="Approve & Delegate"
+        controls={approvalDecision}
+        fallbackFields={approvalFields}
+        iconToken="bot"
+        label={toolLabel}
+        prompt={`The agent wants to delegate this task to ${targetLabel}.`}
+        title={`Delegate to ${targetLabel}`}
+      />
+    )
+  }
+
   return (
     <ToolActivityRowShell
       compact={compact}
@@ -95,12 +123,6 @@ export function DelegationToolRow({
             format: "multiline",
           }}
         />
-      ) : null}
-      {approvalDecision ? (
-        <ToolField field={{ key: "tool", label: "Tool", value: toolLabel, format: "text" }} />
-      ) : null}
-      {approvalDecision ? (
-        <ApprovalDecisionBlock activity={activity} controls={approvalDecision} label={toolLabel} />
       ) : null}
       {delegate.output ? (
         <ToolField

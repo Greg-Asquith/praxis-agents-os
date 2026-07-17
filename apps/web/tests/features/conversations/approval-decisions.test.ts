@@ -5,7 +5,7 @@ import {
   approveDecision,
   buildResumeDecisions,
   denyDecision,
-  shouldAutoSubmitDecisions,
+  shouldSubmitDecisions,
   summarizeApprovalDecisions,
   type LocalApprovalDecisionMap,
 } from "@/features/conversations/approval-decisions"
@@ -97,35 +97,31 @@ describe("approval decision helpers", () => {
     })
   })
 
-  it("auto-submits only when a new approval completes an all-approved set", () => {
+  it("submits when a new decision completes the set", () => {
     const pending = DEFAULT_APPROVAL_DECISION
     const approved = { decision: "approved", message: "", edits: {} } as const
     const allApproved = { allDecided: true, approved: 2, denied: 0, pending: 0 }
 
-    expect(shouldAutoSubmitDecisions(pending, approved, allApproved)).toBe(true)
-    // Editing an already approved decision must not re-submit.
-    expect(shouldAutoSubmitDecisions(approved, approved, allApproved)).toBe(false)
-    // A denial in the set requires the explicit send action.
+    expect(shouldSubmitDecisions(pending, approved, allApproved)).toBe(true)
+    expect(shouldSubmitDecisions(approved, approved, allApproved)).toBe(false)
     expect(
-      shouldAutoSubmitDecisions(pending, approved, {
+      shouldSubmitDecisions(pending, approved, {
         allDecided: true,
         approved: 1,
         denied: 1,
         pending: 0,
       })
-    ).toBe(false)
-    // Undecided requests remain.
+    ).toBe(true)
     expect(
-      shouldAutoSubmitDecisions(pending, approved, {
+      shouldSubmitDecisions(pending, approved, {
         allDecided: false,
         approved: 1,
         denied: 0,
         pending: 1,
       })
     ).toBe(false)
-    // Denying never auto-submits.
     expect(
-      shouldAutoSubmitDecisions(
+      shouldSubmitDecisions(
         pending,
         { decision: "denied", message: "", edits: {} },
         {
@@ -135,7 +131,7 @@ describe("approval decision helpers", () => {
           pending: 0,
         }
       )
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it("requires a decision for every request", () => {

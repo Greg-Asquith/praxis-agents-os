@@ -90,8 +90,9 @@ their shape.
 - **Failed calls get the plain-language treatment.** Live failed
   activities open by default: a destructive-accented "What went wrong"
   field (026) with one line of framing — "The agent saw this error and
-  can adjust." Raw output stays in Technical details. Historical failed
-  rows stay collapsed but show the same content when opened.
+  can adjust." Raw output is not exposed generically in the transcript;
+  historical failed rows stay collapsed but show the same friendly content
+  when opened.
 - **No new status taxonomy**; denied/unknown keep current treatment.
 
 ## Steps
@@ -133,7 +134,7 @@ their shape.
 - Live failed activities get `defaultOpen={true}`; add the framing line
   + destructive-labeled error field sourced from
   `friendlyResultText(activity.result)` when present, otherwise the
-  framing line alone with detail left to Technical details.
+  framing line alone. Do not add a raw technical-details disclosure.
 
 ### 5. Verify
 
@@ -148,8 +149,8 @@ their shape.
   - Reduced motion: no shimmer; spinner unchanged from today.
   - Completed web_search open: Answer before Search; the collapsed
     metric appears only when short.
-  - Failed: opens itself live with plain-language framing; raw detail
-    only under Technical details.
+  - Failed: opens itself live with plain-language framing; raw detail is not
+    exposed in the transcript.
   - Refresh mid-run: rows only, no elapsed suffix, no cards for
     finished calls.
   - Scroll position holds through card→row transitions.

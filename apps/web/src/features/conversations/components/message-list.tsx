@@ -5,7 +5,6 @@ import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
-import { ApprovalSubmitBar } from "@/features/conversations/components/approval-submit-bar"
 import { AssistantMessageShell } from "@/features/conversations/components/message-shell"
 import {
   AssistantLiveActivityRow,
@@ -126,7 +125,6 @@ export function MessageList({
   }, [approvals, isAwaitingApproval, liveToolActivities, parsedMessages])
   const hasInlineApprovals =
     isAwaitingApproval && (approvals.length > 0 || isApprovalLoading || Boolean(approvalError))
-  const showApprovalBar = isAwaitingApproval && approvals.length > 0
   const hasMessages =
     parsedMessages.length > 0 ||
     visiblePendingUserMessages.length > 0 ||
@@ -196,15 +194,6 @@ export function MessageList({
 
         {isAwaitingApproval && isApprovalLoading && approvals.length === 0 && (
           <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
-        )}
-
-        {showApprovalBar && (
-          <ApprovalSubmitBar
-            error={inlineApprovals.formError}
-            isSubmitting={isApprovalSubmitting}
-            onSubmit={inlineApprovals.submitStaged}
-            summary={inlineApprovals.summary}
-          />
         )}
 
         {streamError && (

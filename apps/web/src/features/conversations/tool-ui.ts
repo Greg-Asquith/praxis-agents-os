@@ -7,6 +7,7 @@ import { formatBytes, formatDateTime, truncateText } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 const TEMPLATE_VALUE_LIMIT = 64
+const APPROVAL_PROMPT_VALUE_LIMIT = 240
 const AUTO_FIELD_LIMIT = 6
 const AUTO_VALUE_LIMIT = 200
 
@@ -30,10 +31,18 @@ export function toolUiApprovalPrompt(ui: ToolUi, activity: ToolActivity): string
   if (!ui.approval_prompt) {
     return null
   }
-  return resolveToolTemplate(ui.approval_prompt, [normalizeToolArgs(activity.args)])
+  return resolveToolTemplate(
+    ui.approval_prompt,
+    [normalizeToolArgs(activity.args)],
+    APPROVAL_PROMPT_VALUE_LIMIT
+  )
 }
 
-export function resolveToolTemplate(template: string, sources: unknown[]): string | null {
+export function resolveToolTemplate(
+  template: string,
+  sources: unknown[],
+  valueLimit = TEMPLATE_VALUE_LIMIT
+): string | null {
   const missing: string[] = []
   const resolved = template.replace(/\{([a-z0-9_]+)\}/gi, (_match, key: string) => {
     const value = lookupTemplateValue(key, sources)
@@ -41,7 +50,7 @@ export function resolveToolTemplate(template: string, sources: unknown[]): strin
       missing.push(key)
       return ""
     }
-    return truncateText(value, TEMPLATE_VALUE_LIMIT, "…")
+    return truncateText(value, valueLimit, "…")
   })
   return missing.length > 0 ? null : resolved
 }

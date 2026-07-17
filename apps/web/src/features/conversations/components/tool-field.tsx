@@ -15,7 +15,7 @@ const FULL_WIDTH_FORMATS = new Set<ResolvedToolField["format"]>([
 ])
 const URL_LABEL_LIMIT = 80
 
-export const toolFieldLabelClass = "text-muted-foreground text-sm leading-none font-medium"
+export const toolFieldLabelClass = "text-foreground/75 text-xs leading-4 font-medium tracking-wide"
 export const toolFieldWellClass =
   "min-h-8 w-full min-w-0 rounded-lg border px-2.5 py-1 text-sm leading-relaxed"
 

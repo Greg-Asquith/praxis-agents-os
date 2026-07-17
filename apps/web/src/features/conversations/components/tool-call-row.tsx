@@ -6,7 +6,6 @@ import { ApprovalDecisionContext } from "@/features/conversations/approval-decis
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
-import { TechnicalDetails } from "@/features/conversations/components/tool-friendly-blocks"
 import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
 import {
   ToolActivityRowHeader,
@@ -22,10 +21,8 @@ import {
 } from "@/features/conversations/components/tool-activity-status-values"
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import {
   autoUiFields,
-  editableUiFields,
   friendlyResultText,
   resolveUiFields,
   toolUiApprovalPrompt,
@@ -33,6 +30,7 @@ import {
 } from "@/features/conversations/tool-ui"
 import type { ToolUi } from "@/features/tools/types"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
+import { normalizeOptionalText } from "@/lib/format"
 
 type ToolCallRowProps = {
   activity: ToolActivity
@@ -58,7 +56,6 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
   const ui = entry?.ui ?? null
   const title = entry?.label ?? activity.name
   const supportLabel = entry ? null : supportIdentifier(activity.name)
-  const normalizedArgs = normalizeToolArgs(activity.args)
 
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
@@ -67,11 +64,6 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
   const argFields = ui?.arg_fields.length
     ? resolveUiFields(ui.arg_fields, activity.args)
     : autoUiFields(activity.args)
-  const editableFields = approvalDecision
-    ? editableUiFields(ui?.arg_fields ?? [], activity.args)
-    : []
-  const editableFieldKeys = new Set(editableFields.map((field) => field.key))
-  const readOnlyArgFields = argFields.filter((field) => !editableFieldKeys.has(field.key))
   const resultFields = ui?.result_fields.length
     ? resolveUiFields(ui.result_fields, activity.result)
     : []
@@ -79,6 +71,22 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
   const approvalPrompt = ui
     ? (toolUiApprovalPrompt(ui, activity) ?? fallbackApprovalPrompt(title))
     : fallbackApprovalPrompt(title)
+
+  if (approvalDecision) {
+    return (
+      <ApprovalDecisionBlock
+        activity={activity}
+        approveLabel={normalizeOptionalText(ui?.approve_label) ?? "Approve"}
+        controls={approvalDecision}
+        fallbackFields={argFields}
+        fields={ui?.arg_fields ?? []}
+        iconToken={ui?.icon ?? null}
+        label={title}
+        prompt={approvalPrompt}
+        title={normalizeOptionalText(ui?.approval_title) ?? title}
+      />
+    )
+  }
 
   const header = (
     <ToolActivityRowHeader
@@ -102,23 +110,13 @@ export function ToolCallRow({ activity, compact = false, defaultOpen = false }: 
       expandable={expandable}
       header={header}
     >
-      <ToolFieldGrid fields={readOnlyArgFields} />
-      {approvalDecision ? (
-        <ApprovalDecisionBlock
-          activity={activity}
-          controls={approvalDecision}
-          editableFields={editableFields}
-          label={title}
-          prompt={approvalPrompt}
-        />
-      ) : null}
+      <ToolFieldGrid fields={argFields} />
       <ToolFieldGrid fields={resultFields} />
       {resultText ? (
         <ToolField
           field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
         />
       ) : null}
-      <TechnicalDetails args={normalizedArgs} result={activity.result} />
     </ToolActivityRowShell>
   )
 }

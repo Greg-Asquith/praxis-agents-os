@@ -30,8 +30,11 @@
 When the agent writes a paragraph, calls a tool, and continues writing,
 the transcript should read exactly that way: text, then the tool
 surface, then text — the same narrative order the agent actually
-worked in. Today every assistant turn renders **all tool calls first,
-then thinking, then all text** regardless of when things happened
+worked in. The collapsed **Thinking** disclosure is turn-level hidden
+reasoning and always stays first; ordering applies to the user-visible text and
+tool timeline beneath it (maintainer correction, 2026-07-17). Today every
+assistant turn renders **thinking first, then all tool calls, then all text**
+regardless of when the user-visible parts happened
 (`message-row.tsx`: `AssistantLiveActivityRow` renders
 `toolActivities.map` before the text drafts, `AssistantTurnRow` does
 the same for persisted turns, and `MessageContentParts` puts tool
@@ -51,14 +54,14 @@ paragraphs the agent wrote earlier.
   `message-parts/parse.ts` from the persisted model-message parts,
   which *are* ordered in the source payload.
 - **Persisted turns**: `AssistantTurnRow` (`message-row.tsx:120-149`)
-  renders `toolActivities` first, one `ThinkingBlock`, then per-message
+  renders one `ThinkingBlock`, then `toolActivities`, then per-message
   text; `MessageContentParts` (`:184-193`) orders thinking → text →
   attachments → tools within one message.
 - **Live turns**: the stream reducer keeps `messages` (text/thinking
   drafts) and tool activity state separately; events arrive in true
   chronological order over SSE (`stream/reducer.ts`), and
-  `AssistantLiveActivityRow` (`message-row.tsx:82-118`) renders all
-  activities, then thinking, then all text drafts.
+  `AssistantLiveActivityRow` (`message-row.tsx:82-118`) renders thinking first,
+  then all activities, then all text drafts.
 - Existing test coverage for the parser and reducer lives under
   `apps/web/tests/features/conversations/` (paths mirror source
   modules).
@@ -73,24 +76,24 @@ paragraphs the agent wrote earlier.
   gains an ordered `parts: MessagePart[]` sequence
   (`{kind: "text" | "thinking" | "tool"} …`) built in source order.
   The existing flat arrays remain as derived views only if callers
-  still need them (search for consumers; prefer migrating them) — no
-  component may re-sort parts by kind after this plan.
+  still need them (search for consumers; prefer migrating them). Renderers
+  collect thinking into the turn-level disclosure, then preserve source order
+  for every text/tool part beneath it.
 - **The reducer preserves arrival order.** Live turns compose one
   ordered timeline: text drafts and tool activities tagged with a
   monotonic sequence assigned as events arrive. In-place updates to a
   running activity (completion, result) update the existing entry —
   they do not move it. Ordering derives from stream arrival, not
   wall-clock (`Date` stays out of the reducer).
-- **Thinking stays a collapsible block, positioned where it happened.**
-  Consecutive thinking parts merge into one block at the position of
-  the first, as reading flow beats fragmenting into many tiny
-  disclosures. Interleaved thinking → tool → thinking sequences render
-  as separate blocks in true order.
-- **Turn rendering walks the timeline.** `AssistantTurnRow`,
-  `MessageContentParts`, and `AssistantLiveActivityRow` render the
-  ordered sequence; tool rows/cards (027/028) land wherever the
-  timeline puts them. The "Thinking…" pulse placeholder still shows
-  when a live turn has no content yet.
+- **Thinking is turn-level hidden reasoning and always renders first.** All
+  thinking parts in the turn merge into one collapsed block above the visible
+  work timeline. They are never interleaved between text and tools.
+- **Turn rendering walks the visible timeline after Thinking.**
+  `AssistantTurnRow`, `MessageContentParts`, and `AssistantLiveActivityRow`
+  render one Thinking block first, then walk the ordered text/tool sequence;
+  tool rows/cards (027/028) land wherever that visible timeline puts them. The
+  "Thinking…" pulse placeholder still shows when a live turn has no content
+  yet.
 - **Old transcripts must not regress.** Persisted turns from before
   this plan replay through the same parser; if a payload genuinely
   lacks ordering (it should not — parts arrays are ordered), fall back
@@ -117,15 +120,16 @@ paragraphs the agent wrote earlier.
 ### 3. Turn rendering
 
 - `message-row.tsx`: `AssistantLiveActivityRow`, `AssistantTurnRow`,
-  and `MessageContentParts` walk the ordered timeline/parts. Merge
-  consecutive thinking parts per the decision above. Preserve keys
+  and `MessageContentParts` render the merged turn-level Thinking disclosure,
+  then walk the ordered text/tool timeline. Preserve keys
   stable across updates so running→completed transitions do not
   remount rows (scroll position and `<details>` open state survive).
 
 ### 4. Tests
 
-- Parser tests: a turn with text → tool → text yields parts in that
-  order; thinking merge behavior; legacy grouped fallback.
+- Parser tests: a turn with thinking → text → tool → text yields one turn-level
+  thinking block followed by visible parts in text → tool → text order; legacy
+  grouped fallback.
 - Reducer tests: interleaved SSE sequences (text delta, tool start,
   more text, tool result) produce a stable ordered timeline; a tool
   completion updates in place and never reorders.

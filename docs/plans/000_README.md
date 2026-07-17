@@ -347,9 +347,19 @@ delegation rows now render arguments and outcomes as one accessible labeled-well
 system with responsive density, Markdown, safe URL links, wrapping list chips,
 scroll-capped long values, and a custom-content seam for later interactive
 entity views. Editable approval fields share the same label/control geometry
-and consume server-declared placeholders; Technical details remains the sole
-JSON surface, and custom file/skill/todo presenters remain scoped to UI-029 and
-UI-031.
+and consume server-declared placeholders; custom file/skill/todo presenters
+remain scoped to UI-029 and UI-031.
+UI-027 completed the form-first approval card on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-027-approval-card.md`. Approval and delegation
+requests now render as always-open, declared-order forms with action-specific
+approve labels, a confirmed optional decline note, locked decided states, and
+card-local retry after failed resume. Each card commits directly and the run
+resumes as soon as the complete decision set is ready; the global staged
+"Send Decisions" action was removed without changing merge or resume payload
+semantics. Maintainer review widened the card, made long values multiline, and
+removed the generic Technical Details disclosure from conversation tool UI.
+Thinking now stays as the first, collapsed turn-level disclosure above tool
+activity; UI-030 will order the visible text/tool timeline beneath it.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

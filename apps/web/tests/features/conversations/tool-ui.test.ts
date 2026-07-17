@@ -9,7 +9,9 @@ import {
   humanizeKey,
   resolveToolTemplate,
   resolveUiFields,
+  toolUiApprovalPrompt,
 } from "@/features/conversations/tool-ui"
+import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { ToolUiField } from "@/features/tools/types"
 
 function uiField(field: Pick<ToolUiField, "key" | "label"> & Partial<ToolUiField>): ToolUiField {
@@ -46,6 +48,32 @@ describe("resolveToolTemplate", () => {
   it("truncates long values", () => {
     const resolved = resolveToolTemplate("Searching for {query}", [{ query: "q".repeat(100) }])
     expect(resolved).toBe(`Searching for ${"q".repeat(64)}…`)
+  })
+})
+
+describe("toolUiApprovalPrompt", () => {
+  it("keeps long approval values readable", () => {
+    const query = "q".repeat(100)
+    const activity = {
+      id: "search-1",
+      kind: "approval",
+      name: "web_search",
+      status: "awaiting_approval",
+      args: { query },
+    } satisfies ToolActivity
+    const ui = {
+      icon: "globe",
+      running_label: "Searching",
+      completed_label: "Searched",
+      failed_label: "Search failed",
+      approval_title: "Search the Web",
+      approval_prompt: "The agent wants to search for {query}.",
+      approve_label: "Approve & Search",
+      arg_fields: [],
+      result_fields: [],
+    }
+
+    expect(toolUiApprovalPrompt(ui, activity)).toBe(`The agent wants to search for ${query}.`)
   })
 })
 

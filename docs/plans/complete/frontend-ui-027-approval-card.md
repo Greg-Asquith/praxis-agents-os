@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-17
 - **Written**: 2026-07-17, anchors verified against the working tree at
   `19ace81` with plan 022 applied. Part of the tool-surface series —
   see the series preamble in plan 025 and `reference-tool-card.png`.
@@ -19,7 +20,35 @@
   resume payload contract (`AgentRunResumeDecision`), and the rule that
   a run resumes only when every pending request has a decision.
   Changing: how and when the client submits.
-- **Depends on**: 025, 026. Web-only.
+- **Depends on**: 025, 026. Web-only; no backend contract changes.
+
+## Completed implementation
+
+- Replaced staged approval decisions and the global "Send Decisions" bar with
+  per-card commits that submit as soon as every pending request is decided,
+  including mixed approve/decline batches.
+- Added the shared form-first approval card with declared-order inputs,
+  selects, read-only wells, secondary-field reveal/focus/removal, semantic
+  warning treatment, action-specific approve copy, and locked
+  approved/declined states. Maintainer review widened the card and made long
+  editable text multiline so requests remain readable.
+- Added the decline note confirmation and Back flow, card-local failed-resume
+  alert with retained decisions and Try Again, in-flight locking/progress, and
+  duplicate-submit protection without changing resume payload or merge
+  semantics.
+- Moved delegation approvals onto the same card with task and tool fields;
+  resolved history and non-approval tool calls keep their existing collapsible
+  rows. Maintainer review also removed the generic Technical Details disclosure
+  from conversation tool UI entirely; underlying activity data is unchanged.
+- Corrected assistant-turn hierarchy so the single collapsed Thinking
+  disclosure always precedes tool activity in both persisted and live turns;
+  plan 030 now orders only the visible text/tool timeline beneath it.
+- Verification passed: full frontend `pnpm check` with 32 test files and 151
+  tests, typecheck, zero-warning lint, formatting, dead-code analysis,
+  dependency-cruiser, and production build. Focused tests cover all-decided
+  submission (including denials), unchanged merge/payload behavior, the
+  always-open pending card, and its locked waiting state. Browser verification
+  was intentionally not used per maintainer instruction.
 
 ## Goal
 
@@ -98,7 +127,8 @@ at home in SaaS dashboards clicks one button and the thing happens.
   `approval_prompt` as muted supporting text, then **all arg fields in
   declared order** — editable inputs, selects, and read-only wells
   (026) interleaved; no separate read-only list above the block.
-  Technical details disclosure stays at the card foot.
+  Technical details are omitted from the conversation UI; declared fields are
+  the complete user-facing review surface (maintainer correction, 2026-07-17).
 - **Secondary fields** (025): empty → ghost "+ Add {label}" reveals the
   field; agent-supplied → renders normally; read-only secondary with no
   value stays hidden.
@@ -108,8 +138,9 @@ at home in SaaS dashboards clicks one button and the thing happens.
   disable, primary shows progress ("Approving…"), `aria-busy` set.
 - **Delegation approvals use the same card** — task preview and tool
   name as read-only fields, no editable fields (settled, plan 022).
-- **Width**: the card spans the transcript content width, capped on
-  `sm+` (`max-w-xl` region) so it reads as a surface, not a banner.
+- **Width**: the card spans the transcript content width, capped at `max-w-3xl`
+  after maintainer review so long requests stay readable without becoming a
+  full-bleed banner.
 
 ## Steps
 

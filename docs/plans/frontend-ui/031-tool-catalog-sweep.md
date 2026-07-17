@@ -71,9 +71,9 @@ everything else — custom only where a mini-view genuinely needs code
 - **Copy is outcome-language, Title Case actions.** Status templates
   say what happened to the user's world ("Saved {name} to Your
   Files"), approve labels are verbs ("Approve & Save"), and technical
-  vocabulary (bytes offsets, provider ids) moves behind field labels a
-  non-technical user understands or into Technical details. Plans 013
-  and 015–018's copy rules apply verbatim.
+  vocabulary (bytes offsets, provider ids) is either expressed through a field
+  label a non-technical user understands or omitted from the transcript. Plans
+  013 and 015–018's copy rules apply verbatim.
 - **Fields where the user would look.** Every approval-capable tool
   declares the fields a user needs to judge the request (and marks
   editable/secondary/options deliberately — editability is a per-field
@@ -120,7 +120,8 @@ description):
 - `file-tool-row.tsx`: replace remaining ad-hoc headers/`TextBlock`s
   with the shared header + 026 field shells (029 already made the
   entity rows; this step retires the rest of the bespoke scaffolding —
-  byte ranges and hints move into fields or Technical details).
+  useful byte ranges and hints move into plain-language fields; raw technical
+  detail stays out of the transcript).
 - `todo-list-row.tsx`, `skill-activation-row.tsx`,
   `skill-document-read-row.tsx`: adopt the shared shell/field
   primitives around their mini-views; review the skill rows against
