@@ -19,6 +19,7 @@ export type ChatMessageDraft = {
   role: "assistant"
   text: string
   status: "streaming" | "complete"
+  timelineSequence: number
 }
 
 export type ToolCallState = {
@@ -27,6 +28,7 @@ export type ToolCallState = {
   args: unknown
   result: unknown
   status: "running" | "awaiting_approval" | "completed"
+  timelineSequence: number
 }
 
 export type ApprovalState = {
@@ -48,7 +50,12 @@ export type AgentStreamState = {
   error: StreamError | null
   done: boolean
   lastSeq: number
+  nextTimelineSequence: number
 }
+
+export type LiveTimelineItem =
+  | { kind: "text"; message: ChatMessageDraft; sequence: number }
+  | { kind: "tool"; toolCall: ToolCallState; sequence: number }
 
 export type AgentStreamAction =
   | { type: "start" }
@@ -69,6 +76,7 @@ export const initialAgentStreamState: AgentStreamState = {
   error: null,
   done: false,
   lastSeq: 0,
+  nextTimelineSequence: 0,
 }
 
 export function agentStreamReducer(
@@ -130,33 +138,56 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
       }
     case "run.status":
       return { ...nextState, status: streamEvent.data.status }
-    case "message.start":
+    case "message.start": {
+      const existing = nextState.messages.find(
+        (message) => message.id === streamEvent.data.message_id
+      )
+      const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
       return {
         ...nextState,
         messages: upsertMessageStart(
           nextState.messages,
           streamEvent.data.message_id,
           streamEvent.data.role,
-          streamEvent.data.channel
+          streamEvent.data.channel,
+          timelineSequence
         ),
+        nextTimelineSequence: existing
+          ? nextState.nextTimelineSequence
+          : nextState.nextTimelineSequence + 1,
       }
-    case "message.delta":
+    }
+    case "message.delta": {
+      const existing = nextState.messages.find(
+        (message) => message.id === streamEvent.data.message_id
+      )
+      const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
       return {
         ...nextState,
         messages: appendMessageDelta(
           nextState.messages,
           streamEvent.data.message_id,
-          streamEvent.data.text
+          streamEvent.data.text,
+          timelineSequence
         ),
+        nextTimelineSequence: existing
+          ? nextState.nextTimelineSequence
+          : nextState.nextTimelineSequence + 1,
       }
+    }
     case "message.end":
       return {
         ...nextState,
         messages: completeMessage(nextState.messages, streamEvent.data.message_id),
       }
-    case "tool.call":
+    case "tool.call": {
+      const existing = nextState.toolCalls[streamEvent.data.tool_call_id]
+      const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
       return {
         ...nextState,
+        nextTimelineSequence: existing
+          ? nextState.nextTimelineSequence
+          : nextState.nextTimelineSequence + 1,
         toolCalls: {
           ...nextState.toolCalls,
           [streamEvent.data.tool_call_id]: {
@@ -164,14 +195,20 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             name: streamEvent.data.name,
             result: null,
             status: "running",
+            timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
           },
         },
       }
+    }
     case "tool.result": {
       const existing = nextState.toolCalls[streamEvent.data.tool_call_id]
+      const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
       return {
         ...nextState,
+        nextTimelineSequence: existing
+          ? nextState.nextTimelineSequence
+          : nextState.nextTimelineSequence + 1,
         toolCalls: {
           ...nextState.toolCalls,
           [streamEvent.data.tool_call_id]: {
@@ -179,12 +216,15 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             name: streamEvent.data.name ?? existing?.name ?? "tool",
             result: streamEvent.data.result,
             status: "completed",
+            timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
           },
         },
       }
     }
     case "tool.approval_required": {
+      const existing = nextState.toolCalls[streamEvent.data.tool_call_id]
+      const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
       const approval = {
         args: streamEvent.data.args,
         delegation: streamEvent.data.delegation ?? null,
@@ -195,6 +235,9 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
 
       return {
         ...nextState,
+        nextTimelineSequence: existing
+          ? nextState.nextTimelineSequence
+          : nextState.nextTimelineSequence + 1,
         approvals: {
           ...nextState.approvals,
           [streamEvent.data.tool_call_id]: approval,
@@ -207,6 +250,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             name: streamEvent.data.name,
             result: null,
             status: "awaiting_approval",
+            timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
           },
         },
@@ -230,14 +274,16 @@ function upsertMessageStart(
   messages: ChatMessageDraft[],
   messageId: string,
   role: "assistant",
-  channel: MessageChannel = "text"
+  channel: MessageChannel | undefined,
+  timelineSequence: number
 ): ChatMessageDraft[] {
   const nextMessage: ChatMessageDraft = {
-    channel,
+    channel: channel ?? "text",
     id: messageId,
     role,
     status: "streaming",
     text: "",
+    timelineSequence,
   }
   const existingIndex = messages.findIndex((message) => message.id === messageId)
   if (existingIndex === -1) {
@@ -250,7 +296,8 @@ function upsertMessageStart(
 function appendMessageDelta(
   messages: ChatMessageDraft[],
   messageId: string,
-  text: string
+  text: string,
+  timelineSequence: number
 ): ChatMessageDraft[] {
   const existingIndex = messages.findIndex((message) => message.id === messageId)
   if (existingIndex === -1) {
@@ -262,6 +309,7 @@ function appendMessageDelta(
         role: "assistant" as const,
         status: "streaming" as const,
         text,
+        timelineSequence,
       },
     ]
   }
@@ -269,6 +317,28 @@ function appendMessageDelta(
   return messages.map((message) =>
     message.id === messageId ? { ...message, text: `${message.text}${text}` } : message
   )
+}
+
+export function selectLiveTimeline(
+  messages: ChatMessageDraft[],
+  toolCalls: ToolCallState[]
+): LiveTimelineItem[] {
+  const timeline: LiveTimelineItem[] = [
+    ...messages
+      .filter((message) => message.channel === "text")
+      .map((message) => ({
+        kind: "text" as const,
+        message,
+        sequence: message.timelineSequence,
+      })),
+    ...toolCalls.map((toolCall) => ({
+      kind: "tool" as const,
+      toolCall,
+      sequence: toolCall.timelineSequence,
+    })),
+  ]
+
+  return timeline.sort((left, right) => left.sequence - right.sequence)
 }
 
 function completeMessage(messages: ChatMessageDraft[], messageId: string): ChatMessageDraft[] {

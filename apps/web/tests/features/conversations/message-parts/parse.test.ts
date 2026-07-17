@@ -32,6 +32,45 @@ function message(
 }
 
 describe("parseConversationMessages", () => {
+  it("preserves thinking and visible parts in source order", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "assistant", 1, [
+        { part_kind: "thinking", content: "Hidden reasoning" },
+        { part_kind: "text", content: "First, I will check." },
+        {
+          part_kind: "tool-call",
+          tool_call_id: "tool-call-1",
+          tool_name: "web_search",
+          args: { query: "Praxis Agents" },
+        },
+        {
+          part_kind: "tool-return",
+          tool_call_id: "tool-call-1",
+          tool_name: "web_search",
+          outcome: "success",
+          content: { answer: "Found it" },
+        },
+        { part_kind: "text", content: "Here is the conclusion." },
+      ]),
+    ])
+
+    expect(parsed[0]?.parts).toMatchObject([
+      { kind: "thinking", content: "Hidden reasoning" },
+      { kind: "text", content: "First, I will check." },
+      { kind: "tool", activity: { id: "tool-call-1", status: "completed" } },
+      { kind: "text", content: "Here is the conclusion." },
+    ])
+  })
+
+  it("marks messages without an ordered parts array for grouped fallback rendering", () => {
+    const fallbackMessage = message("message-1", "assistant", 1, [])
+    fallbackMessage.parts = { content: "Legacy answer" }
+
+    const parsed = parseConversationMessages([fallbackMessage])
+
+    expect(parsed[0]).toMatchObject({ parts: null, text: ["Legacy answer"] })
+  })
+
   it("parses a plain user and assistant exchange", () => {
     const parsed = parseConversationMessages([
       message("message-1", "user", 1, [{ part_kind: "user-prompt", content: "Hello" }]),

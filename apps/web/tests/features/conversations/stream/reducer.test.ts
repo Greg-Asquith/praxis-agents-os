@@ -4,6 +4,7 @@ import type { StreamEvent } from "@/features/conversations/stream/protocol"
 import {
   agentStreamReducer,
   initialAgentStreamState,
+  selectLiveTimeline,
   type AgentStreamState,
 } from "@/features/conversations/stream/reducer"
 import type { Conversation } from "@/features/conversations/types"
@@ -60,6 +61,7 @@ describe("agentStreamReducer", () => {
           role: "assistant",
           text: "stale",
           status: "complete",
+          timelineSequence: 0,
         },
       ],
       error: { code: "old_error", message: "Old error" },
@@ -124,6 +126,7 @@ describe("agentStreamReducer", () => {
         role: "assistant",
         text: "Hello",
         status: "complete",
+        timelineSequence: 0,
       },
     ])
   })
@@ -156,6 +159,7 @@ describe("agentStreamReducer", () => {
       args: { file_id: "file-1" },
       result: { text: "Contents" },
       status: "completed",
+      timelineSequence: 0,
     })
   })
 
@@ -195,6 +199,7 @@ describe("agentStreamReducer", () => {
       args: { to: "user@example.com" },
       result: null,
       status: "awaiting_approval",
+      timelineSequence: 0,
     })
   })
 
@@ -213,6 +218,59 @@ describe("agentStreamReducer", () => {
     expect(state.done).toBe(true)
     expect(state.status).toBe("completed")
     expect(state.error).toBeNull()
+  })
+
+  it("keeps text and tool calls in arrival order while updating results in place", () => {
+    const beforeResult = reduceEvents([
+      {
+        event: "message.start",
+        data: { ...eventWithSeq(1), message_id: "text-1", role: "assistant" },
+      },
+      {
+        event: "message.delta",
+        data: { ...eventWithSeq(2), message_id: "text-1", text: "Introduction" },
+      },
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(3),
+          tool_call_id: "tool-1",
+          name: "web_search",
+          args: { query: "Praxis Agents" },
+        },
+      },
+      {
+        event: "message.start",
+        data: { ...eventWithSeq(4), message_id: "text-2", role: "assistant" },
+      },
+      {
+        event: "message.delta",
+        data: { ...eventWithSeq(5), message_id: "text-2", text: "Conclusion" },
+      },
+    ])
+    const sequenceBeforeResult = beforeResult.toolCalls["tool-1"]?.timelineSequence
+    const afterResult = reduceEvents(
+      [
+        {
+          event: "tool.result",
+          data: {
+            ...eventWithSeq(6),
+            tool_call_id: "tool-1",
+            name: "web_search",
+            result: { answer: "Found it" },
+          },
+        },
+      ],
+      beforeResult
+    )
+
+    expect(
+      selectLiveTimeline(afterResult.messages, Object.values(afterResult.toolCalls)).map((item) =>
+        item.kind === "text" ? `text:${item.message.id}` : `tool:${item.toolCall.tool_call_id}`
+      )
+    ).toEqual(["text:text-1", "tool:tool-1", "text:text-2"])
+    expect(afterResult.toolCalls["tool-1"]?.timelineSequence).toBe(sequenceBeforeResult)
+    expect(afterResult.toolCalls["tool-1"]?.status).toBe("completed")
   })
 
   it("marks error events as failed and stores the stream error", () => {

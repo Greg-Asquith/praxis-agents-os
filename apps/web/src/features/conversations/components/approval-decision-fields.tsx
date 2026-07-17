@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -23,6 +24,7 @@ import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { ResolvedToolField } from "@/features/conversations/tool-ui"
 import { resolveUiFields } from "@/features/conversations/tool-ui"
 import type { ToolUiField } from "@/features/tools/types"
+import { titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
 
@@ -151,11 +153,16 @@ export function ApprovalRequestFields({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent align="start">
-                    {field.options.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {field.options.map((option) => {
+                        const label = titleCaseToken(option, option)
+                        return (
+                          <SelectItem key={option} label={label} value={option}>
+                            {label}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               ) : field.format === "multiline" || value.length > 80 ? (

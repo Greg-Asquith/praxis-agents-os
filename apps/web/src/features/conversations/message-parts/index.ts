@@ -17,6 +17,7 @@ export type { ConversationRenderItem } from "@/features/conversations/message-pa
 export type {
   DelegationToolActivity,
   ParsedConversationMessage,
+  ParsedMessagePart,
   PendingUserMessage,
   ToolActivity,
 } from "@/features/conversations/message-parts/types"

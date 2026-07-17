@@ -359,7 +359,7 @@ resumes as soon as the complete decision set is ready; the global staged
 semantics. Maintainer review widened the card, made long values multiline, and
 removed the generic Technical Details disclosure from conversation tool UI.
 Thinking now stays as the first, collapsed turn-level disclosure above tool
-activity; UI-030 will order the visible text/tool timeline beneath it.
+activity.
 UI-028 completed the live activity and outcome lifecycle on 2026-07-17 and
 moved to `docs/plans/complete/frontend-ui-028-live-activity-outcomes.md`.
 Generic live tools now use the shared card shell with argument wells, isolated
@@ -378,6 +378,14 @@ Files feature's existing rename and audited download operations. Transcript
 labels remain historical after mutations; stale or deleted files stay
 contained in the modal; drafts remain display-only. No endpoint, permission,
 audit, Pydantic AI, runtime, or protocol contract changed.
+UI-030 completed ordered assistant turns on 2026-07-17 and moved to
+`docs/plans/complete/frontend-ui-030-in-place-tool-calls.md`. Persisted message
+parts now retain source order and live stream entries receive stable monotonic
+positions, so visible text and tool surfaces interleave where they occurred
+while tool results and approvals update the existing row in place. Thinking
+remains one collapsed turn-level disclosure above the visible timeline, legacy
+payloads fall back to grouped text-then-tool rendering, and the SSE and
+persistence contracts remain unchanged.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

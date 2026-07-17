@@ -44,6 +44,11 @@ type UnsupportedMessagePart = {
   preview: string
 }
 
+export type ParsedMessagePart =
+  | { kind: "text"; id: string; content: string }
+  | { kind: "thinking"; id: string; content: string }
+  | { kind: "tool"; id: string; activity: ToolActivity }
+
 export type ParsedConversationMessage = {
   id: string
   role: ParsedMessageRole
@@ -51,6 +56,7 @@ export type ParsedConversationMessage = {
   agentRunId: string | null
   clientMessageId: string | null
   createdAt: string
+  parts: ParsedMessagePart[] | null
   text: string[]
   thinking: string[]
   attachments: MessageAttachment[]

@@ -364,8 +364,7 @@ resumes directly from its final card decision; the staged global submit bar is
 gone, while deferred-tool result and argument-override contracts are unchanged.
 Maintainer review widened the card, made long editable values multiline, and
 removed generic Technical Details from conversation tool UI. Thinking now stays
-as the first collapsed turn-level disclosure; UI-030 orders the visible
-text/tool timeline beneath it.
+as the first collapsed turn-level disclosure.
 UI-028 completed the live tool lifecycle on 2026-07-17: generic running tools
 now render on the shared activity-card shell with argument wells, isolated
 live-only elapsed timers, and reduced-motion-safe shimmer; completed calls
@@ -381,6 +380,12 @@ Files feature's rename and audited download operations. Transcript labels stay
 historical after mutations, stale/deleted files resolve to a contained modal
 state, scratch drafts remain display-only, and no API, permission, audit,
 runtime, or protocol contract changed.
+UI-030 completed in-place tool ordering on 2026-07-17: persisted parts preserve
+source order and live entries receive stable monotonic positions, so visible
+text and tool surfaces interleave chronologically while completion and approval
+updates remain in place. Thinking stays as the first collapsed turn-level
+disclosure, legacy payloads retain grouped fallback rendering, and no SSE,
+persistence, backend, or runtime contract changed.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

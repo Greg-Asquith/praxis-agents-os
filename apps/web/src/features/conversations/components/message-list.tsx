@@ -10,6 +10,7 @@ import {
   AssistantLiveActivityRow,
   AssistantTurnRow,
   MessageRow,
+  type AssistantLiveTimelinePart,
 } from "@/features/conversations/components/message-row"
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
@@ -20,10 +21,11 @@ import type {
   PendingDelegatedApproval,
   PendingToolApproval,
 } from "@/features/conversations/types"
-import type {
-  ApprovalState,
-  ChatMessageDraft,
-  ToolCallState,
+import {
+  selectLiveTimeline,
+  type ApprovalState,
+  type ChatMessageDraft,
+  type ToolCallState,
 } from "@/features/conversations/stream/reducer"
 import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skill-activation"
 import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"
@@ -91,6 +93,20 @@ export function MessageList({
     () => buildLiveToolActivities(streamToolCalls, streamApprovals),
     [streamToolCalls, streamApprovals]
   )
+  const liveTimeline = useMemo(() => {
+    const activitiesById = new Map(
+      liveToolActivities.map((activity) => [activity.id, activity] as const)
+    )
+    return selectLiveTimeline(streamMessages, streamToolCalls).flatMap(
+      (item): AssistantLiveTimelinePart[] => {
+        if (item.kind === "text") {
+          return [{ kind: "text", message: item.message }]
+        }
+        const activity = activitiesById.get(item.toolCall.tool_call_id)
+        return activity ? [{ kind: "tool", activity }] : []
+      }
+    )
+  }, [liveToolActivities, streamMessages, streamToolCalls])
   const hasRunningTranscriptTool = parsedMessages.some((message) =>
     message.toolActivities.some((activity) => activity.status === "running")
   )
@@ -171,7 +187,7 @@ export function MessageList({
             assistantLabel={assistantLabel}
             isStreaming={isStreaming}
             messages={streamMessages}
-            toolActivities={liveToolActivities}
+            timeline={liveTimeline}
           />
         )}
 
@@ -225,7 +241,6 @@ function TranscriptRenderItem({
         assistantLabel={assistantLabel}
         createdAt={item.createdAt}
         messages={item.messages}
-        toolActivities={item.toolActivities}
       />
     )
   }

@@ -13,10 +13,14 @@ import { UnsupportedPartRows } from "@/features/conversations/components/unsuppo
 import type { MessageAttachment } from "@/features/conversations/attachments"
 import type {
   ParsedConversationMessage,
+  ParsedMessagePart,
   PendingUserMessage,
   ToolActivity,
 } from "@/features/conversations/message-parts"
 import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
+
+export type AssistantLiveTimelinePart =
+  { kind: "text"; message: ChatMessageDraft } | { kind: "tool"; activity: ToolActivity }
 
 type MessageRowProps =
   | {
@@ -84,16 +88,15 @@ export function AssistantLiveActivityRow({
   assistantLabel = "Agent",
   isStreaming,
   messages,
-  toolActivities,
+  timeline,
 }: {
   assistantAgentId: string
   assistantLabel?: string
   isStreaming: boolean
   messages: ChatMessageDraft[]
-  toolActivities: ToolActivity[]
+  timeline: AssistantLiveTimelinePart[]
 }) {
   const thinkingContent = liveThinkingContent(messages)
-  const textMessages = messages.filter((message) => message.channel !== "thinking")
 
   return (
     <AssistantMessageShell
@@ -103,16 +106,18 @@ export function AssistantLiveActivityRow({
       streaming={isStreaming}
     >
       <ThinkingBlock content={thinkingContent} idPrefix="live-assistant-turn:thinking" />
-      {toolActivities.map((activity) => (
-        <ToolCallRow key={`${activity.id}:${activity.kind}`} activity={activity} live />
-      ))}
-      {messages.length > 0 ? (
-        textMessages.map((message) => <LiveMessageDraft key={message.id} message={message} />)
-      ) : (
+      {timeline.map((part) =>
+        part.kind === "text" ? (
+          <LiveMessageDraft key={`text:${part.message.id}`} message={part.message} />
+        ) : (
+          <ToolCallRow key={`tool:${part.activity.id}`} activity={part.activity} live />
+        )
+      )}
+      {messages.length === 0 && timeline.length === 0 ? (
         <p className="text-muted-foreground animate-pulse text-sm motion-reduce:animate-none">
           Thinking…
         </p>
-      )}
+      ) : null}
     </AssistantMessageShell>
   )
 }
@@ -122,13 +127,11 @@ export function AssistantTurnRow({
   assistantLabel = "Agent",
   createdAt,
   messages,
-  toolActivities,
 }: {
   assistantAgentId: string
   assistantLabel?: string
   createdAt: string
   messages: ParsedConversationMessage[]
-  toolActivities: ToolActivity[]
 }) {
   const thinkingContent = persistedThinkingContent(messages)
 
@@ -138,9 +141,6 @@ export function AssistantTurnRow({
         content={thinkingContent}
         idPrefix={`assistant-turn:${messages[0]?.id ?? "unknown"}:thinking`}
       />
-      {toolActivities.map((activity, index) => (
-        <ToolCallRow key={`${activity.id}:${activity.kind}:${String(index)}`} activity={activity} />
-      ))}
       {messages.map((message) => (
         <PersistedAssistantTurnMessage key={message.id} message={message} />
       ))}
@@ -174,7 +174,7 @@ function PersistedAssistantTurnMessage({ message }: { message: ParsedConversatio
 
   return (
     <>
-      <MessageTextParts message={message} />
+      <MessageVisibleParts message={message} />
       <AttachmentCards attachments={message.attachments} />
       <UnsupportedPartRows message={message} />
     </>
@@ -185,12 +185,51 @@ function MessageContentParts({ message }: { message: ParsedConversationMessage }
   return (
     <>
       <ThinkingParts message={message} />
-      <MessageTextParts message={message} />
+      <MessageVisibleParts message={message} />
       <AttachmentCards attachments={message.attachments} />
-      <MessageToolActivities message={message} />
       <UnsupportedPartRows message={message} />
     </>
   )
+}
+
+function MessageVisibleParts({ message }: { message: ParsedConversationMessage }) {
+  return <>{visibleMessageParts(message).map((part) => renderMessagePart(message, part))}</>
+}
+
+function renderMessagePart(message: ParsedConversationMessage, part: ParsedMessagePart) {
+  if (part.kind === "thinking") {
+    return null
+  }
+  if (part.kind === "tool") {
+    return <ToolCallRow key={part.id} activity={part.activity} />
+  }
+  if (message.role === "tool") {
+    return (
+      <div key={part.id} className="text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 text-sm">
+        <MessageMarkdown content={part.content} />
+      </div>
+    )
+  }
+  return <MessageMarkdown key={part.id} content={part.content} />
+}
+
+function visibleMessageParts(message: ParsedConversationMessage): ParsedMessagePart[] {
+  if (message.parts !== null) {
+    return message.parts.filter((part) => part.kind !== "thinking")
+  }
+
+  return [
+    ...message.text.map((content, index) => ({
+      kind: "text" as const,
+      id: `${message.id}:legacy-text:${String(index)}`,
+      content,
+    })),
+    ...message.toolActivities.map((activity, index) => ({
+      kind: "tool" as const,
+      id: `${message.id}:legacy-tool:${activity.id}:${String(index)}`,
+      activity,
+    })),
+  ]
 }
 
 function MessageTextParts({ message }: { message: ParsedConversationMessage }) {
@@ -248,39 +287,17 @@ function ThinkingBlock({ content, idPrefix }: { content: string[]; idPrefix: str
   )
 }
 
-function MessageToolActivities({ message }: { message: ParsedConversationMessage }) {
-  return (
-    <>
-      {message.toolActivities.map((activity) => (
-        <ToolCallRow key={`${message.id}:${activity.id}:${activity.kind}`} activity={activity} />
-      ))}
-    </>
-  )
-}
-
 function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
   return (
     <div className="flex w-full flex-col gap-2 px-1">
-      <MessageToolActivities message={message} />
-      <ToolMessageContent message={message} />
+      <MessageVisibleParts message={message} />
+      <UnsupportedPartRows message={message} />
     </div>
   )
 }
 
 function ToolMessageContent({ message }: { message: ParsedConversationMessage }) {
-  return (
-    <>
-      {message.text.map((text, index) => (
-        <div
-          key={`${message.id}:tool-text:${String(index)}`}
-          className="text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 text-sm"
-        >
-          <MessageMarkdown content={text} />
-        </div>
-      ))}
-      <UnsupportedPartRows message={message} />
-    </>
-  )
+  return <MessageVisibleParts message={message} />
 }
 
 function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage }) {
@@ -296,7 +313,10 @@ function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage
 
 function hasPersistedTurnContent(message: ParsedConversationMessage) {
   return (
-    message.text.length > 0 || message.attachments.length > 0 || message.unsupportedParts.length > 0
+    message.text.length > 0 ||
+    message.toolActivities.length > 0 ||
+    message.attachments.length > 0 ||
+    message.unsupportedParts.length > 0
   )
 }
 

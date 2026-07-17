@@ -1,9 +1,6 @@
 // apps/web/src/features/conversations/message-parts/group-render-items.ts
 
-import type {
-  ParsedConversationMessage,
-  ToolActivity,
-} from "@/features/conversations/message-parts/types"
+import type { ParsedConversationMessage } from "@/features/conversations/message-parts/types"
 
 export type ConversationRenderItem =
   | {
@@ -17,7 +14,6 @@ export type ConversationRenderItem =
       agentRunId: string
       createdAt: string
       messages: ParsedConversationMessage[]
-      toolActivities: ToolActivity[]
     }
 
 type AssistantTurnAccumulator = {
@@ -25,7 +21,6 @@ type AssistantTurnAccumulator = {
   firstMessageId: string
   createdAt: string
   messages: ParsedConversationMessage[]
-  toolActivities: ToolActivity[]
 }
 
 type AssistantTurnMessage = ParsedConversationMessage & { agentRunId: string }
@@ -76,13 +71,11 @@ function createAssistantTurn(message: AssistantTurnMessage): AssistantTurnAccumu
     firstMessageId: message.id,
     createdAt: message.createdAt,
     messages: [message],
-    toolActivities: [...message.toolActivities],
   }
 }
 
 function appendMessageToTurn(turn: AssistantTurnAccumulator, message: ParsedConversationMessage) {
   turn.messages.push(message)
-  turn.toolActivities.push(...message.toolActivities)
 }
 
 function assistantTurnItem(turn: AssistantTurnAccumulator): ConversationRenderItem {
@@ -92,6 +85,5 @@ function assistantTurnItem(turn: AssistantTurnAccumulator): ConversationRenderIt
     agentRunId: turn.agentRunId,
     createdAt: turn.createdAt,
     messages: turn.messages,
-    toolActivities: turn.toolActivities,
   }
 }

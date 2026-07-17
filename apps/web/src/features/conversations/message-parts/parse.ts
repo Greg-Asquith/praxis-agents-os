@@ -2,6 +2,7 @@
 
 import type {
   ParsedConversationMessage,
+  ParsedMessagePart,
   ParsedMessageRole,
   ParsedAttachment,
   ToolActivity,
@@ -53,67 +54,79 @@ export function parseConversationMessages(
   const runIsExecuting = isRunStatusPolling(activeRunStatus)
 
   return parsed
-    .map((message, messageIndex) => ({
-      ...message,
-      toolActivities: message.toolActivities
-        .map((activity, activityIndex) => {
-          if (activity.kind !== "call" || !activity.id) {
-            return activity
-          }
+    .map((message, messageIndex) => {
+      const resolvedActivities = message.toolActivities.map((activity, activityIndex) => {
+        if (activity.kind !== "call" || !activity.id) {
+          return activity
+        }
 
-          const pendingDelegate = pendingDelegationsByParentCallId.get(activity.id)
-          const activityDelegate = pendingDelegate
-            ? mergeDelegationDetails(
-                activity.delegate,
-                delegationDetailsForPendingApproval(pendingDelegate, activity.args)
-              )
-            : activity.delegate
-          const activityWithDelegate = activityDelegate
-            ? { ...activity, delegate: activityDelegate }
-            : activity
+        const pendingDelegate = pendingDelegationsByParentCallId.get(activity.id)
+        const activityDelegate = pendingDelegate
+          ? mergeDelegationDetails(
+              activity.delegate,
+              delegationDetailsForPendingApproval(pendingDelegate, activity.args)
+            )
+          : activity.delegate
+        const activityWithDelegate = activityDelegate
+          ? { ...activity, delegate: activityDelegate }
+          : activity
 
-          const result = resultsByCallKey.get(toolActivityKey(messageIndex, activityIndex))
-          if (result) {
-            const delegate = mergeDelegationDetails(activityDelegate, result.delegate)
-            const mergedActivity: ToolActivity = {
-              ...activity,
-              outcome: result.outcome ?? null,
-              result: result.result,
-              status: result.status,
-            }
-            if (delegate) {
-              mergedActivity.delegate = delegate
-            }
-            if (result.args !== undefined) {
-              mergedActivity.args = result.args
-            }
-            if (result.decision !== undefined) {
-              mergedActivity.decision = result.decision
-            }
-            return mergedActivity
+        const result = resultsByCallKey.get(toolActivityKey(messageIndex, activityIndex))
+        if (result) {
+          const delegate = mergeDelegationDetails(activityDelegate, result.delegate)
+          const mergedActivity: ToolActivity = {
+            ...activity,
+            outcome: result.outcome ?? null,
+            result: result.result,
+            status: result.status,
           }
-          if (runAwaitsApproval) {
-            return {
-              ...activityWithDelegate,
-              kind: "approval" as const,
-              status: "awaiting_approval" as const,
-            }
+          if (delegate) {
+            mergedActivity.delegate = delegate
           }
-          if (!runIsExecuting) {
-            return { ...activityWithDelegate, status: "unknown" as const }
+          if (result.args !== undefined) {
+            mergedActivity.args = result.args
           }
-          return activityWithDelegate
-        })
-        .filter((activity, activityIndex) => {
-          if (
-            (activity.kind === "result" || activity.kind === "retry") &&
-            consumedResultKeys.has(toolActivityKey(messageIndex, activityIndex))
-          ) {
-            return false
+          if (result.decision !== undefined) {
+            mergedActivity.decision = result.decision
           }
-          return true
-        }),
-    }))
+          return mergedActivity
+        }
+        if (runAwaitsApproval) {
+          return {
+            ...activityWithDelegate,
+            kind: "approval" as const,
+            status: "awaiting_approval" as const,
+          }
+        }
+        if (!runIsExecuting) {
+          return { ...activityWithDelegate, status: "unknown" as const }
+        }
+        return activityWithDelegate
+      })
+      const resolvedActivitiesByOriginal = new Map<ToolActivity, ToolActivity | null>()
+      const visibleActivities: ToolActivity[] = []
+      resolvedActivities.forEach((activity, activityIndex) => {
+        const originalActivity = message.toolActivities[activityIndex]
+        if (!originalActivity) {
+          return
+        }
+        if (
+          (activity.kind === "result" || activity.kind === "retry") &&
+          consumedResultKeys.has(toolActivityKey(messageIndex, activityIndex))
+        ) {
+          resolvedActivitiesByOriginal.set(originalActivity, null)
+          return
+        }
+        resolvedActivitiesByOriginal.set(originalActivity, activity)
+        visibleActivities.push(activity)
+      })
+
+      return {
+        ...message,
+        parts: resolveOrderedToolParts(message.parts, resolvedActivitiesByOriginal),
+        toolActivities: visibleActivities,
+      }
+    })
     .filter(hasRenderableMessageContent)
 }
 
@@ -126,6 +139,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     agentRunId: message.metadata ? (stringValue(message.metadata["agent_run_id"]) ?? null) : null,
     clientMessageId: message.client_message_id,
     createdAt: message.created_at,
+    parts: rawParts.length > 0 ? [] : null,
     text: [],
     thinking: [],
     attachments: [],
@@ -155,6 +169,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const content = parseUserPromptContent(part["content"], partId)
       if (content.text) {
         parsed.text.push(content.text)
+        parsed.parts?.push({ kind: "text", id: partId, content: content.text })
       }
       parsed.attachments.push(...content.attachments)
       parsed.unsupportedParts.push(...content.unsupportedParts)
@@ -176,6 +191,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const text = stringValue(part["content"])
       if (text) {
         parsed.text.push(text)
+        parsed.parts?.push({ kind: "text", id: partId, content: text })
       }
       return
     }
@@ -186,6 +202,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const thinking = stringValue(part["content"])
       if (thinking) {
         parsed.thinking.push(thinking)
+        parsed.parts?.push({ kind: "thinking", id: partId, content: thinking })
       }
       return
     }
@@ -208,6 +225,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
         activity.delegate = delegate
       }
       parsed.toolActivities.push(activity)
+      parsed.parts?.push({ kind: "tool", id: partId, activity })
       return
     }
 
@@ -237,18 +255,21 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
         activity.decision = approvalMetadata.decision
       }
       parsed.toolActivities.push(activity)
+      parsed.parts?.push({ kind: "tool", id: partId, activity })
       return
     }
 
     if (partKind === "retry-prompt") {
-      parsed.toolActivities.push({
+      const activity: ToolActivity = {
         id: stringValue(part["tool_call_id"]) ?? partId,
         kind: "retry",
         status: "failed",
         name: stringValue(part["tool_name"]) ?? "tool",
         result: part["content"],
         outcome: "retry",
-      })
+      }
+      parsed.toolActivities.push(activity)
+      parsed.parts?.push({ kind: "tool", id: partId, activity })
       return
     }
 
@@ -264,6 +285,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     const fallbackText = extractFallbackText(part)
     if (fallbackText) {
       parsed.text.push(fallbackText)
+      parsed.parts?.push({ kind: "text", id: partId, content: fallbackText })
       return
     }
 
@@ -275,6 +297,28 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
   })
 
   return parsed
+}
+
+function resolveOrderedToolParts(
+  parts: ParsedMessagePart[] | null,
+  resolvedActivitiesByOriginal: Map<ToolActivity, ToolActivity | null>
+): ParsedMessagePart[] | null {
+  if (parts === null) {
+    return null
+  }
+
+  const resolvedParts: ParsedMessagePart[] = []
+  for (const part of parts) {
+    if (part.kind !== "tool") {
+      resolvedParts.push(part)
+      continue
+    }
+    const activity = resolvedActivitiesByOriginal.get(part.activity)
+    if (activity) {
+      resolvedParts.push({ ...part, activity })
+    }
+  }
+  return resolvedParts
 }
 
 function hasRenderableMessageContent(message: ParsedConversationMessage) {

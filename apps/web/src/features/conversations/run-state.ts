@@ -9,7 +9,7 @@ export function getConversationComposerDisabledReason(activeRun: AgentRun | null
   }
 
   if (activeRun.status === "awaiting_approval") {
-    return "Tools require approving before this run can continue."
+    return "Tools require approving before this conversation can continue."
   }
 
   if (isRunStatusPolling(activeRun.status)) {

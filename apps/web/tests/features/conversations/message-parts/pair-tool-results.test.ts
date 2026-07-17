@@ -17,6 +17,7 @@ function parsedMessage(
     agentRunId: null,
     clientMessageId: null,
     createdAt: "2026-07-07T10:00:00.000Z",
+    parts: null,
     text: [],
     thinking: [],
     attachments: [],
