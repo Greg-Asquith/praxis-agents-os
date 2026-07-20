@@ -42,10 +42,10 @@
   decision D11 (no fake provider) folded into the body; anchors
   re-verified against the tree with the 037 implementation present
   (post-`edc3abc`).
-- **Execution progress**: Slice A completed 2026-07-17 (discovery engine,
-  computed status machine, notifications, retention and periodic
-  re-discovery jobs). Slice B remains pending, so this plan stays TODO and
-  remains in `docs/plans/`.
+- **Execution progress**: **DONE 2026-07-20.** Slice A completed 2026-07-17
+  (discovery engine, computed status machine, notifications, retention and
+  periodic re-discovery jobs). Slice B completed 2026-07-20 (resource list,
+  bulk selection, RBAC and deduplicated manual-discovery routes).
 
 ## Decisions taken
 
@@ -604,30 +604,31 @@ survival** (§3).
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0; `uv run alembic check` clean (no
+- [x] `uv run ruff check .` exits 0; `uv run alembic check` clean (no
       new migration in this plan)
-- [ ] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite,
+- [x] `TEST_DATABASE_URL=... uv run pytest -q` exits 0 (full suite,
       including an untouched `tests/services/jobs`)
-- [ ] Kind smoke prints exactly the four kinds listed in the Commands
+- [x] Kind smoke prints exactly the four kinds listed in the Commands
       table
-- [ ] `uv run python -m workers.job_runner --once` exits 0
-- [ ] Grep shows `transition_connection_status` is still the only
+- [x] `uv run python -m workers.job_runner --once` exits 0
+- [x] Grep shows `transition_connection_status` is still the only
       assigner of `IntegrationConnection.status`, and
       `recompute_connection_status` the only source of
       `needs_resource_selection`
-- [ ] The 038 seam comments are gone, replaced by `enqueue_discovery`
+- [x] The 038 seam comments are gone, replaced by `enqueue_discovery`
       calls
-- [ ] No `import integrations` (or `from integrations`) outside
-      `services/integrations/loader.py` — packaging §4.6 law holds
-- [ ] `docs/architecture/governance.md` updated: §3 rows "Credentials
+- [x] No application-code `import integrations` (or `from integrations`)
+      outside `services/integrations/loader.py` — packaging §4.6 law holds;
+      suite-local provider tests retain their deliberate test-only imports
+- [x] `docs/architecture/governance.md` updated: §3 rows "Credentials
       (037)" and "Integration resources/discovery runs (039)" →
       `[implemented: plan 039]`; §6 row "Integration needs_reauth /
       discovery failure" → `[implemented: plan 039]`; §1 row "Select
       integration resources / edit context groups (039–040)" → annotate
       `[implemented (selection): plan 039]` (context groups remain
       040's)
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `git status` shows no modified files outside the in-scope list
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 

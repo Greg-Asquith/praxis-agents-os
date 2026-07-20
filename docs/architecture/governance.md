@@ -37,7 +37,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Hard-delete / purge files (032) *(enforced today: 032, `require_file_purge_access`)* | — | — | ✓ | ✓ |
 | Connect/revoke own user-scoped integrations (037–038) *[implemented: plan 038]* | — | ✓ | ✓ | ✓ |
 | Connect/revoke workspace-scoped integrations (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Select integration resources / edit context groups (039–040) | — | ✓ | ✓ | ✓ |
+| Select integration resources / edit context groups (039–040) *[implemented (selection): plan 039; context groups pending 040]* | — | ✓ | ✓ | ✓ |
 | View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Create/edit KB documents (044/046) | — | ✓ | ✓ | ✓ |
@@ -99,8 +99,8 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
 | KB documents/chunks/embeddings (044) | ✓ | 30 d after doc hard-delete; chunks/vectors cascade immediately with doc | n/a | ✓ | ✓ (markdown) |
 | Memories (048) | supersession, never hard | archive at `expires_at`; hard-delete only by user action | n/a | ✓ | ✓ |
-| Credentials (037) | revoke = soft | 30 d after revoke; tokens crypto-shredded at revoke | n/a | metadata only, never values | — |
-| Integration resources/discovery runs (039) | ✓ / plain rows | 90 d | n/a | counters | — |
+| Credentials (037) | revoke = soft [implemented: plan 039] | 30 d after revoke; tokens crypto-shredded at revoke [implemented: plan 039] | n/a | metadata only, never values | — |
+| Integration resources/discovery runs (039) | ✓ / plain rows [implemented: plan 039] | 90 d [implemented: plan 039] | n/a | counters [implemented: plan 039] | — |
 | Artifact shares (051) | revocable | at `expires_at` (default 7 d) | n/a | ✓ | — |
 | Audit events | append-only | 400 d | n/a | n/a | ✓ (super-admin) |
 | Security events | append-only | 400 d | n/a | n/a | super-admin only |
@@ -156,7 +156,7 @@ used by invites). Email stays out until a digest exists. All rows
 | Event | Notify (in-app) | Recipient | Emitting plan |
 |---|---|---|---|
 | Schedule run terminal failure / auto-disable | ✓ | schedule owner | 021-adjacent worker |
-| Integration `needs_reauth` / discovery failure | ✓ | connecting user | 039 |
+| Integration `needs_reauth` / discovery failure | ✓ [implemented: plan 039] | connecting user [implemented: plan 039] | 039 |
 | Job pipeline failure — only after final retry exhausted | ✓ [implemented: plan 030] | initiator (`initiated_by_user_id`) [implemented: plan 030] | 030 |
 | Every tool invocation, successful runs, routine refreshes | — (audit only) | — | — |
 

@@ -431,13 +431,12 @@ the next starts, and a plan's status row flips to DONE only when its
 final slice lands. Plans 043, 047, 055, and 056 were assessed in the same
 pass and left single-slice.
 
-Plan 039 Slice A was executed 2026-07-17: the provider-neutral discovery
-engine, data-derived connection status machine, final-attempt and
-needs-reauth notifications, retention sweep, and periodic permission
-re-discovery now run through the generic jobs worker. Slice B (resource
-selection services and routes) remains pending; the plan row therefore stays
-TODO and the plan document remains under `docs/plans/` as required by its
-binding slice instructions.
+Plan 039 completed 2026-07-20 and moved to `docs/plans/complete/`. Slice A
+landed the provider-neutral discovery engine, data-derived connection status
+machine, final-attempt and needs-reauth notifications, retention sweep, and
+periodic permission re-discovery. Slice B added the resource list and bulk
+selection services, member/owner authorization, selection-diff audit records,
+status recomputation, and the deduplicated manual-discovery route.
 
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
@@ -498,7 +497,7 @@ results retain the file snapshot needed by the existing thumbnail path.
 | C05 | Close small production-readiness gaps (license, metrics, 403 bodies, README) | P2 | S-M | maintainer license decision for license step | DONE |
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | DONE |
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | DONE |
-| 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | TODO |
+| 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | DONE |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |
 | 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO |
 | 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | TODO |

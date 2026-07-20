@@ -117,3 +117,33 @@ class ConnectionRefreshResponse(BaseModel):
     connection_id: UUID
     status: str
     token_expires_at: datetime | None
+
+
+class IntegrationResourceRead(BaseModel):
+    id: UUID
+    connection_id: UUID
+    resource_type: str
+    external_id: str
+    display_name: str
+    parent_external_id: str | None
+    enabled: bool
+    availability: str
+    writable: bool
+    metadata: dict[str, object]
+    first_seen_at: datetime
+    last_seen_at: datetime
+    removed_at: datetime | None
+
+
+class ResourceSelectionRequest(BaseModel):
+    enabled_resource_ids: list[UUID]
+
+
+class ResourceSelectionResponse(BaseModel):
+    connection_id: UUID
+    enabled_resource_ids: list[UUID]
+    status: str
+
+
+class DiscoveryTriggerResponse(BaseModel):
+    job_id: UUID
