@@ -2,9 +2,9 @@
 
 """Provider contribution contract used by the settings-driven loader."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic import SecretStr
 
@@ -13,7 +13,20 @@ from services.integrations.manifest import IntegrationProviderManifest
 if TYPE_CHECKING:
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
 
-DiscoverResourcesFn = Callable[..., Awaitable[Any]]
+
+@dataclass(frozen=True)
+class DiscoveredIntegrationResource:
+    """Provider-neutral resource returned by a discovery implementation."""
+
+    resource_type: str
+    external_id: str
+    display_name: str
+    parent_external_id: str | None = None
+    writable: bool = False
+    permissions_metadata: dict[str, object] | None = None
+
+
+DiscoverResourcesFn = Callable[[str], Awaitable[Sequence[DiscoveredIntegrationResource]]]
 
 
 @dataclass(frozen=True)

@@ -37,6 +37,31 @@ class IntegrationsSettingsMixin:
         gt=0,
         description="Maximum Retry-After delay honored for integration-provider calls.",
     )
+    INTEGRATIONS_DISCOVERY_TIMEOUT_SECONDS: float = Field(
+        default=300.0,
+        gt=0,
+        description="Maximum runtime for one integration resource-discovery job.",
+    )
+    INTEGRATIONS_STALE_RETENTION_DAYS: int = Field(
+        default=90,
+        gt=0,
+        description="Governance retention in days for stale integration resources and discovery runs.",
+    )
+    INTEGRATIONS_REVOKED_RETENTION_DAYS: int = Field(
+        default=30,
+        gt=0,
+        description="Governance retention in days for revoked integration credentials.",
+    )
+    INTEGRATIONS_SWEEP_INTERVAL_SECONDS: int = Field(
+        default=3600,
+        gt=0,
+        description="Interval between integration lifecycle-retention sweeps.",
+    )
+    INTEGRATIONS_REDISCOVERY_INTERVAL_SECONDS: int = Field(
+        default=86400,
+        gt=0,
+        description="Maximum age of provider permissions before resource re-discovery.",
+    )
     CREDENTIAL_MASTER_KEY_SECRET_NAME: str = Field(
         default="credential-master-key",
         min_length=1,

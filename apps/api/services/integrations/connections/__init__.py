@@ -6,6 +6,10 @@ from services.integrations.connections.complete_oauth_callback import complete_o
 from services.integrations.connections.connect_api_key import connect_api_key
 from services.integrations.connections.get_connection import get_connection
 from services.integrations.connections.list_connections import list_connections
+from services.integrations.connections.notify_connection_event import notify_connection_event
+from services.integrations.connections.recompute_connection_status import (
+    recompute_connection_status,
+)
 from services.integrations.connections.refresh_connection import refresh_connection
 from services.integrations.connections.rename_connection import rename_connection
 from services.integrations.connections.revoke_connection import revoke_connection
@@ -20,6 +24,8 @@ __all__ = [
     "connect_api_key",
     "get_connection",
     "list_connections",
+    "notify_connection_event",
+    "recompute_connection_status",
     "refresh_connection",
     "rename_connection",
     "revoke_connection",

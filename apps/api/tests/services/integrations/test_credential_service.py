@@ -108,7 +108,7 @@ async def test_duplicate_principal_detection_warns_without_blocking(db_session) 
     assert first_connection.id != second_connection.id
 
 
-async def test_refresh_failure_sets_needs_reauth_without_notification(db_session) -> None:
+async def test_refresh_failure_sets_needs_reauth_and_notifies_once(db_session) -> None:
     credential = await _stored(db_session, expires_in=1)
     credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     connection = await _connection(db_session, credential)
@@ -118,7 +118,13 @@ async def test_refresh_failure_sets_needs_reauth_without_notification(db_session
     await db_session.refresh(connection)
     assert credential.refresh_failure_count == 1
     assert connection.status == "needs_reauth"
-    assert await db_session.scalar(select(func.count()).select_from(Notification)) == 0
+    notification = await db_session.scalar(
+        select(Notification).where(
+            Notification.notification_type == "integration_needs_reauth",
+            Notification.recipient_user_id == connection.connected_by_user_id,
+        )
+    )
+    assert notification is not None
     failure_events = await db_session.scalar(
         select(func.count())
         .select_from(AuditEvent)

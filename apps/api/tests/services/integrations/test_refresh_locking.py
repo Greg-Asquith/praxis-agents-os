@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from core.exceptions.integration import IntegrationAuthError
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
+from models.notification import Notification
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.integrations.connections import test_connection as run_connection_test
@@ -84,6 +85,9 @@ async def test_concurrent_refresh_hits_provider_once(committed_db_session_factor
         assert refresh_calls == 1
     finally:
         async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(
+                delete(Notification).where(Notification.recipient_user_id == user_id)
+            )
             await cleanup.execute(
                 delete(AuditEvent).where(
                     (AuditEvent.resource_id == str(credential_id))
@@ -183,6 +187,9 @@ async def test_auth_refresh_failure_survives_request_style_rollback(
             )
     finally:
         async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(
+                delete(Notification).where(Notification.recipient_user_id == user_id)
+            )
             await cleanup.execute(
                 delete(AuditEvent).where(
                     (AuditEvent.resource_id == str(credential_id))
@@ -290,6 +297,9 @@ async def test_identity_failure_transition_survives_request_style_rollback(
             )
     finally:
         async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(
+                delete(Notification).where(Notification.recipient_user_id == user_id)
+            )
             await cleanup.execute(
                 delete(AuditEvent).where(
                     (AuditEvent.resource_id == str(credential_id))

@@ -1,5 +1,6 @@
 """HTTP-boundary coverage for PKCE OAuth connection creation."""
 
+from dataclasses import replace
 from importlib import import_module
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -13,8 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection, IntegrationOAuthState
+from models.jobs import Job
+from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
 from services.integrations.oauth.utils import code_challenge
+from services.integrations.plugin import PROVIDER_PLUGINS
 
 pytestmark = pytest.mark.asyncio
 
@@ -25,6 +29,25 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
     integration_identity: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    discovery_calls = 0
+
+    async def discover_resources(_credential: str):
+        nonlocal discovery_calls
+        discovery_calls += 1
+        return ()
+
+    gmail_plugin = PROVIDER_PLUGINS["gmail"]
+    discoverable_manifest = replace(
+        gmail_plugin.manifest,
+        resource_types=("gmail_mailbox",),
+        requires_discovery=True,
+    )
+    PROVIDER_MANIFESTS["gmail"] = discoverable_manifest
+    PROVIDER_PLUGINS["gmail"] = replace(
+        gmail_plugin,
+        manifest=discoverable_manifest,
+        discover_resources=discover_resources,
+    )
     headers = integration_identity["headers"]
     start = await db_async_client.post(
         "/api/v1/integrations/connections/oauth/start",
@@ -79,12 +102,21 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
     assert callback.status_code == 200, callback.text
     assert callback.json()["next_path"] == "/integrations?provider=gmail"
     assert callback.json()["connection"]["id"] == payload["connection_id"]
-    assert callback.json()["connection"]["status"] == "active"
+    assert callback.json()["connection"]["status"] == "discovery_pending"
     assert seen["verifier"]
+    assert discovery_calls == 0
+    pending_job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == "integrations.discover_resources",
+            Job.subject_id == connection.id,
+        )
+    )
+    assert pending_job is not None
+    assert pending_job.initiated_by_user_id is None
 
     db_session.expire_all()
     connection = await db_session.get(IntegrationConnection, payload["connection_id"])
-    assert connection is not None and connection.status == "active"
+    assert connection is not None and connection.status == "discovery_pending"
     credential = await db_session.get(ExternalCredential, connection.credential_id)
     assert credential is not None
     assert credential.access_token_encrypted != "access-secret"

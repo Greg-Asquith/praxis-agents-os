@@ -431,6 +431,14 @@ the next starts, and a plan's status row flips to DONE only when its
 final slice lands. Plans 043, 047, 055, and 056 were assessed in the same
 pass and left single-slice.
 
+Plan 039 Slice A was executed 2026-07-17: the provider-neutral discovery
+engine, data-derived connection status machine, final-attempt and
+needs-reauth notifications, retention sweep, and periodic permission
+re-discovery now run through the generic jobs worker. Slice B (resource
+selection services and routes) remains pending; the plan row therefore stays
+TODO and the plan document remains under `docs/plans/` as required by its
+binding slice instructions.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and

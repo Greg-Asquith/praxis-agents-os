@@ -24,6 +24,7 @@ from services.integrations.connections.transition_connection_status import (
 )
 from services.integrations.connections.utils import connection_to_read
 from services.integrations.credentials import store_oauth_credential
+from services.integrations.discovery import enqueue_discovery
 from services.integrations.domain import (
     CONNECTION_STATUS_ACTIVE,
     CONNECTION_STATUS_AUTH_PENDING,
@@ -191,7 +192,6 @@ async def complete_oauth_callback(
         if manifest.requires_discovery
         else CONNECTION_STATUS_ACTIVE
     )
-    # Resource discovery will enqueue here once its worker is available.
     await transition_connection_status(
         db,
         connection,
@@ -203,6 +203,8 @@ async def complete_oauth_callback(
         },
         audit_workspace_id=audit_workspace_id,
     )
+    if manifest.requires_discovery:
+        await enqueue_discovery(db, connection=connection)
     await db.flush()
     return OAuthCallbackResponse(
         connection=await connection_to_read(db, connection, include_credential=True),

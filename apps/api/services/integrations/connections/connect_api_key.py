@@ -15,6 +15,7 @@ from services.audit_events import AuditAction, AuditResourceType
 from services.integrations.connections.schemas import ApiKeyConnectRequest, ConnectionRead
 from services.integrations.connections.utils import connection_to_read
 from services.integrations.credentials import store_secret_reference_credential
+from services.integrations.discovery import enqueue_discovery
 from services.integrations.domain import (
     CONNECTION_STATUS_ACTIVE,
     CONNECTION_STATUS_DISCOVERY_PENDING,
@@ -89,7 +90,8 @@ async def connect_api_key(
         )
         db.add(connection)
         await db.flush()
-        # Resource discovery will enqueue here once its worker is available.
+        if manifest.requires_discovery:
+            await enqueue_discovery(db, connection=connection)
         await record_integration_audit(
             db,
             workspace_id=workspace.id,

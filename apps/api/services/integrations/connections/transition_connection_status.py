@@ -51,4 +51,14 @@ async def transition_connection_status(
         details=details,
         status=audit_status,
     )
+    if status == "needs_reauth":
+        from services.integrations.connections.notify_connection_event import (
+            notify_connection_event,
+        )
+
+        await notify_connection_event(
+            db,
+            connection_id=connection.id,
+            event="needs_reauth",
+        )
     return connection

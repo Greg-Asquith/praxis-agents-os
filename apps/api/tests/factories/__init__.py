@@ -10,6 +10,7 @@ from tests.factories.files import (
 from tests.factories.integrations import (
     build_external_credential,
     build_integration_connection,
+    build_integration_discovery_run,
     build_integration_resource,
 )
 from tests.factories.jobs import build_job
@@ -25,6 +26,7 @@ __all__ = [
     "build_file_revision",
     "build_file_upload",
     "build_integration_connection",
+    "build_integration_discovery_run",
     "build_integration_resource",
     "build_job",
     "build_session",

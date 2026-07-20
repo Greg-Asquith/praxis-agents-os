@@ -42,6 +42,10 @@
   decision D11 (no fake provider) folded into the body; anchors
   re-verified against the tree with the 037 implementation present
   (post-`edc3abc`).
+- **Execution progress**: Slice A completed 2026-07-17 (discovery engine,
+  computed status machine, notifications, retention and periodic
+  re-discovery jobs). Slice B remains pending, so this plan stays TODO and
+  remains in `docs/plans/`.
 
 ## Decisions taken
 
@@ -59,16 +63,14 @@
    run returns the existing job.
 3. **Provider dispatch resolves through the loaded plugin, never by
    importing `integrations.*`** (packaging note §4.6). The delivered
-   loader (`services/integrations/loader.py:12`) registers only the
-   manifest and drops the plugin object — this plan extends it with a
-   module-level `LOADED_PROVIDER_PLUGINS: dict[str,
-   IntegrationProviderPlugin]` populated during `load_enabled_providers`
-   so the discovery handler can resolve `plugin.discover_resources` by
-   provider key. A loaded plugin with `discover_resources=None` on a
-   `requires_discovery` manifest raises
-   `IntegrationValidationError("provider discovery not implemented")` —
-   expected for all shipped providers until 041 lands; documented, not a
-   gap.
+   loader (`services/integrations/loader.py:12`) now retains plugin objects
+   in the singular `plugin.py::PROVIDER_PLUGINS` registry for 038's
+   provider-owned OAuth configuration. Discovery reuses that delivered
+   registry instead of introducing a second source of plugin state. The
+   loader rejects a `requires_discovery` plugin with
+   `discover_resources=None` at boot. The runtime also defensively raises
+   `IntegrationValidationError("provider discovery not implemented")` if
+   the registry is mutated or otherwise misconfigured after loading.
 4. **The handler is idempotent by construction** (030 contract:
    at-least-once execution). It diffs provider results against
    `integration_resources` keyed by the unique constraint
@@ -225,8 +227,9 @@ present. 038 deliverables are consumed-and-verified-at-execution.
   `INTEGRATION_RESOURCE`. Manifest/loader/plugin:
   `manifest.py::PROVIDER_MANIFESTS` (with `requires_discovery`),
   `plugin.py::IntegrationProviderPlugin(manifest, discover_resources,
-  tool_definitions)`, `loader.py:12::load_enabled_providers` — note the
-  loader does NOT yet retain plugin objects (decision 3 extends it).
+  tool_definitions)`, `loader.py:12::load_enabled_providers`, and 038's
+  delivered singular `plugin.py::PROVIDER_PLUGINS` registry (decision 3
+  reuses it).
 - **Will exist after 038** (verify): `routes/integrations/` +
   `services/integrations/connections/` ops; the
   `# discovery enqueue seam — plan 039` comments in
@@ -275,8 +278,9 @@ present. 038 deliverables are consumed-and-verified-at-execution.
 **In scope:**
 
 - `apps/api/core/settings/integrations.py` (extend — decision 12 fields)
-- `apps/api/services/integrations/loader.py` (extend —
-  `LOADED_PROVIDER_PLUGINS`, decision 3)
+- `apps/api/services/integrations/plugin.py` (extend — typed
+  provider-neutral discovery result; decision 3 reuses its existing plugin
+  registry)
 - `apps/api/services/integrations/discovery/` (create): `__init__.py`,
   `run_discovery.py` (the core diff logic, handler-agnostic),
   `handlers.py` (`@job_handler` registrations), `enqueue_discovery.py`,
@@ -368,9 +372,9 @@ row only then.
 
 Add the decision 12 fields to `IntegrationsSettingsMixin`, all
 `Field(..., gt=0)` with descriptions citing governance §3 for the
-retention pair. Extend `loader.py` per decision 3
-(`LOADED_PROVIDER_PLUGINS` populated in `load_enabled_providers`,
-cleared/replaced on re-load so tests can re-register).
+retention pair. Reuse 038's `PROVIDER_PLUGINS` registry per decision 3;
+do not create a second retained-plugin map. Add the provider-neutral typed
+discovery result to `plugin.py` for the 041 implementations to return.
 
 **Verify**: settings import prints `90`/`30` for the retention pair; a
 quick `python -c` load with a monkeypatched allowlist shows the plugin
@@ -390,7 +394,7 @@ synchronous admin tool share it:
    run `failed` with `error_code="auth"`; the connection is flipped to
    `needs_reauth` by the credential path and the §6 notification fires
    from the transition hook — do NOT also emit discovery-failed.
-4. Fetch resources via `LOADED_PROVIDER_PLUGINS[provider_key]
+4. Fetch resources via `PROVIDER_PLUGINS[provider_key]
    .discover_resources` (decision 3; None → not-implemented error).
 5. Apply the idempotent diff (decision 4), stamping
    `first_seen_at`/`last_seen_at`, `writable`, `permissions_metadata`,
@@ -522,7 +526,7 @@ Extend `tests/factories/integrations.py` with
 test-provider resources. Add a fixture that registers the suite-local
 test provider as a full plugin (manifest with `requires_discovery=True`
 + a controllable `discover_resources` callable) in
-`LOADED_PROVIDER_PLUGINS`/`PROVIDER_MANIFESTS`, cleaned up in teardown.
+`PROVIDER_PLUGINS`/`PROVIDER_MANIFESTS`, cleaned up in teardown.
 
 ### Step 8: Tests
 
@@ -535,8 +539,8 @@ test provider as a full plugin (manifest with `requires_discovery=True`
   failure → run `failed`, connection `degraded`/`error`, **credential
   row untouched** and a follow-up `run_discovery` succeeds without
   reconnecting (decision 6 pinned); auth failure → `needs_reauth`, no
-  discovery-failed notification; not-implemented arm raises for a
-  shipped provider key (decision 3).
+  discovery-failed notification; loader rejection and the defensive
+  runtime not-implemented arm are both pinned (decision 3).
 - `tests/services/integrations/test_recompute_status.py` (DB): the
   decision 5 table — zero enabled → `needs_resource_selection`;
   enabling one → `active`; disabling all → back; non-discovery provider
@@ -549,7 +553,9 @@ test provider as a full plugin (manifest with `requires_discovery=True`
   row; final attempt → `failed` job, exactly ONE
   `integration_discovery_failed` notification to
   `connected_by_user_id`, and no generic `job_failed` notification (the
-  no-initiator choice); **the callback never discovers** — complete a
+  no-initiator choice); terminal handler timeout → failed discovery run,
+  `error`/`degraded` connection, and exactly one discovery-failed
+  notification; **the callback never discovers** — complete a
   test-provider OAuth connect (transport-mocked endpoints) and assert a
   pending job row exists while the test provider's `discover_resources`
   call count is still 0 (decision 1 pinned).

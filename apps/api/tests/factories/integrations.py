@@ -5,7 +5,12 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from models.integrations import ExternalCredential, IntegrationConnection, IntegrationResource
+from models.integrations import (
+    ExternalCredential,
+    IntegrationConnection,
+    IntegrationDiscoveryRun,
+    IntegrationResource,
+)
 from models.user import User
 from models.workspace import Workspace
 
@@ -60,3 +65,19 @@ def build_integration_resource(
     }
     defaults.update(overrides)
     return IntegrationResource(**defaults)
+
+
+def build_integration_discovery_run(
+    *,
+    connection: IntegrationConnection,
+    **overrides,
+) -> IntegrationDiscoveryRun:
+    defaults = {
+        "id": uuid4(),
+        "connection_id": connection.id,
+        "status": "succeeded",
+        "started_at": datetime.now(UTC),
+        "finished_at": datetime.now(UTC),
+    }
+    defaults.update(overrides)
+    return IntegrationDiscoveryRun(**defaults)
