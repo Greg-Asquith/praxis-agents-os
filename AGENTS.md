@@ -62,6 +62,9 @@ it as pending instead of implying it works.
 
 ## Working Principles
 
+- Do not create Git commits without explicit human approval. A request to
+  implement, fix, or change code does not by itself authorize a commit; obtain
+  clear approval before running `git commit`.
 - Read nearby code before editing and follow existing local patterns. Keep
   changes focused; do the simplest thing that works well and avoid
   refactors, new abstractions, or features beyond what the task requires.
