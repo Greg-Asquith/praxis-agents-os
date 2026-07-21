@@ -104,3 +104,19 @@ in production.
   on `agent_runs` hot columns; only the quota surface is missing.
 - **What**: admin-visible workspace token budgets with enforcement. Becomes a
   numbered plan when picked up.
+
+## 7. Populate active-context summaries for the UI
+
+- **Source**: Plan 042 Slice B endpoint reconciliation, 2026-07-21.
+- **Where**: `apps/api/routes/integrations/get_context.py` and the existing
+  integration-context resolution helpers.
+- **Problem**: `ActiveContextRead` declares `entries` and `unavailable`, and
+  plan 040 specified that the conversation GET route return the resolved
+  summary, but the landed route currently supplies only `selection`; Pydantic
+  serializes both summary arrays as empty defaults. The chat picker can render
+  the declared unavailable indicator but cannot observe degradation.
+- **Action before plan 041/042 live provider QA**: resolve the visible
+  conversation selection into the same safe summary vocabulary used at run
+  setup, populate both arrays without creating an `AgentRun`, and add a route
+  test covering a revoked or disabled selected resource. Keep the route
+  read-only and conversation/workspace scoped.

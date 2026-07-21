@@ -85,6 +85,7 @@ export type IntegrationResource = {
   removed_at: string | null
   provider_key?: string
   connection_label?: string
+  connection_status?: string
 }
 
 export type DiscoveryTriggerResponse = {
@@ -147,6 +148,35 @@ export type IntegrationContextGroup = {
 
 export type ContextGroupListResponse = {
   items: IntegrationContextGroup[]
+}
+
+type ResolvedContextEntry = {
+  integration_resource_id: string
+  provider_key: string
+  resource_type: string
+  external_id: string
+  display_name: string
+  connection_id: string
+  connection_label: string
+  connection_status: string
+  write_allowed: boolean
+}
+
+type UnavailableContextEntry = {
+  display_name: string
+  provider_key: string
+  reason: string
+}
+
+export type ActiveContextRead = {
+  selection: ActiveContextSelectionValue | null
+  entries: ResolvedContextEntry[]
+  unavailable: UnavailableContextEntry[]
+}
+
+export type ContextGroupWriteRequest = {
+  name: string
+  resource_ids: string[]
 }
 
 export type OAuthCallbackResponse = {

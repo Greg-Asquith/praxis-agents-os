@@ -8,6 +8,8 @@ import type {
 
 const NO_ACTIVE_CONTEXT = "none"
 
+export const MANAGE_INTEGRATIONS_SELECTION = "manage-integrations"
+
 export function activeContextSelectionKey(value: ActiveContextSelectionValue | null) {
   if (value === null) {
     return NO_ACTIVE_CONTEXT
@@ -23,6 +25,25 @@ export function contextGroupSelectionKey(id: string) {
 
 export function resourceSelectionKey(id: string) {
   return `resource:${id}`
+}
+
+export function activeContextSelectionFromKey(
+  key: string,
+  contextGroups: IntegrationContextGroup[],
+  resources: IntegrationResource[]
+): ActiveContextSelectionValue | null | undefined {
+  if (key === NO_ACTIVE_CONTEXT) {
+    return null
+  }
+  const group = contextGroups.find((item) => contextGroupSelectionKey(item.id) === key)
+  if (group) {
+    return { context_group_id: group.id, type: "context_group" }
+  }
+  const resource = resources.find((item) => resourceSelectionKey(item.id) === key)
+  if (resource) {
+    return { integration_resource_id: resource.id, type: "resource" }
+  }
+  return undefined
 }
 
 export function activeContextSelectionLabel(

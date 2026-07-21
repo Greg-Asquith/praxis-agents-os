@@ -269,6 +269,8 @@ const integrationsRoute = createRoute({
     await Promise.all([
       context.queryClient.ensureQueryData(integrationProvidersQueryOptions()),
       context.queryClient.ensureQueryData(integrationConnectionsQueryOptions()),
+      context.queryClient.ensureQueryData(contextGroupsQueryOptions()),
+      context.queryClient.ensureQueryData(integrationResourcesQueryOptions()),
     ])
   },
   component: lazyRouteComponent(

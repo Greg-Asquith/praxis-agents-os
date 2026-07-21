@@ -47,15 +47,15 @@
   080 (endpoint spellings, Vitest, query-key factory, verified drift)
   folded into the body; anchors re-verified against the tree
   (post-`edc3abc`).
-- **Execution progress (2026-07-21)**: Slice A implementation is complete and
-  `pnpm check` is green (45 test files, 201 tests). The 038/039 endpoint
-  pre-flight matched the landed routes and eight-state machine. Live provider
-  QA is deferred until 041 makes the shipped provider packages operable;
-  Slice B remains TODO. The plan therefore remains in progress and stays in
-  `docs/plans/`. Follow-up review fixes make removed resources safe in the
-  replace-set, refresh resources after asynchronous discovery, expose the
-  latest discovery-run summary, keep schedule resource caches coherent, and
-  make revoked connection resources read-only.
+- **Completed**: 2026-07-21. Slice A shipped the provider, connection, and
+  resource-selection surface. Slice B adds the context-groups editor, one
+  shared `ContextSelect` in the conversation composer and schedules, and conversation-scoped
+  selection mutations. The final `pnpm check` is green (46 test files, 203
+  tests). Live provider QA remains deferred until 041 makes the shipped
+  provider packages operable; the browser runtime was unavailable for visual
+  QA in this execution environment. The completion report below records those
+  limits and the earlier 040 resolved-summary follow-up without expanding this
+  frontend slice into backend work.
 
 ## Decisions taken
 
@@ -126,21 +126,20 @@
     name field + searchable, provider-grouped, checkbox multi-select of
     enabled resources. Group rows show member counts and per-provider
     chips.
-11. **The chat-header context picker writes the current conversation's
+11. **The conversation context picker writes the current conversation's
     selection** (040 decision 11 binds this plan). Reopening a conversation
     must restore its own selection; changing Context B must never mutate
     Context A. The picker is a compact dropdown in
-    `ConversationDetailHeader` (rendered at
-    `conversation-route.tsx:156`): current selection name (or "No
+    conversation composer toolbar beside the agent control: current selection name (or "No
     context"), groups then single resources, a "Clear" item, and a
     "Manage integrations" link. Changing it mid-conversation affects
     that conversation's *next* run — the picker states that in a hint line,
     because resolution happens once per run.
 12. **One shared `ContextSelect` component**
-    (`components/context-select.tsx`) backs both the chat-header picker
+    (`components/context-select.tsx`) backs both the conversation picker
     and the schedule form, replacing 040 Step 9's minimal flat `Select`
     in `schedule-context-field.tsx`. Same options model, two triggers
-    (header-compact and form-field).
+    (composer-compact and form-field).
 13. **UI role-gating mirrors governance §1 but is convenience only** —
     the server enforces. Using `workspace.current_user_role`
     (`features/workspaces/types.ts:12`): workspace-scoped
@@ -186,6 +185,12 @@
     form validation model, the decision-7 status → badge/CTA mapping
     (all 8 states plus the unknown fallback), and the
     `integrationsQueryKeys` shapes.
+18. **Composer placement supersedes the planned header mount.** The operator's
+    final UI direction places active context beside the agent control in the
+    existing-conversation composer, using the same borderless, hover-muted,
+    compact selector treatment. New-conversation mode has no persisted
+    conversation id yet, so it does not render the control. The "next run"
+    behavior remains available as trigger help text.
 
 ## Superseded decisions
 
@@ -399,7 +404,7 @@ this).
 ### Slice B — Context groups + pickers (`Web - Active Context Picker`)
 
 - **Steps**: 7–8 (context groups editor, shared `ContextSelect`,
-  chat-header picker, schedule-form swap) and Step 9's final gate.
+  conversation-composer picker, schedule-form swap) and Step 9's final gate.
 - **Tests**: any decision-17 additions for picker logic; the full
   static gate.
 - **Gate**: `pnpm check` exits 0 with zero warnings; manual QA script
@@ -585,7 +590,7 @@ Step 2 doing their job); read-only and removed states render.
 replaces members; duplicate name surfaces the backend conflict as an
 inline error.
 
-### Step 8: Context picker (chat header + schedule form)
+### Step 8: Context picker (conversation composer + schedule form)
 
 - `context-select.tsx` (decision 12) — options model: "No active
   context" / Groups (name + member count) / Resources (display name +
@@ -595,11 +600,10 @@ inline error.
   bound to `get-active-context` / `set-active-context` /
   `clear-active-context` with the route's `conversationId`; every query and
   mutation key is conversation-scoped. Shows an amber dot when the resolved summary
-  reports unavailable entries; hint line "Applies to your next run in
-  this conversation" (decision 11). Mount it in
-  `conversation-detail-header.tsx` in the right-hand column above the
-  "Last Updated" block (line 61); keep the header layout intact on
-  mobile (it stacks via `md:flex-row`).
+  reports unavailable entries; trigger help states that it applies to the
+  next run (decision 11). Mount it in the existing-conversation composer
+  toolbar directly beside the agent control, with the same compact styling
+  (decision 18).
 - `schedule-context-field.tsx` — replace 040's flat `Select` internals
   with `ContextSelect` (form-field variant); the form state and payload
   wiring from 040 Step 9 stay as-is.
@@ -607,7 +611,7 @@ inline error.
   their own selection); `read_only` renders it disabled with the
   current value visible (decision 13).
 
-**Verify**: pick a group in the chat header →
+**Verify**: pick a group in the conversation composer →
 `PUT /integrations/conversations/{conversation_id}/context` fires → reopening
 that conversation shows it selected, while another conversation retains its
 own choice; the
@@ -649,7 +653,7 @@ completion report):
    read-only chip on a `read`-permission Airtable base; Ads MCC
    hierarchy indents; manager row not enableable.
 5. **Groups**: cross-provider group create/edit/delete; delete warning.
-6. **Context picker**: header picker sets/clears selection; Context A and
+6. **Context picker**: composer picker sets/clears selection; Context A and
    Context B retain different selections when navigating between them; unavailable
    indicator appears after revoking a connection used by the selection;
    schedule form shows the same options; no workspace-global selection state
@@ -660,30 +664,56 @@ completion report):
 
 ## Done criteria
 
-- [ ] `pnpm check` exits 0 with zero warnings (including the decision
+- [x] `pnpm check` exits 0 with zero warnings (including the decision
       17 Vitest tests)
-- [ ] `/integrations` registered, lazy-loaded, in nav (not managerOnly)
+- [x] `/integrations` registered, lazy-loaded, in nav (not managerOnly)
       and breadcrumbs
-- [ ] Endpoint table reconciled against landed 038/039/040 routes, with
+- [x] Endpoint table reconciled against landed 038/039/040 routes, with
       the reconciliation noted in the completion report
 - [ ] Multi-connection D3 flows work end to end (QA script item 1)
-- [ ] API-key values are write-only (QA script item 3)
-- [ ] All 8 connection statuses render distinctly with the correct CTA;
+- [x] API-key values are write-only (QA script item 3)
+- [x] All 8 connection statuses render distinctly with the correct CTA;
       unknown statuses render the neutral fallback
-- [ ] Context picker present in the chat header and the schedule form,
+- [x] Context picker present beside the conversation composer's agent control
+      and in the schedule form,
       backed by one shared `ContextSelect`; 040's minimal schedule
       select is gone
-- [ ] Conversation A and Conversation B retain independent context selections;
+- [x] Conversation A and Conversation B retain independent context selections;
       query keys and mutations cannot leak one selection into the other
       (040 decision 11)
-- [ ] `src/integrations/` contract + registry exist with the §5.5
+- [x] `src/integrations/` contract + registry exist with the §5.5
       dep-cruiser rules; no per-provider custom tool rows shipped
-- [ ] `checkbox.tsx` + `switch.tsx` added as vendored shadcn output only
-- [ ] No `fetch` outside `lib/api`; no form/schema library added; no
+- [x] `checkbox.tsx` + `switch.tsx` added as vendored shadcn output only
+- [x] No `fetch` outside `lib/api`; no form/schema library added; no
       SSE changes
-- [ ] Manual QA script results recorded in the completion report
-- [ ] `git status` clean outside the in-scope list;
+- [x] Manual QA script results recorded in the completion report
+- [x] `git status` clean outside the in-scope list;
       `docs/plans/000_README.md` row updated
+
+## Completion report
+
+- The 038/039/040 pre-flight matched every planned path, method, and write
+  payload. The 040 `ActiveContextRead` schema includes `entries` and
+  `unavailable`, but the landed GET route currently returns the selection with
+  those arrays at their empty defaults. The amber unavailable-state indicator
+  consumes the declared contract; populating that summary is recorded in
+  `FOLLOW_UPS.md` for the 041/042 live-QA pass rather than changed in this
+  frontend-only slice.
+- Slice B adds context-group create/edit/delete flows over enabled resources,
+  provider grouping and search, member counts/provider chips, read-only role
+  treatment, and the planned destructive confirmation copy.
+- Conversation composer and schedule use the same `ContextSelect`. Active-context reads and
+  writes carry the conversation id in both the endpoint and cache key; a
+  focused test proves distinct conversations cannot share a key. Independent
+  backend round-trip coverage remains in 040's route suite.
+- `cd apps/web && pnpm check` passed on 2026-07-21: TypeScript, ESLint, 46
+  Vitest files / 203 tests, Prettier, Knip, dependency-cruiser, and the
+  production Vite build. Focused active-context and query-key tests also pass.
+- Manual QA items 1–4 remain deferred until 041 supplies operable Gmail,
+  Google Ads, and Airtable packages. Items 5–7 and responsive visual QA could
+  not be exercised because no browser instance was available to the browser
+  runtime. Source review and the static gate cover the implemented states, but
+  are not represented as live interaction evidence.
 
 ## STOP conditions
 

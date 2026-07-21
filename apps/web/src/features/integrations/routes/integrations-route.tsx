@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/shell/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ProviderCatalog } from "@/features/integrations/components/provider-catalog"
+import { ContextGroupsSection } from "@/features/integrations/components/context-groups-section"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 
 const routeApi = getRouteApi("/app/integrations")
@@ -51,6 +52,19 @@ export function IntegrationsRoute() {
       <Suspense fallback={<ProviderCatalogSkeleton />}>
         <ProviderCatalog />
       </Suspense>
+      <Suspense fallback={<ContextGroupsSkeleton />}>
+        <ContextGroupsSection />
+      </Suspense>
+    </div>
+  )
+}
+
+function ContextGroupsSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border p-4" aria-label="Loading context groups">
+      <Skeleton className="h-5 w-36" />
+      <Skeleton className="h-4 w-72 max-w-full" />
+      <Skeleton className="h-24 w-full" />
     </div>
   )
 }

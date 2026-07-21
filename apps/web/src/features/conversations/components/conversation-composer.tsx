@@ -33,6 +33,7 @@ import {
   type MessageAttachment,
 } from "@/features/conversations/attachments"
 import { useCancelAgentRunMutation } from "@/features/conversations/api/cancel-run"
+import { ConversationContextPicker } from "@/features/conversations/components/conversation-context-picker"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
 import { AttachmentChip } from "./attachment-chip"
@@ -447,6 +448,10 @@ export function ConversationComposer(props: ConversationComposerProps) {
               <span className="max-w-48 truncate">{props.agent.name}</span>
             </div>
           )}
+
+          {props.mode === "turn" ? (
+            <ConversationContextPicker conversationId={props.conversationId} />
+          ) : null}
 
           <span className="min-w-0 flex-1" />
           {selectedModelLabel ? (

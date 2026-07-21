@@ -20,6 +20,7 @@ async function listIntegrationResources() {
       return resources.map((resource) => ({
         ...resource,
         connection_label: connection.label,
+        connection_status: connection.status,
         provider_key: connection.provider_key,
       }))
     })

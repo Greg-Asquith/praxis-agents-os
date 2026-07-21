@@ -31,12 +31,20 @@ describe("integrationsQueryKeys", () => {
       "acme",
       "context-groups",
     ])
+    expect(integrationsQueryKeys.activeContexts()).toEqual([
+      "integrations",
+      "acme",
+      "active-context",
+    ])
     expect(integrationsQueryKeys.activeContext("conversation-1")).toEqual([
       "integrations",
       "acme",
       "active-context",
       "conversation-1",
     ])
+    expect(integrationsQueryKeys.activeContext("conversation-2")).not.toEqual(
+      integrationsQueryKeys.activeContext("conversation-1")
+    )
     expect(integrationResourcesForConnectionQueryOptions("connection-1").queryKey).toEqual(
       integrationsQueryKeys.resources("connection-1")
     )
