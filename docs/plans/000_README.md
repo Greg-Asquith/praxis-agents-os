@@ -452,6 +452,29 @@ and the ordered prompt block. Slice C completed the validated schedule
 create/read/update contract, explicit-null clearing, and the minimal schedule
 selector over context groups and enabled resources.
 
+Plan 055 completed 2026-07-21 and moved to `docs/plans/complete/`. Gate G5
+now has 17 deterministic, database-backed `execute_run` scenarios covering
+dispatch and digest-only audit, approvals, run envelopes, delegation, prompt
+and skill assembly, stable history trimming, multimodal input, and
+cancellation. The opt-in `pydantic-evals` layer adds 12 instruction, tool
+selection, boundary, format, and injection-scaffold cases behind `make
+evals`; it fails loudly without provider credentials and remains outside
+pytest and `make check`. Injection scaffolds use typed tool-return history and
+argument canaries, with three deterministic eval-runner contract tests; the
+plans introducing KB, memory, and compaction replace the scaffolds with real
+channel execution. The scenario probe exposed a missing pending audit
+for policy-gated approvals; the operator authorized that narrow prerequisite
+runtime correction before Plan 055 resumed.
+
+Plan 041 Slice A was reconciled 2026-07-21 after its Gate G6 pre-flight was
+found to require shared framing code that no earlier completed plan delivered.
+Slice A now explicitly owns the runtime-internal untrusted-content carrier, one
+marker vocabulary with forgery neutralization, dispatch framing, the standing
+data-not-instructions prompt block, and the hostile Gmail fixture. This removes
+the contradictory prerequisite without weakening Gate G6 or permitting
+provider-local delimiters; Plan 041 remains TODO until all three provider slices
+land.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and
@@ -546,7 +569,7 @@ note wins on intent.
 | 052 | Action-driven homepage redesign | P2 | M | - | TODO |
 | 053 | Cooperative run cancellation (kill switch; amended by 073) | P1 | M | - (before 041) | DONE |
 | 054 | Run envelope enforcement — principal-derived side-effect policy | P1 | M | 025, 026 (hard: before 041) | DONE |
-| 055 | Agent behavior eval harness (Gate G5) | P1 | L | - (soft: 053, 054 add scenarios) | TODO |
+| 055 | Agent behavior eval harness (Gate G5) | P1 | L | - (soft: 053, 054 add scenarios) | DONE |
 | 056 | Context compaction — watermark summaries + token-aware budgets | P1 | L | 013, 018, 030 (hard: before 048/049) | TODO |
 | 057 | Parallel delegation fan-out (breadth, not depth) | P2 | M | 054, 055 (soft: 053) | TODO |
 | 058 | Model failover chain | P3 | S-M | 010 (filler; supersedes the 2026-07-01 FallbackModel rejection) | TODO |

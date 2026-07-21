@@ -15,9 +15,10 @@
 > parameters, and reports the attempt. This category is the named home of
 > behavioral injection resistance platform-wide (threat-model.md §4):
 > live LLM calls are blocked in tests, so resistance is graded here —
-> opt-in, never CI. Channel cases land as their plans land (046/048/056
-> amendments each add theirs); the category and its first KB-backed cases
-> are this plan's deliverable.
+> opt-in, never CI. Plan 055 establishes typed tool-return scaffolds and
+> outbound-argument canaries; real channel execution lands with the owning
+> plans because 045/046/048/056 are not implemented yet. Those plans replace
+> the scaffolds rather than creating another injection-eval home.
 >
 > **Drift check (run first)**:
 > `git diff --stat c2f08cc..HEAD -- apps/api/services/agents/runtime/ apps/api/tests/ apps/api/pyproject.toml makefiles/`
@@ -27,6 +28,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-21
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: LOW-MED (additive test/eval infrastructure; the risk is
@@ -286,24 +288,30 @@ module docstrings ("new runtime behavior lands with a scenario").
 
 ## Test plan
 
-The plan *is* tests: ~18-25 scenario tests across seven behavior groups,
-plus the evals layer's own smoke (a `--collect-only` guard and a mocked
-`run.py` unit test for key-absence failure). Existing suites must pass
+The plan *is* tests: 17 scenario tests across the runtime behavior groups,
+plus three deterministic eval-runner contract tests (including collection,
+case-specific judging, output formatting, tool selection, and key-absence
+failure). Existing suites must pass
 unchanged — this plan asserts current behavior; any red scenario is
 either a wrong assertion or a real bug to report, never a reason to
 change runtime code in this PR.
 
 ## Done criteria
 
-- [ ] `tests/scenarios/` green under `TEST_DATABASE_URL`, red-lining the
+- [x] `tests/scenarios/` green under `TEST_DATABASE_URL`, red-lining the
       behaviors in decision 3 (envelope group may track 054)
-- [ ] Scenario helper is <~300 lines, framework-free, and used by every
+- [x] Scenario helper is <~300 lines, framework-free, and used by every
       scenario
-- [ ] `evals/` runs pydantic-evals datasets against a catalog model via
+- [x] `evals/` runs pydantic-evals datasets against a catalog model via
       `make evals`, is never collected by pytest, and fails loudly
       without provider keys
-- [ ] No runtime source files changed; no new dependencies
-- [ ] Gate G5 recorded in the roadmap (this plan named as owner);
+- [x] Injection scaffolds use typed tool-return history plus outbound-argument
+      canaries; real KB/memory/compaction channel execution is explicitly
+      deferred to the plans that introduce those channels
+- [x] No new dependencies. One operator-authorized prerequisite runtime fix
+      records the missing pending audit for normal approval-policy tools; the
+      scenario that exposed it now pins the corrected behavior.
+- [x] Gate G5 recorded in the roadmap (this plan named as owner);
       `docs/plans/000_README.md` row updated
 
 ## STOP conditions

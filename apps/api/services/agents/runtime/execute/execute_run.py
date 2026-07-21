@@ -183,6 +183,7 @@ async def execute_run_with_builders(
             client_message_id=client_message_id,
             history=built_agent.history,
             deferred_tool_results=deferred_tool_results,
+            deps=prepared.deps,
             skip_initial_user_prompt=user_prompt_persisted,
         )
         if eager_message_count == 0:

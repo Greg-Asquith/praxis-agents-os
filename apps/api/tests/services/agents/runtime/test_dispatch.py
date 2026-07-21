@@ -832,11 +832,16 @@ async def test_denied_approval_records_audit_without_executing_tool(
         assert resumed.output == "denial handled"
         assert seen_messages
         assert dispatch_test_tools["write_ok"] == 0
-        [event] = await _tool_audit_events(
+        events = await _tool_audit_events(
             committed_db_session_factory,
             context,
             tool_name="dispatch_write_ok",
         )
+        assert {event.details["outcome"] for event in events} == {
+            "approval_requested",
+            "denied_approval",
+        }
+        event = next(event for event in events if event.details["outcome"] == "denied_approval")
         assert event.status == "denied"
         assert event.details["outcome"] == "denied_approval"
         assert event.details["approval_ref"] == suspended_state.pending_tool_call_ids[0]

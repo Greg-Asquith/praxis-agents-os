@@ -131,6 +131,21 @@ fan-out seam, while unavailable context degrades without bricking a run. Slice C
 completed the validated schedule create/read/update contract, explicit-null
 clearing, and the minimal schedule-form selector over context groups and enabled
 resources.
+Plan 055 completed 2026-07-21 and moved to `docs/plans/complete/`: Gate G5
+now consists of 17 deterministic database-backed runtime scenarios plus a
+12-case, opt-in `pydantic-evals` quality layer behind `make evals`. Its
+injection scaffolds use typed tool-return history and argument canaries until
+the owning KB, memory, and compaction plans replace them with real channel
+execution. Three deterministic runner contract tests stay in pytest; live-model
+evals remain outside pytest and `make check`. The scenario probe found the
+normal approval-policy path skipped its pending audit; the operator authorized
+the narrow prerequisite correction before harness work resumed.
+Plan 041 Slice A was reconciled 2026-07-21 after its Gate G6 pre-flight was
+found to require framing code that no earlier plan owned. Slice A now explicitly
+creates the shared untrusted-content carrier and marker vocabulary, dispatch
+framing, standing data-not-instructions prompt block, and hostile Gmail fixture
+before exposing Gmail read tools. The plan remains TODO and retains its
+three-provider slice boundaries.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -605,7 +620,7 @@ bracket Phases 4–6.
 |------|-------|----------|------|
 | 053 | Cooperative run cancellation: cancel route + audit, `RunTaskRegistry.cancel`, heartbeat cancel-detection (works cross-process via the lease seam), `CancelledError` terminal handling, UI stop control. DONE 2026-07-09; amended by 073. | P1 | Complete |
 | 054 | Run envelope enforcement: `effect_scope` (internal/external) on the tool contract, scheduled run grants stamped at mint time (`require_approval` by default, explicit `allow` for schedules expected to write), the missing `require_approval` dispatch branch, delegated inheritance recorded at mint time. **DONE 2026-07-09.** | P1 | Complete |
-| 055 | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). Content, not platform. | P1 | Parallel with Phase 4; before 048 |
+| 055 | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). **DONE 2026-07-21.** | P1 | Complete |
 | 056 | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. | P1 | Before 048/049 |
 | 057 | Parallel delegation fan-out: depth stays 1; bound (per-run semaphore), prove (usage accounting, multi-child approval collapse, cancellation propagation — all as scenarios), and prompt the concurrency pydantic-ai already executes for parallel tool calls. | P2 | After 054/055 |
 | 058 | Model failover chain: catalog-defined `FallbackModel` chains, double opt-in (settings + agent), same-capability-class validation, actually-used model recorded. Supersedes the 2026-07-01 rejection — product decision taken 2026-07-07. | P3 | Filler |
@@ -718,7 +733,7 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → {041–042 ∥ 043–047 ∥ 055} → 082 → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 ∥ 043–047} → 082 → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 →
 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,

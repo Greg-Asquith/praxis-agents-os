@@ -33,7 +33,13 @@ from time import monotonic
 from typing import Any
 
 from pydantic import ValidationError
-from pydantic_ai import ApprovalRequired, DeferredToolResults, ModelRetry, ToolDenied
+from pydantic_ai import (
+    ApprovalRequired,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ModelRetry,
+    ToolDenied,
+)
 from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
 
 from core.settings import settings
@@ -48,6 +54,7 @@ from services.agents.runtime.staged_tool_content import (
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
+    TOOL_POLICY_APPROVAL,
     RuntimeToolDefinition,
     ToolEffectScope,
 )
@@ -441,6 +448,39 @@ async def record_denied_approval_audit_events(
             error_code="ToolDenied",
         )
         await _cleanup_denied_staged_content(deps=deps, tool_name=tool_name, args=args)
+
+
+async def record_policy_approval_request_audit_events(
+    *,
+    deps: RuntimeDeps,
+    deferred_tool_requests: DeferredToolRequests,
+) -> None:
+    """Audit policy-gated approvals that bypass tool-execution hooks."""
+    policies = deps.agent.tool_policies or {}
+    for approval in deferred_tool_requests.approvals:
+        tool_name = approval.tool_name
+        definition = RUNTIME_TOOL_CATALOG.get(tool_name)
+        if definition is None:
+            continue
+        policy = policies.get(tool_name, definition.default_policy)
+        if policy != TOOL_POLICY_APPROVAL:
+            continue
+
+        args = _tool_call_args_for_digest(approval.args)
+        args_sha256, args_bytes = digest_args(args)
+        await record_invocation(
+            deps=deps,
+            tool_name=tool_name,
+            tool_provider=_tool_provider(tool_name, definition),
+            status=AuditStatus.PENDING,
+            args=args,
+            args_sha256=args_sha256,
+            args_bytes=args_bytes,
+            started=monotonic(),
+            tool_call_id=approval.tool_call_id,
+            outcome="approval_requested",
+            approval_ref=approval.tool_call_id,
+        )
 
 
 async def _cleanup_denied_staged_content(

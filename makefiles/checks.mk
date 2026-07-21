@@ -14,6 +14,10 @@ api-test: test-db ## Run backend tests against the local test database
 api-migrations-check: local-env ## Check Alembic migration drift
 	cd $(API_DIR) && $(API_ENV) uv run alembic check
 
+.PHONY: evals
+evals: ## Run opt-in live-model agent behavior evaluations
+	cd $(API_DIR) && uv run python -m evals.run
+
 .PHONY: web-check
 web-check: ## Run the frontend local gate
 	cd $(WEB_DIR) && pnpm check

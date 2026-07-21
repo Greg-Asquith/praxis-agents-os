@@ -71,8 +71,10 @@ Repo-wide expectations are in the root `AGENTS.md`.
 ## Tests
 
 - Keep API tests organized by intent under `apps/api/tests`: `contract`,
-  `routes`, `services`, `integration`, `integrations`, `middleware`, and
-  `utils`, with shared helpers in `factories/` and `support/`. Do not add
+  `routes`, `services`, `integration`, `integrations`, `middleware`,
+  `scenarios`, and `utils`, with shared helpers in `factories/` and `support/`.
+  Runtime behavior changes should add or update a deterministic
+  `tests/scenarios/` case through the shared scenario helper. Do not add
   random root-level `test_*.py` files. Test key behavior and high-risk flows
   rather than creating one test file per route or service operation by
   default.
@@ -84,6 +86,9 @@ Repo-wide expectations are in the root `AGENTS.md`.
   database and sets that variable automatically. Use the fixtures in
   `conftest.py` and the helpers in `tests/factories/` and `tests/support/`
   instead of hand-rolling setup. Live LLM calls are blocked in tests.
+- Live-model behavior evaluations live outside pytest under `apps/api/evals`
+  and run only through the explicit `make evals` target with `EVALS_MODEL`
+  and matching provider credentials. They must never enter `make check`.
 
 ## Commands
 
@@ -95,6 +100,8 @@ uv run ruff format --check .
 uv run alembic check
 uv run alembic upgrade heads
 uv run pytest
+# From the repository root, opt-in only:
+EVALS_MODEL=openai:gpt-5.6-luna make evals
 uv run uvicorn main:app --reload --port 8000
 ```
 

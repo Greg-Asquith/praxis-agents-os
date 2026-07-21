@@ -24,6 +24,8 @@ from services.agents.runtime.approval_events import (
     emit_approval_required_events,
     emit_deferred_tool_resume_events,
 )
+from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.dispatch import record_policy_approval_request_audit_events
 from services.agents.runtime.events import EVENT_DONE, EVENT_ERROR, EVENT_RUN_STATUS
 from services.agents.runtime.run_persistence import (
     persist_cancelled_run,
@@ -48,6 +50,7 @@ async def finalize_terminal_run(
     client_message_id: str | None,
     history: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults | None,
+    deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
 ) -> ExecuteRunResult:
     if deferred_tool_results is not None:
@@ -66,6 +69,7 @@ async def finalize_terminal_run(
             run=run,
             terminal_result=terminal_result,
             client_message_id=client_message_id,
+            deps=deps,
             skip_initial_user_prompt=skip_initial_user_prompt,
         )
 
@@ -90,9 +94,14 @@ async def finalize_suspended_run(
     run: AgentRun,
     terminal_result: Any,
     client_message_id: str | None,
+    deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
 ) -> ExecuteRunResult:
     deferred_tool_requests = terminal_result.output
+    await record_policy_approval_request_audit_events(
+        deps=deps,
+        deferred_tool_requests=deferred_tool_requests,
+    )
     suspended_run, new_message_count, deferred_tool_requests = await persist_suspended_run(
         db,
         conversation_id=conversation.id,

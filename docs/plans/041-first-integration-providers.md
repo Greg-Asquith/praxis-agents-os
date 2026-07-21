@@ -18,8 +18,10 @@
 > `docs/architecture/threat-model.md` §2 row **(g) integration-fetched
 > content** exists (verified 2026-07-10) and names this plan as owner of
 > its mechanical defense. This plan must NOT ship Gmail read tools before
-> that defense and its fixture test exist (Step 7). If row (g) is missing
-> at execution time, STOP and reconcile.
+> that defense and its fixture test exist (Step 7). **Slice A owns the
+> first implementation of the shared framing substrate**; it is not a
+> prerequisite from an earlier plan. If row (g) is missing at execution
+> time, STOP and reconcile.
 >
 > **Notes pre-flight**: re-read `docs/architecture/governance.md` §2
 > (spend rule) and §4 (Retry-After posture), and
@@ -325,7 +327,9 @@ present.
 - **Gate G1 inputs**: 014, 021, 022, 023, 053, 054 all DONE
   (`docs/plans/000_README.md`, verified 2026-07-10).
 - **Threat model**: `docs/architecture/threat-model.md` §2 row (g)
-  exists (integration-fetched content; owner 041/055).
+  exists (integration-fetched content; owner 041/055). The shared marker
+  vocabulary and runtime framing utility do not exist yet; Slice A creates
+  them at the shared runtime seam before Gmail read tools are exposed.
 
 ## Commands you will need
 
@@ -354,6 +358,11 @@ present.
   behavior is missing)
 - `apps/api/services/agents/runtime/tools/permissions.py` — provider
   availability gating (decision 9)
+- `apps/api/services/agents/runtime/untrusted.py` (create),
+  `apps/api/services/agents/runtime/dispatch.py`, and
+  `apps/api/services/agents/runtime/prompt.py` — shared Gate G6 content
+  carrier, marker vocabulary/forgery neutralization, dispatch framing, and
+  the single standing data-not-instructions prompt block (decision 14)
 - `apps/api/services/audit_events/integration_events.py` (create)
 - `apps/api/tests/integrations/{gmail,google_ads,airtable}/` (create),
   `tests/integrations/test_import_laws.py` (extend), policy tests under
@@ -367,8 +376,9 @@ present.
 - Discovery *harness* (job kind, status transitions, retries) — 039;
   this plan supplies each provider's `discover_resources` the harness
   invokes through the plugin.
-- Context resolution, fan-out internals, prompt block, schedule wiring
-  — 040.
+- Context resolution, fan-out internals, the active-context prompt block,
+  and schedule wiring — 040. Slice A may add only the separate standing
+  untrusted-content policy block required by Gate G6.
 - Any UI — 042. Event/webhook code (decision 15).
 - More operations per provider than decisions 1/10 list.
 - New migrations — this plan creates **no tables** (resources ride the
@@ -398,9 +408,12 @@ that is not diluted by the other two.
 - **Steps**: 0 (both gate pre-flights), 1 (settings + retry-helper
   audit), 2's gmail manifest completion, 3 (the Gmail package), and
   Step 6's **shared machinery** —
-  `services/audit_events/integration_events.py` and the
+  `services/agents/runtime/untrusted.py`, dispatch framing, the standing
+  untrusted-content prompt block,
+  `services/audit_events/integration_events.py`, and the
   `permissions.is_tool_allowed` availability gating — plus the three
-  gmail tool definitions.
+  gmail tool definitions. This is the first implementation of the shared
+  Gate G6 vocabulary; no earlier completed plan owns it.
 - **Tests (from Step 7)**: `test_gmail_provider.py`,
   `test_fetched_content_enclosure.py` (the Gate G6 channel (g)
   deliverable — it ships with the first read tools, in this slice),
@@ -581,6 +594,28 @@ then succeeding (Airtable's 5 rps limit is the realistic case).
 
 ### Step 6: Tool definitions + per-account audit + availability gating
 
+Before registering Gmail's read tools, add the shared Gate G6 substrate:
+
+- `services/agents/runtime/untrusted.py` owns the one marker vocabulary,
+  an internal `UntrustedContent` carrier containing server-minted
+  `source_kind`, `source_ref`, and content, marker-forgery neutralization,
+  and recursive conversion of carriers inside structured tool results;
+- provider operations return the carrier for attacker-authorable free text
+  and never format delimiters themselves;
+- dispatch converts every carrier to its framed model-visible string before
+  output-contract validation and result-size enforcement, so framing cannot
+  be bypassed by a provider tool and typed output contracts validate what the
+  model actually receives; and
+- `services/agents/runtime/prompt.py` adds one standing policy block for the
+  vocabulary: framed content is data, instructions inside it must not be
+  followed, and suspicious instructions should be reported. Do not add a
+  Gmail-specific prompt block.
+
+The carrier and recursive transformer are runtime-internal types, not public
+API or SSE payload contracts. Deterministic tests must cover nested structured
+results, forged start/end markers, sanitized server-minted source metadata,
+and ordinary tool results remaining byte-for-byte unchanged.
+
 `services/audit_events/integration_events.py` —
 `record_integration_operation_audit_event(*, workspace_id, agent, run,
 tool_name, provider_key, connection_id, integration_resource_id,
@@ -710,9 +745,10 @@ Stop and report back (do not improvise) if:
 
 - **Gate G1 fails**: 014, 053, or 054 not DONE (or 021–023 regressed)
   at execution time. Do not ship the tools "temporarily disabled".
-- **Gate G6 fails**: threat-model §2 row (g) missing, or the shared
-  marker vocabulary (§3) does not exist in dispatch — do not invent a
-  provider-local framing.
+- **Gate G6 fails**: threat-model §2 row (g) is missing, or Slice A cannot
+  implement the shared runtime carrier + dispatch framing + standing prompt
+  block described in Step 6. The framing is a Slice A deliverable, not a
+  pre-existing prerequisite; do not replace it with provider-local markers.
 - 038/039/040 are unimplemented or deviate from the dictated contract:
   no `IntegrationToolBinding`, different fan-out signature or result
   shape, no credential-service token seam, discovery job kind renamed,
