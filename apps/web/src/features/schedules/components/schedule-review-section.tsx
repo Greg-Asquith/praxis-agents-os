@@ -16,11 +16,13 @@ import { SchedulePreviewResult } from "@/features/schedules/components/schedule-
 import type { SchedulePreviewView } from "@/features/schedules/components/use-schedule-preview"
 
 export function ScheduleReviewSection({
+  activeContextLabel,
   preview,
   selectedAgent,
   setField,
   state,
 }: {
+  activeContextLabel: string
   preview: SchedulePreviewView
   selectedAgent: Agent | null
   setField: ScheduleFormFieldSetter
@@ -56,6 +58,7 @@ export function ScheduleReviewSection({
           </ReviewRow>
           <ReviewRow label="Cadence">{formatScheduleFormCadence(state)}</ReviewRow>
           <ReviewRow label="Timezone">{state.timezone}</ReviewRow>
+          <ReviewRow label="Active context">{activeContextLabel}</ReviewRow>
         </dl>
 
         <div className="flex flex-col gap-2">

@@ -1,0 +1,44 @@
+// apps/web/src/features/integrations/api/list-integration-resources.ts
+
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
+
+import { integrationContextQueryKeys } from "@/features/integrations/api/list-context-groups"
+import type { ConnectionListResponse, IntegrationResource } from "@/features/integrations/types"
+import { apiRequest } from "@/lib/api/client"
+
+type ResourceResponse = Omit<IntegrationResource, "connection_label" | "provider_key">
+
+async function listIntegrationResources() {
+  const connections = await apiRequest<ConnectionListResponse>("/integrations/connections", {
+    query: { limit: 200 },
+  })
+  const resourcesByConnection = await Promise.all(
+    connections.items.map(async (connection) => {
+      const resources = await apiRequest<ResourceResponse[]>(
+        `/integrations/connections/${connection.id}/resources`
+      )
+      return resources.map((resource) => ({
+        ...resource,
+        connection_label: connection.label,
+        provider_key: connection.provider_key,
+      }))
+    })
+  )
+  return resourcesByConnection
+    .flat()
+    .toSorted((left, right) =>
+      left.display_name.localeCompare(right.display_name, undefined, { sensitivity: "base" })
+    )
+}
+
+export function integrationResourcesQueryOptions() {
+  return queryOptions({
+    queryKey: integrationContextQueryKeys.list({ kind: "resources" }),
+    queryFn: listIntegrationResources,
+    staleTime: 30_000,
+  })
+}
+
+export function useIntegrationResourcesQuery() {
+  return useSuspenseQuery(integrationResourcesQueryOptions())
+}

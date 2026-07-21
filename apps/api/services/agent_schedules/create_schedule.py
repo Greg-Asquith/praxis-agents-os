@@ -20,6 +20,7 @@ from services.agent_schedules.utils import (
     normalize_default_prompt,
     normalize_schedule_name,
     require_active_agent_for_schedule,
+    validate_schedule_active_context,
 )
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -36,6 +37,12 @@ async def create_schedule(
 ) -> AgentScheduleRead:
     assert_can_create_schedule(membership=membership)
     await require_active_agent_for_schedule(db, workspace=workspace, agent_id=payload.agent_id)
+    active_context = await validate_schedule_active_context(
+        db,
+        selection=payload.active_context,
+        actor=actor,
+        workspace=workspace,
+    )
 
     config = normalize_schedule_config(
         schedule_type=payload.schedule_type,
@@ -63,6 +70,7 @@ async def create_schedule(
         timezone=config.timezone,
         default_prompt=normalize_default_prompt(payload.default_prompt),
         execution_params=payload.execution_params,
+        active_context=active_context,
         is_active=payload.is_active,
         next_run_at=calculate_next_run(config) if payload.is_active else None,
     )

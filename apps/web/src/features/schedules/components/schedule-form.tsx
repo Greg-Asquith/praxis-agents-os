@@ -5,6 +5,8 @@ import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
 import { FormAlerts } from "@/components/forms/form-alerts"
 import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
 import type { Agent } from "@/features/agents/types"
+import { activeContextSelectionLabel } from "@/features/integrations/active-context"
+import type { IntegrationContextGroup, IntegrationResource } from "@/features/integrations/types"
 import {
   buildSchedulePayload,
   initialScheduleFormState,
@@ -35,17 +37,21 @@ import { buildFieldErrors } from "@/lib/forms"
 type ScheduleFormProps =
   | {
       agents: Agent[]
+      contextGroups: IntegrationContextGroup[]
       cancelLabel: string
       isSubmitting: boolean
       mode: "create"
       onSubmit: (payload: ScheduleCreateRequest) => Promise<void>
+      resources: IntegrationResource[]
     }
   | {
       agents: Agent[]
+      contextGroups: IntegrationContextGroup[]
       cancelLabel: string
       isSubmitting: boolean
       mode: "edit"
       onSubmit: (payload: ScheduleUpdateRequest) => Promise<void>
+      resources: IntegrationResource[]
       schedule: AgentSchedule
     }
 
@@ -61,6 +67,11 @@ export function ScheduleForm(props: ScheduleFormProps) {
   const preview = useSchedulePreview(state)
   const isDirty = props.mode === "edit" ? isScheduleFormDirty(state, initialState) : true
   const selectedAgent = props.agents.find((agent) => agent.id === state.agentId) ?? null
+  const activeContextLabel = activeContextSelectionLabel(
+    state.activeContext,
+    props.contextGroups,
+    props.resources
+  )
 
   function setField<K extends keyof ScheduleFormState>(field: K, value: ScheduleFormState[K]) {
     setState((current) => ({ ...current, [field]: value }))
@@ -143,12 +154,14 @@ export function ScheduleForm(props: ScheduleFormProps) {
               {activeStepId === "run" ? (
                 <ScheduleRunSection
                   agents={props.agents}
+                  contextGroups={props.contextGroups}
                   fieldErrors={{
                     agent: fieldErrors["schedule-agent"],
                     name: fieldErrors["schedule-name"],
                     prompt: fieldErrors["schedule-prompt"],
                   }}
                   mode={props.mode}
+                  resources={props.resources}
                   selectedAgent={selectedAgent}
                   setField={setField}
                   state={state}
@@ -171,6 +184,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
               ) : null}
               {activeStepId === "review" ? (
                 <ScheduleReviewSection
+                  activeContextLabel={activeContextLabel}
                   preview={preview}
                   selectedAgent={selectedAgent}
                   setField={setField}

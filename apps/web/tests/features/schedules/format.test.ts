@@ -5,6 +5,7 @@ import type { AgentSchedule } from "@/features/schedules/types"
 
 function schedule(overrides: Partial<AgentSchedule> = {}): AgentSchedule {
   return {
+    active_context: null,
     id: "schedule-1",
     agent_id: "agent-1",
     user_id: "user-1",

@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.integration_context import ActiveContextSelection
 from models.user import User
 from models.workspace import Workspace
-from services.conversations.utils import get_conversation_for_actor
 
 
 async def get_active_context_selection(
@@ -20,6 +19,9 @@ async def get_active_context_selection(
     workspace: Workspace,
     conversation_id: UUID,
 ) -> ActiveContextSelection | None:
+    # Import lazily to avoid a cycle between runtime setup and conversation streaming.
+    from services.conversations.utils import get_conversation_for_actor
+
     conversation = await get_conversation_for_actor(
         db,
         actor=actor,

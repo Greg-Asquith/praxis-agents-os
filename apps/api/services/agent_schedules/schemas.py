@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_schedules.runs import schedule_health_from_run
+from services.integrations.context.schemas import ActiveContextSelectionValue
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -85,6 +86,7 @@ class AgentScheduleRead(BaseModel):
     timezone: str
     default_prompt: str | None = None
     execution_params: dict[str, Any] | None = None
+    active_context: ActiveContextSelectionValue | None = None
     is_active: bool
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
@@ -116,6 +118,7 @@ class AgentScheduleRead(BaseModel):
                 "timezone": schedule.timezone,
                 "default_prompt": schedule.default_prompt,
                 "execution_params": schedule.execution_params,
+                "active_context": schedule.active_context,
                 "is_active": schedule.is_active,
                 "last_run_at": schedule.last_run_at,
                 "next_run_at": schedule.next_run_at if schedule.is_active else None,
@@ -147,6 +150,7 @@ class AgentScheduleCreateRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     default_prompt: str = Field(max_length=20000)
     execution_params: dict[str, Any] | None = None
+    active_context: ActiveContextSelectionValue | None = None
     is_active: bool = True
 
     @field_validator("name")
@@ -185,6 +189,7 @@ class AgentScheduleUpdateRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     default_prompt: str | None = Field(default=None, max_length=20000)
     execution_params: dict[str, Any] | None = None
+    active_context: ActiveContextSelectionValue | None = None
     is_active: bool | None = None
 
     @field_validator("name")

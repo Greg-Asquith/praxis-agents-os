@@ -32,9 +32,8 @@
   (hard, DONE — schedule routes/UI this plan extends)
 - **Category**: Phase 4a integrations (roadmap `000_MASTER_ROADMAP.md` §4
   row 040; decision D3 full multi-connection)
-- **Execution progress**: Slice A completed 2026-07-20 as `core_0016`;
-  Slice B completed 2026-07-21; Slice C remains. The plan stays TODO until
-  Slice C passes its gate.
+- **Execution progress**: DONE 2026-07-21. Slice A completed 2026-07-20 as
+  `core_0016`; Slices B–C completed 2026-07-21.
 - **Planned at**: commit `0cbbb39`, 2026-07-06. **Consolidated** at
   2026-07-10: the plan 080 amendment (runtime anchor refresh after
   053/054/066, prompt-block position, dedup correction) folded into the
@@ -419,6 +418,17 @@ provider tool registered ahead of plan 041.
   the law before the listing so budget truncation never eats the rules.
 
 ### Slice C — Schedule contract + minimal selector (`API - Schedule Active Context`, then `Web - Schedule Active Context Selector`)
+
+**DONE 2026-07-21.** Schedule create/read/update now share the strict active
+context selection contract, validate resource/group visibility before storing
+the existing JSONB value, and distinguish omitted updates from explicit-null
+clears. The schedule wizard loads context groups and discovered resources with
+workspace-scoped query keys, offers groups before enabled resources, keeps an
+unavailable saved selection visible, includes the choice in review, and sends
+the exact tagged value. The planned conversation-specific `get-active-context`
+client module was left to 042 with its chat-picker consumer so this slice does
+not ship dead code. Focused schedule tests, the 437-test plan regression set,
+Ruff/format, Alembic drift, and the full `pnpm check` gate passed.
 
 - **Steps**: Step 8's **schedule-contract half** (create/update/read
   `active_context`, explicit-null clear) and Step 9 (the minimal 022 UI
@@ -818,25 +828,25 @@ flip at line 146).
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0
-- [ ] `uv run alembic check` clean; migration on the **core** branch
+- [x] `uv run ruff check .` exits 0
+- [x] `uv run alembic check` clean; migration on the **core** branch
       (D5) and downgrade round-trips
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/integrations
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/integrations
       tests/routes/integrations tests/services/agents
       tests/services/agent_schedules tests/routes/schedules -q` exits 0
-- [ ] `cd apps/web && pnpm check` exits 0
-- [ ] Grep shows **zero** registered tools with `integration_binding`
+- [x] `cd apps/web && pnpm check` exits 0
+- [x] Grep shows **zero** registered tools with `integration_binding`
       (041 registers the first ones)
-- [ ] The import-time guard rejects deny-listed parameter names
+- [x] The import-time guard rejects deny-listed parameter names
       (covered by test)
-- [ ] Schedule create/update accepts, returns, and clears
+- [x] Schedule create/update accepts, returns, and clears
       `active_context`; the schedule form can set it end to end
-- [ ] `docs/architecture/governance.md` §1 row "Select integration
+- [x] `docs/architecture/governance.md` §1 row "Select integration
       resources / edit context groups" completed to
       `[implemented: plan 040]` (039 annotated the selection half)
-- [ ] Reopening a conversation restores its own selection; no workspace-global
+- [x] Reopening a conversation restores its own selection; no workspace-global
       active-context state exists (decision 11)
-- [ ] `git status` clean outside the in-scope list;
+- [x] `git status` clean outside the in-scope list;
       `docs/plans/000_README.md` row updated
 
 ## STOP conditions

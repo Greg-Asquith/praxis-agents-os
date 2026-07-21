@@ -13,7 +13,6 @@ from models.integration_context import ActiveContextSelection
 from models.user import User
 from models.workspace import Workspace
 from services.audit_events import AuditAction, AuditResourceType, record_workspace_audit_event
-from services.conversations.utils import get_conversation_for_actor
 from services.integrations.context.schemas import ActiveContextSelectionValue
 from services.integrations.context.utils import load_selection_group, load_selection_resource
 
@@ -28,6 +27,9 @@ async def set_active_context_selection(
     selection: ActiveContextSelectionValue,
 ) -> ActiveContextSelection:
     """Validate and atomically upsert a selection without a read/insert race."""
+    # Import lazily to avoid a cycle between runtime setup and conversation streaming.
+    from services.conversations.utils import get_conversation_for_actor
+
     conversation = await get_conversation_for_actor(
         db,
         actor=actor,

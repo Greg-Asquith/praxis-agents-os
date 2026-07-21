@@ -21,8 +21,11 @@ import { conversationActiveRunQueryOptions } from "@/features/conversations/api/
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
+import { contextGroupsQueryOptions } from "@/features/integrations/api/list-context-groups"
+import { integrationResourcesQueryOptions } from "@/features/integrations/api/list-integration-resources"
 import { validateFilesSearch } from "@/features/files/search"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
+import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
 import { ErrorRoute } from "@/routes/error-route"
@@ -258,6 +261,15 @@ const schedulesRoute = createRoute({
 const newScheduleRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules/new",
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(
+        agentsQueryOptions({ includeInactive: false, limit: 100 })
+      ),
+      context.queryClient.ensureQueryData(contextGroupsQueryOptions()),
+      context.queryClient.ensureQueryData(integrationResourcesQueryOptions()),
+    ])
+  },
   component: lazyRouteComponent(
     () => import("@/features/schedules/routes/new-schedule-route"),
     "NewScheduleRoute"
@@ -267,6 +279,16 @@ const newScheduleRoute = createRoute({
 const scheduleDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules/$scheduleId",
+  loader: async ({ context, params }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(scheduleQueryOptions(params.scheduleId)),
+      context.queryClient.ensureQueryData(
+        agentsQueryOptions({ includeInactive: true, limit: 100 })
+      ),
+      context.queryClient.ensureQueryData(contextGroupsQueryOptions()),
+      context.queryClient.ensureQueryData(integrationResourcesQueryOptions()),
+    ])
+  },
   component: lazyRouteComponent(
     () => import("@/features/schedules/routes/schedule-detail-route"),
     "ScheduleDetailRoute"

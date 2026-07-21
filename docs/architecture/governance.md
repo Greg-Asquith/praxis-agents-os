@@ -37,7 +37,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Hard-delete / purge files (032) *(enforced today: 032, `require_file_purge_access`)* | — | — | ✓ | ✓ |
 | Connect/revoke own user-scoped integrations (037–038) *[implemented: plan 038]* | — | ✓ | ✓ | ✓ |
 | Connect/revoke workspace-scoped integrations (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Select integration resources / set conversation context / edit context groups (039–040) *[implemented: plan 039 and plan 040 Slice A]* | — | ✓ | ✓ | ✓ |
+| Select integration resources / set conversation context / edit context groups (039–040) *[implemented: plans 039–040]* | — | ✓ | ✓ | ✓ |
 | View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Create/edit KB documents (044/046) | — | ✓ | ✓ | ✓ |

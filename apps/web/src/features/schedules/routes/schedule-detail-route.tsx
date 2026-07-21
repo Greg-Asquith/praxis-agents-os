@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
+import { useContextGroupsQuery } from "@/features/integrations/api/list-context-groups"
+import { useIntegrationResourcesQuery } from "@/features/integrations/api/list-integration-resources"
 import { useDeleteScheduleMutation } from "@/features/schedules/api/delete-schedule"
 import { useEnableScheduleMutation } from "@/features/schedules/api/enable-schedule"
 import { useScheduleQuery } from "@/features/schedules/api/get-schedule"
@@ -37,6 +39,8 @@ export function ScheduleDetailRoute() {
   const scheduleId = requireScheduleId(params.scheduleId)
   const { data: schedule } = useScheduleQuery(scheduleId)
   const { data: agentsData } = useAgentsQuery({ includeInactive: true, limit: 100 })
+  const { data: contextGroupsData } = useContextGroupsQuery()
+  const { data: integrationResources } = useIntegrationResourcesQuery()
   const updateScheduleMutation = useUpdateScheduleMutation()
   const deleteScheduleMutation = useDeleteScheduleMutation()
   const pauseScheduleMutation = usePauseScheduleMutation()
@@ -179,9 +183,11 @@ export function ScheduleDetailRoute() {
               key={`${schedule.id}:${schedule.updated_at}`}
               agents={agentsData.agents}
               cancelLabel="Back to Schedules"
+              contextGroups={contextGroupsData.items}
               isSubmitting={updateScheduleMutation.isPending}
               mode="edit"
               onSubmit={handleUpdateSchedule}
+              resources={integrationResources}
               schedule={schedule}
             />
           </div>

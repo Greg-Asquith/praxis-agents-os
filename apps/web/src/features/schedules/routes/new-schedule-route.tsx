@@ -5,6 +5,8 @@ import { ArrowLeftIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
+import { useContextGroupsQuery } from "@/features/integrations/api/list-context-groups"
+import { useIntegrationResourcesQuery } from "@/features/integrations/api/list-integration-resources"
 import { useCreateScheduleMutation } from "@/features/schedules/api/create-schedule"
 import { ScheduleForm } from "@/features/schedules/components/schedule-form"
 import type { ScheduleCreateRequest } from "@/features/schedules/types"
@@ -12,6 +14,8 @@ import type { ScheduleCreateRequest } from "@/features/schedules/types"
 export function NewScheduleRoute() {
   const navigate = useNavigate()
   const { data: agentsData } = useAgentsQuery({ includeInactive: false, limit: 100 })
+  const { data: contextGroupsData } = useContextGroupsQuery()
+  const { data: integrationResources } = useIntegrationResourcesQuery()
   const createScheduleMutation = useCreateScheduleMutation()
 
   async function handleCreateSchedule(payload: ScheduleCreateRequest) {
@@ -35,9 +39,11 @@ export function NewScheduleRoute() {
         <ScheduleForm
           agents={agentsData.agents}
           cancelLabel="Back to Schedules"
+          contextGroups={contextGroupsData.items}
           isSubmitting={createScheduleMutation.isPending}
           mode="create"
           onSubmit={handleCreateSchedule}
+          resources={integrationResources}
         />
       </div>
     </div>

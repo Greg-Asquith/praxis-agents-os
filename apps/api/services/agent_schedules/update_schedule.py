@@ -31,6 +31,7 @@ from services.agent_schedules.utils import (
     normalize_schedule_from_row,
     normalize_schedule_name,
     set_if_changed,
+    validate_schedule_active_context,
 )
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -75,6 +76,15 @@ async def update_schedule(
 
     if "execution_params" in payload.model_fields_set:
         set_if_changed(schedule, "execution_params", payload.execution_params, changed_fields)
+
+    if "active_context" in payload.model_fields_set:
+        active_context = await validate_schedule_active_context(
+            db,
+            selection=payload.active_context,
+            actor=actor,
+            workspace=workspace,
+        )
+        set_if_changed(schedule, "active_context", active_context, changed_fields)
 
     if "is_active" in payload.model_fields_set:
         if payload.is_active is None:

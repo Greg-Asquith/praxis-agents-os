@@ -13,6 +13,7 @@ import type { AgentSchedule } from "@/features/schedules/types"
 
 function validState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormState {
   return {
+    activeContext: null,
     agentId: "agent-1",
     cronExpression: DEFAULT_CRON_EXPRESSION,
     defaultPrompt: "  Run the launch report.  ",
@@ -41,6 +42,7 @@ const schedule: AgentSchedule = {
   timezone: "Europe/London",
   default_prompt: "Run once.",
   execution_params: null,
+  active_context: null,
   is_active: false,
   last_run_at: null,
   next_run_at: null,
@@ -53,6 +55,7 @@ const schedule: AgentSchedule = {
 describe("initialScheduleFormState", () => {
   it("uses defaults for a new schedule", () => {
     expect(initialScheduleFormState(null)).toEqual({
+      activeContext: null,
       agentId: "",
       cronExpression: DEFAULT_CRON_EXPRESSION,
       defaultPrompt: "",
@@ -69,6 +72,7 @@ describe("initialScheduleFormState", () => {
 
   it("round-trips an existing once schedule into local wall time", () => {
     expect(initialScheduleFormState(schedule)).toEqual({
+      activeContext: null,
       agentId: "agent-1",
       cronExpression: DEFAULT_CRON_EXPRESSION,
       defaultPrompt: "Run once.",
@@ -151,6 +155,7 @@ describe("buildSchedulePayload", () => {
   it("builds create and edit cron payloads", () => {
     expect(buildSchedulePayload(validState(), "create")).toEqual({
       agent_id: "agent-1",
+      active_context: null,
       name: "Weekly launch report",
       schedule_type: "cron",
       cron_expression: DEFAULT_CRON_EXPRESSION,
@@ -162,6 +167,7 @@ describe("buildSchedulePayload", () => {
       is_active: true,
     })
     expect(buildSchedulePayload(validState({ cronExpression: "*/15 * * * *" }), "edit")).toEqual({
+      active_context: null,
       name: "Weekly launch report",
       schedule_type: "cron",
       cron_expression: "*/15 * * * *",
@@ -179,6 +185,28 @@ describe("buildSchedulePayload", () => {
       buildSchedulePayload(validState({ externalWritesAllowed: true }), "create")
     ).toMatchObject({
       execution_params: { envelope: { side_effect_policy: "allow" } },
+    })
+  })
+
+  it("round-trips an active context selection and explicit clear", () => {
+    expect(
+      buildSchedulePayload(
+        validState({
+          activeContext: {
+            type: "context_group",
+            context_group_id: "group-1",
+          },
+        }),
+        "create"
+      )
+    ).toMatchObject({
+      active_context: {
+        type: "context_group",
+        context_group_id: "group-1",
+      },
+    })
+    expect(buildSchedulePayload(validState({ activeContext: null }), "edit")).toMatchObject({
+      active_context: null,
     })
   })
 
@@ -292,5 +320,14 @@ describe("isScheduleFormDirty", () => {
     expect(isScheduleFormDirty(initial, initial)).toBe(false)
     expect(isScheduleFormDirty({ ...initial, timezone: "UTC" }, initial)).toBe(true)
     expect(isScheduleFormDirty({ ...initial, name: "Renamed report" }, initial)).toBe(true)
+    expect(
+      isScheduleFormDirty(
+        {
+          ...initial,
+          activeContext: { type: "resource", integration_resource_id: "resource-1" },
+        },
+        initial
+      )
+    ).toBe(true)
   })
 })

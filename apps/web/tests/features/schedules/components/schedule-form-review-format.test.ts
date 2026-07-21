@@ -8,6 +8,7 @@ import { formatScheduleFormCadence } from "@/features/schedules/format"
 
 function formState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormState {
   return {
+    activeContext: null,
     agentId: "agent-1",
     cronExpression: DEFAULT_CRON_EXPRESSION,
     defaultPrompt: "Run the report.",

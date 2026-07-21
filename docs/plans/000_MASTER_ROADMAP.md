@@ -119,15 +119,18 @@ validate connection ownership and availability before changing the enabled
 set, selection changes are audited and recompute connection status, and
 manual discovery is a deduplicated background job rather than request-path
 provider I/O.
-Plan 040 Slice A completed 2026-07-20: `core_0016` adds conversation-scoped
+Plan 040 completed 2026-07-21 and moved to `docs/plans/complete/`. Slice A
+completed 2026-07-20: `core_0016` adds conversation-scoped
 active-context selections and workspace context groups, with atomic selection
 updates, member-authorized CRUD routes, lifecycle-safe soft deletion, and
 user-attributed audit records. Conversation scope preserves Context A when a
-user leaves it for a Context B conversation and later returns. Plan 040 remains
-open for the schedule contract/minimal selector (Slice C). Slice B completed
+user leaves it for a Context B conversation and later returns. Slice B completed
 2026-07-21: root-principal context resolution now feeds runtime dependencies,
 tool compatibility filtering, the ordered prompt block, and a partial-failure
-fan-out seam, while unavailable context degrades without bricking a run.
+fan-out seam, while unavailable context degrades without bricking a run. Slice C
+completed the validated schedule create/read/update contract, explicit-null
+clearing, and the minimal schedule-form selector over context groups and enabled
+resources.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -534,7 +537,7 @@ structure.
 | 037 | Core models (credentials/connections/resources/discovery_runs — **full multi-connection per D3**: no per-provider uniqueness, required connection labels, principal fingerprints for cross-connection dedup) + declarative provider manifest + credential service (encryption, locked proactive refresh, needs_reauth) + secret references per 029. **DONE 2026-07-10**; one provider allowlist, cloud secrets on GCP/Azure/AWS. (Donor C1.) |
 | 038 | OAuth flows (initiate/callback with PKCE S256 + signed single-value and server-side single-use state), provider-isolated OAuth settings, non-OAuth connect, test/revoke/refresh routes. **DONE 2026-07-10.** (Donor C2.) |
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
-| 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **Slices A–B DONE 2026-07-21; Slice C remains.** (Donor C4.) |
+| 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **DONE 2026-07-21.** (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. (Donor C6.) |
 | 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |
@@ -715,7 +718,7 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → {039–042 ∥ 043–047 ∥ 055} → 082 → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → {041–042 ∥ 043–047 ∥ 055} → 082 → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 →
 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,

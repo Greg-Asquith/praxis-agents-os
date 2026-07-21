@@ -24,7 +24,15 @@ from services.agent_schedules.runs import (
     RUN_STATUS_RETRYABLE_FAILED,
 )
 from services.audit_events import AuditAction, AuditResourceType
-from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.factories import (
+    build_external_credential,
+    build_integration_connection,
+    build_integration_context_group,
+    build_integration_resource,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 from tests.support.auth import bearer_headers
 
 pytestmark = pytest.mark.asyncio
@@ -147,7 +155,7 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
     assert body["next_run_at"] is not None
     assert body["health"] == "healthy"
     assert body["latest_run"] is None
-    assert "active_context" not in body
+    assert body["active_context"] is None
 
     audit_event = await db_session.scalar(
         select(AuditEvent).where(
@@ -161,6 +169,140 @@ async def test_create_cron_schedule_persists_read_shape_and_audit(
     assert audit_event.details["name"] == "Account performance check"
     assert audit_event.details["schedule_type"] == "cron"
     assert audit_event.details["side_effect_policy"] == "allow"
+
+
+async def test_schedule_active_context_create_update_and_clear_round_trip(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=workspace, user=user)
+    credential = build_external_credential()
+    connection = build_integration_connection(
+        credential=credential,
+        user=user,
+        workspace=workspace,
+        status="active",
+    )
+    resource = build_integration_resource(
+        connection=connection,
+        enabled=True,
+        availability="available",
+    )
+    group = build_integration_context_group(
+        workspace=workspace,
+        user=user,
+        resources=[resource],
+    )
+    db_session.add_all([credential, connection, resource, group])
+    await db_session.commit()
+
+    create_response = await db_async_client.post(
+        "/api/v1/schedules/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "name": "Context schedule",
+            "schedule_type": "interval",
+            "interval_minutes": 15,
+            "default_prompt": "Review the selected account.",
+            "active_context": {
+                "type": "resource",
+                "integration_resource_id": str(resource.id),
+            },
+        },
+    )
+
+    assert create_response.status_code == 201
+    schedule_id = create_response.json()["id"]
+    assert create_response.json()["active_context"] == {
+        "type": "resource",
+        "integration_resource_id": str(resource.id),
+    }
+
+    update_response = await db_async_client.patch(
+        f"/api/v1/schedules/{schedule_id}",
+        headers=headers,
+        json={
+            "active_context": {
+                "type": "context_group",
+                "context_group_id": str(group.id),
+            }
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["active_context"] == {
+        "type": "context_group",
+        "context_group_id": str(group.id),
+    }
+
+    clear_response = await db_async_client.patch(
+        f"/api/v1/schedules/{schedule_id}",
+        headers=headers,
+        json={"active_context": None},
+    )
+
+    assert clear_response.status_code == 200
+    assert clear_response.json()["active_context"] is None
+    persisted = await db_session.get(AgentSchedule, schedule_id)
+    assert persisted is not None
+    assert persisted.active_context is None
+    update_audits = (
+        await db_session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == AuditAction.UPDATE.value,
+                AuditEvent.resource_type == AuditResourceType.AGENT_SCHEDULE.value,
+                AuditEvent.resource_id == schedule_id,
+            )
+            .order_by(AuditEvent.created_at)
+        )
+    ).all()
+    assert [event.details["changed_fields"] for event in update_audits] == [
+        ["active_context"],
+        ["active_context"],
+    ]
+
+
+async def test_schedule_active_context_rejects_cross_workspace_target(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=workspace, user=user)
+    other_workspace = build_workspace(slug=f"other-context-{uuid4().hex[:8]}")
+    db_session.add(other_workspace)
+    await db_session.flush()
+    credential = build_external_credential()
+    connection = build_integration_connection(
+        credential=credential,
+        user=user,
+        workspace=other_workspace,
+        status="active",
+    )
+    resource = build_integration_resource(connection=connection)
+    db_session.add_all([credential, connection, resource])
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        "/api/v1/schedules/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "name": "Invalid context schedule",
+            "schedule_type": "interval",
+            "interval_minutes": 15,
+            "default_prompt": "Do not run.",
+            "active_context": {
+                "type": "resource",
+                "integration_resource_id": str(resource.id),
+            },
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/problem+json")
 
 
 async def test_update_schedule_audits_effective_side_effect_policy_transition(

@@ -18,6 +18,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { agentSelectLabel } from "@/features/agents/components/agent-select-format"
 import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
+import type { IntegrationContextGroup, IntegrationResource } from "@/features/integrations/types"
+import { ScheduleContextField } from "@/features/schedules/components/schedule-context-field"
 import type {
   ScheduleFormFieldSetter,
   ScheduleFormState,
@@ -25,16 +27,20 @@ import type {
 
 export function ScheduleRunSection({
   agents,
+  contextGroups,
   fieldErrors,
   mode,
   selectedAgent,
+  resources,
   setField,
   state,
 }: {
   agents: Agent[]
+  contextGroups: IntegrationContextGroup[]
   fieldErrors: Record<"agent" | "name" | "prompt", string | undefined>
   mode: "create" | "edit"
   selectedAgent: Agent | null
+  resources: IntegrationResource[]
   setField: ScheduleFormFieldSetter
   state: ScheduleFormState
 }) {
@@ -131,6 +137,15 @@ export function ScheduleRunSection({
           </FieldDescription>
           <FieldError>{fieldErrors.prompt}</FieldError>
         </Field>
+
+        <ScheduleContextField
+          contextGroups={contextGroups}
+          onChange={(value) => {
+            setField("activeContext", value)
+          }}
+          resources={resources}
+          value={state.activeContext}
+        />
       </FieldGroup>
     </FormSection>
   )

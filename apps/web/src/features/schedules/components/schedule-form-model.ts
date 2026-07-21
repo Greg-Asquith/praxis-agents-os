@@ -8,6 +8,8 @@ import type {
   ScheduleType,
   ScheduleUpdateRequest,
 } from "@/features/schedules/types"
+import type { ActiveContextSelectionValue } from "@/features/integrations/types"
+import { activeContextSelectionKey } from "@/features/integrations/active-context"
 import type { FormValidationEntry } from "@/lib/forms"
 
 export const DEFAULT_CRON_EXPRESSION = "0 9 * * 1-5"
@@ -26,6 +28,7 @@ type DateTimeLocalParts = {
 type ScheduleTimingPayload = Omit<SchedulePreviewRequest, "preview_count">
 
 export type ScheduleFormState = {
+  activeContext: ActiveContextSelectionValue | null
   agentId: string
   cronExpression: string
   defaultPrompt: string
@@ -48,6 +51,7 @@ export type ScheduleFormFieldSetter = <K extends keyof ScheduleFormState>(
 
 export function initialScheduleFormState(schedule: AgentSchedule | null): ScheduleFormState {
   return {
+    activeContext: schedule?.active_context ?? null,
     agentId: schedule?.agent_id ?? "",
     cronExpression: schedule?.cron_expression ?? DEFAULT_CRON_EXPRESSION,
     defaultPrompt: schedule?.default_prompt ?? "",
@@ -190,6 +194,7 @@ export function buildSchedulePayload(
 
   const basePayload = {
     ...timingPayload,
+    active_context: state.activeContext,
     default_prompt: state.defaultPrompt.trim(),
     execution_params: buildExecutionParams(state),
     is_active: state.isActive,
@@ -208,6 +213,8 @@ export function buildSchedulePayload(
 
 export function isScheduleFormDirty(current: ScheduleFormState, initial: ScheduleFormState) {
   return (
+    activeContextSelectionKey(current.activeContext) !==
+      activeContextSelectionKey(initial.activeContext) ||
     current.agentId !== initial.agentId ||
     current.cronExpression !== initial.cronExpression ||
     current.defaultPrompt !== initial.defaultPrompt ||
