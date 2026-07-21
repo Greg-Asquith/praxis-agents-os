@@ -44,6 +44,13 @@
 > the search contract gains `is_private` on hits and a SQL-level
 > `private_only` filter (dictated by 046/047); where it conflicts with
 > the body above, the amendment wins.
+>
+> **Amendment (operator, 2026-07-21) pre-flight**: the "Amendment
+> (operator, 2026-07-21)" block at the end of this file also amends this
+> plan — recency joins the fusion as a weighted third RRF list over the
+> lexical/semantic candidates (ranking on 044's `source_updated_at`),
+> `rrf_merge` gains per-list weights, and the harness gains recency
+> cases; where it conflicts with the body above, the amendment wins.
 
 ## Status
 
@@ -810,3 +817,103 @@ user (and nothing from other users or workspaces), and that
 `is_private` is populated on every hit in both hybrid and
 lexical-fallback modes. The existing isolation/privacy assertions stand
 unchanged.
+
+## Amendment (operator, 2026-07-21): recency as a weighted third RRF list
+
+Where this block conflicts with the body above, this block wins. The
+plan 074 and plan 080 amendments are unaffected. Origin: operator
+decision after reviewing the Cerebras knowledge-base write-up
+(`docs/legacy/cerebras.htm`): "Slack answers expire … when relevance is
+otherwise equal, the newer thread wins." Recency ships in the initial
+engine rather than as a later tuning pass. Depends on 044's operator
+amendment of the same date (`kb_documents.source_updated_at`).
+
+**New decision 14.** The fusion becomes *weighted* RRF —
+`score = Σ weight_list / (rrf_k + rank)` — with a third list, `recency`:
+
+1. **Recency ranks candidates, never the corpus.** The recency CTE
+   orders the union of ids already selected by the lexical and semantic
+   CTEs — by `coalesce(d.source_updated_at, d.created_at) DESC`,
+   tie-break `c.id` — restricted to documents whose `source_type` is in
+   `KB_SEARCH_RECENCY_SOURCE_TYPES`. It introduces no new rows: a
+   fresh-but-irrelevant document can never surface through recency, and
+   the workspace/privacy/soft-delete predicates are inherited because
+   every candidate id already passed them in its source CTE (decision 4
+   parity is preserved by construction — note this in the module so
+   reviewers don't flag missing predicates).
+2. **Weights**: lexical and semantic stay at 1.0;
+   `KB_SEARCH_RECENCY_WEIGHT` defaults to **0.25** — sized as a
+   tie-breaker (its spread across the candidate pool sits near the
+   head-of-list relevance spread, so freshness reorders near-ties, not
+   clear relevance wins). A written default with a scoreboard, like
+   every other constant here.
+3. **Eligibility**: `KB_SEARCH_RECENCY_SOURCE_TYPES` defaults to
+   `("url", "conversation", "integration")` — sources whose content
+   goes stale. `manual`/`upload` are user-curated canonical documents
+   and stay outside the list (absence from an RRF list is neutral,
+   never a penalty). `conversation`/`integration` have no producers yet
+   (044 decision 3); the signal activates for them the moment they land.
+4. **Fallback parity**: in `lexical_fallback` mode the recency CTE
+   ranks the lexical candidates alone — the mode changes the candidate
+   pool, not the fusion shape.
+
+**Step deltas.** Step 1: `rrf_merge` gains an optional
+`weights: Mapping[str, float]` (default all 1.0); `FusedResult.sources`
+may include `"recency"`. Step 2 adds:
+
+```python
+KB_SEARCH_RECENCY_WEIGHT: float = 0.25
+KB_SEARCH_RECENCY_SOURCE_TYPES: tuple[str, ...] = ("url", "conversation", "integration")
+```
+
+Step 3's statement gains the CTE and the weighted fusion:
+
+```sql
+recency AS (
+    SELECT c.id, row_number() OVER (
+               ORDER BY coalesce(d.source_updated_at, d.created_at) DESC, c.id
+           ) AS rank
+    FROM kb_chunks c
+    JOIN kb_documents d ON d.id = c.document_id
+    WHERE c.id IN (SELECT id FROM lexical UNION SELECT id FROM semantic)
+      AND d.source_type = ANY(:recency_source_types)
+),
+fused AS (
+    SELECT id, sum(weight / (:rrf_k + rank)) AS score,
+           array_agg(source) AS sources
+    FROM (
+        SELECT id, rank, 1.0 AS weight, 'lexical'  AS source FROM lexical
+        UNION ALL
+        SELECT id, rank, 1.0 AS weight, 'semantic' AS source FROM semantic
+        UNION ALL
+        SELECT id, rank, CAST(:recency_weight AS float) AS weight,
+               'recency' AS source FROM recency
+    ) ranked
+    GROUP BY id
+)
+```
+
+**Test deltas (Step 6).** `test_rrf.py`: weighted-merge math on
+hand-computed examples (weight 0 removes a list's influence; equal
+weights reproduce the unweighted result). Harness, new module
+`test_recency.py`: seed two near-duplicate documents answering the same
+query through the real pipeline, then set `source_type='url'` (+
+`external_url`) and stale/fresh `source_updated_at` values directly on
+the doc rows (post-seed metadata mutation, the `test_filters.py`
+collection-guard precedent — chunks still came through the real
+pipeline); assert the fresh document outranks the stale one and the
+winning hit's `sources` includes `"recency"`; assert a `manual`
+document's hits never carry `"recency"`. `test_sql_matches_rrf_spec.py`
+extends to the weighted three-list fusion. The existing eval cases —
+including the `WireGuard`/`EXP-REIMBURSE-90` needle-rank-1 assertions —
+stand unchanged and must still pass (the corpus is `manual`-sourced, so
+recency is inert for it; that inertness is itself the eligibility
+test).
+
+**Gate G4 note**: like the plan 074 amendment, this sets written
+defaults before the harness exists — it is the initial specification,
+not ranking tuning; the tuning protocol does not apply to landing it.
+Any subsequent change to `KB_SEARCH_RECENCY_WEIGHT`,
+`KB_SEARCH_RECENCY_SOURCE_TYPES`, or the timestamp expression follows
+the protocol as usual, and 048 copies the weighted three-list shape
+when it clones the engine for memories.

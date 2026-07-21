@@ -42,6 +42,12 @@
 > `services/jobs/handlers/`, and contextual annotation carries the
 > threat-model §2(h) defenses; where it conflicts with the body above,
 > the amendment wins.
+>
+> **Amendment (operator, 2026-07-21) pre-flight**: the "Amendment
+> (operator, 2026-07-21)" block at the end of this file adds
+> `kb_documents.source_updated_at` — the content-freshness timestamp
+> plan 045's recency list ranks on; where it conflicts with the body
+> above, the amendment wins.
 
 ## Status
 
@@ -1055,3 +1061,39 @@ search-hit payload. This plan owns the channel's mechanical defenses:
       imported from its `__init__.py`; no `services/kb/handlers/`
       package exists; no converter copy exists — conversion goes through
       `utils/document_markdown.py`
+
+## Amendment (operator, 2026-07-21): `source_updated_at` for the recency signal
+
+Where this block conflicts with the body above, this block wins. The
+plan 074 and plan 080 amendments are unaffected. Origin: operator
+decision after reviewing the Cerebras knowledge-base write-up
+(`docs/legacy/cerebras.htm`) — recency joins the initial retrieval
+implementation (see plan 045's operator amendment of the same date);
+this plan supplies the timestamp it ranks on.
+
+**New decision 14.** `kb_documents` gains `source_updated_at`
+(`DateTime(timezone=True)`, nullable) — the moment the document's
+*content* last changed, distinct from `updated_at` (which status flips
+and short-circuit re-ingests also touch). Semantics:
+
+- `create_kb_document` sets it to now() for `manual` sources (content
+  arrives at create); other sources leave it NULL until ingest.
+- The ingest handler sets it to now() exactly when the computed
+  markdown hash differs from the stored `content_hash` (Step 5 item 5).
+  The decision-11 short-circuit (hash unchanged) must NOT touch it.
+- Future `conversation`/`integration` producers stamp provider-side
+  timestamps (message/thread activity time) instead of now(); recorded
+  here so the column's meaning is source freshness, not row churn.
+- No index: plan 045's recency CTE ranks only ids already selected by
+  the bounded lexical/semantic CTEs (≤ 2 × `KB_SEARCH_CTE_LIMIT` rows),
+  never scanning by timestamp.
+
+**Step deltas**: Step 2's `KBDocument` column list gains
+`source_updated_at`; the migration carries it (plain nullable column,
+autogenerate handles it). Step 4 (`create_kb_document`) and Step 5
+(ingest item 5) implement the stamping rules above.
+
+**Test deltas (Step 7)**: `test_ingest_document.py` — content change
+sets `source_updated_at`; the unchanged-hash short-circuit leaves it
+untouched (assert exact prior value). `test_create_document.py` —
+manual create stamps it; url create leaves it NULL until ingest.
