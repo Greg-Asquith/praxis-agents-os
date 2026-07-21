@@ -2,6 +2,7 @@
 
 """Runtime tool catalog value types."""
 
+import inspect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -42,6 +43,19 @@ TOOL_KIND_CAPABILITY: ToolKind = "capability"
 VALID_TOOL_KINDS = frozenset({TOOL_KIND_FUNCTION, TOOL_KIND_CAPABILITY})
 _TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
+_INTEGRATION_PARAMETER_DENYLIST = frozenset(
+    {
+        "account_id",
+        "base_id",
+        "connection_id",
+        "connection_label",
+        "customer_id",
+        "integration_resource_id",
+        "mailbox",
+        "principal",
+        "resource_id",
+    }
+)
 VALID_TOOL_FIELD_FORMATS = frozenset(
     {"text", "multiline", "markdown", "bytes", "datetime", "boolean", "url", "list"}
 )
@@ -93,6 +107,15 @@ class ToolPresentation:
 
 
 @dataclass(frozen=True)
+class IntegrationToolBinding:
+    """Provider/resource compatibility declared by one integration tool."""
+
+    provider_keys: frozenset[str]
+    resource_types: frozenset[str]
+    requires_write: bool = False
+
+
+@dataclass(frozen=True)
 class RuntimeToolDefinition:
     """One Python-owned runtime tool entry."""
 
@@ -121,6 +144,7 @@ class RuntimeToolDefinition:
     supported_model_providers: frozenset[str] | None = None
     configurable: bool = True
     auto_mount: bool = False
+    integration_binding: IntegrationToolBinding | None = None
     presentation: ToolPresentation = ToolPresentation()
 
     def allowed_policies(self) -> frozenset[ToolPolicy]:
@@ -202,6 +226,7 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
                 raise RuntimeError(
                     "Runtime tool supported model providers must be lowercase tokens"
                 )
+    _validate_integration_binding(definition)
     _validate_presentation(definition.presentation)
 
     if definition.kind == TOOL_KIND_FUNCTION:
@@ -246,6 +271,46 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         and not definition.auto_mount
     ):
         raise RuntimeError("Write runtime tools must support approval policy")
+
+
+def _validate_integration_binding(definition: RuntimeToolDefinition) -> None:
+    binding = definition.integration_binding
+    if binding is None:
+        return
+    if definition.kind != TOOL_KIND_FUNCTION or definition.function is None:
+        raise RuntimeError("Integration bindings require function runtime tools")
+    if not binding.provider_keys or not binding.resource_types:
+        raise RuntimeError("Integration bindings require provider keys and resource types")
+
+    from services.integrations.manifest import PROVIDER_KEY_PATTERN, PROVIDER_MANIFESTS
+
+    if any(not PROVIDER_KEY_PATTERN.fullmatch(key) for key in binding.provider_keys):
+        raise RuntimeError("Integration binding provider keys must be lowercase snake_case")
+    if any(not _TOOL_PROVIDER_PATTERN.fullmatch(kind) for kind in binding.resource_types):
+        raise RuntimeError("Integration binding resource types must be lowercase tokens")
+    unknown_providers = binding.provider_keys.difference(PROVIDER_MANIFESTS)
+    if unknown_providers:
+        raise RuntimeError(
+            f"Integration binding has unknown provider keys: {', '.join(sorted(unknown_providers))}"
+        )
+    declared_resource_types = {
+        resource_type
+        for provider_key in binding.provider_keys
+        for resource_type in PROVIDER_MANIFESTS[provider_key].resource_types
+    }
+    unknown_resource_types = binding.resource_types.difference(declared_resource_types)
+    if unknown_resource_types:
+        raise RuntimeError(
+            "Integration binding has undeclared resource types: "
+            f"{', '.join(sorted(unknown_resource_types))}"
+        )
+    if binding.requires_write and definition.effect != TOOL_EFFECT_WRITE:
+        raise RuntimeError("Write-required integration bindings require a write tool")
+    parameter_names = set(inspect.signature(definition.function).parameters)
+    if parameter_names.intersection(_INTEGRATION_PARAMETER_DENYLIST):
+        raise RuntimeError(
+            "Integration tools must not take connection/account parameters; context is server-resolved"
+        )
 
 
 def _validate_presentation(presentation: ToolPresentation) -> None:

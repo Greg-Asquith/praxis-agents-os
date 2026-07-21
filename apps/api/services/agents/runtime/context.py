@@ -2,7 +2,10 @@
 
 """Typed dependencies passed into Pydantic AI runtime tools and hooks."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +16,9 @@ from models.user import User
 from models.workspace import Workspace
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.sinks import EventSink
+
+if TYPE_CHECKING:
+    from services.integrations.context.domain import ResolvedActiveContext
 
 
 @dataclass(frozen=True)
@@ -28,3 +34,4 @@ class RuntimeDeps:
     sink: EventSink
     envelope: RunEnvelope
     delegation_depth: int = 0
+    active_context: ResolvedActiveContext | None = None

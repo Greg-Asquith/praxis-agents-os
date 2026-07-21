@@ -2,6 +2,7 @@
 
 """Prepare database state, prompt content, and runtime deps for execute_run."""
 
+import logging
 from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
@@ -32,8 +33,12 @@ from services.agents.runtime.loop import RuntimeAgent
 from services.agents.runtime.persistence import load_message_history
 from services.agents.runtime.sinks import EventSink
 from services.files import build_attachment_user_content, resolve_chat_attachments
+from services.integrations.context import resolve_active_context
+from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
 
 from .types import BuiltRuntimeAgent, PreparedRuntime
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeAgentBuilder(Protocol):
@@ -47,6 +52,7 @@ class RuntimeAgentBuilder(Protocol):
         force_delegation_tools: bool = False,
         skills: Sequence[Skill] = (),
         available_files: Sequence[AvailableFile] = (),
+        active_context: ResolvedActiveContext | None = None,
         skipped_tool_names: list[str] | None = None,
     ) -> RuntimeAgent: ...
 
@@ -119,6 +125,19 @@ async def prepare_runtime(
     run_envelope_builder: RunEnvelopeBuilder,
 ) -> PreparedRuntime:
     user, workspace = await load_actor_context(db, run)
+    try:
+        active_context = await resolve_active_context(
+            db,
+            run=run,
+            user=user,
+            workspace=workspace,
+        )
+    except Exception:
+        logger.exception(
+            "Active integration context resolution failed; continuing without context",
+            extra={"agent_run_id": str(run.id)},
+        )
+        active_context = EMPTY_ACTIVE_CONTEXT
     prepared_prompt = await assemble_user_prompt(
         db,
         workspace=workspace,
@@ -137,6 +156,7 @@ async def prepare_runtime(
         deferred_tool_results=deferred_tool_results,
         skills=skills,
         available_files=available_files,
+        active_context=active_context,
         runtime_agent_builder=runtime_agent_builder,
     )
     deps = RuntimeDeps(
@@ -149,6 +169,7 @@ async def prepare_runtime(
         sink=event_sink,
         envelope=run_envelope_builder(run),
         delegation_depth=run.delegation_depth or 0,
+        active_context=active_context,
     )
     if deferred_tool_results is not None:
         await record_denied_approval_audit_events(
@@ -203,6 +224,7 @@ async def build_agent_for_run(
     deferred_tool_results: DeferredToolResults | None,
     skills: Sequence[Skill],
     available_files: Sequence[AvailableFile],
+    active_context: ResolvedActiveContext,
     runtime_agent_builder: RuntimeAgentBuilder,
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
@@ -222,6 +244,7 @@ async def build_agent_for_run(
         force_delegation_tools=force_delegation_tools,
         skills=skills,
         available_files=available_files,
+        active_context=active_context,
         skipped_tool_names=skipped_tool_names,
     )
     _record_skipped_runtime_tools(run, skipped_tool_names)

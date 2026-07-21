@@ -78,6 +78,8 @@ def test_web_search_catalog_entry_is_native_function_tool() -> None:
     assert entry.effect_scope == "internal"
     assert entry.default_policy == "approval"
     assert entry.supported_policies == ["approval", "auto"]
+    assert entry.provider_keys is None
+    assert entry.resource_types is None
     assert definition.supports_approval is True
     assert definition.output_model is web_search_tools.WebSearchOutput
 

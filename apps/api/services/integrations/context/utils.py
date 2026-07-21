@@ -19,6 +19,12 @@ from services.integrations.context.schemas import ContextGroupRead
 CONTEXT_GROUP_NAME_UNIQUE_CONSTRAINT = "uq_integration_context_groups_workspace_name"
 
 
+def sanitize_context_error(message: str, *, max_chars: int = 1000) -> str:
+    """Bound an operation error and remove control characters from model-visible text."""
+    sanitized = " ".join(message.split())
+    return sanitized[:max_chars]
+
+
 def normalize_context_group_name(name: str) -> str:
     normalized = name.strip()
     if not normalized:

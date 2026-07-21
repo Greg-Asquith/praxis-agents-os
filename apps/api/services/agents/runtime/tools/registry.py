@@ -5,7 +5,7 @@
 
 import logging
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_KIND_FUNCTION,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
+    IntegrationToolBinding,
     RuntimeToolDefinition,
     ToolEffect,
     ToolEffectScope,
@@ -26,6 +27,9 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
     validate_definition,
 )
+
+if TYPE_CHECKING:
+    from services.integrations.context.domain import ResolvedActiveContext
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,7 @@ def runtime_tool(
     supported_model_providers: Iterable[str] | None = None,
     configurable: bool = True,
     auto_mount: bool = False,
+    integration_binding: IntegrationToolBinding | None = None,
     presentation: ToolPresentation | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a Python function as a runtime tool."""
@@ -96,6 +101,7 @@ def runtime_tool(
             supported_model_providers=normalized_supported_providers,
             configurable=configurable,
             auto_mount=auto_mount,
+            integration_binding=integration_binding,
             presentation=presentation or ToolPresentation(),
         )
         register_tool_definition(definition)
@@ -108,6 +114,7 @@ def build_runtime_tools(
     agent: Agent,
     *,
     include_delegation: bool = False,
+    active_context: "ResolvedActiveContext | None" = None,
     skipped_tool_names: list[str] | None = None,
 ):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
@@ -142,6 +149,15 @@ def build_runtime_tools(
             )
             continue
         if definition.kind == TOOL_KIND_CAPABILITY:
+            continue
+        if definition.integration_binding is not None and (
+            active_context is None
+            or not active_context.compatible_entries(definition.integration_binding)
+        ):
+            logger.info(
+                "Skipping runtime tool %s without compatible active context",
+                definition.name,
+            )
             continue
         if not permissions.is_tool_allowed(definition, workspace=None, agent=agent):
             logger.info(

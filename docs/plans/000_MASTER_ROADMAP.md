@@ -124,8 +124,10 @@ active-context selections and workspace context groups, with atomic selection
 updates, member-authorized CRUD routes, lifecycle-safe soft deletion, and
 user-attributed audit records. Conversation scope preserves Context A when a
 user leaves it for a Context B conversation and later returns. Plan 040 remains
-open for runtime resolution (Slice B) and the schedule contract/minimal
-selector (Slice C).
+open for the schedule contract/minimal selector (Slice C). Slice B completed
+2026-07-21: root-principal context resolution now feeds runtime dependencies,
+tool compatibility filtering, the ordered prompt block, and a partial-failure
+fan-out seam, while unavailable context degrades without bricking a run.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -532,7 +534,7 @@ structure.
 | 037 | Core models (credentials/connections/resources/discovery_runs — **full multi-connection per D3**: no per-provider uniqueness, required connection labels, principal fingerprints for cross-connection dedup) + declarative provider manifest + credential service (encryption, locked proactive refresh, needs_reauth) + secret references per 029. **DONE 2026-07-10**; one provider allowlist, cloud secrets on GCP/Azure/AWS. (Donor C1.) |
 | 038 | OAuth flows (initiate/callback with PKCE S256 + signed single-value and server-side single-use state), provider-isolated OAuth settings, non-OAuth connect, test/revoke/refresh routes. **DONE 2026-07-10.** (Donor C2.) |
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
-| 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **Slice A DONE 2026-07-20; Slices B–C remain.** (Donor C4.) |
+| 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **Slices A–B DONE 2026-07-21; Slice C remains.** (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. (Donor C6.) |
 | 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |

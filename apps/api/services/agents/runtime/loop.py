@@ -2,9 +2,12 @@
 
 """Construct the Pydantic AI agent used by one Praxis runtime turn."""
 
+from __future__ import annotations
+
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent as PydanticAgent, DeferredToolRequests
 from pydantic_ai.models import Model
@@ -28,6 +31,9 @@ from services.agents.runtime.tools import (
     build_runtime_tools,
 )
 
+if TYPE_CHECKING:
+    from services.integrations.context.domain import ResolvedActiveContext
+
 
 @dataclass(frozen=True)
 class RuntimeAgent:
@@ -47,6 +53,7 @@ def build_runtime_agent(
     force_delegation_tools: bool = False,
     skills: Sequence[Skill] = (),
     available_files: Sequence[AvailableFile] = (),
+    active_context: ResolvedActiveContext | None = None,
     skipped_tool_names: list[str] | None = None,
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
@@ -62,12 +69,14 @@ def build_runtime_agent(
                 agent,
                 include_delegation=include_delegation,
                 available_files=available_files,
+                active_context=active_context,
             ),
             deps_type=RuntimeDeps,
             output_type=[str, DeferredToolRequests],
             tools=build_runtime_tools(
                 agent,
                 include_delegation=include_delegation,
+                active_context=active_context,
                 skipped_tool_names=skipped_tool_names,
             ),
             capabilities=[
@@ -95,11 +104,17 @@ def _runtime_instructions(
     *,
     include_delegation: bool,
     available_files: Sequence[AvailableFile] = (),
+    active_context: ResolvedActiveContext | None = None,
 ) -> str:
+    from services.integrations.context.prompt_block import render_active_context_block
+
     return build_system_prompt(
         runtime_prompt_blocks(
             agent,
             include_delegation=include_delegation,
             available_files=available_files,
+            active_context_block=(
+                render_active_context_block(active_context) if active_context is not None else ""
+            ),
         )
     )

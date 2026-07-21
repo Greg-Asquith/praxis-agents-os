@@ -58,11 +58,7 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
         raise RuntimeError(
             f"OAuth integration provider '{expected_key}' must own its OAuth configuration"
         )
-    if plugin.tool_definitions:
-        from services.agents.runtime.tools.contract import validate_definition
-
     for definition in plugin.tool_definitions:
-        validate_definition(definition)
         if definition.provider != expected_key:
             raise RuntimeError("Integration tool provider must match its package")
         if not definition.name.startswith(f"{expected_key}_"):

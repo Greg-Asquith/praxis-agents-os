@@ -98,6 +98,8 @@ class ToolCatalogEntry(BaseModel):
     default_policy: str
     supported_policies: list[str]
     defer_loading: bool
+    provider_keys: list[str] | None
+    resource_types: list[str] | None
 
     @classmethod
     def from_definition(cls, definition: RuntimeToolDefinition) -> "ToolCatalogEntry":
@@ -112,6 +114,16 @@ class ToolCatalogEntry(BaseModel):
             default_policy=definition.default_policy,
             supported_policies=sorted(definition.allowed_policies()),
             defer_loading=definition.defer_loading,
+            provider_keys=(
+                sorted(definition.integration_binding.provider_keys)
+                if definition.integration_binding is not None
+                else None
+            ),
+            resource_types=(
+                sorted(definition.integration_binding.resource_types)
+                if definition.integration_binding is not None
+                else None
+            ),
         )
 
 

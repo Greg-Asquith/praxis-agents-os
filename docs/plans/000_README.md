@@ -443,9 +443,12 @@ Plan 040 Slice A completed 2026-07-20 as the context data-layer slice:
 context groups; reopening a conversation restores its own context instead of
 inheriting the user's latest choice elsewhere. Atomic selection updates, group
 CRUD, role-gated routes, and user-attributed audit events are covered by the
-focused database-backed suites. Per the
-execution-slice contract, plan 040 remains TODO and stays in `docs/plans/`
-until runtime Slice B and schedule/UI Slice C are complete.
+focused database-backed suites. Slice B completed 2026-07-21: root-principal
+resolution covers interactive, scheduled, and delegated runs; compatible tools
+are mounted only when usable context exists; fan-out isolates per-resource
+failures and gates writes; and the resolved value is shared by `RuntimeDeps`
+and the ordered prompt block. Per the execution-slice contract, plan 040
+remains TODO and stays in `docs/plans/` until schedule/UI Slice C is complete.
 
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
@@ -526,7 +529,7 @@ note wins on intent.
 | 037 | Integration core models, credential service, and secret references | P1 | L | 029 | DONE |
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | DONE |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | DONE |
-| 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO |
+| 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | TODO (Slices A–B done; Slice C next) |
 | 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO |
 | 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | TODO |
 | 043 | Embeddings provider service | P1 | M | 029 (Gate G3; done) | TODO |

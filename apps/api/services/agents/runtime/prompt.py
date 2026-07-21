@@ -49,6 +49,7 @@ def runtime_prompt_blocks(
     *,
     include_delegation: bool,
     available_files: Sequence[AvailableFile] = (),
+    active_context_block: str = "",
 ) -> list[PromptBlock]:
     """Return the canonical ordered prompt blocks for one runtime agent."""
     return [
@@ -61,6 +62,7 @@ def runtime_prompt_blocks(
             "delegation",
             DELEGATION_INSTRUCTIONS if include_delegation else "",
         ),
+        PromptBlock("active_context", active_context_block, budget=2000),
         PromptBlock(
             "available_files",
             _render_available_files(available_files),

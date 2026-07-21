@@ -63,6 +63,8 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
             "default_policy": "approval",
             "supported_policies": ["approval", "auto"],
             "defer_loading": False,
+            "provider_keys": None,
+            "resource_types": None,
         },
     ]
     assert "timeout" not in body["tools"][0]

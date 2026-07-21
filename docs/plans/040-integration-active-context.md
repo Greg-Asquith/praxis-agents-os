@@ -33,7 +33,8 @@
 - **Category**: Phase 4a integrations (roadmap `000_MASTER_ROADMAP.md` §4
   row 040; decision D3 full multi-connection)
 - **Execution progress**: Slice A completed 2026-07-20 as `core_0016`;
-  Slices B–C remain. The plan stays TODO until Slice C passes its gate.
+  Slice B completed 2026-07-21; Slice C remains. The plan stays TODO until
+  Slice C passes its gate.
 - **Planned at**: commit `0cbbb39`, 2026-07-06. **Consolidated** at
   2026-07-10: the plan 080 amendment (runtime anchor refresh after
   053/054/066, prompt-block position, dedup correction) folded into the
@@ -392,6 +393,16 @@ the broader integration regression suite remained green.
   expression matching `__table_args__`.
 
 ### Slice B — Runtime resolution, binding, fan-out, injection (`API - Integration Context Runtime`)
+
+**DONE 2026-07-21.** Active context now resolves once per run from the root
+interactive conversation or saved schedule selection, including bounded
+delegation inheritance, multi-connection deduplication, fail-closed write
+permissions, and degradation for unavailable selections. Integration tool
+bindings are import-time validated and build-time filtered; the sequential
+fan-out executor isolates per-resource failures; `RuntimeDeps` and the ordered,
+budgeted prompt block receive the same resolved value. The focused Slice B
+suites and the complete integration/agent regression gate passed, with no
+provider tool registered ahead of plan 041.
 
 - **Steps**: 4–7 (resolution, `IntegrationToolBinding` + import-time
   law + build-time filtering, fan-out executor, `RuntimeDeps` injection
