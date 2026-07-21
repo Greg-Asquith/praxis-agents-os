@@ -17,6 +17,11 @@ from models.base import BaseModel  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
 from models.conversation_todos import ConversationTodoList  # noqa: F401
 from models.files import File, FileReference, FileRevision, FileUpload  # noqa: F401
+from models.integration_context import (  # noqa: F401
+    ActiveContextSelection,
+    IntegrationContextGroup,
+    IntegrationContextGroupMember,
+)
 from models.integrations import (  # noqa: F401
     ExternalCredential,
     IntegrationConnection,

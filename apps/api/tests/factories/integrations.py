@@ -5,6 +5,12 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from models.conversation import Conversation
+from models.integration_context import (
+    ActiveContextSelection,
+    IntegrationContextGroup,
+    IntegrationContextGroupMember,
+)
 from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
@@ -81,3 +87,43 @@ def build_integration_discovery_run(
     }
     defaults.update(overrides)
     return IntegrationDiscoveryRun(**defaults)
+
+
+def build_integration_context_group(
+    *,
+    workspace: Workspace,
+    user: User,
+    resources: list[IntegrationResource] | None = None,
+    **overrides,
+) -> IntegrationContextGroup:
+    defaults = {
+        "id": uuid4(),
+        "workspace_id": workspace.id,
+        "name": "Test context",
+        "created_by_user_id": user.id,
+        "members": [
+            IntegrationContextGroupMember(integration_resource_id=resource.id)
+            for resource in resources or []
+        ],
+    }
+    defaults.update(overrides)
+    return IntegrationContextGroup(**defaults)
+
+
+def build_active_context_selection(
+    *,
+    workspace: Workspace,
+    conversation: Conversation,
+    resource: IntegrationResource | None = None,
+    group: IntegrationContextGroup | None = None,
+    **overrides,
+) -> ActiveContextSelection:
+    defaults = {
+        "id": uuid4(),
+        "workspace_id": workspace.id,
+        "conversation_id": conversation.id,
+        "integration_resource_id": resource.id if resource is not None else None,
+        "context_group_id": group.id if group is not None else None,
+    }
+    defaults.update(overrides)
+    return ActiveContextSelection(**defaults)

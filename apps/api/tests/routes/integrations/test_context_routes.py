@@ -1,0 +1,157 @@
+# apps/api/tests/routes/integrations/test_context_routes.py
+
+"""Active-context and context-group route contracts."""
+
+from uuid import uuid4
+
+from httpx2 import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.workspace import WorkspaceRole
+from tests.factories import (
+    build_conversation,
+    build_external_credential,
+    build_integration_connection,
+    build_integration_resource,
+)
+from tests.routes.integrations.conftest import create_identity
+
+
+async def _workspace_resource(db: AsyncSession, identity: dict[str, object]):
+    conversation = build_conversation(user=identity["user"], workspace=identity["workspace"])
+    credential = build_external_credential(principal_fingerprint=uuid4().hex.ljust(64, "0"))
+    db.add_all([conversation, credential])
+    await db.flush()
+    connection = build_integration_connection(
+        credential=credential,
+        user=identity["user"],
+        workspace=identity["workspace"],
+        status="active",
+    )
+    db.add(connection)
+    await db.flush()
+    resource = build_integration_resource(connection=connection, enabled=True)
+    db.add(resource)
+    await db.commit()
+    return conversation, resource
+
+
+async def test_context_routes_round_trip_selection_and_group(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    conversation, resource = await _workspace_resource(db_session, integration_identity)
+    created = await db_async_client.post(
+        "/api/v1/integrations/context-groups",
+        headers=integration_identity["headers"],
+        json={"name": "Client accounts", "resource_ids": [str(resource.id)]},
+    )
+    assert created.status_code == 201, created.text
+    group = created.json()
+    assert group["name"] == "Client accounts"
+    assert [member["id"] for member in group["members"]] == [str(resource.id)]
+
+    selected = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+        json={"type": "context_group", "context_group_id": group["id"]},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["selection"] == {
+        "type": "context_group",
+        "context_group_id": group["id"],
+    }
+    other_conversation = build_conversation(
+        user=integration_identity["user"],
+        workspace=integration_identity["workspace"],
+        title="Context B conversation",
+    )
+    db_session.add(other_conversation)
+    await db_session.commit()
+    other_selected = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{other_conversation.id}/context",
+        headers=integration_identity["headers"],
+        json={"type": "resource", "integration_resource_id": str(resource.id)},
+    )
+    assert other_selected.status_code == 200, other_selected.text
+    fetched = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+    )
+    assert fetched.status_code == 200
+    assert fetched.json() == selected.json()
+    other_fetched = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{other_conversation.id}/context",
+        headers=integration_identity["headers"],
+    )
+    assert other_fetched.status_code == 200
+    assert other_fetched.json() == other_selected.json()
+
+    cleared = await db_async_client.delete(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+    )
+    assert cleared.status_code == 204
+
+
+async def test_context_route_rbac_allows_reads_but_denies_writes(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    owner_conversation, resource = await _workspace_resource(db_session, integration_identity)
+    reader, workspace, _membership, headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.READ_ONLY,
+        workspace=integration_identity["workspace"],
+    )
+    hidden = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{owner_conversation.id}/context",
+        headers=headers,
+    )
+    assert hidden.status_code == 404
+    reader_conversation = build_conversation(user=reader, workspace=workspace)
+    db_session.add(reader_conversation)
+    await db_session.commit()
+    read = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{reader_conversation.id}/context",
+        headers=headers,
+    )
+    assert read.status_code == 200
+    denied = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{reader_conversation.id}/context",
+        headers=headers,
+        json={"type": "resource", "integration_resource_id": str(resource.id)},
+    )
+    assert denied.status_code == 403
+
+
+async def test_context_route_hides_cross_workspace_resource(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    foreign_user, foreign_workspace, _membership, _headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.OWNER,
+    )
+    foreign_identity = {"user": foreign_user, "workspace": foreign_workspace}
+    _foreign_conversation, foreign_resource = await _workspace_resource(
+        db_session, foreign_identity
+    )
+    conversation = build_conversation(
+        user=integration_identity["user"],
+        workspace=integration_identity["workspace"],
+    )
+    db_session.add(conversation)
+    await db_session.commit()
+    response = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+        json={
+            "type": "resource",
+            "integration_resource_id": str(foreign_resource.id),
+        },
+    )
+    assert response.status_code == 404, response.text

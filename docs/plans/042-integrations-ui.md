@@ -117,15 +117,16 @@
     name field + searchable, provider-grouped, checkbox multi-select of
     enabled resources. Group rows show member counts and per-provider
     chips.
-11. **The chat-header context picker writes the per-user-per-workspace
-    selection — there is NO per-conversation override** (040 decision
-    11 binds this plan). The picker is a compact dropdown in
+11. **The chat-header context picker writes the current conversation's
+    selection** (040 decision 11 binds this plan). Reopening a conversation
+    must restore its own selection; changing Context B must never mutate
+    Context A. The picker is a compact dropdown in
     `ConversationDetailHeader` (rendered at
     `conversation-route.tsx:156`): current selection name (or "No
     context"), groups then single resources, a "Clear" item, and a
     "Manage integrations" link. Changing it mid-conversation affects
-    the *next* run — the picker states that in a hint line, because
-    resolution happens once per run.
+    that conversation's *next* run — the picker states that in a hint line,
+    because resolution happens once per run.
 12. **One shared `ContextSelect` component**
     (`components/context-select.tsx`) backs both the chat-header picker
     and the schedule form, replacing 040 Step 9's minimal flat `Select`
@@ -283,8 +284,8 @@ Anchors verified 2026-07-10 (post-`edc3abc`).
 | List discovered resources | `GET /integrations/connections/{id}/resources` | 039 |
 | Enable/disable resources (replace-set) | `PUT /integrations/connections/{id}/resources/selection` | 039 |
 | Retry discovery | `POST /integrations/connections/{id}/discover` | 039 |
-| Get active context (selection + resolved summary) | `GET /integrations/context` | 040 |
-| Set / clear active context | `PUT /integrations/context` / `DELETE /integrations/context` | 040 |
+| Get active context (selection + resolved summary) | `GET /integrations/conversations/{conversation_id}/context` | 040 |
+| Set / clear active context | `PUT /integrations/conversations/{conversation_id}/context` / `DELETE /integrations/conversations/{conversation_id}/context` | 040 |
 | Context groups CRUD | `GET/POST /integrations/context-groups`, `PATCH/DELETE /integrations/context-groups/{id}` | 040 |
 
 ## Commands you will need
@@ -337,7 +338,8 @@ Anchors verified 2026-07-10 (post-`edc3abc`).
 
 - Any backend change. If a needed route is missing, that is a
   reconciliation finding (pre-flight/STOP), not a thing to add here.
-- Per-conversation context overrides (decision 11).
+- Workspace-global context state or implicit selection inheritance between
+  conversations (decision 11).
 - SSE protocol changes (`features/conversations/stream/` untouched —
   decision 8).
 - Secret display, download, or "reveal" affordances of any kind
@@ -395,9 +397,9 @@ this).
   items 6–7; then the plan-level Done criteria checklist.
 - **Review focus**: the conversations→integrations import staying
   inside the dependency-cruiser rules (restructure, never edit
-  feature-boundary rules), no per-conversation override surface
-  anywhere (040 decision 11), 040's minimal schedule select fully
-  replaced.
+  feature-boundary rules), query/mutation keys including `conversationId`
+  so Context A and Context B cannot share cache state (040 decision 11),
+  and 040's minimal schedule select fully replaced.
 
 ## Steps
 
@@ -582,9 +584,10 @@ inline error.
   Two trigger variants: `compact` (header) and form-field.
 - `conversation-context-picker.tsx` — mounts `ContextSelect compact`
   bound to `get-active-context` / `set-active-context` /
-  `clear-active-context`; shows an amber dot when the resolved summary
+  `clear-active-context` with the route's `conversationId`; every query and
+  mutation key is conversation-scoped. Shows an amber dot when the resolved summary
   reports unavailable entries; hint line "Applies to your next run in
-  this workspace" (decision 11). Mount it in
+  this conversation" (decision 11). Mount it in
   `conversation-detail-header.tsx` in the right-hand column above the
   "Last Updated" block (line 61); keep the header layout intact on
   mobile (it stacks via `md:flex-row`).
@@ -596,7 +599,9 @@ inline error.
   current value visible (decision 13).
 
 **Verify**: pick a group in the chat header →
-`PUT /integrations/context` fires → reopening shows it selected; the
+`PUT /integrations/conversations/{conversation_id}/context` fires → reopening
+that conversation shows it selected, while another conversation retains its
+own choice; the
 schedule form renders the same options; `pnpm arch` still clean (the
 conversations feature imports from `features/integrations` — follow how
 existing cross-feature imports are structured; restructure, never edit
@@ -635,9 +640,10 @@ completion report):
    read-only chip on a `read`-permission Airtable base; Ads MCC
    hierarchy indents; manager row not enableable.
 5. **Groups**: cross-provider group create/edit/delete; delete warning.
-6. **Context picker**: header picker sets/clears selection; unavailable
+6. **Context picker**: header picker sets/clears selection; Context A and
+   Context B retain different selections when navigating between them; unavailable
    indicator appears after revoking a connection used by the selection;
-   schedule form shows the same options; no per-conversation override
+   schedule form shows the same options; no workspace-global selection state
    exists anywhere.
 7. **Roles**: as a `member` — no workspace-scoped connect/api-key
    controls, but own-user Gmail connect works and groups are editable;
@@ -658,7 +664,9 @@ completion report):
 - [ ] Context picker present in the chat header and the schedule form,
       backed by one shared `ContextSelect`; 040's minimal schedule
       select is gone
-- [ ] No per-conversation override surface exists (040 decision 11)
+- [ ] Conversation A and Conversation B retain independent context selections;
+      query keys and mutations cannot leak one selection into the other
+      (040 decision 11)
 - [ ] `src/integrations/` contract + registry exist with the §5.5
       dep-cruiser rules; no per-provider custom tool rows shipped
 - [ ] `checkbox.tsx` + `switch.tsx` added as vendored shadcn output only
@@ -694,7 +702,7 @@ Stop and report back (do not improvise) if:
   `src/integrations` rules and knip entries are in scope; any OTHER
   rule edit (e.g. loosening feature-boundary rules) is this STOP.
 - You feel the need to add backend routes, a form library, optimistic
-  credential updates, or per-conversation context state — scope leak.
+  credential updates, or workspace-global context state — scope leak.
 
 ## Maintenance notes
 

@@ -119,6 +119,23 @@ validate connection ownership and availability before changing the enabled
 set, selection changes are audited and recompute connection status, and
 manual discovery is a deduplicated background job rather than request-path
 provider I/O.
+Plan 040 Slice A completed 2026-07-20: `core_0016` adds conversation-scoped
+active-context selections and workspace context groups, with atomic selection
+updates, member-authorized CRUD routes, lifecycle-safe soft deletion, and
+user-attributed audit records. Conversation scope preserves Context A when a
+user leaves it for a Context B conversation and later returns. Plan 040 remains
+open for runtime resolution (Slice B) and the schedule contract/minimal
+selector (Slice C).
+Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
+maintainer adoption of `docs/architecture/internal-applications.md`
+(decision D13, Gate G7): applications as versioned workspace content —
+contract + static bundle over Files — built locally with the builder's own
+coding tools, published through server-side validation gates, and run
+sandboxed inside the Praxis shell under contract-scoped tokens. 082 is the
+cheap catalogue-prerequisites slice that interleaves with Phase 4a; 083–088
+follow Phase 4a/4b product value and the artifacts serving substrate
+(050/051, which carries a D13 forward-compatibility amendment; 078 carries
+a coordinating amendment on the OpenAPI posture).
 
 ---
 
@@ -167,6 +184,7 @@ product interview on 2026-07-02.
 | D9 | OKF and Google Knowledge Catalog posture | **Own the KB; use OKF for compatibility.** Praxis owns storage, indexing, permissions, jobs, audit, retention, and agent behavior. Open Knowledge Format informs markdown/frontmatter structure, stable concept identifiers, and import/export. Google Knowledge Catalog may become an optional integration/source/sink later, not the runtime substrate. | 044–047 |
 | D11 | Fake integration provider | **Removed (2026-07-10).** The shipped provider set is exactly D4 (Gmail, Google Ads, Airtable): no fake provider package, manifest entry, or local-only settings gate ships. The plugin contract and loader are exercised by a suite-local test provider registered through the loader seam in test code only, with provider HTTP mocked at the transport layer; manual QA connects real dev credentials (Airtable's API key is the cheapest). The optional `oauth_operations` plugin seam (plan 080 decision 1) is dropped with its only consumer — the engine's generic manifest-driven OAuth flow is the only token path; revisit only if a real provider cannot use it. Supersedes 037's decision 7 and the fake slices of the 061/077/080 notes; 039 ships its discovery engine with no working shipped arm until 041. | 037–039, 079 |
 | D12 | Google integration OAuth isolation | **One Google Cloud project and OAuth client per service.** Gmail, Google Ads, and every future Google integration own separate client IDs/secrets and revocation boundaries; login OAuth is separate too. Multiple clients inside one project are insufficient because Google revocation invalidates the user's project-wide grants. Provider variables live beside service code in `apps/api/integrations/<key>/settings.py`, not on the global settings model; shared orchestration settings alone remain in `core/settings/integrations.py`. Reused non-empty client IDs fail at provider load. | 038/041 and every later Google provider |
+| D13 | Internal applications | **Adopted 2026-07-20 as workspace content, not deployments.** Applications are first-class workspace resources: a versioned machine-enforced contract + a static frontend bundle over `File`/`FileRevision`, served in a sandboxed frame (CSP `connect-src` = Praxis API origin only) inside the Praxis shell. Three-tier change model (application / building block / platform); builders never touch the repo. One scoped-token mechanism, two mint paths (short-lived frame tokens; revocable dev tokens) — no OIDC provider, PATs, service accounts, or machine principals. Build is local-first on the builder's own coding-tool subscription; Praxis carries no build-time model spend; production CORS/CSRF posture is never loosened (the kit's dev proxy is the sanctioned local path). Design note: `docs/architecture/internal-applications.md` (living document; deviations are recorded back into it). Registers Gate G7. | 082–088; amends 050/078 |
 | D10 | Integration provider packaging | **Self-contained, individually-enableable provider packages on both sides; the registry and dispatch choke point stay singular.** Backend: one package per provider under `apps/api/integrations/` exporting an `IntegrationProviderPlugin`, loaded only when named in `INTEGRATIONS_ENABLED_PROVIDERS`; per-provider pyproject extras for SDK deps; machine-enforced import laws. Frontend: per-provider lazy modules under `apps/web/src/integrations/` (one chunk each), default-first server-declared tool presentation, custom rows exceptional; no pnpm workspace (rejected with revisit trigger). Design note: `docs/architecture/integration-packaging.md` (plan 061, DONE 2026-07-07); binds 037/039/041/042 via amendments. Motivated by the donor system's everything-always interconnection failure and customers wanting disjoint provider subsets. | 037–042 and every later provider |
 
 Per-subsystem open decisions that do *not* change ordering (embedding
@@ -215,6 +233,15 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   mechanics; behavioral resistance rides 055's graded eval layer. Binds
   041/044/046/048/049/056/059 and every later content source (044 added
   2026-07-10 by plan 080 for the ingestion annotation channel).
+- **G7 (applications ride the platform, not beside it)**: no
+  application-facing capability ships except through the headless dispatch
+  entrypoint over the single choke point, under an app-principal envelope,
+  with the standard tool audit rows (083); and no application bundle is
+  served except from the sandboxed serving substrate with contract-scoped
+  token verification (084/085). Registered 2026-07-20 by D13; binds
+  083–088 and every later app-surface capability. Enforcement never
+  distributes: registry, dispatch, credential handling, approvals, audit,
+  and token minting stay singular.
 
 ## 4. The Roadmap
 
@@ -505,7 +532,7 @@ structure.
 | 037 | Core models (credentials/connections/resources/discovery_runs — **full multi-connection per D3**: no per-provider uniqueness, required connection labels, principal fingerprints for cross-connection dedup) + declarative provider manifest + credential service (encryption, locked proactive refresh, needs_reauth) + secret references per 029. **DONE 2026-07-10**; one provider allowlist, cloud secrets on GCP/Azure/AWS. (Donor C1.) |
 | 038 | OAuth flows (initiate/callback with PKCE S256 + signed single-value and server-side single-use state), provider-isolated OAuth settings, non-OAuth connect, test/revoke/refresh routes. **DONE 2026-07-10.** (Donor C2.) |
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
-| 040 | Active context: per-user-per-workspace selection, context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). (Donor C4.) |
+| 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **Slice A DONE 2026-07-20; Slices B–C remain.** (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. (Donor C6.) |
 | 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |
@@ -533,6 +560,33 @@ structure.
 |------|-------|
 | 050 | `artifacts` model over FileRevisions + `create_artifact`/`update_artifact` registry tools + serving route with the three-layer defense (opaque-origin sandbox, `ARTIFACT_ORIGIN`, strict CSP with `connect-src 'none'`). Local dev: srcdoc + sandbox; separate origin required only when share links ship. (Donor F1.) |
 | 051 | Chat artifact cards (sandboxed preview, version selector, diff/restore) + share links (≥128-bit tokens, version-pinned, expiry/revocation, audited, rate-limited per 029). (Donor F2.) |
+
+### Phase 7 — Internal Applications (added 2026-07-20; gates G3, G7; design note D13)
+
+Adopted 2026-07-20: `docs/architecture/internal-applications.md` is the
+binding architecture — downstream plans implement its slices and cite the
+section they implement; a plan that deviates records the deviation back
+into the note in the same PR. Ordering: 082 interleaves with Phase 4a
+(before 041 multiplies the catalog); 083–088 run after Phase 4a/4b product
+value (040–042) and after the artifacts serving substrate (050/051 — 050
+carries the D13 forward-compatibility amendment). Open decisions from the
+note's §11 are distributed into the plans as `[default — confirm at
+review]` markers or STOP conditions.
+
+| Plan | Scope | When |
+|------|-------|------|
+| 082 | Capability catalogue prerequisites: tool contract `version`, serialized input JSON schemas on the catalog, a real `is_tool_allowed` workspace grant store (default-allow + explicit disables), authenticated OpenAPI schema route (amends 078's posture). (Note §10 prerequisites.) | Interleave with Phase 4a, before 041 completes |
+| 083 | Headless dispatch entrypoint over the existing choke point, app-principal envelopes (user ∩ contract scopes; external writes `require_approval`), and the generic approval primitive (rows, not paused conversations) surfaced in the approvals UI. Gate G7 registers here. (Note §5.2–§5.3.) | First Phase 7 code slice |
+| 084 | Scoped application tokens: one verifier, two mint paths — short-lived signed frame tokens minted from the session; hashed, revocable, read-default dev tokens — with per-route scope enforcement. CORS/CSRF posture untouched. (Note §4.) | After 083 (prefer after 085) |
+| 085 | Application model + machine-enforced contract + immutable versioned bundles over Files + sandboxed serving on the 050 substrate with `connect-src` = API origin; publish/rollback/disable as audited row-state changes; publish-time scope-diff. (Note §2, §5.1, §7.) | After 050/051 |
+| 086 | App data collections: first `app`-schema tables (D5), schemaless JSONB v1 with quotas and live/dev namespaces, contract-declared, digest-audited, retention-swept. (Note §5.2.) | After 084/085 |
+| 087 | Application kit + publish gates: in-repo template (Vite + vendored UI baseline), token-server-side dev proxy, coding-agent instructions + machine-readable catalogue snapshot, typed client off 082's schema route, `push` CLI, and the server-side validation gate set with machine-readable failure reports. (Note §6.) | After 082/084/085 |
+| 088 | Applications catalogue + audience surface + frame host page + owner lifecycle/dev-token UI + generic approvals wiring, and the reference application built from the kit through the full loop — the phase's acceptance test. Reference-app choice is a maintainer STOP. (Note §10 slice 6.) | Last; closes Phase 7 |
+
+Explicit non-goals stand (note §9): no hosted backend code, no external
+identity, no externally-deployed consumers, no public exposure of
+applications, no prompt-generated integrations — new providers remain
+tier-2 human-owned packages under the D10 law.
 
 ### Lane H — Harness Hardening & Evals (added 2026-07-07; plans 053–060)
 
@@ -659,10 +713,21 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → {039–042 ∥ 043–047 ∥ 055} → 079 → 056 → 071 → 048 →
-069 → 049 → 057 → 070 → 050 → 051 → 072 → 059 → 060` — with 015, 052, 058,
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → {039–042 ∥ 043–047 ∥ 055} → 082 → 079 → 056 → 071 → 048 →
+069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 →
+072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,
 land it early).
+
+Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
+because the catalogue fields it adds (`version`, input schemas) should
+exist before 041's provider tools multiply the catalog, and its grant
+store is pure default-allow until used; 083–088 follow 051 because
+applications compose working integrations (product value lands in
+040–042) and 085 serves bundles on the artifact substrate; within the
+phase the order is fixed by hard dependencies (dispatch → tokens → model/
+serving → data → kit → catalogue/reference app), with 084/085 order
+swappable per 084's decision 6.
 
 Lane B placement rationale: each amendment lands immediately before the
 plan it binds — 073 before 053 (both done), 067/068/074/077/075 (done)

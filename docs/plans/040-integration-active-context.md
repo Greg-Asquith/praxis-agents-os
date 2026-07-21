@@ -32,6 +32,8 @@
   (hard, DONE — schedule routes/UI this plan extends)
 - **Category**: Phase 4a integrations (roadmap `000_MASTER_ROADMAP.md` §4
   row 040; decision D3 full multi-connection)
+- **Execution progress**: Slice A completed 2026-07-20 as `core_0016`;
+  Slices B–C remain. The plan stays TODO until Slice C passes its gate.
 - **Planned at**: commit `0cbbb39`, 2026-07-06. **Consolidated** at
   2026-07-10: the plan 080 amendment (runtime anchor refresh after
   053/054/066, prompt-block position, dedup correction) folded into the
@@ -40,8 +42,8 @@
 
 ## Decisions taken
 
-1. **Final table names**: `active_context_selections` (one row per user
-   per workspace), `integration_context_groups` (workspace-scoped,
+1. **Final table names**: `active_context_selections` (one row per
+   conversation), `integration_context_groups` (workspace-scoped,
    soft-deleted — `BaseModel`), and `integration_context_group_members`
    (plain join rows, hard-deleted with the group:
    `Base + UUIDMixin + CreatedAtMixin`, the `models/rate_limiting.py:16`
@@ -61,14 +63,14 @@
    once per run inside `prepare_runtime`
    (`services/agents/runtime/execute/setup.py:104`), after
    `load_actor_context` returns and before the agent builder runs and
-   `RuntimeDeps` is constructed (~142): `interactive` runs read the
-   caller's `active_context_selections` row; `scheduled` runs read
+   `RuntimeDeps` is constructed (~142): `interactive` runs read the root
+   conversation's `active_context_selections` row; `scheduled` runs read
    `AgentSchedule.active_context` (found via
    `AgentScheduleRun.agent_run_id`); `delegated` runs walk
    `AgentRun.parent_run_id` (`models/agent_run.py:45`) to the root run
    and use *its* source, so a scheduled parent's delegates operate on
-   the schedule's saved context, not the delegating user's live
-   selection.
+   the schedule's saved context while an interactive parent's delegates
+   retain that root conversation's context.
 4. **Resolution failure degrades, never crashes a run.** A dangling
    resource/group id, a deleted group, or an all-unavailable context
    resolves to an empty `ResolvedActiveContext` with `unavailable`
@@ -126,9 +128,13 @@
     the provider, and an empty compatible set raises `ModelRetry` (the
     tool was mounted, then the context changed between turns). Bounded
     concurrency is a recorded follow-up, not built now.
-11. **No per-conversation context override in v1.** Selection is
-    per-user-per-workspace plus per-schedule, exactly the roadmap scope.
-    042's chat-header picker writes the workspace-level selection.
+11. **Direct-chat context is conversation-scoped.** Maintainer amendment,
+    2026-07-20: each conversation owns its selection, so reopening an older
+    conversation restores the context used there instead of inheriting the
+    user's most recent workspace-wide choice. There is no workspace-global
+    active-context row. Scheduled runs continue to use the schedule's saved
+    `active_context`; 042's chat-header picker writes the current
+    conversation's selection.
 12. **040 ships the minimal schedule-form selector**, extending 022's UI
     with a flat resource/group `Select` fed by this plan's list routes.
     042 replaces it with the shared rich picker. Shipping schedule
@@ -278,10 +284,11 @@ present.
 
 ### Migrations
 
-- Core head at consolidation is `core_0013`
-  (`0013_add_integration_core_tables.py`); 038 adds `core_0014`
-  (`integration_oauth_states`). Number this plan's migration against the
-  real head at execution time.
+- Core head at consolidation was `core_0013`
+  (`0013_add_integration_core_tables.py`); 038 added `core_0014`
+  (`integration_oauth_states`) and the schedule-name migration later added
+  `core_0015`. The maintainer approved refreshing this anchor on 2026-07-20;
+  Slice A is `core_0016` with `down_revision = "core_0015"`.
 
 ## Commands you will need
 
@@ -340,7 +347,8 @@ present.
 - The rich connection/context pickers, provider cards, chat-header
   picker — 042. This plan's only UI is the minimal schedule-form
   selector (decision 12).
-- Per-conversation context overrides (decision 11).
+- Workspace-global active-context defaults or implicit cross-conversation
+  selection inheritance (decision 11).
 - `is_tool_allowed` behavior changes (041 uses that seam).
 - MCP, concurrency in fan-out, notification changes.
 
@@ -363,15 +371,22 @@ in Slice B — it is the only slice that touches the runtime turn path.
 
 ### Slice A — Context data layer (`API - Integration Context Selection & Groups`)
 
+**DONE 2026-07-20.** Added the three context tables on the core branch,
+atomic per-conversation selection, workspace context-group CRUD, member+
+mutation/read-only read routes, user-attributed audit events, and the focused
+service/route test suites. Migration downgrade/upgrade and drift checks passed;
+the broader integration regression suite remained green.
+
 - **Steps**: 1–3, plus Step 8's **context routes only** (`GET/PUT/DELETE
-  /integrations/context`, the four context-group routes) — models, core
+  /integrations/conversations/{conversation_id}/context`, the four
+  context-group routes) — models, core
   migration, selection/group service ops, route composition.
 - **Tests (from Step 10)**: `test_context_groups.py`,
   `test_selection_ops.py`, `test_context_routes.py`.
 - **Gate**: migration applies and downgrade round-trips; `uv run alembic
   check` clean; the listed suites green; ruff clean. No runtime file is
   touched in this slice.
-- **Review focus**: the XOR CHECK + `(user, workspace)` upsert race
+- **Review focus**: the XOR CHECK + per-conversation upsert race
   (unique-constraint retry, never a 500), cross-workspace ids resolving
   as 404 without leaking existence, the partial unique group-name index
   expression matching `__table_args__`.
@@ -438,13 +453,13 @@ Create `models/integration_context.py`:
 `__tablename__ = "active_context_selections"` (no soft delete —
 clearing deletes the row):
 
-- `user_id` UUID FK `users.id` `ondelete="CASCADE"`, not null
+- `conversation_id` UUID FK `conversations.id` `ondelete="CASCADE"`, not null
 - `workspace_id` UUID FK `workspaces.id` `ondelete="CASCADE"`, not null
 - `integration_resource_id` UUID FK `integration_resources.id`
   `ondelete="CASCADE"`, nullable
 - `context_group_id` UUID FK `integration_context_groups.id`
   `ondelete="CASCADE"`, nullable
-- UniqueConstraint `(user_id, workspace_id)`
+- UniqueConstraint `(conversation_id)`
 - CHECK `num_nonnulls(integration_resource_id, context_group_id) = 1`
   (name `active_context_selections_target_check`)
 
@@ -467,7 +482,7 @@ check` clean; downgrade/upgrade round-trips.
   `UnavailableContextEntry(display_name, provider_key, reason)` (reason
   ∈ `connection_needs_reauth | connection_revoked | connection_error |
   connection_inactive | resource_disabled | resource_removed |
-  dangling`); `ResolvedActiveContext(source: Literal["user_selection",
+  dangling`); `ResolvedActiveContext(source: Literal["conversation",
   "schedule"] | None, selection_kind, group_id, group_name,
   entries: tuple[ResolvedContextEntry, ...],
   unavailable: tuple[UnavailableContextEntry, ...])` with helpers
@@ -489,11 +504,12 @@ prints `resource`.
 
 ### Step 3: Selection + context-group service operations (one per file)
 
-- `get_active_context_selection.py` — load the caller's row (or None).
+- `get_active_context_selection.py` — load the visible conversation's row
+  (or None).
 - `set_active_context_selection.py` — validate the target exists in
   this workspace and is not deleted (resource: also its connection
   belongs to this workspace or to this user in this workspace; group:
-  workspace match), upsert the `(user, workspace)` row, audit, return
+  workspace match), atomically upsert the conversation row, audit, return
   the row. Raise `AppValidationError` for a dangling target,
   `NotFoundError` for cross-workspace ids (do not leak existence).
 - `clear_active_context_selection.py` — delete the row if present;
@@ -524,8 +540,8 @@ load-bearing):
 1. **Pick the source by principal** (decision 3). While
    `run.trigger == "delegated"` and `parent_run_id` is set, load the
    parent (bounded by `delegation_depth`) and take its trigger.
-   `interactive` → the root run's user's selection row for this
-   workspace; `scheduled` → the `AgentScheduleRun` with
+   `interactive` → the root run's conversation selection row;
+   `scheduled` → the `AgentScheduleRun` with
    `agent_run_id == root_run.id` → `schedule.active_context` parsed
    through `ActiveContextSelectionValue` (malformed JSON → treat as no
    selection, log warning). No selection → `EMPTY_ACTIVE_CONTEXT`.
@@ -677,11 +693,14 @@ entries or unavailable items exist, positioned before
 Routes (one operation per file in `routes/integrations/`, composed in
 038's package `__init__.py`; RBAC per decision 13):
 
-- `GET /integrations/context` (`require_read`) → the caller's selection
+- `GET /integrations/conversations/{conversation_id}/context`
+  (`require_read`) → that visible conversation's selection
   + a resolved summary (entries/unavailable) so pickers can render state
-- `PUT /integrations/context` (`require_editor`) — body
+- `PUT /integrations/conversations/{conversation_id}/context`
+  (`require_editor`) — body
   `ActiveContextSelectionValue`
-- `DELETE /integrations/context` (`require_editor`) → 204
+- `DELETE /integrations/conversations/{conversation_id}/context`
+  (`require_editor`) → 204
 - `GET /integrations/context-groups` (`require_read`)
 - `POST /integrations/context-groups` (`require_editor`) — `{name,
   resource_ids}`
@@ -757,8 +776,9 @@ group helpers):
   tools unaffected by context.
 - `test_context_groups.py` + `test_selection_ops.py`: CRUD; duplicate
   name in workspace → conflict; cross-workspace resource in group →
-  validation error; selection upsert (set twice keeps one row); clear
-  deletes; audit rows written.
+  validation error; selection upsert (set twice keeps one row); two
+  conversations retain different selections; clear deletes; audit rows
+  written.
 - `test_prompt_block.py`: empty context renders `""`; entries render
   the law + per-entry lines + read-only/degraded markers; unavailable
   section renders; oversized listing truncates at the 2000 budget with
@@ -779,8 +799,8 @@ Covered by Step 10 (~30-35 tests). Pinned invariants: **fan-out partial
 failure isolation**, **compatibility filtering hides incompatible tools
 from the model but never from the catalog**, **context never appears in
 tool schemas (import-time law)**, **multi-connection resolution (D3)**,
-**scheduled and delegated principals resolve from the schedule, not the
-user's live selection**, **resolution failure degrades instead of
+**scheduled and delegated principals resolve from the schedule, while direct
+runs resolve from their root conversation**, **resolution failure degrades instead of
 failing the run**, and **the schedule route contract change is
 additive** (all pre-existing schedule tests green with one deliberate
 flip at line 146).
@@ -803,7 +823,8 @@ flip at line 146).
 - [ ] `docs/architecture/governance.md` §1 row "Select integration
       resources / edit context groups" completed to
       `[implemented: plan 040]` (039 annotated the selection half)
-- [ ] No per-conversation override surface exists anywhere (decision 11)
+- [ ] Reopening a conversation restores its own selection; no workspace-global
+      active-context state exists (decision 11)
 - [ ] `git status` clean outside the in-scope list;
       `docs/plans/000_README.md` row updated
 
@@ -841,8 +862,8 @@ Stop and report back (do not improvise) if:
   checklist: no tool without a binding, no binding without manifest
   backing, no denied parameter names.
 - **042 consumes**: the context routes (Step 8) and must honor decision
-  11 (no per-conversation override) — the chat-header picker writes the
-  per-user-per-workspace selection and invalidates the GET.
+  11 — the chat-header picker writes and invalidates the current
+  conversation's selection without changing any other conversation.
 - **Dedup rule** (decision 5, newest-active-connection wins) is a
   policy default — if agencies need explicit per-resource connection
   pinning, the seam is Step 4 point 4; record any change in

@@ -50,8 +50,9 @@ it as pending instead of implying it works.
   the table in `docs/plans/000_README.md` tracks per-plan status.
 - The next major verticals are integration resource discovery/context and the
   first providers (Gmail, Google Ads, Airtable), the knowledge base, agent
-  memory, artifacts, harness hardening with behavior evals, and public launch
-  readiness.
+  memory, artifacts, harness hardening with behavior evals, public launch
+  readiness, and — after those — internal applications (plans 082–088,
+  architecture in `docs/architecture/internal-applications.md`).
 - Before executing a numbered plan, read it fully, honor its STOP conditions,
   and update its status row when done. Plans record decisions taken and
   findings rejected — check both before re-proposing something the roadmap

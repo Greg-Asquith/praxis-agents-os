@@ -62,7 +62,41 @@ in production.
   threat-model §2(g)/(h) channels already cover the content classes). Becomes
   a numbered plan when picked up.
 
-## 5. Workspace-level LLM token budgets
+## 5. Communication-thread ingestion (Slack, Teams, email)
+
+- **Source**: operator decision, 2026-07-21, after reviewing the Cerebras
+  knowledge-base write-up (`docs/legacy/cerebras.htm`;
+  https://www.cerebras.ai/blog/how-we-built-our-knowledge-base). Extends
+  item 4's integration-source seam from documents (Drive files, Gmail
+  attachments) to conversational sources — without these the KB permanently
+  misses the context that lives in chat and email threads.
+- **Where**: builds on 040/041 (connections, resource selection) feeding the
+  044 pipeline as `integration`-source documents; new provider adapters emit
+  rows in the common document shape and never touch the retrieval layer.
+- **What**: per-thread ingestion following the Cerebras pattern — never embed
+  raw transcripts; an LLM distills each thread into a normalized document
+  (question, summary, resolution, systems/refs — riding the 044
+  utility-model/annotation machinery, structured fields in `meta`), with
+  optional burst extraction (high-signal individual messages: rare tokens,
+  length, reactions) as separate chunks. The recency signal (in the initial
+  engine per the plan 044/045 operator amendments of 2026-07-21) is
+  load-bearing for this content class — producers must stamp provider-side
+  timestamps into `kb_documents.source_updated_at`.
+- **Permissions posture (binding)**: workspace-shared ingestion is allowed
+  only from sources whose audience is provably workspace-wide (public
+  channels selected by an admin/editor). Content reached through a
+  user-scoped token (DMs, private channels, personal mailboxes) maps to
+  `is_private=True` + `created_by_user_id` = the connection owner, so plan
+  045's visibility predicate scopes it automatically. Never mirror provider
+  ACLs into workspace sharing — if the audience cannot be established as
+  workspace-wide, the content stays private or is not ingested. Revoking a
+  connection must have a defined fate for its synced documents (delete or
+  quarantine, decided in the plan). Threat-model §2(g)/(h) channels cover the
+  content class; the 046 framing layer applies unchanged.
+- **When**: after 043–047 and the first 041 providers land. Becomes a
+  numbered plan when picked up.
+
+## 6. Workspace-level LLM token budgets
 
 - **Source**: 2026-07-07 harness-engineering review (roadmap §4 Lane H notes);
   consolidated here by plan 080.

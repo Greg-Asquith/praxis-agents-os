@@ -43,6 +43,8 @@ class AuditResourceType(StrEnum):
     INTEGRATION_CONNECTION = "integration_connection"
     INTEGRATION_CREDENTIAL = "integration_credential"
     INTEGRATION_RESOURCE = "integration_resource"
+    INTEGRATION_CONTEXT_GROUP = "integration_context_group"
+    ACTIVE_CONTEXT_SELECTION = "active_context_selection"
     SECRET_REFERENCE = "secret_reference"
 
 

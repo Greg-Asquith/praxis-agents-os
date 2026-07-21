@@ -438,6 +438,15 @@ periodic permission re-discovery. Slice B added the resource list and bulk
 selection services, member/owner authorization, selection-diff audit records,
 status recomputation, and the deduplicated manual-discovery route.
 
+Plan 040 Slice A completed 2026-07-20 as the context data-layer slice:
+`core_0016` adds conversation-scoped active selections and reusable workspace
+context groups; reopening a conversation restores its own context instead of
+inheriting the user's latest choice elsewhere. Atomic selection updates, group
+CRUD, role-gated routes, and user-attributed audit events are covered by the
+focused database-backed suites. Per the
+execution-slice contract, plan 040 remains TODO and stays in `docs/plans/`
+until runtime Slice B and schedule/UI Slice C are complete.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and
@@ -449,6 +458,25 @@ for truthful file-read behavior. It completed 2026-07-17: images now use
 native multimodal tool returns across all supported providers, extracted
 documents remain content-first, SSE stays metadata-only, and explicit URL
 results retain the file snapshot needed by the existing thumbnail path.
+
+Plans 082–088 (Phase 7, internal applications) were written 2026-07-20 at
+`1bc7c03` from the maintainer adoption of
+`docs/architecture/internal-applications.md` (roadmap decision D13,
+Gate G7): applications become versioned workspace content — a
+machine-enforced contract plus a static bundle over Files — built locally
+with the builder's own coding tools, pushed through server-side validation
+gates, and run in a sandboxed frame under contract-scoped frame/dev
+tokens, with every capability call going through the single dispatch choke
+point. 082 (catalogue prerequisites: tool `version`, input schemas, a real
+`is_tool_allowed` grant store, the authenticated schema route) interleaves
+with Phase 4a and should land before 041 completes; 083–088 follow Phase
+4a/4b product value and the artifacts serving substrate. The same pass
+appended coordinating amendment blocks to 050 (parameterized
+`connect-src`, credential-agnostic renderer, preserved app-frame
+scaffolding) and 078 (authenticated schema route narrows, not reverses,
+the OpenAPI posture). Plans 083–088 were written ahead of their substrate:
+each carries a re-anchor pre-flight and STOP conditions, and the design
+note wins on intent.
 
 ## Execution Order & Status
 
@@ -540,6 +568,13 @@ results retain the file snapshot needed by the existing thumbnail path.
 | 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO (plan doc written by the Phase 4a executor once 041 lands) |
 | 080 | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h) | P1 | S-M | binds before Phase 4a/4b execute | DONE |
 | 081 | Make agent file inspection content-first and truthful across images and documents | P1 | M | 034, 036 (before remaining Phase 4 work) | DONE |
+| 082 | Capability catalogue prerequisites — tool versioning, input schemas, workspace tool grants, authenticated schema route | P1 | S-M | 025, 026 (interleave with Phase 4a; before 041 completes) | TODO |
+| 083 | Headless dispatch, app-principal envelopes, and the generic approval primitive (Gate G7) | P1 | L | 026, 054, 082; after 040–042 | TODO |
+| 084 | Scoped application tokens — frame and development mint paths | P1 | M-L | 083 (prefer after 085; see its decision 6) | TODO |
+| 085 | Application model, contract, versioned bundles, and sandboxed serving | P1 | L | 031/032, 050 (+D13 amendment), 083, 084 | TODO |
+| 086 | App data collections on the `app` schema | P1 | M | 084, 085 | TODO |
+| 087 | Application kit, dev harness, and publish validation gates | P1 | L | 082, 084, 085 (soft: 086, 078) | TODO |
+| 088 | Applications catalogue, audience surface, and the reference application | P1 | L | 083–087 (reference-app choice is a maintainer STOP) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
