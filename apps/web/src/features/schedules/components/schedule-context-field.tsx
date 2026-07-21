@@ -90,12 +90,12 @@ export function ScheduleContextField({
               {enabledResources.map((resource) => (
                 <SelectItem
                   key={resource.id}
-                  label={`${resource.display_name} — ${resource.connection_label}`}
+                  label={`${resource.display_name} — ${resource.connection_label ?? "Connection"}`}
                   value={resourceSelectionKey(resource.id)}
                 >
                   <span className="min-w-0 truncate">{resource.display_name}</span>
                   <span className="text-muted-foreground truncate">
-                    {resource.connection_label}
+                    {resource.connection_label ?? "Connection"}
                   </span>
                 </SelectItem>
               ))}

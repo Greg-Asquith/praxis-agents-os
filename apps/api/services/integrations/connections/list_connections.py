@@ -9,7 +9,10 @@ from models.integrations import ExternalCredential, IntegrationConnection
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.integrations.connections.schemas import ConnectionListResponse
-from services.integrations.connections.utils import build_connection_read
+from services.integrations.connections.utils import (
+    build_connection_read,
+    latest_discovery_runs_for_connections,
+)
 from services.workspaces.utils import MANAGER_ROLES
 
 
@@ -41,12 +44,16 @@ async def list_connections(
         )
     ).all()
     include_credential = membership.role in MANAGER_ROLES
+    latest_discovery_runs = await latest_discovery_runs_for_connections(
+        db, [connection.id for connection, _credential in rows]
+    )
     return ConnectionListResponse(
         items=[
             build_connection_read(
                 connection,
                 credential,
                 include_credential=include_credential,
+                latest_discovery_run=latest_discovery_runs.get(connection.id),
             )
             for connection, credential in rows
         ],

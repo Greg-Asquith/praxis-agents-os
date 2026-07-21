@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/components/tool-ui-icon.tsx
 
+import { createElement } from "react"
 import {
   BookOpenIcon,
   BotIcon,
@@ -15,6 +16,8 @@ import {
   WrenchIcon,
   type LucideIcon,
 } from "lucide-react"
+
+import { integrationIcon } from "@/integrations/registry"
 
 const TOOL_UI_ICONS: Record<string, LucideIcon> = {
   book: BookOpenIcon,
@@ -35,9 +38,9 @@ export function ToolUiIcon({ token }: { token: string | null }) {
   if (!token || token === "tool") {
     return null
   }
-  const Icon = TOOL_UI_ICONS[token]
+  const Icon = integrationIcon(token) ?? TOOL_UI_ICONS[token]
   if (!Icon) {
     return null
   }
-  return <Icon className="text-muted-foreground size-3.5 shrink-0" />
+  return createElement(Icon, { className: "text-muted-foreground size-3.5 shrink-0" })
 }

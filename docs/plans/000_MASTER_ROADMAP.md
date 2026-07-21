@@ -146,6 +146,15 @@ creates the shared untrusted-content carrier and marker vocabulary, dispatch
 framing, standing data-not-instructions prompt block, and hostile Gmail fixture
 before exposing Gmail read tools. The plan remains TODO and retains its
 three-provider slice boundaries.
+Plan 042 Slice A was implemented 2026-07-21: `/integrations` now exposes the
+server manifest as provider cards with multi-connection labels, OAuth/API-key
+connect flows, the eight-state lifecycle, connection actions, and bulk resource
+selection. The frontend integration-module registry emits separate lazy chunks
+for Gmail, Google Ads, and Airtable while default server-declared tool rows stay
+authoritative. Follow-up resource-lifecycle review fixes are included;
+`pnpm check` passed (45 files, 201 tests). Live provider QA waits
+for 041's operable provider packages; Slice B still owns context groups and the
+shared chat/schedule context picker, so 042 remains in progress.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -554,7 +563,7 @@ structure.
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
 | 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **DONE 2026-07-21.** (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
-| 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. (Donor C6.) |
+| 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker in chat header. **IN PROGRESS 2026-07-21:** Slice A implementation and static gate complete; live provider QA + Slice B pending. (Donor C6.) |
 | 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |
 
 ### Phase 4b — Knowledge Base (donor Phase D; gates G3, G4; parallel with 4a)

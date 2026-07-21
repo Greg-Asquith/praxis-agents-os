@@ -5,6 +5,7 @@ import {
   CalendarClockIcon,
   FilesIcon,
   LayoutDashboardIcon,
+  PlugIcon,
   type LucideIcon,
   SparklesIcon,
 } from "lucide-react"
@@ -54,6 +55,12 @@ const mainNavigation: NavigationItem[] = [
     label: "Schedules",
     to: "/schedules",
     icon: CalendarClockIcon,
+    disabled: false,
+  },
+  {
+    label: "Integrations",
+    to: "/integrations",
+    icon: PlugIcon,
     disabled: false,
   },
 ] as const

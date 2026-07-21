@@ -44,6 +44,40 @@ module.exports = {
       from: { path: "^src/routes/" },
       to: { path: "^src/app/" },
     },
+    {
+      name: "integration-modules-use-published-seams",
+      severity: "error",
+      comment: "Integration UI modules stay isolated from application feature internals.",
+      from: { path: "^src/integrations/(?!contract\\.ts$)" },
+      to: {
+        path: "^src/",
+        pathNot: "^src/(components/ui/|lib/|integrations/)",
+      },
+    },
+    {
+      name: "integration-modules-enter-through-registry",
+      severity: "error",
+      comment: "Application code reaches provider UI only through its public registry or contract.",
+      from: { path: "^src/(features|routes|app)/" },
+      to: {
+        path: "^src/integrations/",
+        pathNot: "^src/integrations/(registry|contract)\\.ts$",
+      },
+    },
+    {
+      name: "integration-providers-do-not-import-siblings",
+      severity: "error",
+      comment: "A provider UI package must not depend on another provider package.",
+      from: { path: "^src/integrations/([^/]+)/" },
+      to: { path: "^src/integrations/(?!$1(?:/|$))[^/]+/" },
+    },
+    {
+      name: "integration-providers-do-not-import-registry",
+      severity: "error",
+      comment: "Provider UI packages depend on the contract, never the shared loader registry.",
+      from: { path: "^src/integrations/[^/]+/" },
+      to: { path: "^src/integrations/registry\\.ts$" },
+    },
   ],
   options: {
     doNotFollow: {

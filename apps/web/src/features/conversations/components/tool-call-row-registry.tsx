@@ -1,8 +1,5 @@
 // apps/web/src/features/conversations/components/tool-call-row-registry.tsx
 
-import type { ReactNode } from "react"
-
-import type { ToolApprovalDecisionControls } from "@/features/conversations/components/approval-decision-block"
 import {
   DelegateAgentListRow,
   DelegationToolRow,
@@ -35,6 +32,8 @@ import {
 } from "@/features/conversations/skill-activation"
 import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skill-document-read"
 import { isTodoToolActivity, todoItemsFromActivity } from "@/features/conversations/todo-tools"
+import { integrationToolRowPresenters } from "@/integrations/registry"
+import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 
 // Tool rows resolve in three layers: a custom presenter registered here wins,
 // otherwise the default row renders from the tool's server-declared presentation
@@ -42,20 +41,6 @@ import { isTodoToolActivity, todoItemsFromActivity } from "@/features/conversati
 // Register a presenter only when a tool needs richer UI than the declarative
 // config can express; everything else should be configured on its backend
 // runtime_tool definition.
-
-type ToolRowPresenterProps = {
-  activity: ToolActivity
-  approvalDecision?: ToolApprovalDecisionControls
-  compact: boolean
-  defaultOpen: boolean
-  live: boolean
-}
-
-type ToolRowPresenter = {
-  key: string
-  matches: (activity: ToolActivity) => boolean
-  render: (props: ToolRowPresenterProps) => ReactNode
-}
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   {
@@ -109,7 +94,10 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
 ]
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
-  const presenter = TOOL_ROW_PRESENTERS.find((item) => item.matches(props.activity))
+  const presenter = [
+    ...TOOL_ROW_PRESENTERS,
+    ...integrationToolRowPresenters(props.providerKey),
+  ].find((item) => item.matches(props.activity))
   return presenter ? presenter.render(props) : null
 }
 

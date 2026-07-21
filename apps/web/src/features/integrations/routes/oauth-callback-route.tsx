@@ -21,11 +21,11 @@ export function IntegrationOAuthCallbackRoute() {
           </Alert>
           <Button
             onClick={() => {
-              void navigate({ to: "/", replace: true })
+              void navigate({ to: "/integrations", replace: true })
             }}
             variant="outline"
           >
-            Back to Home
+            Back to Integrations
           </Button>
         </>
       ) : null}

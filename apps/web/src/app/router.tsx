@@ -21,8 +21,11 @@ import { conversationActiveRunQueryOptions } from "@/features/conversations/api/
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
+import { validateIntegrationsSearch } from "@/features/integrations/search"
 import { contextGroupsQueryOptions } from "@/features/integrations/api/list-context-groups"
 import { integrationResourcesQueryOptions } from "@/features/integrations/api/list-integration-resources"
+import { integrationConnectionsQueryOptions } from "@/features/integrations/api/list-connections"
+import { integrationProvidersQueryOptions } from "@/features/integrations/api/list-providers"
 import { validateFilesSearch } from "@/features/files/search"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
@@ -258,6 +261,22 @@ const schedulesRoute = createRoute({
   ),
 })
 
+const integrationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/integrations",
+  validateSearch: validateIntegrationsSearch,
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(integrationProvidersQueryOptions()),
+      context.queryClient.ensureQueryData(integrationConnectionsQueryOptions()),
+    ])
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/integrations/routes/integrations-route"),
+    "IntegrationsRoute"
+  ),
+})
+
 const newScheduleRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules/new",
@@ -354,6 +373,7 @@ const routeTree = rootRoute.addChildren([
     skillDetailRoute,
     filesRoute,
     schedulesRoute,
+    integrationsRoute,
     newScheduleRoute,
     scheduleDetailRoute,
     workspacesRoute,

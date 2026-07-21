@@ -47,6 +47,15 @@
   080 (endpoint spellings, Vitest, query-key factory, verified drift)
   folded into the body; anchors re-verified against the tree
   (post-`edc3abc`).
+- **Execution progress (2026-07-21)**: Slice A implementation is complete and
+  `pnpm check` is green (45 test files, 201 tests). The 038/039 endpoint
+  pre-flight matched the landed routes and eight-state machine. Live provider
+  QA is deferred until 041 makes the shipped provider packages operable;
+  Slice B remains TODO. The plan therefore remains in progress and stays in
+  `docs/plans/`. Follow-up review fixes make removed resources safe in the
+  replace-set, refresh resources after asynchronous discovery, expose the
+  latest discovery-run summary, keep schedule resource caches coherent, and
+  make revoked connection resources read-only.
 
 ## Decisions taken
 
@@ -273,7 +282,7 @@ Anchors verified 2026-07-10 (post-`edc3abc`).
 | Operation | Expected route (under `/api/v1`) | Owner plan |
 |---|---|---|
 | Provider catalog (loaded manifests: key, display name, auth modes, owner scope, resource types, `configured`, form help) | `GET /integrations/providers` | 038 |
-| List connections (both scopes, with status/label/provider/owner) | `GET /integrations/connections` | 038 |
+| List connections (both scopes, with status/label/provider/owner and latest discovery-run summary) | `GET /integrations/connections` | 038 |
 | Connection detail (+ credential metadata for admin+, duplicate warnings) | `GET /integrations/connections/{id}` | 038 |
 | OAuth start (new connection or re-auth via `connection_id`) | `POST /integrations/connections/oauth/start` → `{authorization_url, ...}` | 038 |
 | API-key connect (label + secret value, write-only) | `POST /integrations/connections/api-key` | 038 |

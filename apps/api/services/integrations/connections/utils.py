@@ -4,17 +4,18 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.integration import IntegrationAuthError, IntegrationNotFoundError
-from models.integrations import ExternalCredential, IntegrationConnection
+from models.integrations import ExternalCredential, IntegrationConnection, IntegrationDiscoveryRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.integrations.connections.schemas import (
     ConnectionRead,
     CredentialMetadataRead,
+    DiscoveryRunRead,
 )
 from services.integrations.credentials import find_duplicate_principals
 from services.integrations.oauth import refresh_authorization_token
@@ -86,6 +87,7 @@ async def connection_to_read(
     # the async context before constructing the synchronous response model.
     await db.refresh(connection)
     credential = await db.get(ExternalCredential, connection.credential_id)
+    latest_discovery_runs = await latest_discovery_runs_for_connections(db, [connection.id])
     duplicates: list[UUID] = []
     if credential is not None and include_duplicates and credential.revoked_at is None:
         duplicates = await find_duplicate_principals(
@@ -101,7 +103,40 @@ async def connection_to_read(
         credential,
         include_credential=include_credential,
         duplicates=duplicates,
+        latest_discovery_run=latest_discovery_runs.get(connection.id),
     )
+
+
+async def latest_discovery_runs_for_connections(
+    db: AsyncSession,
+    connection_ids: list[UUID],
+) -> dict[UUID, IntegrationDiscoveryRun]:
+    if not connection_ids:
+        return {}
+    ranked_runs = (
+        select(
+            IntegrationDiscoveryRun.id.label("run_id"),
+            func.row_number()
+            .over(
+                partition_by=IntegrationDiscoveryRun.connection_id,
+                order_by=(
+                    IntegrationDiscoveryRun.started_at.desc(),
+                    IntegrationDiscoveryRun.id.desc(),
+                ),
+            )
+            .label("position"),
+        )
+        .where(IntegrationDiscoveryRun.connection_id.in_(connection_ids))
+        .subquery()
+    )
+    runs = (
+        await db.scalars(
+            select(IntegrationDiscoveryRun)
+            .join(ranked_runs, ranked_runs.c.run_id == IntegrationDiscoveryRun.id)
+            .where(ranked_runs.c.position == 1)
+        )
+    ).all()
+    return {run.connection_id: run for run in runs}
 
 
 def build_connection_read(
@@ -110,6 +145,7 @@ def build_connection_read(
     *,
     include_credential: bool,
     duplicates: list[UUID] | None = None,
+    latest_discovery_run: IntegrationDiscoveryRun | None = None,
 ) -> ConnectionRead:
     metadata = None
     if credential is not None and include_credential:
@@ -143,4 +179,15 @@ def build_connection_read(
         updated_at=connection.updated_at,
         duplicate_of_connection_ids=duplicates or [],
         credential=metadata,
+        latest_discovery_run=(
+            DiscoveryRunRead(
+                status=latest_discovery_run.status,
+                resources_found=latest_discovery_run.resources_found,
+                error_code=latest_discovery_run.error_code,
+                started_at=latest_discovery_run.started_at,
+                finished_at=latest_discovery_run.finished_at,
+            )
+            if latest_discovery_run is not None
+            else None
+        ),
     )

@@ -2,7 +2,7 @@
 
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
-import { integrationContextQueryKeys } from "@/features/integrations/api/list-context-groups"
+import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
 import type { ConnectionListResponse, IntegrationResource } from "@/features/integrations/types"
 import { apiRequest } from "@/lib/api/client"
 
@@ -33,7 +33,7 @@ async function listIntegrationResources() {
 
 export function integrationResourcesQueryOptions() {
   return queryOptions({
-    queryKey: integrationContextQueryKeys.list({ kind: "resources" }),
+    queryKey: integrationsQueryKeys.enabledResources(),
     queryFn: listIntegrationResources,
     staleTime: 30_000,
   })

@@ -14,7 +14,13 @@ import { titleFromSegment } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type BreadcrumbRoute =
-  "/" | "/agents" | "/conversations" | "/schedules" | "/workspaces" | "/workspace-settings"
+  | "/"
+  | "/agents"
+  | "/conversations"
+  | "/integrations"
+  | "/schedules"
+  | "/workspaces"
+  | "/workspace-settings"
 
 type BreadcrumbItem = {
   key: string
@@ -161,6 +167,10 @@ function getBreadcrumbs({
           { key: "schedules-detail", label: scheduleName ?? "Schedule" },
         ]
       : [{ key: "schedules", label: "Schedules" }]
+  }
+
+  if (section === "integrations") {
+    return [{ key: "integrations", label: "Integrations" }]
   }
 
   if (section === "workspaces") {

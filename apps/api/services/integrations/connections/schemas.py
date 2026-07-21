@@ -80,6 +80,14 @@ class CredentialMetadataRead(BaseModel):
     last_refresh_error_code: str | None
 
 
+class DiscoveryRunRead(BaseModel):
+    status: Literal["running", "succeeded", "failed"]
+    resources_found: int
+    error_code: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
 class ConnectionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -96,6 +104,7 @@ class ConnectionRead(BaseModel):
     updated_at: datetime
     duplicate_of_connection_ids: list[UUID] = Field(default_factory=list)
     credential: CredentialMetadataRead | None = None
+    latest_discovery_run: DiscoveryRunRead | None = None
 
 
 class OAuthCallbackResponse(BaseModel):

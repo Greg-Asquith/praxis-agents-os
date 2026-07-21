@@ -33,6 +33,7 @@ import {
 } from "@/features/conversations/tool-ui"
 import type { ToolUi } from "@/features/tools/types"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
+import { useIntegrationUiModule } from "@/integrations/registry"
 import { normalizeOptionalText } from "@/lib/format"
 
 type ToolCallRowProps = {
@@ -50,6 +51,8 @@ export function ToolCallRow({
 }: ToolCallRowProps) {
   const presentationFor = useToolPresentations()
   const approvalDecision = use(ApprovalDecisionContext)(activity) ?? undefined
+  const entry = presentationFor(activity.name)
+  useIntegrationUiModule(entry?.provider ?? null)
   const shouldOpen =
     defaultOpen || approvalDecision !== undefined || (live && activity.status === "failed")
   const customRow = renderCustomToolCallRow({
@@ -58,12 +61,12 @@ export function ToolCallRow({
     compact,
     defaultOpen: shouldOpen,
     live,
+    providerKey: entry?.provider ?? null,
   })
   if (customRow) {
     return customRow
   }
 
-  const entry = presentationFor(activity.name)
   const ui = entry?.ui ?? null
   const title = entry?.label ?? activity.name
   const supportLabel = entry ? null : supportIdentifier(activity.name)

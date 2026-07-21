@@ -17,6 +17,7 @@ describe("navigationItemsForRole", () => {
         { label: "Skills", to: "/skills" },
         { label: "Files", to: "/files" },
         { label: "Schedules", to: "/schedules" },
+        { label: "Integrations", to: "/integrations" },
       ])
     }
   )

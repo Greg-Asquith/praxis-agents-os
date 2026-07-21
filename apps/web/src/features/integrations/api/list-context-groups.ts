@@ -2,11 +2,9 @@
 
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
+import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
 import type { ContextGroupListResponse } from "@/features/integrations/types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
 import { apiRequest } from "@/lib/api/client"
-
-export const integrationContextQueryKeys = createWorkspaceScopedQueryKeys("integration-context")
 
 async function listContextGroups() {
   return apiRequest<ContextGroupListResponse>("/integrations/context-groups")
@@ -14,7 +12,7 @@ async function listContextGroups() {
 
 export function contextGroupsQueryOptions() {
   return queryOptions({
-    queryKey: integrationContextQueryKeys.list({ kind: "groups" }),
+    queryKey: integrationsQueryKeys.contextGroups(),
     queryFn: listContextGroups,
     staleTime: 30_000,
   })

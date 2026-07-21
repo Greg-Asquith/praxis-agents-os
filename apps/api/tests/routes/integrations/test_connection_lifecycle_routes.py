@@ -1,5 +1,6 @@
 """Connection read, rename, and revoke lifecycle tests."""
 
+from datetime import timedelta
 from importlib import import_module
 
 import pytest
@@ -12,6 +13,7 @@ from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
 from services.integrations.credentials import store_oauth_credential
 from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
+from tests.factories import build_integration_discovery_run
 
 pytestmark = pytest.mark.asyncio
 
@@ -101,6 +103,39 @@ async def test_read_only_connection_list_omits_credential_values(
     body = response.text
     assert "access-value" not in body
     assert "refresh-value" not in body
+
+
+async def test_connection_list_includes_latest_discovery_run(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    earlier_run = build_integration_discovery_run(
+        connection=connection,
+        resources_found=1,
+    )
+    latest_run = build_integration_discovery_run(
+        connection=connection,
+        resources_found=3,
+        started_at=earlier_run.started_at + timedelta(seconds=1),
+    )
+    expected_started_at = latest_run.started_at.isoformat().replace("+00:00", "Z")
+    expected_finished_at = latest_run.finished_at.isoformat().replace("+00:00", "Z")
+    db_session.add_all([earlier_run, latest_run])
+    await db_session.commit()
+    response = await db_async_client.get(
+        "/api/v1/integrations/connections",
+        headers=integration_identity["headers"],
+    )
+    assert response.status_code == 200
+    assert response.json()["items"][0]["latest_discovery_run"] == {
+        "status": "succeeded",
+        "resources_found": 3,
+        "error_code": None,
+        "started_at": expected_started_at,
+        "finished_at": expected_finished_at,
+    }
 
 
 async def test_refresh_and_test_connection_happy_paths(

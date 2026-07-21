@@ -431,6 +431,23 @@ the next starts, and a plan's status row flips to DONE only when its
 final slice lands. Plans 043, 047, 055, and 056 were assessed in the same
 pass and left single-slice.
 
+Plan 042 Slice A was implemented 2026-07-21 as the provider, connection,
+and resource-selection UI slice. The web app now has a lazy `/integrations`
+route and primary-nav entry, manifest-driven provider cards, multiple labeled
+connections per provider, OAuth and write-only API-key connect flows, the full
+eight-state connection treatment with polling and lifecycle actions, bulk
+resource selection, and the frontend provider-module contract/registry with
+separate lazy Gmail, Google Ads, and Airtable chunks. Interactive checkbox
+controls now consistently use the shared shadcn/Base UI primitive, including
+the existing Schedule review options. The landed 038/039 route and field
+contracts were reconciled exactly; follow-up review fixes hardened
+removed-resource selection, asynchronous discovery refresh, schedule
+resource-cache invalidation, and revoked-connection read-only behavior.
+`pnpm check` passed with 45 test files and 201 tests. Live provider QA remains
+deferred until 041 supplies operable
+provider discovery/tool packages; Slice B (context groups and the shared chat/
+schedule context picker) remains TODO, so plan 042 stays in `docs/plans/`.
+
 Plan 039 completed 2026-07-20 and moved to `docs/plans/complete/`. Slice A
 landed the provider-neutral discovery engine, data-derived connection status
 machine, final-attempt and needs-reauth notifications, retention sweep, and
@@ -556,7 +573,7 @@ note wins on intent.
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | DONE |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | DONE |
 | 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO |
-| 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | TODO |
+| 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | IN PROGRESS — Slice A implemented + static gate green; live provider QA and Slice B pending |
 | 043 | Embeddings provider service | P1 | M | 029 (Gate G3; done) | TODO |
 | 044 | KB models and ingestion pipeline | P1 | L | 030, 031, 043 | TODO |
 | 045 | Hybrid search engine, KB routes, and the Gate G4 eval harness | P1 | L | 044 | TODO |

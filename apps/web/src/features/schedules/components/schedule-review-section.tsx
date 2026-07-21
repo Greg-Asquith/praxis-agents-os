@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { ClipboardCheckIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import type { Agent } from "@/features/agents/types"
@@ -118,15 +119,7 @@ function ScheduleOptionField({
         className="hover:bg-muted/40 focus-within:bg-muted/40 has-checked:bg-primary/5 dark:has-checked:bg-primary/10 w-full cursor-pointer items-start gap-3 rounded-md p-3 transition-colors"
         htmlFor={id}
       >
-        <input
-          checked={checked}
-          className="border-input text-primary focus-visible:ring-ring/50 mt-0.5 size-4 shrink-0 rounded border"
-          id={id}
-          onChange={(event) => {
-            onCheckedChange(event.currentTarget.checked)
-          }}
-          type="checkbox"
-        />
+        <Checkbox checked={checked} className="mt-0.5" id={id} onCheckedChange={onCheckedChange} />
         <span className="flex min-w-0 flex-col gap-1">
           <span className="text-sm font-medium">{label}</span>
           <span className="text-muted-foreground text-left text-sm leading-normal font-normal">
