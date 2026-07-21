@@ -62,6 +62,17 @@ published API image, and an exported OpenAPI spec.
    `pnpm audit` run as a CI job with `continue-on-error: true` until the
    first triage pass establishes a clean baseline; the flip to blocking
    is a maintenance-note rule, not a later plan.
+
+   > **Amendment (2026-07-20, internal applications adoption — roadmap
+   > D13)**: decision 2's posture is narrowed, not reversed. Anonymous
+   > `docs_url`/`redoc_url`/`openapi_url` stay disabled and the CI
+   > artifact export ships here unchanged. Plan 082 separately adds an
+   > **authenticated** schema route
+   > (`GET /api/v1/meta/openapi.json`, session-auth) consumed by the
+   > application kit's typed-client generation (087) — superseding only
+   > the "no consumer yet" rationale, not the attack-surface one. If 082
+   > lands first, keep the CI export anyway: docs tooling should not
+   > need credentials.
 4. **Semver 0.x posture.** While the major version is 0, breaking changes
    to APIs, schemas, and config are allowed in minor releases; patches
    are fixes only. Recorded in the CHANGELOG header and CONTRIBUTING.md —

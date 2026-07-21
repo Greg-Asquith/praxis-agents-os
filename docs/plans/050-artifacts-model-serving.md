@@ -48,6 +48,28 @@
 >    Step 7 tampering tests, and the 051 share-route reuse note inherit
 >    this shape.
 
+> **Amendment (2026-07-20, internal applications adoption — roadmap D13,
+> Gate G7)**: the serving pipeline built here becomes the shared substrate
+> for internal application bundles (plan 085, design note
+> `docs/architecture/internal-applications.md` §5.1). Three
+> forward-compatibility requirements, none changing artifact behavior:
+>
+> 1. **Parameterized `connect-src`.** The CSP builders in `domain.py`
+>    take `connect_src` as an explicit parameter rather than hard-coding
+>    it. Artifacts pass `'none'` — that value stays non-negotiable for
+>    artifacts (decision 7 and plan 070 are unchanged). Plan 085 later
+>    passes the Praxis API origin only. The Step 7 CSP exact-match test
+>    keeps pinning the artifact value.
+> 2. **Credential-agnostic renderer.** `serve_artifact_version.py` stays
+>    free of signature-specific logic (already required by 051's share
+>    reuse) so 085 can reach the same renderer seam with a
+>    frame-token-resolved principal instead of a signed URL.
+> 3. **Do not remove the dormant app-frame scaffolding** —
+>    `middleware/utils.py` `_is_app_frame_path`, its
+>    `security_headers.py` branch, and the `X-Praxis-App-Frame-Token`
+>    CORS header. Plans 084/085 claim them; treat them as reserved, not
+>    dead code.
+
 ## Status
 
 - **Priority**: P2

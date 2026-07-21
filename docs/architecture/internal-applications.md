@@ -1,13 +1,15 @@
 # Internal Applications
 
-- **Status**: draft proposal — not adopted. No gate owns it, no plan
-  implements it, and nothing below binds any current work. If adopted after
-  maintainer review it becomes a living document in the `governance.md` /
-  `integration-packaging.md` mold and registers its own gate.
+- **Status**: **adopted 2026-07-20** by maintainer decision (roadmap D13).
+  Living document in the `governance.md` / `integration-packaging.md`
+  mold; registers **Gate G7** (applications ride the platform, not beside
+  it — see `docs/plans/000_MASTER_ROADMAP.md` §3). Implemented by plans
+  **082–088** (roadmap Phase 7), with coordinating amendments to plans
+  050 and 078.
 - **Written**: 2026-07-20, from a feasibility reconciliation of the
   internal-builders product brief against the repository at the current
   Phase 4a state (037/038 landed, 039 Slice A in flight, 040–042 pending).
-- **Rule (if adopted)**: downstream plans implement slices of this note and
+- **Rule**: downstream plans implement slices of this note and
   cite the section they implement. A plan that deviates records the
   deviation back into this note in the same PR.
 - This note contains **architecture, not product scope**. Intake flows,
@@ -327,7 +329,7 @@ scope-diffing contract versions at publish time.
   are tier-2 human-owned packages).
 - Public/external-user exposure of applications.
 
-## 10. Sequencing (indicative, not a roadmap amendment)
+## 10. Sequencing (plan numbers assigned at adoption, 2026-07-20)
 
 Nothing here preempts the current roadmap. Phase 4a/4b (039 Slice B →
 040 → 041 → 042; KB lane) comes first — applications composing
@@ -335,39 +337,55 @@ integrations require working integrations, and the brief's Workstream H
 *is* that phase.
 
 Cheap contract prerequisites worth folding into current work before the
-catalogue hardens around their absence: tool `version` field, serialized
-input schemas on the catalogue route, a real `is_tool_allowed` grant
-model, OpenAPI re-enabled behind auth.
+catalogue hardens around their absence — **plan 082**: tool `version`
+field, serialized input schemas on the catalogue route, a real
+`is_tool_allowed` grant model, OpenAPI re-enabled behind auth (as an
+authenticated schema route; plan 078's anonymous-docs posture stands).
 
-Then, in plan-sized slices (numbers assigned if adopted):
+Then, in plan-sized slices (roadmap Phase 7):
 
-1. Headless dispatch + app-principal envelope + generic approvals.
-2. Token mint/verify (frame + dev paths) + scope enforcement on the app
-   capability surface.
-3. Application model + contract + versioned bundle over Files + sandboxed
-   serving (sequence with/after artifacts 050/051 — artifacts becomes the
-   serving substrate, an argument for doing it sooner).
-4. App data service on the `app` schema.
-5. Application kit: template, dev proxy, catalogue export, push +
-   validation gates.
-6. Catalogue/audience surface + one reference application through the
-   full loop.
+1. **Plan 083** — headless dispatch + app-principal envelope + generic
+   approvals. Gate G7 registers here.
+2. **Plan 084** — token mint/verify (frame + dev paths) + scope
+   enforcement on the app capability surface.
+3. **Plan 085** — application model + contract + versioned bundle over
+   Files + sandboxed serving (sequenced after artifacts 050/051 —
+   artifacts is the serving substrate; 050 carries the D13
+   forward-compatibility amendment).
+4. **Plan 086** — app data service on the `app` schema.
+5. **Plan 087** — application kit: template, dev proxy, catalogue export,
+   push + validation gates.
+6. **Plan 088** — catalogue/audience surface + one reference application
+   through the full loop.
 
-## 11. Decisions required before adoption
+## 11. Open decisions (distributed into the implementing plans)
 
-1. Confirm the two framing constraints in §1 (one place; built anywhere).
+Resolved at adoption (2026-07-20): the two framing constraints in §1 are
+confirmed (decision 1), and sequencing relative to artifacts and the KB
+lane is fixed in the roadmap's Phase 7 section (decision 8). The rest
+carry defaults or STOPs in their owning plans and are resolved at plan
+execution:
+
+1. ~~Confirm the two framing constraints in §1~~ — confirmed by D13.
 2. First supported application shape and a first reference application
-   (internal, read-mostly, recognisable to a non-technical operator).
+   (internal, read-mostly, recognisable to a non-technical operator) —
+   **plan 088**, maintainer STOP.
 3. Frame/dev token mechanics: lifetime, storage, revocation, and whether
-   dev tokens default read-only (§4.2 default).
+   dev tokens default read-only (§4.2 default) — **plan 084**, defaults
+   marked for review.
 4. App data service v1 scope: typed collections vs schemaless JSONB with
-   quotas.
-5. Whether app-owned schedules ship v1 (via a referenced agent) or defer.
+   quotas — **plan 086**, default: schemaless JSONB + quotas.
+5. Whether app-owned schedules ship v1 (via a referenced agent) or
+   defer — deferred out of v1; the contract's agent/schedule references
+   (§7) reserve the seam. Revisit after 088.
 6. Validation gate set for v1 and which checks must be runtime
-   enforcement rather than publish-time validation.
+   enforcement rather than publish-time validation — **plan 087**,
+   decision 6/7.
 7. Where the UI component baseline for templates comes from (shared
-   package vs copied scaffold).
-8. Sequencing relative to artifacts (050/051) and the KB lane.
+   package vs copied scaffold) — **plan 087**, default: copied scaffold.
+8. ~~Sequencing relative to artifacts (050/051) and the KB lane~~ —
+   fixed in the roadmap (082 interleaves with Phase 4a; 083–088 after
+   040–042 and 050/051).
 
 ## 12. Source material
 
