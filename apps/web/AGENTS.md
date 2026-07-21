@@ -56,6 +56,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   disclosures. Prefer simple, accessible controls over custom widgets.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- The conversation composer exposes active integration context for both new
+  and existing conversations. New-conversation selection stays local until it
+  is submitted atomically with the first message.
 - Build the real product interface, not marketing pages, unless the task
   explicitly asks for marketing content. Do not leave default scaffold copy,
   metadata, or assets in user-facing screens.

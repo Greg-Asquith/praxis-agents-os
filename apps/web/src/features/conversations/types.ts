@@ -1,5 +1,7 @@
 // apps/web/src/features/conversations/types.ts
 
+import type { ActiveContextSelectionValue } from "@/features/integrations/types"
+
 export type AgentRunStatus =
   "pending" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled"
 
@@ -90,6 +92,7 @@ export type ConversationCreateRequest = {
   user_prompt: string
   client_message_id?: string | null
   attachments?: string[]
+  active_context?: ActiveContextSelectionValue | null
 }
 
 export type ConversationTurnCreateRequest = {

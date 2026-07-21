@@ -33,12 +33,16 @@ import {
   type MessageAttachment,
 } from "@/features/conversations/attachments"
 import { useCancelAgentRunMutation } from "@/features/conversations/api/cancel-run"
-import { ConversationContextPicker } from "@/features/conversations/components/conversation-context-picker"
+import {
+  ConversationContextPicker,
+  NewConversationContextPicker,
+} from "@/features/conversations/components/conversation-context-picker"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import type { PendingUserMessage } from "@/features/conversations/message-parts"
 import { AttachmentChip } from "./attachment-chip"
 import { filesQueryKeys } from "@/features/files/api/list-files"
 import type { ModelCatalogResponse } from "@/features/models/types"
+import type { ActiveContextSelectionValue } from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 
@@ -78,6 +82,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
   const activeAgents =
     props.mode === "create" ? props.agents.filter((agent) => agent.is_active) : []
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [activeContext, setActiveContext] = useState<ActiveContextSelectionValue | null>(null)
   const [prompt, setPrompt] = useState("")
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
@@ -151,6 +156,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
     try {
       if (props.mode === "create") {
         await stream.sendFirstMessage({
+          active_context: activeContext,
           agent_id: effectiveSelectedAgentId,
           attachments: readyAttachments.map((attachment) => attachment.fileId),
           client_message_id: clientMessageId,
@@ -449,9 +455,15 @@ export function ConversationComposer(props: ConversationComposerProps) {
             </div>
           )}
 
-          {props.mode === "turn" ? (
+          {props.mode === "create" ? (
+            <NewConversationContextPicker
+              disabled={isCurrentStreamBlocking}
+              onChange={setActiveContext}
+              value={activeContext}
+            />
+          ) : (
             <ConversationContextPicker conversationId={props.conversationId} />
-          ) : null}
+          )}
 
           <span className="min-w-0 flex-1" />
           {selectedModelLabel ? (

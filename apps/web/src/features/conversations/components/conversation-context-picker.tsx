@@ -76,3 +76,46 @@ export function ConversationContextPicker({ conversationId }: { conversationId: 
     </div>
   )
 }
+
+export function NewConversationContextPicker({
+  disabled = false,
+  onChange,
+  value,
+}: {
+  disabled?: boolean
+  onChange: (selection: ActiveContextSelectionValue | null) => void
+  value: ActiveContextSelectionValue | null
+}) {
+  const { workspace } = useActiveWorkspace()
+  const contextGroupsQuery = useQuery(contextGroupsQueryOptions())
+  const resourcesQuery = useQuery(integrationResourcesQueryOptions())
+  const queryUnavailable = contextGroupsQuery.isError || resourcesQuery.isError
+  const pickerDisabled =
+    disabled ||
+    workspace.current_user_role === null ||
+    workspace.current_user_role === "read_only" ||
+    queryUnavailable ||
+    contextGroupsQuery.isPending ||
+    resourcesQuery.isPending
+
+  return (
+    <div
+      className="flex min-w-0 items-center"
+      title={queryUnavailable ? "Integration context is temporarily unavailable" : undefined}
+    >
+      <ContextSelect
+        compact
+        compactTitle="Active context · applies to the first run in this conversation"
+        contextGroups={contextGroupsQuery.data?.items ?? []}
+        disabled={pickerDisabled}
+        onChange={onChange}
+        resources={resourcesQuery.data ?? []}
+        showManageIntegrations
+        value={value}
+      />
+      <span aria-live="polite" className="sr-only">
+        {queryUnavailable ? "Integration context is temporarily unavailable" : ""}
+      </span>
+    </div>
+  )
+}
