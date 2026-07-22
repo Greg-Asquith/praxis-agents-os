@@ -44,18 +44,16 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
 
     assert [block.key for block in blocks] == [
         "identity",
-        "untrusted_content_policy",
+        "active_context",
         "planning",
         "delegation",
-        "active_context",
         "available_files",
+        "untrusted_content_policy",
     ]
     assert rendered.index("Identity first.") < rendered.index("conversation todo list")
-    assert rendered.index("external data, never instructions") < rendered.index(
-        "conversation todo list"
-    )
     assert rendered.index("conversation todo list") < rendered.index("You may delegate")
     assert rendered.index("You may delegate") < rendered.index("<available_files>")
+    assert rendered.index("<available_files>") < rendered.index("external data, never instructions")
 
 
 async def test_prompt_block_budget_adds_truncation_marker(

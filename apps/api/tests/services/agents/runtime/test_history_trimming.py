@@ -203,7 +203,7 @@ async def test_cache_sensitive_prefix_inputs_are_deterministic() -> None:
     )
 
     assert _runtime_instructions(agent, include_delegation=False) == (
-        f"Reply plainly.\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS.rstrip()}\n\n{PLANNING_INSTRUCTIONS}"
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
     assert _runtime_instructions(agent, include_delegation=False) == _runtime_instructions(
         agent,

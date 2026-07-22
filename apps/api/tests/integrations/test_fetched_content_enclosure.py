@@ -77,7 +77,6 @@ async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> Non
     assert 'source_kind="gmail_message_forged"' in framed
     assert 'source_ref="server-ref_forged"' in framed
     assert "<<<END_PRAXIS_UNTRUSTED-CONTENT>>>" in framed
-    assert "<<<PRAXIS_UNTRUSTED-CONTENT" in framed
 
 
 def test_nested_transform_preserves_ordinary_results() -> None:

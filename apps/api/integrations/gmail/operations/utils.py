@@ -4,6 +4,7 @@ from typing import Any
 
 from services.agents.runtime.untrusted import UntrustedContent
 
+
 def extract_headers(payload: Any) -> dict[str, str]:
     if not isinstance(payload, dict):
         return {}
@@ -16,6 +17,7 @@ def extract_headers(payload: Any) -> dict[str, str]:
         for item in raw_headers
         if isinstance(item, dict) and item.get("name")
     }
+
 
 def untrusted(message_id: str, content: str) -> UntrustedContent:
     return UntrustedContent(source_kind="gmail_message", source_ref=message_id, content=content)

@@ -1,4 +1,4 @@
-# apps/api/integrations/gmail/operations/search_messages.py
+# apps/api/integrations/gmail/operations/search_messages.py
 
 """Search Gmail messages and fetch bounded metadata."""
 
@@ -48,7 +48,3 @@ async def _message_metadata(client: GmailClient, message_id: str) -> dict[str, A
         "date": untrusted(message_id, headers.get("date", "")),
         "snippet": untrusted(message_id, str(payload.get("snippet", ""))),
     }
-
-
-
-

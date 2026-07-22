@@ -49,13 +49,13 @@ def test_runtime_instructions_match_canonical_spacing() -> None:
 
     assert (
         _runtime_instructions(agent, include_delegation=False)
-        == f"Reply plainly.\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS.rstrip()}\n\n"
-        f"{PLANNING_INSTRUCTIONS}"
+        == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
     assert (
         _runtime_instructions(agent, include_delegation=True)
-        == f"Reply plainly.\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS.rstrip()}\n\n"
-        f"{PLANNING_INSTRUCTIONS.rstrip()}\n\n{DELEGATION_INSTRUCTIONS}"
+        == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{DELEGATION_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
 
 
@@ -64,8 +64,8 @@ def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
 
     assert (
         _runtime_instructions(agent, include_delegation=False)
-        == f"Reply plainly.\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS.rstrip()}\n\n"
-        f"{PLANNING_INSTRUCTIONS}"
+        == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
 
 

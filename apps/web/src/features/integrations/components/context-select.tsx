@@ -106,7 +106,7 @@ export function ContextSelect({
       </SelectTrigger>
       <SelectContent
         align={compact ? "start" : "end"}
-        className={compact ? "w-auto min-w-64 max-w-96 min-h-28" : undefined}
+        className={compact ? "min-h-28 w-auto max-w-96 min-w-64" : undefined}
       >
         <SelectGroup>
           <SelectItem value={activeContextSelectionKey(null)}>No active context</SelectItem>
