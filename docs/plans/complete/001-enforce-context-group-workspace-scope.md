@@ -21,6 +21,7 @@
 
 ## Status
 
+- **Status**: DONE 2026-07-22
 - **Priority**: P0
 - **Effort**: M
 - **Risk**: MEDIUM-HIGH (workspace tenancy and external-tool targeting)
@@ -503,26 +504,26 @@ tests.
 
 ## Done criteria
 
-- [ ] Shared-workspace Context Groups accept only resources whose connection has
+- [x] Shared-workspace Context Groups accept only resources whose connection has
       `owner_workspace_id == current workspace.id`.
-- [ ] Personal-workspace Context Groups accept same-workspace connections plus
+- [x] Personal-workspace Context Groups accept same-workspace connections plus
       connections with `owner_user_id == actor.id`.
-- [ ] Resources owned by another workspace are rejected in every workspace
+- [x] Resources owned by another workspace are rejected in every workspace
       type.
-- [ ] Direct single-resource active context retains current actor-or-workspace
+- [x] Direct single-resource active context retains current actor-or-workspace
       visibility.
-- [ ] Shared-workspace group UI hides user-owned resources and explains that
+- [x] Shared-workspace group UI hides user-owned resources and explains that
       standalone context remains available.
-- [ ] A mixed-provider fan-out test proves operations receive only compatible
+- [x] A mixed-provider fan-out test proves operations receive only compatible
       provider/resource entries.
-- [ ] Existing deduplication and partial write-gating tests remain green.
-- [ ] No database migration or Context Group scope column is added.
-- [ ] `make api-test` exits 0.
-- [ ] `cd apps/web && pnpm check` exits 0.
-- [ ] `make check` exits 0.
-- [ ] `git diff --check` exits 0.
-- [ ] No unrelated worktree changes are overwritten, staged, or committed.
-- [ ] `plans/README.md` marks Plan 001 DONE only after all checks pass.
+- [x] Existing deduplication and partial write-gating tests remain green.
+- [x] No database migration or Context Group scope column is added.
+- [x] `make api-test` exits 0.
+- [x] `cd apps/web && pnpm check` exits 0.
+- [x] `make check` exits 0.
+- [x] `git diff --check` exits 0.
+- [x] No unrelated worktree changes are overwritten, staged, or committed.
+- [x] `plans/README.md` marks Plan 001 DONE only after all checks pass.
 
 ## STOP conditions
 

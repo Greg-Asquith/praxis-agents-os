@@ -49,6 +49,13 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | View security events *(enforced today: 023 super-admin only — `security_events` has no workspace column)* | — | — | — | — |
 | Configure agent tool policies *(enforced today: EDITOR via agents)* | — | ✓ | ✓ | ✓ |
 
+Context Groups inherit the active workspace's scope. In a shared workspace,
+group members must come from connections owned by that same workspace. In a
+personal workspace, groups may additionally include connections owned by the
+current actor, but never connections owned by another workspace. Standalone
+resource context intentionally retains actor-or-workspace visibility, including
+personal connections selected while acting in a shared workspace.
+
 ## 2. Approval Defaults Per Tool Effect
 
 Mechanics are plans 025/026 (registry `effect` metadata, dispatch choke

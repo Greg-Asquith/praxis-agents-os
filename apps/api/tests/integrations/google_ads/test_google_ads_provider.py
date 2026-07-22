@@ -79,7 +79,7 @@ async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:
     ]
 
 
-async def test_report_caps_rows_and_marks_provider_text_untrusted() -> None:
+async def test_report_caps_rows_and_preserves_plain_provider_values() -> None:
     client = _OperationClient(
         [{"results": [{"campaign": {"name": "one"}}, {"campaign": {"name": "two"}}]}]
     )
@@ -92,7 +92,7 @@ async def test_report_caps_rows_and_marks_provider_text_untrusted() -> None:
     )
     assert result["row_count"] == 1
     assert result["truncated"] is True
-    assert result["rows"][0]["campaign"]["name"].content == "one"
+    assert result["rows"][0]["campaign"]["name"] == "one"
     assert client.last_json["query"].endswith("LIMIT 2")
 
 

@@ -59,6 +59,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - The conversation composer exposes active integration context for both new
   and existing conversations. New-conversation selection stays local until it
   is submitted atomically with the first message.
+- In shared workspaces, the Context Group picker hides resources from personal
+  connections. Standalone context selection may still show those resources in
+  conversations and schedules; do not reuse the group filter for that picker.
 - Build the real product interface, not marketing pages, unless the task
   explicitly asks for marketing content. Do not leave default scaffold copy,
   metadata, or assets in user-facing screens.

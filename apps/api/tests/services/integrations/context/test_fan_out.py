@@ -14,11 +14,17 @@ from services.integrations.context.domain import ResolvedActiveContext, Resolved
 from services.integrations.context.fan_out import run_context_fan_out
 
 
-def _entry(name: str, *, write_allowed: bool = True) -> ResolvedContextEntry:
+def _entry(
+    name: str,
+    *,
+    provider_key: str = "test_provider",
+    resource_type: str = "test_resource",
+    write_allowed: bool = True,
+) -> ResolvedContextEntry:
     return ResolvedContextEntry(
         integration_resource_id=uuid4(),
-        provider_key="test_provider",
-        resource_type="test_resource",
+        provider_key=provider_key,
+        resource_type=resource_type,
         external_id=name.casefold(),
         display_name=name,
         connection_id=uuid4(),
@@ -96,3 +102,47 @@ async def test_fan_out_retries_when_no_compatible_entries() -> None:
 
     with pytest.raises(ModelRetry, match="select a context"):
         await run_context_fan_out(deps, binding=_binding(), operation=lambda _entry: None)
+
+
+async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resource() -> None:
+    gmail_one = _entry(
+        "Inbox one",
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+    )
+    google_ads = _entry(
+        "Ads account",
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+    )
+    gmail_two = _entry(
+        "Inbox two",
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+    )
+    deps = SimpleNamespace(
+        active_context=ResolvedActiveContext(entries=(gmail_one, google_ads, gmail_two))
+    )
+    calls = []
+
+    async def operation(entry: ResolvedContextEntry):
+        calls.append(entry)
+        return {"resource_id": str(entry.integration_resource_id)}
+
+    results = await run_context_fan_out(
+        deps,
+        binding=IntegrationToolBinding(
+            provider_keys=frozenset({"gmail"}),
+            resource_types=frozenset({"gmail_mailbox"}),
+        ),
+        operation=operation,
+    )
+
+    assert calls == [gmail_one, gmail_two]
+    assert [result.integration_resource_id for result in results] == [
+        gmail_one.integration_resource_id,
+        gmail_two.integration_resource_id,
+    ]
+    assert google_ads.integration_resource_id not in {
+        result.integration_resource_id for result in results
+    }

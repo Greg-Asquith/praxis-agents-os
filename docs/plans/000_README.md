@@ -451,6 +451,14 @@ deferred until 041 supplies operable provider discovery/tool packages; visual
 QA was unavailable in the execution environment, and both limits are recorded
 in the completed plan.
 
+Corrective follow-up `001-enforce-context-group-workspace-scope` completed
+2026-07-22 and moved to `docs/plans/complete/`. Context Group membership now
+derives from the active workspace: shared groups accept only same-workspace
+connections, while personal groups additionally accept the current actor's
+user-owned connections. The shared-workspace editor hides personal resources
+without narrowing standalone context selection, and mixed-provider fan-out is
+characterized to invoke every compatible resource and no incompatible one.
+
 Plan 039 completed 2026-07-20 and moved to `docs/plans/complete/`. Slice A
 landed the provider-neutral discovery engine, data-derived connection status
 machine, final-attempt and needs-reauth notifications, retention sweep, and
@@ -538,6 +546,12 @@ scaffolding) and 078 (authenticated schema route narrows, not reverses,
 the OpenAPI posture). Plans 083–088 were written ahead of their substrate:
 each carries a re-anchor pre-flight and STOP conditions, and the design
 note wins on intent.
+
+## Corrective Follow-up Status
+
+| Plan file | Title | Status |
+|---|---|---|
+| `001-enforce-context-group-workspace-scope` | Enforce workspace-scoped Context Group resources and relevant-only fan-out | DONE 2026-07-22 |
 
 ## Execution Order & Status
 

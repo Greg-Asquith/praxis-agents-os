@@ -2,7 +2,7 @@
 
 import asyncio
 import hashlib
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from cryptography.fernet import Fernet
@@ -17,9 +17,26 @@ from services.integrations.utils import (
     _reset_credential_key_cache,
     ensure_credential_keys_loaded,
 )
+from services.jobs.handlers import rotate_credential_encryption as rotation_handler_module
 from services.jobs.handlers.rotate_credential_encryption import rotate_credential_encryption
 
 pytestmark = pytest.mark.asyncio
+
+
+def _limit_rotation_to(
+    monkeypatch: pytest.MonkeyPatch,
+    credential_id: UUID,
+) -> None:
+    calls = iter(([credential_id], []))
+
+    async def list_candidate_ids(*args, **kwargs):
+        return next(calls)
+
+    monkeypatch.setattr(
+        rotation_handler_module,
+        "_list_rotation_candidate_ids",
+        list_candidate_ids,
+    )
 
 
 async def test_rotation_reencrypts_under_newest_key_and_old_key_can_be_dropped(
@@ -39,6 +56,7 @@ async def test_rotation_reencrypts_under_newest_key_and_old_key_can_be_dropped(
         granted_scopes=[],
     )
     old_key_id = credential.encryption_key_id
+    _limit_rotation_to(monkeypatch, credential.id)
 
     monkeypatch.setattr(settings, "CREDENTIAL_MASTER_KEYS", f"{new_key},{old_key}")
     _reset_credential_key_cache()
@@ -73,6 +91,7 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
         )
         await setup.commit()
         credential_id = credential.id
+    _limit_rotation_to(monkeypatch, credential_id)
 
     monkeypatch.setattr(settings, "CREDENTIAL_MASTER_KEYS", f"{new_key},{old_key}")
     _reset_credential_key_cache()

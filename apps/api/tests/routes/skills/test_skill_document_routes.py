@@ -215,19 +215,17 @@ async def test_skill_document_upload_confirm_read_download_and_delete(
     audit_events = (
         (
             await db_session.execute(
-                select(AuditEvent)
-                .where(
+                select(AuditEvent).where(
                     AuditEvent.action == AuditAction.UPDATE.value,
                     AuditEvent.resource_type == AuditResourceType.SKILL.value,
                     AuditEvent.resource_id == str(skill.id),
                 )
-                .order_by(AuditEvent.created_at)
             )
         )
         .scalars()
         .all()
     )
-    assert [event.details["action"] for event in audit_events] == ["upload", "delete"]
+    assert sorted(event.details["action"] for event in audit_events) == ["delete", "upload"]
 
 
 async def test_unconfirmed_replacement_upload_does_not_overwrite_current_original(

@@ -127,7 +127,10 @@ async def test_write_and_delete_operations_audit_reference_only(
         (
             await db_session.scalars(
                 select(AuditEvent)
-                .where(AuditEvent.resource_type == "secret_reference")
+                .where(
+                    AuditEvent.resource_type == "secret_reference",
+                    AuditEvent.details["reference"].astext == ref.render(),
+                )
                 .order_by(AuditEvent.occurred_at, AuditEvent.id)
             )
         ).all()

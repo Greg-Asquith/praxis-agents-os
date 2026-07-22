@@ -155,3 +155,40 @@ async def test_context_route_hides_cross_workspace_resource(
         },
     )
     assert response.status_code == 404, response.text
+
+
+async def test_shared_context_group_route_rejects_user_owned_resource(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    credential = build_external_credential(principal_fingerprint=uuid4().hex.ljust(64, "0"))
+    db_session.add(credential)
+    await db_session.flush()
+    connection = build_integration_connection(
+        credential=credential,
+        user=integration_identity["user"],
+        owner_user_id=integration_identity["user"].id,
+        status="active",
+    )
+    db_session.add(connection)
+    await db_session.flush()
+    resource = build_integration_resource(connection=connection, enabled=True)
+    db_session.add(resource)
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        "/api/v1/integrations/context-groups",
+        headers=integration_identity["headers"],
+        json={"name": "Personal inbox", "resource_ids": [str(resource.id)]},
+    )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json() == {
+        "type": "https://httpstatuses.com/400",
+        "title": "Validation Error",
+        "status": 400,
+        "detail": "Resources must be available to Context Groups in the current workspace",
+        "field": "resource_ids",
+    }

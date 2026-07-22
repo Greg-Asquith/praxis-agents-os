@@ -162,6 +162,13 @@ shared selector in chat and schedules, with conversation-scoped cache keys and
 read-only role treatment. `pnpm check` passed (46 files, 203 tests). Live
 provider QA waits for 041's operable provider packages; the completed plan
 records that deferral and the unavailable browser QA explicitly.
+Corrective follow-up `001-enforce-context-group-workspace-scope` completed
+2026-07-22 and moved to `docs/plans/complete/`: reusable Context Groups now
+derive eligibility from `Workspace.is_personal`, keeping shared groups limited
+to same-workspace connections while personal groups may also use the current
+actor's connections. Standalone resource context retains its broader
+actor-or-workspace visibility, and relevant-only mixed-provider fan-out is
+pinned by regression coverage.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —

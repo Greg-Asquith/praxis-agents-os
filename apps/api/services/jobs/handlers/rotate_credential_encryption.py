@@ -6,6 +6,8 @@ Enqueue with ``enqueue_job(..., kind='integrations.rotate_credential_encryption'
 after deploying a root-key list whose newest entry is the new key.
 """
 
+from uuid import UUID
+
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,32 +25,43 @@ ROTATE_CREDENTIAL_ENCRYPTION_KIND = "integrations.rotate_credential_encryption"
 _ROTATION_BATCH_SIZE = 100
 
 
+async def _list_rotation_candidate_ids(
+    db: AsyncSession,
+    *,
+    current_key_id: str,
+) -> list[UUID]:
+    return list(
+        (
+            await db.scalars(
+                select(ExternalCredential.id)
+                .where(
+                    ExternalCredential.deleted.is_(False),
+                    ExternalCredential.revoked_at.is_(None),
+                    or_(
+                        ExternalCredential.access_token_encrypted.is_not(None),
+                        ExternalCredential.refresh_token_encrypted.is_not(None),
+                    ),
+                    or_(
+                        ExternalCredential.encryption_key_id.is_(None),
+                        ExternalCredential.encryption_key_id != current_key_id,
+                    ),
+                )
+                .order_by(ExternalCredential.id)
+                .limit(_ROTATION_BATCH_SIZE)
+            )
+        ).all()
+    )
+
+
 @job_handler(kind=ROTATE_CREDENTIAL_ENCRYPTION_KIND, timeout=300.0, max_attempts=3)
 async def rotate_credential_encryption(db: AsyncSession, job: Job) -> None:
     await ensure_credential_keys_loaded(db)
     current_key_id = credential_encryption_key_id()
     rotated = 0
     while True:
-        ids = list(
-            (
-                await db.scalars(
-                    select(ExternalCredential.id)
-                    .where(
-                        ExternalCredential.deleted.is_(False),
-                        ExternalCredential.revoked_at.is_(None),
-                        or_(
-                            ExternalCredential.access_token_encrypted.is_not(None),
-                            ExternalCredential.refresh_token_encrypted.is_not(None),
-                        ),
-                        or_(
-                            ExternalCredential.encryption_key_id.is_(None),
-                            ExternalCredential.encryption_key_id != current_key_id,
-                        ),
-                    )
-                    .order_by(ExternalCredential.id)
-                    .limit(_ROTATION_BATCH_SIZE)
-                )
-            ).all()
+        ids = await _list_rotation_candidate_ids(
+            db,
+            current_key_id=current_key_id,
         )
         if not ids:
             break

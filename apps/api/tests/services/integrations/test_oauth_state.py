@@ -54,9 +54,11 @@ def test_tampered_state_is_rejected() -> None:
         user_id=uuid4(),
         next_path=None,
     )
-    replacement = "A" if state[-1] != "A" else "B"
+    header, payload, signature = state.split(".")
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered_state = f"{header}.{payload}.{replacement}{signature[1:]}"
     with pytest.raises(IntegrationAuthError):
-        verify_integration_oauth_state(f"{state[:-1]}{replacement}")
+        verify_integration_oauth_state(tampered_state)
 
 
 def test_expired_and_login_flow_states_are_rejected() -> None:
