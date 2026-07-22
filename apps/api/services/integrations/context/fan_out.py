@@ -38,6 +38,7 @@ async def run_context_fan_out(
     binding: "IntegrationToolBinding",
     operation: Callable[[ResolvedContextEntry], Awaitable[Any]],
     write: bool = False,
+    on_write_denied: Callable[[ResolvedContextEntry], Awaitable[None]] | None = None,
 ) -> list[FanOutEntryResult]:
     """Run an operation once per compatible entry and isolate failures."""
     active_context = deps.active_context
@@ -64,6 +65,8 @@ async def run_context_fan_out(
             "display_name": entry.display_name,
         }
         if (write or binding.requires_write) and not entry.write_allowed:
+            if on_write_denied is not None:
+                await on_write_denied(entry)
             results.append(
                 FanOutEntryResult(
                     **base,

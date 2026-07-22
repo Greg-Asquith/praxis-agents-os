@@ -32,8 +32,10 @@ from evals.evaluators import (
 )
 from models.agent import Agent
 from services.agents.runtime.loop import build_runtime_agent
+from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
+FIXTURE_ROOT = Path(__file__).parents[1] / "tests" / "fixtures"
 KEY_BY_PROVIDER = {
     "anthropic": "ANTHROPIC_API_KEY",
     "azure": "AZURE_OPENAI_API_KEY",
@@ -107,6 +109,21 @@ def _channel_fixture_history(inputs: EvalInputs):
         return None
     tool_name = fixture["tool_name"]
     tool_call_id = f"eval-{tool_name}"
+    content = fixture.get("content")
+    fixture_path = fixture.get("fixture_path")
+    if fixture_path:
+        path = (FIXTURE_ROOT / fixture_path).resolve()
+        if not path.is_relative_to(FIXTURE_ROOT.resolve()):
+            raise ValueError("Channel fixture path must stay under the shared fixture root")
+        content = path.read_text(encoding="utf-8")
+    if fixture.get("source_kind"):
+        content = frame_untrusted_content(
+            UntrustedContent(
+                source_kind=str(fixture["source_kind"]),
+                source_ref=str(fixture["source_ref"]),
+                content=str(content or ""),
+            )
+        )
     return [
         ModelResponse(
             parts=[
@@ -121,7 +138,7 @@ def _channel_fixture_history(inputs: EvalInputs):
             parts=[
                 ToolReturnPart(
                     tool_name=tool_name,
-                    content=fixture["content"],
+                    content=content,
                     tool_call_id=tool_call_id,
                 )
             ]

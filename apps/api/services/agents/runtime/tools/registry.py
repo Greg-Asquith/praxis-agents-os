@@ -69,6 +69,7 @@ def runtime_tool(
     configurable: bool = True,
     auto_mount: bool = False,
     integration_binding: IntegrationToolBinding | None = None,
+    availability_check: Callable[[], bool] | None = None,
     presentation: ToolPresentation | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a Python function as a runtime tool."""
@@ -102,6 +103,7 @@ def runtime_tool(
             configurable=configurable,
             auto_mount=auto_mount,
             integration_binding=integration_binding,
+            availability_check=availability_check,
             presentation=presentation or ToolPresentation(),
         )
         register_tool_definition(definition)

@@ -12,4 +12,4 @@ def is_tool_allowed(
     agent: object | None = None,
 ) -> bool:
     """Return whether a runtime tool is available in this context."""
-    return True
+    return definition.availability_check is None or definition.availability_check()

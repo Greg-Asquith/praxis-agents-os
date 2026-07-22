@@ -133,19 +133,20 @@ clearing, and the minimal schedule-form selector over context groups and enabled
 resources.
 Plan 055 completed 2026-07-21 and moved to `docs/plans/complete/`: Gate G5
 now consists of 17 deterministic database-backed runtime scenarios plus a
-12-case, opt-in `pydantic-evals` quality layer behind `make evals`. Its
+13-case, opt-in `pydantic-evals` quality layer behind `make evals`. Its
 injection scaffolds use typed tool-return history and argument canaries until
 the owning KB, memory, and compaction plans replace them with real channel
 execution. Three deterministic runner contract tests stay in pytest; live-model
 evals remain outside pytest and `make check`. The scenario probe found the
 normal approval-policy path skipped its pending audit; the operator authorized
 the narrow prerequisite correction before harness work resumed.
-Plan 041 Slice A was reconciled 2026-07-21 after its Gate G6 pre-flight was
-found to require framing code that no earlier plan owned. Slice A now explicitly
-creates the shared untrusted-content carrier and marker vocabulary, dispatch
-framing, standing data-not-instructions prompt block, and hostile Gmail fixture
-before exposing Gmail read tools. The plan remains TODO and retains its
-three-provider slice boundaries.
+Plan 041 Slice A completed 2026-07-21. It delivered the shared
+untrusted-content carrier and marker vocabulary, dispatch framing, standing
+data-not-instructions prompt block, per-resource integration audit seam,
+scope-derived write availability, bounded provider HTTP behavior, and Gmail
+discovery plus its three typed tools. Provider tools use one module per tool
+under a `tools/` tree. The plan remains TODO: Google Ads Slice B and Airtable
+Slice C are still pending.
 Plan 042 completed 2026-07-21 and moved to `docs/plans/complete/`.
 `/integrations` now exposes the
 server manifest as provider cards with multi-connection labels, OAuth/API-key
@@ -565,7 +566,8 @@ structure.
 | 038 | OAuth flows (initiate/callback with PKCE S256 + signed single-value and server-side single-use state), provider-isolated OAuth settings, non-OAuth connect, test/revoke/refresh routes. **DONE 2026-07-10.** (Donor C2.) |
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
 | 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **DONE 2026-07-21.** (Donor C4.) |
-| 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Gate G1 applies.** (Donor C5.) |
+| 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Slice A DONE 2026-07-21:** shared provider substrate and Gmail. Google Ads and Airtable remain pending. **Gate G1 applies.** (Donor C5.) |
+| 041b | Rich provider tool UI: the packaging-note §5 presenter seam earns its first consumers — Gmail search/read/send presenter rows (later Ads report and Airtable record tables), the untrusted-frame vocabulary surfaced as provenance chips instead of raw markers, and an engine-owned ephemeral preview seam rendering sanitized email HTML in a script-less sandboxed iframe. Added 2026-07-22; Slice C waits on 041 B/C. |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker beside the conversation composer's agent control. **DONE 2026-07-21:** both implementation slices and the static gate are complete; live provider QA is deferred to 041's operable packages. (Donor C6.) |
 | 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |
 

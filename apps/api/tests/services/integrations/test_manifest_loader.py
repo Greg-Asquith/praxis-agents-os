@@ -6,6 +6,7 @@ from pydantic import SecretStr
 from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.loader import _validate_plugin, load_enabled_providers
 from services.integrations.manifest import (
     PROVIDER_MANIFESTS,
@@ -13,6 +14,19 @@ from services.integrations.manifest import (
     register_provider_manifest,
 )
 from services.integrations.plugin import PROVIDER_PLUGINS, IntegrationProviderPlugin
+
+
+@pytest.fixture(autouse=True)
+def clear_loaded_provider_state():
+    for name in tuple(RUNTIME_TOOL_CATALOG):
+        if name.startswith(("airtable_", "gmail_", "google_ads_")):
+            RUNTIME_TOOL_CATALOG.pop(name)
+    yield
+    PROVIDER_MANIFESTS.clear()
+    PROVIDER_PLUGINS.clear()
+    for name in tuple(RUNTIME_TOOL_CATALOG):
+        if name.startswith(("airtable_", "gmail_", "google_ads_")):
+            RUNTIME_TOOL_CATALOG.pop(name)
 
 
 def _oauth_manifest(key: str = "example") -> IntegrationProviderManifest:

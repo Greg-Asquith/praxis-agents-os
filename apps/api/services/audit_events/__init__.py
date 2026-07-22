@@ -13,6 +13,7 @@ from services.audit_events.enums import (
     AuditStatus,
 )
 from services.audit_events.get_event import get_audit_event_for_workspace
+from services.audit_events.integration_events import record_integration_operation_audit_event
 from services.audit_events.list_events import list_audit_events_for_workspace
 from services.audit_events.operations import safe_record_operation_audit_event
 from services.audit_events.queries import (
@@ -37,6 +38,7 @@ __all__ = [
     "list_audit_events",
     "list_audit_events_for_workspace",
     "list_audit_events_page",
+    "record_integration_operation_audit_event",
     "record_tool_invocation_audit_event",
     "record_user_audit_event",
     "record_workspace_audit_event",

@@ -11,6 +11,7 @@ class GoogleAdsSettings(BaseSettings):
 
     GOOGLE_ADS_OAUTH_CLIENT_ID: str = ""
     GOOGLE_ADS_OAUTH_CLIENT_SECRET: SecretStr = SecretStr("")
+    GOOGLE_ADS_DEVELOPER_TOKEN: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

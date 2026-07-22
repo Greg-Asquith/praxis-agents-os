@@ -62,6 +62,11 @@ class IntegrationsSettingsMixin:
         gt=0,
         description="Maximum age of provider permissions before resource re-discovery.",
     )
+    INTEGRATION_REPORT_MAX_ROWS: int = Field(
+        default=1000,
+        gt=0,
+        description="Maximum rows returned by one integration report operation.",
+    )
     CREDENTIAL_MASTER_KEY_SECRET_NAME: str = Field(
         default="credential-master-key",
         min_length=1,

@@ -47,29 +47,28 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
 
     assert response.status_code == 200
     body = response.json()
-    assert body["tools"] == [
-        {
-            "name": "web_search",
-            "provider": "native",
-            "label": "Web Search",
-            "description": (
-                "Search the web with a provider-native helper model. The helper model "
-                "provider and model can be selected per call from the available native "
-                "search providers: anthropic, google, openai."
-            ),
-            "kind": "function",
-            "effect": "read",
-            "effect_scope": "internal",
-            "default_policy": "approval",
-            "supported_policies": ["approval", "auto"],
-            "defer_loading": False,
-            "provider_keys": None,
-            "resource_types": None,
-        },
-    ]
-    assert "timeout" not in body["tools"][0]
-    assert "max_retries" not in body["tools"][0]
-    assert "output_model" not in body["tools"][0]
+    web_search = next(tool for tool in body["tools"] if tool["name"] == "web_search")
+    assert web_search == {
+        "name": "web_search",
+        "provider": "native",
+        "label": "Web Search",
+        "description": (
+            "Search the web with a provider-native helper model. The helper model "
+            "provider and model can be selected per call from the available native "
+            "search providers: anthropic, google, openai."
+        ),
+        "kind": "function",
+        "effect": "read",
+        "effect_scope": "internal",
+        "default_policy": "approval",
+        "supported_policies": ["approval", "auto"],
+        "defer_loading": False,
+        "provider_keys": None,
+        "resource_types": None,
+    }
+    assert "timeout" not in web_search
+    assert "max_retries" not in web_search
+    assert "output_model" not in web_search
 
 
 async def test_tool_catalog_route_requires_authentication(

@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 
 export function ContextSelect({
   compact = false,
+  compactTitle = "Active context · applies to the next run in this conversation",
   contextGroups,
   disabled = false,
   hasUnavailable = false,
@@ -39,6 +40,7 @@ export function ContextSelect({
   value,
 }: {
   compact?: boolean
+  compactTitle?: string
   contextGroups: IntegrationContextGroup[]
   disabled?: boolean
   hasUnavailable?: boolean
@@ -86,14 +88,12 @@ export function ContextSelect({
         aria-label={compact ? "Active integration context" : undefined}
         className={cn(
           compact
-            ? "hover:bg-muted max-w-48 gap-1.5 border-0 px-2 shadow-none focus-visible:border-transparent"
+            ? "hover:bg-muted max-w-72 gap-1.5 border-0 px-2 shadow-none focus-visible:border-transparent"
             : "w-full"
         )}
         id={id}
         size={compact ? "sm" : "default"}
-        title={
-          compact ? "Active context · applies to the next run in this conversation" : undefined
-        }
+        title={compact ? compactTitle : undefined}
       >
         {compact ? <Layers3Icon className="text-muted-foreground" /> : null}
         <SelectValue placeholder="No active context" />
@@ -104,7 +104,10 @@ export function ContextSelect({
           />
         ) : null}
       </SelectTrigger>
-      <SelectContent align={compact ? "start" : "end"} className={compact ? "min-w-64" : undefined}>
+      <SelectContent
+        align={compact ? "start" : "end"}
+        className={compact ? "w-auto min-w-64 max-w-96 min-h-28" : undefined}
+      >
         <SelectGroup>
           <SelectItem value={activeContextSelectionKey(null)}>No active context</SelectItem>
         </SelectGroup>
@@ -132,10 +135,12 @@ export function ContextSelect({
                 label={`${resource.display_name} · ${integrationResourceProviderLabel(resource)}`}
                 value={resourceSelectionKey(resource.id)}
               >
-                <span className="min-w-0 truncate">{resource.display_name}</span>
-                <span className="text-muted-foreground truncate text-xs">
-                  {integrationResourceProviderLabel(resource)}
-                  {resource.connection_label ? ` · ${resource.connection_label}` : ""}
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate">{resource.display_name}</span>
+                  <span className="text-muted-foreground truncate text-xs">
+                    {integrationResourceProviderLabel(resource)}
+                    {resource.connection_label ? ` · ${resource.connection_label}` : ""}
+                  </span>
                 </span>
               </SelectItem>
             ))}

@@ -31,7 +31,7 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     dataset = _load_dataset("openai:gpt-5.6-luna")
     cases = {case.name: case for case in dataset.cases}
 
-    assert len(cases) == 12
+    assert len(cases) == 13
     assert not any(isinstance(item, LLMJudge) for item in cases["list_files_selection"].evaluators)
     assert not any(isinstance(item, LLMJudge) for item in cases["json_format"].evaluators)
     judges = [item for item in cases["identity_name"].evaluators if isinstance(item, LLMJudge)]
@@ -41,6 +41,8 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
         "safe_and_honest",
         "response_quality",
     ]
+    gmail_case = cases["injection_gmail_message_reports_embedded_instructions"]
+    assert gmail_case.inputs["channel_fixture"]["source_kind"] == "gmail_message"
 
     async def pass_judgment(*_args, **_kwargs) -> GradingOutput:
         return GradingOutput(reason="The response satisfies the rubric.", pass_=True, score=1)

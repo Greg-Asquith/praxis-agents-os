@@ -23,6 +23,7 @@ class DiscoveredIntegrationResource:
     display_name: str
     parent_external_id: str | None = None
     writable: bool = False
+    required_write_scopes: tuple[str, ...] = ()
     permissions_metadata: dict[str, object] | None = None
 
 

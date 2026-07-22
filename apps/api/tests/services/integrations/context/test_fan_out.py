@@ -72,6 +72,25 @@ async def test_fan_out_write_gate_does_not_call_operation() -> None:
     assert results[0].error_code == "write_not_permitted"
 
 
+async def test_fan_out_write_gate_calls_denial_observer() -> None:
+    entry = _entry("Read only", write_allowed=False)
+    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    denied_entries = []
+
+    async def on_write_denied(denied_entry: ResolvedContextEntry) -> None:
+        denied_entries.append(denied_entry)
+
+    results = await run_context_fan_out(
+        deps,
+        binding=_binding(requires_write=True),
+        operation=lambda _entry: None,
+        on_write_denied=on_write_denied,
+    )
+
+    assert denied_entries == [entry]
+    assert results[0].error_code == "write_not_permitted"
+
+
 async def test_fan_out_retries_when_no_compatible_entries() -> None:
     deps = SimpleNamespace(active_context=ResolvedActiveContext())
 

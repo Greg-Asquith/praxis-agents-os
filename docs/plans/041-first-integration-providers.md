@@ -61,6 +61,10 @@
   token), 077 (event posture), 080 (G6 channel (g), `effect_scope`,
   dispatch anchors) folded into the body; anchors re-verified against
   the tree with the 037 implementation present (post-`edc3abc`).
+  **Revised 2026-07-21** (Google Ads slice rethink): `login-customer-id`
+  is per-resource discovery metadata, never an env var (decision 9
+  rewritten, decision 6 extended); workspace-wide service-account
+  authentication added for Google Ads (new decision 16).
 
 ## Decisions taken
 
@@ -126,8 +130,17 @@
    discovery lists accessible customers then expands MCC hierarchies via
    `customers/{id}/googleAds:searchStream` on `customer_client`, storing
    `google_ads_account` resources with metadata `{manager,
-   parent_external_id, level, currency_code, descriptive_name, status}`;
-   manager (MCC) accounts are stored but non-operable
+   parent_external_id, level, currency_code, descriptive_name, status,
+   login_customer_id}`. `login_customer_id` is the **accessible root**
+   the account was discovered under — the customer the authenticated
+   principal accesses directly (`listAccessibleCustomers`), which for a
+   grandchild account in a multi-level MCC tree is the root MCC, NOT
+   `parent_external_id` (the immediate parent); for directly accessible
+   accounts it is the account's own id. Discovery sets the
+   `login-customer-id` header to the root while expanding each
+   hierarchy (donor precedent:
+   `ad_resource_discovery/providers/google_ads.py` in the saas-template
+   donor). Manager (MCC) accounts are stored but non-operable
    (`metadata.manager=true`; `enabled` defaults false for them —
    reports/mutations target client accounts). Airtable discovery lists
    bases via the meta API, one `airtable_base` resource per base.
@@ -152,21 +165,32 @@
    and what changed" must be answerable from audit alone. Never message
    bodies, query results, or tokens in audit details. Provider packages
    call this one function; they never write audit rows their own way.
-9. **Provider settings, env-gated availability**: extend the provider-owned
-   `apps/api/integrations/google_ads/settings.py` object from 038 with
+9. **Provider settings, env-gated availability**: the provider-owned
+   `apps/api/integrations/google_ads/settings.py` object holds
    `GOOGLE_ADS_DEVELOPER_TOKEN: SecretStr | None = None` (SecretStr per
    the `ANTHROPIC_API_KEY` precedent — the client reads it via
    `.get_secret_value()` for the `developer-token` header; the value
-   must never appear in logs, audit details, or exception context),
-   `GOOGLE_ADS_LOGIN_CUSTOMER_ID: str | None = None`. Keep the genuinely
-   shared `INTEGRATION_REPORT_MAX_ROWS: int = 1000` in
+   must never appear in logs, audit details, or exception context).
+   **There is NO login-customer-id setting.** `login-customer-id` is a
+   per-request routing header that depends on which account is being
+   addressed and through which MCC the connection reaches it — one
+   workspace can hold connections reaching different accounts through
+   different manager hierarchies, so a process-wide env value is wrong
+   by construction. It is always resolved per fan-out entry from the
+   target resource's decision-6 `login_customer_id` metadata. Slice B
+   removes the `GOOGLE_ADS_LOGIN_CUSTOMER_ID` field that 038's
+   execution added to `settings.py` and the matching `.env.example`
+   line. Keep the genuinely shared
+   `INTEGRATION_REPORT_MAX_ROWS: int = 1000` in
    `core/settings/integrations.py`. Availability gating:
    `permissions.is_tool_allowed` (`tools/permissions.py:8-15` — the stub
    seam 040 deliberately left) returns `False` for integration-provider
    tools whose required settings are absent (gmail → provider-owned
-   `GMAIL_OAUTH_CLIENT_ID`; google_ads → provider-owned
-   `GOOGLE_ADS_OAUTH_CLIENT_ID` AND the developer
-   token; airtable → always available once enabled). Keep it tiny and
+   `GMAIL_OAUTH_CLIENT_ID`; google_ads → the developer token only —
+   the OAuth client id gates the OAuth *connect* surface via 038's
+   per-mode `configured` flag, not tool availability, because
+   service-account connections (decision 16) work without it;
+   airtable → always available once enabled). Keep it tiny and
    data-driven. This composes with 038's `configured` flag on
    `list_providers`; there is no manifest-level enable flag (enablement
    is the loader allowlist).
@@ -194,7 +218,8 @@
     `apps/api/integrations/<key>/` — `__init__.py` (exports
     `PROVIDER: IntegrationProviderPlugin`), `manifest.py` if split out,
     `client.py`, `discover_resources.py`, `operations/` (one op per
-    file), `tools.py`. Registration is via the loader +
+    file), `tools/` (one tool per module; `__init__.py` composes only).
+    Registration is via the loader +
     `INTEGRATIONS_ENABLED_PROVIDERS` — the loader registers manifests
     and tool definitions (`loader.py:12-31`, validating provider match
     and the `<key>_` name prefix at 34-51) and 039 retains the plugin
@@ -225,6 +250,53 @@
     package layout reserves an `events.py` module slot per provider —
     leave it absent, not stubbed; clients must not acquire
     push-registration calls here.
+16. **Workspace-wide service-account authentication for Google Ads**
+    (added 2026-07-21). The google_ads manifest declares
+    `auth_modes=("oauth", "service_account")`. The substrate already
+    supports this end to end except the connect path: `AUTH_MODES` and
+    the `external_credentials` check constraint include
+    `service_account`, and
+    `store_secret_reference_credential(auth_mode="service_account")`
+    persists it reference-only. This plan adds:
+    - **Connect path**: `services/integrations/connections/
+      connect_service_account.py` + route
+      `routes/integrations/connect_service_account.py`, mirroring the
+      api-key connect shape (`connect_api_key.py`): the operator
+      submits service-account JSON (written to workspace secrets) or an
+      existing secret reference; the service validates before
+      persistence — payload parses as service-account JSON with a
+      non-empty `client_email`, and the manifest allows
+      `service_account` — then stores the credential via
+      `store_secret_reference_credential` and records
+      `service_account_email` on the connection metadata (donor
+      precedent: `services/integrations/service_accounts.py` in the
+      saas-template donor). Connections are workspace-scoped like every
+      google_ads connection (`owner_scope="workspace"`), so any
+      workspace agent context can use them.
+    - **Token minting, REST-only**: a helper in
+      `services/integrations/credentials/` exchanges a self-signed
+      RS256 JWT assertion (claims `iss`/`sub`=client_email,
+      `scope`=adwords, `aud`=token URL) at
+      `https://oauth2.googleapis.com/token` with
+      `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`, signed
+      with the key from the secret-resolved JSON. `pyjwt` +
+      `cryptography` are existing dependencies — no google-auth, no
+      SDK (decision 3 holds). Minted tokens are short-lived and held
+      in process memory only; the JSON and private key never appear in
+      logs, audit details, or exception context.
+    - **One client seam**: the Google Ads client takes an access-token
+      callable regardless of auth mode — the credential seam supplies
+      the OAuth `ensure_fresh_credential` path for `oauth` credentials
+      and the JWT-bearer minting path for `service_account`
+      credentials. Operations, discovery, and tools never branch on
+      auth mode. (`_needs_refresh` already returns `False` for
+      non-OAuth credentials; service-account credentials do not enter
+      the OAuth refresh path.)
+    - **Same policy surface**: discovery, decision-7 write metadata,
+      per-entry audit, and the spend rule apply identically — the
+      service account is just another principal Google resolves
+      permissions for. Gmail/Airtable do not gain this mode here; a
+      later plan may generalize (record in FOLLOW_UPS).
 
 ## Superseded decisions
 
@@ -245,6 +317,12 @@ Recorded so they are not re-proposed; full history in
   package manifests in place.
 - **Gate G1 = 014/021–023 only** — plan 080 added 053/054 to the
   checklist (all DONE as of 2026-07-10).
+- **`GOOGLE_ADS_LOGIN_CUSTOMER_ID` env setting** — superseded
+  2026-07-21 by decisions 6/9: `login-customer-id` is per-resource
+  discovery metadata resolved per fan-out entry; a process-wide value
+  cannot represent one workspace reaching different accounts through
+  different MCC hierarchies. Do not re-propose any static
+  login-customer-id configuration.
 
 ## Why this matters
 
@@ -348,9 +426,16 @@ present.
 
 - `apps/api/integrations/gmail/` (fill): manifest additions
   (decision 6 resource types + `requires_discovery`), `client.py`,
-  `discover_resources.py`, `operations/` (one per file), `tools.py`;
+  `discover_resources.py`, `operations/` (one per file), `tools/` (one
+  tool per module; `__init__.py` composes only);
   wire `PROVIDER.discover_resources` and `PROVIDER.tool_definitions`
-- `apps/api/integrations/google_ads/` (fill): same shape
+- `apps/api/integrations/google_ads/` (fill): same shape; remove the
+  `GOOGLE_ADS_LOGIN_CUSTOMER_ID` field from its `settings.py` and the
+  matching `.env.example` line (decision 9)
+- `apps/api/services/integrations/connections/connect_service_account.py`
+  (create), `apps/api/routes/integrations/connect_service_account.py`
+  (create), and the JWT-bearer token-minting helper under
+  `apps/api/services/integrations/credentials/` (decision 16)
 - `apps/api/integrations/airtable/` (fill): same shape + PAT-scope help
   metadata (decision 5)
 - `apps/api/core/settings/integrations.py` (extend — decision 9 fields)
@@ -372,14 +457,17 @@ present.
 
 - OAuth flow mechanics, token encryption, refresh locking — 037/038 own
   the credential lifecycle; this plan only calls the credential-service
-  token seam per fan-out entry.
+  token seam per fan-out entry. (The decision-16 service-account
+  connect path and token minting are the one credential-surface
+  addition this plan makes; OAuth internals stay untouched.)
 - Discovery *harness* (job kind, status transitions, retries) — 039;
   this plan supplies each provider's `discover_resources` the harness
   invokes through the plugin.
 - Context resolution, fan-out internals, the active-context prompt block,
   and schedule wiring — 040. Slice A may add only the separate standing
   untrusted-content policy block required by Gate G6.
-- Any UI — 042. Event/webhook code (decision 15).
+- Any UI — 042 (which now also owes the service-account connect form
+  for decision 16). Event/webhook code (decision 15).
 - More operations per provider than decisions 1/10 list.
 - New migrations — this plan creates **no tables** (resources ride the
   generic `integration_resources`).
@@ -404,6 +492,12 @@ one of these tools spends money — and each provider deserves a review
 that is not diluted by the other two.
 
 ### Slice A — Provider substrate + Gmail (`API - Gmail Provider`)
+
+**Completed 2026-07-21.** Gate pre-flights passed; registry smoke exposed
+exactly `gmail_read_message`, `gmail_search_messages`, and
+`gmail_send_message`; the database-backed integration, integration-service,
+and agent-runtime suites passed with 374 tests. The plan stays open for Slices
+B and C.
 
 - **Steps**: 0 (both gate pre-flights), 1 (settings + retry-helper
   audit), 2's gmail manifest completion, 3 (the Gmail package), and
@@ -431,19 +525,26 @@ that is not diluted by the other two.
 
 ### Slice B — Google Ads, the spend slice (`API - Google Ads Provider`)
 
-- **Steps**: 2's google_ads manifest completion, 4 (the Google Ads
-  package), and its three tool definitions in Step 6.
-- **Tests (from Step 7)**: `test_google_ads_provider.py` and
+- **Steps**: 2's google_ads manifest completion (including the
+  decision-16 `auth_modes` addition), 4 (the Google Ads package, the
+  service-account connect path + token minting, and the decision-9
+  settings-field removal), and its three tool definitions in Step 6.
+- **Tests (from Step 7)**: `test_google_ads_provider.py`, the
+  service-account connect/token tests, and
   `tests/services/agents/test_spend_policy.py` — the roadmap's first
   hard Gate G1 test lands in this slice, in the same commit as the
   spend lever it pins.
 - **Gate**: `INTEGRATIONS_ENABLED_PROVIDERS='["google_ads"]'` smoke
   prints `approval False ['approval']` for
-  `google_ads_update_campaign_status`; the listed suites green.
-- **Review focus**: `login-customer-id` selection for MCC children,
-  manager accounts stored non-enabled, the developer token never in
-  logs/audit/exceptions, the mutate partial-failure surfacing, and
-  both spend-policy enforcement layers.
+  `google_ads_update_campaign_status`; the listed suites green; grep
+  confirms `GOOGLE_ADS_LOGIN_CUSTOMER_ID` no longer exists anywhere.
+- **Review focus**: `login-customer-id` always from the resource's
+  `login_customer_id` metadata (accessible root, never env, never the
+  immediate parent by assumption), manager accounts stored non-enabled,
+  the developer token AND service-account JSON/private key never in
+  logs/audit/exceptions, secret-reference-only credential persistence,
+  the mutate partial-failure surfacing, and both spend-policy
+  enforcement layers.
 
 ### Slice C — Airtable + catalog closure (`API - Airtable Provider`)
 
@@ -501,8 +602,10 @@ Edit the three package manifests in place:
   still flows through discovery so Gmail shares the context/fan-out
   shape).
 - `google_ads`: flip `requires_discovery=True` alongside its real discovery
-  callable. The 037 completion decision deliberately left it false while
-  `discover_resources=None`.
+  callable (the 037 completion decision deliberately left it false while
+  `discover_resources=None`), and set
+  `auth_modes=("oauth", "service_account")` (decision 16 — the value is
+  already in `AUTH_MODES` and the DB check constraint).
 - `airtable`: flip `requires_discovery=True` alongside its real discovery
   callable, and add the connect-form help text naming the required PAT
   scopes (decision 5) via the manifest metadata surface agreed with 038
@@ -551,16 +654,37 @@ Operations (one per file under `operations/`):
 `client.py` — async client over
 `https://googleads.googleapis.com/v<pinned>` (pin the current stable
 version in one constant; record it in the module docstring with the
-verification date). Every request carries `developer-token` from
-settings (via `.get_secret_value()`) and, when calling client accounts
-under an MCC, `login-customer-id` (the manager's external id from the
-resource's `parent_external_id` metadata — resolve per entry, no
-if-ladders).
+verification date). The constructor takes an access-token callable from
+the credential seam (works for both auth modes per decision 16). Every
+request carries `developer-token` from settings (via
+`.get_secret_value()`) and `login-customer-id` from the target
+resource's decision-6 `login_customer_id` metadata — resolved per
+fan-out entry, never from settings or process state, no if-ladders.
+Remove the vestigial `GOOGLE_ADS_LOGIN_CUSTOMER_ID` settings field and
+`.env.example` line in this step (decision 9).
+
+Service-account support (decision 16), before or alongside the client:
+
+- token-minting helper under `services/integrations/credentials/` —
+  resolves the service-account JSON via the secret-reference seam,
+  signs the RS256 JWT-bearer assertion with `pyjwt`, exchanges it at
+  the Google token endpoint through the Step 1 retry helper, returns
+  a short-lived access token (cache in process until near expiry).
+- `services/integrations/connections/connect_service_account.py` +
+  its route — validate-then-persist per decision 16, reusing
+  `store_secret_reference_credential` and the api-key connect shape
+  (label handling, discovery enqueue, audit, `ConnectionRead`).
+
+Operations:
 
 - `discover_resources.py` — `customers:listAccessibleCustomers`, then
-  per accessible customer a `customer_client` GAQL query to expand the
-  hierarchy; `google_ads_account` resources with decision-6 metadata;
-  managers stored non-enabled by default.
+  per accessible root a `customer_client` GAQL query (with
+  `login-customer-id` set to that root) to expand the hierarchy;
+  `google_ads_account` resources with decision-6 metadata including
+  the per-account `login_customer_id` (the accessible root, or the
+  account's own id when directly accessible); managers stored
+  non-enabled by default. Identical for OAuth and service-account
+  connections.
 - `list_accounts.py` — read of the *persisted* resource hierarchy for
   the active-context entries (no API call; gives the model the account
   tree cheaply).
@@ -571,8 +695,12 @@ if-ladders).
   operation per id, `partial_failure=true`; returns mutate
   `resource_names` + per-campaign errors.
 
-**Verify**: unit tests cover MCC header selection, report row cap, and
-mutate partial-failure surfacing.
+**Verify**: unit tests cover MCC header selection from resource
+metadata (including a three-level hierarchy fixture where the header
+must be the root MCC, not the immediate parent), report row cap, mutate
+partial-failure surfacing, service-account connect validation, and the
+JWT-bearer exchange (mocked; assert the assertion's claims and that the
+key material never reaches logs or errors).
 
 ### Step 5: Airtable provider (`integrations/airtable/`)
 
@@ -624,8 +752,9 @@ str | None)` following the `tool_events.py:35` shape (independent
 committed transaction; never raises into the tool path — log on
 failure).
 
-`integrations/<key>/tools.py` — build the decision-1
-`RuntimeToolDefinition`s and export them via
+`integrations/<key>/tools/` — build each decision-1
+`RuntimeToolDefinition` in its own module, compose them in `__init__.py`, and
+export them via
 `PROVIDER.tool_definitions`. Every tool:
 
 - carries the decision-1 effect/effect_scope/policy/binding matrix
@@ -664,11 +793,16 @@ calls are blocked in tests):
   resource with scope-derived write metadata; search caps results; read
   truncates; send builds correct RFC 2822 (base64url round-trip) and
   returns the message id.
-- `test_google_ads_provider.py`: discovery expands an MCC fixture into
-  parent-linked resources with managers non-enabled; report rejects
-  non-SELECT GAQL (`ModelRetry`); row cap truncates with note; mutate
-  sends `login-customer-id` for managed accounts and surfaces
-  partial-failure errors per campaign.
+- `test_google_ads_provider.py`: discovery expands a multi-level MCC
+  fixture into parent-linked resources with managers non-enabled and
+  each account's `login_customer_id` set to its accessible root (a
+  grandchild account carries the root MCC id, not its immediate
+  parent); report rejects non-SELECT GAQL (`ModelRetry`); row cap
+  truncates with note; mutate sends the resource-metadata
+  `login-customer-id` for managed accounts and surfaces partial-failure
+  errors per campaign; service-account connect rejects malformed JSON /
+  missing `client_email` and persists reference-only; the JWT-bearer
+  exchange builds correct claims and returns a usable token (mocked).
 - `test_airtable_provider.py`: discovery maps `permissionLevel` to
   write metadata; 429 retry; create/update return record ids.
 - `test_integration_tools.py`: each tool's registered
@@ -718,7 +852,7 @@ enclosed and forged markers neutralized** (Gate G6 channel (g)), and
 
 ## Done criteria
 
-- [ ] Gate G1 + G6 pre-flights passed; the required status rows quoted
+- [x] Gate G1 + G6 pre-flights passed; the required status rows quoted
       in the completion report
 - [ ] `uv run ruff check .` exits 0; no new migrations exist
 - [ ] Registry smoke lists exactly the 10 decision-1 tools; the spend
@@ -767,7 +901,7 @@ Stop and report back (do not improvise) if:
 
 - **Provider #4 checklist**: a package under `apps/api/integrations/`
   (manifest, `client.py`, `discover_resources.py`, one file per
-  operation, `tools.py` with bindings + presentations), per-entry audit
+  operation, `tools/` with one module per binding + presentation), per-entry audit
   via `record_integration_operation_audit_event`, MockTransport tests
   under `tests/integrations/<key>/`, import-law compliance, and
   governance §2 policy review — writes approval-default, spend ops
@@ -779,11 +913,13 @@ Stop and report back (do not improvise) if:
   the read side).
 - **Reviewers should scrutinize**: the fail-closed write metadata
   (absent → read-only), that `update_campaign_status` is the ONLY spend
-  lever and stays single-field, `login-customer-id` selection for MCC
-  children, that audit details never contain message bodies or record
-  fields, and that a fan-out entry's token comes from *its own*
-  connection (cross-connection token bleed is the multi-connection
-  failure mode).
+  lever and stays single-field, `login-customer-id` taken only from
+  per-resource discovery metadata (never settings; the accessible root,
+  not an assumed immediate parent), service-account key material staying
+  inside the secret-reference seam, that audit details never contain
+  message bodies or record fields, and that a fan-out entry's token
+  comes from *its own* connection (cross-connection token bleed is the
+  multi-connection failure mode).
 - 014's OTel spans wrap the dispatch layer; add provider/connection
   attributes to integration tool spans — record as a FOLLOW_UPS item at
   execution, not a scope change here.

@@ -5,7 +5,9 @@
 from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
 
+from .discover_resources import discover_resources
 from .settings import gmail_settings
+from .tools import TOOL_DEFINITIONS
 
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -36,8 +38,11 @@ PROVIDER = IntegrationProviderPlugin(
             "https://www.googleapis.com/auth/gmail.send",
         ),
         capability_flags=frozenset({"read", "write"}),
-        event_delivery="pubsub_push",
+        resource_types=("gmail_mailbox",),
+        requires_discovery=True,
+        event_delivery="none",
     ),
-    discover_resources=None,
+    discover_resources=discover_resources,
     oauth_config=oauth_config,
+    tool_definitions=TOOL_DEFINITIONS,
 )

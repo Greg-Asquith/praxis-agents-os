@@ -112,11 +112,12 @@ async def run_discovery(
     )
 
     try:
-        credential_value = await _resolve_credential_value(db, connection)
+        credential_value, granted_scopes = await _resolve_credential_value(db, connection)
         resources = await _fetch_resources(
             provider_key=connection.provider_key,
             credential_value=credential_value,
         )
+        resources = _apply_granted_scope_permissions(resources, granted_scopes=granted_scopes)
         counters = await _reconcile_resources(
             db,
             connection=connection,
@@ -168,7 +169,7 @@ async def run_discovery(
 async def _resolve_credential_value(
     db: AsyncSession,
     connection: IntegrationConnection,
-) -> str:
+) -> tuple[str, frozenset[str]]:
     credential = await db.get(ExternalCredential, connection.credential_id)
     if credential is None or credential.deleted:
         raise IntegrationNotFoundError(
@@ -189,16 +190,19 @@ async def _resolve_credential_value(
                 provider_key=connection.provider_key,
                 operation="discover_resources",
             )
-        return access_token
-    return await resolve_secret(
-        db,
-        SecretReference(
-            provider=credential.secret_provider or "",
-            name=credential.secret_name or "",
-            version=credential.secret_version or "",
+        return access_token, frozenset(fresh.granted_scopes or ())
+    return (
+        await resolve_secret(
+            db,
+            SecretReference(
+                provider=credential.secret_provider or "",
+                name=credential.secret_name or "",
+                version=credential.secret_version or "",
+            ),
+            workspace_id=connection.owner_workspace_id,
+            actor_id=connection.connected_by_user_id,
         ),
-        workspace_id=connection.owner_workspace_id,
-        actor_id=connection.connected_by_user_id,
+        frozenset(),
     )
 
 
@@ -233,6 +237,26 @@ async def _fetch_resources(
             )
         keys.add(key)
     return resources
+
+
+def _apply_granted_scope_permissions(
+    resources: tuple[DiscoveredIntegrationResource, ...],
+    *,
+    granted_scopes: frozenset[str],
+) -> tuple[DiscoveredIntegrationResource, ...]:
+    """Fail closed when a resource's write capability requires OAuth scopes."""
+    return tuple(
+        DiscoveredIntegrationResource(
+            resource_type=item.resource_type,
+            external_id=item.external_id,
+            display_name=item.display_name,
+            parent_external_id=item.parent_external_id,
+            writable=item.writable and set(item.required_write_scopes).issubset(granted_scopes),
+            required_write_scopes=item.required_write_scopes,
+            permissions_metadata=item.permissions_metadata,
+        )
+        for item in resources
+    )
 
 
 async def _reconcile_resources(

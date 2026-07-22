@@ -17,6 +17,7 @@ import httpx2
 from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationConnectionError,
+    IntegrationNotFoundError,
     IntegrationPermissionError,
     IntegrationRateLimitError,
     IntegrationTimeoutError,
@@ -31,57 +32,106 @@ async def request_with_retries(
     *,
     operation: str,
     provider_key: str,
+    client: httpx2.AsyncClient | None = None,
     **kwargs: Any,
 ) -> httpx2.Response:
     """Issue one bounded provider request and map failures to typed errors."""
     kwargs.setdefault("timeout", settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS)
+    if client is not None:
+        return await _request_with_client(
+            client,
+            method,
+            url,
+            operation=operation,
+            provider_key=provider_key,
+            kwargs=kwargs,
+        )
+    async with httpx2.AsyncClient() as owned_client:
+        return await _request_with_client(
+            owned_client,
+            method,
+            url,
+            operation=operation,
+            provider_key=provider_key,
+            kwargs=kwargs,
+        )
+
+
+async def _request_with_client(
+    client: httpx2.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    operation: str,
+    provider_key: str,
+    kwargs: dict[str, Any],
+) -> httpx2.Response:
     last_status: int | None = None
     last_error: Exception | None = None
+    retryable = True
+    normalized_method = method.upper()
+    idempotent = normalized_method in {"DELETE", "GET", "HEAD", "OPTIONS", "PUT", "TRACE"}
 
-    async with httpx2.AsyncClient() as client:
-        for attempt in range(settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS):
-            response: httpx2.Response | None = None
-            try:
-                response = await client.request(method, url, **kwargs)
-                if response.status_code < 400:
-                    return response
-                last_status = response.status_code
-                if response.status_code == 401:
-                    raise IntegrationAuthError(
-                        "Integration authentication failed",
-                        provider_key=provider_key,
-                        operation=operation,
-                    )
-                if response.status_code == 403:
-                    raise IntegrationPermissionError(
-                        "Integration operation was denied",
-                        provider_key=provider_key,
-                        operation=operation,
-                    )
-                if 400 <= response.status_code < 500 and response.status_code != 429:
-                    raise IntegrationValidationError(
-                        "Integration request was rejected",
-                        provider_key=provider_key,
-                        operation=operation,
-                    )
-                last_error = httpx2.HTTPStatusError(
-                    "Retryable integration response",
-                    request=response.request,
-                    response=response,
+    for attempt in range(settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS):
+        response: httpx2.Response | None = None
+        try:
+            response = await client.request(method, url, **kwargs)
+            if response.status_code < 400:
+                return response
+            last_status = response.status_code
+            if response.status_code == 401:
+                raise IntegrationAuthError(
+                    "Integration authentication failed",
+                    provider_key=provider_key,
+                    operation=operation,
                 )
-            except (IntegrationAuthError, IntegrationPermissionError, IntegrationValidationError):
-                raise
-            except (TimeoutError, httpx2.RequestError) as exc:
-                last_error = exc
+            if response.status_code == 403:
+                raise IntegrationPermissionError(
+                    "Integration operation was denied",
+                    provider_key=provider_key,
+                    operation=operation,
+                )
+            if response.status_code == 404:
+                raise IntegrationNotFoundError(
+                    "Integration resource was not found",
+                    provider_key=provider_key,
+                    operation=operation,
+                )
+            if 400 <= response.status_code < 500 and response.status_code != 429:
+                raise IntegrationValidationError(
+                    "Integration request was rejected",
+                    provider_key=provider_key,
+                    operation=operation,
+                )
+            last_error = httpx2.HTTPStatusError(
+                "Retryable integration response",
+                request=response.request,
+                response=response,
+            )
+            retryable = idempotent or response.status_code in {429, 503}
+        except (
+            IntegrationAuthError,
+            IntegrationNotFoundError,
+            IntegrationPermissionError,
+            IntegrationValidationError,
+        ):
+            raise
+        except (TimeoutError, httpx2.RequestError) as exc:
+            last_error = exc
+            retryable = idempotent or isinstance(
+                exc,
+                (httpx2.ConnectError, httpx2.ConnectTimeout),
+            )
 
-            if attempt + 1 < settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS:
-                retry_after = _retry_after_seconds(response) if response is not None else None
-                delay = (
-                    min(retry_after, settings.INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS)
-                    if retry_after is not None
-                    else settings.INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR * (2**attempt)
-                )
-                await asyncio.sleep(delay)
+        if not retryable or attempt + 1 >= settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS:
+            break
+        retry_after = _retry_after_seconds(response) if response is not None else None
+        delay = (
+            min(retry_after, settings.INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS)
+            if retry_after is not None
+            else settings.INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR * (2**attempt)
+        )
+        await asyncio.sleep(delay)
 
     context = {
         "provider_key": provider_key,
@@ -90,7 +140,7 @@ async def request_with_retries(
     }
     if last_status == 429:
         raise IntegrationRateLimitError("Integration rate limit exceeded", **context)
-    if isinstance(last_error, (TimeoutError, httpx2.RequestError)):
+    if isinstance(last_error, (TimeoutError, httpx2.TimeoutException)):
         raise IntegrationTimeoutError("Integration request timed out", **context)
     raise IntegrationConnectionError("Integration provider request failed", **context)
 

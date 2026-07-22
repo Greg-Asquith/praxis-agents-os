@@ -486,14 +486,22 @@ channel execution. The scenario probe exposed a missing pending audit
 for policy-gated approvals; the operator authorized that narrow prerequisite
 runtime correction before Plan 055 resumed.
 
-Plan 041 Slice A was reconciled 2026-07-21 after its Gate G6 pre-flight was
-found to require shared framing code that no earlier completed plan delivered.
-Slice A now explicitly owns the runtime-internal untrusted-content carrier, one
-marker vocabulary with forgery neutralization, dispatch framing, the standing
-data-not-instructions prompt block, and the hostile Gmail fixture. This removes
-the contradictory prerequisite without weakening Gate G6 or permitting
-provider-local delimiters; Plan 041 remains TODO until all three provider slices
-land.
+Plan 041 Slice A completed 2026-07-21. It delivered the shared
+untrusted-content carrier with marker forgery neutralization, dispatch framing,
+the standing data-not-instructions prompt block, per-resource integration audit
+events, scope-derived write availability, bounded provider HTTP behavior, and
+Gmail discovery plus its search, read, and send tools. Provider tools are split
+one per module under a `tools/` tree. Plan 041 remains TODO; Google Ads Slice B
+and Airtable Slice C are still pending.
+
+Plan 041b was added 2026-07-22: rich provider tool UI. 041's tools render
+through the generic declarative row, which shows raw untrusted-content framing
+markers and flattened text instead of an email. 041b fills the packaging-note
+§5 presenter seam (custom `ToolRowPresenter`s for Gmail search/read/send, then
+Ads/Airtable tables), publishes the frame vocabulary as a client display
+contract with provenance chips, and adds an engine-owned, audited, ephemeral
+content-preview seam (sanitized HTML email in a script-less sandboxed iframe).
+Its Slice C waits on 041 Slices B/C.
 
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
@@ -575,7 +583,8 @@ note wins on intent.
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | DONE |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | DONE |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | DONE |
-| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO |
+| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO (Slice A DONE; B/C pending) |
+| 041b | Rich provider tool UI — presenter rows, provenance display, safe content preview | P1 | M-L | 041 Slice A, 042 (Slice C: 041 B/C) | TODO |
 | 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | DONE |
 | 043 | Embeddings provider service | P1 | M | 029 (Gate G3; done) | TODO |
 | 044 | KB models and ingestion pipeline | P1 | L | 030, 031, 043 | TODO |

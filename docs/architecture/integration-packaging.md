@@ -88,7 +88,7 @@ Goals, in priority order:
 | SSE protocol, `ToolActivity` shape, presentation schema | stream/protocol + tool contract | stale-client safety; closed vocabularies |
 
 A provider package supplies: manifest data, a discovery function,
-operation clients, tool definitions (with bindings and presentations),
+operation clients, one-module-per-tool definitions (with bindings and presentations),
 tests — and optionally a small web UI module.
 
 ## 4. Backend layout
@@ -108,7 +108,13 @@ apps/api/integrations/
       search_messages.py
       read_message.py
       send_message.py
-    tools.py             # RuntimeToolDefinitions: bindings + presentations
+    tools/
+      __init__.py        # composes exported definitions only
+      schemas.py         # provider tool-result contracts
+      utils.py           # shared bindings and provider-local helpers
+      search_messages.py # one RuntimeToolDefinition per module
+      read_message.py
+      send_message.py
   google_ads/            # same shape
   airtable/              # same shape
 ```
@@ -324,7 +330,8 @@ map. No other shared file changes per provider.
 Adding a provider touches:
 
 1. `apps/api/integrations/<key>/` — the package (manifest, client,
-   discovery, operations, tools with presentations, per-package tests).
+   discovery, operations, a one-module-per-tool tree with presentations,
+   per-package tests).
 2. `apps/api/pyproject.toml` — an extra, only if it needs an SDK.
 3. Core settings mixin — its operational settings (client id, tokens),
    only if OAuth/config-gated.

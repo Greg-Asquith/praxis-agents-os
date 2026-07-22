@@ -59,6 +59,7 @@ from services.agents.runtime.tools.contract import (
     ToolEffectScope,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.agents.runtime.untrusted import frame_untrusted_content
 from services.audit_events.enums import AuditStatus
 from services.audit_events.tool_events import (
     ToolAuditOutcome,
@@ -354,6 +355,7 @@ async def dispatch_tool_execution(
         )
         raise
 
+    result = frame_untrusted_content(result)
     try:
         validate_output(definition, result)
     except OutputContractError as exc:

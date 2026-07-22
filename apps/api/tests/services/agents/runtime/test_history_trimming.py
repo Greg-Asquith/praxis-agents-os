@@ -24,7 +24,10 @@ from core.settings import settings
 from models.agent import Agent
 from services.agents.runtime.history import history_trimmer, trim_history
 from services.agents.runtime.loop import _runtime_instructions
-from services.agents.runtime.prompt import PLANNING_INSTRUCTIONS
+from services.agents.runtime.prompt import (
+    PLANNING_INSTRUCTIONS,
+    UNTRUSTED_CONTENT_INSTRUCTIONS,
+)
 from services.agents.runtime.tools import build_runtime_tools
 
 pytestmark = pytest.mark.asyncio
@@ -200,7 +203,7 @@ async def test_cache_sensitive_prefix_inputs_are_deterministic() -> None:
     )
 
     assert _runtime_instructions(agent, include_delegation=False) == (
-        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS}"
+        f"Reply plainly.\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS.rstrip()}\n\n{PLANNING_INSTRUCTIONS}"
     )
     assert _runtime_instructions(agent, include_delegation=False) == _runtime_instructions(
         agent,

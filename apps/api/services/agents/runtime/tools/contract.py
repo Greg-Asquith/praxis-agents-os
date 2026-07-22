@@ -74,6 +74,7 @@ VALID_TOOL_ICONS = frozenset(
         "image",
         "book",
         "link",
+        "mail",
     }
 )
 
@@ -145,6 +146,7 @@ class RuntimeToolDefinition:
     configurable: bool = True
     auto_mount: bool = False
     integration_binding: IntegrationToolBinding | None = None
+    availability_check: Callable[[], bool] | None = None
     presentation: ToolPresentation = ToolPresentation()
 
     def allowed_policies(self) -> frozenset[ToolPolicy]:

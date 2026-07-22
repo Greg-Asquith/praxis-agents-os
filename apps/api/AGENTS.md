@@ -32,10 +32,17 @@ Repo-wide expectations are in the root `AGENTS.md`.
   versioned event protocol, run persistence, approval state
   (`DeferredToolRequests`/`DeferredToolResults`), capabilities, cooperative
   cancellation, and agent-to-agent delegation under `runtime/delegation/`.
+- Direct conversation creation may include an `active_context` selection. It
+  must be validated and persisted after the conversation is flushed but before
+  its first run is created, so the initial turn resolves the selected context.
 - Every agent tool flows through the tool registry and the single dispatch
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
   not execute tool logic around it.
+- Provider packages keep each agent tool in its own module under a `tools/`
+  tree. The tree may share schemas and provider-local helpers, while its
+  `__init__.py` only composes exported definitions; do not accumulate a
+  provider's catalog in one `tools.py` module.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

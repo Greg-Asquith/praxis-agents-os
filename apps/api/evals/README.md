@@ -25,3 +25,5 @@ history as typed tool returns and check both tool choice and outbound argument
 canaries. They do not execute the unfinished knowledge or memory tools. Once
 those tools land, their owning plans must replace the scaffolds with real
 channel-tool cases while retaining the same exfiltration and compliance checks.
+The Gmail case uses the shared hostile-email fixture and production untrusted-
+content framing before placing the tool return in history.
