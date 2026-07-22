@@ -25,8 +25,9 @@
 - **Risk**: LOW-MED (additive contract fields and a default-allow grant seam;
   the only behavior-bearing change is the grant store, which ships with
   default-allow semantics identical to today's stub)
-- **Depends on**: 025/026 (DONE). Interleaves any time; must land **before
-  041** finishes multiplying the tool catalog and before 083 executes.
+- **Depends on**: 025/026 (DONE). Plan 041 completed with the first 10
+  provider tools before this prerequisite landed; execute this as the immediate
+  catalogue-hardening follow-up, before 083 or any further provider expansion.
 - **Category**: Phase 7 prerequisite (roadmap §4 Phase 7; design note
   `internal-applications.md` §10)
 - **Planned at**: commit `1bc7c03`, 2026-07-20

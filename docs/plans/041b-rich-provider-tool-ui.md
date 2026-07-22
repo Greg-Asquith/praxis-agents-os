@@ -1,4 +1,4 @@
-# Plan 041b: Rich provider tool UI — presenter kits, provenance display, safe content preview
+# Plan 041b: Rich provider tool UI — structured untrusted content, presenter kits, safe content preview
 
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to
@@ -12,38 +12,50 @@
 > the `IntegrationUiModule` seam this plan is the first real consumer
 > of, and the §5.5 boundary rules this plan amends per decision 2), and
 > `docs/architecture/threat-model.md` §3 (the shared framing standard
-> whose markers this plan surfaces in the UI). The notes win over this
-> plan if they diverge — except where a decision below explicitly
-> amends a note, in which case the amendment lands in the note in the
-> same slice.
+> whose *enforcement point* this plan moves per decision 3). The notes
+> win over this plan if they diverge — except where a decision below
+> explicitly amends a note, in which case the amendment lands in the
+> note in the same slice.
 >
 > **Sibling-plan pre-flight**: 041 Slice A (Gmail provider) and 042
 > (integrations UI, including the `src/integrations/` lazy-module seam)
-> must be DONE. Slice C of this plan requires 041 Slice B (Google Ads —
+> must be DONE. Slice D of this plan requires 041 Slice B (Google Ads —
 > in progress on `main` as of 2026-07-22, package present uncommitted);
-> Slice D requires 041 Slice C (Airtable). Do not start a slice before
+> Slice F requires 041 Slice C (Airtable). Do not start a slice before
 > its provider lands.
 
 ## Status
 
 - **Priority**: P1
 - **Effort**: L
-- **Risk**: MEDIUM-HIGH (renders attacker-authored email HTML in the
-  operator's browser; a sanitization gap is an XSS against the
-  workspace session — treat the preview slice like an auth surface)
-- **Depends on**: 041 Slice A (hard, DONE), 042 (hard, DONE); Slice C
-  only: 041 Slice B; Slice D only: 041 Slice C
+- **Risk**: MEDIUM-HIGH (Slice A rewires how untrusted content reaches
+  model context — a framing gap there is a prompt-injection regression;
+  Slice C renders attacker-authored email HTML in the operator's
+  browser — a sanitization gap is an XSS against the workspace session.
+  Treat both like auth surfaces)
+- **Depends on**: 041 Slice A (hard, DONE), 042 (hard, DONE); Slice D
+  only: 041 Slice B; Slice F only: 041 Slice C
 - **Category**: Phase 4a integrations (packaging note §2 principle 2,
   §5.2–5.5; threat-model §3/§4)
 - **Planned at**: 2026-07-22, tree with 041 Slice A present.
-  **Rewritten 2026-07-22** after a donor-app parity review: the first
-  draft's per-provider one-off presenters were replaced by engine-owned
-  **presenter kits** (the donor's "family renderer" architecture), a
-  kind-driven data-table/KPI/chart surface for reports, and a richer
-  message experience. The donor sets the *richness benchmark*; its
-  *mechanisms* are adopted only where they fit our packaging and
-  threat-model posture — rejections are recorded in "Donor patterns
-  deliberately rejected" so they are not re-proposed.
+  **Rewritten 2026-07-22** after a donor-app parity review: per-provider
+  one-off presenters were replaced by engine-owned **presenter kits**
+  (the donor's "family renderer" architecture). **Rewritten again
+  2026-07-22** after operator review, which took four decisions the
+  first rewrite got wrong: (1) the untrusted-frame vocabulary stays
+  **model-only** — instead of teaching the client to parse frames, the
+  backend stores structured untrusted nodes and renders frames only at
+  prompt-assembly time (decision 3, amending 041); (2) the preview
+  seam ships as a **Gmail-scoped route**, not a generic plugin
+  mechanism — generalize at provider #2 (decision 4); (3) Gmail search
+  results get **click-to-open drill-in** to the full message, the
+  donor's flagship inbox interaction (decision 6); (4) **charts move
+  to a trailing slice** so the trust-critical report table is not
+  gated on a chart library review (decision 7). The donor sets the
+  *richness benchmark*; its *mechanisms* are adopted only where they
+  fit our packaging and threat-model posture — rejections are recorded
+  in "Donor patterns deliberately rejected" so they are not
+  re-proposed.
 
 ## Problem
 
@@ -57,17 +69,23 @@ email. Google Ads (041 Slice B, landing now) is worse: every tool ships
 (`integrations/google_ads/tools/utils.py:39`), so a GAQL report — rows
 of framed strings keyed by field paths — renders as an unreadable chip
 soup. There is no way to see the actual HTML message, no table for a
-report, no chart, no affordance to reply, and nothing that generalizes
-to Airtable records.
+report, no affordance to reply, and nothing that generalizes to
+Airtable records.
 
-The declarative default row was never meant to carry this. Principle 2
-says the default row must render every tool *acceptably*, and custom
-presenter rows are "opt-in polish for the few tools that earn it (rich
-previews, domain widgets)". Email in a chat transcript and ad-spend
-report tables are the canonical cases that earn it. The donor app
-proves the ceiling: message lists that read like an inbox, HTML email
-in a hardened frame, reports as formatted tables with currency/percent
-cells, KPI strips, chart⇄table toggles, CSV export, row drill-downs,
+The root cause of the marker noise is upstream: dispatch renders
+untrusted content into model-facing frame strings *before* the result
+is validated, persisted, and streamed (`dispatch.py:358`), so the
+client inherits the model's view of the data. The frames are a prompt-
+injection defense; they were never meant to be a display format.
+
+The declarative default row was never meant to carry this either.
+Principle 2 says the default row must render every tool *acceptably*,
+and custom presenter rows are "opt-in polish for the few tools that
+earn it (rich previews, domain widgets)". Email in a chat transcript
+and ad-spend report tables are the canonical cases that earn it. The
+donor app proves the ceiling: message lists that read like an inbox,
+click-through to full HTML email, reports as formatted tables with
+currency/percent cells, KPI strips, CSV export, row drill-downs,
 editable approval cards, and per-account partial-failure summaries.
 This plan builds that level of experience — through our seams, not the
 donor's.
@@ -75,20 +93,22 @@ donor's.
 ## Donor benchmark (what "rich" means here)
 
 The donor (`saas-template` — see `apps/web/src/components/ai/tools/`
-in that tree) renders ~10 providers richly from ~6 shared renderer
-kits; providers contribute only thin `adapt(output) → KitResult`
-functions. The experiences this plan commits to reproducing, in our
-styles:
+in that tree) renders ~10 providers richly from shared renderer kit
+families; providers contribute only thin `adapt(output) → KitResult`
+functions (e.g. the 46-line Ads report descriptor over the 554-line
+`data-tables` kit). The experiences this plan commits to reproducing,
+in our styles:
 
 - **Gmail search** → an inbox-like list per mailbox: sender, subject,
-  relative date, snippet, per-row "Open in Gmail" deep link; fan-out
-  entry headers when multiple mailboxes; inline error entries.
+  relative date, snippet, per-row "Open in Gmail" deep link, and **row
+  click → full-message view** (the donor's `useMailDetailDialog`
+  drill-in); fan-out entry headers when multiple mailboxes; inline
+  error entries.
 - **Gmail read** → an email header block (from/to/date/subject as
   address chips), the plain-text body in a provenance-marked external-
   content container with preview/expand, "Open in Gmail", "Reply"
-  prefill, and — once the preview seam lands — a "View full email"
-  HTML view in a hardened iframe with remote images blocked by
-  default.
+  prefill, and a "View full email" HTML view in a hardened iframe with
+  remote images blocked by default.
 - **Gmail send** → an email-shaped approval card (To/Cc/Bcc/Subject/
   Body laid out as a message, editable fields wired to the existing
   approval-edit mechanism), then a compact "sent" confirmation row
@@ -97,8 +117,7 @@ styles:
   (currency from micros, percent, number, date, status badge, id),
   right-aligned `tabular-nums` metrics, zebra rows, a totals footer,
   truncation note, copy-CSV/download-CSV actions, row click → detail
-  sheet, and a chart⇄table toggle (line over time when a date
-  dimension is present, bar otherwise).
+  sheet; a chart⇄table toggle lands in the trailing chart slice.
 - **Google Ads accounts** → the account hierarchy as an indented list
   with manager/status/writable badges.
 - **Google Ads campaign mutation** → an approval card with an explicit
@@ -107,47 +126,53 @@ styles:
   and per-campaign status badges + inline error text (partial-failure
   first-class).
 - **Airtable records** → field-table cards per record with
-  field-type-aware value rendering and framed-field handling.
+  field-type-aware value rendering.
 - **Everywhere** → "N succeeded · M failed" fan-out summaries with a
-  failed-entries block, loading skeletons, empty states, metadata
+  failed-entries block, **in-flight states** (running tool calls render
+  skeleton rows / a labelled progress line, not a blank row — the
+  donor ships a `progress.tsx` per kit family), empty states, metadata
   strips (provider · resource · counts · truncation), and provenance
   chips instead of raw markers.
 
 ## Decisions taken
 
-1. **Two layers, strictly separated** (unchanged from the first
-   draft).
-   - *Layer 1 — presenter kits + adapters*: rich rendering of the
-     **existing** tool-result payloads. Zero model-visible change
-     beyond decision 8's narrow metadata additions; pure consumers of
-     the shipped `IntegrationUiModule` seam.
-   - *Layer 2 — on-demand content preview*: full HTML email (and later
-     provider blobs) is fetched **user-initiated, at view time**,
-     through a new engine seam — never by fattening tool results. The
-     model-visible result deliberately excludes HTML (Gate G6 framing +
-     truncation bounds); those constraints are not negotiable for UI
-     convenience. Preview responses are ephemeral: never persisted,
-     never entered into model context.
+1. **Two layers, strictly separated.**
+   - *Layer 1 — presenter kits + adapters*: rich rendering of tool-
+     result payloads; pure consumers of the shipped
+     `IntegrationUiModule` seam. The only model-visible changes are
+     decision 3's representation change (identical rendered bytes) and
+     decision 8's narrow metadata addition.
+   - *Layer 2 — on-demand content preview*: full HTML email is fetched
+     **user-initiated, at view time**, through a preview route — never
+     by fattening tool results. The model-visible result deliberately
+     excludes HTML (Gate G6 framing + truncation bounds); those
+     constraints are not negotiable for UI convenience. Preview
+     responses are ephemeral: never persisted, never entered into
+     model context.
 2. **Layer 1 is kit-based: engine-owned presenter kits, thin provider
-   adapters.** This is the donor's highest-leverage pattern and the
-   core change of the rewrite. A new engine-owned directory
-   `apps/web/src/components/tool-ui/` holds shared renderer kits;
-   provider modules under `src/integrations/<key>/` contain only
-   `matches` guards and `adapt(activity) → KitProps | null` functions
-   plus composition. The kits:
+   adapters.** This is the donor's highest-leverage pattern. A new
+   engine-owned directory `apps/web/src/components/tool-ui/` holds
+   shared renderer kits; provider modules under
+   `src/integrations/<key>/` contain only `matches` guards and
+   `adapt(activity) → KitProps | null` functions plus composition.
+   Every kit renders three states: pending (skeleton/progress,
+   driven by `activity.status` + `live`), success, and entry-level
+   failure. The kits:
    - **`fan-out-shell`** — the universal envelope for
      `{"results": [entries...]}` payloads: per-entry sections keyed by
      resource `display_name`/`external_id`, a "N succeeded · M failed"
      summary when mixed, a failed-entries block rendering
-     `error_message` inline, an empty state, and a metadata strip.
-     Every provider presenter wraps in it.
+     `error_message` inline, an empty state, a pending skeleton, and a
+     metadata strip. Every provider presenter wraps in it.
    - **`external-content`** — the provenance container from decision
-     3: distinct background, provenance chip, plain-text rendering
+     3: distinct background, provenance chip built from the node's
+     `source_kind`/`source_ref`, plain-text rendering
      (`white-space: pre-wrap`, never markdown), preview/expand for
      long bodies.
    - **`message`** — message list rows (sender/subject/date/snippet,
-     deep-link action) and a message detail block (header grid,
-     address chips, body via `external-content`, action row).
+     action slot, optional `onSelect` for drill-in) and a message
+     detail block (header grid, address chips, body via
+     `external-content`, action row).
    - **`data-table`** — kind-driven columns
      (`text | number | currency | percent | date | datetime | status |
      badge | link | id`), per-kind cell formatters (`Intl` currency
@@ -163,8 +188,6 @@ styles:
    - **`kpi`** — a responsive strip of stat cards (mono tabular value,
      tone border), used for mutation result counts and report
      summaries.
-   - **`chart`** — decision 7's chart surface with the chart⇄table
-     toggle.
    - **`approval-card`** — the tool approval shell (title, icon,
      optional write-operation banner, body slot, Approve/Decline
      footer driven by the existing `ToolApprovalDecisionControls`
@@ -176,6 +199,7 @@ styles:
      consumer of the extracted primitives; the editable-field engine
      (`approval-decision-fields.tsx`) moves with the shell. No change
      to the controls contract or approval flow.
+   - **`chart`** — decision 7's chart surface, added in Slice E only.
 
    **§5.5 amendment (recorded in the packaging note in the same
    slice)**: boundary rule 1 gains `^src/components/tool-ui` in the
@@ -184,51 +208,70 @@ styles:
    review, not a package change. `src/components/tool-ui` may import
    only `src/components/ui` and `src/lib` (a new cruiser rule pins
    this), so kits can never grow feature/route dependencies.
-3. **The untrusted-frame vocabulary becomes a published display
-   contract.** 041 declared the carrier/markers "runtime-internal, not
-   SSE payload contracts", but the framed strings already reach the
-   client verbatim inside stored tool-result parts — the client
-   renders them today, badly. This plan records the deviation (in the
-   packaging note §5.3 area and threat-model §3): the marker
-   vocabulary and `source_kind`/`source_ref` attribute shape are now
-   also a client-side *display* contract. A single shared helper
-   (`src/lib/untrusted-frames.ts`) parses frames out of display
-   strings and returns `{ content, sourceKind, sourceRef }` spans; UI
-   renders the content inside the `external-content` container with a
-   provenance chip ("Gmail message · 18c…"), never the raw markers.
-   Parsing is forgiving: unmatched or forged (neutralized) markers
-   render as plain text; a parse failure can never hide content.
-   **Per-cell frames**: Google Ads report cells arrive individually
-   framed (`operations/run_report.py:40-50` wraps every string cell);
-   the data-table adapter unwraps each cell via the shared parser and
-   the table shows provenance **once at container level** ("External
-   data · Google Ads · account 123…") — a chip per cell would be
-   noise, and the container-level treatment is the same trust signal.
-   Changing the vocabulary now requires touching both sides — that is
-   the cost of surfacing provenance as a UI asset, and it is pinned by
-   tests on both sides (the frontend fixture string is copied from
-   real backend output so drift fails CI).
-4. **Preview seam shape (Layer 2).** `IntegrationProviderPlugin` gains
-   one optional attribute —
-   `previews: tuple[IntegrationPreviewDefinition, ...]`, default `()`
-   — following the (withdrawn) §9 `oauth_operations` mechanism:
-   contribution through the loaded plugin, resolution loader-only,
-   §4.6 import laws unchanged. Each definition is
-   `(kind: str, fetch: PreviewFetchFn)` where
-   `fetch(client_credentials, external_ref)` returns a typed
-   `IntegrationPreviewPayload` (`kind`,
-   `content_type: "html" | "text"`, `content`, `meta: dict`). One
-   generic core route serves every provider:
-   `GET /api/v1/workspaces/{workspace_id}/integrations/connections/{connection_id}/previews/{kind}?ref=...`
-   — engine-owned auth (`require_read` + workspace membership +
-   connection-in-workspace check, mirroring
-   `routes/integrations/list_connection_resources.py`), engine-owned
-   response size bound, and one audit event per preview via
-   `record_integration_operation_audit_event` (operation
-   `preview_<kind>`, the user as actor, external ref = the `ref`;
-   never content in audit details). The rationale bar for
+3. **Untrusted frames become model-only: structured nodes in storage,
+   frames rendered at prompt-assembly time.** This amends 041's
+   framing mechanics (not its posture — every model-visible untrusted
+   byte stays framed). Today `dispatch.py:358` renders
+   `UntrustedContent` carriers into frame strings before validation,
+   persistence, and streaming, so the framed text is what the client
+   receives. Operator decision: the frame vocabulary is a prompt-
+   injection defense and must not leak into any other layer. New
+   mechanics:
+   - Dispatch serializes carriers into a tagged, JSON-serializable
+     **untrusted node** (a small pydantic model in `untrusted.py`
+     with an unmistakable discriminator field plus `source_kind`,
+     `source_ref`, `content`; source components sanitized at mint
+     time as today). Nodes are what get validated, persisted
+     (`persistence.py` stores pydantic-ai messages verbatim), and
+     streamed (`events.py:113,155` serialize `part.content` as-is).
+   - A **history processor** on the runtime agent (registered at the
+     single construction point, `loop.py:65`; none exist today)
+     renders nodes inside `ToolReturnPart` content into the existing
+     frame strings — including forged-marker neutralization — on
+     every model request. The model-visible rendering is
+     byte-identical to today's output; a test pins this against the
+     pre-change fixture. Legacy history containing already-framed
+     strings passes through untouched (the processor only transforms
+     nodes), so old runs replay exactly as before.
+   - Tool output models type untrusted-capable fields as
+     `str | UntrustedNode` (provider packages already import from
+     `services.agents.runtime.untrusted`).
+   - The client receives structured nodes and renders them natively:
+     a type guard in the kit space (`isUntrustedNode`) feeds
+     `external-content` with `{content, sourceKind, sourceRef}`. **No
+     frame parser exists anywhere outside the history processor**, and
+     the vocabulary stays runtime-internal exactly as 041 declared.
+   - **Per-cell nodes**: Google Ads report cells arrive individually
+     wrapped (`operations/run_report.py:40-50`); the data-table
+     adapter reads each node's `content` and the table shows
+     provenance **once at container level** ("External data · Google
+     Ads · account 123…") — a chip per cell would be noise.
+   - **Legacy transcripts**: tool results stored before this slice
+     contain framed strings; they render as plain text (raw markers
+     visible) in old transcripts only. Accepted — pre-launch data, no
+     migration, no client-side legacy parser.
+4. **Preview seam shape (Layer 2): a Gmail-scoped route now; the
+   generic plugin mechanism waits for provider #2.** Operator decision:
+   the first rewrite's `previews` plugin attribute + loader validation
+   was a framework with one consumer. Instead: one route,
+   `GET /api/v1/workspaces/{workspace_id}/integrations/connections/{connection_id}/previews/gmail_message?ref=...`
+   — the URL keeps the generic `previews/{kind}` shape so a later
+   generalization does not break the client, but the implementation
+   dispatches directly to the Gmail preview operation (404 unless the
+   connection's provider is `gmail`). Engine-owned auth
+   (`require_read` + workspace membership + connection-in-workspace
+   check, mirroring `routes/integrations/list_connection_resources.py`),
+   engine-owned response size bound
+   (`INTEGRATION_PREVIEW_MAX_BYTES`, default 2MB), and one audit event
+   per preview via `record_integration_operation_audit_event`
+   (operation `preview_gmail_message`, the user as actor, external ref
+   = the `ref`; never content in audit details). The rationale bar for
    membership-level access: the same member already sees the full
-   plain-text body in the transcript.
+   plain-text body in the transcript. FOLLOW_UPS records the
+   generalization trigger: when a second provider needs a preview
+   kind, lift the dispatch into a plugin-contributed registry
+   (following the withdrawn §9 `oauth_operations` loader-only shape) —
+   do not add a second hardcoded provider branch.
 5. **HTML safety is defense in depth, and scripts never run.**
    - *Server*: sanitize with `nh3` (new dependency, rust ammonia
      bindings — allowlist-based) before the payload leaves the API:
@@ -259,59 +302,64 @@ styles:
      form, meta refresh, remote tracking pixel, javascript: link)
      asserted sanitized server-side; the fixture lives with the shared
      corpus directory.
-6. **Reply stays inside the governance loop.** The read-message
-   presenter's "Reply" affordance pre-fills the conversation composer
-   with a structured instruction (recipient, subject, quoted context)
-   so the send flows through `gmail_send_message` and its
-   approval-default policy; the approval card's editable fields
-   (`ToolUiField.editable`, rendered by the extracted field engine)
-   are the editing surface. No user-direct write path ships in this
-   plan: direct actions (send-as-user, file/archive/label) require
-   operations outside 041 decision 10's curated surface AND a new
-   user-principal action category with its own envelope/audit story —
-   record in `docs/plans/FOLLOW_UPS.md`, do not grow this plan. "Open
-   in Gmail" deep links
+6. **Drill-in everywhere the preview reaches, and reply stays inside
+   the governance loop.** Search-result rows are clickable: row click
+   opens a message detail sheet that fetches the full message through
+   the decision-4 preview route (the fan-out entry already carries
+   `connection_id` and the message id) — the donor's flagship inbox
+   interaction. The read-message presenter's "Reply" affordance
+   pre-fills the conversation composer with a structured instruction
+   (recipient, subject, quoted context) so the send flows through
+   `gmail_send_message` and its approval-default policy; the approval
+   card's editable fields (`ToolUiField.editable`, rendered by the
+   extracted field engine) are the editing surface. No user-direct
+   write path ships in this plan: direct actions (send-as-user,
+   file/archive/label) require operations outside 041 decision 10's
+   curated surface AND a new user-principal action category with its
+   own envelope/audit story — record in `docs/plans/FOLLOW_UPS.md`,
+   do not grow this plan. "Open in Gmail" deep links
    (`https://mail.google.com/mail/#all/<message_id>`) cover the
    escape-hatch cases meanwhile.
-7. **Charts: `recharts`, one wrapper, chart⇄table toggle.** The web
-   app has no chart library; reports deserve one. Add `recharts`
-   (^2.x) to `apps/web` as the single chart dependency, wrapped once
-   in the `chart` kit (`DataChart`: bar | line; themed via existing
-   Tailwind tokens; abbreviated K/M axis ticks with currency/percent
-   awareness; capped legend). `google_ads_run_report` presenters
-   auto-derive a chart from the parsed table: line when a
-   `segments.date` column is present, bar otherwise; up to 3 metric
-   series; rendered behind a chart⇄table toggle with the table as the
-   default view. Charts consume only unwrapped, numerically parsed
-   cells — a framed string that fails numeric parsing is excluded from
-   charting, never coerced. Pie/combo variants, model-authored charts,
-   and dashboards are out of scope (FOLLOW_UPS).
+7. **Charts: `recharts`, one wrapper, chart⇄table toggle — in a
+   trailing slice.** Operator decision: the trust-critical fix is the
+   table; the chart must not gate it. Slice E adds `recharts` (^2.x)
+   to `apps/web` as the single chart dependency, wrapped once in the
+   `chart` kit (`DataChart`: bar | line; themed via existing Tailwind
+   tokens; abbreviated K/M axis ticks with currency/percent awareness;
+   capped legend). `google_ads_run_report` presenters auto-derive a
+   chart from the parsed table: line when a `segments.date` column is
+   present, bar otherwise; up to 3 metric series; rendered behind a
+   chart⇄table toggle with the table as the default view. Charts
+   consume only numerically parsed node contents — a value that fails
+   numeric parsing is excluded from charting, never coerced.
+   Pie/combo variants, model-authored charts, and dashboards are out
+   of scope (FOLLOW_UPS).
 8. **Narrow, additive result-data enrichment — recorded, not
-   forbidden.** The first draft froze tool payloads entirely; that
-   froze the UI below the benchmark. The rule is now: *small additive
-   metadata fields inside a provider `data` dict are allowed when they
-   serve the model and the human alike and cost trivial tokens*; HTML,
-   blobs, and anything that exists only for rendering stay excluded
-   (that is what Layer 2 is for). Under this rule, this plan makes
-   exactly one addition: `google_ads_run_report` per-account `data`
-   gains `currency_code` (from the discovered resource metadata) so
-   both the model and the table formatter can interpret micros. Cell
-   values stay raw GAQL micros in the model-visible payload; the
-   data-table kit converts micros → currency units for display
-   (`metrics.*_micros` → `value / 1e6`, `Intl` currency with
-   `currency_code`). Whether the model-visible rows should pre-convert
-   micros is a FOLLOW_UPS question, not this plan's. Any future
-   addition under this rule is a provider-package change reviewed
-   against it, one field at a time.
+   forbidden.** The rule: *small additive metadata fields inside a
+   provider `data` dict are allowed when they serve the model and the
+   human alike and cost trivial tokens*; HTML, blobs, and anything
+   that exists only for rendering stay excluded (that is what Layer 2
+   is for). Under this rule, this plan makes exactly one addition:
+   `google_ads_run_report` per-account `data` gains `currency_code`
+   (from the discovered resource metadata) so both the model and the
+   table formatter can interpret micros. Cell values stay raw GAQL
+   micros in the model-visible payload; the data-table kit converts
+   micros → currency units for display (`metrics.*_micros` →
+   `value / 1e6`, `Intl` currency with `currency_code`). Whether the
+   model-visible rows should pre-convert micros is a FOLLOW_UPS
+   question, not this plan's. Any future addition under this rule is a
+   provider-package change reviewed against it, one field at a time.
 9. **No protocol growth.** No new SSE event types, no new
    `ToolFieldFormat` values, no `ToolPresentation` schema changes
    (packaging §2 principle 5). Column kinds, table rendering, charts,
    and provenance are entirely client-side interpretations of existing
-   payloads (plus decision 8's one field). Everything rides
-   presenters, the kits, the one new preview route, and the one plugin
-   attribute. The declarative default row remains the guaranteed
-   fallback for every tool.
-10. **The pattern is the deliverable.** Slices C and D apply the kits
+   payloads (decision 3 changes the *representation* inside existing
+   `result` values — `unknown` end-to-end on the wire — not the
+   protocol). Everything rides presenters, the kits, the one preview
+   route, and the dispatch/history-processor change. The declarative
+   default row remains the guaranteed fallback for every tool and must
+   render untrusted nodes acceptably (node → its `content` text).
+10. **The pattern is the deliverable.** Slices D and F apply the kits
     to Google Ads and Airtable as each 041 slice lands, and amend
     packaging §8 so the provider N+1 checklist asks the adapter
     question explicitly ("does any tool return content a human would
@@ -329,16 +377,19 @@ Recorded so they are not re-proposed as "the donor did it":
   client sanitizer and pays for auto-height with a weaker sandbox.
 - **Full HTML email bodies inside tool results** — rejected; the
   model-visible payload stays plain-text and framed (Gate G6). HTML
-  arrives only via the audited, ephemeral preview seam (Layer 2).
+  arrives only via the audited, ephemeral preview route (Layer 2).
 - **Direct tool invocation from the UI** (donor's tool-catalog
   playground, direct-send forms, `inputSubmitsInternally`) — rejected
   for this plan; every write flows through the agent + approval
-  governance (decision 6). A tool playground is a separate roadmap
-  conversation.
+  governance (decision 6). The read-only preview fetch is the one
+  sanctioned user-direct call, and it is scoped, audited, and
+  ephemeral. A tool playground is a separate roadmap conversation.
 - **Provider logic in shared modules** (the donor's descriptor cache,
   per-provider branches in shared renderers) — rejected; kits are
   generic, adapters live in provider packages, boundaries are
-  machine-enforced (§5.5 as amended).
+  machine-enforced (§5.5 as amended). The decision-4 provider branch
+  in the preview route is a recorded exception with a recorded
+  generalization trigger.
 - **Micros pre-converted server-side for display** — deferred
   (decision 8): the model-visible contract keeps raw GAQL values;
   conversion is a display concern until FOLLOW_UPS decides otherwise.
@@ -348,6 +399,12 @@ Recorded so they are not re-proposed as "the donor did it":
   `integrations/gmail/tools/schemas.py:11-18`), so the UI does not
   fake them. The message kit is designed so label chips/attachment
   rows slot in when a later plan widens the surface (FOLLOW_UPS).
+
+Plan-internal rejection, same purpose: **teaching the client the frame
+vocabulary** (the first rewrite's `untrusted-frames.ts` parser and
+two-sided "display contract") — rejected by operator decision 3. The
+frames are prompt hygiene; anything that needs the content outside
+model context consumes the structured node.
 
 ## Why this matters
 
@@ -359,16 +416,36 @@ story at first contact. This is also the moment to set the pattern:
 Gmail and Google Ads are the first providers a real user connects, and
 every later provider (Drive, Sheets, Meta, Microsoft) maps onto the
 same few kits: messages, tables, records, charts. Getting the seam
-right once — engine-owned kits, provider-owned adapters, provenance as
-a chip instead of noise, ephemeral audited preview for anything heavy —
-is what keeps principle 2 true as the catalog grows: the default row
-stays the floor, the kits become the affordable ceiling, and bespoke
-one-off UI stays exceptional.
+right once — structured content with provenance instead of display-
+parsed markers, engine-owned kits, provider-owned adapters, ephemeral
+audited preview for anything heavy — is what keeps principle 2 true as
+the catalog grows: the default row stays the floor, the kits become
+the affordable ceiling, and bespoke one-off UI stays exceptional.
 
 ## Current state
 
 Anchors verified 2026-07-22.
 
+- **Framing pipeline (backend)**: operations mint `UntrustedContent`
+  carriers (`integrations/gmail/operations/utils.py:22-23`,
+  `integrations/airtable/operations/utils.py:22`); dispatch renders
+  them to frame strings at `services/agents/runtime/dispatch.py:358`,
+  *before* `validate_output` (360) and `truncate_result` (378 —
+  structured results are exempt from truncation); the framed result is
+  what pydantic-ai receives, so it flows into run history. History is
+  persisted verbatim (`persistence.py:45,225`,
+  `ModelMessagesTypeAdapter`) and replayed as `message_history` on
+  later runs (`execute/setup.py:255-257`). SSE serializes
+  `part.content` as-is (`events.py:113,155`,
+  `_public_function_tool_result`). Frame vocabulary + neutralization:
+  `untrusted.py:10-13,63-79` (note the rendered opening frame is
+  `<<<PRAXIS_UNTRUSTED_CONTENT>>> source_kind="..." source_ref="...">>>`
+  — the START constant plus attributes plus a second `>>>`). The
+  runtime agent has **no history processors today**; the single
+  construction point is `services/agents/runtime/loop.py:64-87`
+  (`PydanticAgent(...)`) — delegate runners build through the same
+  helper. `evals/run.py` also touches `ToolReturnPart` — check for
+  framed-string assumptions in Slice A.
 - **Frontend seam (042, delivered)**: `apps/web/src/integrations/
   contract.ts` — `ToolRowPresenterProps` (lines 13-20: `activity`,
   `approvalDecision?`, `compact`, `defaultOpen`, `live`,
@@ -376,7 +453,8 @@ Anchors verified 2026-07-22.
   (28-33). `registry.ts` — `MODULE_LOADERS` (11-15),
   `integrationToolRowPresenters` (24-29), `useIntegrationUiModule`
   (41). All three provider modules are bare stubs exporting only
-  `providerKey`.
+  `providerKey`. `ToolActivity` carries `status` — presenters can
+  render pending states.
 - **Dispatch order**: `tool-call-row.tsx:58-68` consults
   `renderCustomToolCallRow` (which appends integration presenters to
   the built-in list, `tool-call-row-registry.tsx:96-102`) BEFORE the
@@ -402,17 +480,15 @@ Anchors verified 2026-07-22.
   (35-37), fan-out envelope `GmailFanOutEntry` (39-49:
   `integration_resource_id`, `connection_id`, `provider_key`,
   `external_id`, `display_name`, `status`, `data`, `error_code`,
-  `error_message`). Free-text fields arrive as framed strings
-  (`services/agents/runtime/untrusted.py` — markers at 10-13,
-  `UntrustedContent` 18-25, `_render_frame` 63-73,
-  `_sanitize_source_component` 76-79). The HTML body never reaches
-  the transcript — by design (`read_message.py` strips HTML, caps at
-  50k).
+  `error_message`). Untrusted-capable fields are typed `str` today —
+  they hold framed strings at validation time; decision 3 retypes
+  them. The HTML body never reaches the transcript — by design
+  (`read_message.py` strips HTML, caps at 50k).
 - **Google Ads payloads (041 Slice B, in progress on `main`,
   uncommitted — verify at execution)**: client pinned to v24
   (`client.py:12`). `google_ads_run_report` per-account `data` =
   `{rows, row_count, truncated, truncation_note}` with every string
-  cell individually framed (`operations/run_report.py:40-50`);
+  cell individually wrapped (`operations/run_report.py:40-50`);
   `google_ads_list_accounts` `data` = `{accounts: [{customer_id,
   display_name, parent_customer_id, manager, currency_code, status,
   writable, enabled}]}`; `google_ads_update_campaign_status` `data` =
@@ -433,7 +509,7 @@ Anchors verified 2026-07-22.
   (`src/components/ui/`: table, sheet, badge, card, skeleton, tabs,
   tooltip, select, …), Tailwind v4 + CVA + `cn()`, `lucide-react`.
   **No chart library** in `apps/web/package.json` (decision 7 adds
-  one).
+  one in Slice E).
 - **Route/auth precedent**:
   `routes/integrations/list_connection_resources.py` (require_read +
   workspace + connection scoping); audit precedent
@@ -442,10 +518,6 @@ Anchors verified 2026-07-22.
   preview or on-demand-fetch route exists** —
   `routes/integrations/__init__.py` registers connect/context/
   discovery/connection-management routes only.
-- **Plugin contract**: `services/integrations/plugin.py` —
-  `manifest + discover_resources + tool_definitions`; packaging §10
-  withdrew `oauth_operations` but its loader-only resolution mechanism
-  is the sanctioned extension shape.
 - **Boundary enforcement**: `.dependency-cruiser.cjs` rules for
   `src/integrations` (§5.5); `tests/integrations/test_import_laws.py`
   for the backend (§4.6).
@@ -455,7 +527,7 @@ Anchors verified 2026-07-22.
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
 | Backend lint | `cd apps/api && uv run ruff check .` | exit 0 |
-| Backend tests | `cd apps/api && TEST_DATABASE_URL=... uv run pytest tests/integrations tests/services/integrations tests/routes/integrations -q` | all pass |
+| Backend tests | `cd apps/api && TEST_DATABASE_URL=... uv run pytest tests/integrations tests/services/integrations tests/routes/integrations tests/services/agents -q` | all pass |
 | Frontend gate | `cd apps/web && pnpm check` | exit 0 (includes dependency-cruiser + knip) |
 | Frontend tests | `cd apps/web && pnpm test` | all pass |
 | Full gate | `make check` | exit 0 |
@@ -464,57 +536,62 @@ Anchors verified 2026-07-22.
 
 **In scope:**
 
-- `apps/web/src/lib/untrusted-frames.ts` (create) — frame parsing for
-  display (decision 3) + tests; `src/lib/table-export.ts` (extract
-  from `markdown-table.tsx`)
+- `apps/api/services/agents/runtime/untrusted.py` (extend — the
+  serializable `UntrustedNode` + node→frame rendering),
+  `dispatch.py` (serialize instead of frame), `loop.py` (history
+  processor), provider output schemas (`str | UntrustedNode` fields)
+  — decision 3
+- `apps/web/src/lib/table-export.ts` (extract from
+  `markdown-table.tsx`)
 - `apps/web/src/components/tool-ui/` (create) — the decision-2 kits
   (`fan-out-shell`, `external-content`, `message`, `data-table`,
-  `kpi`, `chart`, `approval-card` + the relocated editable-field
-  engine) with tests
+  `kpi`, `approval-card` + the relocated editable-field engine;
+  `chart` in Slice E) with tests, including the `isUntrustedNode`
+  guard and pending-state rendering
 - `.dependency-cruiser.cjs` — the §5.5 amendment (integrations may
   import `^src/components/tool-ui`; tool-ui may import only ui/lib)
 - `apps/web/src/integrations/gmail/` (fill): search/read/send
-  adapters + presenters, `message-preview.tsx` (sandboxed HTML view),
-  `index.ts` composition
-- `apps/web/src/integrations/google_ads/` (fill, Slice C): report
-  table+chart adapter, accounts list adapter, campaign-status
-  approval/result adapter
-- `apps/web/src/integrations/airtable/` (fill, Slice D): record
+  adapters + presenters, `message-preview.tsx` (sandboxed HTML view +
+  detail sheet shared by drill-in and read), `index.ts` composition
+- `apps/web/src/integrations/google_ads/` (fill, Slice D): report
+  table adapter, accounts list adapter, campaign-status
+  approval/result adapter; chart derivation in Slice E
+- `apps/web/src/integrations/airtable/` (fill, Slice F): record
   field-table adapters
 - `apps/web/src/features/conversations/components/` — extraction
   refactor only (decision 2); `ApprovalDecisionBlock` keeps its
-  public behavior
-- `apps/web/package.json` — `recharts` (decision 7)
-- `apps/api/services/integrations/plugin.py` (extend — `previews`
-  attribute), `services/integrations/loader.py` (validate preview
-  definitions), a preview dispatch service under
-  `services/integrations/` and route under `routes/integrations/`
-  (decision 4)
-- `apps/api/integrations/gmail/operations/preview_message.py` +
-  registration of the `gmail_message` preview kind
+  public behavior; default row renders nodes as their content text
+- `apps/web/package.json` — `recharts` (Slice E only)
+- `apps/api/routes/integrations/` + `services/integrations/` — the
+  decision-4 Gmail-scoped preview route + service
+- `apps/api/integrations/gmail/operations/preview_message.py`
 - `apps/api/integrations/google_ads/operations/run_report.py` — the
-  decision-8 `currency_code` addition (Slice C)
+  decision-8 `currency_code` addition (Slice D)
 - `nh3` dependency in `apps/api/pyproject.toml`; server-side
   sanitization helper (engine-owned, not provider-owned)
-- `docs/architecture/threat-model.md` (new browser-rendering section +
-  fixture), `docs/architecture/integration-packaging.md` (§5.3
-  deviation note per decision 3; §5.5 amendment per decision 2; §8
-  checklist line per decision 10)
-- Tests: kit unit tests; presenter/adapter tests per provider;
-  frame/XSS tests; backend preview auth/sanitization/audit/import-law
-  tests
+- `docs/architecture/threat-model.md` (framing enforcement-point
+  amendment per decision 3; new browser-rendering section + fixture),
+  `docs/architecture/integration-packaging.md` (§5.5 amendment per
+  decision 2; §8 checklist line per decision 10)
+- Tests: framing-equivalence + persistence/SSE node tests; kit unit
+  tests; presenter/adapter tests per provider; XSS/sanitization
+  tests; backend preview auth/audit tests
 
 **Out of scope (do NOT touch):**
 
-- Tool `output_model`s, dispatch framing, truncation bounds, or any
-  model-visible value beyond decision 8's single `currency_code`
-  field — the model-visible contract is 041's
+- Tool `output_model` *values* beyond decision 3's type change and
+  decision 8's single `currency_code` field; truncation bounds; the
+  rendered model-visible framing bytes (must stay identical)
 - New Gmail/Ads/Airtable operations beyond the preview fetch (no
   labels, archive, drafts, attachments, threads — FOLLOW_UPS)
 - User-direct write actions or UI-direct tool invocation of any kind
   (decision 6; rejected-patterns list)
 - SSE protocol, `ToolPresentation`/`ToolFieldFormat` vocabularies,
   approval resume contract
+- A generic preview plugin mechanism (decision 4 defers it to
+  provider #2)
+- Data migration of legacy framed transcripts (decision 3 accepts
+  them)
 - Notifications, unread badges, or any inbox-like standalone surface —
   this plan renders tool activity, it does not build an email client
 - Dashboards, saved reports, model-authored charts (FOLLOW_UPS)
@@ -527,69 +604,99 @@ Anchors verified 2026-07-22.
 
 ## Execution slices
 
-### Slice A — Kit substrate + Gmail presenters (`Web - Tool UI Kits & Gmail Rows`)
+### Slice A — Structured untrusted content (`Cross - Structured Untrusted Content`)
 
-Layer 1; no backend change. Steps 1–3.
+Decision 3; backend only. Step 1. **Highest-risk slice — the framing
+invariant moves; treat like an auth change.**
 
-- `untrusted-frames.ts` parser; `src/components/tool-ui/` with
-  `fan-out-shell`, `external-content`, `message`, and the
-  `approval-card` extraction; the §5.5 cruiser amendment; Gmail
+- `UntrustedNode` + dispatch serialization + history processor +
+  schema retyping + threat-model amendment.
+- **Gate**: backend suites green, including the new
+  framing-equivalence test (captured model request bytes identical to
+  the pre-change framed rendering) and persistence/SSE tests (nodes,
+  zero markers, for new runs); existing untrusted/framing tests
+  updated in the same commit, never deleted.
+- **Review focus**: every model request path (fresh run, replayed
+  history, delegate runs, approval resume) passes through the
+  processor; forged-marker neutralization happens at render time;
+  legacy framed strings replay unchanged; no path serializes a raw
+  `UntrustedContent` dataclass into storage.
+
+### Slice B — Kit substrate + Gmail presenters (`Web - Tool UI Kits & Gmail Rows`)
+
+Layer 1; no backend change. Steps 2–3.
+
+- `src/components/tool-ui/` with `fan-out-shell`,
+  `external-content`, `message`, the `approval-card` extraction, and
+  the `isUntrustedNode` guard; the §5.5 cruiser amendment; Gmail
   search/read/send presenters registered in `gmail/index.ts`; reply
-  prefill; Open-in-Gmail links.
+  prefill; Open-in-Gmail links; pending-state skeletons.
 - **Gate**: `pnpm check` + kit/presenter tests green; a transcript
-  fixture with framed content renders zero raw markers; a
-  forged-marker fixture renders as inert text; `ApprovalDecisionBlock`
-  behavior unchanged (existing approval tests still pass).
-- **Review focus**: frames can never render as trusted chrome (the
-  provenance chip is server-attributed data, styled distinctly from
-  app UI); presenter fallback — any unexpected payload shape falls
-  through to the default row rather than crashing (guard-and-return-
-  null, error boundary at the presenter seam); the extraction did not
-  alter approval semantics or the controls contract.
+  fixture with node payloads renders zero raw markers and correct
+  provenance chips; a running-status fixture renders the pending
+  state; `ApprovalDecisionBlock` behavior unchanged (existing
+  approval tests still pass).
+- **Review focus**: provenance chips are visibly data, not chrome;
+  presenter fallback — any unexpected payload shape falls through to
+  the default row rather than crashing (guard-and-return-null, error
+  boundary at the presenter seam); the extraction did not alter
+  approval semantics or the controls contract.
 
-### Slice B — Preview seam + HTML email view (`Cross - Provider Content Preview`)
+### Slice C — Gmail message preview + drill-in (`Cross - Gmail Message Preview`)
 
 Layer 2. Steps 4–6.
 
-- Plugin `previews` + loader validation; preview service + route;
-  `nh3` sanitization; audit; `gmail_message` preview kind; web
-  `message-preview.tsx` (sandbox="" iframe, CSP meta, remote-image
-  toggle, fixed max-height) wired into the read presenter behind a
-  "View full email" action; threat-model section + hostile HTML
-  fixture.
+- Preview service + Gmail-scoped route; `nh3` sanitization; audit;
+  `preview_message.py`; web `message-preview.tsx` (sandbox="" iframe,
+  CSP meta, remote-image toggle, fixed max-height) wired into BOTH
+  the read presenter ("View full email") and search-row drill-in
+  (decision 6); threat-model section + hostile HTML fixture.
 - **Gate**: backend suites green including the sanitization fixture
   test and a cross-workspace 404 test; `pnpm check` green; manual QA
-  with a real connection renders an HTML email with images blocked.
+  with a real connection: search → click a row → HTML email renders
+  with images blocked.
 - **Review focus**: sanitizer allowlist (scripts/handlers/forms/
   javascript: URLs all stripped, anchors hardened), iframe has NO
   allow-scripts and NO allow-same-origin, preview responses are never
   persisted or logged, audit rows carry refs but never content,
-  connection scoping cannot be bypassed by guessing ids.
+  connection scoping cannot be bypassed by guessing ids, non-gmail
+  connections 404.
 
-### Slice C — Google Ads report UI (`Cross - Google Ads Report UI`)
+### Slice D — Google Ads report UI (`Cross - Google Ads Report UI`)
 
-Blocked on 041 Slice B. Steps 7–8.
+Blocked on 041 Slice B. Steps 7–8. No charts here.
 
-- `data-table`, `kpi`, and `chart` kits; `recharts`;
-  `table-export.ts` extraction; the decision-8 `currency_code`
-  addition; Google Ads adapters — report table with chart⇄table
-  toggle, accounts hierarchy list, campaign-status approval card
+- `data-table` + `kpi` kits; `table-export.ts` extraction; the
+  decision-8 `currency_code` addition; Google Ads adapters — report
+  table, accounts hierarchy list, campaign-status approval card
   (write banner) + per-campaign result view.
 - **Gate**: `pnpm check` + kit/presenter tests green; a report
   fixture renders currency/percent/date cells correctly formatted and
   the truncation note; a mixed-success mutation fixture renders
   per-campaign statuses; backend suite green for the `currency_code`
   addition.
-- **Review focus**: micros conversion only at display time; framed
-  cells unwrapped with container-level provenance; chart series parse
-  numerically or are excluded (never coerced); CSV export contains
-  unwrapped display values, not raw frames; the approval card cannot
-  weaken or bypass the approval flow (it renders the same controls
-  contract).
+- **Review focus**: micros conversion only at display time; node
+  cells read via the shared guard with container-level provenance;
+  CSV export contains node contents, never marker text or node JSON;
+  the approval card cannot weaken or bypass the approval flow (it
+  renders the same controls contract).
 
-### Slice D — Airtable records + checklist closure (`Web - Airtable Record UI`)
+### Slice E — Report charts (`Web - Report Charts`)
 
-Blocked on 041 Slice C. Step 9.
+Trailing polish on Slice D; ship after the table has been used.
+Step 9.
+
+- `recharts`; the `chart` kit (`DataChart` + `ChartTableToggle`);
+  auto-derived chart for `google_ads_run_report` (line when
+  `segments.date` present, bar otherwise, ≤3 metric series), table
+  remains the default view.
+- **Gate**: `pnpm check` green (knip accepts recharts); chart tests —
+  date fixture → line offered, no-date fixture → bar, non-numeric
+  cells excluded never coerced; toggle preserves table state.
+
+### Slice F — Airtable records + checklist closure (`Web - Airtable Record UI`)
+
+Blocked on 041 Slice C. Step 10.
 
 - Airtable record/field-table adapters over the kits (verify the
   landed payload shapes first); packaging §8 checklist amendment;
@@ -599,31 +706,52 @@ Blocked on 041 Slice C. Step 9.
 
 ## Steps
 
-### Step 1: Frame display contract
+### Step 1: Structured untrusted content (Slice A)
 
-Implement `src/lib/untrusted-frames.ts`: split a string into ordered
-spans of plain text and `{ content, sourceKind, sourceRef }` frames by
-scanning for the exact vocabulary
-(`<<<PRAXIS_UNTRUSTED_CONTENT source_kind="..." source_ref="...">>>` …
-`<<<END_PRAXIS_UNTRUSTED_CONTENT>>>`). Forgiving by construction:
-unterminated frames yield the remainder as frame content; attribute
-parse failure yields kind/ref `null`; neutralized forged markers
-(`PRAXIS_UNTRUSTED-CONTENT`) are plain text. Export a scalar helper
-(`unwrapFramedValue`) for the per-cell case (decision 3).
+- `untrusted.py`: add `UntrustedNode` (pydantic `BaseModel`) with an
+  unmistakable literal discriminator (e.g.
+  `node: Literal["praxis_untrusted"]`), `source_kind`, `source_ref`,
+  `content`. Add `serialize_untrusted_content(value)` (recursive walk
+  as `frame_untrusted_content` does today, replacing carriers with
+  nodes; source components sanitized at mint) and
+  `render_untrusted_frames(messages)` — the history-processor body
+  that maps `ToolReturnPart` content, replacing nodes with the
+  existing `_render_frame` output (including forged-marker
+  neutralization of the node content at render time). Keep the frame
+  constants and `_render_frame` unchanged so rendered bytes are
+  identical.
+- `dispatch.py:358`: call `serialize_untrusted_content` instead of
+  `frame_untrusted_content`. `validate_output` and `truncate_result`
+  now see nodes — retype untrusted-capable fields in
+  `integrations/gmail/tools/schemas.py` (and Airtable's, and — if
+  landed — Google Ads') as `str | UntrustedNode`; confirm structured
+  results remain truncation-exempt as today.
+- `loop.py:65`: register `render_untrusted_frames` as a history
+  processor on the `PydanticAgent`; confirm delegate/resume paths
+  build through this constructor.
+- Check `evals/run.py` for framed-string assumptions; update in the
+  same commit if present.
+- Amend threat-model §3: framing is enforced at prompt-assembly time;
+  storage and client-visible payloads carry structured provenance
+  nodes; the vocabulary remains runtime-internal.
 
-Record the decision-3 deviation in packaging §5.3 and threat-model §3
-(one sentence each: the vocabulary is also a display contract; both
-sides pin it).
+**Verify**: (a) framing-equivalence — a test tool returning
+`UntrustedContent` through a captured-request model (pydantic-ai
+`FunctionModel`/capture) produces a model-visible tool return
+byte-identical to the pre-change framed fixture; (b) persisted
+messages for the run contain nodes and zero frame markers; (c) the
+SSE `tool.result` payload carries nodes; (d) a legacy history fixture
+containing framed strings replays through the processor unchanged;
+(e) forged markers inside node content are neutralized in the
+rendered request but stored verbatim; (f) full backend gate green.
 
-**Verify**: unit tests — round-trip of a server-produced frame
-(fixture string copied from a backend test's actual output, so drift
-breaks a test), forged markers inert, unterminated frame safe,
-multi-frame strings ordered correctly, scalar unwrap.
-
-### Step 2: Kit substrate
+### Step 2: Kit substrate (Slice B)
 
 Create `src/components/tool-ui/` with this slice's kits:
 
+- `untrusted-node.ts` — the `isUntrustedNode` type guard + a
+  `nodeText` helper (node → content string) shared by kits and the
+  default row.
 - `external-content.tsx` — the provenance container: distinct
   background, provenance chip built from `sourceKind`/`sourceRef`
   (chip is visibly data, not chrome), content as plain text
@@ -633,16 +761,21 @@ Create `src/components/tool-ui/` with this slice's kits:
 - `fan-out-shell.tsx` — narrows `{results: [...]}` payloads
   (`status`, `display_name`, `external_id`, `error_message` per
   entry), renders per-entry sections, the mixed-outcome summary, the
-  failed-entries block, empty state, and metadata strip. Exports the
-  entry-narrowing type guard adapters reuse.
+  failed-entries block, empty state, metadata strip, and a pending
+  skeleton when the activity is running. Exports the entry-narrowing
+  type guard adapters reuse.
 - `message.tsx` — `MessageListRow` (sender, subject, relative date,
-  snippet, action slot) and `MessageDetail` (header grid with address
-  chips, body slot, action row).
+  snippet, action slot, optional `onSelect`) and `MessageDetail`
+  (header grid with address chips, body slot, action row), plus
+  skeleton variants.
 - `approval-card.tsx` — extract `ToolApprovalCard`,
   `ApprovalRequestFields` (the editable-field engine), and
   `ApprovalFooter` from `features/conversations/components/` into the
   kit space, preserving the `ToolApprovalDecisionControls` contract;
   `ApprovalDecisionBlock` becomes a thin `features/` consumer.
+
+Update the declarative default row to render untrusted nodes as their
+content text (via `nodeText`) so non-presenter tools degrade cleanly.
 
 Amend `.dependency-cruiser.cjs`: rule 1 allowlist gains
 `^src/components/tool-ui`; new rule — `^src/components/tool-ui` may
@@ -650,62 +783,67 @@ import only `^src/components/ui` and `^src/lib`. Record the amendment
 in packaging §5.5.
 
 **Verify**: kit unit tests (fixtures for mixed fan-out, empty results,
-malformed entries → shell returns null); existing conversation/
-approval tests pass unchanged; `pnpm check` (cruiser rules) green.
+running status → skeleton, malformed entries → shell returns null);
+default row renders a node fixture as plain content text; existing
+conversation/approval tests pass unchanged; `pnpm check` (cruiser
+rules) green.
 
-### Step 3: Gmail presenters
+### Step 3: Gmail presenters (Slice B)
 
 In `src/integrations/gmail/`, one adapter+presenter per tool, matching
 on `activity.name`, each guarding its payload shape and returning
 `null` on mismatch so the default row takes over:
 
 - `gmail_search_messages` → `fan-out-shell` + `MessageListRow` per
-  message: sender, subject (frame-unwrapped), relative date, snippet;
-  mailbox header when multiple entries; per-row "Open in Gmail".
+  message: sender, subject (via `nodeText`), relative date, snippet;
+  mailbox header when multiple entries; per-row "Open in Gmail";
+  `onSelect` slot wired in Slice C.
 - `gmail_read_message` → `MessageDetail`: header block, body in
-  `external-content` (frame-parsed), truncation notice when
-  `truncated`, "Open in Gmail", "Reply" prefill (decision 6), and —
-  after Slice B — "View full email".
+  `external-content` (node-fed), truncation notice when `truncated`,
+  "Open in Gmail", "Reply" prefill (decision 6), and — after Slice C
+  — "View full email".
 - `gmail_send_message` → when `approvalDecision` is present, an
   email-shaped approval card composed from `approval-card` primitives
   (To/Subject/Body laid out as a message, editable per the existing
   `ToolUiField.editable` flags); after completion, a compact "sent"
   row with the message id as an Open-in-Gmail link.
+- Running-status activities render the kit skeletons ("Searching
+  mailboxes…", header-only detail shell).
 
 Compose in `index.ts`; `registry.ts` needs no change (loaders already
 exist).
 
 **Verify**: vitest presenter tests with transcript-shaped fixtures
-(success, partial fan-out failure, forged markers, unexpected shape →
+(success, partial fan-out failure, running status, unexpected shape →
 null, approval card renders + approve/decline controls fire);
 `pnpm check` green.
 
-### Step 4: Preview seam (engine)
+### Step 4: Preview service + route (Slice C)
 
-- `plugin.py`: `IntegrationPreviewDefinition(kind, fetch)` +
-  `previews: tuple[...] = ()` on the plugin; loader validates kinds
-  are unique, `^[a-z][a-z0-9_]*$`, and prefixed with the provider key.
-- Preview service: resolve connection (workspace-scoped, 404 outside),
-  resolve the provider's loaded plugin, find the kind, mint
-  credentials via the existing seam, call `fetch`, sanitize `html`
-  payloads with the `nh3` helper, enforce a response size cap
-  (settings: `INTEGRATION_PREVIEW_MAX_BYTES`, default 2MB), emit the
-  audit event, return the payload. Never store anything.
-- Route per decision 4, response model
-  `IntegrationPreviewRead(kind, content_type, content, meta)`.
+- Service under `services/integrations/`: resolve connection
+  (workspace-scoped, 404 outside; 404 unless `provider_key ==
+  "gmail"`), mint credentials via the existing seam, call the Gmail
+  preview operation, sanitize `html` payloads with the `nh3` helper,
+  enforce `INTEGRATION_PREVIEW_MAX_BYTES` (default 2MB), emit the
+  audit event, return
+  `IntegrationPreviewRead(kind, content_type, content, meta)`. Never
+  store anything.
+- Route per decision 4 at
+  `.../connections/{connection_id}/previews/gmail_message?ref=...` —
+  the `{kind}` path segment is literal for now; keep the URL shape so
+  generalization is non-breaking.
 
-**Verify**: route tests — auth required, cross-workspace 404, unknown
-kind 404, size cap enforced, audit row written with
+**Verify**: route tests — auth required, cross-workspace 404, wrong
+provider 404, size cap enforced, audit row written with
 `operation="preview_gmail_message"` and no content; import-law test
 still green.
 
-### Step 5: Gmail preview operation
+### Step 5: Gmail preview operation (Slice C)
 
 `integrations/gmail/operations/preview_message.py`: `messages.get
 (format=full)`, extract the `text/html` part (fall back to `text/plain`
 via `content_type="text"`), return payload with `meta` = sanitized
-header summary (from/to/subject/date). Register `("gmail_message",
-fetch)` on `PROVIDER.previews`. The operation returns RAW html —
+header summary (from/to/subject/date). The operation returns RAW html —
 sanitization is engine-owned (Step 4), so a provider can never opt out
 of it.
 
@@ -716,20 +854,24 @@ javascript:-URL removal, anchor hardening, and that the tracking-pixel
 img survives as an https img for the client-side blocking layer to
 handle).
 
-### Step 6: HTML email view (web)
+### Step 6: HTML email view + drill-in (web, Slice C)
 
 `message-preview.tsx`: fetch on demand (TanStack Query, no persistence
 beyond cache), render via `<iframe sandbox="" srcDoc>` with injected
 CSP meta per decision 5, fixed max-height with internal scroll,
 loading/error states, "Load remote images" toggle re-rendering with
-the widened `img-src`. Wire into the read presenter. Add the
-threat-model section + fixture file reference (Steps 4/5 created the
-fixture).
+the widened `img-src`. Wire it twice: the read presenter's "View full
+email" action, and search-row drill-in — row click opens a detail
+`Sheet` titled with the subject, fetching by the row's message id +
+the entry's `connection_id` (decision 6). Add the threat-model section
++ fixture file reference (Steps 4/5 created the fixture).
 
 **Verify**: component tests assert the iframe has `sandbox=""` (empty,
-not merely present) and the CSP meta is injected; `make check` green.
+not merely present) and the CSP meta is injected; a search fixture row
+click opens the sheet and issues exactly one preview fetch;
+`make check` green.
 
-### Step 7: Data-table, KPI, and chart kits
+### Step 7: Data-table + KPI kits (Slice D)
 
 - `table-export.ts`: extract copy-TSV/copy-CSV/download-CSV from
   `markdown-table.tsx`; `MarkdownTable` consumes it (behavior
@@ -743,17 +885,14 @@ not merely present) and the CSP meta is injected; `make check` green.
   link cells as hardened external anchors); zebra rows; totals footer
   (sums of numeric metric columns, opt-in); truncation footer;
   export actions; row click → detail `Sheet` with a two-column field
-  grid derived from the columns.
+  grid derived from the columns; loading skeleton.
 - `kpi.tsx`: stat-card strip with tone borders.
-- `chart.tsx`: the decision-7 `recharts` wrapper (bar | line) +
-  `ChartTableToggle`.
 
 **Verify**: kit unit tests — formatter matrix (micros/percent/date/
-status/id/link), totals correctness, CSV export emits unwrapped
-values, toggle switches without losing table state; `pnpm check`
-green (knip accepts recharts).
+status/id/link), totals correctness, CSV export emits node contents
+(never marker text or node JSON); `pnpm check` green.
 
-### Step 8: Google Ads adapters + `currency_code`
+### Step 8: Google Ads adapters + `currency_code` (Slice D)
 
 Backend (small): `operations/run_report.py` adds `currency_code` (from
 the target resource's discovered metadata) to each per-account `data`
@@ -765,9 +904,10 @@ dict (decision 8); extend the operation's tests.
   (`metrics.*` → metric/number, `*_micros` → currency,
   `metrics.ctr`/`*_rate` → percent, `segments.date` → date,
   `*.status` → status, `*.id`/`*.resource_name` → id, else text);
-  cells unwrapped per decision 3 with container-level provenance;
-  `data-table` + auto-derived `chart` behind the toggle; truncation
-  note surfaced; per-account sections via `fan-out-shell`.
+  cells read through `isUntrustedNode`/`nodeText` with
+  container-level provenance ("External data · Google Ads · account
+  …"); `data-table` per account via `fan-out-shell`; truncation note
+  surfaced.
 - `google_ads_list_accounts` → indented hierarchy list
   (parent-linked), manager/status/writable badges, currency code.
 - `google_ads_update_campaign_status` → approval card with a
@@ -776,82 +916,111 @@ dict (decision 8); extend the operation's tests.
   presentation flags); result view with a succeeded/failed KPI strip
   and per-campaign status badges + inline `campaign_errors` messages.
 
-**Verify**: presenter tests — report fixture (framed cells, micros,
-date dimension → line chart offered), no-date fixture (bar), mixed
-mutation fixture, hierarchy fixture; backend test for
-`currency_code`; `pnpm check` + backend suites green.
+**Verify**: presenter tests — report fixture (node cells, micros,
+correct formatting), mixed mutation fixture, hierarchy fixture;
+backend test for `currency_code`; `pnpm check` + backend suites green.
 
-### Step 9 (Slice D): Airtable adapters, checklist closure
+### Step 9: Charts (Slice E)
+
+`chart.tsx`: the decision-7 `recharts` wrapper (bar | line) +
+`ChartTableToggle`. `google_ads_run_report` presenter derives the
+chart from the parsed table (line when `segments.date` present, bar
+otherwise, ≤3 metric series); table stays the default view.
+
+**Verify**: chart tests per the Slice E gate; `pnpm check` green
+(knip accepts recharts).
+
+### Step 10 (Slice F): Airtable adapters, checklist closure
 
 Verify the landed Airtable payload shapes first (041 Slice C), then:
 `airtable_list_records`/`airtable_get_record` → record cards with
-field tables (field-name/value grid; framed field values through
+field tables (field-name/value grid; node field values through
 `external-content`'s scalar treatment; long text expandable);
 `airtable_create_record`/`airtable_update_record` → approval card
 listing the fields being written, result row with the record id.
 Amend packaging §8 with the decision-10 checklist line. Record
 FOLLOW_UPS (labels/threads/attachments, user-direct actions, micros
-pre-conversion, further chart variants, tool playground). Update the
-`000_README.md` status row.
+pre-conversion, chart variants, tool playground, preview-seam
+generalization at provider #2). Update the `000_README.md` status
+row.
 
 **Verify**: `pnpm check` + presenter tests; packaging note updated.
 
 ## Test plan
 
-Pinned invariants: **no raw framing markers ever render** (fixture
-copied from real backend output so vocabulary drift fails CI), **forged
-markers render inert**, **presenters and kits fail open to the default
-row** (bad payload → null, never a crash), **the approval-card
-extraction changes zero approval semantics** (existing approval tests
-unchanged), **preview HTML is sanitized server-side AND rendered
-script-less in an opaque-origin sandbox** (both layers asserted
-independently), **remote images blocked by default**, **preview access
-is workspace-scoped and audited without content**, **micros/percent
-conversion is display-only** (model-visible payload byte-identical
-except `currency_code`), **CSV export never contains raw frames**,
-**no new SSE/presentation vocabulary**, and **§4.6/§5.5 (as amended)
-boundary rules pass mechanically**.
+Pinned invariants: **the model-visible framed rendering is
+byte-identical to the pre-change output** (equivalence fixture),
+**stored payloads and SSE payloads for new runs contain zero frame
+markers** (nodes only), **legacy framed history replays unchanged**,
+**forged markers are neutralized at render time and inert in the UI**,
+**presenters and kits fail open to the default row** (bad payload →
+null, never a crash) **and render pending states while running**,
+**the approval-card extraction changes zero approval semantics**
+(existing approval tests unchanged), **preview HTML is sanitized
+server-side AND rendered script-less in an opaque-origin sandbox**
+(both layers asserted independently), **remote images blocked by
+default**, **preview access is workspace- and provider-scoped and
+audited without content**, **micros/percent conversion is
+display-only** (model-visible payload unchanged except
+`currency_code`), **CSV export never contains marker text or node
+JSON**, **no new SSE/presentation vocabulary**, and **§4.6/§5.5 (as
+amended) boundary rules pass mechanically**.
 
 ## Done criteria
 
-- [ ] Gmail search/read/send render through kit-based presenters; zero
-      raw markers in a seeded transcript; default row still renders
-      when a module chunk fails to load
-- [ ] "View full email" renders sanitized HTML in a script-less
-      opaque-origin iframe with remote images blocked by default
-- [ ] Preview route: scoped, size-bounded, audited (refs only),
-      nothing persisted
+- [ ] Untrusted content is stored and streamed as structured nodes;
+      frames exist only in rendered model requests; the equivalence
+      test pins identical model-visible bytes
+- [ ] Gmail search/read/send render through kit-based presenters with
+      pending states; zero raw markers in a newly seeded transcript;
+      default row still renders when a module chunk fails to load
+- [ ] Search-row click and "View full email" both render sanitized
+      HTML in a script-less opaque-origin iframe with remote images
+      blocked by default
+- [ ] Preview route: workspace- and provider-scoped, size-bounded,
+      audited (refs only), nothing persisted
 - [ ] Reply prefill flows into the composer; send still requires
       approval (no policy change anywhere in the diff)
 - [ ] Google Ads reports render as formatted tables with currency/
-      percent/date cells, totals, truncation note, CSV export, detail
-      sheet, and a chart⇄table toggle; campaign mutations show an
-      explicit write banner at approval and per-campaign outcomes
-      after
-- [ ] Airtable records render as field tables (Slice D may trail 041
+      percent/date cells, totals, truncation note, CSV export, and
+      detail sheet; campaign mutations show an explicit write banner
+      at approval and per-campaign outcomes after; charts land in
+      Slice E behind the chart⇄table toggle
+- [ ] Airtable records render as field tables (Slice F may trail 041
       Slice C — mark partial status accordingly)
 - [ ] `src/components/tool-ui/` exists with cruiser rules pinning its
       imports; provider modules contain adapters only (no kit logic)
-- [ ] Threat model has the browser-rendering section + hostile HTML
-      fixture; packaging note carries the §5.3 deviation, the §5.5
-      amendment, and the §8 checklist line
+- [ ] Threat model carries the framing enforcement-point amendment and
+      the browser-rendering section + hostile HTML fixture; packaging
+      note carries the §5.5 amendment and the §8 checklist line
 - [ ] FOLLOW_UPS records user-direct actions, attachments/labels/
-      threads, micros pre-conversion, and chart growth as explicitly
-      deferred
+      threads, micros pre-conversion, chart growth, and preview-seam
+      generalization as explicitly deferred
 - [ ] `make check` green; `docs/plans/000_README.md` row updated
 
 ## STOP conditions
 
 Stop and report back (do not improvise) if:
 
+- The Step 1 framing-equivalence test cannot be made to pass — i.e.
+  moving framing to prompt-assembly changes any model-visible byte,
+  or any request path (delegates, approval resume, replayed history)
+  bypasses the history processor. This is the prompt-injection
+  invariant; do not ship a partial version.
+- Retyping output-model fields to `str | UntrustedNode` breaks
+  output-contract validation or truncation semantics in a way that
+  needs new dispatch behavior — reconcile before touching truncation.
 - Rendering rich results seems to require changing tool
-  `output_model`s beyond decision 8's single `currency_code` field,
-  dispatch framing, truncation bounds, or adding SSE event types /
-  presentation field formats — that is platform scope this plan
-  explicitly bounded.
-- The preview seam seems to need to persist provider content, or to
+  `output_model` *values* beyond decisions 3 and 8, dispatch
+  semantics beyond Step 1, truncation bounds, or adding SSE event
+  types / presentation field formats — that is platform scope this
+  plan explicitly bounded.
+- The preview route seems to need to persist provider content, or to
   feed preview responses into model context — both are design
   violations, not implementation details.
+- A second provider needs a preview kind during this plan — that is
+  the decision-4 generalization trigger; design the plugin seam then
+  rather than adding a provider branch.
 - The approval-card extraction cannot preserve the existing controls
   contract and approval tests — reconcile before restructuring
   anything else.
@@ -859,8 +1028,6 @@ Stop and report back (do not improvise) if:
   HTML sanitization — never hand-roll; report instead. Same for
   `recharts`: if it is rejected, stop rather than hand-rolling SVG
   charts or picking a substitute unilaterally.
-- The frame vocabulary in `untrusted.py` changed since 2026-07-22 —
-  reconcile decision 3's two-sided contract first.
 - The §5.5 amendment (a `src/components/tool-ui` import lane) is
   rejected in review — the kit architecture depends on it; do not
   smuggle kits into `src/components/ui` or duplicate them per
@@ -872,22 +1039,30 @@ Stop and report back (do not improvise) if:
 
 ## Maintenance notes
 
-- **Provider N+1**: adapters and preview kinds live in the provider's
-  own packages (`apps/api/integrations/<key>/` +
+- **Provider N+1**: adapters live in the provider's own packages
+  (`apps/api/integrations/<key>/` +
   `apps/web/src/integrations/<key>/`); the engine surface (kits,
-  route, sanitizer, frame parser) never grows per provider. A provider
-  needing a new kit, a new column kind, a new `content_type`, or a new
-  engine behavior is a platform review, not a package change.
+  preview route, sanitizer, untrusted-node contract) never grows per
+  provider — except the recorded decision-4 exception, which converts
+  to a plugin seam at provider #2. A provider needing a new kit, a
+  new column kind, a new `content_type`, or a new engine behavior is
+  a platform review, not a package change.
 - **Kit ownership**: `src/components/tool-ui/` is engine code with the
   same review bar as `features/conversations` — changes there affect
   every provider at once. Keep kits payload-shape-agnostic: they take
   narrowed props, never `unknown` activity objects (narrowing is the
   adapter's job).
-- **Reviewers should scrutinize**: sandbox attributes on every iframe
-  touching provider content (empty `sandbox`, no `allow-same-origin`),
-  sanitizer allowlist changes, any path where preview content could
-  reach logs/audit/model context, that provenance chips are visually
-  distinct from app chrome (a frame must not be stylable into looking
-  like a system message), that adapters guard payload shapes rather
-  than trusting them, and that display-time conversions (micros,
-  percent) never leak back into model-visible payloads.
+- **Untrusted-node contract**: the node shape is the one cross-layer
+  contract (dispatch → storage → SSE → kits). Changing it is a
+  platform review touching `untrusted.py`, the history processor, and
+  `untrusted-node.ts` together; the frame vocabulary itself remains
+  free to evolve without touching the client.
+- **Reviewers should scrutinize**: every model request path passes
+  the history processor (the framing invariant now lives there),
+  sandbox attributes on every iframe touching provider content (empty
+  `sandbox`, no `allow-same-origin`), sanitizer allowlist changes,
+  any path where preview content could reach logs/audit/model
+  context, that provenance chips are visually distinct from app
+  chrome, that adapters guard payload shapes rather than trusting
+  them, and that display-time conversions (micros, percent) never
+  leak back into model-visible payloads.

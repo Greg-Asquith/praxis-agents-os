@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
+from models.jobs import Job
 from models.workspace import WorkspaceRole
 from services.integrations.connections.schemas import ApiKeyConnectRequest
 from services.secrets.domain import SecretReference
@@ -79,7 +80,7 @@ async def test_raw_api_key_is_replaced_by_reference_everywhere(
     assert response.json()["credential"]["secret_reference"].startswith("local:")
 
     connection = await db_session.get(IntegrationConnection, response.json()["id"])
-    assert connection is not None and connection.status == "active"
+    assert connection is not None and connection.status == "discovery_pending"
     credential = await db_session.get(ExternalCredential, connection.credential_id)
     assert credential is not None
     assert credential.auth_mode == "api_key"
@@ -87,6 +88,13 @@ async def test_raw_api_key_is_replaced_by_reference_everywhere(
     assert credential.refresh_token_encrypted is None
     assert credential.secret_provider == "local"
     assert credential.secret_name in response.json()["credential"]["secret_reference"]
+    discovery_job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == "integrations.discover_resources",
+            Job.subject_id == connection.id,
+        )
+    )
+    assert discovery_job is not None and discovery_job.payload == {}
     serialized_audits = json.dumps(
         [event.details for event in (await db_session.scalars(select(AuditEvent))).all()]
     )

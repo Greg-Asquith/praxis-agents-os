@@ -73,8 +73,8 @@ point, per-agent `tool_policies`); this section is the policy law:
   pending — KB default recorded by plan 080]
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
-  and external KB writes) default `approval`. [integrations, artifacts, and
-  external KB targets pending]
+  and external KB writes) default `approval`. [integrations implemented:
+  plan 041; artifacts and external KB targets pending]
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. [implemented: plan 041 Slice B]

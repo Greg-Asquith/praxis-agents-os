@@ -18,6 +18,7 @@ def list_providers() -> list[ProviderRead]:
             oauth_scopes=manifest.oauth_scopes,
             resource_types=manifest.resource_types,
             required_form_fields=manifest.required_form_fields,
+            connect_help=manifest.connect_help,
             capability_flags=manifest.capability_flags,
             requires_discovery=manifest.requires_discovery,
             configured=is_provider_configured(manifest),

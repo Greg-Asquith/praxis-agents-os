@@ -1,9 +1,12 @@
 # apps/api/integrations/airtable/__init__.py
 
-"""Airtable provider manifest contribution."""
+"""Airtable provider contribution."""
 
 from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin
+
+from .discover_resources import discover_resources
+from .tools import TOOL_DEFINITIONS
 
 PROVIDER = IntegrationProviderPlugin(
     manifest=IntegrationProviderManifest(
@@ -12,11 +15,15 @@ PROVIDER = IntegrationProviderPlugin(
         auth_modes=("api_key",),
         owner_scope="workspace",
         resource_types=("airtable_base",),
-        # Discovery is advertised when the provider operation lands.
-        requires_discovery=False,
+        requires_discovery=True,
         required_form_fields=("api_key",),
+        connect_help=(
+            "Use an Airtable personal access token with data.records:read, "
+            "data.records:write, and schema.bases:read scopes."
+        ),
         capability_flags=frozenset({"read", "write"}),
         event_delivery="webhook",
     ),
-    discover_resources=None,
+    discover_resources=discover_resources,
+    tool_definitions=TOOL_DEFINITIONS,
 )

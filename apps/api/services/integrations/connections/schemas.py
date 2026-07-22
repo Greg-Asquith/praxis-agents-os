@@ -82,6 +82,7 @@ class ProviderRead(BaseModel):
     oauth_scopes: tuple[str, ...]
     resource_types: tuple[str, ...]
     required_form_fields: tuple[str, ...]
+    connect_help: str
     capability_flags: frozenset[str]
     requires_discovery: bool
     configured: bool

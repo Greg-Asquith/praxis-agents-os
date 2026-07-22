@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.integration import IntegrationAuthError
+from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS
 from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
@@ -30,6 +31,54 @@ from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL
 from services.agents.runtime.tools.permissions import is_tool_allowed
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from tests.factories import build_user, build_workspace
+
+
+def test_full_integration_tool_contract_matrix_and_schemas() -> None:
+    definitions = {
+        definition.name: definition
+        for definition in (
+            *TOOL_DEFINITIONS,
+            *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *AIRTABLE_TOOL_DEFINITIONS,
+        )
+    }
+    expected = {
+        "gmail_search_messages": ("read", "internal", "auto", False),
+        "gmail_read_message": ("read", "internal", "auto", False),
+        "gmail_send_message": ("write", "external", "approval", True),
+        "google_ads_list_accounts": ("read", "internal", "auto", False),
+        "google_ads_run_report": ("read", "internal", "auto", False),
+        "google_ads_update_campaign_status": ("write", "external", "approval", True),
+        "airtable_list_records": ("read", "internal", "auto", False),
+        "airtable_get_record": ("read", "internal", "auto", False),
+        "airtable_create_record": ("write", "external", "approval", True),
+        "airtable_update_record": ("write", "external", "approval", True),
+    }
+    assert set(definitions) == set(expected)
+    denylisted = {
+        "account_id",
+        "base_id",
+        "connection_id",
+        "connection_label",
+        "customer_id",
+        "integration_resource_id",
+        "mailbox",
+        "principal",
+        "resource_id",
+    }
+    for name, (effect, scope, policy, requires_write) in expected.items():
+        definition = definitions[name]
+        assert (
+            definition.effect,
+            definition.effect_scope,
+            definition.default_policy,
+            definition.integration_binding.requires_write,
+        ) == (effect, scope, policy, requires_write)
+        schema = definition.to_pydantic_tool().function_schema.json_schema
+        assert denylisted.isdisjoint(schema["properties"])
+        assert definition.presentation.running_label
+        assert definition.presentation.completed_label
+        assert definition.presentation.failed_label
 
 
 def test_gmail_tool_contract_matrix_and_schemas() -> None:

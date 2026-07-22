@@ -83,7 +83,8 @@ Plan 077 was completed 2026-07-10 and moved to `docs/plans/complete/`;
 verification, deduplication, jobs processing, and the unattended-run envelope
 law before plans 037/041 execute. Plan 079 is reserved as the first
 implementation slice (receipt spine + Airtable webhooks); its plan document
-is written by the Phase 4a executor once 041 lands.
+is now unblocked by 041 and follows the immediate 082 catalogue-hardening
+slice. It remains unwritten until that sequenced turn.
 Plan 080 was written and executed 2026-07-10 as the Phase 4a/4b handoff
 readiness sweep (docs-only, the 074 mold): it refreshed the stale
 post-053/054/066 runtime anchors in 040/046, registered threat-model
@@ -149,7 +150,10 @@ under a `tools/` tree. Slice B completed 2026-07-22: Google Ads now has
 workspace OAuth and reference-only service-account authentication, MCC-aware
 discovery with per-resource root routing, bounded GAQL reporting, and the
 approval-only campaign-status spend lever pinned at both policy layers. The
-plan remains TODO: Airtable Slice C is still pending.
+plan completed 2026-07-22 with Airtable Slice C: paginated base discovery,
+permission-derived write metadata, secret-reference-only PAT use, bounded
+record reads, and approval-default create/update tools. The complete catalog
+now contains the 10 curated provider tools.
 Plan 042 completed 2026-07-21 and moved to `docs/plans/complete/`.
 `/integrations` now exposes the
 server manifest as provider cards with multi-connection labels, OAuth/API-key
@@ -576,10 +580,10 @@ structure.
 | 038 | OAuth flows (initiate/callback with PKCE S256 + signed single-value and server-side single-use state), provider-isolated OAuth settings, non-OAuth connect, test/revoke/refresh routes. **DONE 2026-07-10.** (Donor C2.) |
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
 | 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **DONE 2026-07-21.** (Donor C4.) |
-| 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **Slices A/B DONE 2026-07-22:** shared provider substrate, Gmail, and Google Ads. Airtable remains pending. **Gate G1 applies.** (Donor C5.) |
-| 041b | Rich provider tool UI: the packaging-note §5 presenter seam earns its first consumers — Gmail search/read/send presenter rows (later Ads report and Airtable record tables), the untrusted-frame vocabulary surfaced as provenance chips instead of raw markers, and an engine-owned ephemeral preview seam rendering sanitized email HTML in a script-less sandboxed iframe. Added 2026-07-22; Slice C waits on 041 B/C. |
+| 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **DONE 2026-07-22:** all three provider slices, shared safety/audit substrate, and the 10-tool catalog are complete. **Gate G1 applies.** (Donor C5.) |
+| 041b | Structured untrusted content + rich provider tool UI: keep frame markers model-only by persisting/streaming typed provenance nodes, then use the packaging-note §5 presenter seam for Gmail rows, Ads reports, and Airtable record tables; add a Gmail-scoped ephemeral preview route rendering sanitized email HTML in a script-less sandboxed iframe. Added 2026-07-22; all 041 provider prerequisites are now satisfied. |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker beside the conversation composer's agent control. **DONE 2026-07-21:** both implementation slices and the static gate are complete; live provider QA is deferred to 041's operable packages. (Donor C6.) |
-| 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; the plan document is written by the Phase 4a executor once 041 lands.) |
+| 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; plan authoring is now unblocked and follows 082.) |
 
 ### Phase 4b — Knowledge Base (donor Phase D; gates G3, G4; parallel with 4a)
 
@@ -619,7 +623,7 @@ review]` markers or STOP conditions.
 
 | Plan | Scope | When |
 |------|-------|------|
-| 082 | Capability catalogue prerequisites: tool contract `version`, serialized input JSON schemas on the catalog, a real `is_tool_allowed` workspace grant store (default-allow + explicit disables), authenticated OpenAPI schema route (amends 078's posture). (Note §10 prerequisites.) | Interleave with Phase 4a, before 041 completes |
+| 082 | Capability catalogue prerequisites: tool contract `version`, serialized input JSON schemas on the catalog, a real `is_tool_allowed` workspace grant store (default-allow + explicit disables), authenticated OpenAPI schema route (amends 078's posture). (Note §10 prerequisites.) | Immediate post-041 catalogue hardening; before 083 or further provider expansion |
 | 083 | Headless dispatch entrypoint over the existing choke point, app-principal envelopes (user ∩ contract scopes; external writes `require_approval`), and the generic approval primitive (rows, not paused conversations) surfaced in the approvals UI. Gate G7 registers here. (Note §5.2–§5.3.) | First Phase 7 code slice |
 | 084 | Scoped application tokens: one verifier, two mint paths — short-lived signed frame tokens minted from the session; hashed, revocable, read-default dev tokens — with per-route scope enforcement. CORS/CSRF posture untouched. (Note §4.) | After 083 (prefer after 085) |
 | 085 | Application model + machine-enforced contract + immutable versioned bundles over Files + sandboxed serving on the 050 substrate with `connect-src` = API origin; publish/rollback/disable as audited row-state changes; publish-time scope-diff. (Note §2, §5.1, §7.) | After 050/051 |

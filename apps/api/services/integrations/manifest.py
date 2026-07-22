@@ -20,6 +20,7 @@ class IntegrationProviderManifest:
     resource_types: tuple[str, ...] = ()
     requires_discovery: bool = False
     required_form_fields: tuple[str, ...] = ()
+    connect_help: str = ""
     capability_flags: frozenset[str] = frozenset()
     event_delivery: Literal["none", "webhook", "pubsub_push"] = "none"
 

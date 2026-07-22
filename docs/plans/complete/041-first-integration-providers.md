@@ -44,6 +44,7 @@
 
 ## Status
 
+- **Status**: DONE 2026-07-22
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH (first tools with real external side effects; one of
@@ -558,6 +559,13 @@ passed with 386 tests. The plan stays open for Slice C.
 
 ### Slice C — Airtable + catalog closure (`API - Airtable Provider`)
 
+**Completed 2026-07-22.** Airtable now contributes paginated base discovery,
+permission-derived write metadata, bounded record reads, and approval-default
+create/update tools. PATs remain secret references and resolve per connection
+at request time; provider text uses the shared untrusted-content carrier. The
+full registry exposes exactly the 10 curated tools, the required database-backed
+suites passed, and the complete backend suite passed with 857 tests.
+
 - **Steps**: 2's airtable manifest completion (including the
   `connect_help` PAT-scope metadata), 5 (the Airtable package), its
   four tool definitions in Step 6, and the full-catalog closure checks.
@@ -864,23 +872,23 @@ enclosed and forged markers neutralized** (Gate G6 channel (g)), and
 
 - [x] Gate G1 + G6 pre-flights passed; the required status rows quoted
       in the completion report
-- [ ] `uv run ruff check .` exits 0; no new migrations exist
-- [ ] Registry smoke lists exactly the 10 decision-1 tools; the spend
+- [x] `uv run ruff check .` exits 0; no new migrations exist
+- [x] Registry smoke lists exactly the 10 decision-1 tools; the spend
       op prints `approval False ['approval']`
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/integrations
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/integrations
       tests/services/integrations tests/services/agents -q` exits 0
-- [ ] Grep confirms no `import httpx\b` under `integrations/` or
+- [x] Grep confirms no `import httpx\b` under `integrations/` or
       `services/integrations/` (httpx2 only) and no deny-listed
       parameter names in tool signatures
-- [ ] Per-entry audit events observable end to end in one integration
+- [x] Per-entry audit events observable end to end in one integration
       test (tool call → N audit rows with external refs)
-- [ ] The import-law test still passes against the filled packages
-- [ ] `docs/architecture/governance.md` §2 spend-rule cell flipped to
+- [x] The import-law test still passes against the filled packages
+- [x] `docs/architecture/governance.md` §2 spend-rule cell flipped to
       `[implemented: plan 041]`; §4 integration-retries row still
       reflects the landed helper; threat-model §2 row (g) marked
       implemented per its tracking convention
-- [ ] No plan numbers cited in implementation code or docstrings
-- [ ] `git status` clean outside the in-scope list;
+- [x] No plan numbers cited in implementation code or docstrings
+- [x] `git status` clean outside the in-scope list;
       `docs/plans/000_README.md` row updated
 
 ## STOP conditions
