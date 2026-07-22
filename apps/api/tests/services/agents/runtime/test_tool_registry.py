@@ -264,6 +264,18 @@ def test_validate_definition_accepts_url_and_list_result_fields() -> None:
     validate_definition(definition)
 
 
+@pytest.mark.parametrize("icon", ["airtable", "gmail", "google_ads"])
+def test_validate_definition_accepts_integration_icon_tokens(icon: str) -> None:
+    definition = RuntimeToolDefinition(
+        name=f"{icon}_icon_tool",
+        function=_noop,
+        description="Uses its integration brand mark.",
+        presentation=ToolPresentation(icon=icon),
+    )
+
+    validate_definition(definition)
+
+
 def test_allowed_policies_and_tool_build_reject_unsupported_policy() -> None:
     definition = RuntimeToolDefinition(
         name="approval_only",

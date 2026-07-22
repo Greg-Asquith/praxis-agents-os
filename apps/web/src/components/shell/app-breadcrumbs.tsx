@@ -7,6 +7,7 @@ import { ChevronRightIcon } from "lucide-react"
 import { getAgent } from "@/features/agents/api/get-agent"
 import { agentsQueryKeys } from "@/features/agents/api/list-agents"
 import type { Conversation } from "@/features/conversations/types"
+import { integrationProvidersQueryOptions } from "@/features/integrations/api/list-providers"
 import { getSchedule } from "@/features/schedules/api/get-schedule"
 import { schedulesQueryKeys } from "@/features/schedules/api/list-schedules"
 import { scheduleTitle } from "@/features/schedules/format"
@@ -47,6 +48,11 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
     ...scheduleBreadcrumbQueryOptions(scheduleId),
     enabled: scheduleId !== null,
   })
+  const integrationProviderKey = getIntegrationProviderKey(pathname)
+  const integrationProvidersQuery = useQuery({
+    ...integrationProvidersQueryOptions(),
+    enabled: integrationProviderKey !== null,
+  })
 
   const conversationId = getEntityId(pathname, "conversations")
   const conversation = conversationId
@@ -55,6 +61,10 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
   const breadcrumbs = getBreadcrumbs({
     agentName: agentQuery.data?.name ?? null,
     conversationTitle: conversation ? (conversation.title ?? "Untitled conversation") : null,
+    integrationProviderName:
+      integrationProvidersQuery.data?.find(
+        (provider) => provider.provider_key === integrationProviderKey
+      )?.display_name ?? null,
     pathname,
     scheduleName: scheduleQuery.data ? scheduleTitle(scheduleQuery.data) : null,
   })
@@ -106,11 +116,13 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
 function getBreadcrumbs({
   agentName,
   conversationTitle,
+  integrationProviderName,
   pathname,
   scheduleName,
 }: {
   agentName: string | null
   conversationTitle: string | null
+  integrationProviderName: string | null
   pathname: string
   scheduleName: string | null
 }): BreadcrumbItem[] {
@@ -170,7 +182,15 @@ function getBreadcrumbs({
   }
 
   if (section === "integrations") {
-    return [{ key: "integrations", label: "Integrations" }]
+    return detail && detail !== "oauth"
+      ? [
+          { key: "integrations", label: "Integrations", to: "/integrations" },
+          {
+            key: "integrations-detail",
+            label: integrationProviderName ?? titleFromSegment(detail.replaceAll("_", "-")),
+          },
+        ]
+      : [{ key: "integrations", label: "Integrations" }]
   }
 
   if (section === "workspaces") {
@@ -215,6 +235,19 @@ function getEntityId(pathname: string, section: "agents" | "conversations" | "sc
     return null
   }
 
+  return segments[1]
+}
+
+function getIntegrationProviderKey(pathname: string) {
+  const segments = getPathSegments(pathname)
+  if (
+    segments[0] !== "integrations" ||
+    !segments[1] ||
+    segments[1] === "context-groups" ||
+    segments[1] === "oauth"
+  ) {
+    return null
+  }
   return segments[1]
 }
 

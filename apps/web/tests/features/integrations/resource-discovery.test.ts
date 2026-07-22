@@ -13,8 +13,8 @@ describe("resource discovery", () => {
   })
 
   it("renders the persisted discovery states in operator language", () => {
-    expect(discoveryStatusLabel("running")).toBe("Discovery in progress")
-    expect(discoveryStatusLabel("succeeded")).toBe("Discovery completed")
-    expect(discoveryStatusLabel("failed")).toBe("Discovery failed")
+    expect(discoveryStatusLabel("running")).toBe("Looking for resources…")
+    expect(discoveryStatusLabel("succeeded")).toBe("Resources are up to date")
+    expect(discoveryStatusLabel("failed")).toBe("Resources could not be checked")
   })
 })

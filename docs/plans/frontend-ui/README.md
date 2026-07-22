@@ -112,7 +112,7 @@ Functional, but visibly unstyled.
 | 030 | In-place tool calls: ordered turns | P1 | L | — | DONE |
 | 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | DONE |
 | 032 | Resilient conversation streams across navigation | P1 | M | — | DONE |
-| 033 | Integrations: calm app list & provider detail pages | P1 | L | — | TODO |
+| 033 | Integrations: calm app list & provider detail pages | P1 | L | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -395,6 +395,11 @@ Dependency notes:
   in both themes: this is the one sanctioned exception to the
   tokens-only rule, scoped to third-party trademarks. Still no raster
   assets, and non-integration tools keep the semantic lucide token set.
+- **Service-account setup is a credential-file paste, not a JSON editor**
+  (recorded 2026-07-22; plan 033). The field sits behind the Add Account
+  dialog's collapsed Advanced disclosure and asks operators to paste the
+  contents of the key file downloaded from Google. Internal parsing remains
+  JSON-based, but the UI neither teaches nor exposes JSON editing.
 
 ## Considered and rejected (do not re-propose)
 

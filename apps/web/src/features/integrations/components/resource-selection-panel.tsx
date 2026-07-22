@@ -88,9 +88,9 @@ function ResourceSelectionForm({
     <div className="bg-muted/25 flex flex-col gap-4 border-t px-4 py-4">
       {connection.status === "needs_resource_selection" ? (
         <Alert>
-          <AlertTitle>Select resources</AlertTitle>
+          <AlertTitle>Choose what agents can use</AlertTitle>
           <AlertDescription>
-            Choose at least one resource before agents can use this connection.
+            Choose at least one account before agents can use this connection.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -144,7 +144,7 @@ function ResourceSelectionForm({
           ))
         ) : (
           <p className="text-muted-foreground px-2 text-sm">
-            No resources have been discovered for this connection yet.
+            We have not found any resources for this account yet.
           </p>
         )}
       </div>
@@ -152,10 +152,10 @@ function ResourceSelectionForm({
         <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
           <span>
             {discoveryPending
-              ? "Discovery in progress"
+              ? "Looking for resources…"
               : discoveryRun
                 ? discoveryStatusLabel(discoveryRun.status)
-                : "Discovery has not run yet"}
+                : "Resources have not been checked yet"}
           </span>
           {discoveryRun ? (
             <span>
@@ -186,7 +186,7 @@ function ResourceSelectionForm({
                 ? "Starting"
                 : discoveryPending
                   ? "Discovery Running"
-                  : "Re-run Discovery"}
+                  : "Look for New Resources"}
             </Button>
             <Button
               disabled={!changed || saveMutation.isPending}

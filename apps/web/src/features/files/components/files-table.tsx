@@ -524,7 +524,7 @@ function FileActions({
       >
         <MoreHorizontalIcon />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
+      <DropdownMenuContent align="end">
         <DropdownMenuItem
           onClick={() => {
             void onOpen(file, false)

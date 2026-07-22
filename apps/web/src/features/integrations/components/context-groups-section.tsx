@@ -1,32 +1,36 @@
 // apps/web/src/features/integrations/components/context-groups-section.tsx
 
-import { useState } from "react"
-import { Layers3Icon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
+import { useEffect, useState } from "react"
+import { EllipsisIcon, Layers3Icon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { PageHeader } from "@/components/shell/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { EmptyState } from "@/components/ui/empty-state"
 import { useDeleteContextGroupMutation } from "@/features/integrations/api/delete-context-group"
 import { useContextGroupsQuery } from "@/features/integrations/api/list-context-groups"
+import { useIntegrationProvidersQuery } from "@/features/integrations/api/list-providers"
 import { useIntegrationResourcesQuery } from "@/features/integrations/api/list-integration-resources"
 import { ContextGroupDialog } from "@/features/integrations/components/context-group-dialog"
+import { ProviderMark } from "@/features/integrations/components/provider-mark"
 import type { IntegrationContextGroup } from "@/features/integrations/types"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { loadIntegrationUiModules } from "@/integrations/registry"
 import { titleCaseToken } from "@/lib/format"
 import { getErrorMessage } from "@/lib/api/errors"
 
 export function ContextGroupsSection() {
   const { workspace } = useActiveWorkspace()
   const { data } = useContextGroupsQuery()
+  const { data: providers } = useIntegrationProvidersQuery()
   const { data: resources } = useIntegrationResourcesQuery()
   const deleteMutation = useDeleteContextGroupMutation()
   const [editingGroup, setEditingGroup] = useState<IntegrationContextGroup | null>(null)
@@ -35,9 +39,17 @@ export function ContextGroupsSection() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const canEdit =
     workspace.current_user_role !== null && workspace.current_user_role !== "read_only"
+  const providerKeySignature = providers.map((provider) => provider.provider_key).join("|")
   const providerByResourceId = new Map(
     resources.map((resource) => [resource.id, resource.provider_key])
   )
+  const providerNames = new Map(
+    providers.map((provider) => [provider.provider_key, provider.display_name])
+  )
+
+  useEffect(() => {
+    void loadIntegrationUiModules(providerKeySignature ? providerKeySignature.split("|") : [])
+  }, [providerKeySignature])
 
   function openGroupDialog(group: IntegrationContextGroup | null) {
     setEditingGroup(group)
@@ -57,108 +69,101 @@ export function ContextGroupsSection() {
     }
   }
 
+  const newGroupButton = canEdit ? (
+    <Button
+      onClick={() => {
+        openGroupDialog(null)
+      }}
+    >
+      <PlusIcon data-icon="inline-start" />
+      New Group
+    </Button>
+  ) : undefined
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Context Groups</CardTitle>
-        <CardDescription>
-          Bundle resources that agents should use together in conversations and schedules.
-        </CardDescription>
-        {canEdit ? (
-          <CardAction>
-            <Button
-              onClick={() => {
-                openGroupDialog(null)
-              }}
-              size="sm"
-            >
-              <PlusIcon data-icon="inline-start" />
-              New Group
-            </Button>
-          </CardAction>
-        ) : null}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {deleteError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Context group not deleted</AlertTitle>
-            <AlertDescription>{deleteError}</AlertDescription>
-          </Alert>
-        ) : null}
-        {data.items.length > 0 ? (
-          <div className="divide-border divide-y rounded-lg border">
-            {data.items.map((group) => {
-              const providers = [
-                ...new Set(
-                  group.members.map((member) => providerByResourceId.get(member.id) ?? "other")
-                ),
-              ].toSorted()
-              return (
-                <div
-                  className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
-                  key={group.id}
-                >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="bg-muted mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg">
-                      <Layers3Icon className="text-muted-foreground size-4" />
-                    </span>
-                    <div className="flex min-w-0 flex-col gap-1.5">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="truncate font-medium">{group.name}</span>
-                        <span className="text-muted-foreground text-xs">
-                          {group.members.length}{" "}
-                          {group.members.length === 1 ? "resource" : "resources"}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {providers.map((providerKey) => (
-                          <Badge key={providerKey} variant="secondary">
-                            {titleCaseToken(providerKey, "Provider")}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  {canEdit ? (
-                    <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
-                      <Button
-                        aria-label={`Edit ${group.name}`}
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        actions={newGroupButton}
+        description="Save a set of accounts agents use together, then pick it when starting a conversation or schedule."
+        title="Context Groups"
+      />
+      {deleteError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Context group not deleted</AlertTitle>
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      ) : null}
+      {data.items.length > 0 ? (
+        <div className="divide-border divide-y" aria-label="Context groups">
+          {data.items.map((group) => {
+            const providerKeys = [
+              ...new Set(
+                group.members.map((member) => providerByResourceId.get(member.id) ?? "other")
+              ),
+            ].toSorted()
+            return (
+              <div
+                className="flex min-h-20 items-center gap-3 px-2 py-4 sm:gap-4 sm:px-3"
+                key={group.id}
+              >
+                <GroupMarks providerKeys={providerKeys} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{group.name}</p>
+                  <p className="text-muted-foreground mt-0.5 truncate text-sm">
+                    {groupSummary(group.members.length, providerKeys, providerNames)}
+                  </p>
+                </div>
+                {canEdit ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          aria-label={`Actions for ${group.name}`}
+                          size="icon-sm"
+                          variant="ghost"
+                        />
+                      }
+                    >
+                      <EllipsisIcon />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
                         onClick={() => {
                           openGroupDialog(group)
                         }}
-                        size="icon-sm"
-                        variant="ghost"
                       >
                         <PencilIcon />
-                      </Button>
-                      <Button
-                        aria-label={`Delete ${group.name}`}
+                        Edit Group
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
                         onClick={() => {
                           setDeletingGroup(group)
                         }}
-                        size="icon-sm"
-                        variant="ghost"
+                        variant="destructive"
                       >
                         <Trash2Icon />
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="border-border flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-8 text-center">
-            <Layers3Icon className="text-muted-foreground size-5" />
-            <p className="font-medium">No context groups yet</p>
-            <p className="text-muted-foreground max-w-md text-sm">
-              {canEdit
-                ? "Create a group to switch a conversation or schedule between client resources in one step."
-                : "Workspace editors can create groups from connected resources."}
-            </p>
-          </div>
-        )}
-      </CardContent>
+                        Delete Group
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          action={newGroupButton}
+          description={
+            canEdit
+              ? "Group the accounts a client or project uses so you can pick them together in chat and schedules."
+              : "Workspace editors can create groups from connected accounts."
+          }
+          icon={<Layers3Icon className="size-5" />}
+          title="No context groups yet"
+        />
+      )}
 
       {groupDialogOpen ? (
         <ContextGroupDialog
@@ -166,16 +171,18 @@ export function ContextGroupsSection() {
           key={editingGroup?.id ?? "new"}
           onOpenChange={setGroupDialogOpen}
           open={groupDialogOpen}
+          providers={providers}
           resources={resources}
         />
       ) : null}
       <ConfirmDialog
+        confirmIcon={<Trash2Icon data-icon="inline-start" />}
         confirmLabel="Delete Group"
-        confirmPendingLabel="Deleting…"
+        confirmPendingLabel="Deleting"
         description={
           deletingGroup
-            ? `Runs using “${deletingGroup.name}” will fall back to no context.`
-            : "Runs using this group will fall back to no context."
+            ? `Conversations and schedules using “${deletingGroup.name}” will run without it.`
+            : "Conversations and schedules using this group will run without it."
         }
         isPending={deleteMutation.isPending}
         onConfirm={handleDelete}
@@ -185,8 +192,61 @@ export function ContextGroupsSection() {
           }
         }}
         open={deletingGroup !== null}
-        title="Delete Context Group?"
+        title="Delete this group?"
       />
-    </Card>
+    </div>
   )
+}
+
+function GroupMarks({ providerKeys }: { providerKeys: string[] }) {
+  const shown = providerKeys.slice(0, 3)
+  const extra = providerKeys.length - shown.length
+
+  if (shown.length === 0) {
+    return (
+      <span className="border-border bg-background text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg border shadow-xs">
+        <Layers3Icon className="size-4" aria-hidden="true" />
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {shown.map((providerKey) => (
+        <span
+          className="border-border bg-background flex size-9 items-center justify-center rounded-lg border shadow-xs"
+          key={providerKey}
+        >
+          <ProviderMark className="size-4" providerKey={providerKey} />
+        </span>
+      ))}
+      {extra > 0 ? (
+        <span className="border-border bg-background text-muted-foreground flex size-9 items-center justify-center rounded-lg border text-xs shadow-xs">
+          +{extra}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+function groupSummary(
+  memberCount: number,
+  providerKeys: string[],
+  providerNames: Map<string, string>
+) {
+  if (memberCount === 0) {
+    return "Nothing in this group yet"
+  }
+  const names = providerKeys.map(
+    (providerKey) => providerNames.get(providerKey) ?? titleCaseToken(providerKey, "Provider")
+  )
+  const count = memberCount === 1 ? "1 resource" : `${String(memberCount)} resources`
+  return `${count} from ${joinNames(names)}`
+}
+
+function joinNames(names: string[]) {
+  if (names.length <= 1) {
+    return names[0] ?? ""
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`
 }

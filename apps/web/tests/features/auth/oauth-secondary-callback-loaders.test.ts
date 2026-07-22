@@ -90,6 +90,23 @@ describe("secondary OAuth callback loaders", () => {
       },
     })
   })
+
+  it("returns integration failures to the provider detail page", async () => {
+    const payload = "eyJwcm92aWRlcl9rZXkiOiJnb29nbGVfYWRzIn0"
+    completeIntegrationOAuth.mockRejectedValue(new Error("Authorization denied"))
+
+    const redirect = await captureRedirect(
+      loadIntegrationOAuthCallback({ code: "code", state: `header.${payload}.signature` })
+    )
+
+    expect(redirect).toMatchObject({
+      options: {
+        href: "https://praxis.example/integrations/google_ads?integration_error=Authorization+denied",
+        reloadDocument: true,
+        replace: true,
+      },
+    })
+  })
 })
 
 async function captureRedirect(promise: Promise<unknown>) {

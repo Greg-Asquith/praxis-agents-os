@@ -1,19 +1,11 @@
 // apps/web/src/features/integrations/components/connect-oauth-button.tsx
 
 import { useState, type SyntheticEvent } from "react"
-import { ExternalLinkIcon, PlusIcon } from "lucide-react"
+import { ExternalLinkIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useStartOAuthMutation } from "@/features/integrations/api/start-oauth"
@@ -21,8 +13,8 @@ import type { IntegrationProvider } from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
 
 type ConnectOAuthButtonProps = {
-  connectionId?: string
-  connectionLabel?: string
+  connectionId: string
+  connectionLabel: string
   provider: IntegrationProvider
 }
 
@@ -31,16 +23,9 @@ export function ConnectOAuthButton({
   connectionLabel,
   provider,
 }: ConnectOAuthButtonProps) {
-  if (connectionId && connectionLabel) {
-    return (
-      <OAuthRedirectButton
-        connectionId={connectionId}
-        label={connectionLabel}
-        provider={provider}
-      />
-    )
-  }
-  return <NewOAuthConnectionDialog provider={provider} />
+  return (
+    <OAuthRedirectButton connectionId={connectionId} label={connectionLabel} provider={provider} />
+  )
 }
 
 function OAuthRedirectButton({
@@ -48,7 +33,7 @@ function OAuthRedirectButton({
   label,
   provider,
 }: {
-  connectionId?: string
+  connectionId: string
   label: string
   provider: IntegrationProvider
 }) {
@@ -59,9 +44,9 @@ function OAuthRedirectButton({
     setError(null)
     try {
       const response = await mutation.mutateAsync({
-        ...(connectionId ? { connection_id: connectionId } : {}),
+        connection_id: connectionId,
         label,
-        next_path: "/integrations?integration_status=connected",
+        next_path: integrationDetailReturnPath(provider.provider_key),
         owner_scope: provider.owner_scope,
         provider_key: provider.provider_key,
       })
@@ -75,26 +60,23 @@ function OAuthRedirectButton({
     <div className="flex flex-col items-start gap-2">
       <Button disabled={mutation.isPending} onClick={() => void start()} size="sm" type="button">
         <ExternalLinkIcon data-icon="inline-start" />
-        {mutation.isPending ? "Opening Provider" : connectionId ? "Reconnect" : "Continue"}
+        {mutation.isPending ? "Opening Provider" : "Sign In Again"}
       </Button>
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
     </div>
   )
 }
 
-function NewOAuthConnectionDialog({ provider }: { provider: IntegrationProvider }) {
+export function OAuthConnectionForm({
+  onCancel,
+  provider,
+}: {
+  onCancel: () => void
+  provider: IntegrationProvider
+}) {
   const mutation = useStartOAuthMutation()
-  const [open, setOpen] = useState(false)
   const [label, setLabel] = useState("")
   const [error, setError] = useState<string | null>(null)
-
-  function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
-    if (!nextOpen) {
-      setLabel("")
-      setError(null)
-    }
-  }
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -107,7 +89,7 @@ function NewOAuthConnectionDialog({ provider }: { provider: IntegrationProvider 
     try {
       const response = await mutation.mutateAsync({
         label: connectionLabel,
-        next_path: "/integrations?integration_status=connected",
+        next_path: integrationDetailReturnPath(provider.provider_key),
         owner_scope: provider.owner_scope,
         provider_key: provider.provider_key,
       })
@@ -118,74 +100,62 @@ function NewOAuthConnectionDialog({ provider }: { provider: IntegrationProvider 
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button size="sm" variant="outline" />}>
-        {provider.auth_modes.length > 1 ? (
-          <ExternalLinkIcon data-icon="inline-start" />
-        ) : (
-          <PlusIcon data-icon="inline-start" />
-        )}
-        {provider.auth_modes.length > 1 ? "Sign in with Google" : "Add Connection"}
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Connect {provider.display_name}</DialogTitle>
-          <DialogDescription>
-            Name this connection before continuing to the provider for authorization.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id={`connect-${provider.provider_key}-oauth`}
-          onSubmit={(event) => {
-            void handleSubmit(event)
-          }}
+    <>
+      <DialogHeader>
+        <DialogTitle>Connect {provider.display_name}</DialogTitle>
+        <DialogDescription>
+          Name this account before continuing to the provider to sign in.
+        </DialogDescription>
+      </DialogHeader>
+      <form
+        id={`connect-${provider.provider_key}-oauth`}
+        onSubmit={(event) => {
+          void handleSubmit(event)
+        }}
+      >
+        <FieldGroup>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Connection not started</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          <Field data-invalid={Boolean(error) || undefined}>
+            <FieldLabel htmlFor={`oauth-label-${provider.provider_key}`}>
+              Connection Name
+            </FieldLabel>
+            <Input
+              aria-invalid={Boolean(error) || undefined}
+              id={`oauth-label-${provider.provider_key}`}
+              maxLength={120}
+              onChange={(event) => {
+                setLabel(event.currentTarget.value)
+                setError(null)
+              }}
+              placeholder="Client account"
+              value={label}
+            />
+            <FieldError>{error}</FieldError>
+          </Field>
+        </FieldGroup>
+      </form>
+      <DialogFooter>
+        <Button onClick={onCancel} type="button" variant="outline">
+          Cancel
+        </Button>
+        <Button
+          disabled={mutation.isPending}
+          form={`connect-${provider.provider_key}-oauth`}
+          type="submit"
         >
-          <FieldGroup>
-            {error ? (
-              <Alert variant="destructive">
-                <AlertTitle>Connection not started</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : null}
-            <Field data-invalid={Boolean(error) || undefined}>
-              <FieldLabel htmlFor={`oauth-label-${provider.provider_key}`}>
-                Connection Name
-              </FieldLabel>
-              <Input
-                aria-invalid={Boolean(error) || undefined}
-                id={`oauth-label-${provider.provider_key}`}
-                maxLength={120}
-                onChange={(event) => {
-                  setLabel(event.currentTarget.value)
-                  setError(null)
-                }}
-                placeholder="Client account"
-                value={label}
-              />
-              <FieldError>{error}</FieldError>
-            </Field>
-          </FieldGroup>
-        </form>
-        <DialogFooter>
-          <Button
-            onClick={() => {
-              handleOpenChange(false)
-            }}
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={mutation.isPending}
-            form={`connect-${provider.provider_key}-oauth`}
-            type="submit"
-          >
-            <ExternalLinkIcon data-icon="inline-start" />
-            {mutation.isPending ? "Opening Provider" : "Continue"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <ExternalLinkIcon data-icon="inline-start" />
+          {mutation.isPending ? "Opening Provider" : "Continue"}
+        </Button>
+      </DialogFooter>
+    </>
   )
+}
+
+function integrationDetailReturnPath(providerKey: string) {
+  return `/integrations/${encodeURIComponent(providerKey)}?integration_status=connected`
 }

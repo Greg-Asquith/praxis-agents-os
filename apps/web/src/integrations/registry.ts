@@ -1,7 +1,6 @@
 // apps/web/src/integrations/registry.ts
 
-import { useEffect, useSyncExternalStore } from "react"
-import type { LucideIcon } from "lucide-react"
+import { useEffect, useSyncExternalStore, type ComponentType, type SVGProps } from "react"
 
 import type { IntegrationUiModule, ToolRowPresenter } from "@/integrations/contract"
 
@@ -28,7 +27,7 @@ export function integrationToolRowPresenters(providerKey: string | null): ToolRo
   return loadedModules.get(providerKey)?.toolRowPresenters ?? []
 }
 
-export function integrationIcon(token: string): LucideIcon | null {
+export function integrationIcon(token: string): ComponentType<SVGProps<SVGSVGElement>> | null {
   for (const module of loadedModules.values()) {
     const icon = module.icons?.[token]
     if (icon) {

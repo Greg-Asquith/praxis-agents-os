@@ -5,8 +5,6 @@
 import re
 from typing import Any
 
-from services.agents.runtime.untrusted import UntrustedContent
-
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
 
 
@@ -31,6 +29,7 @@ def bounded_query(query: str, *, max_rows: int) -> str:
     if int(match.group(1)) <= request_limit:
         return normalized
     return _LIMIT_PATTERN.sub(f"LIMIT {request_limit}", normalized, count=1)
+
 
 def operation_index(location: Any) -> int | None:
     if not isinstance(location, dict):

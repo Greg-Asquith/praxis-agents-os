@@ -115,7 +115,7 @@ export function AgentModelSection({
                     <SelectLabel>Extra reasoning</SelectLabel>
                     {THINKING_OPTIONS.map((option) => (
                       <SelectItem key={option.value} label={option.label} value={option.value}>
-                        <span className="flex min-w-0 flex-col">
+                        <span className="flex min-w-0 flex-col gap-0.5">
                           <span>{option.label}</span>
                           <span className="text-muted-foreground text-xs">
                             {option.description}

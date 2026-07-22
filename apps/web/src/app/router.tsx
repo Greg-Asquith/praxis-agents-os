@@ -6,6 +6,7 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
+  notFound,
   Outlet,
   redirect,
 } from "@tanstack/react-router"
@@ -269,13 +270,46 @@ const integrationsRoute = createRoute({
     await Promise.all([
       context.queryClient.ensureQueryData(integrationProvidersQueryOptions()),
       context.queryClient.ensureQueryData(integrationConnectionsQueryOptions()),
-      context.queryClient.ensureQueryData(contextGroupsQueryOptions()),
-      context.queryClient.ensureQueryData(integrationResourcesQueryOptions()),
     ])
   },
   component: lazyRouteComponent(
     () => import("@/features/integrations/routes/integrations-route"),
     "IntegrationsRoute"
+  ),
+})
+
+const integrationContextGroupsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/integrations/context-groups",
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(contextGroupsQueryOptions()),
+      context.queryClient.ensureQueryData(integrationProvidersQueryOptions()),
+      context.queryClient.ensureQueryData(integrationResourcesQueryOptions()),
+    ])
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/integrations/routes/context-groups-route"),
+    "IntegrationContextGroupsRoute"
+  ),
+})
+
+const integrationProviderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/integrations/$providerKey",
+  validateSearch: validateIntegrationsSearch,
+  loader: async ({ context, params }) => {
+    const [providers] = await Promise.all([
+      context.queryClient.ensureQueryData(integrationProvidersQueryOptions()),
+      context.queryClient.ensureQueryData(integrationConnectionsQueryOptions()),
+    ])
+    if (!providers.some((provider) => provider.provider_key === params.providerKey)) {
+      throw notFound()
+    }
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/integrations/routes/integration-provider-route"),
+    "IntegrationProviderRoute"
   ),
 })
 
@@ -376,6 +410,8 @@ const routeTree = rootRoute.addChildren([
     filesRoute,
     schedulesRoute,
     integrationsRoute,
+    integrationContextGroupsRoute,
+    integrationProviderRoute,
     newScheduleRoute,
     scheduleDetailRoute,
     workspacesRoute,

@@ -13,7 +13,6 @@ import {
 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
@@ -37,7 +36,7 @@ import { discoveryFinished } from "@/features/integrations/components/resource-d
 import { connectionResourcesAreEditable } from "@/features/integrations/components/resource-selection-model"
 import {
   integrationAuthModeLabel,
-  integrationOwnerScopeLabel,
+  integrationOwnershipDescription,
 } from "@/features/integrations/format"
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -63,6 +62,8 @@ export function ConnectionRow({
   const canUseLifecycleActions = canEdit && connection.status !== "revoked"
   const canEditResources = connectionResourcesAreEditable(canEdit, connection.status)
   const previousStatus = useRef(connection.status)
+  const hasMultipleAuthModes =
+    Object.values(provider.configured_auth_modes).filter(Boolean).length > 1
 
   useEffect(() => {
     if (discoveryFinished(previousStatus.current, connection.status)) {
@@ -113,24 +114,14 @@ export function ConnectionRow({
                 label={connection.label}
               />
               <ConnectionStatusBadge status={connection.status} />
-              <Badge variant="outline">{integrationOwnerScopeLabel(connection.owner_scope)}</Badge>
-              {connection.credential ? (
-                <Badge variant="secondary">
-                  {integrationAuthModeLabel(connection.credential.auth_mode)}
-                </Badge>
-              ) : null}
             </div>
             <p className="text-muted-foreground text-xs">
-              Added {formatDateTime(connection.created_at)}
-              {connection.credential?.last_refreshed_at
-                ? ` · Refreshed ${formatDateTime(connection.credential.last_refreshed_at)}`
+              {integrationOwnershipDescription(connection.owner_scope)} · Added{" "}
+              {formatDateTime(connection.created_at)}
+              {hasMultipleAuthModes && connection.credential
+                ? ` · ${integrationAuthModeLabel(connection.credential.auth_mode)}`
                 : ""}
             </p>
-            {connection.credential?.auth_mode === "api_key" ? (
-              <p className="text-muted-foreground text-xs">
-                Key set · {provider.display_name} · {formatDateTime(connection.created_at)}
-              </p>
-            ) : null}
             {connection.duplicate_of_connection_ids.length > 0 ? (
               <p className="text-warning-foreground flex items-center gap-1 text-xs">
                 <ShieldAlertIcon className="size-3.5" aria-hidden="true" />
@@ -155,7 +146,7 @@ export function ConnectionRow({
               type="button"
               variant="outline"
             >
-              Select Resources
+              Choose Resources
             </Button>
           ) : null}
           {status.action === "retry_test" && canEdit ? (
@@ -166,7 +157,7 @@ export function ConnectionRow({
               type="button"
               variant="outline"
             >
-              Retry Test
+              Try Again
             </Button>
           ) : null}
           {status.action === "reauthenticate" &&
@@ -197,14 +188,14 @@ export function ConnectionRow({
                   onClick={() => void runAction(() => testMutation.mutateAsync(connection.id))}
                 >
                   <WrenchIcon />
-                  Test Connection
+                  Check Connection
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={refreshMutation.isPending}
                   onClick={() => void runAction(() => refreshMutation.mutateAsync(connection.id))}
                 >
                   <RefreshCwIcon />
-                  Refresh Credentials
+                  Refresh Access
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -214,7 +205,7 @@ export function ConnectionRow({
                   variant="destructive"
                 >
                   <Trash2Icon />
-                  Revoke
+                  Disconnect
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -228,14 +219,14 @@ export function ConnectionRow({
       ) : null}
       <ConfirmDialog
         confirmIcon={<Trash2Icon data-icon="inline-start" />}
-        confirmLabel="Revoke Connection"
-        confirmPendingLabel="Revoking"
-        description={`Revoke '${connection.label}'? Agents will lose access to its resources.`}
+        confirmLabel="Disconnect"
+        confirmPendingLabel="Disconnecting"
+        description={`Disconnect '${connection.label}'? Agents will lose access to its resources.`}
         isPending={revokeMutation.isPending}
         onConfirm={revoke}
         onOpenChange={setConfirmRevoke}
         open={confirmRevoke}
-        title="Revoke this connection?"
+        title="Disconnect this account?"
       />
     </div>
   )

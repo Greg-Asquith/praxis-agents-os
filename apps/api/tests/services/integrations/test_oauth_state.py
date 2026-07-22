@@ -97,6 +97,10 @@ def test_expired_and_login_flow_states_are_rejected() -> None:
     ("value", "expected"),
     [
         ("/integrations", "/integrations"),
+        (
+            "/integrations/google_ads?integration_status=connected",
+            "/integrations/google_ads?integration_status=connected",
+        ),
         ("https://attacker.example/path", None),
         ("//attacker.example/path", None),
         ("integrations", None),

@@ -1,36 +1,37 @@
 // apps/web/src/routes/error-route.tsx
 
-import { AlertCircleIcon } from "lucide-react"
+import { ArrowLeftIcon, HouseIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { getErrorMessage } from "@/lib/api/errors"
 import { currentPathname, isAuthRecoveryPath } from "@/routes/recovery-paths"
+import { RouteStatusPage } from "@/routes/route-status-page"
 
 export function ErrorRoute({ error }: { error: unknown }) {
   const pathname = currentPathname()
   const authRecovery = isAuthRecoveryPath(pathname)
 
   return (
-    <main className="bg-background flex min-h-screen items-center justify-center p-6">
-      <div className="flex w-full max-w-md flex-col gap-4">
-        <Alert variant="destructive">
-          <AlertCircleIcon />
-          <AlertTitle>Unable to load this page</AlertTitle>
-          <AlertDescription>{getErrorMessage(error)}</AlertDescription>
-        </Alert>
-        <div className="flex flex-wrap gap-2">
+    <RouteStatusPage
+      actions={
+        <>
           <Button
             onClick={() => {
               window.location.reload()
             }}
           >
+            <RefreshCwIcon data-icon="inline-start" />
             Try Again
           </Button>
           {authRecovery ? <BackToSignInButton /> : <AppRecoveryActions />}
-        </div>
-      </div>
-    </main>
+        </>
+      }
+      code="500"
+      description="Something unexpected interrupted this page. Your work should still be safe, and a fresh attempt will often get things moving again."
+      detail={getErrorMessage(error)}
+      icon={<TriangleAlertIcon className="size-5" />}
+      title="We hit a snag"
+    />
   )
 }
 
@@ -42,6 +43,7 @@ function BackToSignInButton() {
         window.location.assign("/login")
       }}
     >
+      <ArrowLeftIcon data-icon="inline-start" />
       Back to Sign In
     </Button>
   )
@@ -56,15 +58,8 @@ function AppRecoveryActions() {
           window.location.assign("/")
         }}
       >
-        Home
-      </Button>
-      <Button
-        variant="ghost"
-        onClick={() => {
-          window.location.assign("/profile")
-        }}
-      >
-        Profile Settings
+        <HouseIcon data-icon="inline-start" />
+        Go Home
       </Button>
     </>
   )

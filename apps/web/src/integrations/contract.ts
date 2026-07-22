@@ -1,7 +1,6 @@
 // apps/web/src/integrations/contract.ts
 
-import type { ComponentType, ReactNode } from "react"
-import type { LucideIcon } from "lucide-react"
+import type { ComponentType, ReactNode, SVGProps } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/features/conversations/components/approval-decision-block"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -26,8 +25,9 @@ export type ToolRowPresenter = {
 }
 
 export type IntegrationUiModule = {
+  catalogDescription?: string
   providerKey: string
   toolRowPresenters?: ToolRowPresenter[]
-  icons?: Record<string, LucideIcon>
+  icons?: Record<string, ComponentType<SVGProps<SVGSVGElement>>>
   ConnectHelp?: ComponentType<{ provider: IntegrationProvider }>
 }

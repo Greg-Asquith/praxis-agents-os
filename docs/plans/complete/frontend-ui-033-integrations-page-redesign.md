@@ -8,7 +8,8 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
+- **Completed**: 2026-07-22
 - **Written**: 2026-07-22 (anchors verified against the working tree at
   `27f9b18`, which carries in-flight roadmap plan 041b changes across the
   integrations feature — this plan builds on that working tree, not the
@@ -189,11 +190,14 @@ Rewrite `provider-catalog.tsx` as `provider-list.tsx` (delete
   (lines 22–24, external-system sync — justified).
 - Update `ProviderCatalogSkeleton` in the route to match row shapes.
 
-`ContextGroupsSection` stays below the list. Copy pass only: description
-becomes outcome language ("Save a set of accounts agents use together,
-then pick it when starting a conversation or schedule."); no structural
-change (it was de-carded/restyled scope is not this plan's concern —
-leave its card if plan 011 left it).
+`ContextGroupsSection` moves to its own `/integrations/context-groups` page,
+linked from a secondary action in the Integrations header. Its description
+becomes outcome language ("Save a set of accounts agents use together, then
+pick it when starting a conversation or schedule."). During implementation,
+the maintainer directed the remaining card-in-card treatment to be removed:
+the outer card, bordered inner list, icon tiles, and provider chips became a
+plain section with divider rows and quiet provider text; behavior stayed
+unchanged.
 
 ### 3. Detail route `/integrations/$providerKey`
 

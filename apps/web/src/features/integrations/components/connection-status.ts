@@ -10,31 +10,31 @@ export type ConnectionStatusPresentation = {
 }
 
 const CONNECTION_STATUS_PRESENTATIONS: Record<string, ConnectionStatusPresentation> = {
-  auth_pending: { action: null, label: "Connecting", pending: true, variant: "secondary" },
+  auth_pending: { action: null, label: "Connecting…", pending: true, variant: "secondary" },
   discovery_pending: {
     action: null,
-    label: "Finding resources",
+    label: "Finding your accounts…",
     pending: true,
     variant: "secondary",
   },
   needs_resource_selection: {
     action: "select_resources",
-    label: "Select resources",
+    label: "Choose what agents can use",
     pending: false,
     variant: "warning",
   },
   active: { action: null, label: "Active", pending: false, variant: "success" },
-  degraded: { action: null, label: "Limited", pending: false, variant: "warning" },
+  degraded: { action: null, label: "Limited access", pending: false, variant: "warning" },
   error: {
     action: "retry_test",
     label: "Needs attention",
     pending: false,
     variant: "destructive",
   },
-  revoked: { action: null, label: "Revoked", pending: false, variant: "outline" },
+  revoked: { action: null, label: "Disconnected", pending: false, variant: "outline" },
   needs_reauth: {
     action: "reauthenticate",
-    label: "Reconnect",
+    label: "Sign in again",
     pending: false,
     variant: "destructive",
   },

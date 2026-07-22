@@ -19,6 +19,7 @@ import {
   MANAGE_INTEGRATIONS_SELECTION,
   resourceSelectionKey,
 } from "@/features/integrations/active-context"
+import { ProviderMark } from "@/features/integrations/components/provider-mark"
 import type {
   ActiveContextSelectionValue,
   IntegrationContextGroup,
@@ -96,7 +97,7 @@ export function ContextSelect({
         title={compact ? compactTitle : undefined}
       >
         {compact ? <Layers3Icon className="text-muted-foreground" /> : null}
-        <SelectValue placeholder="No active context" />
+        <SelectValue placeholder="No Active Context" />
         {compact && hasUnavailable ? (
           <span
             aria-label="Some active context resources are unavailable"
@@ -109,7 +110,7 @@ export function ContextSelect({
         className={compact ? "min-h-28 w-auto max-w-96 min-w-64" : undefined}
       >
         <SelectGroup>
-          <SelectItem value={activeContextSelectionKey(null)}>No active context</SelectItem>
+          <SelectItem value={activeContextSelectionKey(null)}>No Active Context</SelectItem>
         </SelectGroup>
         {contextGroups.length > 0 ? (
           <SelectGroup>
@@ -117,25 +118,29 @@ export function ContextSelect({
             {contextGroups.map((group) => (
               <SelectItem
                 key={group.id}
-                label={`${group.name} · ${String(group.members.length)} ${group.members.length === 1 ? "resource" : "resources"}`}
+                label={`${group.name} · ${contextGroupSizeLabel(group)}`}
                 value={contextGroupSelectionKey(group.id)}
               >
+                <Layers3Icon className="text-muted-foreground" />
                 <span className="min-w-0 truncate">{group.name}</span>
-                <span className="text-muted-foreground text-xs">{group.members.length}</span>
+                <span className="text-muted-foreground text-xs">
+                  {contextGroupSizeLabel(group)}
+                </span>
               </SelectItem>
             ))}
           </SelectGroup>
         ) : null}
         {enabledResources.length > 0 ? (
           <SelectGroup>
-            <SelectLabel>Connected resources</SelectLabel>
+            <SelectLabel>Connected Resources</SelectLabel>
             {enabledResources.map((resource) => (
               <SelectItem
                 key={resource.id}
                 label={`${resource.display_name} · ${integrationResourceProviderLabel(resource)}`}
                 value={resourceSelectionKey(resource.id)}
               >
-                <span className="flex min-w-0 flex-col">
+                <ProviderMark className="mr-1" providerKey={resource.provider_key ?? "other"} />
+                <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate">{resource.display_name}</span>
                   <span className="text-muted-foreground truncate text-xs">
                     {integrationResourceProviderLabel(resource)}
@@ -158,8 +163,8 @@ export function ContextSelect({
           <SelectGroup>
             <SelectLabel>Settings</SelectLabel>
             <SelectItem value={MANAGE_INTEGRATIONS_SELECTION}>
-              <Settings2Icon />
-              Manage integrations
+              <Settings2Icon className="text-muted-foreground" />
+              Manage Integrations
             </SelectItem>
           </SelectGroup>
         ) : null}
@@ -170,4 +175,8 @@ export function ContextSelect({
 
 function integrationResourceProviderLabel(resource: IntegrationResource) {
   return titleCaseToken(resource.provider_key ?? "other", "Provider")
+}
+
+function contextGroupSizeLabel(group: IntegrationContextGroup) {
+  return group.members.length === 1 ? "1 resource" : `${String(group.members.length)} resources`
 }

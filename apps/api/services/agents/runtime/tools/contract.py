@@ -75,6 +75,9 @@ VALID_TOOL_ICONS = frozenset(
         "book",
         "link",
         "mail",
+        "gmail",
+        "google_ads",
+        "airtable",
     }
 )
 

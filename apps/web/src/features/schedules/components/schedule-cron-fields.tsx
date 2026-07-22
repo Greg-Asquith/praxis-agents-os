@@ -75,7 +75,7 @@ export function ScheduleCronFields({
               <SelectLabel>Common patterns</SelectLabel>
               {CRON_PRESETS.map((preset) => (
                 <SelectItem key={preset.value} label={preset.label} value={preset.value}>
-                  <span className="flex min-w-0 flex-col">
+                  <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate">{preset.label}</span>
                     <span className="text-muted-foreground truncate text-xs">
                       {preset.description}
@@ -84,7 +84,7 @@ export function ScheduleCronFields({
                 </SelectItem>
               ))}
               <SelectItem label="Custom days and time" value="advanced">
-                <span className="flex min-w-0 flex-col">
+                <span className="flex min-w-0 flex-col gap-0.5">
                   <span>Custom days and time</span>
                   <span className="text-muted-foreground truncate text-xs">
                     Pick weekdays, hour, and minute
@@ -93,7 +93,7 @@ export function ScheduleCronFields({
               </SelectItem>
               {selectedPreset === "custom" ? (
                 <SelectItem label={formatCronExpression(cronExpression)} value="custom">
-                  <span className="flex min-w-0 flex-col">
+                  <span className="flex min-w-0 flex-col gap-0.5">
                     <span>Saved custom schedule</span>
                     <span className="text-muted-foreground truncate text-xs">
                       {formatCronExpression(cronExpression)}

@@ -6,13 +6,13 @@ export function discoveryFinished(previousStatus: string, currentStatus: string)
 
 export function discoveryStatusLabel(status: string) {
   if (status === "running") {
-    return "Discovery in progress"
+    return "Looking for resources…"
   }
   if (status === "succeeded") {
-    return "Discovery completed"
+    return "Resources are up to date"
   }
   if (status === "failed") {
-    return "Discovery failed"
+    return "Resources could not be checked"
   }
   return status
 }

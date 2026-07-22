@@ -10,7 +10,7 @@ export function AgentSelectItem({ agent, secondary }: { agent: Agent; secondary?
   return (
     <span className="flex min-w-0 items-center gap-2">
       <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="sm" />
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate">{agent.name}</span>
         {description ? (
           <span className="text-muted-foreground truncate text-xs">{description}</span>

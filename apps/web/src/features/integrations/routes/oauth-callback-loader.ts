@@ -8,6 +8,7 @@ import type { OAuthCallbackResponse } from "@/features/integrations/types"
 import type { OAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { getErrorMessage } from "@/lib/api/errors"
 import { fullDocumentRedirect } from "@/lib/full-document-redirect"
+import { decodeBase64Url } from "@/lib/utils"
 
 const completionPromises = new Map<string, Promise<OAuthCallbackResponse>>()
 
@@ -26,10 +27,32 @@ export async function loadIntegrationOAuthCallback(search: OAuthCallbackSearch) 
   try {
     response = await completeOnce(input)
   } catch (error) {
-    return { error: getErrorMessage(error) }
+    const message = getErrorMessage(error)
+    const providerKey = providerKeyFromState(search.state)
+    if (providerKey) {
+      const query = new URLSearchParams({ integration_error: message })
+      return fullDocumentRedirect(
+        `/integrations/${encodeURIComponent(providerKey)}?${query.toString()}`
+      )
+    }
+    return { error: message }
   }
 
   return fullDocumentRedirect(response.next_path ?? "/")
+}
+
+function providerKeyFromState(state: string) {
+  const payloadSegment = state.split(".")[1]
+  if (!payloadSegment) {
+    return null
+  }
+  try {
+    const payload = JSON.parse(decodeBase64Url(payloadSegment)) as { provider_key?: unknown }
+    const providerKey = typeof payload.provider_key === "string" ? payload.provider_key : null
+    return providerKey && /^[a-z0-9_]+$/.test(providerKey) ? providerKey : null
+  } catch {
+    return null
+  }
 }
 
 function completeOnce(input: CompleteIntegrationOAuthInput) {

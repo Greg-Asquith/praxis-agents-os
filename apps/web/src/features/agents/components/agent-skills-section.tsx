@@ -94,7 +94,7 @@ export function AgentSkillsSection({
                   </SelectItem>
                   {availableSkills.map((skill) => (
                     <SelectItem key={skill.id} label={skillDisplayName(skill)} value={skill.id}>
-                      <span className="flex min-w-0 flex-col items-start">
+                      <span className="flex min-w-0 flex-col items-start gap-0.5">
                         <span className="truncate">{skillDisplayName(skill)}</span>
                         <span className="text-muted-foreground truncate text-xs">{skill.name}</span>
                       </span>

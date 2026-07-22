@@ -19,7 +19,12 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { useCreateContextGroupMutation } from "@/features/integrations/api/create-context-group"
 import { useUpdateContextGroupMutation } from "@/features/integrations/api/update-context-group"
-import type { IntegrationContextGroup, IntegrationResource } from "@/features/integrations/types"
+import { ProviderMark } from "@/features/integrations/components/provider-mark"
+import type {
+  IntegrationContextGroup,
+  IntegrationProvider,
+  IntegrationResource,
+} from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { titleCaseToken } from "@/lib/format"
 
@@ -32,11 +37,13 @@ export function ContextGroupDialog({
   group,
   onOpenChange,
   open,
+  providers,
   resources,
 }: {
   group: IntegrationContextGroup | null
   onOpenChange: (open: boolean) => void
   open: boolean
+  providers: IntegrationProvider[]
   resources: IntegrationResource[]
 }) {
   const createMutation = useCreateContextGroupMutation()
@@ -60,6 +67,10 @@ export function ContextGroupDialog({
   const sections = useMemo(
     () => groupResourcesByProvider(editableResources, search),
     [editableResources, search]
+  )
+  const providerNames = useMemo(
+    () => new Map(providers.map((provider) => [provider.provider_key, provider.display_name])),
+    [providers]
   )
   const isPending = createMutation.isPending || updateMutation.isPending
 
@@ -112,9 +123,9 @@ export function ContextGroupDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>{group ? "Edit context group" : "New context group"}</DialogTitle>
+            <DialogTitle>{group ? "Edit Context Group" : "New Context Group"}</DialogTitle>
             <DialogDescription>
-              Combine connected resources so agents can work across a client or project in one run.
+              Pick what agents should use together for a client or project.
             </DialogDescription>
           </DialogHeader>
 
@@ -166,7 +177,11 @@ export function ContextGroupDialog({
                 {sections.map((section) => (
                   <section className="flex flex-col gap-1" key={section.providerKey}>
                     <div className="text-muted-foreground flex items-center justify-between px-2 py-1 text-xs font-medium">
-                      <span>{titleCaseToken(section.providerKey, "Provider")}</span>
+                      <span className="flex items-center gap-1.5">
+                        <ProviderMark className="size-3.5" providerKey={section.providerKey} />
+                        {providerNames.get(section.providerKey) ??
+                          titleCaseToken(section.providerKey, "Provider")}
+                      </span>
                       <span>{section.resources.length}</span>
                     </div>
                     {section.resources.map((resource) => (
@@ -200,11 +215,18 @@ export function ContextGroupDialog({
             ) : (
               <p className="text-muted-foreground px-2 py-8 text-center text-sm">
                 {editableResources.length === 0
-                  ? "Enable resources on a connection before creating a context group."
+                  ? "Nothing to pick from yet. Connect an account on the Integrations page and choose what agents can use."
                   : "No resources match your search."}
               </p>
             )}
           </div>
+          {selectedIds.size > 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {selectedIds.size === 1
+                ? "1 resource selected"
+                : `${String(selectedIds.size)} resources selected`}
+            </p>
+          ) : null}
 
           <DialogFooter>
             <DialogClose render={<Button disabled={isPending} variant="outline" />}>

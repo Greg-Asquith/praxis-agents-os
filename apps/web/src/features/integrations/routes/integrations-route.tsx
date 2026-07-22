@@ -1,33 +1,28 @@
 // apps/web/src/features/integrations/routes/integrations-route.tsx
 
-import { Suspense, useEffect } from "react"
-import { getRouteApi, useNavigate } from "@tanstack/react-router"
+import { Suspense } from "react"
+import { Link } from "@tanstack/react-router"
+import { Layers3Icon } from "lucide-react"
 
 import { PageHeader } from "@/components/shell/page-header"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ProviderCatalog } from "@/features/integrations/components/provider-catalog"
-import { ContextGroupsSection } from "@/features/integrations/components/context-groups-section"
+import { ProviderList } from "@/features/integrations/components/provider-list"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
-
-const routeApi = getRouteApi("/app/integrations")
 
 export function IntegrationsRoute() {
   const { workspace } = useActiveWorkspace()
-  const navigate = useNavigate()
-  const search = routeApi.useSearch()
   const readOnly = workspace.current_user_role === "read_only"
-
-  useEffect(() => {
-    if (!search.integration_error && !search.integration_status) {
-      return
-    }
-    void navigate({ replace: true, search: {}, to: "/integrations" })
-  }, [navigate, search.integration_error, search.integration_status])
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
+        actions={
+          <Button variant="outline" render={<Link to="/integrations/context-groups" />}>
+            <Layers3Icon data-icon="inline-start" />
+            Context Groups
+          </Button>
+        }
         description={
           readOnly
             ? "View the accounts and resources available to agents in this workspace."
@@ -35,48 +30,24 @@ export function IntegrationsRoute() {
         }
         title="Integrations"
       />
-      {search.integration_status === "connected" ? (
-        <Alert>
-          <AlertTitle>Connection authorized</AlertTitle>
-          <AlertDescription>
-            We are checking the account and finding the resources available to agents.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {search.integration_error ? (
-        <Alert variant="destructive">
-          <AlertTitle>Connection not completed</AlertTitle>
-          <AlertDescription>{search.integration_error}</AlertDescription>
-        </Alert>
-      ) : null}
       <Suspense fallback={<ProviderCatalogSkeleton />}>
-        <ProviderCatalog />
+        <ProviderList />
       </Suspense>
-      <Suspense fallback={<ContextGroupsSkeleton />}>
-        <ContextGroupsSection />
-      </Suspense>
-    </div>
-  )
-}
-
-function ContextGroupsSkeleton() {
-  return (
-    <div className="flex flex-col gap-4 rounded-xl border p-4" aria-label="Loading context groups">
-      <Skeleton className="h-5 w-36" />
-      <Skeleton className="h-4 w-72 max-w-full" />
-      <Skeleton className="h-24 w-full" />
     </div>
   )
 }
 
 function ProviderCatalogSkeleton() {
   return (
-    <div className="grid gap-4 xl:grid-cols-2" aria-label="Loading integrations">
-      {["provider-one", "provider-two"].map((key) => (
-        <div className="flex flex-col gap-4 rounded-xl border p-4" key={key}>
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="h-4 w-52" />
-          <Skeleton className="h-28 w-full" />
+    <div className="divide-border divide-y" aria-label="Loading integrations">
+      {["provider-one", "provider-two", "provider-three"].map((key) => (
+        <div className="flex min-h-20 items-center gap-4 px-3 py-4" key={key}>
+          <Skeleton className="size-10 rounded-xl" />
+          <div className="flex flex-1 flex-col gap-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-64 max-w-full" />
+          </div>
+          <Skeleton className="h-5 w-28 rounded-full" />
         </div>
       ))}
     </div>
