@@ -48,6 +48,7 @@ async def test_successful_tool_dispatch_writes_one_digest_only_audit(
     [audit] = result.audit_rows
     assert audit.status == "success"
     assert audit.details["outcome"] == "completed"
+    assert audit.details["tool_version"] == 1
     assert audit.details["args_bytes"] > 0
     assert len(audit.details["args_sha256"]) == 64
     assert "a" not in audit.details and "b" not in audit.details

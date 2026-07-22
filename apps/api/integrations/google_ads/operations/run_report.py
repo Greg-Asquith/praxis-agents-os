@@ -4,6 +4,8 @@
 
 from typing import Any
 
+from services.agents.runtime.untrusted import UntrustedContent
+
 from ..client import GoogleAdsClient
 from .utils import bounded_query, stream_rows
 
@@ -25,7 +27,7 @@ async def run_report(
     )
     rows = stream_rows(payload)
     truncated = len(rows) > max_rows
-    bounded = rows[:max_rows]
+    bounded = [_untrusted_row(row, customer_id=customer_id) for row in rows[:max_rows]]
     return {
         "rows": bounded,
         "row_count": len(bounded),
@@ -36,3 +38,17 @@ async def run_report(
             else None
         ),
     }
+
+
+def _untrusted_row(value: Any, *, customer_id: str) -> Any:
+    if isinstance(value, str):
+        return UntrustedContent(
+            source_kind="google_ads_report",
+            source_ref=customer_id,
+            content=value,
+        )
+    if isinstance(value, dict):
+        return {key: _untrusted_row(item, customer_id=customer_id) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_untrusted_row(item, customer_id=customer_id) for item in value]
+    return value

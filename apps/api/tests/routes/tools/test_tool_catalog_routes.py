@@ -50,6 +50,7 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
     web_search = next(tool for tool in body["tools"] if tool["name"] == "web_search")
     assert web_search == {
         "name": "web_search",
+        "version": 1,
         "provider": "native",
         "label": "Web Search",
         "description": (
@@ -65,6 +66,33 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
         "defer_loading": False,
         "provider_keys": None,
         "resource_types": None,
+        "input_schema": {
+            "additionalProperties": False,
+            "properties": {
+                "query": {
+                    "description": "Search query to send to the native-search helper model.",
+                    "type": "string",
+                },
+                "model_provider": {
+                    "description": (
+                        "Helper model provider. Available providers are anthropic, google, "
+                        "and openai."
+                    ),
+                    "enum": ["anthropic", "google", "openai"],
+                    "type": "string",
+                },
+                "model": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": (
+                        "Optional model id for model_provider. Omit to use that provider's "
+                        "default native-search helper model."
+                    ),
+                },
+            },
+            "required": ["query", "model_provider"],
+            "type": "object",
+        },
     }
     assert "timeout" not in web_search
     assert "max_retries" not in web_search
@@ -78,6 +106,63 @@ async def test_tool_catalog_route_requires_authentication(
 
     assert response.status_code == 401
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+@pytest.mark.parametrize("role", [WorkspaceRole.OWNER, WorkspaceRole.ADMIN])
+async def test_tool_availability_route_allows_workspace_managers(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    role: WorkspaceRole,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session, role=role)
+
+    response = await db_async_client.put(
+        "/api/v1/tools/web_search/availability",
+        headers=headers,
+        json={"enabled": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"tool_name": "web_search", "enabled": False}
+
+    catalog_response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
+    assert catalog_response.status_code == 200
+    assert "web_search" not in {entry["name"] for entry in catalog_response.json()["tools"]}
+
+
+@pytest.mark.parametrize("role", [WorkspaceRole.MEMBER, WorkspaceRole.READ_ONLY])
+async def test_tool_availability_route_rejects_non_managers(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    role: WorkspaceRole,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session, role=role)
+
+    response = await db_async_client.put(
+        "/api/v1/tools/web_search/availability",
+        headers=headers,
+        json={"enabled": False},
+    )
+
+    assert response.status_code == 403
+
+
+async def test_tool_availability_route_returns_not_found_for_unknown_tool(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(
+        db_session,
+        role=WorkspaceRole.OWNER,
+    )
+
+    response = await db_async_client.put(
+        "/api/v1/tools/not_a_runtime_tool/availability",
+        headers=headers,
+        json={"enabled": False},
+    )
+
+    assert response.status_code == 404
 
 
 async def test_tool_presentations_route_returns_every_first_party_runtime_tool(

@@ -75,6 +75,32 @@ def test_runtime_tool_decorator_registers_definition_with_derived_label(
     assert definition.effect == "read"
     assert definition.effect_scope == "internal"
     assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
+    assert definition.version == 1
+    assert definition.serialized_input_schema() == {
+        "additionalProperties": False,
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "type": "object",
+    }
+
+
+def test_runtime_tool_decorator_accepts_explicit_version(cleanup_test_tools) -> None:
+    @runtime_tool(name="test_versioned_tool", description="Versioned.", version=3)
+    def versioned_tool(value: int) -> int:
+        return value
+
+    assert RUNTIME_TOOL_CATALOG["test_versioned_tool"].version == 3
+
+
+def test_registered_function_schemas_are_cached() -> None:
+    for definition in RUNTIME_TOOL_CATALOG.values():
+        schema = definition.serialized_input_schema()
+        if definition.kind == TOOL_KIND_CAPABILITY:
+            assert schema is None
+            continue
+        assert schema is not None
+        assert schema is definition.serialized_input_schema()
+        assert schema["type"] == "object"
 
 
 def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> None:
@@ -143,6 +169,12 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             function=_noop,
             description="Result bound must be positive.",
             max_result_chars=0,
+        ),
+        RuntimeToolDefinition(
+            name="bad_version",
+            function=_noop,
+            description="Version must be positive.",
+            version=0,
         ),
     ],
 )
@@ -420,4 +452,23 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
         "write_todos",
         "test_runtime_context",
     ]
+    assert "test_add_numbers" not in {definition.name for definition in catalog}
+
+
+def test_workspace_disabled_tools_are_skipped_in_runtime_and_catalog() -> None:
+    disabled = frozenset({"test_add_numbers"})
+    agent = _agent(tool_names=["test_add_numbers"])
+    workspace = object()
+
+    tools = build_runtime_tools(
+        agent,
+        workspace=workspace,
+        disabled_tool_names=disabled,
+    )
+    catalog = list_allowed_tool_definitions(
+        workspace=workspace,
+        disabled_tool_names=disabled,
+    )
+
+    assert "test_add_numbers" not in {tool.name for tool in tools}
     assert "test_add_numbers" not in {definition.name for definition in catalog}

@@ -32,7 +32,7 @@ from evals.evaluators import (
 )
 from models.agent import Agent
 from services.agents.runtime.loop import build_runtime_agent
-from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
+from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
 FIXTURE_ROOT = Path(__file__).parents[1] / "tests" / "fixtures"
@@ -117,7 +117,7 @@ def _channel_fixture_history(inputs: EvalInputs):
             raise ValueError("Channel fixture path must stay under the shared fixture root")
         content = path.read_text(encoding="utf-8")
     if fixture.get("source_kind"):
-        content = frame_untrusted_content(
+        content = serialize_untrusted_content(
             UntrustedContent(
                 source_kind=str(fixture["source_kind"]),
                 source_ref=str(fixture["source_ref"]),

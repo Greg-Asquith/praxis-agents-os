@@ -5,6 +5,8 @@
 - **Written**: 2026-07-10 (plan 075)
 - **Amended**: 2026-07-10 (plan 080 — channels (g) integration-fetched
   content and (h) KB annotation helper; hostile email-body fixture)
+- **Amended**: 2026-07-22 (structured provenance nodes in storage and
+  streams; model-only framing at prompt assembly)
 - **Rule**: downstream plans implement slices of this note and cite the
   relevant sections. A plan that changes a channel, defense, or test contract
   records the deviation here in the same change. New model-visible untrusted
@@ -64,7 +66,7 @@ layer tests whether a model resists the content.
 | **(d) File content to generated code** | A hostile CSV cell or file passage can steer the helper model that writes code. | Keep task text separate; frame all inlined file content as untrusted before the helper-model call. | The hostile CSV fixture is entirely enclosed by the shared frame and cannot forge its end marker. | Generated code follows the user's task rather than file-borne instructions. Sandbox egress is tested separately by 072. | 059 |
 | **(e) Read-tool egress** | A URL or free-text query can encode workspace data into an outbound request even though the tool is classified as a read. | **[default — confirm at review]** Keep query arguments audit-visible through existing dispatch digests; add no new enforcement machinery in v1. Write envelopes do not cover reads. | Assert audit metadata records bounded argument digests without exposing secret values. | The model does not encode workspace data into outbound URL/query parameters and reports the attempt. | 055, with 041/054 context |
 | **(f) KB retrieval** | Retrieved documents and URL content can carry direct or indirect instructions. | Wrap every retrieved byte with the shared markers after forgery sanitization; one standing prompt block declares framed content data, never instructions. | Reuse the shared prompt-injection documents across retrieval and tool-framing tests. | `search_knowledge` and `read_document` cases do not follow fixture instructions. | 046 (reference defense), 055 behavioral layer |
-| **(g) Integration-fetched content** | Provider API payloads (Gmail bodies, Airtable records, Ads report text) are attacker-controlled and become model-visible through integration read tools. | **[implemented: 041 Slice A]** Provider free text enters model context only through dispatch tool results, wrapped with the shared markers and a server-minted source kind and `ref` (for example a Gmail message id); size is bounded by 076's dispatch truncation. | **[implemented: 041 Slice A]** The hostile email-body fixture is entirely enclosed by the shared frame, forged markers are neutralized, and the source ref is server-minted. | The model does not follow instructions embedded in provider content and reports the attempt. | 041, 055 behavioral layer |
+| **(g) Integration-fetched content** | Provider API payloads (Gmail bodies, Airtable records, Ads report text) are attacker-controlled and become model-visible through integration read tools. | Provider free text crosses dispatch as a typed provenance node containing a server-minted source kind and `ref` (for example a Gmail message id). Nodes are persisted and streamed; an always-loaded, request-only model wrapper renders them with the shared markers in a copied request context immediately before provider dispatch. Size remains bounded by 076's dispatch truncation. | The hostile email-body fixture is stored verbatim inside a node; every model request encloses it in the byte-stable shared frame, neutralizes forged markers at render time, and retains server-minted provenance. Persistence and SSE fixtures contain nodes rather than rendered frames. | The model does not follow instructions embedded in provider content and reports the attempt. | 041, 041b, 055 behavioral layer |
 | **(h) KB ingestion annotation helper** | Full untrusted document content is fed to the contextual-annotation model; the model-authored `context_line` enters the lexical index, the embedding input, and search-hit payloads. | The annotation prompt frames document content as untrusted and instructs the helper to extract, not obey (§3); `context_line` is length-bounded server-side and stays labelled automatic. | A scripted model pins the annotation prompt shape against the shared hostile documents, and the stored `context_line` respects the bound. | Annotating a hostile document yields a descriptive context line that adopts no instructions. | 044, 055 behavioral layer |
 
 A new channel means any new path that places attacker-influenced text in model
@@ -73,9 +75,11 @@ must append a row with an owner and both test layers before shipping.
 
 ## 3. Escaping And Delimiting Standard
 
-- Use one shared framing utility at **[implemented: 041 Slice A]
-  `services/agents/runtime/untrusted.py`**. The 046 KB helper moves there
-  when its second consumer arrives.
+- Use one shared framing utility at
+  `services/agents/runtime/untrusted.py`. Runtime-only carriers become
+  serializable provenance nodes at dispatch; an always-loaded request wrapper
+  renders nodes in a copied request context immediately before provider
+  dispatch. The 046 KB helper moves there when its second consumer arrives.
 - Use one marker vocabulary for all sources. Each frame contains a sanitized,
   server-minted source kind and `ref`; content cannot supply either value.
 - Neutralize occurrences of both start and end markers before wrapping. A
@@ -95,9 +99,12 @@ must append a row with an owner and both test layers before shipping.
   example, core-memory title/content must not be able to create Markdown
   headings or additional list entries.
 
-Framing is a model-visible trust signal and a testable structural boundary. It
-does not replace input-size limits, typed tool contracts, authorization,
-approval, audit, sandboxing, or provider egress controls.
+The frame vocabulary is runtime-internal and model-only. Storage and
+client-visible tool results carry structured nodes; they do not use or parse
+frame markers. Legacy stored strings that already contain frames pass through
+unchanged. Framing is a model-visible trust signal and a testable structural
+boundary. It does not replace input-size limits, typed tool contracts,
+authorization, approval, audit, sandboxing, or provider egress controls.
 
 ## 4. Adversarial Fixture Standard
 

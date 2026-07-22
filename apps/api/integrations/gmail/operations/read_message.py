@@ -30,7 +30,6 @@ async def read_message(client: GmailClient, *, message_id: str) -> dict[str, Any
     )
     headers = extract_headers(payload)
     body = _extract_body(payload.get("payload") if isinstance(payload, dict) else None)
-    html_body = _extract_body(payload.get("payload") if isinstance(payload, dict) else None, True)
     truncated = len(body) > MAX_BODY_CHARS
     if truncated:
         body = f"{body[:MAX_BODY_CHARS]}{TRUNCATION_MARKER}"
@@ -41,12 +40,11 @@ async def read_message(client: GmailClient, *, message_id: str) -> dict[str, Any
         "subject": untrusted(message_id, headers.get("subject", "")),
         "date": untrusted(message_id, headers.get("date", "")),
         "body": untrusted(message_id, body),
-        "raw_html_body": html_body,
         "truncated": truncated,
     }
 
 
-def _extract_body(payload: Any, html: bool = False) -> str:
+def _extract_body(payload: Any) -> str:
     plain = _find_part(payload, "text/plain")
     if plain is not None:
         return plain

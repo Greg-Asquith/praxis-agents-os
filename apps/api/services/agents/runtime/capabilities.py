@@ -2,12 +2,15 @@
 
 """Assemble Pydantic AI capabilities for one runtime agent."""
 
+from dataclasses import replace
+
 from pydantic_ai.capabilities import AgentCapability, Hooks, ProcessHistory
 
 from models.agent import Agent
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import dispatch_tool_execution
 from services.agents.runtime.history import history_trimmer
+from services.agents.runtime.untrusted import render_untrusted_frames
 
 
 def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDeps]]:
@@ -28,4 +31,15 @@ def build_runtime_capabilities(_agent: Agent) -> list[AgentCapability[RuntimeDep
             handler=handler,
         )
 
-    return [hooks, ProcessHistory(history_trimmer())]
+    @hooks.on.model_request
+    async def render_untrusted_content_for_model(_ctx, *, request_context, handler):
+        model_request = replace(
+            request_context,
+            messages=render_untrusted_frames(request_context.messages),
+        )
+        return await handler(model_request)
+
+    return [
+        hooks,
+        ProcessHistory(history_trimmer(), id="praxis-history-trimmer"),
+    ]

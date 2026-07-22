@@ -39,6 +39,7 @@ RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {}
 def register_tool_definition(definition: RuntimeToolDefinition) -> None:
     """Register a provider-contributed definition in the singular catalog."""
     validate_definition(definition)
+    definition.serialized_input_schema()
     if definition.name in RUNTIME_TOOL_CATALOG:
         raise RuntimeError(f"Duplicate runtime tool name: {definition.name}")
     RUNTIME_TOOL_CATALOG[definition.name] = definition
@@ -48,6 +49,7 @@ def runtime_tool(
     *,
     name: str,
     description: str,
+    version: int = 1,
     provider: str = "core",
     label: str | None = None,
     kind: ToolKind = TOOL_KIND_FUNCTION,
@@ -82,6 +84,7 @@ def runtime_tool(
             name=name,
             function=function if kind == TOOL_KIND_FUNCTION else None,
             description=description,
+            version=version,
             provider=provider,
             label=label or _derive_label(name),
             kind=kind,
@@ -118,6 +121,8 @@ def build_runtime_tools(
     include_delegation: bool = False,
     active_context: "ResolvedActiveContext | None" = None,
     skipped_tool_names: list[str] | None = None,
+    workspace: object | None = None,
+    disabled_tool_names: frozenset[str] = frozenset(),
 ):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     tool_names = [
@@ -161,7 +166,12 @@ def build_runtime_tools(
                 definition.name,
             )
             continue
-        if not permissions.is_tool_allowed(definition, workspace=None, agent=agent):
+        if not permissions.is_tool_allowed(
+            definition,
+            workspace=workspace,
+            agent=agent,
+            disabled_tool_names=disabled_tool_names,
+        ):
             logger.info(
                 "Skipping disallowed runtime tool %s for agent %s",
                 definition.name,
@@ -187,6 +197,9 @@ def build_runtime_tools(
 def build_runtime_native_capabilities(
     agent: Agent,
     resolved_model: ResolvedModel,
+    *,
+    workspace: object | None = None,
+    disabled_tool_names: frozenset[str] = frozenset(),
 ) -> list[Any]:
     """Resolve an agent row's configured capability-backed runtime entries."""
     tool_names = _normalize_tool_names(agent.tool_names or [])
@@ -196,7 +209,12 @@ def build_runtime_native_capabilities(
         definition = RUNTIME_TOOL_CATALOG.get(name)
         if definition is None or definition.kind != TOOL_KIND_CAPABILITY:
             continue
-        if not permissions.is_tool_allowed(definition, workspace=None, agent=agent):
+        if not permissions.is_tool_allowed(
+            definition,
+            workspace=workspace,
+            agent=agent,
+            disabled_tool_names=disabled_tool_names,
+        ):
             logger.info(
                 "Skipping disallowed native capability %s for agent %s",
                 definition.name,
@@ -227,6 +245,7 @@ def list_allowed_tool_definitions(
     *,
     workspace: object | None,
     agent: Agent | None = None,
+    disabled_tool_names: frozenset[str] = frozenset(),
 ) -> list[RuntimeToolDefinition]:
     """Return registry entries visible in the supplied workspace context."""
     return sorted(
@@ -234,7 +253,12 @@ def list_allowed_tool_definitions(
             definition
             for definition in RUNTIME_TOOL_CATALOG.values()
             if definition.configurable
-            and permissions.is_tool_allowed(definition, workspace=workspace, agent=agent)
+            and permissions.is_tool_allowed(
+                definition,
+                workspace=workspace,
+                agent=agent,
+                disabled_tool_names=disabled_tool_names,
+            )
         ),
         key=lambda definition: (definition.provider, definition.name),
     )

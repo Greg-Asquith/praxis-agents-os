@@ -59,7 +59,7 @@ from services.agents.runtime.tools.contract import (
     ToolEffectScope,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
-from services.agents.runtime.untrusted import frame_untrusted_content
+from services.agents.runtime.untrusted import serialize_untrusted_content
 from services.audit_events.enums import AuditStatus
 from services.audit_events.tool_events import (
     ToolAuditOutcome,
@@ -355,7 +355,7 @@ async def dispatch_tool_execution(
         )
         raise
 
-    result = frame_untrusted_content(result)
+    result = serialize_untrusted_content(result)
     try:
         validate_output(definition, result)
     except OutputContractError as exc:
@@ -526,6 +526,7 @@ async def record_native_tool_invocation_audit_event(
         run=deps.run,
         tool_name=return_part.tool_name,
         tool_provider="native",
+        tool_version=_tool_version(return_part.tool_name),
         tool_call_id=return_part.tool_call_id,
         status=status,
         args=dict(args),
@@ -563,6 +564,7 @@ async def record_invocation(
         run=deps.run,
         tool_name=tool_name,
         tool_provider=tool_provider,
+        tool_version=_tool_version(tool_name),
         tool_call_id=tool_call_id,
         status=status,
         args=dict(args),
@@ -587,6 +589,11 @@ def _tool_provider(
     if tool_name in DELEGATION_TOOL_NAMES:
         return "delegation"
     return "runtime"
+
+
+def _tool_version(tool_name: str) -> int | None:
+    definition = RUNTIME_TOOL_CATALOG.get(tool_name)
+    return definition.version if definition is not None else None
 
 
 def _native_audit_status_and_outcome(

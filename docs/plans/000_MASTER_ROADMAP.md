@@ -173,6 +173,12 @@ to same-workspace connections while personal groups may also use the current
 actor's connections. Standalone resource context retains its broader
 actor-or-workspace visibility, and relevant-only mixed-provider fan-out is
 pinned by regression coverage.
+Plan 082 completed 2026-07-22 and moved to `docs/plans/complete/`: runtime
+tool contracts now expose validated versions and registration-cached input
+schemas, workspace tool availability is a real audited default-allow grant,
+catalog and runtime assembly share request-scoped disabled sets, tool-call
+audits record the executed version, and OpenAPI is available only through an
+authenticated no-store route while anonymous docs remain disabled.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -581,7 +587,7 @@ structure.
 | 039 | Async resource discovery via jobs, resource selection, connection status machine. **DONE 2026-07-20** (Slice A: engine, status recomputation, notifications, retention and periodic re-discovery; Slice B: selection services and routes). (Donor C3.) |
 | 040 | Active context: per-conversation selection, workspace context groups, server-side resolution **across multiple connections per provider (D3)** + compatibility filtering + fan-out executor, `RuntimeDeps` injection + prompt block via the 018 assembler; schedule saved-context wiring (fills `AgentSchedule.active_context`, extends 022's UI). **DONE 2026-07-21.** (Donor C4.) |
 | 041 | First providers per D4: Gmail, Google Ads (MCC→account discovery; write/spend operations default to `approval`), Airtable — operation services + registry tools through the 026 choke point. **DONE 2026-07-22:** all three provider slices, shared safety/audit substrate, and the 10-tool catalog are complete. **Gate G1 applies.** (Donor C5.) |
-| 041b | Structured untrusted content + rich provider tool UI: keep frame markers model-only by persisting/streaming typed provenance nodes, then use the packaging-note §5 presenter seam for Gmail rows, Ads reports, and Airtable record tables; add a Gmail-scoped ephemeral preview route rendering sanitized email HTML in a script-less sandboxed iframe. Added 2026-07-22; all 041 provider prerequisites are now satisfied. |
+| 041b | Structured untrusted content + rich provider tool UI: keep frame markers model-only by persisting/streaming typed provenance nodes, then use the packaging-note §5 presenter seam for Gmail rows, Ads reports, and Airtable record tables; add a Gmail-scoped ephemeral preview route rendering sanitized email HTML in a script-less sandboxed iframe. Added 2026-07-22; all 041 provider prerequisites are now satisfied. **Slice A DONE 2026-07-22:** structured nodes now persist and stream while byte-stable frames are rendered only at model-request assembly; Slices B–F remain. |
 | 042 | Integrations UI: provider cards, connect flows (**multiple labeled connections per provider, D3**), connection pickers, resource selection, context picker beside the conversation composer's agent control. **DONE 2026-07-21:** both implementation slices and the static gate are complete; live provider QA is deferred to 041's operable packages. (Donor C6.) |
 | 079 | Inbound event receipt spine + Airtable webhooks: verification-first shared route, bounded event log and dedup, `integrations.process_event`, unattended `event` run envelope, retention, and the first provider push path. (Plan 077 implementation reservation; plan authoring is now unblocked and follows 082.) |
 
@@ -623,7 +629,7 @@ review]` markers or STOP conditions.
 
 | Plan | Scope | When |
 |------|-------|------|
-| 082 | Capability catalogue prerequisites: tool contract `version`, serialized input JSON schemas on the catalog, a real `is_tool_allowed` workspace grant store (default-allow + explicit disables), authenticated OpenAPI schema route (amends 078's posture). (Note §10 prerequisites.) | Immediate post-041 catalogue hardening; before 083 or further provider expansion |
+| 082 | Capability catalogue prerequisites: tool contract `version`, serialized input JSON schemas on the catalog, a real `is_tool_allowed` workspace grant store (default-allow + explicit disables), authenticated OpenAPI schema route (amends 078's posture). **DONE 2026-07-22.** (Note §10 prerequisites.) | Complete |
 | 083 | Headless dispatch entrypoint over the existing choke point, app-principal envelopes (user ∩ contract scopes; external writes `require_approval`), and the generic approval primitive (rows, not paused conversations) surfaced in the approvals UI. Gate G7 registers here. (Note §5.2–§5.3.) | First Phase 7 code slice |
 | 084 | Scoped application tokens: one verifier, two mint paths — short-lived signed frame tokens minted from the session; hashed, revocable, read-default dev tokens — with per-route scope enforcement. CORS/CSRF posture untouched. (Note §4.) | After 083 (prefer after 085) |
 | 085 | Application model + machine-enforced contract + immutable versioned bundles over Files + sandboxed serving on the 050 substrate with `connect-src` = API origin; publish/rollback/disable as audited row-state changes; publish-time scope-diff. (Note §2, §5.1, §7.) | After 050/051 |
@@ -761,7 +767,7 @@ If work proceeds roughly serially, the default order is:
 `0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
 C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 ∥ 043–047} → 082 → 079 → 056 → 071 → 048 →
+067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 ∥ 043–047} → 082 (DONE) → 079 → 056 → 071 → 048 →
 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 →
 072 → 059 → 060` — with 015, 052, 058,
 078, and the polish lane as filler (078 is P1 filler: no dependencies,

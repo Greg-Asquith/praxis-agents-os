@@ -22,6 +22,7 @@ from integrations.google_ads.discover_resources import discover_google_ads_resou
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
 from integrations.google_ads.tools.run_report import google_ads_run_report
+from services.agents.runtime.untrusted import UntrustedContent
 from services.integrations.credentials.google_service_account import (
     GOOGLE_TOKEN_URL,
     GoogleServiceAccountTokenProvider,
@@ -79,7 +80,7 @@ async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:
     ]
 
 
-async def test_report_caps_rows_and_preserves_plain_provider_values() -> None:
+async def test_report_caps_rows_and_marks_provider_values_untrusted() -> None:
     client = _OperationClient(
         [{"results": [{"campaign": {"name": "one"}}, {"campaign": {"name": "two"}}]}]
     )
@@ -92,7 +93,11 @@ async def test_report_caps_rows_and_preserves_plain_provider_values() -> None:
     )
     assert result["row_count"] == 1
     assert result["truncated"] is True
-    assert result["rows"][0]["campaign"]["name"] == "one"
+    name = result["rows"][0]["campaign"]["name"]
+    assert isinstance(name, UntrustedContent)
+    assert name.content == "one"
+    assert name.source_kind == "google_ads_report"
+    assert name.source_ref == "333"
     assert client.last_json["query"].endswith("LIMIT 2")
 
 

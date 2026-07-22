@@ -20,6 +20,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-22
 - **Priority**: P1
 - **Effort**: S-M
 - **Risk**: LOW-MED (additive contract fields and a default-allow grant seam;
@@ -47,7 +48,7 @@
    `input_schema: null`. This is the machine-readable half of the
    building-block catalogue the app kit (087) snapshots for coding agents.
 3. **Real `is_tool_allowed`: default-allow with explicit workspace
-   disables** [default — confirm at review]. A `workspace_tool_settings`
+   disables** [confirmed at execution 2026-07-22]. A `workspace_tool_settings`
    core table (workspace_id, tool_name, enabled, updated_by, timestamps;
    unique on workspace+tool) backs the seam. Absence of a row means
    allowed — zero rows reproduces today's `return True` exactly. Owner/
@@ -191,13 +192,13 @@ route requires auth**, **every function tool serializes a schema**.
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exit 0; `uv run alembic check` clean;
+- [x] `uv run ruff check .` exit 0; `uv run alembic check` clean;
       migration downgrade round-trips
-- [ ] Catalog entries expose `version` and `input_schema`
-- [ ] `is_tool_allowed` performs a real lookup; default-allow pinned by test
-- [ ] Authenticated schema route live; anonymous docs still disabled
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/agents/runtime tests/routes/tools -q` passes
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] Catalog entries expose `version` and `input_schema`
+- [x] `is_tool_allowed` performs a real lookup; default-allow pinned by test
+- [x] Authenticated schema route live; anonymous docs still disabled
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/agents/runtime tests/routes/tools -q` passes
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 

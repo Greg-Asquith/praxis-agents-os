@@ -10,6 +10,9 @@ def is_tool_allowed(
     *,
     workspace: object | None,
     agent: object | None = None,
+    disabled_tool_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Return whether a runtime tool is available in this context."""
+    if workspace is not None and definition.name in disabled_tool_names:
+        return False
     return definition.availability_check is None or definition.availability_check()

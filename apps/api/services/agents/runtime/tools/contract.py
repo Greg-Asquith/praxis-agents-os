@@ -5,7 +5,7 @@
 import inspect
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -126,6 +126,7 @@ class RuntimeToolDefinition:
     name: str
     function: Callable[..., Any] | None
     description: str
+    version: int = 1
     provider: str = "core"
     label: str = ""
     kind: ToolKind = TOOL_KIND_FUNCTION
@@ -151,6 +152,18 @@ class RuntimeToolDefinition:
     integration_binding: IntegrationToolBinding | None = None
     availability_check: Callable[[], bool] | None = None
     presentation: ToolPresentation = ToolPresentation()
+    _serialized_input_schema: dict[str, Any] | None = dataclass_field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _input_schema_cached: bool = dataclass_field(
+        default=False,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def allowed_policies(self) -> frozenset[ToolPolicy]:
         """Return the policies this tool can run under."""
@@ -160,6 +173,16 @@ class RuntimeToolDefinition:
         if self.supports_approval:
             allowed.add(TOOL_POLICY_APPROVAL)
         return frozenset(allowed)
+
+    def serialized_input_schema(self) -> dict[str, Any] | None:
+        """Return the registration-cached JSON schema for function arguments."""
+        if not self._input_schema_cached:
+            schema = None
+            if self.kind == TOOL_KIND_FUNCTION and self.function is not None:
+                schema = self.to_pydantic_tool().tool_def.parameters_json_schema
+            object.__setattr__(self, "_serialized_input_schema", schema)
+            object.__setattr__(self, "_input_schema_cached", True)
+        return self._serialized_input_schema
 
     def to_pydantic_tool(self, *, policy: ToolPolicy | None = None) -> Tool[RuntimeDeps]:
         """Build the Pydantic AI tool instance for one turn."""
@@ -210,6 +233,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool provider must be a lowercase token starting with a letter")
     if not definition.description.strip():
         raise RuntimeError("Runtime tool description must not be blank")
+    if definition.version < 1:
+        raise RuntimeError("Runtime tool version must be greater than or equal to one")
     if definition.kind not in VALID_TOOL_KINDS:
         raise RuntimeError("Runtime tool kind must be function or capability")
     if definition.effect not in VALID_TOOL_EFFECTS:

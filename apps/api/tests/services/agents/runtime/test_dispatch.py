@@ -52,6 +52,12 @@ from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
+from services.agents.runtime.untrusted import (
+    UNTRUSTED_CONTENT_END,
+    UNTRUSTED_CONTENT_START,
+    UntrustedContent,
+    UntrustedNode,
+)
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
@@ -62,6 +68,10 @@ dispatch_module = importlib.import_module("services.agents.runtime.dispatch")
 
 class DispatchToolOutput(BaseModel):
     ok: bool
+
+
+class DispatchUntrustedOutput(BaseModel):
+    body: UntrustedNode
 
 
 @dataclass(frozen=True)
@@ -84,6 +94,7 @@ def dispatch_test_tools():
         "dispatch_internal_write_ok",
         "dispatch_large_structured",
         "dispatch_long_text",
+        "dispatch_untrusted",
         "dispatch_write_ok",
     ]
     for name in names:
@@ -172,6 +183,22 @@ def dispatch_test_tools():
     )
     async def dispatch_large_structured(value: str) -> dict[str, str]:
         return {"value": value}
+
+    @runtime_tool(
+        name="dispatch_untrusted",
+        provider="test",
+        label="Dispatch untrusted",
+        description="Return structured untrusted content for dispatch tests.",
+        output_model=DispatchUntrustedOutput,
+    )
+    async def dispatch_untrusted(value: str) -> dict[str, UntrustedContent]:
+        return {
+            "body": UntrustedContent(
+                source_kind="gmail_message",
+                source_ref="message-1",
+                content=value,
+            )
+        }
 
     @runtime_tool(
         name="dispatch_write_ok",
@@ -337,6 +364,61 @@ async def test_oversized_structured_result_is_preserved_warned_and_audited(
         assert event.details["result_chars"] > 20
         assert event.details["result_truncated"] is False
         assert "result_original_chars" not in event.details
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_untrusted_result_is_framed_for_model_but_streamed_and_persisted_as_node(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_untrusted"],
+    )
+    content = "External body"
+    seen_messages: list[ModelMessage] = []
+    sink = CollectingSink(
+        run_id=context.run_id,
+        conversation_id=context.conversation_id,
+    )
+
+    try:
+        await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_untrusted",
+            args={"value": content},
+            seen_messages=seen_messages,
+            sink=sink,
+        )
+
+        model_visible = _tool_result_content(seen_messages, "dispatch_untrusted")["body"]
+        assert model_visible.count(UNTRUSTED_CONTENT_START) == 1
+        assert model_visible.count(UNTRUSTED_CONTENT_END) == 1
+
+        async with committed_db_session_factory() as db:
+            persisted_row = await db.scalar(
+                select(ConversationMessage).where(
+                    ConversationMessage.conversation_id == context.conversation_id,
+                    ConversationMessage.tool_name == "dispatch_untrusted",
+                    ConversationMessage.role == "tool",
+                )
+            )
+        assert persisted_row is not None
+        persisted_body = persisted_row.parts["parts"][0]["content"]["body"]
+        assert persisted_body == {
+            "node": "praxis_untrusted",
+            "source_kind": "gmail_message",
+            "source_ref": "message-1",
+            "content": content,
+        }
+        assert UNTRUSTED_CONTENT_START not in json.dumps(persisted_body)
+        assert UNTRUSTED_CONTENT_END not in json.dumps(persisted_body)
+        tool_results = [event for event in sink.events if event.event == "tool.result"]
+        assert tool_results[-1].data["result"]["body"] == persisted_body
+        assert UNTRUSTED_CONTENT_START not in json.dumps(tool_results[-1].data["result"])
+        assert UNTRUSTED_CONTENT_END not in json.dumps(tool_results[-1].data["result"])
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
@@ -1032,6 +1114,7 @@ async def _execute_single_tool(
     args: dict[str, object],
     final_text: str = "done",
     seen_messages: list[ModelMessage] | None = None,
+    sink: CollectingSink | None = None,
 ):
     stream_function, _seen_messages = _single_tool_stream(
         tool_name=tool_name,
@@ -1045,7 +1128,8 @@ async def _execute_single_tool(
             conversation_id=context.conversation_id,
             run_id=context.run_id,
             user_prompt="Use the tool.",
-            sink=CollectingSink(
+            sink=sink
+            or CollectingSink(
                 run_id=context.run_id,
                 conversation_id=context.conversation_id,
             ),

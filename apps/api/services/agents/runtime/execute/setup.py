@@ -35,6 +35,7 @@ from services.agents.runtime.sinks import EventSink
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
+from services.tools import get_disabled_tools
 
 from .types import BuiltRuntimeAgent, PreparedRuntime
 
@@ -54,6 +55,8 @@ class RuntimeAgentBuilder(Protocol):
         available_files: Sequence[AvailableFile] = (),
         active_context: ResolvedActiveContext | None = None,
         skipped_tool_names: list[str] | None = None,
+        workspace: object | None = None,
+        disabled_tool_names: frozenset[str] = frozenset(),
     ) -> RuntimeAgent: ...
 
 
@@ -236,6 +239,7 @@ async def build_agent_for_run(
     # Pydantic AI still needs the original tool registered to resolve an approved deferred delegation; the tool body re-checks live policy.
     force_delegation_tools = has_delegated_deferred_results(deferred_tool_results)
     skipped_tool_names: list[str] = []
+    disabled_tool_names = await get_disabled_tools(db, workspace)
     runtime_agent = runtime_agent_builder(
         agent,
         model=model,
@@ -246,6 +250,8 @@ async def build_agent_for_run(
         available_files=available_files,
         active_context=active_context,
         skipped_tool_names=skipped_tool_names,
+        workspace=workspace,
+        disabled_tool_names=disabled_tool_names,
     )
     _record_skipped_runtime_tools(run, skipped_tool_names)
     if run.model_name is None:

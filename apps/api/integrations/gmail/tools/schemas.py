@@ -7,14 +7,18 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from services.agents.runtime.untrusted import UntrustedNode
+
+type UntrustedText = str | UntrustedNode
+
 
 class GmailMessageSummary(BaseModel):
     message_id: str
-    sender: str
-    to: str
-    subject: str
-    date: str
-    snippet: str
+    sender: UntrustedText
+    to: UntrustedText
+    subject: UntrustedText
+    date: UntrustedText
+    snippet: UntrustedText
 
 
 class GmailSearchData(BaseModel):
@@ -24,11 +28,11 @@ class GmailSearchData(BaseModel):
 
 class GmailMessageData(BaseModel):
     message_id: str
-    sender: str
-    to: str
-    subject: str
-    date: str
-    body: str
+    sender: UntrustedText
+    to: UntrustedText
+    subject: UntrustedText
+    date: UntrustedText
+    body: UntrustedText
     truncated: bool
 
 

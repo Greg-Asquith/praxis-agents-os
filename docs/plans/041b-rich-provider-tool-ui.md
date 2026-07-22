@@ -37,6 +37,13 @@
   only: 041 Slice B; Slice F only: 041 Slice C
 - **Category**: Phase 4a integrations (packaging note §2 principle 2,
   §5.2–5.5; threat-model §3/§4)
+- **Execution progress**: Slice A **DONE 2026-07-22** (structured
+  provenance nodes, prompt-assembly framing, provider schema retyping,
+  persistence/SSE/model-request coverage). Slices B–F remain TODO.
+  Execution corrected two landed-state mismatches found during pre-flight:
+  Google Ads report strings were still plain despite 041's Gate G6 contract,
+  and Gmail read results carried an undeclared duplicate body field. Report
+  strings now mint the shared carrier and the duplicate field is removed.
 - **Planned at**: 2026-07-22, tree with 041 Slice A present.
   **Rewritten 2026-07-22** after a donor-app parity review: per-provider
   one-off presenters were replaced by engine-owned **presenter kits**
@@ -224,11 +231,15 @@ in our styles:
      time as today). Nodes are what get validated, persisted
      (`persistence.py` stores pydantic-ai messages verbatim), and
      streamed (`events.py:113,155` serialize `part.content` as-is).
-   - A **history processor** on the runtime agent (registered at the
-     single construction point, `loop.py:65`; none exist today)
-     renders nodes inside `ToolReturnPart` content into the existing
-     frame strings — including forged-marker neutralization — on
-     every model request. The model-visible rendering is
+   - An always-loaded, request-only **`model_request` wrapper** on the
+     runtime hooks renders nodes inside `ToolReturnPart` content into
+     the existing frame strings — including forged-marker neutralization —
+     on every model request. The wrapper passes a copied request context to
+     the provider and never replaces the agent's canonical history. A
+     `ProcessHistory` capability was explicitly rejected during Slice A
+     verification because its processed current-run tool returns become
+     `new_messages()` and would therefore persist frames instead of nodes.
+     The model-visible rendering is
      byte-identical to today's output; a test pins this against the
      pre-change fixture. Legacy history containing already-framed
      strings passes through untouched (the processor only transforms
@@ -239,7 +250,7 @@ in our styles:
    - The client receives structured nodes and renders them natively:
      a type guard in the kit space (`isUntrustedNode`) feeds
      `external-content` with `{content, sourceKind, sourceRef}`. **No
-     frame parser exists anywhere outside the history processor**, and
+     frame parser exists anywhere outside the request wrapper**, and
      the vocabulary stays runtime-internal exactly as 041 declared.
    - **Per-cell nodes**: Google Ads report cells arrive individually
      wrapped (`operations/run_report.py:40-50`); the data-table
@@ -356,7 +367,7 @@ in our styles:
    payloads (decision 3 changes the *representation* inside existing
    `result` values — `unknown` end-to-end on the wire — not the
    protocol). Everything rides presenters, the kits, the one preview
-   route, and the dispatch/history-processor change. The declarative
+   route, and the dispatch/request-wrapper change. The declarative
    default row remains the guaranteed fallback for every tool and must
    render untrusted nodes acceptably (node → its `content` text).
 10. **The pattern is the deliverable.** Slices D and F apply the kits
@@ -441,11 +452,12 @@ Anchors verified 2026-07-22.
   `untrusted.py:10-13,63-79` (note the rendered opening frame is
   `<<<PRAXIS_UNTRUSTED_CONTENT>>> source_kind="..." source_ref="...">>>`
   — the START constant plus attributes plus a second `>>>`). The
-  runtime agent has **no history processors today**; the single
-  construction point is `services/agents/runtime/loop.py:64-87`
-  (`PydanticAgent(...)`) — delegate runners build through the same
-  helper. `evals/run.py` also touches `ToolReturnPart` — check for
-  framed-string assumptions in Slice A.
+  runtime agent already has a `ProcessHistory` trimmer assembled in
+  `services/agents/runtime/capabilities.py`; the same always-loaded hooks
+  capability is the request-only framing seam. The single construction point
+  is `services/agents/runtime/loop.py` (`PydanticAgent(...)`) — delegate
+  runners build through the same helper. `evals/run.py` also touches
+  `ToolReturnPart` — check for framed-string assumptions in Slice A.
 - **Frontend seam (042, delivered)**: `apps/web/src/integrations/
   contract.ts` — `ToolRowPresenterProps` (lines 13-20: `activity`,
   `approvalDecision?`, `compact`, `defaultOpen`, `live`,
@@ -609,7 +621,7 @@ Anchors verified 2026-07-22.
 Decision 3; backend only. Step 1. **Highest-risk slice — the framing
 invariant moves; treat like an auth change.**
 
-- `UntrustedNode` + dispatch serialization + history processor +
+- `UntrustedNode` + dispatch serialization + request-only model wrapper +
   schema retyping + threat-model amendment.
 - **Gate**: backend suites green, including the new
   framing-equivalence test (captured model request bytes identical to
@@ -714,7 +726,7 @@ Blocked on 041 Slice C. Step 10.
   `content`. Add `serialize_untrusted_content(value)` (recursive walk
   as `frame_untrusted_content` does today, replacing carriers with
   nodes; source components sanitized at mint) and
-  `render_untrusted_frames(messages)` — the history-processor body
+  `render_untrusted_frames(messages)` — the request-wrapper transform
   that maps `ToolReturnPart` content, replacing nodes with the
   existing `_render_frame` output (including forged-marker
   neutralization of the node content at render time). Keep the frame
@@ -726,9 +738,10 @@ Blocked on 041 Slice C. Step 10.
   `integrations/gmail/tools/schemas.py` (and Airtable's, and — if
   landed — Google Ads') as `str | UntrustedNode`; confirm structured
   results remain truncation-exempt as today.
-- `loop.py:65`: register `render_untrusted_frames` as a history
-  processor on the `PydanticAgent`; confirm delegate/resume paths
-  build through this constructor.
+- `capabilities.py`: register `render_untrusted_frames` in the always-loaded
+  hooks capability's `model_request` wrapper, passing a copied request context
+  to the provider so `new_messages()` retains nodes; confirm delegate/resume
+  paths build through the shared runtime constructor.
 - Check `evals/run.py` for framed-string assumptions; update in the
   same commit if present.
 - Amend threat-model §3: framing is enforced at prompt-assembly time;
@@ -1005,7 +1018,7 @@ Stop and report back (do not improvise) if:
 - The Step 1 framing-equivalence test cannot be made to pass — i.e.
   moving framing to prompt-assembly changes any model-visible byte,
   or any request path (delegates, approval resume, replayed history)
-  bypasses the history processor. This is the prompt-injection
+  bypasses the request-only model wrapper. This is the prompt-injection
   invariant; do not ship a partial version.
 - Retyping output-model fields to `str | UntrustedNode` breaks
   output-contract validation or truncation semantics in a way that
@@ -1054,11 +1067,11 @@ Stop and report back (do not improvise) if:
   adapter's job).
 - **Untrusted-node contract**: the node shape is the one cross-layer
   contract (dispatch → storage → SSE → kits). Changing it is a
-  platform review touching `untrusted.py`, the history processor, and
+  platform review touching `untrusted.py`, the request wrapper, and
   `untrusted-node.ts` together; the frame vocabulary itself remains
   free to evolve without touching the client.
 - **Reviewers should scrutinize**: every model request path passes
-  the history processor (the framing invariant now lives there),
+  the request wrapper (the framing invariant now lives there),
   sandbox attributes on every iframe touching provider content (empty
   `sandbox`, no `allow-same-origin`), sanitizer allowlist changes,
   any path where preview content could reach logs/audit/model

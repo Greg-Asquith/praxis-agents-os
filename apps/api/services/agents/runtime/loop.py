@@ -55,6 +55,8 @@ def build_runtime_agent(
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
     skipped_tool_names: list[str] | None = None,
+    workspace: object | None = None,
+    disabled_tool_names: frozenset[str] = frozenset(),
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
     resolved_model = resolve_agent_model(agent)
@@ -78,10 +80,17 @@ def build_runtime_agent(
                 include_delegation=include_delegation,
                 active_context=active_context,
                 skipped_tool_names=skipped_tool_names,
+                workspace=workspace,
+                disabled_tool_names=disabled_tool_names,
             ),
             capabilities=[
                 *build_runtime_capabilities(agent),
-                *build_runtime_native_capabilities(agent, resolved_model),
+                *build_runtime_native_capabilities(
+                    agent,
+                    resolved_model,
+                    workspace=workspace,
+                    disabled_tool_names=disabled_tool_names,
+                ),
                 *build_skill_capabilities(skills),
             ],
         ),

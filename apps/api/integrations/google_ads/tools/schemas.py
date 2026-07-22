@@ -2,10 +2,11 @@
 
 """Typed Google Ads tool-result contracts."""
 
-from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from services.agents.runtime.untrusted import UntrustedJsonValue
 
 
 class GoogleAdsFanOutEntry(BaseModel):
@@ -15,7 +16,7 @@ class GoogleAdsFanOutEntry(BaseModel):
     external_id: str
     display_name: str
     status: str
-    data: Any | None = None
+    data: dict[str, UntrustedJsonValue] | None = None
     error_code: str | None = None
     error_message: str | None = None
 

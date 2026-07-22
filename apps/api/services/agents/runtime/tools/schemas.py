@@ -2,6 +2,8 @@
 
 """Pydantic contracts for runtime tool catalog routes."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolPresentation
@@ -89,6 +91,7 @@ class ToolPresentationsResponse(BaseModel):
 
 class ToolCatalogEntry(BaseModel):
     name: str
+    version: int
     provider: str
     label: str
     description: str
@@ -100,11 +103,13 @@ class ToolCatalogEntry(BaseModel):
     defer_loading: bool
     provider_keys: list[str] | None
     resource_types: list[str] | None
+    input_schema: dict[str, Any] | None
 
     @classmethod
     def from_definition(cls, definition: RuntimeToolDefinition) -> "ToolCatalogEntry":
         return cls(
             name=definition.name,
+            version=definition.version,
             provider=definition.provider,
             label=definition.label,
             description=definition.description,
@@ -124,6 +129,7 @@ class ToolCatalogEntry(BaseModel):
                 if definition.integration_binding is not None
                 else None
             ),
+            input_schema=definition.serialized_input_schema(),
         )
 
 

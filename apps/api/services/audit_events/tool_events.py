@@ -39,6 +39,7 @@ async def record_tool_invocation_audit_event(
     run: AgentRun,
     tool_name: str,
     tool_provider: str,
+    tool_version: int | None,
     tool_call_id: str,
     status: AuditStatus,
     args: dict[str, Any],
@@ -89,6 +90,7 @@ async def record_tool_invocation_audit_event(
                         "run_id": str(run.id),
                         "agent_id": str(agent.id),
                         "agent_name": agent.name,
+                        "tool_version": tool_version,
                         **(
                             {
                                 "result_chars": result_chars,

@@ -515,7 +515,12 @@ tool UI starts by keeping frame markers model-only, with typed provenance nodes
 persisted and streamed for native client rendering. It then fills the
 packaging-note §5 presenter seam with shared kits and provider adapters for
 Gmail, Google Ads, and Airtable, plus a Gmail-scoped, audited, ephemeral HTML
-preview route. All provider prerequisites from 041 are now satisfied.
+preview route. All provider prerequisites from 041 are now satisfied. Slice A
+completed 2026-07-22: dispatch now persists and streams structured provenance
+nodes, an always-loaded request-only model wrapper renders byte-stable frames
+in copied provider request contexts, provider result schemas accept the node
+form, and deterministic coverage pins framing equivalence, legacy replay,
+forged-marker handling, persistence, and SSE. Slices B–F remain.
 
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
@@ -548,6 +553,13 @@ scaffolding) and 078 (authenticated schema route narrows, not reverses,
 the OpenAPI posture). Plans 083–088 were written ahead of their substrate:
 each carries a re-anchor pre-flight and STOP conditions, and the design
 note wins on intent.
+
+Plan 082 completed 2026-07-22 and moved to `docs/plans/complete/`. Runtime
+tools now carry a validated version and registration-cached Pydantic AI input
+schema, workspace managers can explicitly disable tools through an audited
+default-allow grant store, catalog and turn assembly share one request-scoped
+disabled set, dispatch audits record the tool version, and authenticated users
+can fetch the OpenAPI schema without re-enabling anonymous docs.
 
 ## Corrective Follow-up Status
 
@@ -605,7 +617,7 @@ note wins on intent.
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | DONE |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | DONE |
 | 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | DONE |
-| 041b | Structured untrusted content + rich provider tool UI — presenter kits and safe content preview | P1 | L | 041, 042 | TODO |
+| 041b | Structured untrusted content + rich provider tool UI — presenter kits and safe content preview | P1 | L | 041, 042 | IN PROGRESS (Slice A DONE 2026-07-22; Slices B–F TODO) |
 | 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | DONE |
 | 043 | Embeddings provider service | P1 | M | 029 (Gate G3; done) | TODO |
 | 044 | KB models and ingestion pipeline | P1 | L | 030, 031, 043 | TODO |
@@ -643,10 +655,10 @@ note wins on intent.
 | 076 | Bounded tool results — dispatch truncation + calibrated token estimation | P1 | M | 026, 066 (hard); before 056 (hard) and 041 | DONE |
 | 077 | Inbound integration events — webhooks, verification, event-triggered runs (design note) | P2 | M | 029, 030, 061, 054; binds before 037/041 execute | DONE |
 | 078 | Public launch readiness — README, community health, supply chain, first release (Lane P) | P1 | L | C01; C05 done | TODO |
-| 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO (plan doc authoring is now unblocked; follows 082) |
+| 079 | Inbound event receipt spine + Airtable webhooks | P2 | L | 030, 037–039, 041, 054, 077 | TODO (next sequenced item; plan doc authoring is unblocked) |
 | 080 | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h) | P1 | S-M | binds before Phase 4a/4b execute | DONE |
 | 081 | Make agent file inspection content-first and truthful across images and documents | P1 | M | 034, 036 (before remaining Phase 4 work) | DONE |
-| 082 | Capability catalogue prerequisites — tool versioning, input schemas, workspace tool grants, authenticated schema route | P1 | S-M | 025, 026 (immediate post-041 hardening; before 083/provider expansion) | TODO |
+| 082 | Capability catalogue prerequisites — tool versioning, input schemas, workspace tool grants, authenticated schema route | P1 | S-M | 025, 026 (immediate post-041 hardening; before 083/provider expansion) | DONE |
 | 083 | Headless dispatch, app-principal envelopes, and the generic approval primitive (Gate G7) | P1 | L | 026, 054, 082; after 040–042 | TODO |
 | 084 | Scoped application tokens — frame and development mint paths | P1 | M-L | 083 (prefer after 085; see its decision 6) | TODO |
 | 085 | Application model, contract, versioned bundles, and sandboxed serving | P1 | L | 031/032, 050 (+D13 amendment), 083, 084 | TODO |
@@ -1085,9 +1097,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   add a threat-model channel row and shared-fixture coverage before
   shipping.
 - `079` has a reserved number and README row but no plan document yet. Plan
-  041 has now landed, so authoring is unblocked; the authoritative sequence
-  places 082 first, then 079 with the recorded provider facts re-checked at
-  planning time. Nothing in 037–042 assumes 079 exists.
+  041 and the sequenced 082 catalogue prerequisite have now landed, so 079 is
+  the next item; re-check the recorded provider facts when authoring it.
+  Nothing in 037–042 assumes 079 exists.
 - `080` is the pre-handoff amendment layer for Phases 4a/4b: read each
   target plan's `Amendment (plan 080, 2026-07-10)` block before executing.
   Notably: 040/046 runtime anchors are refreshed to the post-053/054/066
