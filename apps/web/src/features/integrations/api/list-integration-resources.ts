@@ -6,7 +6,10 @@ import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
 import type { ConnectionListResponse, IntegrationResource } from "@/features/integrations/types"
 import { apiRequest } from "@/lib/api/client"
 
-type ResourceResponse = Omit<IntegrationResource, "connection_label" | "provider_key">
+type ResourceResponse = Omit<
+  IntegrationResource,
+  "connection_label" | "connection_owner_scope" | "provider_key"
+>
 
 async function listIntegrationResources() {
   const connections = await apiRequest<ConnectionListResponse>("/integrations/connections", {
@@ -20,6 +23,7 @@ async function listIntegrationResources() {
       return resources.map((resource) => ({
         ...resource,
         connection_label: connection.label,
+        connection_owner_scope: connection.owner_scope,
         connection_status: connection.status,
         provider_key: connection.provider_key,
       }))

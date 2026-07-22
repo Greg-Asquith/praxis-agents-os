@@ -19,6 +19,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { useCreateContextGroupMutation } from "@/features/integrations/api/create-context-group"
 import { useUpdateContextGroupMutation } from "@/features/integrations/api/update-context-group"
+import { eligibleContextGroupResources } from "@/features/integrations/components/context-group-resource-model"
 import { ProviderMark } from "@/features/integrations/components/provider-mark"
 import type {
   IntegrationContextGroup,
@@ -35,12 +36,14 @@ type ResourceSection = {
 
 export function ContextGroupDialog({
   group,
+  isPersonalWorkspace,
   onOpenChange,
   open,
   providers,
   resources,
 }: {
   group: IntegrationContextGroup | null
+  isPersonalWorkspace: boolean
   onOpenChange: (open: boolean) => void
   open: boolean
   providers: IntegrationProvider[]
@@ -55,14 +58,8 @@ export function ContextGroupDialog({
   )
   const [error, setError] = useState<string | null>(null)
   const editableResources = useMemo(
-    () =>
-      resources.filter(
-        (resource) =>
-          resource.enabled &&
-          resource.availability === "available" &&
-          (resource.connection_status === "active" || resource.connection_status === "degraded")
-      ),
-    [resources]
+    () => eligibleContextGroupResources(resources, isPersonalWorkspace),
+    [isPersonalWorkspace, resources]
   )
   const sections = useMemo(
     () => groupResourcesByProvider(editableResources, search),
@@ -156,6 +153,12 @@ export function ContextGroupDialog({
 
           <Field>
             <FieldLabel htmlFor="context-resource-search">Resources</FieldLabel>
+            {!isPersonalWorkspace ? (
+              <FieldDescription>
+                Personal connections aren&apos;t shown in shared groups. You can still select them
+                as standalone context in conversations and schedules.
+              </FieldDescription>
+            ) : null}
             <div className="relative">
               <SearchIcon className="text-muted-foreground pointer-events-none absolute top-2 left-2.5 size-4" />
               <Input

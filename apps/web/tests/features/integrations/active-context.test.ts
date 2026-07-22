@@ -23,6 +23,7 @@ const resource: IntegrationResource = {
   availability: "available",
   connection_id: "connection-1",
   connection_label: "Client X Gmail",
+  connection_owner_scope: "user",
   connection_status: "active",
   display_name: "Inbox",
   enabled: true,

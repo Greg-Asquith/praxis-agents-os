@@ -15,6 +15,7 @@ function resource(overrides: Partial<IntegrationResource> = {}): IntegrationReso
   return {
     availability: "available",
     connection_id: "connection-1",
+    connection_owner_scope: "workspace",
     display_name: "Resource",
     enabled: true,
     external_id: "external-1",

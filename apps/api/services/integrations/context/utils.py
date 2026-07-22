@@ -5,7 +5,7 @@
 from collections.abc import Collection
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -139,11 +139,15 @@ async def load_workspace_resources(
     db: AsyncSession,
     *,
     resource_ids: Collection[UUID],
+    actor: User,
     workspace: Workspace,
 ) -> list[IntegrationResource]:
     unique_ids = set(resource_ids)
     if not unique_ids:
         return []
+    ownership = IntegrationConnection.owner_workspace_id == workspace.id
+    if workspace.is_personal:
+        ownership = or_(ownership, IntegrationConnection.owner_user_id == actor.id)
     resources = (
         await db.scalars(
             select(IntegrationResource)
@@ -155,13 +159,13 @@ async def load_workspace_resources(
                 IntegrationResource.id.in_(unique_ids),
                 IntegrationResource.deleted.is_(False),
                 IntegrationConnection.deleted.is_(False),
-                IntegrationConnection.owner_workspace_id == workspace.id,
+                ownership,
             )
         )
     ).all()
     if {resource.id for resource in resources} != unique_ids:
         raise AppValidationError(
-            "Context group resources must belong to this workspace",
+            "Resources must be available to Context Groups in the current workspace",
             field="resource_ids",
         )
     return sorted(resources, key=lambda resource: str(resource.id))

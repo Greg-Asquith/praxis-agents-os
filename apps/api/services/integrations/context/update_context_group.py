@@ -56,6 +56,7 @@ async def update_context_group(
         resources = await load_workspace_resources(
             db,
             resource_ids=payload.resource_ids,
+            actor=actor,
             workspace=workspace,
         )
         current_ids = {member.integration_resource_id for member in group.members}

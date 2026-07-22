@@ -84,6 +84,7 @@ export type IntegrationResource = {
   first_seen_at: string
   last_seen_at: string
   removed_at: string | null
+  connection_owner_scope: IntegrationOwnerScope
   provider_key?: string
   connection_label?: string
   connection_status?: string

@@ -168,6 +168,7 @@ export function ContextGroupsSection() {
       {groupDialogOpen ? (
         <ContextGroupDialog
           group={editingGroup}
+          isPersonalWorkspace={workspace.is_personal}
           key={editingGroup?.id ?? "new"}
           onOpenChange={setGroupDialogOpen}
           open={groupDialogOpen}

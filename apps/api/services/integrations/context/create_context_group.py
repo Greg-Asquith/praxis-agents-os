@@ -31,6 +31,7 @@ async def create_context_group(
     resources = await load_workspace_resources(
         db,
         resource_ids=payload.resource_ids,
+        actor=actor,
         workspace=workspace,
     )
     group = IntegrationContextGroup(
