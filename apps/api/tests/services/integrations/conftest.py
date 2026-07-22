@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/conftest.py
+
 """Suite-local discoverable provider fixtures."""
 
 import asyncio
@@ -47,7 +49,7 @@ def discovery_provider(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ob
         ],
     }
 
-    async def discover_resources(credential: str):
+    async def discover_resources(credential: str, _principal_label: str | None = None):
         assert credential == "test-secret"
         state["calls"] = int(state["calls"]) + 1
         if state["block"]:

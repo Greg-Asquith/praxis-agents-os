@@ -21,6 +21,7 @@ from core.auth.sessions import session_manager
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
+from models.integration_context import ActiveContextSelection
 from models.session import Session
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
@@ -46,7 +47,14 @@ from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink, EventSink
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationTurnCreateRequest
-from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.factories import (
+    build_external_credential,
+    build_integration_connection,
+    build_integration_resource,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 from tests.support.auth import bearer_headers
 
 pytestmark = pytest.mark.asyncio
@@ -157,9 +165,18 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _user, _workspace, agent, _existing_conversation, headers = await _authenticated_context(
+    user, workspace, agent, _existing_conversation, headers = await _authenticated_context(
         db_session
     )
+    credential = build_external_credential()
+    connection = build_integration_connection(
+        credential=credential,
+        user=user,
+        workspace=workspace,
+    )
+    resource = build_integration_resource(connection=connection)
+    db_session.add_all([credential, connection, resource])
+    await db_session.commit()
 
     async def fake_title_worker(
         *,
@@ -229,6 +246,10 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
             "agent_id": str(agent.id),
             "user_prompt": "Plan the launch",
             "client_message_id": "first-message",
+            "active_context": {
+                "type": "resource",
+                "integration_resource_id": str(resource.id),
+            },
         },
     ) as response:
         body = (await response.aread()).decode()
@@ -260,6 +281,13 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert created_conversation.metadata_json == {
         "title": {"source": "model", "model": "function:title"}
     }
+    active_context = await db_session.scalar(
+        select(ActiveContextSelection).where(
+            ActiveContextSelection.conversation_id == created_conversation.id
+        )
+    )
+    assert active_context is not None
+    assert active_context.integration_resource_id == resource.id
     created_run = await db_session.scalar(
         select(AgentRun).where(AgentRun.conversation_id == created_conversation.id)
     )

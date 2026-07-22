@@ -33,7 +33,7 @@ from services.integrations.oauth.utils import (
     encrypt_code_verifier,
     generate_code_verifier,
 )
-from services.integrations.providers_view import is_provider_configured
+from services.integrations.providers_view import is_auth_mode_configured
 from services.integrations.utils import record_integration_audit
 from services.workspaces.utils import MANAGER_ROLES
 
@@ -53,7 +53,7 @@ async def start_oauth_connect(
             provider_key=payload.provider_key,
             operation="start_oauth_connect",
         )
-    if not is_provider_configured(manifest):
+    if not is_auth_mode_configured(manifest, "oauth"):
         raise IntegrationValidationError(
             "OAuth provider is not configured",
             provider_key=payload.provider_key,

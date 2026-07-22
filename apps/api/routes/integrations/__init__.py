@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from routes.integrations.clear_context import router as clear_context_router
 from routes.integrations.connect_api_key import router as connect_api_key_router
+from routes.integrations.connect_service_account import router as connect_service_account_router
 from routes.integrations.create_context_group import router as create_context_group_router
 from routes.integrations.delete_context_group import router as delete_context_group_router
 from routes.integrations.get_connection import router as get_connection_router
@@ -44,6 +45,7 @@ router.include_router(delete_context_group_router)
 router.include_router(start_oauth_connect_router)
 router.include_router(oauth_callback_router)
 router.include_router(connect_api_key_router)
+router.include_router(connect_service_account_router)
 router.include_router(rename_connection_router)
 router.include_router(test_connection_router)
 router.include_router(refresh_connection_router)

@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/test_oauth_connect_flow.py
+
 """HTTP-boundary coverage for PKCE OAuth connection creation."""
 
 from dataclasses import replace
@@ -31,7 +33,7 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
 ) -> None:
     discovery_calls = 0
 
-    async def discover_resources(_credential: str):
+    async def discover_resources(_credential: str, _principal_label: str | None = None):
         nonlocal discovery_calls
         discovery_calls += 1
         return ()

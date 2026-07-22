@@ -112,6 +112,7 @@ Functional, but visibly unstyled.
 | 030 | In-place tool calls: ordered turns | P1 | L | — | DONE |
 | 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | DONE |
 | 032 | Resilient conversation streams across navigation | P1 | M | — | DONE |
+| 033 | Integrations: calm app list & provider detail pages | P1 | L | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -181,6 +182,12 @@ Dependency notes:
   `src/app/router.tsx` (router-wide pending component + loaders) and
   the conversation stream files — do not run it concurrently with any
   plan editing those.
+- 033 (written 2026-07-22 against the working tree at `27f9b18`, which
+  carries in-flight roadmap plan 041b changes across the integrations
+  feature) has no dependencies inside this series but must build on the
+  041b working tree, not around it — do not run it concurrently with
+  any roadmap plan editing `src/features/integrations/` or
+  `src/app/router.tsx`.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
   outstanding 017–020 (disjoint files) and may run in parallel
   worktrees with them. Within the set: 021 (conversation headers) and
@@ -377,11 +384,17 @@ Dependency notes:
   the status line, visible fields, and a client-measured elapsed
   count, live-run only. Do not propose arg-delta streaming for UI
   effect.
-- **No per-provider brand logos on tool surfaces** (recorded
-  2026-07-17; plan 025). The reference's Gmail "M" is not adopted: the
-  semantic icon token set is the extension point, keeping the
-  tokens-only theming contract; new tokens arrive with the tools that
-  need them.
+- **Integration providers and their tools use brand logos** (maintainer
+  reversal, 2026-07-22 — supersedes plan 025's "no per-provider brand
+  logos" decision, which stands only for non-integration tools). Each
+  provider's official mark ships as an inline-SVG React component
+  colocated in its UI module (`src/integrations/<provider_key>/logo.tsx`),
+  registered through the module's `icons` map and resolved via the
+  existing registry lookup — so logos ride the provider's lazy chunk and
+  new providers bring their own. Brand marks keep their official colors
+  in both themes: this is the one sanctioned exception to the
+  tokens-only rule, scoped to third-party trademarks. Still no raster
+  assets, and non-integration tools keep the semantic lucide token set.
 
 ## Considered and rejected (do not re-propose)
 

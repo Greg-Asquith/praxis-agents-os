@@ -12,6 +12,10 @@ from services.integrations.credentials.ensure_fresh_credential import (
 from services.integrations.credentials.find_duplicate_principals import (
     find_duplicate_principals,
 )
+from services.integrations.credentials.google_service_account import (
+    GoogleServiceAccountTokenProvider,
+    parse_google_service_account_json,
+)
 from services.integrations.credentials.revoke_credential import revoke_credential
 from services.integrations.credentials.store_oauth_credential import store_oauth_credential
 from services.integrations.credentials.store_secret_reference_credential import (
@@ -19,8 +23,10 @@ from services.integrations.credentials.store_secret_reference_credential import 
 )
 
 __all__ = [
+    "GoogleServiceAccountTokenProvider",
     "ensure_fresh_credential",
     "find_duplicate_principals",
+    "parse_google_service_account_json",
     "revoke_credential",
     "store_oauth_credential",
     "store_secret_reference_credential",

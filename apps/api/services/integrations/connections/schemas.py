@@ -52,6 +52,24 @@ class ApiKeyConnectRequest(BaseModel):
         return self
 
 
+class ServiceAccountConnectRequest(BaseModel):
+    provider_key: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=120)
+    service_account_json: SecretStr | None = None
+    secret_reference: SecretReferenceInput | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_secret_source(self) -> Self:
+        if (self.service_account_json is None) == (self.secret_reference is None):
+            raise ValueError("Exactly one of service_account_json or secret_reference is required")
+        if (
+            self.service_account_json is not None
+            and not self.service_account_json.get_secret_value().strip()
+        ):
+            raise ValueError("service_account_json cannot be blank")
+        return self
+
+
 class RenameConnectionRequest(BaseModel):
     label: str = Field(min_length=1, max_length=120)
 
@@ -67,6 +85,7 @@ class ProviderRead(BaseModel):
     capability_flags: frozenset[str]
     requires_discovery: bool
     configured: bool
+    configured_auth_modes: dict[str, bool]
 
 
 class CredentialMetadataRead(BaseModel):

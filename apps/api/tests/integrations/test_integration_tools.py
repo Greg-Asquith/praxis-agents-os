@@ -14,6 +14,8 @@ from integrations.gmail.tools import TOOL_DEFINITIONS
 from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
 from integrations.gmail.tools.utils import run_audited_operation
+from integrations.google_ads.settings import google_ads_settings
+from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -62,6 +64,46 @@ def test_gmail_tool_contract_matrix_and_schemas() -> None:
         assert definition.presentation.running_label
         assert definition.presentation.completed_label
         assert definition.presentation.failed_label
+
+
+def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
+    definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
+    assert set(definitions) == {
+        "google_ads_list_accounts",
+        "google_ads_run_report",
+        "google_ads_update_campaign_status",
+    }
+    assert definitions["google_ads_list_accounts"].effect == "read"
+    assert definitions["google_ads_run_report"].effect == "read"
+    spend = definitions["google_ads_update_campaign_status"]
+    assert spend.effect == "write"
+    assert spend.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
+    assert spend.default_policy == "approval"
+    assert spend.supports_auto is False
+    assert spend.allowed_policies() == frozenset({"approval"})
+    assert spend.integration_binding is not None
+    assert spend.integration_binding.requires_write is True
+
+    denylisted = {
+        "account_id",
+        "base_id",
+        "connection_id",
+        "connection_label",
+        "customer_id",
+        "integration_resource_id",
+        "mailbox",
+        "principal",
+        "resource_id",
+    }
+    for definition in definitions.values():
+        schema = definition.to_pydantic_tool().function_schema.json_schema
+        assert denylisted.isdisjoint(schema["properties"])
+        assert definition.presentation.running_label
+        assert definition.presentation.completed_label
+        assert definition.presentation.failed_label
+
+    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", None)
+    assert all(not is_tool_allowed(item, workspace=None) for item in definitions.values())
 
 
 async def test_write_gating_fails_closed_without_provider_call(monkeypatch) -> None:

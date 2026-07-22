@@ -120,3 +120,15 @@ in production.
   setup, populate both arrays without creating an `AgentRun`, and add a route
   test covering a revoked or disabled selected resource. Keep the route
   read-only and conversation/workspace scoped.
+
+## 8. Integration tool span attributes and service-account generalization
+
+- **Source**: Plan 041 Slice B completion, 2026-07-22.
+- **Where**: the existing dispatch tracing seam and
+  `services/integrations/credentials/google_service_account.py`.
+- **What**: add provider and connection attributes to integration-tool spans
+  without creating another interception layer. If a second provider needs
+  service-account authentication, generalize the current Google token helper
+  behind manifest-declared token metadata instead of adding provider branches
+  to the discovery engine. Until then, Gmail and Airtable keep their existing
+  authentication modes.

@@ -120,8 +120,12 @@ function NewOAuthConnectionDialog({ provider }: { provider: IntegrationProvider 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger render={<Button size="sm" variant="outline" />}>
-        <PlusIcon data-icon="inline-start" />
-        Add Connection
+        {provider.auth_modes.length > 1 ? (
+          <ExternalLinkIcon data-icon="inline-start" />
+        ) : (
+          <PlusIcon data-icon="inline-start" />
+        )}
+        {provider.auth_modes.length > 1 ? "Sign in with Google" : "Add Connection"}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

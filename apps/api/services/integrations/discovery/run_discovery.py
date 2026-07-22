@@ -1,3 +1,5 @@
+# apps/api/services/integrations/discovery/run_discovery.py
+
 """Discover and reconcile provider resources for one connection."""
 
 from datetime import UTC, datetime
@@ -112,10 +114,13 @@ async def run_discovery(
     )
 
     try:
-        credential_value, granted_scopes = await _resolve_credential_value(db, connection)
+        credential_value, granted_scopes, principal_label = await _resolve_credential_value(
+            db, connection
+        )
         resources = await _fetch_resources(
             provider_key=connection.provider_key,
             credential_value=credential_value,
+            principal_label=principal_label,
         )
         resources = _apply_granted_scope_permissions(resources, granted_scopes=granted_scopes)
         counters = await _reconcile_resources(
@@ -169,7 +174,7 @@ async def run_discovery(
 async def _resolve_credential_value(
     db: AsyncSession,
     connection: IntegrationConnection,
-) -> tuple[str, frozenset[str]]:
+) -> tuple[str, frozenset[str], str | None]:
     credential = await db.get(ExternalCredential, connection.credential_id)
     if credential is None or credential.deleted:
         raise IntegrationNotFoundError(
@@ -190,7 +195,11 @@ async def _resolve_credential_value(
                 provider_key=connection.provider_key,
                 operation="discover_resources",
             )
-        return access_token, frozenset(fresh.granted_scopes or ())
+        return (
+            access_token,
+            frozenset(fresh.granted_scopes or ()),
+            fresh.external_principal_label,
+        )
     return (
         await resolve_secret(
             db,
@@ -203,6 +212,7 @@ async def _resolve_credential_value(
             actor_id=connection.connected_by_user_id,
         ),
         frozenset(),
+        credential.external_principal_label,
     )
 
 
@@ -210,6 +220,7 @@ async def _fetch_resources(
     *,
     provider_key: str,
     credential_value: str,
+    principal_label: str | None,
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     plugin = PROVIDER_PLUGINS.get(provider_key)
     if plugin is None or plugin.discover_resources is None:
@@ -218,7 +229,7 @@ async def _fetch_resources(
             provider_key=provider_key,
             operation="discover_resources",
         )
-    resources = tuple(await plugin.discover_resources(credential_value))
+    resources = tuple(await plugin.discover_resources(credential_value, principal_label))
     manifest = plugin.manifest
     keys: set[tuple[str, str]] = set()
     for resource in resources:

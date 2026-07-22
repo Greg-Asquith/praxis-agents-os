@@ -5,7 +5,9 @@
 from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
 
+from .discover_resources import discover_resources
 from .settings import google_ads_settings
+from .tools import TOOL_DEFINITIONS
 
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -27,7 +29,7 @@ PROVIDER = IntegrationProviderPlugin(
     manifest=IntegrationProviderManifest(
         provider_key="google_ads",
         display_name="Google Ads",
-        auth_modes=("oauth",),
+        auth_modes=("oauth", "service_account"),
         owner_scope="workspace",
         oauth_scopes=(
             "openid",
@@ -35,10 +37,10 @@ PROVIDER = IntegrationProviderPlugin(
             "https://www.googleapis.com/auth/adwords",
         ),
         resource_types=("google_ads_account",),
-        # Discovery is advertised when the provider operation lands.
-        requires_discovery=False,
+        requires_discovery=True,
         capability_flags=frozenset({"read", "write", "spend"}),
     ),
-    discover_resources=None,
+    discover_resources=discover_resources,
     oauth_config=oauth_config,
+    tool_definitions=TOOL_DEFINITIONS,
 )

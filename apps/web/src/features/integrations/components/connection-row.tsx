@@ -35,7 +35,10 @@ import { connectionStatusPresentation } from "@/features/integrations/components
 import { ResourceSelectionPanel } from "@/features/integrations/components/resource-selection-panel"
 import { discoveryFinished } from "@/features/integrations/components/resource-discovery"
 import { connectionResourcesAreEditable } from "@/features/integrations/components/resource-selection-model"
-import { integrationOwnerScopeLabel } from "@/features/integrations/format"
+import {
+  integrationAuthModeLabel,
+  integrationOwnerScopeLabel,
+} from "@/features/integrations/format"
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
@@ -111,6 +114,11 @@ export function ConnectionRow({
               />
               <ConnectionStatusBadge status={connection.status} />
               <Badge variant="outline">{integrationOwnerScopeLabel(connection.owner_scope)}</Badge>
+              {connection.credential ? (
+                <Badge variant="secondary">
+                  {integrationAuthModeLabel(connection.credential.auth_mode)}
+                </Badge>
+              ) : null}
             </div>
             <p className="text-muted-foreground text-xs">
               Added {formatDateTime(connection.created_at)}

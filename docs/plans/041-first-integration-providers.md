@@ -525,6 +525,16 @@ B and C.
 
 ### Slice B — Google Ads, the spend slice (`API - Google Ads Provider`)
 
+**Completed 2026-07-22.** Google Ads now contributes MCC-aware discovery,
+persisted account listing, bounded GAQL reports, and the approval-only campaign
+status mutation through the shared dispatch and per-resource audit seams.
+Workspace service-account connections retain only secret references and mint
+short-lived JWT-bearer tokens in memory. Runtime context carries the discovered
+accessible root so every request derives `login-customer-id` from resource
+metadata. The registry smoke printed the three expected tools and `approval
+False ['approval']`; the database-backed integration and agent-service suites
+passed with 386 tests. The plan stays open for Slice C.
+
 - **Steps**: 2's google_ads manifest completion (including the
   decision-16 `auth_modes` addition), 4 (the Google Ads package, the
   service-account connect path + token minting, and the decision-9

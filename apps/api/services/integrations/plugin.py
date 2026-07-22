@@ -27,7 +27,9 @@ class DiscoveredIntegrationResource:
     permissions_metadata: dict[str, object] | None = None
 
 
-DiscoverResourcesFn = Callable[[str], Awaitable[Sequence[DiscoveredIntegrationResource]]]
+DiscoverResourcesFn = Callable[
+    [str, str | None], Awaitable[Sequence[DiscoveredIntegrationResource]]
+]
 
 
 @dataclass(frozen=True)

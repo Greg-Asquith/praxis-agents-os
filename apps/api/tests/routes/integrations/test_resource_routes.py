@@ -37,7 +37,7 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(autouse=True)
 def discoverable_route_provider() -> Iterator[None]:
-    async def discover_resources(_credential: str):
+    async def discover_resources(_credential: str, _principal_label: str | None = None):
         return ()
 
     plugin = IntegrationProviderPlugin(

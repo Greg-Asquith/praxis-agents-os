@@ -239,6 +239,7 @@ async def _resolve_resources(
                     connection_label=connection.label,
                     connection_status=connection.status,
                     write_allowed=bool(resource.writable and resource.permissions_metadata),
+                    permissions_metadata=dict(resource.permissions_metadata or {}),
                 ),
                 connection,
             )

@@ -2,7 +2,7 @@
 
 """Pure active-context domain values shared by selection and runtime layers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 from uuid import UUID
 
@@ -38,6 +38,7 @@ class ResolvedContextEntry:
     connection_label: str
     connection_status: str
     write_allowed: bool
+    permissions_metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

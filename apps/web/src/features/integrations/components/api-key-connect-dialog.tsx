@@ -103,7 +103,8 @@ export function ApiKeyConnectDialog({ provider }: { provider: IntegrationProvide
                 id={`connection-label-${provider.provider_key}`}
                 maxLength={120}
                 onChange={(event) => {
-                  setForm((current) => ({ ...current, label: event.currentTarget.value }))
+                  const label = event.currentTarget.value
+                  setForm((current) => ({ ...current, label }))
                 }}
                 placeholder="Client account"
                 value={form.label}
@@ -117,7 +118,8 @@ export function ApiKeyConnectDialog({ provider }: { provider: IntegrationProvide
                 autoComplete="off"
                 id={`api-key-${provider.provider_key}`}
                 onChange={(event) => {
-                  setForm((current) => ({ ...current, apiKey: event.currentTarget.value }))
+                  const apiKey = event.currentTarget.value
+                  setForm((current) => ({ ...current, apiKey }))
                 }}
                 type="password"
                 value={form.apiKey}

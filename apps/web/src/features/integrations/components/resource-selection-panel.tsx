@@ -10,7 +10,11 @@ import { useIntegrationResourcesForConnectionQuery } from "@/features/integratio
 import { useUpdateResourceSelectionMutation } from "@/features/integrations/api/update-resource-selection"
 import { ResourceRow } from "@/features/integrations/components/resource-row"
 import { discoveryStatusLabel } from "@/features/integrations/components/resource-discovery"
-import { enabledSelectableResourceIds } from "@/features/integrations/components/resource-selection-model"
+import {
+  enabledSelectableResourceIds,
+  resourcesInHierarchyOrder,
+  resourcesWithExpandedParents,
+} from "@/features/integrations/components/resource-selection-model"
 import { integrationResourceTypeLabel } from "@/features/integrations/format"
 import type { IntegrationConnection, IntegrationResource } from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -50,6 +54,7 @@ function ResourceSelectionForm({
   const saveMutation = useUpdateResourceSelectionMutation()
   const discoveryMutation = useRetryDiscoveryMutation()
   const [selected, setSelected] = useState(() => new Set(enabledSelectableResourceIds(resources)))
+  const [collapsedManagers, setCollapsedManagers] = useState(() => new Set<string>())
   const [error, setError] = useState<string | null>(null)
   const initial = enabledSelectableResourceIds(resources).toSorted()
   const pending = [...selected].toSorted()
@@ -98,29 +103,43 @@ function ResourceSelectionForm({
       <div className="flex flex-col gap-4">
         {groups.length > 0 ? (
           groups.map(([resourceType, items]) => (
-            <section className="flex flex-col gap-1" key={resourceType}>
-              <h4 className="text-muted-foreground px-2 text-xs font-medium tracking-wide uppercase">
+            <section className="flex min-h-0 flex-col gap-1" key={resourceType}>
+              <h4 className="text-muted-foreground px-2 pb-1 text-xs font-medium tracking-wide uppercase">
                 {integrationResourceTypeLabel(resourceType)}
               </h4>
-              {items.map((resource) => (
-                <ResourceRow
-                  canEdit={canEdit}
-                  checked={selected.has(resource.id)}
-                  key={resource.id}
-                  onCheckedChange={(checked) => {
-                    setSelected((current) => {
-                      const next = new Set(current)
-                      if (checked) {
-                        next.add(resource.id)
-                      } else {
-                        next.delete(resource.id)
-                      }
-                      return next
-                    })
-                  }}
-                  resource={resource}
-                />
-              ))}
+              <div className="bg-background max-h-80 overflow-y-auto rounded-lg border p-1">
+                {resourcesWithExpandedParents(items, collapsedManagers).map((resource) => (
+                  <ResourceRow
+                    canEdit={canEdit}
+                    checked={selected.has(resource.id)}
+                    collapsed={collapsedManagers.has(resource.external_id)}
+                    key={resource.id}
+                    onCheckedChange={(checked) => {
+                      setSelected((current) => {
+                        const next = new Set(current)
+                        if (checked) {
+                          next.add(resource.id)
+                        } else {
+                          next.delete(resource.id)
+                        }
+                        return next
+                      })
+                    }}
+                    onToggleCollapsed={() => {
+                      setCollapsedManagers((current) => {
+                        const next = new Set(current)
+                        if (next.has(resource.external_id)) {
+                          next.delete(resource.external_id)
+                        } else {
+                          next.add(resource.external_id)
+                        }
+                        return next
+                      })
+                    }}
+                    resource={resource}
+                  />
+                ))}
+              </div>
             </section>
           ))
         ) : (
@@ -191,5 +210,7 @@ function groupResources(resources: IntegrationResource[]) {
     items.push(resource)
     groups.set(resource.resource_type, items)
   }
-  return [...groups.entries()].toSorted(([left], [right]) => left.localeCompare(right))
+  return [...groups.entries()]
+    .map(([resourceType, items]) => [resourceType, resourcesInHierarchyOrder(items)] as const)
+    .toSorted(([left], [right]) => left.localeCompare(right))
 }

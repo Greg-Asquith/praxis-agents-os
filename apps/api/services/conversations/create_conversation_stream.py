@@ -40,6 +40,7 @@ from services.conversations.utils import (
     get_assignable_agent_for_workspace,
 )
 from services.files import create_conversation_file_references, resolve_chat_attachments
+from services.integrations.context import set_active_context_selection
 
 _drain_sse_sink = runtime_streaming.drain_sse_sink
 logger = logging.getLogger(__name__)
@@ -92,6 +93,15 @@ async def create_conversation_stream(
     )
     db.add(conversation)
     await db.flush()
+    if payload.active_context is not None:
+        await set_active_context_selection(
+            db,
+            request=request,
+            actor=actor,
+            workspace=workspace,
+            conversation_id=conversation.id,
+            selection=payload.active_context,
+        )
     await create_conversation_file_references(
         db,
         workspace_id=workspace.id,

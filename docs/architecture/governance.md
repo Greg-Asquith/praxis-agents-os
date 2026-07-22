@@ -70,7 +70,7 @@ point, per-agent `tool_policies`); this section is the policy law:
   external KB targets pending]
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
-  weaken it. [default — confirm at review]
+  weaken it. [implemented: plan 041 Slice B]
 - Non-interactive principals: scheduled runs stamp a server-minted
   side-effect grant at run preparation time; the default is
   `require_approval`, and schedules may explicitly opt into `allow` when

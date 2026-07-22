@@ -491,8 +491,13 @@ untrusted-content carrier with marker forgery neutralization, dispatch framing,
 the standing data-not-instructions prompt block, per-resource integration audit
 events, scope-derived write availability, bounded provider HTTP behavior, and
 Gmail discovery plus its search, read, and send tools. Provider tools are split
-one per module under a `tools/` tree. Plan 041 remains TODO; Google Ads Slice B
-and Airtable Slice C are still pending.
+one per module under a `tools/` tree. Slice B completed 2026-07-22: Google Ads
+now supports workspace OAuth and service-account connections, MCC hierarchy
+discovery with per-resource root routing metadata, persisted account listing,
+bounded GAQL reports, and an approval-only campaign status mutation whose
+policy cannot be weakened to auto. The service-account JSON remains behind the
+secret-reference seam and short-lived JWT-bearer tokens stay in memory. Plan
+041 remains TODO; Airtable Slice C is still pending.
 
 Plan 041b was added 2026-07-22: rich provider tool UI. 041's tools render
 through the generic declarative row, which shows raw untrusted-content framing
@@ -583,7 +588,7 @@ note wins on intent.
 | 038 | Integration OAuth connect flows and connection routes | P1 | L | 037 | DONE |
 | 039 | Integration resource discovery, selection, and status machine | P1 | M | 030, 037, 038 | DONE |
 | 040 | Integration active context — selection, resolution, runtime injection | P1 | L | 037, 038, 039 | DONE |
-| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO (Slice A DONE; B/C pending) |
+| 041 | First integration providers — Gmail, Google Ads, Airtable | P1 | L | 037, 038, 039, 040, 014/053/054 (Gate G1 + extension), 075 (Gate G6) | TODO (Slices A/B DONE; C pending) |
 | 041b | Rich provider tool UI — presenter rows, provenance display, safe content preview | P1 | M-L | 041 Slice A, 042 (Slice C: 041 B/C) | TODO |
 | 042 | Integrations UI — providers, connections, resources, context picker | P1 | L | 038, 039 (soft: 040, 041) | DONE |
 | 043 | Embeddings provider service | P1 | M | 029 (Gate G3; done) | TODO |

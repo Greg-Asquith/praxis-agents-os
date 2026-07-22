@@ -4,6 +4,7 @@
 
 from services.integrations.connections.complete_oauth_callback import complete_oauth_callback
 from services.integrations.connections.connect_api_key import connect_api_key
+from services.integrations.connections.connect_service_account import connect_service_account
 from services.integrations.connections.get_connection import get_connection
 from services.integrations.connections.list_connection_resources import (
     list_connection_resources,
@@ -29,6 +30,7 @@ from services.integrations.connections.update_resource_selection import (
 __all__ = [
     "complete_oauth_callback",
     "connect_api_key",
+    "connect_service_account",
     "get_connection",
     "list_connection_resources",
     "list_connections",

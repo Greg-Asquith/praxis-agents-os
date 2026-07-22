@@ -24,6 +24,7 @@ export type IntegrationProvider = {
   capability_flags: string[]
   requires_discovery: boolean
   configured: boolean
+  configured_auth_modes: Record<string, boolean>
 }
 
 type IntegrationCredentialMetadata = {
