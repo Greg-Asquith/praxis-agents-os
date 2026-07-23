@@ -4,14 +4,18 @@
 
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic_ai import DeferredToolResults, ToolDenied
 from pydantic_ai.messages import (
     ModelMessage,
     ModelMessagesTypeAdapter,
     ModelRequest,
+    ToolCallPart,
+    ToolReturnPart,
     UserContent,
     UserPromptPart,
 )
@@ -213,12 +217,91 @@ async def persist_eager_user_prompt(
     )
 
 
+async def persist_eager_denied_tool_results(
+    db: AsyncSession,
+    *,
+    conversation: Conversation,
+    run_id: UUID,
+    message_history: Sequence[ModelMessage],
+    deferred_tool_results: DeferredToolResults | None,
+) -> set[str]:
+    """Persist denied tool returns before the provider continuation starts."""
+    if deferred_tool_results is None:
+        return set()
+
+    calls_by_id = {
+        part.tool_call_id: part
+        for message in message_history
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    }
+    denied_parts: list[ToolReturnPart] = []
+    for tool_call_id, result in deferred_tool_results.approvals.items():
+        if not isinstance(result, ToolDenied):
+            continue
+        call = calls_by_id.get(tool_call_id)
+        if call is None:
+            continue
+        denied_parts.append(
+            ToolReturnPart(
+                tool_name=call.tool_name,
+                content=result.message,
+                tool_call_id=tool_call_id,
+                outcome="denied",
+            )
+        )
+
+    if not denied_parts:
+        return set()
+
+    message = ModelRequest(parts=denied_parts)
+    from services.agents.runtime.approval_events import build_deferred_tool_result_metadata
+
+    metadata = build_deferred_tool_result_metadata(
+        message_history=message_history,
+        new_messages=[message],
+        deferred_tool_results=deferred_tool_results,
+    )
+    await persist_new_messages(
+        db,
+        conversation=conversation,
+        run_id=run_id,
+        messages=[message],
+        tool_approval_metadata_by_call_id=metadata,
+    )
+    return {part.tool_call_id for part in denied_parts}
+
+
 def without_initial_user_prompt(messages: Sequence[ModelMessage]) -> list[ModelMessage]:
     """Drop the first current-run user prompt already written by eager persistence."""
     pending = list(messages)
     if pending and _is_user_prompt_request(pending[0]):
         return pending[1:]
     return pending
+
+
+def without_tool_returns(
+    messages: Sequence[ModelMessage],
+    *,
+    tool_call_ids: set[str],
+) -> list[ModelMessage]:
+    """Drop tool returns that were already durably persisted before streaming."""
+    if not tool_call_ids:
+        return list(messages)
+
+    filtered: list[ModelMessage] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            filtered.append(message)
+            continue
+        parts = [
+            part
+            for part in message.parts
+            if not (isinstance(part, ToolReturnPart) and part.tool_call_id in tool_call_ids)
+        ]
+        if parts:
+            filtered.append(replace(message, parts=parts))
+    return filtered
 
 
 def _dump_messages(messages: Sequence[ModelMessage]) -> list[dict[str, Any]]:

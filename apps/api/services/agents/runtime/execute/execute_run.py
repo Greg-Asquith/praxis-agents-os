@@ -29,7 +29,11 @@ from services.agents.runtime.load_context import (
     load_available_files,
     load_run_context,
 )
-from services.agents.runtime.persistence import load_message_history, persist_eager_user_prompt
+from services.agents.runtime.persistence import (
+    load_message_history,
+    persist_eager_denied_tool_results,
+    persist_eager_user_prompt,
+)
 from services.agents.runtime.sinks import EventSink, NullSink
 
 from .finalize import (
@@ -150,6 +154,15 @@ async def execute_run_with_builders(
             run_envelope_builder=run_envelope_builder,
         )
         built_agent = prepared.built_agent
+        eager_tool_return_ids = await persist_eager_denied_tool_results(
+            db,
+            conversation=conversation,
+            run_id=run.id,
+            message_history=built_agent.history,
+            deferred_tool_results=deferred_tool_results,
+        )
+        if eager_tool_return_ids:
+            await db.commit()
 
         # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
         live_deferred_result_ids: set[str] = set()
@@ -188,7 +201,9 @@ async def execute_run_with_builders(
             deps=prepared.deps,
             skip_initial_user_prompt=user_prompt_persisted,
             live_deferred_result_ids=live_deferred_result_ids,
+            eager_tool_return_ids=eager_tool_return_ids,
         )
+        eager_message_count += 1 if eager_tool_return_ids else 0
         if eager_message_count == 0:
             return result
         return ExecuteRunResult(

@@ -31,7 +31,11 @@ from services.agents.runtime.approval_state import (
     clear_suspended_run_metadata,
 )
 from services.agents.runtime.load_context import load_run_context
-from services.agents.runtime.persistence import persist_new_messages, without_initial_user_prompt
+from services.agents.runtime.persistence import (
+    persist_new_messages,
+    without_initial_user_prompt,
+    without_tool_returns,
+)
 from services.agents.runtime.staged_tool_content import stage_write_file_approval_content
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,7 @@ async def persist_suspended_run(
     deferred_tool_requests: DeferredToolRequests,
     client_message_id: str | None,
     skip_initial_user_prompt: bool = False,
+    eager_tool_return_ids: set[str] | None = None,
 ) -> tuple[AgentRun, int, DeferredToolRequests]:
     """Store messages and suspend a running run for human tool approval."""
     run, conversation, _agent = await load_run_context(
@@ -67,6 +72,10 @@ async def persist_suspended_run(
     new_messages = terminal_result.new_messages()
     messages_to_persist = (
         without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
+    )
+    messages_to_persist = without_tool_returns(
+        messages_to_persist,
+        tool_call_ids=eager_tool_return_ids or set(),
     )
     staged = await stage_write_file_approval_content(
         workspace_id=run.workspace_id,
@@ -109,6 +118,7 @@ async def persist_successful_run(
     client_message_id: str | None,
     tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] | None = None,
     skip_initial_user_prompt: bool = False,
+    eager_tool_return_ids: set[str] | None = None,
 ) -> tuple[AgentRun, int]:
     """Store messages and complete a running run."""
     run, conversation, _agent = await load_run_context(
@@ -130,6 +140,10 @@ async def persist_successful_run(
     new_messages = terminal_result.new_messages()
     messages_to_persist = (
         without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
+    )
+    messages_to_persist = without_tool_returns(
+        messages_to_persist,
+        tool_call_ids=eager_tool_return_ids or set(),
     )
     persisted_messages = await persist_new_messages(
         db,

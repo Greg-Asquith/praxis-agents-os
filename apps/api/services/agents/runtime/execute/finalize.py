@@ -53,6 +53,7 @@ async def finalize_terminal_run(
     deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
     live_deferred_result_ids: Sequence[str] | set[str] = (),
+    eager_tool_return_ids: set[str] | None = None,
 ) -> ExecuteRunResult:
     if deferred_tool_results is not None:
         await emit_deferred_tool_resume_events(
@@ -73,6 +74,7 @@ async def finalize_terminal_run(
             client_message_id=client_message_id,
             deps=deps,
             skip_initial_user_prompt=skip_initial_user_prompt,
+            eager_tool_return_ids=eager_tool_return_ids,
         )
 
     return await finalize_successful_run(
@@ -85,6 +87,7 @@ async def finalize_terminal_run(
         history=history,
         deferred_tool_results=deferred_tool_results,
         skip_initial_user_prompt=skip_initial_user_prompt,
+        eager_tool_return_ids=eager_tool_return_ids,
     )
 
 
@@ -98,6 +101,7 @@ async def finalize_suspended_run(
     client_message_id: str | None,
     deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
+    eager_tool_return_ids: set[str] | None = None,
 ) -> ExecuteRunResult:
     deferred_tool_requests = terminal_result.output
     await record_policy_approval_request_audit_events(
@@ -112,6 +116,7 @@ async def finalize_suspended_run(
         deferred_tool_requests=deferred_tool_requests,
         client_message_id=client_message_id,
         skip_initial_user_prompt=skip_initial_user_prompt,
+        eager_tool_return_ids=eager_tool_return_ids,
     )
     await emit_approval_required_events(event_sink, deferred_tool_requests)
     await event_sink.emit(
@@ -137,6 +142,7 @@ async def finalize_successful_run(
     history: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults | None,
     skip_initial_user_prompt: bool = False,
+    eager_tool_return_ids: set[str] | None = None,
 ) -> ExecuteRunResult:
     tool_approval_metadata_by_call_id = (
         build_deferred_tool_result_metadata(
@@ -156,6 +162,7 @@ async def finalize_successful_run(
         client_message_id=client_message_id,
         tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
         skip_initial_user_prompt=skip_initial_user_prompt,
+        eager_tool_return_ids=eager_tool_return_ids,
     )
     if final_run.status == RUN_STATUS_COMPLETED:
         await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_COMPLETED})
