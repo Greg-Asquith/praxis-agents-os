@@ -63,4 +63,21 @@ describe("active context picker values", () => {
       )
     ).toBe("Context unavailable")
   })
+
+  it("formats Google Ads account IDs used as resource names", () => {
+    const googleAdsResource = {
+      ...resource,
+      display_name: "1234567890",
+      id: "google-ads-resource",
+      provider_key: "google_ads",
+    }
+
+    expect(
+      activeContextSelectionLabel(
+        { integration_resource_id: googleAdsResource.id, type: "resource" },
+        [],
+        [googleAdsResource]
+      )
+    ).toBe("123-456-7890")
+  })
 })

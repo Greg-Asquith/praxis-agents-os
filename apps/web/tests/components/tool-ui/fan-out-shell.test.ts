@@ -89,6 +89,7 @@ describe("FanOutShell", () => {
     const html = renderToStaticMarkup(
       createElement(FanOutShell, {
         contextLabel: "Mailbox",
+        defaultOpen: true,
         entries: entries ?? [],
         children: (entry) => createElement("p", null, `Rendered ${entry.displayName}`),
         details: [{ label: "Search", value: "is:unread" }],
@@ -98,8 +99,7 @@ describe("FanOutShell", () => {
     )
 
     expect(html).toContain("Search Gmail")
-    expect(html).toContain("1 Succeeded")
-    expect(html).toContain("1 Failed")
+    expect(html).toContain("Tool succeeded on 1/2 connections")
     expect(html).toContain("Inbox")
     expect(html).toContain("hello@example.com")
     expect(html).toContain("Mailbox")
@@ -116,6 +116,66 @@ describe("FanOutShell", () => {
     expect(html.indexOf("Search Gmail")).toBeLessThan(html.indexOf("</header>"))
     expect(html.indexOf("is:unread")).toBeLessThan(html.indexOf("</header>"))
     expect(html.indexOf("Rendered Inbox")).toBeGreaterThan(html.indexOf("</header>"))
+  })
+
+  it("uses an error summary when every connection fails", () => {
+    const entries = fanOutEntries({
+      results: [
+        {
+          connection_id: "connection-1",
+          display_name: "Inbox",
+          external_id: "hello@example.com",
+          status: "failed",
+          data: null,
+          error_message: "Mailbox access expired.",
+        },
+        {
+          connection_id: "connection-2",
+          display_name: "Support",
+          external_id: "support@example.com",
+          status: "failed",
+          data: null,
+          error_message: "Mailbox access expired.",
+        },
+      ],
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(FanOutShell, {
+        entries: entries ?? [],
+        children: () => null,
+      })
+    )
+
+    expect(html).toContain("Tool failed on 2/2 connections")
+    expect(html).not.toContain("successfully")
+    expect(html).toContain("text-destructive")
+  })
+
+  it("formats context labels without changing the entry passed to result content", () => {
+    const entries = fanOutEntries({
+      results: [
+        {
+          connection_id: "connection-1",
+          display_name: "1234567890",
+          external_id: "1234567890",
+          status: "success",
+          data: null,
+        },
+      ],
+    })
+    const html = renderToStaticMarkup(
+      createElement(FanOutShell, {
+        defaultOpen: true,
+        entries: entries ?? [],
+        formatContextValue: (value) => value.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3"),
+        children: (entry) => createElement("p", null, `Raw ${entry.externalId}`),
+      })
+    )
+
+    expect(html).toContain("123-456-7890")
+    expect(html).toContain('aria-label="123-456-7890"')
+    expect(html).toContain("Raw 1234567890")
   })
 
   it("renders an accessible pending state", () => {

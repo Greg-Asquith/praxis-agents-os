@@ -1,5 +1,6 @@
 // apps/web/src/features/integrations/active-context.ts
 
+import { formatIntegrationResourceValue } from "@/features/integrations/format"
 import type {
   ActiveContextSelectionValue,
   IntegrationContextGroup,
@@ -60,8 +61,8 @@ export function activeContextSelectionLabel(
       "Context unavailable"
     )
   }
-  return (
-    resources.find((resource) => resource.id === value.integration_resource_id)?.display_name ??
-    "Context unavailable"
-  )
+  const resource = resources.find((item) => item.id === value.integration_resource_id)
+  return resource
+    ? formatIntegrationResourceValue(resource.provider_key, resource.display_name)
+    : "Context unavailable"
 }

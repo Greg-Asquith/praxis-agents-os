@@ -8,6 +8,7 @@ import {
   integrationResourceIsManagerAccount,
   integrationResourceIsRemoved,
 } from "@/features/integrations/components/resource-selection-model"
+import { formatIntegrationResourceValue } from "@/features/integrations/format"
 import type { IntegrationResource } from "@/features/integrations/types"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +18,7 @@ export function ResourceRow({
   collapsed,
   onCheckedChange,
   onToggleCollapsed,
+  providerKey,
   resource,
 }: {
   canEdit: boolean
@@ -24,6 +26,7 @@ export function ResourceRow({
   collapsed: boolean
   onCheckedChange: (checked: boolean) => void
   onToggleCollapsed: () => void
+  providerKey: string
   resource: IntegrationResource
 }) {
   const removed = integrationResourceIsRemoved(resource)
@@ -38,6 +41,8 @@ export function ResourceRow({
     indentation > 0 && "border-l-border"
   )
   const rowStyle = { marginLeft: `${String(indentation)}px` }
+  const displayName = formatIntegrationResourceValue(providerKey, resource.display_name)
+  const externalId = formatIntegrationResourceValue(providerKey, resource.external_id)
 
   if (managerAccount) {
     return (
@@ -58,12 +63,10 @@ export function ResourceRow({
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 flex-wrap items-center gap-1.5">
             <Building2Icon className="text-muted-foreground size-3.5" aria-hidden="true" />
-            <span className="truncate text-sm font-medium">{resource.display_name}</span>
+            <span className="truncate text-sm font-medium">{displayName}</span>
             <Badge variant="secondary">Manager Account</Badge>
           </span>
-          <span className="text-muted-foreground truncate font-mono text-xs">
-            {resource.external_id}
-          </span>
+          <span className="text-muted-foreground truncate font-mono text-xs">{externalId}</span>
         </span>
       </button>
     )
@@ -76,7 +79,7 @@ export function ResourceRow({
       style={rowStyle}
     >
       <Checkbox
-        aria-label={`Enable ${resource.display_name}`}
+        aria-label={`Enable ${displayName}`}
         checked={checked}
         disabled={disabled}
         id={checkboxId}
@@ -84,11 +87,11 @@ export function ResourceRow({
       />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{resource.display_name}</span>
+          <span className="truncate text-sm font-medium">{displayName}</span>
           {removed ? <Badge variant="outline">No longer available</Badge> : null}
         </span>
         <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-          <span className="truncate font-mono">{resource.external_id}</span>
+          <span className="truncate font-mono">{externalId}</span>
           {!resource.writable ? <span className="shrink-0">· Read Only</span> : null}
         </span>
       </span>

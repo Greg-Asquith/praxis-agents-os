@@ -45,6 +45,7 @@ async def google_ads_run_report(
             return await run_report(
                 client,
                 customer_id=entry.external_id,
+                currency_code=str(entry.permissions_metadata.get("currency_code", "")),
                 login_customer_id=login_customer_id(entry),
                 query=normalized_query,
                 max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,

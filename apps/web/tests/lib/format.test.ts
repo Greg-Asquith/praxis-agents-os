@@ -4,6 +4,7 @@ import {
   formatBytes,
   formatCompactDate,
   formatDateTime,
+  formatGoogleAdsAccountId,
   initials,
   normalize,
   normalizeOptionalText,
@@ -25,6 +26,13 @@ describe("format helpers", () => {
     expect(pluralize(1, "file")).toBe("file")
     expect(pluralize(2, "file")).toBe("files")
     expect(pluralize(0, "person", "people")).toBe("people")
+  })
+
+  it("formats Google Ads account IDs without changing other labels", () => {
+    expect(formatGoogleAdsAccountId("1234567890")).toBe("123-456-7890")
+    expect(formatGoogleAdsAccountId("123-456-7890")).toBe("123-456-7890")
+    expect(formatGoogleAdsAccountId("Client account")).toBe("Client account")
+    expect(formatGoogleAdsAccountId("12345")).toBe("12345")
   })
 
   it("formats title tokens and route segments", () => {

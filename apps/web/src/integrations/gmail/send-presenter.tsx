@@ -22,7 +22,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
   handlesApprovals: true,
   key: "gmail-send-message",
   matches: (activity) => activity.name === "gmail_send_message",
-  render: ({ activity, approvalDecision }) => {
+  render: ({ activity, approvalDecision, defaultOpen }) => {
     if (approvalDecision) {
       if (!sentMessageArgs(activity.args)) {
         return null
@@ -58,13 +58,19 @@ export const gmailSendPresenter: ToolRowPresenter = {
       )
     }
     if (activity.status === "denied") {
-      return sendFailure(activity.id, activity.args, "This email was declined and was not sent.")
+      return sendFailure(
+        activity.id,
+        activity.args,
+        "This email was declined and was not sent.",
+        defaultOpen
+      )
     }
     if (activity.status === "failed" || activity.status === "unknown") {
       return sendFailure(
         activity.id,
         activity.args,
-        "The send did not finish. No delivery was confirmed."
+        "The send did not finish. No delivery was confirmed.",
+        defaultOpen
       )
     }
     const fanOut = parseFanOutData(activity.result, sentMessageId)
@@ -72,7 +78,8 @@ export const gmailSendPresenter: ToolRowPresenter = {
       return sendFailure(
         activity.id,
         activity.args,
-        "Praxis could not confirm that this email was delivered."
+        "Praxis could not confirm that this email was delivered.",
+        defaultOpen
       )
     }
     const { entries } = fanOut
@@ -80,6 +87,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
       <div aria-label="Sent Gmail messages" className="w-full min-w-0">
         <FanOutShell
           contextLabel="Mailbox"
+          defaultOpen={defaultOpen}
           details={gmailSendDetails(activity.args)}
           entries={entries}
           emptyLabel="No mailbox sent this message."
@@ -93,7 +101,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
   },
 }
 
-function sendFailure(activityId: string, args: unknown, description: string) {
+function sendFailure(activityId: string, args: unknown, description: string, defaultOpen: boolean) {
   const entries = [
     {
       connectionId: activityId,
@@ -105,9 +113,10 @@ function sendFailure(activityId: string, args: unknown, description: string) {
     },
   ]
   return (
-    <div aria-label="Unsent Gmail message" className="w-full min-w-0">
+    <div aria-label="Unsent Gmail Message" className="w-full min-w-0">
       <FanOutShell
         contextLabel="Mailbox"
+        defaultOpen={defaultOpen}
         details={gmailSendDetails(args)}
         entries={entries}
         externalLabel="Email"

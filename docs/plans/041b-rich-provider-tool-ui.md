@@ -44,11 +44,17 @@
   presenters, including stable call/result rendering and bounded inbox lists.
   Slice C is **DONE 2026-07-23**: the preview backend, automatic
   read-message HTML rendering, and search-row drill-in are complete.
-  Slices D–F remain TODO.
-  Execution corrected two landed-state mismatches found during pre-flight:
-  Google Ads report strings were still plain despite 041's Gate G6 contract,
-  and Gmail read results carried an undeclared duplicate body field. Report
-  strings now mint the shared carrier and the duplicate field is removed.
+  Slice D is **DONE 2026-07-23**: the shared data-table and KPI kits,
+  Google Ads report and account presenters, governed campaign-status
+  presenter, discovered-account currency propagation, and production
+  presenter registration are complete. Google Ads results remain ordinary
+  typed values with no model-side untrusted framing or legacy-result decoder,
+  per operator decision. Slices E–F remain TODO.
+  Execution corrected one landed-state mismatch found during pre-flight:
+  Gmail read results carried an undeclared duplicate body field, which is now
+  removed. A later 2026-07-23 operator decision explicitly exempted all Google
+  Ads tool results from model-side untrusted framing; report values remain
+  ordinary typed tool data.
   **2026-07-23 operator-review pass**: Slice C's backend (preview route,
   `nh3` sanitization, audit, hostile-fixture tests) landed with four
   operator amendments: (1) the read presenter renders the full HTML email
@@ -338,17 +344,17 @@ badge | link | id`), per-kind cell formatters (`Intl` currency
    - The client receives structured nodes and renders them natively:
      a type guard in the kit space (`isUntrustedNode`) feeds
      `external-content` with `{content, sourceKind, sourceRef}`. **No
-     frame parser exists anywhere outside the request wrapper**, and
-     the vocabulary stays runtime-internal exactly as 041 declared.
-   - **Per-cell nodes**: Google Ads report cells arrive individually
-     wrapped (`operations/run_report.py:40-50`); the data-table
-     adapter reads each node's `content` and the table shows
-     provenance **once at container level** ("External data · Google
-     Ads · account 123…") — a chip per cell would be noise.
+     general frame parser exists outside the request wrapper**.
+   - **Google Ads exception (operator decision 2026-07-23)**: all
+     Google Ads tool results remain ordinary typed values and do not
+     enter the provenance-node or model-frame path. The data table
+     shows one source label at container level ("External data ·
+     Google Ads · account 123…") for operator context only.
    - **Legacy transcripts**: tool results stored before this slice
-     contain framed strings; they render as plain text (raw markers
-     visible) in old transcripts only. Accepted — pre-launch data, no
-     migration, no client-side legacy parser.
+     contain framed strings. Gmail and other providers retain the
+     pre-launch no-migration posture. Google Ads has no legacy-result
+     compatibility path because its rich presenters replace the
+     pre-launch results.
 4. **Preview seam shape (Layer 2): a generic route with
    provider-contributed handlers.** Operator correction: the initial
    Gmail-scoped implementation put provider-specific route and service
@@ -594,8 +600,8 @@ contract.ts` — `ToolRowPresenterProps` (lines 13-20: `activity`,
 - **Google Ads payloads (041 Slice B, in progress on `main`,
   uncommitted — verify at execution)**: client pinned to v24
   (`client.py:12`). `google_ads_run_report` per-account `data` =
-  `{rows, row_count, truncated, truncation_note}` with every string
-  cell individually wrapped (`operations/run_report.py:40-50`);
+  `{rows, row_count, truncated, truncation_note}` with ordinary typed
+  values under the explicit Google Ads model-framing exception;
   `google_ads_list_accounts` `data` = `{accounts: [{customer_id,
 display_name, parent_customer_id, manager, currency_code, status,
 writable, enabled}]}`; `google_ads_update_campaign_status` `data` =
@@ -780,15 +786,15 @@ Blocked on 041 Slice B. Steps 7–8. No charts here.
 - `data-table` + `kpi` kits; `table-export.ts` extraction; the
   decision-8 `currency_code` addition; Google Ads adapters — report
   table, accounts hierarchy list, campaign-status approval card
-  (write banner) + per-campaign result view.
+  (strong approval prompt) + per-campaign result view.
 - **Gate**: `pnpm check` + kit/presenter tests green; a report
   fixture renders currency/percent/date cells correctly formatted and
   the truncation note; a mixed-success mutation fixture renders
   per-campaign statuses; backend suite green for the `currency_code`
   addition.
-- **Review focus**: micros conversion only at display time; node
-  cells read via the shared guard with container-level provenance;
-  CSV export contains node contents, never marker text or node JSON;
+- **Review focus**: micros conversion only at display time; report
+  cells read as ordinary typed Google Ads values with container-level
+  provenance; CSV export contains the raw values, never framing markers;
   the approval card cannot weaken or bypass the approval flow (it
   renders the same controls contract).
 
@@ -834,8 +840,8 @@ Blocked on 041 Slice C. Step 10.
 - `dispatch.py:358`: call `serialize_untrusted_content` instead of
   `frame_untrusted_content`. `validate_output` and `truncate_result`
   now see nodes — retype untrusted-capable fields in
-  `integrations/gmail/tools/schemas.py` (and Airtable's, and — if
-  landed — Google Ads') as `str | UntrustedNode`; confirm structured
+  `integrations/gmail/tools/schemas.py` (and Airtable's; Google Ads is
+  explicitly exempt) as `str | UntrustedNode`; confirm structured
   results remain truncation-exempt as today.
 - `capabilities.py`: register `render_untrusted_frames` in the always-loaded
   hooks capability's `model_request` wrapper, passing a copied request context
@@ -1029,8 +1035,8 @@ null on mismatch:
 - `google_ads_run_report` → column derivation from the row key paths
   (`metrics.*` → metric/number, `*_micros` → currency,
   `metrics.ctr`/`*_rate` → percent, `segments.date` → date,
-  `*.status` → status, `*.id` → id, else text); cells read through
-  `isUntrustedNode`/`nodeText` with container-level provenance
+  `*.status` → status, `*.id` → id, else text); cells consume ordinary
+  typed values, with container-level provenance
   ("External data · Google Ads · account …"); `data-table` per
   account inside `FanOutShell` (per-account collapsible card +
   Details popover via the `details` prop); truncation note surfaced.
@@ -1063,7 +1069,7 @@ null on mismatch:
   (`resource_names`, integration resource ids, connection ids) stay
   hidden.
 
-**Verify**: presenter tests — report fixture (node cells, micros,
+**Verify**: presenter tests — report fixture (typed cells, micros,
 correct formatting), mixed mutation fixture, hierarchy fixture, PLUS
 approval-card fixture (controls fire, status select edits), denied
 fixture, failed/unknown fixture, awaiting/running skeleton fixtures;

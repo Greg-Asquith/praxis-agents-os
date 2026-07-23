@@ -12,7 +12,13 @@ import {
 } from "@/features/conversations/components/web-search-result"
 import { pluralize } from "@/lib/format"
 
-export function WebSearchToolRow({ activity }: { activity: ToolActivity }) {
+export function WebSearchToolRow({
+  activity,
+  defaultOpen = false,
+}: {
+  activity: ToolActivity
+  defaultOpen?: boolean
+}) {
   if (activity.status === "running") {
     const query = webSearchQuery(activity.args)
     return query ? (
@@ -43,6 +49,7 @@ export function WebSearchToolRow({ activity }: { activity: ToolActivity }) {
   return (
     <ToolResultCard
       ariaLabel={`Web search results for ${result.query}`}
+      defaultOpen={defaultOpen}
       details={details}
       heading={<WebSearchHeading />}
       trailing={<Badge variant="success">Done</Badge>}

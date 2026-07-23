@@ -20,6 +20,7 @@ import {
   resourceSelectionKey,
 } from "@/features/integrations/active-context"
 import { ProviderMark } from "@/features/integrations/components/provider-mark"
+import { formatIntegrationResourceValue } from "@/features/integrations/format"
 import type {
   ActiveContextSelectionValue,
   IntegrationContextGroup,
@@ -133,22 +134,28 @@ export function ContextSelect({
         {enabledResources.length > 0 ? (
           <SelectGroup>
             <SelectLabel>Connected Resources</SelectLabel>
-            {enabledResources.map((resource) => (
-              <SelectItem
-                key={resource.id}
-                label={`${resource.display_name} · ${integrationResourceProviderLabel(resource)}`}
-                value={resourceSelectionKey(resource.id)}
-              >
-                <ProviderMark className="mr-1" providerKey={resource.provider_key ?? "other"} />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate">{resource.display_name}</span>
-                  <span className="text-muted-foreground truncate text-xs">
-                    {integrationResourceProviderLabel(resource)}
-                    {resource.connection_label ? ` · ${resource.connection_label}` : ""}
+            {enabledResources.map((resource) => {
+              const displayName = formatIntegrationResourceValue(
+                resource.provider_key,
+                resource.display_name
+              )
+              return (
+                <SelectItem
+                  key={resource.id}
+                  label={`${displayName} · ${integrationResourceProviderLabel(resource)}`}
+                  value={resourceSelectionKey(resource.id)}
+                >
+                  <ProviderMark className="mr-1" providerKey={resource.provider_key ?? "other"} />
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate">{displayName}</span>
+                    <span className="text-muted-foreground truncate text-xs">
+                      {integrationResourceProviderLabel(resource)}
+                      {resource.connection_label ? ` · ${resource.connection_label}` : ""}
+                    </span>
                   </span>
-                </span>
-              </SelectItem>
-            ))}
+                </SelectItem>
+              )
+            })}
           </SelectGroup>
         ) : null}
         {!selectionAvailable ? (

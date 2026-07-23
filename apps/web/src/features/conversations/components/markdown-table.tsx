@@ -6,12 +6,10 @@ import { CheckIcon, CopyIcon, DownloadIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { reactNodeToText } from "@/lib/react-node"
+import { downloadTableCsv, tableToTsv, type ExportTable } from "@/lib/table-export"
 import { cn } from "@/lib/utils"
 
-type ExtractedTable = {
-  headers: string[]
-  rows: string[][]
-}
+type ExtractedTable = ExportTable
 
 export const MarkdownTable = memo(function MarkdownTable({ children }: { children?: ReactNode }) {
   const extracted = useMemo(() => extractTable(children), [children])
@@ -19,7 +17,7 @@ export const MarkdownTable = memo(function MarkdownTable({ children }: { childre
   const hasContent = extracted.headers.length > 0 || extracted.rows.length > 0
 
   const handleCopy = useCallback(() => {
-    void copy(toTsv(extracted))
+    void copy(tableToTsv(extracted))
   }, [copy, extracted])
 
   return (
@@ -41,7 +39,7 @@ export const MarkdownTable = memo(function MarkdownTable({ children }: { childre
             type="button"
             variant="ghost"
             onClick={() => {
-              downloadCsv(extracted)
+              downloadTableCsv(extracted)
             }}
           >
             <DownloadIcon />
@@ -149,39 +147,4 @@ function findElementsByTag(node: ReactNode, tag: string, out: React.ReactElement
 
   const props = node.props as { children?: ReactNode }
   findElementsByTag(props.children, tag, out)
-}
-
-function toCsv({ headers, rows }: ExtractedTable): string {
-  return [
-    headers.map(escapeCsvCell).join(","),
-    ...rows.map((row) => row.map(escapeCsvCell).join(",")),
-  ]
-    .filter((line) => line.length > 0)
-    .join("\r\n")
-}
-
-function toTsv({ headers, rows }: ExtractedTable): string {
-  const sanitize = (cell: string) => cell.replace(/\t/g, " ").replace(/\r?\n/g, " ")
-  return [headers.map(sanitize).join("\t"), ...rows.map((row) => row.map(sanitize).join("\t"))]
-    .filter((line) => line.length > 0)
-    .join("\n")
-}
-
-function escapeCsvCell(cell: string): string {
-  if (/[",\r\n]/.test(cell)) {
-    return `"${cell.replace(/"/g, '""')}"`
-  }
-  return cell
-}
-
-function downloadCsv(extracted: ExtractedTable): void {
-  const blob = new Blob([toCsv(extracted)], { type: "text/csv;charset=utf-8" })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = "conversation-table.csv"
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
 }

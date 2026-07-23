@@ -33,7 +33,11 @@ async def google_ads_list_accounts(ctx: RunContext[RuntimeDeps]) -> dict[str, An
             entry,
             tool_name="google_ads_list_accounts",
             operation="list_accounts",
-            execute=lambda: list_accounts(ctx.deps.db, connection_id=entry.connection_id),
+            execute=lambda: list_accounts(
+                ctx.deps.db,
+                connection_id=entry.connection_id,
+                integration_resource_id=entry.integration_resource_id,
+            ),
         )
 
     results = await run_context_fan_out(ctx.deps, binding=GOOGLE_ADS_BINDING, operation=operation)

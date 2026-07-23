@@ -16,7 +16,7 @@ import { isRecord } from "@/lib/guards"
 export const gmailSearchPresenter: ToolRowPresenter = {
   key: "gmail-search-messages",
   matches: (activity) => activity.name === "gmail_search_messages",
-  render: ({ activity }) => {
+  render: ({ activity, defaultOpen }) => {
     if (activity.status === "running") {
       return (
         <FanOutSkeleton
@@ -34,6 +34,7 @@ export const gmailSearchPresenter: ToolRowPresenter = {
       <div aria-label="Gmail search results" className="w-full min-w-0">
         <FanOutShell
           contextLabel="Mailbox"
+          defaultOpen={defaultOpen}
           details={gmailSearchDetails(activity.args)}
           entries={entries}
           emptyLabel="No mailboxes were searched."

@@ -3,7 +3,10 @@
 """Google Ads discovery, REST operation, and service-account contracts."""
 
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs
+from uuid import uuid4
 
 import httpx2
 import jwt
@@ -19,10 +22,12 @@ from pydantic_ai import ModelRetry
 
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.discover_resources import discover_google_ads_resources
+from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
+from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.run_report import google_ads_run_report
-from services.agents.runtime.untrusted import UntrustedContent
+from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.credentials.google_service_account import (
     GOOGLE_TOKEN_URL,
     GoogleServiceAccountTokenProvider,
@@ -71,6 +76,8 @@ async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:
     assert by_id["222"].writable is False
     assert by_id["333"].writable is True
     assert {call["login_customer_id"] for call in client.calls} == {"111"}
+    access_queries = [call for call in client.calls if "customer_user_access" in call["query"]]
+    assert [call["path"] for call in access_queries] == ["customers/111/googleAds:searchStream"]
     hierarchy_queries = [
         call for call in client.calls if "customer_user_access" not in call["query"]
     ]
@@ -80,30 +87,188 @@ async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:
     ]
 
 
-async def test_report_caps_rows_and_marks_provider_values_untrusted() -> None:
+async def test_discovery_keeps_accounts_read_only_for_read_only_manager_role() -> None:
+    resources = await discover_google_ads_resources(
+        _DiscoveryClient(manager_access_role="READ_ONLY"),
+        principal_email="agent@example.iam.gserviceaccount.com",
+    )
+    by_id = {resource.external_id: resource for resource in resources}
+
+    assert by_id["333"].writable is False
+    assert by_id["333"].permissions_metadata["access_role"] == "READ_ONLY"
+
+
+async def test_discovery_prefers_writable_manager_route_for_duplicate_account() -> None:
+    resources = await discover_google_ads_resources(
+        _DuplicateRouteDiscoveryClient(),
+        principal_email="agent@example.iam.gserviceaccount.com",
+    )
+    by_id = {resource.external_id: resource for resource in resources}
+
+    assert by_id["333"].writable is True
+    assert by_id["333"].permissions_metadata["login_customer_id"] == "111"
+
+
+async def test_report_caps_rows_without_model_framing() -> None:
     client = _OperationClient(
         [{"results": [{"campaign": {"name": "one"}}, {"campaign": {"name": "two"}}]}]
     )
     result = await run_report(
         client,
         customer_id="333",
+        currency_code="GBP",
         login_customer_id="111",
         query="SELECT campaign.name FROM campaign",
         max_rows=1,
     )
+    assert result["currency_code"] == "GBP"
     assert result["row_count"] == 1
     assert result["truncated"] is True
-    name = result["rows"][0]["campaign"]["name"]
-    assert isinstance(name, UntrustedContent)
-    assert name.content == "one"
-    assert name.source_kind == "google_ads_report"
-    assert name.source_ref == "333"
+    assert result["rows"][0]["campaign"]["name"] == "one"
     assert client.last_json["query"].endswith("LIMIT 2")
 
 
 async def test_report_tool_rejects_non_select_gaql_before_dispatch() -> None:
     with pytest.raises(ModelRetry, match="requires a GAQL SELECT query"):
         await google_ads_run_report(None, "UPDATE campaign SET status = 'PAUSED'")  # type: ignore[arg-type]
+
+
+async def test_report_tool_uses_discovered_account_currency(monkeypatch) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="333",
+        display_name="Client account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"currency_code": "GBP", "login_customer_id": "111"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        )
+    )
+    provider_report = AsyncMock(
+        return_value={
+            "currency_code": "GBP",
+            "rows": [],
+            "row_count": 0,
+            "truncated": False,
+            "truncation_note": None,
+        }
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.run_report.google_ads_client",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr("integrations.google_ads.tools.run_report.run_report", provider_report)
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.record_integration_operation_audit_event",
+        AsyncMock(),
+    )
+
+    result = await google_ads_run_report(ctx, "SELECT campaign.id FROM campaign")
+
+    assert result["results"][0]["data"]["currency_code"] == "GBP"
+    assert provider_report.await_args.kwargs["currency_code"] == "GBP"
+
+
+async def test_list_accounts_queries_only_the_selected_active_context_resource() -> None:
+    connection_id = uuid4()
+    selected_resource_id = uuid4()
+    selected = SimpleNamespace(
+        external_id="333",
+        display_name="Selected account",
+        parent_external_id="111",
+        permissions_metadata={
+            "manager": False,
+            "currency_code": "GBP",
+            "status": "ENABLED",
+        },
+        writable=True,
+        enabled=True,
+    )
+    db = AsyncMock()
+    db.scalar.return_value = selected
+
+    result = await list_accounts(
+        db,
+        connection_id=connection_id,
+        integration_resource_id=selected_resource_id,
+    )
+
+    statement = db.scalar.await_args.args[0]
+    assert statement.compile().params == {
+        "id_1": selected_resource_id,
+        "connection_id_1": connection_id,
+        "resource_type_1": "google_ads_account",
+    }
+    assert result["accounts"] == [
+        {
+            "customer_id": "333",
+            "display_name": "Selected account",
+            "parent_customer_id": "111",
+            "manager": False,
+            "currency_code": "GBP",
+            "status": "ENABLED",
+            "writable": True,
+            "enabled": True,
+        }
+    ]
+
+
+async def test_list_accounts_tool_scopes_each_result_to_its_context_entry(monkeypatch) -> None:
+    connection_id = uuid4()
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=uuid4(),
+            provider_key="google_ads",
+            resource_type="google_ads_account",
+            external_id=customer_id,
+            display_name=f"Account {customer_id}",
+            connection_id=connection_id,
+            connection_label="Agency",
+            connection_status="active",
+            write_allowed=True,
+        )
+        for customer_id in ("222", "333")
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            db=object(),
+            active_context=ResolvedActiveContext(entries=entries),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        )
+    )
+    operation = AsyncMock(
+        side_effect=[
+            {"accounts": [{"customer_id": "222"}]},
+            {"accounts": [{"customer_id": "333"}]},
+        ]
+    )
+    monkeypatch.setattr("integrations.google_ads.tools.list_accounts.list_accounts", operation)
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.record_integration_operation_audit_event",
+        AsyncMock(),
+    )
+
+    result = await google_ads_list_accounts(ctx)
+
+    assert [item["data"]["accounts"][0]["customer_id"] for item in result["results"]] == [
+        "222",
+        "333",
+    ]
+    assert [call.kwargs["integration_resource_id"] for call in operation.await_args_list] == [
+        entry.integration_resource_id for entry in entries
+    ]
 
 
 async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None:
@@ -197,8 +362,9 @@ async def _static_token(_force: bool) -> str:
 
 
 class _DiscoveryClient:
-    def __init__(self) -> None:
+    def __init__(self, *, manager_access_role: str = "STANDARD") -> None:
         self.calls: list[dict[str, str]] = []
+        self.manager_access_role = manager_access_role
 
     async def get(self, _path: str, **_kwargs):
         return {"resourceNames": ["customers/111"]}
@@ -213,13 +379,16 @@ class _DiscoveryClient:
             }
         )
         if "customer_user_access" in query:
+            customer_id = path.split("/")[1]
+            if customer_id != "111":
+                return [{"results": []}]
             return [
                 {
                     "results": [
                         {
                             "customerUserAccess": {
                                 "emailAddress": "agent@example.iam.gserviceaccount.com",
-                                "accessRole": "STANDARD",
+                                "accessRole": self.manager_access_role,
                             }
                         }
                     ]
@@ -231,6 +400,30 @@ class _DiscoveryClient:
         if customer_id == "222":
             return [_hierarchy_page(("222", 0, True), ("333", 1, False))]
         return [_hierarchy_page((customer_id, 0, False))]
+
+
+class _DuplicateRouteDiscoveryClient(_DiscoveryClient):
+    async def get(self, _path: str, **_kwargs):
+        return {"resourceNames": ["customers/333", "customers/111"]}
+
+    async def post(self, path: str, **kwargs):
+        query = kwargs["json"]["query"]
+        if "customer_user_access" in query and path.startswith("customers/333/"):
+            return [
+                {
+                    "results": [
+                        {
+                            "customerUserAccess": {
+                                "emailAddress": "agent@example.iam.gserviceaccount.com",
+                                "accessRole": "READ_ONLY",
+                            }
+                        }
+                    ]
+                }
+            ]
+        if "customer_user_access" not in query and path.startswith("customers/333/"):
+            return [_hierarchy_page(("333", 0, False))]
+        return await super().post(path, **kwargs)
 
 
 class _OperationClient:

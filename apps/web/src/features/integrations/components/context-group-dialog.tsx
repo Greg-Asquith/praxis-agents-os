@@ -21,6 +21,7 @@ import { useCreateContextGroupMutation } from "@/features/integrations/api/creat
 import { useUpdateContextGroupMutation } from "@/features/integrations/api/update-context-group"
 import { eligibleContextGroupResources } from "@/features/integrations/components/context-group-resource-model"
 import { ProviderMark } from "@/features/integrations/components/provider-mark"
+import { formatIntegrationResourceValue } from "@/features/integrations/format"
 import type {
   IntegrationContextGroup,
   IntegrationProvider,
@@ -204,10 +205,17 @@ export function ContextGroupDialog({
                         />
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate text-sm font-medium">
-                            {resource.display_name}
+                            {formatIntegrationResourceValue(
+                              resource.provider_key,
+                              resource.display_name
+                            )}
                           </span>
                           <span className="text-muted-foreground truncate text-xs">
-                            {resource.connection_label ?? resource.external_id}
+                            {resource.connection_label ??
+                              formatIntegrationResourceValue(
+                                resource.provider_key,
+                                resource.external_id
+                              )}
                           </span>
                         </span>
                       </label>

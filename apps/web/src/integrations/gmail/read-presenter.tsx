@@ -24,7 +24,7 @@ type GmailMessage = {
 export const gmailReadPresenter: ToolRowPresenter = {
   key: "gmail-read-message",
   matches: (activity) => activity.name === "gmail_read_message",
-  render: ({ activity }) => {
+  render: ({ activity, defaultOpen }) => {
     if (activity.status === "running") {
       return (
         <FanOutSkeleton
@@ -42,6 +42,7 @@ export const gmailReadPresenter: ToolRowPresenter = {
       <div aria-label="Gmail message" className="w-full min-w-0">
         <FanOutShell
           contextLabel="Mailbox"
+          defaultOpen={defaultOpen}
           entries={entries}
           emptyLabel="No mailbox returned this message."
           externalLabel="Email"

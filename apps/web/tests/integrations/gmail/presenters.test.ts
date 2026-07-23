@@ -590,7 +590,7 @@ function props(
     activity,
     ...(approvalDecision ? { approvalDecision } : {}),
     compact: false,
-    defaultOpen: false,
+    defaultOpen: true,
     live: false,
     providerKey: "gmail",
   }

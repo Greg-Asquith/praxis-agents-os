@@ -136,6 +136,7 @@ function ResourceSelectionForm({
                         return next
                       })
                     }}
+                    providerKey={connection.provider_key}
                     resource={resource}
                   />
                 ))}

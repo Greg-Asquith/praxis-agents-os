@@ -15,37 +15,43 @@ const EMPTY_DETAILS: FanOutDetail[] = []
 export function FanOutShell({
   children,
   contextLabel = "Connection",
+  defaultOpen = false,
   details = EMPTY_DETAILS,
   entries,
   emptyLabel = "No matching items were found.",
   externalLabel = "Account",
+  formatContextValue = identity,
   heading,
   renderFailed,
 }: {
   children: (entry: FanOutEntry, index: number) => ReactNode
   contextLabel?: string
+  defaultOpen?: boolean
   details?: FanOutDetail[]
   entries: FanOutEntry[]
   emptyLabel?: string
   externalLabel?: string
+  formatContextValue?: (value: string) => string
   heading?: ReactNode
   renderFailed?: (entry: FanOutEntry, index: number) => ReactNode
 }) {
   const succeeded = entries.filter((entry) => entry.status === "success").length
-  const failed = entries.length - succeeded
+  const allSucceeded = succeeded === entries.length
+  const allFailed = succeeded === 0
 
   return (
     <div className="grid min-w-0 gap-3">
       {entries.length > 1 ? (
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="success">
-            <CircleCheckIcon /> {String(succeeded)} Succeeded
+          <Badge variant={allSucceeded ? "success" : allFailed ? "destructive" : "warning"}>
+            {allSucceeded ? <CircleCheckIcon /> : <AlertCircleIcon />}
+            {allFailed
+              ? "Tool failed"
+              : allSucceeded
+                ? "Tool ran successfully"
+                : "Tool succeeded"}{" "}
+            on {String(allFailed ? entries.length : succeeded)}/{String(entries.length)} connections
           </Badge>
-          {failed > 0 ? (
-            <Badge variant="destructive">
-              <AlertCircleIcon /> {String(failed)} Failed
-            </Badge>
-          ) : null}
         </div>
       ) : null}
       {entries.length === 0 ? (
@@ -56,9 +62,11 @@ export function FanOutShell({
       {entries.map((entry, index) => (
         <FanOutCard
           contextLabel={contextLabel}
+          defaultOpen={defaultOpen}
           details={details}
           entry={entry}
           externalLabel={externalLabel}
+          formatContextValue={formatContextValue}
           heading={heading}
           key={`${entry.connectionId}:${entry.externalId}`}
         >
@@ -80,25 +88,37 @@ export function FanOutShell({
 function FanOutCard({
   children,
   contextLabel,
+  defaultOpen,
   details,
   entry,
   externalLabel,
+  formatContextValue,
   heading,
 }: {
   children: ReactNode
   contextLabel: string
+  defaultOpen: boolean
   details: FanOutDetail[]
   entry: FanOutEntry
   externalLabel: string
+  formatContextValue: (value: string) => string
   heading?: ReactNode
 }) {
-  const visibleDetails = fanOutDetails(entry, details, contextLabel, externalLabel)
+  const formattedDisplayName = formatContextValue(entry.displayName)
+  const visibleDetails = fanOutDetails(
+    entry,
+    details,
+    contextLabel,
+    externalLabel,
+    formatContextValue
+  )
 
   return (
     <ToolResultCard
-      ariaLabel={entry.displayName}
+      ariaLabel={formattedDisplayName}
+      defaultOpen={defaultOpen}
       details={visibleDetails}
-      heading={heading ?? entry.displayName}
+      heading={heading ?? formattedDisplayName}
       trailing={
         <Badge variant={entry.status === "success" ? "success" : "destructive"}>
           {entry.status === "success" ? "Done" : "Failed"}
@@ -114,15 +134,22 @@ function fanOutDetails(
   entry: FanOutEntry,
   details: FanOutDetail[],
   contextLabel: string,
-  externalLabel: string
+  externalLabel: string,
+  formatContextValue: (value: string) => string
 ): FanOutDetail[] {
   const account =
-    entry.externalId && entry.externalId !== entry.displayName ? entry.externalId : null
+    entry.externalId && entry.externalId !== entry.displayName
+      ? formatContextValue(entry.externalId)
+      : null
   return [
-    { label: contextLabel, value: entry.displayName },
+    { label: contextLabel, value: formatContextValue(entry.displayName) },
     ...(account ? [{ label: externalLabel, value: account }] : []),
     ...details,
   ]
+}
+
+function identity(value: string) {
+  return value
 }
 
 export function FanOutSkeleton({

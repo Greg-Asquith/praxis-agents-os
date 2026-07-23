@@ -83,5 +83,5 @@ describe("WebSearchToolRow", () => {
 })
 
 function render(activity: ToolActivity): string {
-  return renderToStaticMarkup(createElement(WebSearchToolRow, { activity }))
+  return renderToStaticMarkup(createElement(WebSearchToolRow, { activity, defaultOpen: true }))
 }

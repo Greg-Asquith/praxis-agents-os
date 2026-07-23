@@ -59,7 +59,9 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
       (activity.status === "running"
         ? webSearchQuery(activity.args) !== null
         : activity.status === "completed" && webSearchResult(activity.result) !== null),
-    render: ({ activity }) => <WebSearchToolRow activity={activity} />,
+    render: ({ activity, defaultOpen }) => (
+      <WebSearchToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
   },
   {
     key: "delegate-agent-list",

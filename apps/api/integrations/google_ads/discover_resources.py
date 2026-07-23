@@ -79,6 +79,12 @@ async def discover_google_ads_resources(
     )
     discovered: dict[str, DiscoveredIntegrationResource] = {}
     for root_id in roots:
+        root_role = await _access_role(
+            client,
+            customer_id=root_id,
+            login_customer_id=root_id,
+            principal_email=principal_email,
+        )
         pending_managers = [(root_id, 0)]
         queried_managers: set[str] = set()
         while pending_managers:
@@ -109,16 +115,6 @@ async def discover_google_ads_resources(
                 level = query_level + relative_level
                 if manager and relative_level == 1 and external_id not in queried_managers:
                     pending_managers.append((external_id, level))
-                role = (
-                    await _access_role(
-                        client,
-                        customer_id=external_id,
-                        login_customer_id=root_id,
-                        principal_email=principal_email,
-                    )
-                    if not manager
-                    else None
-                )
                 parent_external_id = None if relative_level == 0 else query_customer_id
                 metadata = {
                     "manager": manager,
@@ -128,14 +124,14 @@ async def discover_google_ads_resources(
                     "descriptive_name": str(customer.get("descriptiveName", "")),
                     "status": str(customer.get("status", "")),
                     "login_customer_id": root_id,
-                    "access_role": role or "UNKNOWN",
+                    "access_role": root_role or "UNKNOWN",
                 }
                 candidate = DiscoveredIntegrationResource(
                     resource_type="google_ads_account",
                     external_id=external_id,
                     display_name=str(customer.get("descriptiveName", "")).strip() or external_id,
                     parent_external_id=parent_external_id,
-                    writable=not manager and role in _WRITE_ROLES,
+                    writable=not manager and root_role in _WRITE_ROLES,
                     permissions_metadata=metadata,
                 )
                 existing = discovered.get(external_id)
@@ -183,6 +179,8 @@ def _prefer_candidate(
     candidate: DiscoveredIntegrationResource,
     existing: DiscoveredIntegrationResource,
 ) -> bool:
+    if candidate.writable != existing.writable:
+        return candidate.writable
     candidate_level = int((candidate.permissions_metadata or {}).get("level", 0))
     existing_level = int((existing.permissions_metadata or {}).get("level", 0))
     return candidate_level < existing_level

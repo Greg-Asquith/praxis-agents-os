@@ -13,6 +13,7 @@ const COMPACT_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "short",
   year: "numeric",
 })
+const GOOGLE_ADS_ACCOUNT_ID_PATTERN = /^(\d{3})-?(\d{3})-?(\d{4})$/
 
 export function formatDateTime(
   value: string | null | undefined,
@@ -122,6 +123,10 @@ export function formatTime(
 
 export function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return count === 1 ? singular : plural
+}
+
+export function formatGoogleAdsAccountId(value: string) {
+  return value.replace(GOOGLE_ADS_ACCOUNT_ID_PATTERN, "$1-$2-$3")
 }
 
 export function titleCaseToken(value: string, fallback: string) {

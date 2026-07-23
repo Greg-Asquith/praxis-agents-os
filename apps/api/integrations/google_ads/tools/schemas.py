@@ -6,7 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from services.agents.runtime.untrusted import UntrustedJsonValue
+type GoogleAdsJsonValue = (
+    str | int | float | bool | None | list["GoogleAdsJsonValue"] | dict[str, "GoogleAdsJsonValue"]
+)
 
 
 class GoogleAdsFanOutEntry(BaseModel):
@@ -16,7 +18,7 @@ class GoogleAdsFanOutEntry(BaseModel):
     external_id: str
     display_name: str
     status: str
-    data: dict[str, UntrustedJsonValue] | None = None
+    data: dict[str, GoogleAdsJsonValue] | None = None
     error_code: str | None = None
     error_message: str | None = None
 

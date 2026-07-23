@@ -37,7 +37,10 @@ export function ToolResultCard({
   const summary = detailSummary(details)
 
   return (
-    <section aria-label={ariaLabel} className="max-h-120 overflow-y-auto border-border/70 min-w-0 rounded-lg border">
+    <section
+      aria-label={ariaLabel}
+      className="border-border/70 max-h-120 min-w-0 overflow-y-auto rounded-lg border"
+    >
       <header
         className={cn(
           "bg-muted/25 flex min-w-0 items-center gap-2 rounded-lg p-1",
