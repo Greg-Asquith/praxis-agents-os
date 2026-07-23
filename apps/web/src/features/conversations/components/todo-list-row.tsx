@@ -22,7 +22,7 @@ import {
   READ_TODOS_TOOL_NAME,
   type TodoToolItem,
   todoItemsFromActivity,
-} from "@/features/conversations/todo-tools"
+} from "@/features/conversations/native-tools/todo-tools"
 import { cn } from "@/lib/utils"
 
 type TodoListRowProps = {

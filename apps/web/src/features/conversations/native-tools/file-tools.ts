@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/file-tools.ts
+// apps/web/src/features/conversations/native-tools/file-tools.ts
 
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { FileContractCategory, FileProcessingStatus } from "@/features/files/types"

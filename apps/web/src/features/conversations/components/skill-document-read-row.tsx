@@ -10,7 +10,7 @@ import {
 } from "@/features/conversations/components/tool-activity-row-shell"
 import { ActivityStatusIcon } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import { skillDocumentReadArgs } from "@/features/conversations/skill-document-read"
+import { skillDocumentReadArgs } from "@/features/conversations/skills/skill-document-read"
 
 type SkillDocumentReadRowProps = {
   activity: ToolActivity

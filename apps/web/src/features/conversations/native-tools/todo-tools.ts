@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/todo-tools.ts
+// apps/web/src/features/conversations/native-tools/todo-tools.ts
 
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"

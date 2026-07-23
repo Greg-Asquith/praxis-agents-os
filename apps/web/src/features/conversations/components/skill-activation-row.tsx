@@ -12,7 +12,7 @@ import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   skillActivationDisplayName,
   skillIdFromCapabilityArgs,
-} from "@/features/conversations/skill-activation"
+} from "@/features/conversations/skills/skill-activation"
 import { skillsQueryOptions } from "@/features/skills/api/list-skills"
 
 type SkillActivationRowProps = {

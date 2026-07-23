@@ -18,7 +18,7 @@ import type {
   ToolActivity,
 } from "@/features/conversations/message-parts"
 import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
-import { supersededWriteTodoActivityIds } from "@/features/conversations/todo-tools"
+import { supersededWriteTodoActivityIds } from "@/features/conversations/native-tools/todo-tools"
 
 export type AssistantLiveTimelinePart =
   { kind: "text"; message: ChatMessageDraft } | { kind: "tool"; activity: ToolActivity }

@@ -34,7 +34,7 @@ import {
   WRITE_FILE_TOOL_NAME,
   writeFileContentArg,
   writeFileResult,
-} from "@/features/conversations/file-tools"
+} from "@/features/conversations/native-tools/file-tools"
 import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
 import { ToolField } from "@/features/conversations/components/tool-field"
 import {

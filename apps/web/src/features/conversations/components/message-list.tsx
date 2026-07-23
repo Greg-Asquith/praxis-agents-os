@@ -27,7 +27,7 @@ import {
   type ChatMessageDraft,
   type ToolCallState,
 } from "@/features/conversations/stream/reducer"
-import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skill-activation"
+import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skills/skill-activation"
 import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"
 import {
   groupConversationRenderItems,

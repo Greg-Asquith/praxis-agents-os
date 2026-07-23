@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import type { FileEntitySnapshot } from "@/features/conversations/file-tools"
+import type { FileEntitySnapshot } from "@/features/conversations/native-tools/file-tools"
 import { fileQueryOptions } from "@/features/files/api/get-file"
 import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { FileThumbnail } from "@/features/files/components/file-thumbnail"
