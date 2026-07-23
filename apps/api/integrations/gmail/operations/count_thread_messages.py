@@ -1,4 +1,4 @@
-# apps/api/integrations/gmail/operations/count_thread_messages.py
+# apps/api/integrations/gmail/operations/count_thread_messages.py
 
 """Count the messages in a Gmail thread."""
 

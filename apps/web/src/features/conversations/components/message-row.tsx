@@ -18,6 +18,7 @@ import type {
   ToolActivity,
 } from "@/features/conversations/message-parts"
 import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
+import { supersededWriteTodoActivityIds } from "@/features/conversations/todo-tools"
 
 export type AssistantLiveTimelinePart =
   { kind: "text"; message: ChatMessageDraft } | { kind: "tool"; activity: ToolActivity }
@@ -97,6 +98,9 @@ export function AssistantLiveActivityRow({
   timeline: AssistantLiveTimelinePart[]
 }) {
   const thinkingContent = liveThinkingContent(messages)
+  const supersededTodoIds = supersededWriteTodoActivityIds(
+    timeline.flatMap((part) => (part.kind === "tool" ? [part.activity] : []))
+  )
 
   return (
     <AssistantMessageShell
@@ -109,7 +113,7 @@ export function AssistantLiveActivityRow({
       {timeline.map((part) =>
         part.kind === "text" ? (
           <LiveMessageDraft key={`text:${part.message.id}`} message={part.message} />
-        ) : (
+        ) : supersededTodoIds.has(part.activity.id) ? null : (
           <ToolCallRow key={`tool:${part.activity.id}`} activity={part.activity} live />
         )
       )}
@@ -134,6 +138,9 @@ export function AssistantTurnRow({
   messages: ParsedConversationMessage[]
 }) {
   const thinkingContent = persistedThinkingContent(messages)
+  const supersededTodoIds = supersededWriteTodoActivityIds(
+    messages.flatMap((message) => message.toolActivities)
+  )
 
   return (
     <AssistantMessageShell agentId={assistantAgentId} createdAt={createdAt} label={assistantLabel}>
@@ -142,7 +149,11 @@ export function AssistantTurnRow({
         idPrefix={`assistant-turn:${messages[0]?.id ?? "unknown"}:thinking`}
       />
       {messages.map((message) => (
-        <PersistedAssistantTurnMessage key={message.id} message={message} />
+        <PersistedAssistantTurnMessage
+          hiddenToolActivityIds={supersededTodoIds}
+          key={message.id}
+          message={message}
+        />
       ))}
     </AssistantMessageShell>
   )
@@ -163,18 +174,24 @@ function LiveMessageDraft({ message }: { message: ChatMessageDraft }) {
   )
 }
 
-function PersistedAssistantTurnMessage({ message }: { message: ParsedConversationMessage }) {
+function PersistedAssistantTurnMessage({
+  hiddenToolActivityIds,
+  message,
+}: {
+  hiddenToolActivityIds: ReadonlySet<string>
+  message: ParsedConversationMessage
+}) {
   if (!hasPersistedTurnContent(message)) {
     return null
   }
 
   if (message.role === "tool") {
-    return <ToolMessageContent message={message} />
+    return <ToolMessageContent hiddenToolActivityIds={hiddenToolActivityIds} message={message} />
   }
 
   return (
     <>
-      <MessageVisibleParts message={message} />
+      <MessageVisibleParts hiddenToolActivityIds={hiddenToolActivityIds} message={message} />
       <AttachmentCards attachments={message.attachments} />
       <UnsupportedPartRows message={message} />
     </>
@@ -192,15 +209,34 @@ function MessageContentParts({ message }: { message: ParsedConversationMessage }
   )
 }
 
-function MessageVisibleParts({ message }: { message: ParsedConversationMessage }) {
-  return <>{visibleMessageParts(message).map((part) => renderMessagePart(message, part))}</>
+function MessageVisibleParts({
+  hiddenToolActivityIds,
+  message,
+}: {
+  hiddenToolActivityIds?: ReadonlySet<string>
+  message: ParsedConversationMessage
+}) {
+  return (
+    <>
+      {visibleMessageParts(message).map((part) =>
+        renderMessagePart(message, part, hiddenToolActivityIds)
+      )}
+    </>
+  )
 }
 
-function renderMessagePart(message: ParsedConversationMessage, part: ParsedMessagePart) {
+function renderMessagePart(
+  message: ParsedConversationMessage,
+  part: ParsedMessagePart,
+  hiddenToolActivityIds?: ReadonlySet<string>
+) {
   if (part.kind === "thinking") {
     return null
   }
   if (part.kind === "tool") {
+    if (hiddenToolActivityIds?.has(part.activity.id)) {
+      return null
+    }
     return <ToolCallRow key={part.id} activity={part.activity} />
   }
   if (message.role === "tool") {
@@ -296,8 +332,14 @@ function ToolMessageRow({ message }: { message: ParsedConversationMessage }) {
   )
 }
 
-function ToolMessageContent({ message }: { message: ParsedConversationMessage }) {
-  return <MessageVisibleParts message={message} />
+function ToolMessageContent({
+  hiddenToolActivityIds,
+  message,
+}: {
+  hiddenToolActivityIds: ReadonlySet<string>
+  message: ParsedConversationMessage
+}) {
+  return <MessageVisibleParts hiddenToolActivityIds={hiddenToolActivityIds} message={message} />
 }
 
 function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage }) {

@@ -1,5 +1,3 @@
-// apps/web/tests/features/conversations/components/tool-field.test.ts
-
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"

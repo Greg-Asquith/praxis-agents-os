@@ -3,7 +3,7 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import type { ToolPresentationsResponse } from "@/features/tools/types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
 const baseToolPresentationsQueryKeys = createWorkspaceScopedQueryKeys("tools")

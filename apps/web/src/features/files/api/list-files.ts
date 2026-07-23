@@ -9,7 +9,7 @@ import type {
   FileSortDirection,
   FileSortField,
 } from "../types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
 export type ListFilesParams = {

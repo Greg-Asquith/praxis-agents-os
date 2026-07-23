@@ -89,7 +89,7 @@ Goals, in priority order:
 
 A provider package supplies: manifest data, a discovery function,
 operation clients, one-module-per-tool definitions (with bindings and presentations),
-tests — and optionally a small web UI module.
+optional preview definitions, tests — and optionally a small web UI module.
 
 ## 4. Backend layout
 
@@ -134,11 +134,15 @@ class IntegrationProviderPlugin:
     manifest: IntegrationProviderManifest          # 037 shape, unchanged
     discover_resources: DiscoverResourcesFn | None # required iff manifest.requires_discovery
     tool_definitions: tuple[RuntimeToolDefinition, ...]
+    preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
 ```
 
 Each provider package's `__init__.py` exports exactly one
 `PROVIDER: IntegrationProviderPlugin`. The contract is intentionally
-boring — data plus two kinds of callables. Anything a provider needs
+boring — data plus bounded callable contributions. Preview definitions
+contain a kind, audit operation name, and raw-content fetch function; the
+engine retains connection scoping, response bounds, HTML sanitization, and
+audit. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
 don't grow the contract ad hoc. (Addendum §9 adds one optional
 attribute: `oauth_operations`, default `None`.) *(superseded — see §10
@@ -293,9 +297,12 @@ map. No other shared file changes per provider.
 
 ### 5.5 Boundary rules (enforced in `.dependency-cruiser.cjs`)
 
-1. `^src/integrations` may import only `^src/components/ui`, `^src/lib`,
-   and `^src/integrations/contract` — never `app/`, `routes/`,
-   `features/`, `config/`.
+1. `^src/integrations` may import only `^src/components/ui`,
+   `^src/components/tool-ui`, `^src/lib`, and
+   `^src/integrations/contract` — never `app/`, `routes/`, `features/`,
+   `config/`. The engine-owned `^src/components/tool-ui` presenter kits may
+   import only shared UI primitives, framework-light `lib` helpers, and
+   sibling kit modules; they never reach back into features or providers.
 2. `^src/(features|routes|app)` may import from `^src/integrations` only
    via `^src/integrations/(registry|contract)`.
 3. No provider dir imports a sibling provider dir.
@@ -335,9 +342,11 @@ Adding a provider touches:
 2. `apps/api/pyproject.toml` — an extra, only if it needs an SDK.
 3. Core settings mixin — its operational settings (client id, tokens),
    only if OAuth/config-gated.
-4. Optionally `apps/web/src/integrations/<key>/` + **one line** in
+4. Optionally contribute preview definitions from the provider package;
+   do not add provider routes or branches to shared services.
+5. Optionally `apps/web/src/integrations/<key>/` + **one line** in
    `src/integrations/registry.ts` — only if it earns custom UI.
-5. Governance §2 policy review: writes default `approval`; spend ops
+6. Governance §2 policy review: writes default `approval`; spend ops
    `supports_auto=False`. No exceptions by packaging.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,

@@ -3,7 +3,7 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { AgentsListResponse } from "@/features/agents/types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
 type ListAgentsParams = {

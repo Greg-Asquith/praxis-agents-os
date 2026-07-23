@@ -2,14 +2,14 @@
 
 import { useMemo, useRef, useState } from "react"
 
+import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
 import type { ApprovalDecisionResolver } from "@/features/conversations/approval-decision-context"
 import {
   buildResumeDecisions,
   DEFAULT_APPROVAL_DECISION,
   shouldSubmitDecisions,
   summarizeApprovalDecisions,
-  type LocalApprovalDecision,
-  type LocalApprovalDecisionMap,
+  type ApprovalDecisionMap,
 } from "@/features/conversations/approval-decisions"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 
@@ -26,7 +26,7 @@ export function useInlineApprovals({
   isSubmitting,
   onSubmit,
 }: UseInlineApprovalsParams) {
-  const [decisions, setDecisions] = useState<LocalApprovalDecisionMap>({})
+  const [decisions, setDecisions] = useState<ApprovalDecisionMap>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrorToolCallId, setFormErrorToolCallId] = useState<string | null>(null)
   const [submittingToolCallId, setSubmittingToolCallId] = useState<string | null>(null)
@@ -37,7 +37,7 @@ export function useInlineApprovals({
   )
   const summary = summarizeApprovalDecisions(approvals, decisions)
 
-  async function submit(decisionMap: LocalApprovalDecisionMap, toolCallId: string) {
+  async function submit(decisionMap: ApprovalDecisionMap, toolCallId: string) {
     if (submissionInFlight.current) {
       return
     }
@@ -64,7 +64,7 @@ export function useInlineApprovals({
     }
   }
 
-  function handleDecisionChange(toolCallId: string, next: LocalApprovalDecision) {
+  function handleDecisionChange(toolCallId: string, next: ApprovalDecision) {
     setFormError(null)
     const previous = decisions[toolCallId] ?? DEFAULT_APPROVAL_DECISION
     const nextDecisions = { ...decisions, [toolCallId]: next }

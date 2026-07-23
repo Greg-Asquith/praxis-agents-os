@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest"
 
 import {
   DEFAULT_APPROVAL_DECISION,
-  approveDecision,
   buildResumeDecisions,
-  denyDecision,
   shouldSubmitDecisions,
   summarizeApprovalDecisions,
-  type LocalApprovalDecisionMap,
+  type ApprovalDecisionMap,
 } from "@/features/conversations/approval-decisions"
 import type { PendingToolApproval } from "@/features/conversations/types"
 
@@ -30,55 +28,8 @@ const approvals: PendingToolApproval[] = [
 ]
 
 describe("approval decision helpers", () => {
-  it("approves decisions while preserving pending or approved edits", () => {
-    expect(approveDecision(DEFAULT_APPROVAL_DECISION)).toEqual({
-      decision: "approved",
-      message: "",
-      edits: {},
-    })
-    expect(
-      approveDecision({ decision: "pending", message: "", edits: { query: "UK pricing" } })
-    ).toEqual({
-      decision: "approved",
-      message: "",
-      edits: { query: "UK pricing" },
-    })
-    expect(
-      approveDecision({ decision: "approved", message: "", edits: { query: "UK pricing" } })
-    ).toEqual({
-      decision: "approved",
-      message: "",
-      edits: { query: "UK pricing" },
-    })
-    expect(approveDecision({ decision: "denied", message: "No", edits: {} })).toEqual({
-      decision: "approved",
-      message: "",
-      edits: {},
-    })
-  })
-
-  it("denies decisions while preserving only existing denial messages and clearing edits", () => {
-    expect(denyDecision(DEFAULT_APPROVAL_DECISION)).toEqual({
-      decision: "denied",
-      message: "",
-      edits: {},
-    })
-    expect(denyDecision({ decision: "denied", message: "Needs review", edits: {} })).toEqual({
-      decision: "denied",
-      message: "Needs review",
-      edits: {},
-    })
-    expect(
-      denyDecision({ decision: "approved", message: "", edits: { query: "UK pricing" } })
-    ).toEqual({
-      decision: "denied",
-      message: "",
-      edits: {},
-    })
-  })
-
   it("summarizes pending, approved, and denied decisions", () => {
-    const decisions: LocalApprovalDecisionMap = {
+    const decisions: ApprovalDecisionMap = {
       "tool-1": { decision: "approved", message: "", edits: {} },
       "tool-2": { decision: "denied", message: "No", edits: {} },
     }

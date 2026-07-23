@@ -2,7 +2,7 @@
 
 import type { ComponentType, ReactNode, SVGProps } from "react"
 
-import type { ToolApprovalDecisionControls } from "@/features/conversations/components/approval-decision-block"
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { IntegrationProvider } from "@/features/integrations/types"
 
@@ -19,6 +19,8 @@ export type ToolRowPresenterProps = {
 }
 
 export type ToolRowPresenter = {
+  /** Opts into replacing the default approve/decline UI for pending tool calls. */
+  handlesApprovals?: boolean
   key: string
   matches: (activity: ToolActivity) => boolean
   render: (props: ToolRowPresenterProps) => ReactNode

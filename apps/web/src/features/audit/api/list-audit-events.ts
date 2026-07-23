@@ -3,7 +3,7 @@
 import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query"
 
 import type { AuditEventsListResponse } from "@/features/audit/types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
 export type ListAuditEventsParams = {

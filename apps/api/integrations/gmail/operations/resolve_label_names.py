@@ -1,4 +1,4 @@
-# apps/api/integrations/gmail/operations/resolve_label_names.py
+# apps/api/integrations/gmail/operations/resolve_label_names.py
 
 """Resolve Gmail label IDs to operator-facing names."""
 

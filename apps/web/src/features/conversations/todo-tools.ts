@@ -5,7 +5,7 @@ import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import { isRecord } from "@/lib/guards"
 
 export const WRITE_TODOS_TOOL_NAME = "write_todos"
-const READ_TODOS_TOOL_NAME = "read_todos"
+export const READ_TODOS_TOOL_NAME = "read_todos"
 
 type TodoToolStatus = "pending" | "in_progress" | "completed"
 
@@ -14,12 +14,19 @@ export type TodoToolItem = {
   status: TodoToolStatus
 }
 
-export function isTodoToolActivity(activity: ToolActivity): boolean {
-  return activity.name === WRITE_TODOS_TOOL_NAME || activity.name === READ_TODOS_TOOL_NAME
+export function supersededWriteTodoActivityIds(activities: ToolActivity[]): Set<string> {
+  const validWrites = activities.filter(
+    (activity) =>
+      activity.name === WRITE_TODOS_TOOL_NAME && todoItemsFromActivity(activity) !== null
+  )
+  return new Set(validWrites.slice(0, -1).map((activity) => activity.id))
 }
 
 export function todoItemsFromActivity(activity: ToolActivity): TodoToolItem[] | null {
-  return todoItems(activity.result) ?? todoItems(normalizeToolArgs(activity.args))
+  if (activity.result !== undefined && activity.result !== null) {
+    return todoItems(activity.result)
+  }
+  return todoItems(normalizeToolArgs(activity.args))
 }
 
 function todoItems(value: unknown): TodoToolItem[] | null {

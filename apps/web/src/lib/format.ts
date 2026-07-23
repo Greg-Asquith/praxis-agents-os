@@ -71,6 +71,10 @@ export function formatDateTimeInTimeZone(value: string | null | undefined, timez
 
 export function relativeDateTime(value: string) {
   const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
   const diffMs = Date.now() - date.getTime()
   const diffMinutes = Math.round(diffMs / 60_000)
 

@@ -20,6 +20,17 @@ export async function loadIntegrationUiModules(providerKeys: readonly string[]) 
   await Promise.all(providerKeys.map(loadIntegrationUiModule))
 }
 
+// Integration tools are namespaced "<provider>_<tool>", so rows can resolve
+// their provider before (or without) the tool presentations query.
+export function providerKeyForToolName(toolName: string): string | null {
+  for (const providerKey of Object.keys(MODULE_LOADERS)) {
+    if (toolName.startsWith(`${providerKey}_`)) {
+      return providerKey
+    }
+  }
+  return null
+}
+
 export function integrationToolRowPresenters(providerKey: string | null): ToolRowPresenter[] {
   if (!providerKey) {
     return []

@@ -1,9 +1,19 @@
-// apps/web/src/features/workspaces/query-keys.ts
+// apps/web/src/lib/workspace.ts
 
-import { getActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { setApiRequestHeadersProvider } from "@/lib/api/client"
+
+let activeWorkspaceSlug: string | null = null
+
+setApiRequestHeadersProvider(() => ({
+  "X-Workspace": activeWorkspaceSlug,
+}))
+
+export function setActiveWorkspaceSlug(slug: string | null) {
+  activeWorkspaceSlug = slug
+}
 
 export function activeWorkspaceQueryScope() {
-  return getActiveWorkspaceSlug() ?? "__no_workspace__"
+  return activeWorkspaceSlug ?? "__no_workspace__"
 }
 
 export function createWorkspaceScopedQueryKeys<Root extends string>(root: Root) {

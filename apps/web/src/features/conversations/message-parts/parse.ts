@@ -39,10 +39,15 @@ import { isRecord, stringValue } from "@/lib/guards"
 const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "native-tool-return"])
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
 
+type LiveToolResult = {
+  result: unknown
+}
+
 export function parseConversationMessages(
   messages: ConversationMessage[],
   activeRunStatus?: AgentRunStatus | null,
-  pendingDelegations: PendingDelegatedApproval[] = []
+  pendingDelegations: PendingDelegatedApproval[] = [],
+  liveResultsByCallId?: ReadonlyMap<string, LiveToolResult>
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey } = pairToolResults(parsed)
@@ -52,6 +57,7 @@ export function parseConversationMessages(
 
   const runAwaitsApproval = activeRunStatus === "awaiting_approval"
   const runIsExecuting = isRunStatusPolling(activeRunStatus)
+  const runStoppedBeforeToolResult = activeRunStatus === "failed" || activeRunStatus === "cancelled"
 
   return parsed
     .map((message, messageIndex) => {
@@ -91,12 +97,25 @@ export function parseConversationMessages(
           }
           return mergedActivity
         }
+        // A result that streamed live but is not persisted yet still completes
+        // the transcript row, so resumed tools never linger as skeletons.
+        const liveResult = liveResultsByCallId?.get(activity.id)
+        if (liveResult) {
+          return {
+            ...activityWithDelegate,
+            result: liveResult.result,
+            status: "completed" as const,
+          }
+        }
         if (runAwaitsApproval) {
           return {
             ...activityWithDelegate,
             kind: "approval" as const,
             status: "awaiting_approval" as const,
           }
+        }
+        if (runStoppedBeforeToolResult) {
+          return { ...activityWithDelegate, status: "failed" as const }
         }
         if (!runIsExecuting) {
           return { ...activityWithDelegate, status: "unknown" as const }

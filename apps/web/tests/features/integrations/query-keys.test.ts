@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
 import { integrationResourcesForConnectionQueryOptions } from "@/features/integrations/api/list-resources"
-import { setActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { setActiveWorkspaceSlug } from "@/lib/workspace"
 
 afterEach(() => {
   setActiveWorkspaceSlug(null)

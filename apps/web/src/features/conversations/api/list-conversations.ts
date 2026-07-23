@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-query"
 
 import type { Conversation, ConversationsListResponse } from "@/features/conversations/types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
 type ListConversationsParams = {

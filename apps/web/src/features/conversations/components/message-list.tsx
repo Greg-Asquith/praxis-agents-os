@@ -82,13 +82,38 @@ export function MessageList({
   isStreaming,
   onApprovalSubmit,
 }: MessageListProps) {
+  const shouldShowStream = streamConversationId === conversationId
+  const liveResultsByCallId = useMemo(() => {
+    const results = new Map<string, { result: unknown }>()
+    if (!shouldShowStream) {
+      return results
+    }
+    for (const toolCall of streamToolCalls) {
+      if (toolCall.status === "completed") {
+        results.set(toolCall.tool_call_id, { result: toolCall.result })
+      }
+    }
+    return results
+  }, [shouldShowStream, streamToolCalls])
   const parsedMessages = useMemo(
-    () => parseConversationMessages(messages, activeRun?.status, pendingDelegations),
-    [messages, activeRun?.status, pendingDelegations]
+    () =>
+      parseConversationMessages(
+        messages,
+        activeRun?.status,
+        pendingDelegations,
+        liveResultsByCallId
+      ),
+    [messages, activeRun?.status, pendingDelegations, liveResultsByCallId]
   )
   const renderItems = useMemo(() => groupConversationRenderItems(parsedMessages), [parsedMessages])
   const visiblePendingUserMessages = pendingUserMessages
-  const shouldShowStream = streamConversationId === conversationId
+  const transcriptToolIds = useMemo(
+    () =>
+      new Set(
+        parsedMessages.flatMap((message) => message.toolActivities.map((activity) => activity.id))
+      ),
+    [parsedMessages]
+  )
   const liveToolActivities = useMemo(
     () => buildLiveToolActivities(streamToolCalls, streamApprovals),
     [streamToolCalls, streamApprovals]
@@ -102,11 +127,16 @@ export function MessageList({
         if (item.kind === "text") {
           return [{ kind: "text", message: item.message }]
         }
+        // A tool already rendered in the transcript (a resumed approval, or a
+        // mid-run refetch) must not render twice in the live area.
+        if (transcriptToolIds.has(item.toolCall.tool_call_id)) {
+          return []
+        }
         const activity = activitiesById.get(item.toolCall.tool_call_id)
         return activity ? [{ kind: "tool", activity }] : []
       }
     )
-  }, [liveToolActivities, streamMessages, streamToolCalls])
+  }, [liveToolActivities, streamMessages, streamToolCalls, transcriptToolIds])
   const hasRunningTranscriptTool = parsedMessages.some((message) =>
     message.toolActivities.some((activity) => activity.status === "running")
   )

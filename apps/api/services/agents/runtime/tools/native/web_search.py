@@ -18,12 +18,15 @@ Probe findings recorded 2026-07-03 against installed ``pydantic-ai==2.1.0``:
   runtime function tools and audits the outer tool call through dispatch.
 """
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import WebSearch
+from pydantic_ai.messages import ModelMessage, ModelResponse, NativeToolReturnPart, TextPart
 from pydantic_ai.usage import UsageLimits
 
 from core.settings import settings
@@ -69,15 +72,30 @@ URLs when the provider makes them available.
 """
 
 
+class WebSearchSource(BaseModel):
+    """Provider-supplied source metadata from a native web search."""
+
+    title: str | None = None
+    url: str
+
+
 class WebSearchOutput(BaseModel):
     """Model-visible result returned by the native web search tool."""
 
     query: str
     answer: str
+    sources: list[WebSearchSource]
     model_provider: NativeWebSearchProvider = Field(
         description="Provider used by the helper model."
     )
     model: str = Field(description="Model used by the helper model.")
+
+
+class NativeWebSearchResult(BaseModel):
+    """Answer and structured source metadata returned by the helper run."""
+
+    answer: str
+    sources: list[WebSearchSource]
 
 
 @runtime_tool(
@@ -143,7 +161,7 @@ async def web_search(
             ),
         ),
     ] = None,
-) -> dict[str, str]:
+) -> dict[str, str | list[dict[str, str | None]]]:
     """Search the web using the configured native-search helper model."""
     normalized_query = query.strip()
     if not normalized_query:
@@ -154,10 +172,11 @@ async def web_search(
         model_provider=model_provider,
         model=model,
     )
-    answer = await run_native_web_search(query=normalized_query, model_spec=model_spec)
+    search_result = await run_native_web_search(query=normalized_query, model_spec=model_spec)
     return {
         "query": normalized_query,
-        "answer": answer,
+        "answer": search_result.answer,
+        "sources": [source.model_dump() for source in search_result.sources],
         "model_provider": model_spec.provider,
         "model": model_spec.model,
     }
@@ -191,8 +210,17 @@ def resolve_web_search_model(
     )
 
 
-async def run_native_web_search(*, query: str, model_spec: ResolvedModel) -> str:
+async def run_native_web_search(*, query: str, model_spec: ResolvedModel) -> NativeWebSearchResult:
     """Run a short helper-agent search turn on the selected native model."""
+    if model_spec.provider == PROVIDER_OPENAI:
+        model_spec = replace(
+            model_spec,
+            settings={
+                **model_spec.settings,
+                "openai_include_raw_annotations": True,
+                "openai_include_web_search_sources": True,
+            },
+        )
     helper = PydanticAgent(
         build_model(model_spec),
         name=f"praxis_native_web_search_{model_spec.provider}",
@@ -204,7 +232,80 @@ async def run_native_web_search(*, query: str, model_spec: ResolvedModel) -> str
         f"Search the web for this query and answer it:\n\n{query}",
         usage_limits=UsageLimits(request_limit=model_spec.max_steps),
     )
-    return result.output
+    return NativeWebSearchResult(
+        answer=result.output,
+        sources=_web_search_sources(result.all_messages()),
+    )
+
+
+def _web_search_sources(messages: list[ModelMessage]) -> list[WebSearchSource]:
+    sources: list[WebSearchSource] = []
+    source_indexes: dict[str, int] = {}
+
+    def add_source(*, title: object = None, url: object) -> None:
+        safe_url = _safe_http_url(url)
+        if safe_url is None:
+            return
+        normalized_title = title.strip() if isinstance(title, str) and title.strip() else None
+        existing_index = source_indexes.get(safe_url)
+        if existing_index is not None:
+            if sources[existing_index].title is None and normalized_title is not None:
+                sources[existing_index].title = normalized_title
+            return
+        source_indexes[safe_url] = len(sources)
+        sources.append(WebSearchSource(title=normalized_title, url=safe_url))
+
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            continue
+        for part in message.parts:
+            if isinstance(part, NativeToolReturnPart) and part.tool_name == "web_search":
+                _add_native_return_sources(part.content, add_source)
+            elif isinstance(part, TextPart) and part.provider_details:
+                annotations = part.provider_details.get("annotations")
+                if not isinstance(annotations, list):
+                    continue
+                for annotation in annotations:
+                    if isinstance(annotation, dict) and annotation.get("type") == "url_citation":
+                        add_source(title=annotation.get("title"), url=annotation.get("url"))
+
+    return sources
+
+
+def _add_native_return_sources(
+    content: object,
+    add_source: Callable[..., None],
+) -> None:
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            add_source(
+                title=item.get("title"),
+                url=item.get("url") or item.get("uri"),
+            )
+        return
+
+    if not isinstance(content, dict):
+        return
+    raw_sources = content.get("sources")
+    if not isinstance(raw_sources, list):
+        return
+    for item in raw_sources:
+        if isinstance(item, dict):
+            add_source(title=item.get("title"), url=item.get("url"))
+
+
+def _safe_http_url(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    parsed = urlsplit(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return normalized
 
 
 def _native_model_spec(*, provider: str, model: str) -> ResolvedModel:

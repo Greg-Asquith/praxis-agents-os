@@ -1,16 +1,12 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
+import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import { normalizeOptionalText } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
-export type LocalApprovalDecision =
-  | { decision: "pending"; message: ""; edits: Record<string, string> }
-  | { decision: "approved"; message: ""; edits: Record<string, string> }
-  | { decision: "denied"; message: string; edits: Record<string, string> }
-
-export type LocalApprovalDecisionMap = Record<string, LocalApprovalDecision>
+export type ApprovalDecisionMap = Record<string, ApprovalDecision>
 
 export type ApprovalDecisionSummary = {
   allDecided: boolean
@@ -19,31 +15,15 @@ export type ApprovalDecisionSummary = {
   pending: number
 }
 
-export const DEFAULT_APPROVAL_DECISION: LocalApprovalDecision = {
+export const DEFAULT_APPROVAL_DECISION: ApprovalDecision = {
   decision: "pending",
   message: "",
   edits: {},
 }
 
-export function approveDecision(decision: LocalApprovalDecision): LocalApprovalDecision {
-  return {
-    decision: "approved",
-    message: "",
-    edits: decision.decision === "denied" ? {} : decision.edits,
-  }
-}
-
-export function denyDecision(decision: LocalApprovalDecision): LocalApprovalDecision {
-  return {
-    decision: "denied",
-    message: decision.decision === "denied" ? decision.message : "",
-    edits: {},
-  }
-}
-
 export function shouldSubmitDecisions(
-  previous: LocalApprovalDecision,
-  next: LocalApprovalDecision,
+  previous: ApprovalDecision,
+  next: ApprovalDecision,
   summary: ApprovalDecisionSummary
 ): boolean {
   const isNewDecision = previous.decision === "pending" && next.decision !== "pending"
@@ -52,7 +32,7 @@ export function shouldSubmitDecisions(
 
 export function buildResumeDecisions(
   approvals: PendingToolApproval[],
-  decisions: LocalApprovalDecisionMap
+  decisions: ApprovalDecisionMap
 ): AgentRunResumeDecision[] | string {
   const payload: AgentRunResumeDecision[] = []
 
@@ -90,7 +70,7 @@ export function buildResumeDecisions(
 
 export function summarizeApprovalDecisions(
   approvals: PendingToolApproval[],
-  decisions: LocalApprovalDecisionMap
+  decisions: ApprovalDecisionMap
 ): ApprovalDecisionSummary {
   let pending = 0
   let approved = 0

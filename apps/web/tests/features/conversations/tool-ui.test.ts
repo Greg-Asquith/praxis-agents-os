@@ -1,5 +1,3 @@
-// apps/web/tests/features/conversations/tool-ui.test.ts
-
 import { describe, expect, it } from "vitest"
 
 import {

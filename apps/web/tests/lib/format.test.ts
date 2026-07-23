@@ -8,6 +8,7 @@ import {
   normalize,
   normalizeOptionalText,
   pluralize,
+  relativeDateTime,
   titleCaseToken,
   titleFromSegment,
   truncateText,
@@ -56,6 +57,10 @@ describe("format helpers", () => {
   it("keeps date formatting assertions locale-independent", () => {
     expect(formatDateTime(null)).toBe("Never")
     expect(formatDateTime("2026-07-07T10:00:00.000Z")).not.toBe("")
+  })
+
+  it("preserves invalid relative date values", () => {
+    expect(relativeDateTime("not-a-date")).toBe("not-a-date")
   })
 
   it("formats compact dates by local calendar age", () => {

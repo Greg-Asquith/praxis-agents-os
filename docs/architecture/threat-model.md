@@ -153,11 +153,41 @@ mechanical test, and a named graded-eval case. A plan cannot satisfy the gate by
 asserting that its source is authenticated, that its tool is read-only, or
 that delimiters alone prevent prompt injection.
 
-## 6. Consumed By
+## 6. Browser Rendering Of Provider Content
+
+The §2 channel table governs model context only. Rendering provider-authored
+HTML in the operator's browser (the Gmail message preview) is a separate
+surface: the attacker is the email author, and the target is the workspace
+session. Defenses are layered and both layers are asserted independently:
+
+- **Server**: `nh3` (allowlist-based) sanitizes HTML before it leaves the API —
+  scripts, event handlers, forms, `iframe`/`object`/`embed`, `<meta>` refresh,
+  and `javascript:` URLs are stripped; anchors gain
+  `rel="noopener noreferrer nofollow"`. The sanitized output is the only HTML
+  the client ever receives. Responses are ephemeral (never persisted, never
+  entered into model context), size-bounded
+  (`INTEGRATION_PREVIEW_MAX_BYTES`), and audited by external ref only — audit
+  rows never carry content.
+- **Client**: an opaque-origin `<iframe sandbox="" srcDoc>` — NO
+  `allow-scripts`, NO `allow-same-origin` — with an injected
+  `Content-Security-Policy` meta of `default-src 'none'` plus image and
+  inline-style allowances. The parent cannot measure the frame, so the preview
+  uses a fixed-height scroll container; do not weaken the sandbox to recover
+  auto-height. Links inside the frame are inert (no navigation capability).
+- **Operator decision (2026-07-23)**: remote images load by default — message
+  fidelity was chosen over tracking-pixel blocking. Scripts never run in any
+  configuration; that line is not operator-tunable.
+
+Hostile-HTML coverage lives in `tests/routes/integrations/test_preview_routes.py`
+(script, event handler, form, meta refresh, `javascript:` link, nested iframe)
+and the Gmail provider operation tests.
+
+## 7. Consumed By
 
 | Plan | Sections implemented |
 |---|---|
 | 041 (first integration providers) | §1 external-content boundary; §2(e) integration read/query exposure; §2(g) provider-content framing; §5 gate before Gmail bodies become model-visible |
+| 041b (rich provider tool UI) | §3 prompt-assembly framing enforcement; §6 browser rendering of provider content |
 | 044 (KB models/ingestion) | §2(h) annotation channel; §3 extraction-not-obedience prompt; §4 shared documents |
 | 046 (KB tools) | §2(f) reference defense; §3 shared framing vocabulary; §4 KB fixtures |
 | 048 (memory model/tools) | §2(a) persistence channel; §3 provenance and read framing; §4 hostile memory fixtures |

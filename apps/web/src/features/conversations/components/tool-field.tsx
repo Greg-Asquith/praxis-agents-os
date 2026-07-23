@@ -1,12 +1,11 @@
 // apps/web/src/features/conversations/components/tool-field.tsx
 
 import { useId, type ReactNode } from "react"
-import { ExternalLinkIcon } from "lucide-react"
 
-import { buttonVariants } from "@/components/ui/button"
+import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import { ToolFieldValue } from "@/components/tool-ui/field-value"
 import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
 import type { ResolvedToolField } from "@/features/conversations/tool-ui"
-import { truncateText } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const FULL_WIDTH_FORMATS = new Set<ResolvedToolField["format"]>([
@@ -15,11 +14,6 @@ const FULL_WIDTH_FORMATS = new Set<ResolvedToolField["format"]>([
   "multiline",
   "url",
 ])
-const URL_LABEL_LIMIT = 80
-
-export const toolFieldLabelClass = "text-foreground/75 text-xs leading-4 font-medium tracking-wide"
-export const toolFieldWellClass =
-  "min-h-8 w-full min-w-0 rounded-lg border px-2.5 py-1 text-sm leading-relaxed"
 
 export function ToolField({
   children,
@@ -39,20 +33,28 @@ export function ToolField({
 
   return (
     <div className={cn("flex min-w-0 flex-col gap-1", spansFullWidth && "sm:col-span-2")}>
-      <p className={toolFieldLabelClass} data-slot="tool-field-label" id={labelId}>
+      <p className={fieldLabelClass} data-slot="tool-field-label" id={labelId}>
         {field.label}
       </p>
       <div
         aria-labelledby={labelId}
         className={cn(
-          toolFieldWellClass,
+          fieldWellClass,
           "border-input bg-muted/40 text-foreground",
           scrolls && "max-h-80 overflow-auto",
           field.format !== "markdown" && "wrap-break-word whitespace-pre-wrap"
         )}
         data-slot="tool-field-well"
       >
-        {hasCustomContent ? children : <ToolFieldValue field={field} urlAction={urlAction} />}
+        {hasCustomContent ? (
+          children
+        ) : (
+          <ToolFieldValue
+            field={field}
+            renderMarkdown={(value) => <MessageMarkdown content={value} />}
+            urlAction={urlAction}
+          />
+        )}
       </div>
     </div>
   )
@@ -76,65 +78,4 @@ export function ToolFieldGrid({
       ))}
     </div>
   )
-}
-
-function ToolFieldValue({ field, urlAction }: { field: ResolvedToolField; urlAction: boolean }) {
-  if (field.format === "url") {
-    if (urlAction) {
-      return (
-        <a
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-          href={field.value}
-          rel="noreferrer"
-          target="_blank"
-        >
-          <ExternalLinkIcon data-icon="inline-start" />
-          Open {field.label}
-        </a>
-      )
-    }
-
-    return (
-      <a
-        className="text-link hover:text-primary focus-visible:ring-ring/50 inline-block max-w-full rounded-sm underline underline-offset-2 outline-none focus-visible:ring-3"
-        href={field.value}
-        rel="noreferrer"
-        target="_blank"
-      >
-        {toolUrlLabel(field.value)}
-      </a>
-    )
-  }
-
-  if (field.format === "list" && field.items && field.items.length > 0) {
-    return (
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {field.items.map((item, index) => (
-          <span
-            className="bg-muted rounded-md px-2 py-0.5 text-xs"
-            key={`${item}:${String(index)}`}
-          >
-            {item}
-          </span>
-        ))}
-      </div>
-    )
-  }
-
-  if (field.format === "markdown") {
-    return <MessageMarkdown content={field.value} />
-  }
-
-  return field.value
-}
-
-function toolUrlLabel(value: string): string {
-  try {
-    const url = new URL(value)
-    const path = `${url.pathname}${url.search}${url.hash}`
-    const label = path === "/" ? url.host : `${url.host}${path}`
-    return truncateText(label, URL_LABEL_LIMIT, "…")
-  } catch {
-    return truncateText(value, URL_LABEL_LIMIT, "…")
-  }
 }

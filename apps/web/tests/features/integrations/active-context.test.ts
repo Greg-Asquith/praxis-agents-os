@@ -1,5 +1,3 @@
-// apps/web/tests/features/integrations/active-context.test.ts
-
 import { describe, expect, it } from "vitest"
 
 import {

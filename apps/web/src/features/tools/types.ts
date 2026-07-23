@@ -1,5 +1,7 @@
 // apps/web/src/features/tools/types.ts
 
+import type { ToolFieldFormat } from "@/components/tool-ui/field-resolution"
+
 type ToolEffect = "read" | "write"
 type ToolEffectScope = "internal" | "external"
 type ToolKind = "function" | "capability"
@@ -22,13 +24,10 @@ export type ToolCatalogResponse = {
   tools: ToolCatalogEntry[]
 }
 
-export type ToolUiFieldFormat =
-  "text" | "multiline" | "markdown" | "bytes" | "datetime" | "boolean" | "url" | "list"
-
 export type ToolUiField = {
   key: string
   label: string
-  format: ToolUiFieldFormat
+  format: ToolFieldFormat
   editable: boolean
   placeholder: string
   options: string[]

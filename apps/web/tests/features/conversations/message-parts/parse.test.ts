@@ -32,6 +32,27 @@ function message(
 }
 
 describe("parseConversationMessages", () => {
+  it("marks an unresolved tool call as failed when its run failed", () => {
+    const parsed = parseConversationMessages(
+      [
+        message("message-1", "assistant", 1, [
+          {
+            part_kind: "tool-call",
+            tool_call_id: "send-1",
+            tool_name: "gmail_send_message",
+            args: { to: ["client@example.com"], subject: "Update", body_text: "Hello" },
+          },
+        ]),
+      ],
+      "failed"
+    )
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      id: "send-1",
+      status: "failed",
+    })
+  })
+
   it("preserves thinking and visible parts in source order", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [
@@ -289,5 +310,52 @@ describe("parseConversationMessages", () => {
 
     expect(parsed.map((item) => item.id)).toEqual(["message-2", "message-1"])
     expect(parsed.map((item) => item.sequence)).toEqual([2, 1])
+  })
+
+  it("completes a persisted call from a live stream result before persistence catches up", () => {
+    const parsed = parseConversationMessages(
+      [
+        message("message-1", "assistant", 1, [
+          {
+            part_kind: "tool-call",
+            tool_call_id: "tool-call-1",
+            tool_name: "gmail_send_message",
+            args: { to: ["a@example.com"] },
+          },
+        ]),
+      ],
+      "running" satisfies AgentRunStatus,
+      [],
+      new Map([["tool-call-1", { result: { results: [] } }]])
+    )
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      id: "tool-call-1",
+      status: "completed",
+      result: { results: [] },
+    })
+  })
+
+  it("keeps a call running when no live result exists for it", () => {
+    const parsed = parseConversationMessages(
+      [
+        message("message-1", "assistant", 1, [
+          {
+            part_kind: "tool-call",
+            tool_call_id: "tool-call-1",
+            tool_name: "gmail_send_message",
+            args: {},
+          },
+        ]),
+      ],
+      "running" satisfies AgentRunStatus,
+      [],
+      new Map([["other-call", { result: "done" }]])
+    )
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      id: "tool-call-1",
+      status: "running",
+    })
   })
 })

@@ -27,7 +27,7 @@ const presentation: ToolPresentationEntry = {
 }
 
 describe("ToolCallRow lifecycle", () => {
-  it("renders a live running call as a full activity card", () => {
+  it("renders a live web search with its query and search skeleton", () => {
     const html = renderRow(
       {
         id: "search-1",
@@ -39,10 +39,10 @@ describe("ToolCallRow lifecycle", () => {
       true
     )
 
-    expect(html).toContain('aria-label="Searching the Web for Praxis Agents, in progress"')
+    expect(html).toContain('aria-label="Searching Praxis Agents…"')
     expect(html).toContain("Praxis Agents")
-    expect(html).toContain("tool-activity-shimmer")
-    expect(html).toContain("0s")
+    expect(html).toContain('aria-busy="true"')
+    expect(html).toContain('data-slot="skeleton"')
     expect(html).not.toContain("<details")
   })
 
@@ -60,6 +60,39 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).toContain("Three sources found")
     expect(html.indexOf(">Answer</p>")).toBeLessThan(html.indexOf(">Search</p>"))
     expect(html).not.toContain("0s")
+  })
+
+  it("renders structured untrusted nodes as plain content in the default row", () => {
+    const html = renderRow(
+      {
+        id: "node-1",
+        kind: "result",
+        name: "node_tool",
+        status: "completed",
+        result: {
+          content: {
+            node: "praxis_untrusted",
+            source_kind: "gmail_message",
+            source_ref: "message-1",
+            content: "Visible email content",
+          },
+        },
+      },
+      false,
+      [
+        {
+          ...presentation,
+          name: "node_tool",
+          label: "Node Tool",
+          provider: "native",
+          ui: { ...presentation.ui, result_fields: [field("content", "Content", "multiline")] },
+        },
+      ]
+    )
+
+    expect(html).toContain("Visible email content")
+    expect(html).not.toContain("praxis_untrusted")
+    expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
 
   it("opens live failures with plain-language framing and no technical disclosure", () => {
@@ -152,7 +185,7 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).not.toContain("Next read")
   })
 
-  it("places the todo checklist inside the shared field system", () => {
+  it("renders the todo checklist as a dedicated plan card", () => {
     const html = renderRow({
       id: "todos-1",
       kind: "result",
@@ -164,9 +197,25 @@ describe("ToolCallRow lifecycle", () => {
       },
     })
 
-    expect(html).toContain("Plan · 1 item")
-    expect(html).toContain('data-slot="tool-field-well"')
+    expect(html).toContain('data-slot="plan-card"')
+    expect(html).toContain("0 of 1 done")
+    expect(html).toContain("In progress")
     expect(html).toContain("Review the plan")
+    expect(html).not.toContain('data-slot="tool-field-well"')
+  })
+
+  it("falls back to the default tool row for a malformed todo payload", () => {
+    const html = renderRow({
+      id: "todos-bad",
+      kind: "result",
+      name: "write_todos",
+      status: "completed",
+      args: { items: [{ content: "Original", status: "pending" }] },
+      result: { items: [{ content: "", status: "unknown" }] },
+    })
+
+    expect(html).toContain("Ran write_todos")
+    expect(html).not.toContain('data-slot="plan-card"')
   })
 
   it("renders skill document content in a shared Markdown field without JSON", () => {
@@ -213,12 +262,16 @@ describe("ToolCallRow lifecycle", () => {
   })
 })
 
-function renderRow(activity: ToolActivity, live = false) {
+function renderRow(
+  activity: ToolActivity,
+  live = false,
+  presentations: ToolPresentationEntry[] = [presentation]
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   queryClient.setQueryData(toolPresentationsQueryOptions().queryKey, {
-    tools: [presentation],
+    tools: presentations,
   })
 
   return renderToStaticMarkup(
@@ -229,7 +282,7 @@ function renderRow(activity: ToolActivity, live = false) {
   )
 }
 
-function field(key: string, label: string, format: "text" | "markdown" = "text") {
+function field(key: string, label: string, format: "text" | "markdown" | "multiline" = "text") {
   return {
     key,
     label,

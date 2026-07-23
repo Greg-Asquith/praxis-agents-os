@@ -2,11 +2,16 @@
 
 import { CheckCircle2Icon, CircleDotIcon, CircleIcon, ListTodoIcon } from "lucide-react"
 
-import { ToolField } from "@/features/conversations/components/tool-field"
+import { Badge } from "@/components/ui/badge"
 import {
-  ToolActivityRowHeader,
-  ToolActivityRowShell,
-} from "@/features/conversations/components/tool-activity-row-shell"
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
 import {
   ActivityStatusIcon,
   ActivityStatusSuffix,
@@ -14,69 +19,73 @@ import {
 import { toolStatusSuffix } from "@/features/conversations/components/tool-activity-status-values"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
+  READ_TODOS_TOOL_NAME,
   type TodoToolItem,
-  WRITE_TODOS_TOOL_NAME,
   todoItemsFromActivity,
 } from "@/features/conversations/todo-tools"
-import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type TodoListRowProps = {
   activity: ToolActivity
-  compact: boolean
 }
 
-export function TodoListRow({ activity, compact }: TodoListRowProps) {
+export function TodoListRow({ activity }: TodoListRowProps) {
   const items = todoItemsFromActivity(activity)
+  if (activity.name === READ_TODOS_TOOL_NAME && activity.status !== "completed") {
+    return <PlanLookupRow activity={activity} items={items ?? []} />
+  }
   if (!items) {
     return null
   }
-  const keyedItems = withStableKeys(items)
-  const expandable = items.length > 0
+  if (activity.name === READ_TODOS_TOOL_NAME) {
+    return <PlanLookupRow activity={activity} items={items} />
+  }
 
-  const header = (
-    <ToolActivityRowHeader
-      expandable={expandable}
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <ListTodoIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{todoHeadline(activity, items)}</span>
-        </span>
-      }
-      suffix={
-        <ActivityStatusSuffix status={activity.status} suffix={todoSuffix(activity, items)} />
-      }
-      supportLabel={null}
-    />
-  )
+  const keyedItems = withStableKeys(items)
+  const completedCount = countCompleted(items)
+  const progress = items.length === 0 ? 0 : (completedCount / items.length) * 100
+  const progressLabel = completedLabel(completedCount, items.length)
 
   return (
-    <ToolActivityRowShell
-      compact={compact}
-      defaultOpen={expandable}
-      expandable={expandable}
-      header={header}
+    <Card
+      aria-label={`Plan, ${progressLabel}`}
+      className="w-full min-w-0"
+      data-slot="plan-card"
+      size="sm"
     >
-      {items.length > 0 ? (
-        <ToolField
-          field={{
-            key: "plan",
-            label: `Plan · ${String(items.length)} ${pluralize(items.length, "item")}`,
-            value: "",
-            format: "text",
-          }}
-        >
-          <ul className="flex min-w-0 flex-col gap-1">
+      <CardHeader>
+        <CardTitle className="flex min-w-0 items-center gap-2">
+          <span className="bg-accent text-accent-foreground flex size-7 shrink-0 items-center justify-center rounded-md">
+            <ListTodoIcon className="size-4" />
+          </span>
+          <span className="truncate">Plan</span>
+        </CardTitle>
+        <CardDescription>{planDescription(activity, items)}</CardDescription>
+        <CardAction className="flex flex-col items-end gap-1">
+          <PlanUpdateBadge activity={activity} />
+          <span className="text-muted-foreground text-xs font-medium tabular-nums">
+            {progressLabel}
+          </span>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex min-w-0 flex-col gap-3">
+        <Progress aria-label={progressLabel} value={progress} />
+        {items.length > 0 ? (
+          <ul aria-label="Plan steps" className="flex min-w-0 flex-col gap-1.5">
             {keyedItems.map((item) => (
               <li
                 key={item.key}
-                className="flex min-w-0 items-start gap-1.5 text-xs leading-relaxed"
+                className={cn(
+                  "flex min-w-0 items-start gap-2 rounded-md px-2.5 py-2 text-sm leading-snug",
+                  item.status === "in_progress" && "bg-accent/60 text-accent-foreground",
+                  item.status === "completed" && "bg-success/5",
+                  item.status === "pending" && "text-muted-foreground"
+                )}
               >
                 <TodoItemIcon status={item.status} />
                 <span
                   className={cn(
-                    "min-w-0",
+                    "min-w-0 flex-1",
                     item.status === "completed" && "text-muted-foreground line-through",
                     item.status === "in_progress" && "text-foreground font-medium",
                     item.status === "pending" && "text-muted-foreground"
@@ -84,13 +93,54 @@ export function TodoListRow({ activity, compact }: TodoListRowProps) {
                 >
                   {item.content}
                 </span>
+                {item.status === "in_progress" ? (
+                  <Badge className="mt-px" variant="warning">
+                    In progress
+                  </Badge>
+                ) : null}
               </li>
             ))}
           </ul>
-        </ToolField>
-      ) : null}
-    </ToolActivityRowShell>
+        ) : (
+          <p className="text-muted-foreground py-1 text-sm">No steps in this plan.</p>
+        )}
+      </CardContent>
+    </Card>
   )
+}
+
+function PlanLookupRow({ activity, items }: { activity: ToolActivity; items: TodoToolItem[] }) {
+  const label =
+    activity.status === "running"
+      ? "Checking the plan"
+      : activity.status === "failed"
+        ? "Couldn't check the plan"
+        : "Checked the plan"
+  const suffix =
+    toolStatusSuffix(activity) ??
+    (items.length > 0 ? completedLabel(countCompleted(items), items.length) : "No plan")
+
+  return (
+    <div
+      aria-label="Plan lookup"
+      className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs"
+    >
+      <ActivityStatusIcon fallbackIcon="tool" status={activity.status} />
+      <ListTodoIcon className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <ActivityStatusSuffix status={activity.status} suffix={suffix} />
+    </div>
+  )
+}
+
+function PlanUpdateBadge({ activity }: { activity: ToolActivity }) {
+  if (activity.status === "running") {
+    return <Badge variant="warning">Updating</Badge>
+  }
+  if (activity.status === "failed") {
+    return <Badge variant="destructive">Update failed</Badge>
+  }
+  return null
 }
 
 function withStableKeys(items: TodoToolItem[]) {
@@ -113,28 +163,24 @@ function TodoItemIcon({ status }: { status: TodoToolItem["status"] }) {
   return <CircleIcon className="text-muted-foreground/60 mt-0.5 size-3.5 shrink-0" />
 }
 
-function todoHeadline(activity: ToolActivity, items: TodoToolItem[]) {
-  const isWrite = activity.name === WRITE_TODOS_TOOL_NAME
+function planDescription(activity: ToolActivity, items: TodoToolItem[]) {
   if (activity.status === "running") {
-    return isWrite ? "Updating the Plan" : "Checking the Plan"
+    return "Updating as the work progresses."
   }
   if (activity.status === "failed") {
-    return isWrite ? "Couldn't Update the Plan" : "Couldn't Read the Plan"
+    return "The latest update couldn't be saved."
   }
   if (items.length === 0) {
-    return isWrite ? "Cleared the Plan" : "No Plan Yet"
+    return "Ready for the next steps."
   }
-  return "Plan"
+  const inProgress = items.find((item) => item.status === "in_progress")
+  return inProgress ? `Now: ${inProgress.content}` : "Current steps and progress."
 }
 
-function todoSuffix(activity: ToolActivity, items: TodoToolItem[]) {
-  const statusSuffix = toolStatusSuffix(activity)
-  if (statusSuffix) {
-    return statusSuffix
-  }
-  if (items.length === 0) {
-    return null
-  }
-  const done = items.filter((item) => item.status === "completed").length
-  return `${String(done)} of ${String(items.length)} done`
+function countCompleted(items: TodoToolItem[]) {
+  return items.filter((item) => item.status === "completed").length
+}
+
+function completedLabel(completedCount: number, itemCount: number) {
+  return `${String(completedCount)} of ${String(itemCount)} done`
 }

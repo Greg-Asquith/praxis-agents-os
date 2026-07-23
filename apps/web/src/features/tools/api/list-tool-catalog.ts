@@ -3,7 +3,7 @@
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type { ToolCatalogResponse } from "@/features/tools/types"
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
 const baseToolsQueryKeys = createWorkspaceScopedQueryKeys("tools")

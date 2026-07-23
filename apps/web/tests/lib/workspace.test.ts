@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   activeWorkspaceQueryScope,
   createWorkspaceScopedQueryKeys,
-} from "@/features/workspaces/query-keys"
-import { setActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+  setActiveWorkspaceSlug,
+} from "@/lib/workspace"
 
 afterEach(() => {
   setActiveWorkspaceSlug(null)

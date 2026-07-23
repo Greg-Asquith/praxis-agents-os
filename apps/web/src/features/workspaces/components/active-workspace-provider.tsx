@@ -8,7 +8,7 @@ import { useUpdateCurrentUserMutation } from "@/features/auth/api/update-current
 import { useWorkspacesQuery } from "@/features/workspaces/api/list-workspaces"
 import type { Workspace } from "@/features/workspaces/types"
 import { ActiveWorkspaceContext } from "@/features/workspaces/components/active-workspace-context"
-import { setActiveWorkspaceSlug } from "@/features/workspaces/workspace-context"
+import { setActiveWorkspaceSlug } from "@/lib/workspace"
 
 const STORAGE_KEY = "praxis.activeWorkspaceSlug"
 

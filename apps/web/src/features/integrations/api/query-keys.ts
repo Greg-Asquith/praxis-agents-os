@@ -1,8 +1,6 @@
 // apps/web/src/features/integrations/api/query-keys.ts
 
-import { createWorkspaceScopedQueryKeys } from "@/features/workspaces/query-keys"
-
-const baseIntegrationQueryKeys = createWorkspaceScopedQueryKeys("integrations")
+import { baseIntegrationQueryKeys } from "@/lib/integration-query-keys"
 
 export const integrationsQueryKeys = {
   ...baseIntegrationQueryKeys,

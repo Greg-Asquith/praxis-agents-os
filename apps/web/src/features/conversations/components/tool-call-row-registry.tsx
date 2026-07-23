@@ -9,6 +9,11 @@ import { SkillActivationRow } from "@/features/conversations/components/skill-ac
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
 import { TodoListRow } from "@/features/conversations/components/todo-list-row"
 import {
+  webSearchQuery,
+  webSearchResult,
+} from "@/features/conversations/components/web-search-result"
+import { WebSearchToolRow } from "@/features/conversations/components/web-search-tool-row"
+import {
   LIST_FILES_TOOL_NAME,
   PROMOTE_SCRATCH_TOOL_NAME,
   READ_FILE_TOOL_NAME,
@@ -31,7 +36,11 @@ import {
   skillIdFromCapabilityArgs,
 } from "@/features/conversations/skill-activation"
 import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skill-document-read"
-import { isTodoToolActivity, todoItemsFromActivity } from "@/features/conversations/todo-tools"
+import {
+  READ_TODOS_TOOL_NAME,
+  WRITE_TODOS_TOOL_NAME,
+  todoItemsFromActivity,
+} from "@/features/conversations/todo-tools"
 import { integrationToolRowPresenters } from "@/integrations/registry"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 
@@ -44,6 +53,15 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   {
+    key: "web-search",
+    matches: (activity) =>
+      activity.name === "web_search" &&
+      (activity.status === "running"
+        ? webSearchQuery(activity.args) !== null
+        : activity.status === "completed" && webSearchResult(activity.result) !== null),
+    render: ({ activity }) => <WebSearchToolRow activity={activity} />,
+  },
+  {
     key: "delegate-agent-list",
     matches: (activity) =>
       activity.name === LIST_DELEGATE_AGENTS_TOOL_NAME &&
@@ -53,6 +71,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     ),
   },
   {
+    handlesApprovals: true,
     key: "delegation",
     matches: (activity) => Boolean(activity.delegate),
     render: ({ activity, approvalDecision, compact, defaultOpen, live }) => (
@@ -80,9 +99,17 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     ),
   },
   {
-    key: "todo-list",
-    matches: (activity) => isTodoToolActivity(activity) && todoItemsFromActivity(activity) !== null,
-    render: ({ activity, compact }) => <TodoListRow activity={activity} compact={compact} />,
+    key: "todo-plan",
+    matches: (activity) =>
+      activity.name === WRITE_TODOS_TOOL_NAME && todoItemsFromActivity(activity) !== null,
+    render: ({ activity }) => <TodoListRow activity={activity} />,
+  },
+  {
+    key: "todo-lookup",
+    matches: (activity) =>
+      activity.name === READ_TODOS_TOOL_NAME &&
+      (activity.status !== "completed" || todoItemsFromActivity(activity) !== null),
+    render: ({ activity }) => <TodoListRow activity={activity} />,
   },
   {
     key: "file-tools",
@@ -94,11 +121,25 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
 ]
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
-  const presenter = [
+  for (const presenter of [
     ...TOOL_ROW_PRESENTERS,
     ...integrationToolRowPresenters(props.providerKey),
-  ].find((item) => item.matches(props.activity))
-  return presenter ? presenter.render(props) : null
+  ]) {
+    try {
+      if (
+        (props.approvalDecision === undefined || presenter.handlesApprovals === true) &&
+        presenter.matches(props.activity)
+      ) {
+        return presenter.render(props)
+      }
+    } catch (error) {
+      console.error(
+        `Tool row presenter '${presenter.key}' failed for tool '${props.activity.name}'.`,
+        error
+      )
+    }
+  }
+  return null
 }
 
 function fileToolRowMatches(activity: ToolActivity) {

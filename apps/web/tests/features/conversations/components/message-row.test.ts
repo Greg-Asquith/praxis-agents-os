@@ -50,7 +50,7 @@ describe("assistant turn content order", () => {
       })
     )
 
-    expectOrdered(html, ["Thinking", "Introduction", "web_search", "Conclusion"])
+    expectOrdered(html, ["Thinking", "Introduction", "Praxis Agents", "Conclusion"])
   })
 
   it("renders live thinking first and timeline parts in arrival order", () => {
@@ -94,9 +94,8 @@ describe("assistant turn content order", () => {
       })
     )
 
-    expectOrdered(html, ["Thinking", "Introduction", "web_search", "Conclusion"])
-    expect(html).toContain("in progress")
-    expect(html).toContain("0s")
+    expectOrdered(html, ["Thinking", "Introduction", "Praxis Agents", "Conclusion"])
+    expect(html).toContain('aria-busy="true"')
     expect(html.indexOf("<details")).toBeLessThan(html.indexOf("<section"))
   })
 
@@ -124,7 +123,7 @@ describe("assistant turn content order", () => {
       })
     )
 
-    expectOrdered(html, ["Legacy answer", "web_search"])
+    expectOrdered(html, ["Legacy answer", "Praxis Agents"])
   })
 
   it("renders a persisted tool-only assistant message", () => {
@@ -151,10 +150,78 @@ describe("assistant turn content order", () => {
       })
     )
 
-    expect(html).toContain("web_search")
-    expect(html).toContain("Running web_search")
+    expect(html).toContain("Praxis Agents")
+    expect(html).toContain("Searching Praxis Agents…")
+  })
+
+  it("renders only the newest valid plan update in a persisted assistant turn", () => {
+    const firstPlan = todoActivity("plan-1", "Draft the first version", "pending")
+    const currentPlan = todoActivity("plan-2", "Review the current version", "in_progress")
+    const message: ParsedConversationMessage = {
+      id: "plan-message",
+      role: "assistant",
+      sequence: 1,
+      agentRunId: "run-1",
+      clientMessageId: null,
+      createdAt: "2026-07-17T12:00:00Z",
+      parts: [
+        { kind: "tool", id: "plan-message:0", activity: firstPlan },
+        { kind: "tool", id: "plan-message:1", activity: currentPlan },
+      ],
+      text: [],
+      thinking: [],
+      attachments: [],
+      toolActivities: [firstPlan, currentPlan],
+      unsupportedParts: [],
+    }
+
+    const html = renderWithQuery(
+      createElement(AssistantTurnRow, {
+        assistantAgentId: "agent-1",
+        createdAt: message.createdAt,
+        messages: [message],
+      })
+    )
+
+    expect(html).not.toContain("Draft the first version")
+    expect(html).toContain("Review the current version")
+    expect(html.match(/data-slot="plan-card"/g) ?? []).toHaveLength(1)
+  })
+
+  it("renders only the newest valid plan update in the live timeline", () => {
+    const firstPlan = todoActivity("live-plan-1", "Inspect the old plan", "pending")
+    const currentPlan = todoActivity("live-plan-2", "Implement the current plan", "in_progress")
+    const html = renderWithQuery(
+      createElement(AssistantLiveActivityRow, {
+        assistantAgentId: "agent-1",
+        isStreaming: true,
+        messages: [],
+        timeline: [
+          { kind: "tool", activity: firstPlan },
+          { kind: "tool", activity: currentPlan },
+        ],
+      })
+    )
+
+    expect(html).not.toContain("Inspect the old plan")
+    expect(html).toContain("Implement the current plan")
+    expect(html.match(/data-slot="plan-card"/g) ?? []).toHaveLength(1)
   })
 })
+
+function todoActivity(
+  id: string,
+  content: string,
+  status: "pending" | "in_progress" | "completed"
+): ToolActivity {
+  return {
+    id,
+    kind: "result",
+    name: "write_todos",
+    status: "completed",
+    result: { items: [{ content, status }] },
+  }
+}
 
 function expectOrdered(value: string, fragments: string[]) {
   let previousIndex = -1

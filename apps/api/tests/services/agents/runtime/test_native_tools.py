@@ -5,7 +5,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai import ModelRetry
-from pydantic_ai.messages import NativeToolCallPart, NativeToolReturnPart, PartStartEvent
+from pydantic_ai.messages import (
+    ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
+    PartStartEvent,
+    TextPart,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -154,10 +160,20 @@ async def test_web_search_tool_uses_configured_helper_model(
     agent = _agent(tool_names=["web_search"])
     captured: dict[str, object] = {}
 
-    async def fake_search(*, query: str, model_spec: ResolvedModel) -> str:
+    async def fake_search(
+        *, query: str, model_spec: ResolvedModel
+    ) -> web_search_tools.NativeWebSearchResult:
         captured["query"] = query
         captured["model_spec"] = model_spec
-        return "searched answer"
+        return web_search_tools.NativeWebSearchResult(
+            answer="searched answer",
+            sources=[
+                web_search_tools.WebSearchSource(
+                    title="Praxis documentation",
+                    url="https://docs.example.com/praxis",
+                )
+            ],
+        )
 
     monkeypatch.setattr(web_search_tools, "run_native_web_search", fake_search)
 
@@ -182,9 +198,99 @@ async def test_web_search_tool_uses_configured_helper_model(
     assert result == {
         "query": "latest docs",
         "answer": "searched answer",
+        "sources": [
+            {
+                "title": "Praxis documentation",
+                "url": "https://docs.example.com/praxis",
+            }
+        ],
         "model_provider": PROVIDER_ANTHROPIC,
         "model": "claude-sonnet-4-6",
     }
+
+
+def test_web_search_extracts_only_structured_provider_sources() -> None:
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolReturnPart(
+                    content=[
+                        {
+                            "type": "web_search_result",
+                            "title": "Anthropic source",
+                            "url": "https://anthropic.example/source",
+                        },
+                        {
+                            "title": "Unsafe source",
+                            "url": "javascript:alert(1)",
+                        },
+                    ],
+                    provider_name="anthropic",
+                    tool_call_id="search-1",
+                    tool_name="web_search",
+                ),
+                NativeToolReturnPart(
+                    content=[
+                        {
+                            "domain": "google.example",
+                            "title": "Google source",
+                            "uri": "https://google.example/source",
+                        }
+                    ],
+                    provider_name="google",
+                    tool_call_id="search-2",
+                    tool_name="web_search",
+                ),
+                NativeToolReturnPart(
+                    content={
+                        "sources": [
+                            {
+                                "type": "url",
+                                "url": "https://openai.example/source",
+                            }
+                        ],
+                        "status": "completed",
+                    },
+                    provider_name="openai",
+                    tool_call_id="search-3",
+                    tool_name="web_search",
+                ),
+                TextPart(
+                    content="Answer with a citation.",
+                    provider_details={
+                        "annotations": [
+                            {
+                                "type": "url_citation",
+                                "title": "OpenAI source",
+                                "url": "https://openai.example/source",
+                            },
+                            {
+                                "type": "url_citation",
+                                "title": "Duplicate",
+                                "url": "https://anthropic.example/source",
+                            },
+                        ]
+                    },
+                    provider_name="openai",
+                ),
+            ]
+        )
+    ]
+
+    assert web_search_tools._web_search_sources(messages) == [
+        web_search_tools.WebSearchSource(
+            title="Anthropic source",
+            url="https://anthropic.example/source",
+        ),
+        web_search_tools.WebSearchSource(
+            title="Google source",
+            url="https://google.example/source",
+        ),
+        web_search_tools.WebSearchSource(
+            title="OpenAI source",
+            url="https://openai.example/source",
+        ),
+    ]
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,10 @@
-// apps/web/tests/features/conversations/todo-tools.test.ts
-
 import { describe, expect, it } from "vitest"
 
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import { todoItemsFromActivity } from "@/features/conversations/todo-tools"
+import {
+  supersededWriteTodoActivityIds,
+  todoItemsFromActivity,
+} from "@/features/conversations/todo-tools"
 
 function activity(overrides: Partial<ToolActivity>): ToolActivity {
   return { id: "t1", kind: "call", status: "completed", name: "write_todos", ...overrides }
@@ -58,5 +59,42 @@ describe("todoItemsFromActivity", () => {
 
   it("returns null when neither result nor args carry items", () => {
     expect(todoItemsFromActivity(activity({ result: "done", args: "{}" }))).toBeNull()
+  })
+
+  it("does not hide a malformed completed result behind valid call arguments", () => {
+    expect(
+      todoItemsFromActivity(
+        activity({
+          args: { items: [{ content: "Original", status: "pending" }] },
+          result: { items: "invalid" },
+        })
+      )
+    ).toBeNull()
+  })
+})
+
+describe("supersededWriteTodoActivityIds", () => {
+  it("hides all but the newest valid plan update", () => {
+    const first = activity({
+      id: "write-1",
+      result: { items: [{ content: "First version", status: "pending" }] },
+    })
+    const malformed = activity({ id: "write-2", result: { items: "invalid" } })
+    const latest = activity({
+      id: "write-3",
+      result: { items: [{ content: "Current version", status: "in_progress" }] },
+    })
+
+    expect(supersededWriteTodoActivityIds([first, malformed, latest])).toEqual(new Set(["write-1"]))
+  })
+
+  it("does not collapse plan lookups", () => {
+    const read = activity({
+      id: "read-1",
+      name: "read_todos",
+      result: { items: [{ content: "Looked up", status: "pending" }] },
+    })
+
+    expect(supersededWriteTodoActivityIds([read])).toEqual(new Set())
   })
 })

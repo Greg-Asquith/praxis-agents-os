@@ -23,7 +23,7 @@ export function ToolSurfaceCard({
     <section
       aria-label={ariaLabel}
       className={cn(
-        "bg-card w-full max-w-3xl min-w-0 overflow-hidden rounded-lg border shadow-xs",
+        "bg-card w-full min-w-0 overflow-hidden rounded-lg border shadow-xs",
         accent && "border-warning/40"
       )}
     >
