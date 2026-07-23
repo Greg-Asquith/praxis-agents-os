@@ -13,7 +13,12 @@ from services.integrations.manifest import (
     IntegrationProviderManifest,
     register_provider_manifest,
 )
-from services.integrations.plugin import PROVIDER_PLUGINS, IntegrationProviderPlugin
+from services.integrations.plugin import (
+    PROVIDER_PLUGINS,
+    IntegrationPreviewDefinition,
+    IntegrationPreviewPayload,
+    IntegrationProviderPlugin,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +41,16 @@ def _oauth_manifest(key: str = "example") -> IntegrationProviderManifest:
         auth_modes=("oauth",),
         owner_scope="user",
         oauth_scopes=("scope",),
+    )
+
+
+def _api_key_manifest(key: str = "example") -> IntegrationProviderManifest:
+    return IntegrationProviderManifest(
+        provider_key=key,
+        display_name="Example",
+        auth_modes=("api_key",),
+        owner_scope="workspace",
+        required_form_fields=("api_key",),
     )
 
 
@@ -144,3 +159,35 @@ def test_loader_requires_discovery_callable_when_manifest_advertises_it() -> Non
     )
     with pytest.raises(RuntimeError, match="must implement discovery"):
         _validate_plugin(plugin, expected_key="example")
+
+
+def test_loader_validates_provider_preview_definitions() -> None:
+    async def fetch_preview(db, connection, ref) -> IntegrationPreviewPayload:
+        return IntegrationPreviewPayload(content_type="text", content=ref, meta={})
+
+    definition = IntegrationPreviewDefinition(
+        kind="message",
+        operation="preview_message",
+        fetch=fetch_preview,
+    )
+    plugin = IntegrationProviderPlugin(
+        manifest=_api_key_manifest(),
+        discover_resources=None,
+        preview_definitions=(definition, definition),
+    )
+    with pytest.raises(RuntimeError, match="Duplicate integration preview kind"):
+        _validate_plugin(plugin, expected_key="example")
+
+    invalid_plugin = IntegrationProviderPlugin(
+        manifest=_api_key_manifest(),
+        discover_resources=None,
+        preview_definitions=(
+            IntegrationPreviewDefinition(
+                kind="Invalid-Kind",
+                operation="preview_message",
+                fetch=fetch_preview,
+            ),
+        ),
+    )
+    with pytest.raises(RuntimeError, match="lowercase snake_case"):
+        _validate_plugin(invalid_plugin, expected_key="example")

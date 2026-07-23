@@ -15,7 +15,10 @@ from pydantic_ai.run import AgentRunResultEvent
 
 from models.agent_run import AgentRun
 from models.skills import Skill
-from services.agents.runtime.approval_events import is_deferred_tool_resume_event
+from services.agents.runtime.approval_events import (
+    emit_live_deferred_tool_event,
+    is_deferred_tool_resume_event,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_native_tool_invocation_audit_event
 from services.agents.runtime.events import EventTranslationState, emit_agent_stream_event
@@ -31,6 +34,7 @@ async def consume_stream(
     run: AgentRun,
     deferred_tool_results: DeferredToolResults | None,
     event_sink: EventSink,
+    live_deferred_result_ids: set[str] | None = None,
 ) -> Any | None:
     terminal_result = None
     state = EventTranslationState()
@@ -45,6 +49,13 @@ async def consume_stream(
             event,
             deferred_tool_call_ids=deferred_tool_call_ids,
         ):
+            emitted_result_id = await emit_live_deferred_tool_event(
+                event_sink,
+                event,
+                deferred_tool_results=deferred_tool_results,
+            )
+            if emitted_result_id is not None and live_deferred_result_ids is not None:
+                live_deferred_result_ids.add(emitted_result_id)
             continue
         part = getattr(event, "part", None)
         if isinstance(part, NativeToolCallPart):

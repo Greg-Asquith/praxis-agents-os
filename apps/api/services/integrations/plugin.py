@@ -4,13 +4,16 @@
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import SecretStr
 
 from services.integrations.manifest import IntegrationProviderManifest
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from models.integrations import IntegrationConnection
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
 
 
@@ -47,11 +50,36 @@ OAuthConfigFn = Callable[[], OAuthClientConfig]
 
 
 @dataclass(frozen=True)
+class IntegrationPreviewPayload:
+    """Raw provider content returned to the engine preview boundary."""
+
+    content_type: Literal["html", "text"]
+    content: str
+    meta: dict[str, object]
+
+
+IntegrationPreviewFetchFn = Callable[
+    ["AsyncSession", "IntegrationConnection", str],
+    Awaitable[IntegrationPreviewPayload],
+]
+
+
+@dataclass(frozen=True)
+class IntegrationPreviewDefinition:
+    """One provider-owned preview kind exposed through the generic route."""
+
+    kind: str
+    operation: str
+    fetch: IntegrationPreviewFetchFn
+
+
+@dataclass(frozen=True)
 class IntegrationProviderPlugin:
     manifest: IntegrationProviderManifest
     discover_resources: DiscoverResourcesFn | None
     oauth_config: OAuthConfigFn | None = None
     tool_definitions: tuple["RuntimeToolDefinition", ...] = ()
+    preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
 
 
 PROVIDER_PLUGINS: dict[str, IntegrationProviderPlugin] = {}

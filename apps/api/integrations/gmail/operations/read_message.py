@@ -6,8 +6,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from integrations.gmail.client import GmailClient
-from integrations.gmail.operations.utils import extract_headers, untrusted
-from utils.decode import decode_base64url
+from integrations.gmail.operations.utils import extract_headers, find_body_part, untrusted
 
 MAX_BODY_CHARS = 50_000
 TRUNCATION_MARKER = "\n\n[Message body truncated at 50000 characters.]"
@@ -45,29 +44,12 @@ async def read_message(client: GmailClient, *, message_id: str) -> dict[str, Any
 
 
 def _extract_body(payload: Any) -> str:
-    plain = _find_part(payload, "text/plain")
+    plain = find_body_part(payload, "text/plain")
     if plain is not None:
         return plain
-    html = _find_part(payload, "text/html")
+    html = find_body_part(payload, "text/html")
     if html is None:
         return ""
     parser = _TextExtractor()
     parser.feed(html)
     return "".join(parser.parts)
-
-
-def _find_part(part: Any, media_type: str) -> str | None:
-    if not isinstance(part, dict):
-        return None
-    if part.get("mimeType") == media_type:
-        body = part.get("body")
-        data = body.get("data") if isinstance(body, dict) else None
-        if isinstance(data, str):
-            return decode_base64url(data)
-    children = part.get("parts")
-    if isinstance(children, list):
-        for child in children:
-            value = _find_part(child, media_type)
-            if value is not None:
-                return value
-    return None

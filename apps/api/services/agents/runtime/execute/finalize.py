@@ -52,6 +52,7 @@ async def finalize_terminal_run(
     deferred_tool_results: DeferredToolResults | None,
     deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
+    live_deferred_result_ids: Sequence[str] | set[str] = (),
 ) -> ExecuteRunResult:
     if deferred_tool_results is not None:
         await emit_deferred_tool_resume_events(
@@ -59,6 +60,7 @@ async def finalize_terminal_run(
             message_history=history,
             new_messages=terminal_result.new_messages(),
             deferred_tool_results=deferred_tool_results,
+            already_emitted_tool_call_ids=live_deferred_result_ids,
         )
 
     if isinstance(terminal_result.output, DeferredToolRequests):

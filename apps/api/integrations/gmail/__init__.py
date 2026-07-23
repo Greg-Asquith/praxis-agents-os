@@ -3,9 +3,14 @@
 """Gmail provider manifest contribution."""
 
 from services.integrations.manifest import IntegrationProviderManifest
-from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
+from services.integrations.plugin import (
+    IntegrationPreviewDefinition,
+    IntegrationProviderPlugin,
+    OAuthClientConfig,
+)
 
 from .discover_resources import discover_resources
+from .preview import PREVIEW_OPERATION, fetch_message_preview
 from .settings import gmail_settings
 from .tools import TOOL_DEFINITIONS
 
@@ -45,4 +50,11 @@ PROVIDER = IntegrationProviderPlugin(
     discover_resources=discover_resources,
     oauth_config=oauth_config,
     tool_definitions=TOOL_DEFINITIONS,
+    preview_definitions=(
+        IntegrationPreviewDefinition(
+            kind="gmail_message",
+            operation=PREVIEW_OPERATION,
+            fetch=fetch_message_preview,
+        ),
+    ),
 )

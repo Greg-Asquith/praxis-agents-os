@@ -56,6 +56,7 @@ from services.agent_runs.domain import (
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_events import (
     emit_deferred_tool_resume_events,
+    emit_live_deferred_tool_event,
     is_deferred_tool_resume_event,
 )
 from services.agents.runtime.approval_state import (
@@ -366,6 +367,84 @@ async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> No
     ]
     assert sink.events[0].data["args"] == {"value": 10}
     assert sink.events[1].data["result"] == "approved"
+
+
+async def test_live_deferred_tool_events_emit_with_effective_args() -> None:
+    """Resumed deferred tools stream immediately instead of waiting for finalize."""
+    deferred_tool_call_id = "deferred-tool-call"
+    deferred_tool_results = DeferredToolResults(
+        approvals={deferred_tool_call_id: ToolApproved(override_args={"value": 10})}
+    )
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+
+    call_emitted = await emit_live_deferred_tool_event(
+        sink,
+        FunctionToolCallEvent(
+            part=ToolCallPart(
+                tool_name="approved_tool",
+                args={"value": 1},
+                tool_call_id=deferred_tool_call_id,
+            )
+        ),
+        deferred_tool_results=deferred_tool_results,
+    )
+    result_emitted = await emit_live_deferred_tool_event(
+        sink,
+        FunctionToolResultEvent(
+            part=ToolReturnPart(
+                tool_name="approved_tool",
+                content="approved",
+                tool_call_id=deferred_tool_call_id,
+            )
+        ),
+        deferred_tool_results=deferred_tool_results,
+    )
+
+    assert call_emitted is None
+    assert result_emitted == deferred_tool_call_id
+    assert [(event.event, event.data["tool_call_id"]) for event in sink.events] == [
+        (EVENT_TOOL_CALL, deferred_tool_call_id),
+        (EVENT_TOOL_RESULT, deferred_tool_call_id),
+    ]
+    assert sink.events[0].data["args"] == {"value": 10}
+    assert sink.events[1].data["result"] == "approved"
+
+
+async def test_deferred_resume_replay_skips_already_emitted_results() -> None:
+    deferred_tool_call_id = "deferred-tool-call"
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+
+    await emit_deferred_tool_resume_events(
+        sink,
+        message_history=[
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="approved_tool",
+                        args={"value": 1},
+                        tool_call_id=deferred_tool_call_id,
+                    )
+                ]
+            )
+        ],
+        new_messages=[
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="approved_tool",
+                        content="approved",
+                        tool_call_id=deferred_tool_call_id,
+                    )
+                ]
+            ),
+        ],
+        deferred_tool_results=DeferredToolResults(
+            approvals={deferred_tool_call_id: ToolApproved()}
+        ),
+        already_emitted_tool_call_ids={deferred_tool_call_id},
+    )
+
+    assert sink.events == []
 
 
 @pytest_asyncio.fixture

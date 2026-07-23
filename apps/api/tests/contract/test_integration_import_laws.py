@@ -25,12 +25,16 @@ def _imports(path: Path) -> list[str]:
     return values
 
 
+PROVIDER_IMPORT_EXEMPT_PATHS = ("services/integrations/loader.py",)
+
+
 def test_core_only_imports_provider_packages_through_loader() -> None:
     offenders = []
     roots = ("services", "routes", "models", "workers", "core")
+    exempt = {API_ROOT / exempt_path for exempt_path in PROVIDER_IMPORT_EXEMPT_PATHS}
     for root in roots:
         for path in (API_ROOT / root).rglob("*.py"):
-            if path == API_ROOT / "services/integrations/loader.py":
+            if path in exempt:
                 continue
             if any(value.startswith("integrations.") for value in _imports(path)):
                 offenders.append(str(path.relative_to(API_ROOT)))

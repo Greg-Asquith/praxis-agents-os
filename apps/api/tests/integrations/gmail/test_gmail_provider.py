@@ -9,6 +9,7 @@ import httpx2
 
 from integrations.gmail.client import GmailClient
 from integrations.gmail.discover_resources import GMAIL_SEND_SCOPE, discover_resources
+from integrations.gmail.operations.preview_message import preview_message
 from integrations.gmail.operations.read_message import MAX_BODY_CHARS, read_message
 from integrations.gmail.operations.search_messages import search_messages
 from integrations.gmail.operations.send_message import send_message
@@ -155,6 +156,95 @@ async def test_client_forces_one_refresh_after_unauthorized() -> None:
 
     assert result == {"ok": True}
     assert forces == [False, True]
+
+
+async def test_preview_extracts_html_labels_and_thread_meta() -> None:
+    html = "<div><b>Rich body</b><img src='https://example.com/logo.png'></div>"
+    encoded_html = base64.urlsafe_b64encode(html.encode()).decode().rstrip("=")
+    encoded_plain = base64.urlsafe_b64encode(b"plain body").decode().rstrip("=")
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/users/me/messages/m1"):
+            return httpx2.Response(
+                200,
+                json={
+                    "threadId": "thread-1",
+                    "labelIds": ["INBOX", "UNREAD", "CATEGORY_PERSONAL", "Label_7"],
+                    "payload": {
+                        "mimeType": "multipart/alternative",
+                        "headers": [
+                            {"name": "Subject", "value": "Quarterly update"},
+                            {"name": "From", "value": "Ada <ada@example.com>"},
+                            {"name": "To", "value": "team@example.com"},
+                            {"name": "Date", "value": "Tue, 22 Jul 2026 09:00:00 +0000"},
+                        ],
+                        "parts": [
+                            {"mimeType": "text/plain", "body": {"data": encoded_plain}},
+                            {"mimeType": "text/html", "body": {"data": encoded_html}},
+                        ],
+                    },
+                },
+                request=request,
+            )
+        if request.url.path.endswith("/users/me/labels"):
+            return httpx2.Response(
+                200,
+                json={
+                    "labels": [
+                        {"id": "Label_7", "name": "Clients", "type": "user"},
+                        {"id": "INBOX", "name": "INBOX", "type": "system"},
+                    ]
+                },
+                request=request,
+            )
+        assert request.url.path.endswith("/users/me/threads/thread-1")
+        return httpx2.Response(
+            200,
+            json={"messages": [{"id": "m0"}, {"id": "m1"}, {"id": "m2"}]},
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        result = await preview_message(
+            GmailClient(_static_token, client=http_client), message_id="m1"
+        )
+
+    assert result["content_type"] == "html"
+    assert result["content"] == html
+    assert result["meta"]["subject"] == "Quarterly update"
+    assert result["meta"]["labels"] == ["Inbox", "Clients"]
+    assert result["meta"]["thread_message_count"] == 3
+
+
+async def test_preview_falls_back_to_plain_text_and_survives_enrichment_failures() -> None:
+    encoded_plain = base64.urlsafe_b64encode(b"plain only").decode().rstrip("=")
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/users/me/messages/m1"):
+            return httpx2.Response(
+                200,
+                json={
+                    "threadId": "thread-1",
+                    "labelIds": ["Label_7"],
+                    "payload": {
+                        "mimeType": "text/plain",
+                        "headers": [{"name": "Subject", "value": "Plain"}],
+                        "body": {"data": encoded_plain},
+                    },
+                },
+                request=request,
+            )
+        return httpx2.Response(500, json={"error": "boom"}, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        result = await preview_message(
+            GmailClient(_static_token, client=http_client), message_id="m1"
+        )
+
+    assert result["content_type"] == "text"
+    assert result["content"] == "plain only"
+    assert result["meta"]["labels"] == []
+    assert result["meta"]["thread_message_count"] is None
 
 
 async def _static_token(_force: bool) -> str:

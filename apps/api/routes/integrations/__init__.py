@@ -11,6 +11,7 @@ from routes.integrations.create_context_group import router as create_context_gr
 from routes.integrations.delete_context_group import router as delete_context_group_router
 from routes.integrations.get_connection import router as get_connection_router
 from routes.integrations.get_context import router as get_context_router
+from routes.integrations.get_preview import router as get_preview_router
 from routes.integrations.list_connection_resources import (
     router as list_connection_resources_router,
 )
@@ -35,6 +36,7 @@ router.include_router(list_providers_router)
 router.include_router(list_connections_router)
 router.include_router(get_connection_router)
 router.include_router(list_connection_resources_router)
+router.include_router(get_preview_router)
 router.include_router(get_context_router)
 router.include_router(set_context_router)
 router.include_router(clear_context_router)

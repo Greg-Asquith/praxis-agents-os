@@ -3,10 +3,13 @@
 """Load explicitly enabled integration-provider packages at process boot."""
 
 import importlib
+import re
 
 from core.settings import settings
 from services.integrations.manifest import register_provider_manifest
 from services.integrations.plugin import IntegrationProviderPlugin, register_provider_plugin
+
+PREVIEW_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def load_enabled_providers() -> None:
@@ -63,3 +66,15 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
             raise RuntimeError("Integration tool provider must match its package")
         if not definition.name.startswith(f"{expected_key}_"):
             raise RuntimeError("Integration tool name must be prefixed by its provider key")
+    preview_kinds: set[str] = set()
+    for definition in plugin.preview_definitions:
+        if not PREVIEW_KIND_PATTERN.fullmatch(definition.kind):
+            raise RuntimeError("Integration preview kind must be lowercase snake_case")
+        if definition.kind in preview_kinds:
+            raise RuntimeError(
+                f"Duplicate integration preview kind for provider '{expected_key}': "
+                f"{definition.kind}"
+            )
+        if not definition.operation.strip():
+            raise RuntimeError("Integration preview operation must not be blank")
+        preview_kinds.add(definition.kind)

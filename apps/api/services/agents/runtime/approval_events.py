@@ -31,6 +31,7 @@ from services.agents.runtime.events import (
     EVENT_TOOL_APPROVAL_REQUIRED,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
+    public_function_tool_result,
 )
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.staged_tool_content import tool_args_for_display
@@ -45,6 +46,51 @@ def is_deferred_tool_resume_event(
     if not isinstance(event, (FunctionToolCallEvent, FunctionToolResultEvent)):
         return False
     return getattr(event.part, "tool_call_id", None) in deferred_tool_call_ids
+
+
+async def emit_live_deferred_tool_event(
+    sink: EventSink,
+    event: FunctionToolCallEvent | FunctionToolResultEvent,
+    *,
+    deferred_tool_results: DeferredToolResults,
+) -> str | None:
+    """Emit one resumed deferred-tool event as it happens, with effective args.
+
+    Raw resume events carry the model's original call args, so calls are
+    re-rendered with any approval override applied. Returns the tool call id
+    when a result was emitted so the terminal replay can skip it.
+    """
+    if isinstance(event, FunctionToolCallEvent):
+        part = event.part
+        await sink.emit(
+            EVENT_TOOL_CALL,
+            {
+                "tool_call_id": part.tool_call_id,
+                "name": part.tool_name,
+                "args": to_jsonable_python(
+                    tool_args_for_display(
+                        tool_name=part.tool_name,
+                        args=_effective_tool_args(
+                            tool_call_id=part.tool_call_id,
+                            original_args=part.args,
+                            deferred_tool_results=deferred_tool_results,
+                        ),
+                    )
+                ),
+            },
+        )
+        return None
+
+    part = event.part
+    await sink.emit(
+        EVENT_TOOL_RESULT,
+        {
+            "tool_call_id": part.tool_call_id,
+            "name": getattr(part, "tool_name", None),
+            "result": public_function_tool_result(part),
+        },
+    )
+    return part.tool_call_id
 
 
 async def emit_approval_required_events(
@@ -158,8 +204,9 @@ async def emit_deferred_tool_resume_events(
     message_history: Sequence[ModelMessage],
     new_messages: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults,
+    already_emitted_tool_call_ids: Collection[str] = (),
 ) -> None:
-    """Replay executed deferred tools with approved override args when present."""
+    """Replay executed deferred tools whose live stream events never fired."""
     deferred_tool_call_ids = set(deferred_tool_results.approvals)
     tool_calls = _tool_calls_by_id([*message_history, *new_messages])
     for message in new_messages:
@@ -168,6 +215,8 @@ async def emit_deferred_tool_resume_events(
                 continue
             tool_call_id = getattr(part, "tool_call_id", None)
             if tool_call_id is None or tool_call_id not in deferred_tool_call_ids:
+                continue
+            if tool_call_id in already_emitted_tool_call_ids:
                 continue
 
             call = tool_calls.get(tool_call_id)

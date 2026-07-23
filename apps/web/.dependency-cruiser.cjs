@@ -51,7 +51,17 @@ module.exports = {
       from: { path: "^src/integrations/(?!contract\\.ts$)" },
       to: {
         path: "^src/",
-        pathNot: "^src/(components/ui/|lib/|integrations/)",
+        pathNot: "^src/(components/(ui|tool-ui)/|lib/|integrations/)",
+      },
+    },
+    {
+      name: "tool-ui-kits-stay-generic",
+      severity: "error",
+      comment: "Shared tool UI kits depend only on shared UI primitives, helpers, and each other.",
+      from: { path: "^src/components/tool-ui/" },
+      to: {
+        path: "^src/",
+        pathNot: "^src/(components/(ui|tool-ui)/|lib/)",
       },
     },
     {

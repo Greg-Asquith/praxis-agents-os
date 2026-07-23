@@ -152,6 +152,7 @@ async def execute_run_with_builders(
         built_agent = prepared.built_agent
 
         # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
+        live_deferred_result_ids: set[str] = set()
         with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
             async with built_agent.runtime_agent.agent.run_stream_events(
                 prepared.user_prompt,
@@ -169,6 +170,7 @@ async def execute_run_with_builders(
                     run=run,
                     deferred_tool_results=deferred_tool_results,
                     event_sink=event_sink,
+                    live_deferred_result_ids=live_deferred_result_ids,
                 )
 
         if terminal_result is None:
@@ -185,6 +187,7 @@ async def execute_run_with_builders(
             deferred_tool_results=deferred_tool_results,
             deps=prepared.deps,
             skip_initial_user_prompt=user_prompt_persisted,
+            live_deferred_result_ids=live_deferred_result_ids,
         )
         if eager_message_count == 0:
             return result

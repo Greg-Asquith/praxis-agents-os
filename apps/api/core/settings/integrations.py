@@ -62,6 +62,11 @@ class IntegrationsSettingsMixin:
         gt=0,
         description="Maximum age of provider permissions before resource re-discovery.",
     )
+    INTEGRATION_PREVIEW_MAX_BYTES: int = Field(
+        default=2_000_000,
+        gt=0,
+        description="Maximum UTF-8 byte size returned by an integration content preview.",
+    )
     INTEGRATION_REPORT_MAX_ROWS: int = Field(
         default=1000,
         gt=0,
