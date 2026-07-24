@@ -2,6 +2,8 @@
 
 """Knowledge-base ingestion and retention settings."""
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 
 
@@ -84,6 +86,44 @@ class KBSettingsMixin:
         le=3_650,
         description="Days to retain soft-deleted knowledge-base documents.",
     )
+    KB_SEARCH_TOP_K_DEFAULT: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Default number of knowledge-base search results.",
+    )
+    KB_SEARCH_TOP_K_MAX: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Maximum accepted knowledge-base search result count.",
+    )
+    KB_SEARCH_CTE_LIMIT: int = Field(
+        default=50,
+        ge=1,
+        le=500,
+        description="Candidate limit for each knowledge-base search source list.",
+    )
+    KB_SEARCH_EF_SEARCH: int = Field(
+        default=100,
+        ge=1,
+        le=1_000,
+        description="Per-search HNSW dynamic candidate list size.",
+    )
+    KB_RERANKER: Literal["none"] = Field(
+        default="none",
+        description="Optional knowledge-base reranker implementation.",
+    )
+    KB_SEARCH_RECENCY_WEIGHT: float = Field(
+        default=0.25,
+        ge=0,
+        le=1,
+        description="Weighted RRF contribution from eligible document recency.",
+    )
+    KB_SEARCH_RECENCY_SOURCE_TYPES: tuple[str, ...] = Field(
+        default=("url", "conversation", "integration"),
+        description="Knowledge source types eligible for recency fusion.",
+    )
 
     @model_validator(mode="after")
     def validate_kb_chunk_settings(self):
@@ -92,4 +132,6 @@ class KBSettingsMixin:
             raise ValueError("KB_CHUNK_TARGET_TOKENS must not exceed KB_CHUNK_MAX_TOKENS")
         if self.KB_CHUNK_OVERLAP_TOKENS >= self.KB_CHUNK_TARGET_TOKENS:
             raise ValueError("KB_CHUNK_OVERLAP_TOKENS must be less than KB_CHUNK_TARGET_TOKENS")
+        if self.KB_SEARCH_CTE_LIMIT < self.KB_SEARCH_TOP_K_MAX:
+            raise ValueError("KB_SEARCH_CTE_LIMIT must be at least KB_SEARCH_TOP_K_MAX")
         return self
