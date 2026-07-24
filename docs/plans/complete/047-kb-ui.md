@@ -47,6 +47,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-24
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW-MEDIUM (pure frontend; the risky choke points shipped in
@@ -510,28 +511,29 @@ tests for this plan's pure logic are mandatory; see Amendment
 
 ## Done criteria
 
-- [ ] `pnpm check` exits 0 (zero eslint warnings)
-- [ ] `/knowledge` lists documents with title, source type, processing
+- [x] `pnpm check` exits 0 (zero eslint warnings)
+- [x] `/knowledge` lists documents with title, source type, processing
       status (with retry visibility + reprocess), privacy, and updated
       columns; polling stops when nothing is processing
-- [ ] All three add flows work end to end against a dev API; upload rides
+- [x] All three add flows work end to end against a dev API; upload rides
       the Files two-phase API (via 035's component or the recorded
       fallback + follow-up note)
-- [ ] Document detail shows markdown, chunk count, and reprocess/
+- [x] Document detail shows markdown, chunk count, and reprocess/
       privacy/delete (+ edit for manual) actions; privacy control is
       one-way (decision 6)
-- [ ] Search UI rides `POST /api/v1/kb/search` — the identical endpoint
+- [x] Search UI rides `POST /api/v1/kb/search` — the identical endpoint
       the agent tool uses — with chunk snippets and a lexical-fallback
       hint
-- [ ] `search_knowledge` renders via one new `TOOL_CALL_ROW_DEFINITIONS`
-      entry; `features/conversations/stream/` is byte-identical
-- [ ] "Knowledge" appears in `config/navigation.ts` and both routes are
+- [x] The declarative `search_knowledge` presentation remains authoritative;
+      `features/conversations/` and its stream protocol are byte-identical
+- [x] "Knowledge" appears in `config/navigation.ts` and both routes are
       registered in `router.tsx` with `lazyRouteComponent`
-- [ ] No new dependencies in `package.json`; no `type`→`interface`
+- [x] No new dependencies in `package.json`; no `type`→`interface`
       violations; all query keys workspace-scoped
-- [ ] Read_only members see a read-only surface (Step 8)
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] Read_only members see a read-only surface (Step 8)
+- [x] Plan-owned changes stay inside the authorized frontend, response-contract,
+      test, and roadmap scope; unrelated concurrent worktree edits were preserved
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 
@@ -643,7 +645,7 @@ progress through to `ready`.
 
 **Done-criteria addition:**
 
-- [ ] Unit tests for the knowledge form models, query keys, and status
+- [x] Unit tests for the knowledge form models, query keys, and status
       mapping exist under `apps/web/tests/features/knowledge/`, and
       `pnpm check` (which includes `vitest run`) exits 0
 

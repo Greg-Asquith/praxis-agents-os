@@ -232,6 +232,14 @@ content remains plain, and the one prompt assembler supplies KB search/citation
 guidance. Gate G6's graded cases consume the Gate G4 hostile fixtures. The
 final focused gate passed 319 tests, migration drift was clean, and the
 complete API gate passed 1,108 tests.
+Plan 047 completed 2026-07-24 and moved to `docs/plans/complete/`. The
+operator-facing Knowledge surface now covers document creation from manual,
+URL, and Files sources; ingestion/retry visibility with bounded polling;
+workspace-scoped hybrid search parity; canonical content detail and lifecycle
+actions; and read-only role treatment. The HTTP response prerequisite exposes
+processing attempts and structured external-content provenance without
+changing the agent or SSE contracts. The focused KB backend slice passed 98
+tests and the complete web gate passed 70 files / 332 tests.
 Plan 089 (Google BigQuery provider) was added 2026-07-24 by maintainer
 decision D14 as the first Phase 4a extension past the D4 set:
 workspace-shared service-account connections, dataset discovery into the
@@ -663,7 +671,7 @@ structure.
 | 044  | OKF-compatible, Praxis-owned `kb_documents`/`kb_chunks` models + migrations (stable concept identifiers/frontmatter metadata, halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). **DONE 2026-07-24.** Google Knowledge Catalog remains an optional integration target, not a dependency. (Donor D2 + D9.) |
 | 045  | Hybrid search engine (RRF merge, pending-embedding lexical fallback, SQL filters, reranker interface) + search/read routes + **the eval harness**: seed docs with expected citations, hybrid-search assertions, fallback tests, prompt-injection fixture documents. **DONE 2026-07-24; Gate G4 satisfied.** (Donor D3 + gaps-doc eval requirement.)                                             |
 | 046  | Agent tools (`search_knowledge`, `read_document`) with source-aware untrusted-content handling; write-policy choke point (provenance, private-never-shared rule, secret blocking); document sources (upload via Files, URL, manual). **DONE 2026-07-24:** both write/document-source and agent-tool slices are complete; Gate G2/G6 prompt and hostile-fixture obligations are satisfied. (Donor D4.)                                                                         |
-| 047  | KB UI: documents table, ingestion status, search. (Donor D5.)                                                                                                                                                                                                                                                                                                    |
+| 047  | KB UI: documents table, ingestion status, search. **DONE 2026-07-24.** (Donor D5.)                                                                                                                                                                                                                                                                                |
 
 ### Phase 5 — Agent Memory (donor Phase E; gates G2, G3)
 
@@ -828,7 +836,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 → 071 → 048 → 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). 089 (BigQuery provider, D14) depends only on the landed Phase 4a substrate and interleaves any time after 079; its semantic-schema-search follow-up waits on 045.
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 → 071 → 048 → 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). 089 (BigQuery provider, D14) depends only on the landed Phase 4a substrate and interleaves any time after 079; its semantic-schema-search follow-up waits on 045.
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should

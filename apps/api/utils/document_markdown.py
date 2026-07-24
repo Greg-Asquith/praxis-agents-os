@@ -16,6 +16,7 @@ _CONTENT_TYPE_EXTENSIONS = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "text/html": ".html",
     "text/plain": ".txt",
     "text/markdown": ".md",
 }

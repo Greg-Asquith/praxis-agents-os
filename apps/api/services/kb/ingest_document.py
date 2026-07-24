@@ -106,18 +106,20 @@ async def ingest_kb_document(
             max_tokens=settings.KB_CHUNK_MAX_TOKENS,
             overlap_tokens=settings.KB_CHUNK_OVERLAP_TOKENS,
         )
+        # Pure-markup fragments would outrank real content, so they are never indexed.
+        drafts = [draft for draft in drafts if any(char.isalnum() for char in draft.content)]
         chunks = [
             KBChunk(
                 document_id=document.id,
                 workspace_id=document.workspace_id,
-                chunk_index=draft.chunk_index,
+                chunk_index=chunk_index,
                 content=draft.content,
                 char_start=draft.char_start,
                 char_end=draft.char_end,
                 token_estimate=draft.token_estimate,
                 meta={"headings": list(draft.heading_path)},
             )
-            for draft in drafts
+            for chunk_index, draft in enumerate(drafts)
         ]
         db.add_all(chunks)
         document.chunk_count = len(chunks)

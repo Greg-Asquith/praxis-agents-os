@@ -19,18 +19,17 @@ The core platform is wired end to end (API, worker, and UI):
   cancellation.
 - Tooling: a typed tool registry with a single audited dispatch choke point,
   a tool catalog surface, and per-agent tool policies.
-- Files and skills: signed two-phase uploads, immutable revisions, background
-  markdown extraction, agent file tools, and skill management with document
-  pipelines.
+- Files, skills, and Knowledge Base: signed two-phase uploads, immutable
+  revisions, background markdown extraction, agent file tools, skill
+  management with document pipelines, and pgvector-backed document retrieval
+  with hybrid search, agent tools, and an operator UI.
 - Operations: agent schedules with a leased background worker, a generic jobs
   worker, audit and security event viewers, an LLM model catalog, and
   integration connections (OAuth with PKCE, API keys, encrypted credentials).
 
-Notifications exist as a backend service without routes or UI yet. The
-knowledge-base backend now provides pgvector-backed document and chunk storage
-plus durable ingestion, embedding, and retention jobs; search, agent tools,
-routes, and UI remain pending. See `docs/plans/000_MASTER_ROADMAP.md` for the
-authoritative ordering of what comes next.
+Notifications exist as a backend service without routes or UI yet. See
+`docs/plans/000_MASTER_ROADMAP.md` for the authoritative ordering of what
+comes next.
 
 ## Repository Layout
 
@@ -282,8 +281,9 @@ and remember, and hardening how they behave:
 
 - Integrations: resource discovery, per-workspace active context, and the
   first providers (Gmail, Google Ads, Airtable) with approval-gated writes.
-- Knowledge base: embeddings, hybrid search, and agent retrieval tools with
-  untrusted-content framing.
+- Knowledge Base: retrieval quality, richer source coverage, and operational
+  evaluation on top of the shipped ingestion, hybrid search, agent tools, and
+  operator UI.
 - Agent memory: provenance-tracked memories with human-legible editing.
 - Artifacts: versioned, sandboxed agent-produced documents and pages.
 - Harness hardening: behavior scenario evals, context compaction, parallel

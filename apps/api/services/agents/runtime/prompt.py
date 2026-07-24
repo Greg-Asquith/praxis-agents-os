@@ -34,12 +34,12 @@ PLANNING_INSTRUCTIONS = """\
 - Only pass an empty list when the plan itself no longer applies.
 """
 
-KNOWLEDGE_TOOL_NAMES = frozenset({"search_knowledge", "read_document"})
 KNOWLEDGE_INSTRUCTIONS = """\
 Search the workspace knowledge base before answering questions it may cover.
-Iterate with refined search_knowledge queries when needed, use read_document
-for full context, and cite the document or chunk ref when relying on retrieved
-content.
+search_knowledge returns short snippets: when a result looks relevant, call
+read_document with its document_id for the full document, and cite the
+document title when relying on retrieved content. Iterate with refined queries
+when needed. This should always be your first port of call - only answer using your own knowledge if there are no relevant documents in the knowledge base.
 """
 
 UNTRUSTED_CONTENT_INSTRUCTIONS = """\
@@ -83,9 +83,7 @@ def runtime_prompt_blocks(
         ),
         PromptBlock(
             "knowledge",
-            KNOWLEDGE_INSTRUCTIONS
-            if KNOWLEDGE_TOOL_NAMES.intersection(getattr(agent, "tool_names", ()) or ())
-            else "",
+            KNOWLEDGE_INSTRUCTIONS,
             budget=1200,
         ),
         PromptBlock("untrusted_content_policy", UNTRUSTED_CONTENT_INSTRUCTIONS),

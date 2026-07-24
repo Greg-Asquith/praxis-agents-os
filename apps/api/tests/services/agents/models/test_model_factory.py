@@ -105,6 +105,23 @@ def test_build_openai_model(monkeypatch):
     assert model.provider.client._client is retrying_http_client()
 
 
+def test_build_openai_model_ignores_ambient_base_url_env(monkeypatch):
+    # A blank OPENAI_BASE_URL in the process env must not produce schemeless requests.
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
+    model = build_model(_spec("openai", "gpt-5.4-mini"))
+    assert str(model.provider.client.base_url) == "https://api.openai.com/v1/"
+
+
+def test_openai_base_url_setting_coerces_blank_values():
+    from core.settings import Settings
+
+    assert Settings(OPENAI_BASE_URL="   ").OPENAI_BASE_URL == "https://api.openai.com/v1"
+    assert Settings(OPENAI_BASE_URL=" https://proxy.example/v1 ").OPENAI_BASE_URL == (
+        "https://proxy.example/v1"
+    )
+
+
 def test_prompt_cache_defaults_are_anthropic_only(monkeypatch):
     monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))

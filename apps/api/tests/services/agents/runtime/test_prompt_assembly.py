@@ -51,12 +51,13 @@ def test_runtime_instructions_match_canonical_spacing() -> None:
     assert (
         _runtime_instructions(agent, include_delegation=False)
         == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
-        f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
+        f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
     assert (
         _runtime_instructions(agent, include_delegation=True)
         == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
-        f"{DELEGATION_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
+        f"{DELEGATION_INSTRUCTIONS.rstrip()}\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n"
+        f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
 
 
@@ -66,7 +67,7 @@ def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
     assert (
         _runtime_instructions(agent, include_delegation=False)
         == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
-        f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
+        f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
 
 
@@ -108,23 +109,16 @@ def test_runtime_instructions_omits_available_files_when_none_are_attached() -> 
     assert "<available_files>" not in prompt
 
 
-def test_runtime_instructions_adds_knowledge_guidance_only_for_kb_tools() -> None:
-    baseline_agent = _agent(instructions="Reply plainly.", tool_names=[])
-    knowledge_agent = _agent(
-        instructions="Reply plainly.",
-        tool_names=["search_knowledge"],
-    )
+def test_runtime_instructions_always_include_knowledge_guidance() -> None:
+    agent = _agent(instructions="Reply plainly.", tool_names=[])
 
-    baseline = _runtime_instructions(baseline_agent, include_delegation=False)
-    with_knowledge = _runtime_instructions(knowledge_agent, include_delegation=False)
+    prompt = _runtime_instructions(agent, include_delegation=False)
 
-    assert KNOWLEDGE_INSTRUCTIONS not in baseline
-    assert KNOWLEDGE_INSTRUCTIONS in with_knowledge
-    assert with_knowledge.index(KNOWLEDGE_INSTRUCTIONS) < with_knowledge.index(
-        UNTRUSTED_CONTENT_INSTRUCTIONS
-    )
-    assert baseline == (
-        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
+    assert KNOWLEDGE_INSTRUCTIONS in prompt
+    assert prompt.index(KNOWLEDGE_INSTRUCTIONS) < prompt.index(UNTRUSTED_CONTENT_INSTRUCTIONS)
+    assert prompt == (
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}"
+        f"\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
 
 

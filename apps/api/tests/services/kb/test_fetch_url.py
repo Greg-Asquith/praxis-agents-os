@@ -2,14 +2,16 @@
 
 """SSRF and pinned-connect coverage for knowledge-base URL ingestion."""
 
+import sys
 from collections.abc import Awaitable, Callable
+from types import SimpleNamespace
 
 import httpx2
 import pytest
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
-from services.kb.utils import fetch_url
+from services.kb.utils import convert_html_to_markdown, fetch_url
 
 Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
@@ -92,6 +94,89 @@ async def test_fetch_url_pins_initial_and_redirect_connections() -> None:
         "source.example",
         "redirect.example",
     ]
+
+
+async def test_convert_html_to_markdown_accepts_charset_for_extensionless_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResult:
+        text_content = "# Safe content"
+
+    class FakeMarkItDown:
+        def convert_stream(self, stream, *, file_extension=None, **_kwargs):
+            assert stream.read() == b"<h1>Safe content</h1>"
+            assert file_extension == ".html"
+            return FakeResult()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "markitdown",
+        SimpleNamespace(MarkItDown=FakeMarkItDown),
+    )
+
+    markdown = await convert_html_to_markdown(
+        b"<h1>Safe content</h1>",
+        content_type="text/html; charset=UTF-8",
+        source_url="https://source.example/praxis",
+    )
+
+    assert markdown == "# Safe content"
+
+
+async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> None:
+    html = b"""
+    <html><head><title>Pricing</title><style>body { color: red; }</style></head><body>
+    <header><a href="/"><img src="/G.svg" alt="Greg Asquith Logo">Greg Asquith</a></header>
+    <nav><a href="/pricing">Pricing</a><a href="/blog">Blog</a></nav>
+    <div role="banner"><a href="/signup">Sign up</a></div>
+    <main>
+      <h1>Plans</h1>
+      <p><img src="/hero.png" alt="Plan comparison chart"> Tiers are listed below.</p>
+      <p>See <a href="/plans/pro">the Pro plan</a> for details.</p>
+      <p aria-hidden="true">Decorative marquee</p>
+    </main>
+    <footer><a href="/privacy">Privacy</a></footer>
+    </body></html>
+    """
+
+    markdown = await convert_html_to_markdown(
+        html,
+        content_type="text/html; charset=utf-8",
+        source_url="https://source.example/pricing",
+    )
+
+    assert "Plans" in markdown
+    assert "Tiers are listed below." in markdown
+    assert "the Pro plan" in markdown
+    assert "Plan comparison chart" in markdown
+    assert "![" not in markdown
+    assert "Greg Asquith Logo" not in markdown
+    assert "G.svg" not in markdown
+    assert "Sign up" not in markdown
+    assert "Privacy" not in markdown
+    assert "Decorative marquee" not in markdown
+    assert "\n\n\n" not in markdown
+
+
+async def test_convert_html_to_markdown_prunes_chrome_without_a_main_element() -> None:
+    html = (
+        b"<html><body>"
+        b'<header><img src="/logo.svg" alt="Site Logo"></header>'
+        b"<h1>Release notes</h1><p>Version 2 ships approvals.</p>"
+        b"<footer>Copyright</footer>"
+        b"</body></html>"
+    )
+
+    markdown = await convert_html_to_markdown(
+        html,
+        content_type="text/html",
+        source_url="https://source.example/notes",
+    )
+
+    assert "Release notes" in markdown
+    assert "Version 2 ships approvals." in markdown
+    assert "Site Logo" not in markdown
+    assert "Copyright" not in markdown
 
 
 async def test_fetch_url_brackets_ipv6_literal_host_header() -> None:

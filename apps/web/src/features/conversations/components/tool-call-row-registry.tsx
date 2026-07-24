@@ -6,6 +6,7 @@ import {
 } from "@/features/conversations/components/delegation-tool-row"
 import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
+import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
 import { TodoListRow } from "@/features/conversations/components/todo-list-row"
@@ -38,6 +39,12 @@ import {
 } from "@/features/conversations/skills/skill-activation"
 import { BUILD_CHART_TOOL_NAME } from "@/features/conversations/native-tools/chart-tool"
 import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skills/skill-document-read"
+import {
+  READ_DOCUMENT_TOOL_NAME,
+  SEARCH_KNOWLEDGE_TOOL_NAME,
+  readDocumentResult,
+  searchKnowledgeResult,
+} from "@/features/conversations/native-tools/kb-tools"
 import {
   READ_TODOS_TOOL_NAME,
   WRITE_TODOS_TOOL_NAME,
@@ -127,6 +134,13 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
       <FileToolRow activity={activity} defaultOpen={defaultOpen} />
     ),
   },
+  {
+    key: "kb-tools",
+    matches: kbToolRowMatches,
+    render: ({ activity, defaultOpen }) => (
+      <KbToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
+  },
 ]
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
@@ -149,6 +163,22 @@ export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
     }
   }
   return null
+}
+
+function kbToolRowMatches(activity: ToolActivity) {
+  if (
+    (activity.name === SEARCH_KNOWLEDGE_TOOL_NAME || activity.name === READ_DOCUMENT_TOOL_NAME) &&
+    activity.status !== "completed"
+  ) {
+    return true
+  }
+  if (activity.name === SEARCH_KNOWLEDGE_TOOL_NAME) {
+    return searchKnowledgeResult(activity.result) !== null
+  }
+  if (activity.name === READ_DOCUMENT_TOOL_NAME) {
+    return readDocumentResult(activity.result) !== null
+  }
+  return false
 }
 
 function fileToolRowMatches(activity: ToolActivity) {

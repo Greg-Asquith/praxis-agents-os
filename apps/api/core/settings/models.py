@@ -8,7 +8,7 @@ The model catalog itself is Python-owned in services/agents/models/registry.py;
 these settings only pick defaults and hold credentials.
 """
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 # Provider -> API key setting name. Kept in sync with the runtime credential
 # seam in services/agents/models/utils.py (settings cannot import services).
@@ -68,6 +68,12 @@ class LLMSettingsMixin:
     # required in production for the active providers (validated below).
     ANTHROPIC_API_KEY: SecretStr | None = Field(default=None, description="Anthropic API key.")
     OPENAI_API_KEY: SecretStr | None = Field(default=None, description="OpenAI API key.")
+    # Passed explicitly to every OpenAI client so an ambient OPENAI_BASE_URL
+    # env var can never silently redirect or break provider requests.
+    OPENAI_BASE_URL: str = Field(
+        default="https://api.openai.com/v1",
+        description="OpenAI API base URL; blank values fall back to the official endpoint.",
+    )
     GOOGLE_API_KEY: SecretStr | None = Field(
         default=None,
         description="Google AI (Gemini Developer API) key. Unused when GOOGLE_VERTEX_AI.",
@@ -97,6 +103,14 @@ class LLMSettingsMixin:
     AZURE_OPENAI_API_VERSION: str = Field(
         default="2024-10-21", description="Azure OpenAI API version."
     )
+
+    @field_validator("OPENAI_BASE_URL", mode="before")
+    @classmethod
+    def coerce_blank_openai_base_url(cls, value):
+        """Treat blank env values as unset instead of producing schemeless URLs."""
+        if value is None or not str(value).strip():
+            return "https://api.openai.com/v1"
+        return str(value).strip()
 
     @model_validator(mode="after")
     def validate_llm_provider_credentials(self):

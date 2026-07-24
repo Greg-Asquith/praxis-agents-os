@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/test_native_tools.py
+
 """Tests for provider-native runtime tool catalog entries."""
 
 from dataclasses import dataclass
@@ -176,8 +178,10 @@ def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> Non
         "build_chart",
         "list_files",
         "promote_scratch",
+        "read_document",
         "read_file",
         "read_todos",
+        "search_knowledge",
         "write_file",
         "write_todos",
         "web_search",

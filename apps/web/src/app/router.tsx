@@ -253,6 +253,24 @@ const filesRoute = createRoute({
   component: lazyRouteComponent(() => import("@/features/files/routes/files-route"), "FilesRoute"),
 })
 
+const knowledgeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/knowledge",
+  component: lazyRouteComponent(
+    () => import("@/features/knowledge/routes/knowledge-route"),
+    "KnowledgeRoute"
+  ),
+})
+
+const knowledgeDocumentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/knowledge/$documentId",
+  component: lazyRouteComponent(
+    () => import("@/features/knowledge/routes/document-detail-route"),
+    "KnowledgeDocumentRoute"
+  ),
+})
+
 const schedulesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules",
@@ -407,6 +425,8 @@ const routeTree = rootRoute.addChildren([
     skillsRoute,
     newSkillRoute,
     skillDetailRoute,
+    knowledgeRoute,
+    knowledgeDocumentRoute,
     filesRoute,
     schedulesRoute,
     integrationsRoute,

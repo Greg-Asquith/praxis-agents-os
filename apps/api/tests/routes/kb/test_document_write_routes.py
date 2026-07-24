@@ -64,10 +64,12 @@ async def test_member_can_manage_documents_and_mutations_are_audited(
     )
     assert created.status_code == 201
     document_id = created.json()["id"]
+    assert created.json()["processing_attempts"] == 0
 
     listed = await db_async_client.get("/api/v1/kb/documents", headers=headers)
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()["documents"]] == [document_id]
+    assert listed.json()["documents"][0]["processing_attempts"] == 0
 
     updated = await db_async_client.patch(
         f"/api/v1/kb/documents/{document_id}",

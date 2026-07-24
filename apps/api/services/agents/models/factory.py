@@ -43,6 +43,7 @@ def build_model(spec: ResolvedModel) -> Model:
 
     if spec.provider == PROVIDER_OPENAI:
         provider = OpenAIProvider(
+            base_url=settings.OPENAI_BASE_URL,
             api_key=provider_api_key(PROVIDER_OPENAI),
             http_client=retrying_http_client(),
         )

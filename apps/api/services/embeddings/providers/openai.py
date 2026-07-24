@@ -9,6 +9,7 @@ import httpx
 import openai
 from openai import AsyncOpenAI
 
+from core.settings import settings
 from services.agents.models import provider_api_key, retrying_http_client
 from services.agents.models.domain import PROVIDER_OPENAI
 from services.embeddings.domain import (
@@ -27,6 +28,7 @@ class OpenAIEmbeddingsProvider(EmbeddingProvider):
 
     def __init__(self, *, client: AsyncOpenAI | None = None) -> None:
         self._client = client or AsyncOpenAI(
+            base_url=settings.OPENAI_BASE_URL,
             api_key=provider_api_key(PROVIDER_OPENAI),
             http_client=retrying_http_client(),
         )

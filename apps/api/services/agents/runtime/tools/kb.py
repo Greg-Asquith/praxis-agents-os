@@ -18,10 +18,10 @@ from services.agents.runtime.tools import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
-from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
-from services.kb.domain import KB_FRAMED_SOURCE_TYPES
 from services.kb.get_document import get_kb_document
 from services.kb.search_chunks import search_chunks
+
+KB_AGENT_SEARCH_DEFAULT_LIMIT = 5
 
 
 class KnowledgeSearchFilters(BaseModel):
@@ -42,14 +42,11 @@ class ReadRange(BaseModel):
 class KnowledgeChunkResult(BaseModel):
     """One model-visible knowledge search hit."""
 
-    chunk_id: str
     document_id: str
     document_title: str
     source_type: str
     is_private: bool
-    chunk_index: int
-    score: float
-    content: str | UntrustedNode
+    content: str
 
 
 class SearchKnowledgeOutput(BaseModel):
@@ -59,6 +56,7 @@ class SearchKnowledgeOutput(BaseModel):
     results: list[KnowledgeChunkResult]
     total: int
     used_lexical_fallback: bool
+    next_step: str
 
 
 class ReadDocumentOutput(BaseModel):
@@ -71,7 +69,7 @@ class ReadDocumentOutput(BaseModel):
     start: int
     end: int
     total_chars: int
-    content: str | UntrustedNode
+    content: str
 
 
 @runtime_tool(
@@ -79,14 +77,16 @@ class ReadDocumentOutput(BaseModel):
     provider="kb",
     label="Search Knowledge",
     description=(
-        "Search this workspace's knowledge base. Returns matching chunks with "
-        "document metadata; refine the query as needed and use read_document "
-        "for full context."
+        "Search this workspace's knowledge base. Returns short snippets ranked "
+        "by relevance; call read_document with a result's document_id to read "
+        "the full document."
     ),
     effect=TOOL_EFFECT_READ,
     default_policy=TOOL_POLICY_AUTO,
     takes_ctx=True,
     timeout=30,
+    configurable=False,
+    auto_mount=True,
     output_model=SearchKnowledgeOutput,
     presentation=ToolPresentation(
         icon="search",
@@ -110,21 +110,19 @@ async def search_knowledge(
         int,
         Field(
             description=(
-                "Maximum matches. Use 0 for the workspace default; values above "
-                "the configured maximum are safely capped."
+                "Maximum matches to return. Values above the configured maximum are safely capped."
             )
         ),
-    ] = 0,
+    ] = KB_AGENT_SEARCH_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
     """Search visible workspace knowledge through the shared hybrid service."""
     normalized_query = query.strip()
     if not normalized_query:
         raise ModelRetry("search_knowledge requires a non-empty query.")
-    if limit < 0:
-        raise ModelRetry("search_knowledge limit must be greater than or equal to 0.")
+    if limit < 1:
+        raise ModelRetry("search_knowledge limit must be at least 1.")
 
-    normalized_limit = settings.KB_SEARCH_TOP_K_DEFAULT if limit == 0 else limit
-    normalized_limit = min(normalized_limit, settings.KB_SEARCH_TOP_K_MAX)
+    normalized_limit = min(limit, settings.KB_SEARCH_TOP_K_MAX)
     search_filters = filters or KnowledgeSearchFilters()
     try:
         result = await search_chunks(
@@ -142,18 +140,11 @@ async def search_knowledge(
 
     hits = [
         {
-            "chunk_id": str(hit.id),
             "document_id": str(hit.document_id),
             "document_title": hit.title,
             "source_type": hit.source_type,
             "is_private": hit.is_private,
-            "chunk_index": hit.chunk_index,
-            "score": hit.score,
-            "content": _knowledge_content(
-                hit.content,
-                source_type=hit.source_type,
-                source_ref=f"chunk:{hit.id}",
-            ),
+            "content": hit.content,
         }
         for hit in result.results
     ]
@@ -162,6 +153,11 @@ async def search_knowledge(
         "results": hits,
         "total": len(hits),
         "used_lexical_fallback": result.mode == "lexical_fallback",
+        "next_step": (
+            "Results are snippets: call read_document with a document_id for full context."
+            if hits
+            else "No matches: retry search_knowledge with different terms or answer without it."
+        ),
     }
 
 
@@ -177,6 +173,8 @@ async def search_knowledge(
     default_policy=TOOL_POLICY_AUTO,
     takes_ctx=True,
     timeout=15,
+    configurable=False,
+    auto_mount=True,
     output_model=ReadDocumentOutput,
     presentation=ToolPresentation(
         icon="book",
@@ -236,24 +234,5 @@ async def read_document(
         "start": requested_range.start,
         "end": end,
         "total_chars": total_chars,
-        "content": _knowledge_content(
-            window,
-            source_type=document.source_type,
-            source_ref=f"document:{document.id}",
-        ),
+        "content": window,
     }
-
-
-def _knowledge_content(
-    content: str,
-    *,
-    source_type: str,
-    source_ref: str,
-) -> str | UntrustedContent:
-    if source_type not in KB_FRAMED_SOURCE_TYPES:
-        return content
-    return UntrustedContent(
-        source_kind="kb",
-        source_ref=source_ref,
-        content=content,
-    )

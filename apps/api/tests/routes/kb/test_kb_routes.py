@@ -1,3 +1,5 @@
+# apps/api/tests/routes/kb/test_kb_routes.py
+
 """HTTP-boundary tests for knowledge-base read routes."""
 
 from datetime import UTC, datetime
@@ -135,14 +137,21 @@ async def test_get_document_allows_read_only_and_maps_hidden_to_404(
         workspace=workspace,
         created_by_user_id=user.id,
         status="ready",
+        processing_attempts=2,
         source_updated_at=datetime.now(UTC),
+    )
+    external = build_kb_document(
+        workspace=workspace,
+        created_by_user_id=user.id,
+        source_type="url",
+        status="ready",
     )
     hidden = build_kb_document(
         workspace=workspace,
         created_by_user_id=other_user.id,
         is_private=True,
     )
-    db_session.add_all([visible, hidden])
+    db_session.add_all([visible, external, hidden])
     await db_session.commit()
 
     response = await db_async_client.get(
@@ -151,6 +160,20 @@ async def test_get_document_allows_read_only_and_maps_hidden_to_404(
     )
     assert response.status_code == 200
     assert response.json()["content_md"] == visible.content_md
+    assert response.json()["created_by_user_id"] == str(user.id)
+    assert response.json()["processing_attempts"] == 2
+
+    external_response = await db_async_client.get(
+        f"/api/v1/kb/documents/{external.id}",
+        headers=headers,
+    )
+    assert external_response.status_code == 200
+    assert external_response.json()["content_md"] == {
+        "node": "praxis_untrusted",
+        "source_kind": "kb",
+        "source_ref": f"document:{external.id}",
+        "content": external.content_md,
+    }
 
     hidden_response = await db_async_client.get(
         f"/api/v1/kb/documents/{hidden.id}",

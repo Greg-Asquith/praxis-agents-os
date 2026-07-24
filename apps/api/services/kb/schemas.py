@@ -6,9 +6,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
-from services.kb.domain import KB_DOCUMENT_TITLE_MAX_CHARS
+from services.agents.runtime.untrusted import UntrustedNode
+from services.kb.domain import KB_DOCUMENT_TITLE_MAX_CHARS, KB_FRAMED_SOURCE_TYPES
 from utils.pagination import OffsetPage
 
 if TYPE_CHECKING:
@@ -34,6 +35,17 @@ class KBSearchHit(BaseModel):
     score: float
     sources: list[str]
 
+    @field_serializer("content")
+    def serialize_content(self, content: str) -> str | UntrustedNode:
+        """Keep external-source provenance structured for browser clients."""
+        if self.source_type not in KB_FRAMED_SOURCE_TYPES:
+            return content
+        return UntrustedNode(
+            source_kind="kb",
+            source_ref=f"chunk:{self.id}",
+            content=content,
+        )
+
 
 class KBSearchResult(BaseModel):
     """Bounded search response with an explicit degradation mode."""
@@ -53,12 +65,14 @@ class KBDocumentRead(BaseModel):
     source_updated_at: datetime | None
     status: str
     processing_error: str | None
+    processing_attempts: int = Field(default=0, ge=0)
     summary: str | None
     external_url: str | None
     is_private: bool
     chunk_count: int
     content_md: str | None
     meta: dict[str, Any]
+    created_by_user_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -73,14 +87,27 @@ class KBDocumentRead(BaseModel):
             source_updated_at=document.source_updated_at,
             status=document.status,
             processing_error=document.processing_error,
+            processing_attempts=document.processing_attempts,
             summary=document.summary,
             external_url=document.external_url,
             is_private=document.is_private,
             chunk_count=document.chunk_count,
             content_md=document.content_md,
             meta=document.meta,
+            created_by_user_id=document.created_by_user_id,
             created_at=document.created_at,
             updated_at=document.updated_at,
+        )
+
+    @field_serializer("content_md")
+    def serialize_content(self, content: str | None) -> str | UntrustedNode | None:
+        """Keep external-source provenance structured for browser clients."""
+        if content is None or self.source_type not in KB_FRAMED_SOURCE_TYPES:
+            return content
+        return UntrustedNode(
+            source_kind="kb",
+            source_ref=f"document:{self.id}",
+            content=content,
         )
 
 
@@ -92,6 +119,7 @@ class KBDocumentListItem(BaseModel):
     source_type: str
     status: str
     processing_error: str | None
+    processing_attempts: int = Field(default=0, ge=0)
     is_private: bool
     chunk_count: int
     created_by_user_id: UUID | None
@@ -106,6 +134,7 @@ class KBDocumentListItem(BaseModel):
             source_type=document.source_type,
             status=document.status,
             processing_error=document.processing_error,
+            processing_attempts=document.processing_attempts,
             is_private=document.is_private,
             chunk_count=document.chunk_count,
             created_by_user_id=document.created_by_user_id,

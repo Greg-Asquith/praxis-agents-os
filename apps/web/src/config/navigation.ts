@@ -5,6 +5,7 @@ import {
   CalendarClockIcon,
   FilesIcon,
   LayoutDashboardIcon,
+  LibraryIcon,
   PlugIcon,
   type LucideIcon,
   SparklesIcon,
@@ -43,6 +44,12 @@ const mainNavigation: NavigationItem[] = [
     label: "Skills",
     to: "/skills",
     icon: SparklesIcon,
+    disabled: false,
+  },
+  {
+    label: "Knowledge Base",
+    to: "/knowledge",
+    icon: LibraryIcon,
     disabled: false,
   },
   {

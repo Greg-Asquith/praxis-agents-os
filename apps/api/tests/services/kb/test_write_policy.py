@@ -11,7 +11,12 @@ from models.kb import KBDocument
 from services.kb.write_policy import KBProvenance, enforce_kb_write_policy
 
 
-def _document(*, workspace_id=None, is_private: bool = False) -> KBDocument:
+def _document(
+    *,
+    workspace_id=None,
+    is_private: bool = False,
+    created_by_user_id=None,
+) -> KBDocument:
     return KBDocument(
         id=uuid4(),
         workspace_id=workspace_id or uuid4(),
@@ -20,6 +25,7 @@ def _document(*, workspace_id=None, is_private: bool = False) -> KBDocument:
         content_hash="a" * 64,
         is_private=is_private,
         annotation_enabled=False,
+        created_by_user_id=created_by_user_id,
     )
 
 
@@ -76,15 +82,29 @@ def test_private_documents_can_only_move_toward_private_scope() -> None:
             existing=private,
         )
 
-    shared = _document(workspace_id=workspace_id, is_private=False)
+    creator_id = uuid4()
+    shared = _document(
+        workspace_id=workspace_id,
+        is_private=False,
+        created_by_user_id=creator_id,
+    )
     enforce_kb_write_policy(
         workspace_id=workspace_id,
-        provenance=_user_provenance(),
+        provenance=_user_provenance(user_id=creator_id),
         title=shared.title,
         content_md="Safe content",
         is_private=True,
         existing=shared,
     )
+    with pytest.raises(AppValidationError, match="Only the document creator"):
+        enforce_kb_write_policy(
+            workspace_id=workspace_id,
+            provenance=_user_provenance(),
+            title=shared.title,
+            content_md="Safe content",
+            is_private=True,
+            existing=shared,
+        )
 
 
 @pytest.mark.parametrize(

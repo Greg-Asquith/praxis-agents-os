@@ -1,4 +1,4 @@
-# apps/api/test/services/agents/runtime/test_history_trimming.py
+# apps/api/tests/services/agents/runtime/test_history_trimming.py
 
 """Tests for cache-stable runtime history trimming."""
 
@@ -25,6 +25,7 @@ from models.agent import Agent
 from services.agents.runtime.history import history_trimmer, trim_history
 from services.agents.runtime.loop import _runtime_instructions
 from services.agents.runtime.prompt import (
+    KNOWLEDGE_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
     UNTRUSTED_CONTENT_INSTRUCTIONS,
 )
@@ -203,7 +204,8 @@ async def test_cache_sensitive_prefix_inputs_are_deterministic() -> None:
     )
 
     assert _runtime_instructions(agent, include_delegation=False) == (
-        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
     assert _runtime_instructions(agent, include_delegation=False) == _runtime_instructions(
         agent,

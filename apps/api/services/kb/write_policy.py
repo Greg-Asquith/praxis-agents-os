@@ -83,7 +83,11 @@ def enforce_kb_write_policy(
     """Reject a knowledge-base write that violates shared content invariants."""
     _require_provenance(provenance)
     _require_workspace_scope(workspace_id, existing=existing)
-    _require_private_scope(existing=existing, is_private=is_private)
+    _require_private_scope(
+        existing=existing,
+        is_private=is_private,
+        provenance=provenance,
+    )
     _reject_secrets(title=title, content_md=content_md)
     _require_bounded_content(title=title, content_md=content_md)
     if duplicate is not None and duplicate.id != getattr(existing, "id", None):
@@ -125,10 +129,29 @@ def _require_workspace_scope(
         )
 
 
-def _require_private_scope(*, existing: KBDocument | None, is_private: bool) -> None:
+def _require_private_scope(
+    *,
+    existing: KBDocument | None,
+    is_private: bool,
+    provenance: KBProvenance,
+) -> None:
     if existing is not None and existing.is_private and not is_private:
         raise AppValidationError(
             "Private knowledge documents cannot be made workspace-shared",
+            field="is_private",
+        )
+    if (
+        existing is not None
+        and not existing.is_private
+        and is_private
+        and (
+            provenance.actor_kind != "user"
+            or provenance.user_id is None
+            or provenance.user_id != existing.created_by_user_id
+        )
+    ):
+        raise AppValidationError(
+            "Only the document creator can make a shared knowledge document private",
             field="is_private",
         )
 

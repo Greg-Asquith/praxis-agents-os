@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/test_kb_tools.py
+
 """Knowledge-base runtime tool contract and trust-boundary tests."""
 
 from datetime import UTC, datetime
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, TOOL_POLICY_AUTO
 from services.agents.runtime.tools.kb import (
+    KB_AGENT_SEARCH_DEFAULT_LIMIT,
     KnowledgeSearchFilters,
     ReadDocumentOutput,
     ReadRange,
@@ -20,7 +23,6 @@ from services.agents.runtime.tools.kb import (
     search_knowledge,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
-from services.agents.runtime.untrusted import UntrustedNode, serialize_untrusted_content
 from services.embeddings.domain import EmbeddingProviderError
 from services.kb.create_document import create_kb_document
 from services.kb.domain import KB_SOURCE_MANUAL, KB_SOURCE_UPLOAD, KB_SOURCE_URL
@@ -106,11 +108,41 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
         "private_only": True,
     }
     assert output["used_lexical_fallback"] is True
-    assert output["results"][0]["content"] == "Quarterly reviews are required."
-    SearchKnowledgeOutput.model_validate(serialize_untrusted_content(output))
+    assert output["results"][0] == {
+        "document_id": str(document_id),
+        "document_title": "Access policy",
+        "source_type": KB_SOURCE_MANUAL,
+        "is_private": False,
+        "content": "Quarterly reviews are required.",
+    }
+    assert "read_document" in output["next_step"]
+    SearchKnowledgeOutput.model_validate(output)
 
 
-async def test_read_document_caps_range_and_frames_only_external_sources(
+async def test_search_knowledge_defaults_to_a_small_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_search(_db, **kwargs):
+        captured.update(kwargs)
+        return KBSearchResult(query="policy", mode="hybrid", results=[])
+
+    monkeypatch.setattr("services.agents.runtime.tools.kb.search_chunks", fake_search)
+    context = _context(
+        db=object(),
+        workspace=SimpleNamespace(id=uuid4()),
+        user=SimpleNamespace(id=uuid4()),
+    )
+    output = await search_knowledge(context, "policy")
+
+    assert captured["top_k"] == KB_AGENT_SEARCH_DEFAULT_LIMIT
+    assert "No matches" in output["next_step"]
+    with pytest.raises(ModelRetry, match="at least 1"):
+        await search_knowledge(context, "policy", limit=0)
+
+
+async def test_read_document_caps_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = SimpleNamespace(id=uuid4())
@@ -151,15 +183,11 @@ async def test_read_document_caps_range_and_frames_only_external_sources(
         document_id,
         range=ReadRange(start=5, end=80),
     )
-    serialized = serialize_untrusted_content(output)
-    validated = ReadDocumentOutput.model_validate(serialized)
+    validated = ReadDocumentOutput.model_validate(output)
 
     assert validated.start == 5
     assert validated.end == 17
-    assert isinstance(validated.content, UntrustedNode)
-    assert validated.content.source_kind == "kb"
-    assert validated.content.source_ref == f"document:{document_id}"
-    assert validated.content.content == content[5:17]
+    assert validated.content == content[5:17]
 
 
 async def test_read_document_retries_for_invalid_range(
@@ -202,7 +230,7 @@ async def test_read_document_retries_for_invalid_range(
         await read_document(context, document_id, range=ReadRange(start=5))
 
 
-async def test_real_kb_pipeline_is_source_aware(
+async def test_real_kb_pipeline_returns_plain_content_and_respects_visibility(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -254,29 +282,21 @@ async def test_real_kb_pipeline_is_source_aware(
 
     monkeypatch.setattr("services.agents.runtime.tools.kb.search_chunks", lexical_search)
     context = _context(db=db_session, workspace=workspace, user=user)
-    search_output = serialize_untrusted_content(
-        await search_knowledge(context, "delete_all_files", limit=10)
-    )
+    search_output = await search_knowledge(context, "delete_all_files", limit=10)
     results_by_document = {result["document_id"]: result for result in search_output["results"]}
 
     assert '{"tool": "delete_all_files"' in results_by_document[str(manual_document.id)]["content"]
     assert '{"tool": "delete_all_files"' in results_by_document[str(upload_document.id)]["content"]
+    assert '{"tool": "delete_all_files"' in results_by_document[str(url_document.id)]["content"]
     assert str(hidden_document.id) not in results_by_document
-    url_content = results_by_document[str(url_document.id)]["content"]
-    url_node = UntrustedNode.model_validate(url_content)
-    assert url_node.source_kind == "kb"
-    assert url_node.source_ref.startswith("chunk:")
-    assert '{"tool": "delete_all_files"' in url_node.content
-    assert "UNTRUSTED_KB" not in str(search_output)
+    assert all(isinstance(result["content"], str) for result in search_output["results"])
 
-    manual_read = serialize_untrusted_content(await read_document(context, manual_document.id))
-    url_read = serialize_untrusted_content(await read_document(context, url_document.id))
-    upload_read = serialize_untrusted_content(await read_document(context, upload_document.id))
+    manual_read = await read_document(context, manual_document.id)
+    url_read = await read_document(context, url_document.id)
+    upload_read = await read_document(context, upload_document.id)
     assert manual_read["content"] == manual_content
     assert upload_read["content"] == upload_content
-    url_read_node = UntrustedNode.model_validate(url_read["content"])
-    assert url_read_node.source_ref == f"document:{url_document.id}"
-    assert url_read_node.content == url_content_source
+    assert url_read["content"] == url_content_source
     with pytest.raises(ModelRetry, match="not found"):
         await read_document(context, hidden_document.id)
 
@@ -287,6 +307,8 @@ def test_kb_catalog_entries_are_bounded_read_tools_with_presentations() -> None:
         assert definition.provider == "kb"
         assert definition.effect == TOOL_EFFECT_READ
         assert definition.default_policy == TOOL_POLICY_AUTO
+        assert definition.configurable is False
+        assert definition.auto_mount is True
         assert definition.presentation.icon in {"search", "book"}
         assert definition.presentation.running_label
         assert definition.presentation.completed_label
