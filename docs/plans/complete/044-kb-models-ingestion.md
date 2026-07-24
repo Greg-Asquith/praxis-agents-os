@@ -68,13 +68,16 @@
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md`
   §4 Phase 4b row 044; donor `DONOR_PORT_ROADMAP.md` §4.4 tables +
   ingestion / §6 row D2)
-- **Execution progress**: IN PROGRESS. Slice A completed 2026-07-24:
+- **Execution progress**: DONE 2026-07-24. Slice A completed 2026-07-24:
   `core_0020` adds the KB document/chunk schema, generated lexical
   indexes, and cosine HNSW collection; settings, the offset-preserving
   markdown chunker, IP-pinned URL fetcher, and real file-revision
   markdown seam are implemented. The Slice A migration round-trip,
   drift check, index guard, focused tests, and full 986-test API gate
-  passed. Slice B (ingestion pipeline) remains pending.
+  passed. Slice B completed the workspace-scoped create/delete operations,
+  idempotent ingest/embed/retention jobs, upload ingestion, collection-stamp
+  guard, and Gate G6 annotation defenses. Its 107-test focused gate, worker
+  smoke, migration drift check, and complete 1,022-test API gate passed.
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -829,26 +832,26 @@ private address** (SSRF suite).
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0; `pgvector>=0.4` in `pyproject.toml`
-- [ ] `uv run alembic check` reports no pending operations; migration on
+- [x] `uv run ruff check .` exits 0; `pgvector>=0.4` in `pyproject.toml`
+- [x] `uv run alembic check` reports no pending operations; migration on
       the **core** branch (D5); downgrade round-trips; `\d kb_chunks`
       shows `hnsw (embedding halfvec_cosine_ops)` and the GIN indexes
-- [ ] Server pgvector ≥ 0.8 verified at execution time (0.8.1 at
+- [x] Server pgvector ≥ 0.8 verified at execution time (0.8.1 at
       planning) — the STOP guard actually ran
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/kb tests/services/jobs -q`
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/kb tests/services/jobs -q`
       exits 0; full `uv run pytest -q` green
-- [ ] Registry print shows exactly three new kinds: `kb.embed_chunks`,
+- [x] Registry print shows exactly three new kinds: `kb.embed_chunks`,
       `kb.ingest_document`, `kb.sweep_deleted`;
       `uv run python -m workers.job_runner --once` exits 0
-- [ ] No routes package added; upload/conversation/integration sources
+- [x] No routes package added; upload/conversation/integration sources
       reject with pending-plan messages (033/046/041 named)
       *(superseded — uploads ingest end-to-end; only
       conversation/integration reject, naming 046/041; see Amendment
       (plan 080))*
-- [ ] `docs/architecture/governance.md` §3 KB cell flipped to
+- [x] `docs/architecture/governance.md` §3 KB cell flipped to
       `[implemented: plan 044]` in the same change
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated (add the 044 row if
+- [x] `git status` shows no modified files outside the in-scope list
+- [x] `docs/plans/000_README.md` status row updated (add the 044 row if
       absent)
 
 ## STOP conditions
@@ -1059,12 +1062,12 @@ search-hit payload. This plan owns the channel's mechanical defenses:
 
 **Done-criteria additions:**
 
-- [ ] Upload-source documents ingest end-to-end (create → ingest →
+- [x] Upload-source documents ingest end-to-end (create → ingest →
       chunks → embed) with no pending-033 message anywhere
-- [ ] The annotation prompt carries untrusted-data framing, the stored
+- [x] The annotation prompt carries untrusted-data framing, the stored
       `context_line` is length-bounded server-side, and a deterministic
       test pins both (threat-model §2(h))
-- [ ] KB job handlers are thin modules in `services/jobs/handlers/`
+- [x] KB job handlers are thin modules in `services/jobs/handlers/`
       imported from its `__init__.py`; no `services/kb/handlers/`
       package exists; no converter copy exists — conversion goes through
       `utils/document_markdown.py`

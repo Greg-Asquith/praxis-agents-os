@@ -26,10 +26,11 @@ The core platform is wired end to end (API, worker, and UI):
   worker, audit and security event viewers, an LLM model catalog, and
   integration connections (OAuth with PKCE, API keys, encrypted credentials).
 
-Notifications exist as a backend service without routes or UI yet, and
-pgvector is provisioned but unused until the knowledge-base work lands. See
-`docs/plans/000_MASTER_ROADMAP.md` for the authoritative ordering of what
-comes next.
+Notifications exist as a backend service without routes or UI yet. The
+knowledge-base backend now provides pgvector-backed document and chunk storage
+plus durable ingestion, embedding, and retention jobs; search, agent tools,
+routes, and UI remain pending. See `docs/plans/000_MASTER_ROADMAP.md` for the
+authoritative ordering of what comes next.
 
 ## Repository Layout
 

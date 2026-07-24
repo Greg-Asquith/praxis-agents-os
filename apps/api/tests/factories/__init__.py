@@ -19,6 +19,7 @@ from tests.factories.integrations import (
     build_integration_webhook,
 )
 from tests.factories.jobs import build_job
+from tests.factories.kb import build_kb_chunk, build_kb_document
 from tests.factories.sessions import build_session
 from tests.factories.skills import build_skill
 from tests.factories.users import build_user
@@ -39,6 +40,8 @@ __all__ = [
     "build_integration_resource",
     "build_integration_webhook",
     "build_job",
+    "build_kb_chunk",
+    "build_kb_document",
     "build_session",
     "build_skill",
     "build_user",

@@ -32,6 +32,25 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
 
+def require_kb_workspace_id(workspace_id: UUID | None) -> UUID:
+    """Require tenant scope for a knowledge-base operation."""
+    if workspace_id is None:
+        raise AppValidationError(
+            "Knowledge-base operations require a workspace",
+            field="workspace_id",
+        )
+    return workspace_id
+
+
+def validate_source_url(url: str | None) -> str:
+    """Normalize and validate a URL before a source document is created."""
+    if url is None or not url.strip():
+        raise AppValidationError("URL documents require a URL", field="url")
+    normalized = url.strip()
+    _require_fetch_url(normalized)
+    return normalized
+
+
 async def convert_html_to_markdown(
     data: bytes,
     *,

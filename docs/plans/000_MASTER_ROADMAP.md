@@ -208,14 +208,14 @@ catalogue, preserves ordering across bounded batches, and meters successful
 usage atomically per workspace-month against the soft governance budget.
 The deterministic retrieval fake and provider-isolated tests make downstream
 knowledge and memory work network-free. The complete API gate passed 960 tests.
-Plan 044 Slice A completed 2026-07-24: `core_0020` establishes the
-workspace-scoped KB document/chunk schema with generated lexical indexes and a
-cosine HNSW halfvec collection. The shared settings, deterministic
-offset-preserving markdown chunker, IP-pinned SSRF-safe URL fetcher, and real
-file-revision markdown read seam are in place. Its migration round-trip,
-autogenerate drift check, index guard, focused tests, and full 986-test API
-gate passed. Plan 044 remains IN PROGRESS; Slice B owns the ingestion
-pipeline.
+Plan 044 completed 2026-07-24 and moved to `docs/plans/complete/`. Slice A
+established the workspace-scoped KB document/chunk schema, generated lexical
+indexes, cosine HNSW halfvec collection, offset-preserving markdown chunker,
+IP-pinned URL fetcher, and Files markdown seam. Slice B adds workspace-scoped
+manual, URL, and upload-source creation; idempotent ingest/embed/retention jobs;
+lexical-ready-before-embedding behavior; collection stamp guards; and bounded,
+untrusted-data-framed contextual annotation. The final 107-test focused gate,
+worker smoke, migration drift check, and complete 1,022-test API gate passed.
 Plan 089 (Google BigQuery provider) was added 2026-07-24 by maintainer
 decision D14 as the first Phase 4a extension past the D4 set:
 workspace-shared service-account connections, dataset discovery into the
@@ -644,7 +644,7 @@ structure.
 | Plan | Scope                                                                                                                                                                                                                                                                                                                                                            |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 043  | Embeddings provider service (ABC + OpenAI default + explicit Ollama option; model+dims echoed for collection stamping; atomic workspace-month token counter). **DONE 2026-07-24.** (Donor D1.)                                                                                                                                                                      |
-| 044  | OKF-compatible, Praxis-owned `kb_documents`/`kb_chunks` models + migrations (stable concept identifiers/frontmatter metadata, halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). Google Knowledge Catalog remains an optional integration target, not a dependency. (Donor D2 + D9.) |
+| 044  | OKF-compatible, Praxis-owned `kb_documents`/`kb_chunks` models + migrations (stable concept identifiers/frontmatter metadata, halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). **DONE 2026-07-24.** Google Knowledge Catalog remains an optional integration target, not a dependency. (Donor D2 + D9.) |
 | 045  | Hybrid search engine (RRF merge, pending-embedding lexical fallback, SQL filters, reranker interface) + search/read routes + **the eval harness**: seed docs with expected citations, hybrid-search assertions, fallback tests, prompt-injection fixture documents. (Donor D3 + gaps-doc eval requirement; Gate G4.)                                             |
 | 046  | Agent tools (`search_knowledge`, `read_document`) with retrieved content framed as untrusted data in tool results; write-policy choke point (provenance, private-never-shared rule, secret blocking); document sources (upload via Files, URL, manual). **Gate G2 applies.** (Donor D4.)                                                                         |
 | 047  | KB UI: documents table, ingestion status, search. (Donor D5.)                                                                                                                                                                                                                                                                                                    |
