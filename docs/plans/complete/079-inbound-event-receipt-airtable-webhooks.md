@@ -88,8 +88,8 @@
   unions are exhaustive over interactive/direct, scheduled, and delegated.
 - `APP_BASE_URL` plus `API_V1_PREFIX` is the existing canonical callback URL
   source. Localhost cannot receive Airtable pushes; webhook creation must fail
-  clearly unless the resulting notification URL is HTTPS outside local
-  development and publicly reachable by operator configuration.
+  clearly unless the resulting notification URL is public HTTPS, including in
+  local development (where an operator may configure a tunnel URL).
 
 ## Scope
 

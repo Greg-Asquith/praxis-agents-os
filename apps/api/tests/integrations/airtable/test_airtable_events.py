@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 
 from integrations.airtable import events
+from core.exceptions.integration import IntegrationValidationError
 from models.integrations import (
     IntegrationConnection,
     IntegrationEvent,
@@ -94,6 +95,33 @@ async def test_create_webhook_stores_only_the_mac_secret_reference(
         f"/integrations/events/airtable/{webhook.receipt_id}"
     )
     db.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_webhook_rejects_local_callback_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(events.settings, "APP_BASE_URL", "http://localhost:8000")
+    connection = IntegrationConnection(
+        id=uuid4(),
+        provider_key="airtable",
+        owner_workspace_id=uuid4(),
+        connected_by_user_id=uuid4(),
+    )
+    resource = IntegrationResource(
+        id=uuid4(),
+        connection_id=connection.id,
+        resource_type="airtable_base",
+        external_id="app1",
+        availability="available",
+    )
+
+    with pytest.raises(IntegrationValidationError, match="public HTTPS"):
+        await events.create_webhook(  # type: ignore[arg-type]
+            SimpleNamespace(),
+            connection,
+            resource,
+        )
 
 
 @pytest.mark.asyncio
