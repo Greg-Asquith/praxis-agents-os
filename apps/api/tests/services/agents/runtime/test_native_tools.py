@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import SecretStr
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import (
     ModelResponse,
@@ -15,6 +16,7 @@ from pydantic_ai.messages import (
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -24,9 +26,12 @@ from models.workspace import Workspace
 from services.agent_runs import create_agent_run
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
+    PROVIDER_AZURE,
+    PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
     ResolvedModel,
 )
+from services.agents.models.utils import has_provider_api_key
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import (
     digest_args,
@@ -45,6 +50,7 @@ from services.agents.runtime.tools.registry import (
     RUNTIME_TOOL_CATALOG,
     build_runtime_native_capabilities,
     build_runtime_tools,
+    list_allowed_tool_definitions,
 )
 from services.agents.runtime.tools.schemas import ToolCatalogEntry
 from services.agents.utils import validate_tool_configuration
@@ -60,7 +66,12 @@ class NativeRuntimeContext:
     run_id: UUID
 
 
-def _agent(*, tool_names: list[str]) -> Agent:
+def _agent(
+    *,
+    tool_names: list[str],
+    model_provider: str = PROVIDER_OPENAI,
+    model: str = "gpt-5.4-mini",
+) -> Agent:
     return Agent(
         name="Native Tool Agent",
         slug=f"native-tool-agent-{uuid4().hex[:8]}",
@@ -68,9 +79,57 @@ def _agent(*, tool_names: list[str]) -> Agent:
         workspace_id=uuid4(),
         created_by=uuid4(),
         tool_names=tool_names,
-        model_provider=PROVIDER_OPENAI,
-        model="gpt-5.4-mini",
+        model_provider=model_provider,
+        model=model,
     )
+
+
+def _set_native_provider_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    anthropic: str | None = None,
+    google: str | None = None,
+    openai: str | None = None,
+    azure: str | None = None,
+) -> None:
+    for setting_name, value in (
+        ("ANTHROPIC_API_KEY", anthropic),
+        ("GOOGLE_API_KEY", google),
+        ("OPENAI_API_KEY", openai),
+        ("AZURE_OPENAI_API_KEY", azure),
+    ):
+        monkeypatch.setattr(
+            settings,
+            setting_name,
+            SecretStr(value) if value is not None else None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [
+        ({}, ()),
+        ({"anthropic": "sk-ant-test", "azure": "azure-test"}, ("anthropic",)),
+        (
+            {
+                "anthropic": "sk-ant-test",
+                "google": "google-test",
+                "openai": "sk-openai-test",
+                "azure": "azure-test",
+            },
+            ("anthropic", "google", "openai"),
+        ),
+    ],
+)
+def test_configured_native_search_providers(
+    monkeypatch: pytest.MonkeyPatch,
+    keys: dict[str, str],
+    expected: tuple[str, ...],
+) -> None:
+    _set_native_provider_keys(monkeypatch, **keys)
+
+    assert web_search_tools.configured_native_search_providers() == expected
+    assert has_provider_api_key(PROVIDER_AZURE) is ("azure" in keys)
 
 
 def test_web_search_catalog_entry_is_native_function_tool() -> None:
@@ -88,6 +147,11 @@ def test_web_search_catalog_entry_is_native_function_tool() -> None:
     assert entry.resource_types is None
     assert definition.supports_approval is True
     assert definition.output_model is web_search_tools.WebSearchOutput
+    assert definition.presentation.arg_fields[1].options == (
+        "anthropic",
+        "google",
+        "openai",
+    )
 
     assert validate_tool_configuration(
         tool_names=["web_search"],
@@ -121,12 +185,40 @@ def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> Non
     ]
     web_search_tool = next(tool for tool in tools if tool.name == "web_search")
     schema = web_search_tool.function_schema.json_schema
-    assert "model_provider" in schema["required"]
-    assert schema["properties"]["model_provider"]["enum"] == [
-        "anthropic",
-        "google",
-        "openai",
-    ]
+    assert schema["required"] == ["query"]
+    assert schema["properties"]["model_provider"] == {
+        "anyOf": [
+            {
+                "enum": ["anthropic", "google", "openai"],
+                "type": "string",
+            },
+            {"type": "null"},
+        ],
+        "default": None,
+        "description": (
+            "Optional helper model provider. Omit unless there is a reason to choose one. "
+            "Available providers are anthropic, google, and openai."
+        ),
+    }
+
+
+def test_web_search_availability_follows_configured_provider_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["web_search"])
+    _set_native_provider_keys(monkeypatch)
+
+    assert "web_search" not in {
+        definition.name for definition in list_allowed_tool_definitions(workspace=object())
+    }
+    assert "web_search" not in {tool.name for tool in build_runtime_tools(agent)}
+
+    _set_native_provider_keys(monkeypatch, google="google-test")
+
+    assert "web_search" in {
+        definition.name for definition in list_allowed_tool_definitions(workspace=object())
+    }
+    assert "web_search" in {tool.name for tool in build_runtime_tools(agent)}
 
 
 def test_web_search_helper_model_can_differ_from_active_agent_model() -> None:
@@ -143,15 +235,94 @@ def test_web_search_helper_model_can_differ_from_active_agent_model() -> None:
     assert model_spec.model == "claude-sonnet-4-6"
 
 
-def test_web_search_rejects_unavailable_provider() -> None:
+def test_web_search_rejects_unconfigured_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     agent = _agent(tool_names=["web_search"])
+    _set_native_provider_keys(monkeypatch, anthropic="sk-ant-test")
 
-    with pytest.raises(ModelRetry, match="Available providers"):
+    with pytest.raises(
+        ModelRetry,
+        match=r"Provider 'google' is not configured.*Available configured providers: anthropic",
+    ):
         web_search_tools.resolve_web_search_model(
             agent,
-            model_provider="azure",
+            model_provider=PROVIDER_GOOGLE,
             model=None,
         )
+
+
+def test_web_search_rejects_unsupported_provider_with_configured_choices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["web_search"])
+    _set_native_provider_keys(monkeypatch, anthropic="sk-ant-test")
+
+    with pytest.raises(
+        ModelRetry,
+        match=r"Provider 'azure' is not configured.*Available configured providers: anthropic",
+    ):
+        web_search_tools.resolve_web_search_model(
+            agent,
+            model_provider=PROVIDER_AZURE,
+            model=None,
+        )
+
+
+def test_web_search_omitted_provider_reuses_configured_agent_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["web_search"])
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    model_spec = web_search_tools.resolve_web_search_model(agent)
+
+    assert model_spec.provider == PROVIDER_OPENAI
+    assert model_spec.model == "gpt-5.4-mini"
+    assert model_spec.max_steps == settings.NATIVE_WEB_SEARCH_MAX_STEPS
+
+
+def test_web_search_omitted_provider_falls_back_to_first_configured_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(
+        tool_names=["web_search"],
+        model_provider=PROVIDER_AZURE,
+        model="customer-deployment",
+    )
+    _set_native_provider_keys(
+        monkeypatch,
+        google="google-test",
+        openai="sk-openai-test",
+        azure="azure-test",
+    )
+
+    model_spec = web_search_tools.resolve_web_search_model(agent)
+
+    assert model_spec.provider == PROVIDER_GOOGLE
+    assert model_spec.model == web_search_tools.DEFAULT_NATIVE_SEARCH_MODELS[PROVIDER_GOOGLE]
+
+
+def test_web_search_omitted_provider_uses_only_configured_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["web_search"])
+    _set_native_provider_keys(monkeypatch, anthropic="sk-ant-test")
+
+    model_spec = web_search_tools.resolve_web_search_model(agent)
+
+    assert model_spec.provider == PROVIDER_ANTHROPIC
+    assert model_spec.model == web_search_tools.DEFAULT_NATIVE_SEARCH_MODELS[PROVIDER_ANTHROPIC]
+
+
+def test_web_search_omitted_provider_rejects_when_none_are_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["web_search"])
+    _set_native_provider_keys(monkeypatch)
+
+    with pytest.raises(ModelRetry, match="No native web_search providers are configured"):
+        web_search_tools.resolve_web_search_model(agent)
 
 
 @pytest.mark.asyncio

@@ -83,3 +83,13 @@ def provider_api_key(provider: str) -> str:
             details={"provider": provider, "setting": setting_name},
         )
     return secret.get_secret_value()
+
+
+def has_provider_api_key(provider: str) -> bool:
+    """Return whether a provider has a non-empty configured API key."""
+    setting_name = _PROVIDER_KEY_SETTING.get(provider)
+    if setting_name is None:
+        return False
+
+    secret = getattr(settings, setting_name, None)
+    return secret is not None and bool(secret.get_secret_value().strip())

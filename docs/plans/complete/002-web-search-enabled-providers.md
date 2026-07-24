@@ -14,6 +14,7 @@
 
 ## Status
 
+- **Status**: DONE 2026-07-24
 - **Priority**: P1 (live defect: agents hard-fail runs by selecting an
   unconfigured search provider)
 - **Effort**: S
@@ -24,6 +25,12 @@
 - **Category**: corrective follow-up (spike), same track as
   `001-enforce-context-group-workspace-scope`
 - **Planned at**: working tree at commit `efafa64`, 2026-07-24
+
+The empty-configured-set STOP condition was encountered during execution:
+Python produces `Literal[()]`, which Pydantic rejects during registration-time
+schema serialization. The plan's documented fallback was used: the function
+accepts `str | None`, the configured enum is injected into its JSON schema,
+and call-time validation remains strict through `ModelRetry`.
 
 ## Product intent
 
@@ -212,19 +219,19 @@ agent-provider configured, omitted with agent on azure, unsupported name
 
 ## Done criteria
 
-- [ ] With only `ANTHROPIC_API_KEY` set, the tool schema enum, field
+- [x] With only `ANTHROPIC_API_KEY` set, the tool schema enum, field
       description, tool description, and presentation options name only
       `anthropic`; picking `google` explicitly yields a `ModelRetry` that
       names the configured set; omitting the provider searches via
       anthropic
-- [ ] With no provider keys set, `web_search` is hidden from the catalog
+- [x] With no provider keys set, `web_search` is hidden from the catalog
       routes and never mounted, including for agents with it saved in
       `tool_names`
-- [ ] No path from `web_search` reaches `ModelConfigurationError` for a
+- [x] No path from `web_search` reaches `ModelConfigurationError` for a
       missing key
-- [ ] Existing full-enum behavior is byte-identical when all three keys are
+- [x] Existing full-enum behavior is byte-identical when all three keys are
       configured (regression suites pass)
-- [ ] `docs/plans/000_README.md` corrective follow-up row updated
+- [x] `docs/plans/000_README.md` corrective follow-up row updated
 
 ## STOP conditions
 

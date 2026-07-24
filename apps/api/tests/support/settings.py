@@ -25,3 +25,6 @@ def configure_test_environment() -> None:
     os.environ.setdefault("CREDENTIAL_MASTER_KEYS", Fernet.generate_key().decode())
     os.environ.setdefault("SECURE_COOKIES", "false")
     os.environ.setdefault("SUPER_ADMIN_EMAILS", "admin@example.com")
+    os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
+    os.environ.setdefault("GOOGLE_API_KEY", "google-test")
+    os.environ.setdefault("OPENAI_API_KEY", "sk-openai-test")

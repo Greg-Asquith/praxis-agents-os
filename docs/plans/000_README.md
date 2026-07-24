@@ -594,7 +594,7 @@ can fetch the OpenAPI schema without re-enabling anonymous docs.
 | Plan file                                   | Title                                                                      | Status          |
 | ------------------------------------------- | -------------------------------------------------------------------------- | --------------- |
 | `001-enforce-context-group-workspace-scope` | Enforce workspace-scoped Context Group resources and relevant-only fan-out | DONE 2026-07-22 |
-| `002-web-search-enabled-providers`          | Web Search offers only configured helper providers                         | TODO            |
+| `002-web-search-enabled-providers`          | Web Search offers only configured helper providers                         | DONE 2026-07-24 |
 
 ## Execution Order & Status
 

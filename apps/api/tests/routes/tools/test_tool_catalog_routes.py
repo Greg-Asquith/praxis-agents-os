@@ -9,6 +9,7 @@ from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.settings import settings
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -74,12 +75,19 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
                     "type": "string",
                 },
                 "model_provider": {
+                    "anyOf": [
+                        {
+                            "enum": ["anthropic", "google", "openai"],
+                            "type": "string",
+                        },
+                        {"type": "null"},
+                    ],
+                    "default": None,
                     "description": (
-                        "Helper model provider. Available providers are anthropic, google, "
-                        "and openai."
+                        "Optional helper model provider. Omit unless there is a reason "
+                        "to choose one. Available providers are anthropic, google, and "
+                        "openai."
                     ),
-                    "enum": ["anthropic", "google", "openai"],
-                    "type": "string",
                 },
                 "model": {
                     "anyOf": [{"type": "string"}, {"type": "null"}],
@@ -90,13 +98,29 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
                     ),
                 },
             },
-            "required": ["query", "model_provider"],
+            "required": ["query"],
             "type": "object",
         },
     }
     assert "timeout" not in web_search
     assert "max_retries" not in web_search
     assert "output_model" not in web_search
+
+
+async def test_tool_catalog_route_hides_web_search_without_provider_keys(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+
+    response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
+
+    assert response.status_code == 200
+    assert "web_search" not in {tool["name"] for tool in response.json()["tools"]}
 
 
 async def test_tool_catalog_route_requires_authentication(

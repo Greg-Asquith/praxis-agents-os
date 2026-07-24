@@ -187,6 +187,11 @@ slice moved built-in delegation, skill, and file rows onto the same kit
 substrate with running skeletons, details popovers, honest failure states, and
 unchanged approval controls. The final frontend gate passed with 64 test files
 and 319 tests.
+Corrective follow-up `002-web-search-enabled-providers` completed 2026-07-24
+and moved to `docs/plans/complete/`: Web Search now advertises and accepts only
+helper providers with configured API keys, hides entirely when none are
+configured, defaults deterministically when the provider is omitted, and
+steers stale explicit choices with `ModelRetry` instead of failing the run.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -772,14 +777,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) →
-018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) →
-C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) →
-067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 ∥ 043–047} → 082 (DONE) → 041b (DONE) → 079 → 056 → 071 → 048 →
-069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 →
-072 → 059 → 060` — with 015, 052, 058,
-078, and the polish lane as filler (078 is P1 filler: no dependencies,
-land it early).
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043–047} → 082 (DONE) → 041b (DONE) → 079 → 056 → 071 → 048 → 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early).
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should
