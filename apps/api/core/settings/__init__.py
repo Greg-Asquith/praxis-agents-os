@@ -18,6 +18,7 @@ from core.settings.azure import AzureSettingsMixin
 from core.settings.base import SettingsBase
 from core.settings.database import DatabaseSettingsMixin
 from core.settings.email import EmailSettingsMixin
+from core.settings.embeddings import EmbeddingsSettingsMixin
 from core.settings.files import FilesSettingsMixin
 from core.settings.gcp import GcpSettingsMixin
 from core.settings.integrations import IntegrationsSettingsMixin
@@ -40,6 +41,7 @@ class Settings(
     AzureSettingsMixin,
     DatabaseSettingsMixin,
     EmailSettingsMixin,
+    EmbeddingsSettingsMixin,
     FilesSettingsMixin,
     GcpSettingsMixin,
     IntegrationsSettingsMixin,

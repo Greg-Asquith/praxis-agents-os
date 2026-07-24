@@ -1,3 +1,5 @@
+<!-- docs/plans/complete/043-embeddings-provider-service.md -->
+
 # Plan 043: Embeddings provider service
 
 > **Executor instructions**: Follow this plan step by step. Run every
@@ -27,6 +29,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-24
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW-MEDIUM (new isolated service package + one small table; the

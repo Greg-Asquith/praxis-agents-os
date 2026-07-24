@@ -1,3 +1,5 @@
+<!-- docs/plans/000_MASTER_ROADMAP.md -->
+
 # Praxis Agents OS — Unified Roadmap
 
 Date: 2026-07-02
@@ -199,6 +201,13 @@ and moved to `docs/plans/complete/`: Web Search now advertises and accepts only
 helper providers with configured API keys, hides entirely when none are
 configured, defaults deterministically when the provider is omitted, and
 steers stale explicit choices with `ModelRetry` instead of failing the run.
+Plan 043 completed 2026-07-24 and moved to `docs/plans/complete/`: the
+batch-first embeddings service now supports OpenAI and explicitly configured
+Ollama providers, validates model/dimension compatibility through its own
+catalogue, preserves ordering across bounded batches, and meters successful
+usage atomically per workspace-month against the soft governance budget.
+The deterministic retrieval fake and provider-isolated tests make downstream
+knowledge and memory work network-free. The complete API gate passed 960 tests.
 Plans 082–088 (Phase 7, internal applications) were added 2026-07-20 by
 maintainer adoption of `docs/architecture/internal-applications.md`
 (decision D13, Gate G7): applications as versioned workspace content —
@@ -615,7 +624,7 @@ structure.
 
 | Plan | Scope                                                                                                                                                                                                                                                                                                                                                            |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 043  | Embeddings provider service (ABC + OpenAI default + local option; model+dims recorded per collection). (Donor D1.)                                                                                                                                                                                                                                               |
+| 043  | Embeddings provider service (ABC + OpenAI default + explicit Ollama option; model+dims echoed for collection stamping; atomic workspace-month token counter). **DONE 2026-07-24.** (Donor D1.)                                                                                                                                                                      |
 | 044  | OKF-compatible, Praxis-owned `kb_documents`/`kb_chunks` models + migrations (stable concept identifiers/frontmatter metadata, halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). Google Knowledge Catalog remains an optional integration target, not a dependency. (Donor D2 + D9.) |
 | 045  | Hybrid search engine (RRF merge, pending-embedding lexical fallback, SQL filters, reranker interface) + search/read routes + **the eval harness**: seed docs with expected citations, hybrid-search assertions, fallback tests, prompt-injection fixture documents. (Donor D3 + gaps-doc eval requirement; Gate G4.)                                             |
 | 046  | Agent tools (`search_knowledge`, `read_document`) with retrieved content framed as untrusted data in tool results; write-policy choke point (provenance, private-never-shared rule, secret blocking); document sources (upload via Files, URL, manual). **Gate G2 applies.** (Donor D4.)                                                                         |
@@ -784,7 +793,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043–047} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 → 071 → 048 → 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early).
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044–047} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 → 071 → 048 → 069 → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early).
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should

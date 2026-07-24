@@ -12,7 +12,7 @@ from services.agents.models.registry import (
     qualified_id,
 )
 from services.agents.models.resolution import resolve_agent_model, resolve_naming_model
-from services.agents.models.utils import provider_api_key
+from services.agents.models.utils import provider_api_key, retrying_http_client
 
 __all__ = [
     "build_model",
@@ -25,4 +25,5 @@ __all__ = [
     "qualified_id",
     "resolve_agent_model",
     "resolve_naming_model",
+    "retrying_http_client",
 ]
