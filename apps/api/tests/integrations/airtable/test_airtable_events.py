@@ -12,8 +12,8 @@ from uuid import uuid4
 
 import pytest
 
-from integrations.airtable import events
 from core.exceptions.integration import IntegrationValidationError
+from integrations.airtable import events
 from models.integrations import (
     IntegrationConnection,
     IntegrationEvent,

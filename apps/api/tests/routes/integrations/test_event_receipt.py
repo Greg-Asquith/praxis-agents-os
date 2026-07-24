@@ -14,6 +14,7 @@ from httpx2 import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from models.integrations import IntegrationEvent
 from models.jobs import Job
 from services.secrets import write_secret
@@ -169,3 +170,15 @@ async def test_cookie_bearing_receipt_remains_csrf_protected(
     )
 
     assert response.status_code == 403
+
+
+async def test_receipt_body_is_rejected_at_the_webhook_specific_limit(
+    db_async_client: AsyncClient,
+) -> None:
+    response = await db_async_client.post(
+        "/api/v1/integrations/events/airtable/receipt1",
+        content=b"x" * (settings.INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES + 1),
+    )
+
+    assert response.status_code == 413
+    assert response.json()["max_bytes"] == settings.INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES
