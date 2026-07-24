@@ -66,6 +66,7 @@
 
 ## Status
 
+- **Status**: DONE (2026-07-24)
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH (prompt-injection surface, privacy invariant, and the

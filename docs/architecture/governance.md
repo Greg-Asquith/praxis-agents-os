@@ -42,7 +42,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Select integration resources / set conversation context / edit context groups (039–040) *[implemented: plans 039–040]* | — | ✓ | ✓ | ✓ |
 | View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Create/edit KB documents (044/046) *[implemented: plan 046 Slice A]* | — | ✓ | ✓ | ✓ |
+| Create/edit KB documents (044/046) *[implemented: plan 046]* | — | ✓ | ✓ | ✓ |
 | Delete workspace-scope memories (049) | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) | — | ✓ | ✓ | ✓ |
 | Create artifacts via agents (050) | follows tool policy | ✓ | ✓ | ✓ |
@@ -71,8 +71,9 @@ point, per-agent `tool_policies`); this section is the policy law:
   require approval even though they do not cross the Praxis boundary, and
   agent-initiated KB document writes default `approval` through plan 046's
   write-policy choke point. [implemented: plan 028 for todos; implemented:
-  plans 034/054 for scratch and Praxis Files; memory notes and KB writes
-  pending — KB default recorded by plan 080]
+  plans 034/054 for scratch and Praxis Files; memory notes pending. No agent
+  KB write tool ships in the v1 KB slice; this recorded default applies when
+  one does.]
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. [integrations implemented:

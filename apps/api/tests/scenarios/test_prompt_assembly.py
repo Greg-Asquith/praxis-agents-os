@@ -48,6 +48,7 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
         "planning",
         "delegation",
         "available_files",
+        "knowledge",
         "untrusted_content_policy",
     ]
     assert rendered.index("Identity first.") < rendered.index("conversation todo list")

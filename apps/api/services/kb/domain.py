@@ -15,6 +15,14 @@ KB_SOURCE_MANUAL = "manual"
 KB_SOURCE_CONVERSATION = "conversation"
 KB_SOURCE_INTEGRATION = "integration"
 
+KB_FRAMED_SOURCE_TYPES = frozenset(
+    {
+        KB_SOURCE_URL,
+        KB_SOURCE_CONVERSATION,
+        KB_SOURCE_INTEGRATION,
+    }
+)
+
 ANNOTATION_DEFAULTS: dict[str, bool] = {
     KB_SOURCE_UPLOAD: True,
     KB_SOURCE_URL: True,

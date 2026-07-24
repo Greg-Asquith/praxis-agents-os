@@ -164,6 +164,15 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
+        model="gemini-3.5-flash-lite",
+        display_name="Gemini 3.5 Flash-Lite",
+        context_window=1_048_576,
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
         model="gemini-3.1-pro",
         display_name="Gemini 3.1 Pro",
         context_window=1_048_576,

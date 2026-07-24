@@ -10,6 +10,7 @@ from services.agents.runtime.load_context import AvailableFile
 from services.agents.runtime.loop import _runtime_instructions
 from services.agents.runtime.prompt import (
     DELEGATION_INSTRUCTIONS,
+    KNOWLEDGE_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
     UNTRUSTED_CONTENT_INSTRUCTIONS,
     PromptBlock,
@@ -105,6 +106,26 @@ def test_runtime_instructions_omits_available_files_when_none_are_attached() -> 
     )
 
     assert "<available_files>" not in prompt
+
+
+def test_runtime_instructions_adds_knowledge_guidance_only_for_kb_tools() -> None:
+    baseline_agent = _agent(instructions="Reply plainly.", tool_names=[])
+    knowledge_agent = _agent(
+        instructions="Reply plainly.",
+        tool_names=["search_knowledge"],
+    )
+
+    baseline = _runtime_instructions(baseline_agent, include_delegation=False)
+    with_knowledge = _runtime_instructions(knowledge_agent, include_delegation=False)
+
+    assert KNOWLEDGE_INSTRUCTIONS not in baseline
+    assert KNOWLEDGE_INSTRUCTIONS in with_knowledge
+    assert with_knowledge.index(KNOWLEDGE_INSTRUCTIONS) < with_knowledge.index(
+        UNTRUSTED_CONTENT_INSTRUCTIONS
+    )
+    assert baseline == (
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
+    )
 
 
 def _agent(*, instructions: str, tool_names: list[str] | None = None) -> Agent:

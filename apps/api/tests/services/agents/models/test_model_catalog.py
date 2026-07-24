@@ -63,6 +63,17 @@ def test_gemini_3_6_flash_catalog_capabilities():
     assert info.supports_structured_output is True
 
 
+def test_gemini_3_5_flash_lite_catalog_capabilities():
+    info = get_model("google", "gemini-3.5-flash-lite")
+
+    assert info.display_name == "Gemini 3.5 Flash-Lite"
+    assert info.context_window == 1_048_576
+    assert info.supports_tools is True
+    assert info.supports_thinking is True
+    assert info.supports_vision is True
+    assert info.supports_structured_output is True
+
+
 @pytest.mark.parametrize(
     ("provider", "model", "context_window"),
     [
@@ -73,6 +84,7 @@ def test_gemini_3_6_flash_catalog_capabilities():
         ("anthropic", "claude-opus-4-7", 1_000_000),
         ("anthropic", "claude-opus-4-6", 1_000_000),
         ("google", "gemini-3.5-flash", 1_048_576),
+        ("google", "gemini-3.5-flash-lite", 1_048_576),
         ("google", "gemini-3.1-pro", 1_048_576),
         ("google", "gemini-3.1-flash-lite", 1_048_576),
     ],

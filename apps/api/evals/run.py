@@ -35,7 +35,7 @@ from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
-FIXTURE_ROOT = Path(__file__).parents[1] / "tests" / "fixtures"
+FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
 KEY_BY_PROVIDER = {
     "anthropic": "ANTHROPIC_API_KEY",
     "azure": "AZURE_OPENAI_API_KEY",

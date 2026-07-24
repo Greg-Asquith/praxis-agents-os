@@ -124,6 +124,11 @@ class KBSettingsMixin:
         default=("url", "conversation", "integration"),
         description="Knowledge source types eligible for recency fusion.",
     )
+    KB_READ_DOCUMENT_MAX_CHARS: int = Field(
+        default=20_000,
+        gt=0,
+        description="Maximum canonical markdown characters returned by read_document.",
+    )
 
     @model_validator(mode="after")
     def validate_kb_chunk_settings(self):
