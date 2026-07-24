@@ -115,6 +115,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Audit events | append-only | 400 d | n/a | n/a | ✓ (super-admin) |
 | Security events | append-only | 400 d | n/a | n/a | super-admin only |
 | Conversation todos (028) | rides conversation | with conversation | n/a | digest rows | — |
+| Conversation summaries (056) | derived rows, one per trim watermark | with conversation; safe to regenerate | n/a (bounded Postgres text) | no separate audit; source messages remain canonical | — |
 
 ## 4. Quotas & Cost Controls
 
