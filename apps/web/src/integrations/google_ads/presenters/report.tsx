@@ -134,6 +134,14 @@ function flattenRow(value: Record<string, unknown>): DataRow | null {
       flattened[next.path] = next.value
       continue
     }
+    if (Array.isArray(next.value)) {
+      const repeatedValue = formatRepeatedValue(next.value)
+      if (repeatedValue === null) {
+        return null
+      }
+      flattened[next.path] = repeatedValue
+      continue
+    }
     if (!isRecord(next.value)) {
       return null
     }
@@ -142,6 +150,25 @@ function flattenRow(value: Record<string, unknown>): DataRow | null {
     }
   }
   return flattened
+}
+
+function formatRepeatedValue(value: unknown[]): string | null {
+  if (value.every(isScalar)) {
+    return value.map(scalarText).join(", ")
+  }
+  const textValues = value.map((item) => (isRecord(item) ? item["text"] : undefined))
+  if (textValues.every((item): item is string => typeof item === "string")) {
+    return textValues.join(" · ")
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
+function scalarText(value: string | number | boolean | null): string {
+  return value === null ? "" : String(value)
 }
 
 function reportColumns(rows: DataRow[], currencyCode: string): DataColumn[] {
@@ -197,11 +224,13 @@ function humanizeColumnToken(value: string): string {
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .split("_")
     .filter(Boolean)
-    .map((part) =>
-      REPORT_FIELD_ACRONYMS.has(part.toLowerCase())
-        ? part.toUpperCase()
-        : titleCaseToken(part, part)
-    )
+    .map((part) => {
+      const normalized = part.toLowerCase()
+      if (normalized === "urls") {
+        return "URLs"
+      }
+      return REPORT_FIELD_ACRONYMS.has(normalized) ? part.toUpperCase() : titleCaseToken(part, part)
+    })
     .join(" ")
 }
 

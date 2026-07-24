@@ -78,6 +78,55 @@ describe("Google Ads tool presenters", () => {
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
 
+  it("renders repeated Google Ads fields without falling back to the generic tool row", () => {
+    const html = render(
+      googleAdsReportPresenter.render(
+        props({
+          id: "report-repeated-fields",
+          kind: "result",
+          name: "google_ads_run_report",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                currency_code: "GBP",
+                rows: [
+                  {
+                    adGroupAd: {
+                      ad: {
+                        finalUrls: ["https://example.com/one", "https://example.com/two"],
+                        responsiveSearchAd: {
+                          descriptions: [
+                            { text: "First description" },
+                            { text: "Second description" },
+                          ],
+                          headlines: [
+                            { pinnedField: "HEADLINE_1", text: "Primary headline" },
+                            { text: "Second headline" },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                ],
+                row_count: 1,
+                truncated: false,
+                truncation_note: null,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads report results"')
+    expect(html).toContain(">Final URLs<")
+    expect(html).toContain("https://example.com/one, https://example.com/two")
+    expect(html).toContain("Primary headline · Second headline")
+    expect(html).toContain("First description · Second description")
+    expect(html).not.toContain("GAQL Query")
+  })
+
   it("renders report and account loading states", () => {
     expect(
       render(
