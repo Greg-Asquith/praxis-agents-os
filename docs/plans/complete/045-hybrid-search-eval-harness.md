@@ -54,6 +54,7 @@
 
 ## Status
 
+- **State**: DONE 2026-07-24 — Gate G4 satisfied
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM (the RRF SQL is the single retrieval choke point later
@@ -677,27 +678,27 @@ completes).
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0; `uv run alembic check` reports no
+- [x] `uv run ruff check .` exits 0; `uv run alembic check` reports no
       pending operations (no migration in this plan)
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/integration/retrieval_eval tests/services/retrieval tests/services/kb tests/routes/kb tests/contract -q`
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/integration/retrieval_eval tests/services/retrieval tests/services/kb tests/routes/kb tests/contract -q`
       exits 0; full `uv run pytest -q` green; unit modules pass without
       `TEST_DATABASE_URL`
-- [ ] `POST /api/v1/kb/search` and `GET /api/v1/kb/documents/{id}` exist,
+- [x] `POST /api/v1/kb/search` and `GET /api/v1/kb/documents/{id}` exist,
       gated by `require_read` + `X-Workspace`; no other KB routes added
-- [ ] The semantic CTE filters on `embedding_dims`/`embedding_model`
+- [x] The semantic CTE filters on `embedding_dims`/`embedding_model`
       (collection guard) and both CTEs carry the workspace + soft-delete
       + privacy predicates — verified by reading the final SQL, not just
       the tests
-- [ ] `KB_RERANKER` default `"none"`; `get_reranker()` returns `None`;
+- [x] `KB_RERANKER` default `"none"`; `get_reranker()` returns `None`;
       no reranker implementation shipped
-- [ ] The three prompt-injection fixtures exist under
+- [x] The three prompt-injection fixtures exist under
       `tests/integration/retrieval_eval/fixtures/` with the cross-plan
       comment naming 046
-- [ ] Gate G4 recorded (Step 7); `000_MASTER_ROADMAP.md` and the
-      governance note untouched except any `[implemented: plan 045]`
-      cell flips
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated (add the 045 row if
+- [x] Gate G4 recorded (Step 7); the operator-required master-roadmap edit
+      is limited to factual completion/status text, and the governance note
+      is untouched
+- [x] `git status` shows no modified files outside the in-scope list
+- [x] `docs/plans/000_README.md` status row updated (add the 045 row if
       absent)
 
 ## STOP conditions
