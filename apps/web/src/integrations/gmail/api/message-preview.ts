@@ -1,4 +1,4 @@
-// apps/web/src/integrations/gmail/api.ts
+// apps/web/src/integrations/gmail/api/message-preview.ts
 
 import { queryOptions } from "@tanstack/react-query"
 

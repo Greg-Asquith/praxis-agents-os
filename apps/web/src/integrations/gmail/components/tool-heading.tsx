@@ -1,6 +1,6 @@
-// apps/web/src/integrations/gmail/tool-heading.tsx
+// apps/web/src/integrations/gmail/components/tool-heading.tsx
 
-import { GmailLogo } from "@/integrations/gmail/logo"
+import { GmailLogo } from "@/integrations/gmail/components/logo"
 
 export function GmailToolHeading({ children }: { children: string }) {
   return (

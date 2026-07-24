@@ -14,6 +14,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - Feature code lives in `src/features/<feature>/` with `api/`, `components/`,
   `routes/`, and a feature-local `types.ts`. Follow this layout for new
   features.
+- Integration provider UI lives in `src/integrations/<provider>/` with
+  `index.ts` (the `IntegrationUiModule` default export — the only file the
+  registry imports), `presenters/` (tool row presenters), `components/`
+  (provider-specific visual components, including the logo), `lib/`
+  (non-visual helpers such as arg parsing and detail builders), and `api/`
+  (TanStack Query operations, one per file) when the provider calls the API.
+  Follow this layout for new providers.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; features do
   not import route shells; routes do not import `app/`. Fix violations by

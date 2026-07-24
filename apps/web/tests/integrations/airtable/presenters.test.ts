@@ -9,11 +9,11 @@ import airtableModule from "@/integrations/airtable"
 import {
   airtableGetRecordPresenter,
   airtableListRecordsPresenter,
-} from "@/integrations/airtable/records-presenter"
+} from "@/integrations/airtable/presenters/records"
 import {
   airtableCreateRecordPresenter,
   airtableUpdateRecordPresenter,
-} from "@/integrations/airtable/write-presenter"
+} from "@/integrations/airtable/presenters/write"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
 const NODE = (content: string, ref = "rec-1") => ({

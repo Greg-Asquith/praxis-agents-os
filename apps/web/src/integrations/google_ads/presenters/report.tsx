@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/report-presenter.tsx
+// apps/web/src/integrations/google_ads/presenters/report.tsx
 
 import {
   DataTable,
@@ -10,8 +10,8 @@ import {
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter } from "@/integrations/contract"
-import { googleAdsReportDetails } from "@/integrations/google_ads/tool-details"
-import { GoogleAdsToolHeading } from "@/integrations/google_ads/tool-heading"
+import { googleAdsReportDetails } from "@/integrations/google_ads/lib/tool-details"
+import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
 import { formatGoogleAdsAccountId, titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

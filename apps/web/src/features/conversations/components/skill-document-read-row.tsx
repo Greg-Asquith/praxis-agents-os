@@ -2,94 +2,68 @@
 
 import { FileTextIcon } from "lucide-react"
 
+import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { ToolResultCard } from "@/components/tool-ui/result-card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
-import { ToolField } from "@/features/conversations/components/tool-field"
-import {
-  ToolActivityRowHeader,
-  ToolActivityRowShell,
-} from "@/features/conversations/components/tool-activity-row-shell"
-import { ActivityStatusIcon } from "@/features/conversations/components/tool-activity-status"
+import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { skillDocumentReadArgs } from "@/features/conversations/skills/skill-document-read"
 
 type SkillDocumentReadRowProps = {
   activity: ToolActivity
-  compact?: boolean
   defaultOpen?: boolean
 }
 
-export function SkillDocumentReadRow({
-  activity,
-  compact = false,
-  defaultOpen = false,
-}: SkillDocumentReadRowProps) {
+export function SkillDocumentReadRow({ activity, defaultOpen = false }: SkillDocumentReadRowProps) {
   const { document, skill } = skillDocumentReadArgs(activity.args)
-  const label = document
-    ? `Read skill document: ${document}`
-    : skill
-      ? `Read skill document for ${skill}`
-      : "Read skill document"
-  const hasResultContent = activity.result !== undefined && activity.result !== null
-  const header = (
-    <ToolActivityRowHeader
-      expandable={hasResultContent}
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FileTextIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{label}</span>
-        </span>
-      }
-      reserveChevronSpace={hasResultContent}
-      suffix={null}
-      supportLabel={null}
-    />
-  )
-
-  return (
-    <ToolActivityRowShell
-      compact={compact}
-      defaultOpen={defaultOpen}
-      expandable={hasResultContent}
-      header={header}
-    >
-      {hasResultContent ? <ResultBlock status={activity.status} value={activity.result} /> : null}
-    </ToolActivityRowShell>
-  )
-}
-
-function ResultBlock({ status, value }: { status: ToolActivity["status"]; value: unknown }) {
-  if (typeof value === "string") {
-    if (status === "completed") {
-      return <DocumentContentBlock content={documentContentFromResult(value)} />
-    }
-
+  const heading = <SkillDocumentHeading />
+  if (activity.status === "running") {
     return (
-      <ToolField field={{ key: "result", label: "What Went Wrong", value, format: "multiline" }} />
+      <FanOutSkeleton
+        heading={heading}
+        label="Reading skill document…"
+        summary={document ?? skill ?? "Loading guidance"}
+      />
     )
   }
+  if (typeof activity.result !== "string") {
+    return null
+  }
 
+  const completed = activity.status === "completed"
+  const details = [
+    ...(skill ? [{ label: "Skill", value: skill }] : []),
+    ...(document ? [{ label: "Document", value: document }] : []),
+  ]
   return (
-    <ToolField
-      field={{
-        key: "result",
-        label: "Result",
-        value: "The document response could not be displayed.",
-        format: "text",
-      }}
-    />
+    <ToolResultCard
+      ariaLabel="Skill document result"
+      defaultOpen={defaultOpen}
+      details={details}
+      heading={heading}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      {completed ? (
+        <div className="max-h-96 min-w-0 overflow-auto py-1">
+          <MessageMarkdown content={documentContentFromResult(activity.result)} />
+        </div>
+      ) : (
+        <Alert variant="destructive">
+          <AlertTitle>What Went Wrong</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap">{activity.result}</AlertDescription>
+        </Alert>
+      )}
+    </ToolResultCard>
   )
 }
 
-function DocumentContentBlock({ content }: { content: string }) {
+function SkillDocumentHeading() {
   return (
-    <ToolField
-      field={{ key: "content", label: "Document Content", value: content, format: "markdown" }}
-    >
-      <div className="max-h-96 min-w-0 overflow-auto py-1">
-        <MessageMarkdown content={content} />
-      </div>
-    </ToolField>
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+      <span>Read Skill Document</span>
+    </span>
   )
 }
 

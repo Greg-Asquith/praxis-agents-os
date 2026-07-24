@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/campaign-status-presenter.tsx
+// apps/web/src/integrations/google_ads/presenters/campaign-status.tsx
 
 import { ToolApprovalDecisionCard, type ApprovalField } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
@@ -9,10 +9,10 @@ import {
   CampaignOutcome,
   type CampaignError,
   type CampaignStatusResult,
-} from "@/integrations/google_ads/campaign-outcome"
-import { GoogleAdsLogo } from "@/integrations/google_ads/logo"
-import { googleAdsCampaignDetails } from "@/integrations/google_ads/tool-details"
-import { GoogleAdsToolHeading } from "@/integrations/google_ads/tool-heading"
+} from "@/integrations/google_ads/components/campaign-outcome"
+import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
+import { googleAdsCampaignDetails } from "@/integrations/google_ads/lib/tool-details"
+import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
 import { formatGoogleAdsAccountId } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

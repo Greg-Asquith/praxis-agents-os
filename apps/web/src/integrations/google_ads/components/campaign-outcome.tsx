@@ -1,4 +1,4 @@
-// apps/wev/src/integrations/google_ads/campaign-outcome.tsx
+// apps/wev/src/integrations/google_ads/components/campaign-outcome.tsx
 
 import { AlertCircleIcon, CircleCheckIcon } from "lucide-react"
 

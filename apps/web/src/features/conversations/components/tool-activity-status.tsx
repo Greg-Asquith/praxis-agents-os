@@ -9,6 +9,7 @@ import {
   WrenchIcon,
 } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import type { DelegationToolActivity, ToolActivity } from "@/features/conversations/message-parts"
 import { useElapsedSeconds } from "@/features/conversations/hooks/use-elapsed-seconds"
 import { cn } from "@/lib/utils"
@@ -68,6 +69,33 @@ export function ActivityStatusSuffix({
   )
 }
 
+export function ActivityStatusBadge({
+  liveRunning = false,
+  status,
+}: {
+  liveRunning?: boolean
+  status: ActivityStatus
+}) {
+  const label = statusLabel(status)
+  const content = (
+    <>
+      {label}
+      {liveRunning ? <ElapsedSeconds running={status === "running"} /> : null}
+    </>
+  )
+
+  if (status === "completed") {
+    return <Badge variant="success">{content}</Badge>
+  }
+  if (status === "awaiting_approval") {
+    return <Badge variant="warning">{content}</Badge>
+  }
+  if (status === "failed" || status === "denied") {
+    return <Badge variant="destructive">{content}</Badge>
+  }
+  return <Badge variant="secondary">{content}</Badge>
+}
+
 function ElapsedSeconds({ running }: { running: boolean }) {
   const elapsedSeconds = useElapsedSeconds(running)
 
@@ -85,4 +113,23 @@ function statusColor(status: ActivityStatus) {
     return "text-destructive"
   }
   return "text-muted-foreground"
+}
+
+function statusLabel(status: ActivityStatus) {
+  if (status === "awaiting_approval") {
+    return "Waiting"
+  }
+  if (status === "completed") {
+    return "Done"
+  }
+  if (status === "failed") {
+    return "Failed"
+  }
+  if (status === "denied") {
+    return "Declined"
+  }
+  if (status === "running") {
+    return "Running"
+  }
+  return "Unknown"
 }

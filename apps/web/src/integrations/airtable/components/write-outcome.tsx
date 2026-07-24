@@ -1,9 +1,9 @@
-// apps/web/sec/integrations/airtable/write-outcome.tsx
+// apps/web/sec/integrations/airtable/components/write-outcome.tsx
 
 import { CircleCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { AirtableFieldGrid } from "@/integrations/airtable/record-fields"
+import { AirtableFieldGrid } from "@/integrations/airtable/components/record-fields"
 
 export function AirtableWriteReceipt({
   action,

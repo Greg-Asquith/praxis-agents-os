@@ -1,10 +1,10 @@
 // apps/web/src/integrations/gmail/index.ts
 
 import type { IntegrationUiModule } from "@/integrations/contract"
-import { GmailLogo } from "@/integrations/gmail/logo"
-import { gmailReadPresenter } from "@/integrations/gmail/read-presenter"
-import { gmailSearchPresenter } from "@/integrations/gmail/search-presenter"
-import { gmailSendPresenter } from "@/integrations/gmail/send-presenter"
+import { GmailLogo } from "@/integrations/gmail/components/logo"
+import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
+import { gmailSearchPresenter } from "@/integrations/gmail/presenters/search"
+import { gmailSendPresenter } from "@/integrations/gmail/presenters/send"
 
 export default {
   catalogDescription: "Let agents read and manage your emails.",

@@ -26,6 +26,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-24
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM-HIGH (Slice A rewires how untrusted content reaches
@@ -58,10 +59,13 @@
   card and cover all five lifecycle states, and the provider checklist and
   deferred follow-ups are closed. The focused 16-test presenter suite and
   full `pnpm check` gate (63 files, 310 tests) passed.
-  Slice G (added 2026-07-24 by operator request) migrates the built-in
-  delegation, skill, and file tool rows onto the kit substrate so the
-  internal tools match the provider presenters' polish; it is TODO, has
-  no provider dependency, and is now the remaining slice.
+  Slice G completed 2026-07-24: the built-in delegation, skill, and file
+  tool rows now use the shared result-card, skeleton, field, and approval
+  kits with honest lifecycle states and fail-open guards. Skill activation
+  uses the kit's new non-expandable heading-only mode; the migration removed
+  the now-orphaned delegation status helpers. Focused approval and presenter
+  coverage passed, followed by the full frontend gate (64 test files,
+  319 tests).
   Execution corrected one landed-state mismatch found during pre-flight:
   Gmail read results carried an undeclared duplicate body field, which is now
   removed. A later 2026-07-23 operator decision explicitly exempted all Google
@@ -855,7 +859,7 @@ Blocked on 041 Slice C. Step 10.
 - **Gate**: `pnpm check` green; the decision-10 checklist line is in
   the packaging note.
 
-### Slice G — Internal tool rows on the kit substrate (`Web - Internal Tool Row Kits`)
+### Slice G — Internal tool rows on the kit substrate (`Web - Internal Tool Row Kits`) — DONE 2026-07-24
 
 Added 2026-07-24 by operator request. Web only; no backend change and
 no provider dependency. Step 11.
@@ -1173,7 +1177,7 @@ row.
 
 **Verify**: `pnpm check` + presenter tests; packaging note updated.
 
-### Step 11: Internal tool rows on the kits (Slice G)
+### Step 11: Internal tool rows on the kits (Slice G) — DONE 2026-07-24
 
 The built-in rows registered in `tool-call-row-registry.tsx` predate
 the kit substrate: the delegation, skill, and file rows still compose
@@ -1264,40 +1268,40 @@ amended) boundary rules pass mechanically**.
 
 ## Done criteria
 
-- [ ] Untrusted content is stored and streamed as structured nodes;
+- [x] Untrusted content is stored and streamed as structured nodes;
       frames exist only in rendered model requests; the equivalence
       test pins identical model-visible bytes
-- [ ] Gmail search/read/send render through kit-based presenters with
+- [x] Gmail search/read/send render through kit-based presenters with
       pending states; zero raw markers in a newly seeded transcript;
       default row still renders when a module chunk fails to load
-- [ ] Search-row drill-in and the read presenter's automatic
+- [x] Search-row drill-in and the read presenter's automatic
       full-email view both render sanitized HTML in a script-less
       opaque-origin iframe (remote images load by default per the
       2026-07-23 amendment; scripts never run)
-- [ ] Preview route: workspace- and provider-scoped, size-bounded,
+- [x] Preview route: workspace- and provider-scoped, size-bounded,
       audited (refs only), nothing persisted
-- [ ] Gmail read exposes no reply automation or provider-metadata-to-
+- [x] Gmail read exposes no reply automation or provider-metadata-to-
       instruction path; operator-authored send requests still require
       approval (no policy change anywhere in the diff)
-- [ ] Google Ads reports render as formatted tables with currency/
+- [x] Google Ads reports render as formatted tables with currency/
       percent/date cells, totals, truncation note, CSV export, and
       detail sheet; campaign mutations show an explicit write banner
       at approval and per-campaign outcomes after
-- [ ] Every agent has the `build_chart` core tool; completed charts
+- [x] Every agent has the `build_chart` core tool; completed charts
       render natively with multi-axis/brand controls and export to PNG
 - [x] Airtable records render as field tables
-- [ ] The built-in delegation, skill, and file rows render through
+- [x] The built-in delegation, skill, and file rows render through
       the tool-ui kits with running skeletons, details popovers, and
       unchanged approval semantics (Slice G)
-- [ ] `src/components/tool-ui/` exists with cruiser rules pinning its
+- [x] `src/components/tool-ui/` exists with cruiser rules pinning its
       imports; provider modules contain adapters only (no kit logic)
-- [ ] Threat model carries the framing enforcement-point amendment and
+- [x] Threat model carries the framing enforcement-point amendment and
       the browser-rendering section + hostile HTML fixture; packaging
       note carries the §5.5 amendment and the §8 checklist line
-- [ ] FOLLOW_UPS records user-direct actions, attachments/labels/
+- [x] FOLLOW_UPS records user-direct actions, attachments/labels/
       threads, micros pre-conversion, saved/exotic chart surfaces, and preview-seam
       generalization as explicitly deferred
-- [ ] `make check` green; `docs/plans/000_README.md` row updated
+- [x] `make check` green; `docs/plans/000_README.md` row updated
 
 ## STOP conditions
 

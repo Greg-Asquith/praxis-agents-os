@@ -6,9 +6,9 @@ import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolActivity } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
-import { googleAdsAccountsPresenter } from "@/integrations/google_ads/accounts-presenter"
-import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/campaign-status-presenter"
-import { googleAdsReportPresenter } from "@/integrations/google_ads/report-presenter"
+import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
+import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
 describe("Google Ads tool presenters", () => {

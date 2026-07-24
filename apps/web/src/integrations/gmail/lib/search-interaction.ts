@@ -1,7 +1,8 @@
-// apps/web/src/integrations/gmail/search-interaction.ts
+// apps/web/src/integrations/gmail/lib/search-interaction.ts
+
 import type { QueryClient } from "@tanstack/react-query"
 
-import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api"
+import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
 
 export function gmailSearchMessageSelectHandler({
   connectionId,

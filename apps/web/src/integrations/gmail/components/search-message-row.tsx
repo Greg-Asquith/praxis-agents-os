@@ -1,4 +1,4 @@
-// apps/web/src/integrations/gmail/search-message-row.tsx
+// apps/web/src/integrations/gmail/components/search-message-row.tsx
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
@@ -11,8 +11,8 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { GmailMessageView } from "@/integrations/gmail/message-preview"
-import { gmailSearchMessageSelectHandler } from "@/integrations/gmail/search-interaction"
+import { GmailMessageView } from "@/integrations/gmail/components/message-preview"
+import { gmailSearchMessageSelectHandler } from "@/integrations/gmail/lib/search-interaction"
 import { relativeDateTime } from "@/lib/format"
 
 export type GmailMessageSummary = {

@@ -1,6 +1,6 @@
-// apps/web/src/integrations/airtable/tool-heading.tsx
+// apps/web/src/integrations/airtable/components/tool-heading.tsx
 
-import { AirtableLogo } from "@/integrations/airtable/logo"
+import { AirtableLogo } from "@/integrations/airtable/components/logo"
 
 export function AirtableToolHeading({ children }: { children: string }) {
   return (

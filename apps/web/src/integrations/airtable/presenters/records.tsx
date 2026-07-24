@@ -1,12 +1,12 @@
-// apps/web/src/integrations/airtable/records-presenter.tsx
+// apps/web/src/integrations/airtable/presenters/records.tsx
 
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter } from "@/integrations/contract"
-import { parseAirtableRecord, type AirtableRecord } from "@/integrations/airtable/record-data"
-import { AirtableRecordList } from "@/integrations/airtable/record-fields"
-import { airtableRecordDetails } from "@/integrations/airtable/tool-details"
-import { AirtableToolHeading } from "@/integrations/airtable/tool-heading"
+import { parseAirtableRecord, type AirtableRecord } from "@/integrations/airtable/lib/record-data"
+import { AirtableRecordList } from "@/integrations/airtable/components/record-fields"
+import { airtableRecordDetails } from "@/integrations/airtable/lib/tool-details"
+import { AirtableToolHeading } from "@/integrations/airtable/components/tool-heading"
 import { isRecord } from "@/lib/guards"
 
 type AirtableRecordListResult = {

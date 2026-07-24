@@ -1,4 +1,4 @@
-// apps/web/src/integrations/airtable/record-fields.tsx
+// apps/web/src/integrations/airtable/components/record-fields.tsx
 
 import { CalendarClockIcon } from "lucide-react"
 
@@ -8,7 +8,7 @@ import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styl
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
 import { isUntrustedNode, nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
-import type { AirtableRecord } from "@/integrations/airtable/record-data"
+import type { AirtableRecord } from "@/integrations/airtable/lib/record-data"
 import { formatDateTime } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"

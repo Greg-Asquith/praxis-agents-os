@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/tool-details.ts
+// apps/web/src/integrations/google_ads/lib/tool-details.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import { titleCaseToken } from "@/lib/format"

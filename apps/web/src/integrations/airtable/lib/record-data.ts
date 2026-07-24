@@ -1,4 +1,4 @@
-// apps/web/src/integrations/airtable/record-data.ts
+// apps/web/src/integrations/airtable/lib/record-data.ts
 
 import { isUntrustedNode } from "@/components/tool-ui/untrusted-node"
 import { isRecord } from "@/lib/guards"

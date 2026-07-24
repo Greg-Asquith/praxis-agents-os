@@ -7,151 +7,149 @@ import {
   FileTextIcon,
   ImageIcon,
   SearchIcon,
+  type LucideIcon,
 } from "lucide-react"
+import type { ReactNode } from "react"
 
-import { FileContentView } from "@/features/files/components/file-content-view"
+import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
+import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
+import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   type ReadFileContentToolResult,
   type ReadFileImageToolResult,
   type ReadFileStatusToolResult,
   type ReadFileUrlToolResult,
+  fileEntityFromPromoteResult,
   fileEntityFromReadContentResult,
   fileEntityFromReadImageResult,
   fileEntityFromReadStatusResult,
-  fileEntityFromPromoteResult,
-  fileEntityFromRuntimeFile,
   fileEntityFromReadUrlResult,
+  fileEntityFromRuntimeFile,
   fileEntityFromWriteResult,
   listFilesResult,
   LIST_FILES_TOOL_NAME,
-  PROMOTE_SCRATCH_TOOL_NAME,
   promoteScratchResult,
+  PROMOTE_SCRATCH_TOOL_NAME,
   readFileContentResult,
   readFileImageResult,
   readFileStatusResult,
   READ_FILE_TOOL_NAME,
   readFileUrlResult,
-  WRITE_FILE_TOOL_NAME,
   writeFileContentArg,
   writeFileResult,
+  WRITE_FILE_TOOL_NAME,
 } from "@/features/conversations/native-tools/file-tools"
-import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
-import { ToolField } from "@/features/conversations/components/tool-field"
-import {
-  ToolActivityRowHeader,
-  ToolActivityRowShell,
-} from "@/features/conversations/components/tool-activity-row-shell"
-import {
-  ActivityStatusIcon,
-  ActivityStatusSuffix,
-} from "@/features/conversations/components/tool-activity-status"
-import type { ToolActivity } from "@/features/conversations/message-parts"
+import { FileContentView } from "@/features/files/components/file-content-view"
 import { formatBytes, formatDateTime, pluralize } from "@/lib/format"
 
 type FileToolRowProps = {
   activity: ToolActivity
-  compact: boolean
   defaultOpen: boolean
 }
 
-export function FileToolRow({ activity, compact, defaultOpen }: FileToolRowProps) {
-  return renderFileToolRow({ activity, compact, defaultOpen })
-}
-
-function renderFileToolRow({ activity, compact, defaultOpen }: FileToolRowProps) {
+export function FileToolRow({ activity, defaultOpen }: FileToolRowProps) {
+  if (activity.status === "running" || activity.status === "awaiting_approval") {
+    const state = filePendingState(activity.name)
+    return state ? (
+      <FanOutSkeleton
+        heading={<FileToolHeading icon={state.icon}>{state.heading}</FileToolHeading>}
+        label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
+      />
+    ) : null
+  }
+  if (
+    activity.status === "failed" ||
+    activity.status === "denied" ||
+    activity.status === "unknown"
+  ) {
+    return <FileFailureRow activity={activity} />
+  }
   if (activity.name === LIST_FILES_TOOL_NAME) {
-    return <ListFilesRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    return <ListFilesRow activity={activity} defaultOpen={defaultOpen} />
   }
   if (activity.name === WRITE_FILE_TOOL_NAME) {
-    return <WriteFileRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    return <WriteFileRow activity={activity} defaultOpen={defaultOpen} />
   }
   if (activity.name === PROMOTE_SCRATCH_TOOL_NAME) {
-    return <PromoteScratchRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    return <PromoteScratchRow activity={activity} defaultOpen={defaultOpen} />
   }
   if (activity.name === READ_FILE_TOOL_NAME) {
-    return <ReadFileRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    return <ReadFileRow activity={activity} defaultOpen={defaultOpen} />
   }
   return null
 }
 
-function ListFilesRow({ activity, compact, defaultOpen }: FileToolRowProps) {
+function ListFilesRow({
+  activity,
+  defaultOpen,
+}: Pick<FileToolRowProps, "activity" | "defaultOpen">) {
   const result = listFilesResult(activity.result)
   if (!result) {
     return null
   }
 
-  const header = (
-    <ToolActivityRowHeader
-      expandable
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FilesIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Found Files</span>
-        </span>
-      }
-      suffix={
-        <ActivityStatusSuffix
-          status={activity.status}
-          suffix={`${String(result.total)} ${pluralize(result.total, "file")}`}
-        />
-      }
-      supportLabel={null}
-    />
-  )
-
+  const countLabel = `${String(result.total)} ${pluralize(result.total, "File")}`
+  const draftDetails = result.scratch.map((entry) => ({
+    label: `Draft · ${entry.name}`,
+    summary: false,
+    value: `${formatBytes(entry.content_bytes)} · Updated ${formatDateTime(entry.updated_at)} · Kept until ${formatDateTime(entry.expires_at)}`,
+  }))
   return (
-    <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <ToolField
-        field={{
-          key: "files",
-          label: `Files · ${String(result.files.length)}`,
-          value: "",
-          format: "text",
-        }}
-      >
+    <ToolResultCard
+      ariaLabel="Workspace files"
+      defaultOpen={defaultOpen}
+      details={[
+        { label: "Files", value: countLabel },
+        { label: "Drafts", value: String(result.scratch.length) },
+        ...draftDetails,
+      ]}
+      heading={<FileToolHeading icon={FilesIcon}>Workspace Files</FileToolHeading>}
+      trailing={<Badge variant="success">{countLabel}</Badge>}
+    >
+      <div className="grid min-w-0 gap-4">
         {result.files.length > 0 ? (
-          <div className="divide-border -my-1 divide-y">
+          <div className="divide-border divide-y" role="list">
             {result.files.map((file) => (
-              <FileEntityRow file={fileEntityFromRuntimeFile(file)} key={file.id} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-muted-foreground py-1 text-xs">No workspace files found.</p>
-        )}
-      </ToolField>
-      {result.scratch.length > 0 ? (
-        <ToolField
-          field={{
-            key: "drafts",
-            label: `Drafts · ${String(result.scratch.length)}`,
-            value: "",
-            format: "text",
-          }}
-        >
-          <div className="divide-border -my-1 divide-y">
-            {result.scratch.map((entry) => (
-              <div className="flex min-w-0 items-center gap-2.5 px-1.5 py-2" key={entry.name}>
-                <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border">
-                  <FileTextIcon className="size-4" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{entry.name}</span>
-                  <span className="text-muted-foreground block truncate text-xs">
-                    {formatBytes(entry.content_bytes)} · Updated {formatDateTime(entry.updated_at)}{" "}
-                    · Kept until {formatDateTime(entry.expires_at)}
-                  </span>
-                </span>
+              <div key={file.id} role="listitem">
+                <FileEntityRow file={fileEntityFromRuntimeFile(file)} />
               </div>
             ))}
           </div>
-        </ToolField>
-      ) : null}
-    </ToolActivityRowShell>
+        ) : (
+          <p className="text-muted-foreground px-4 py-6 text-center text-sm">
+            No workspace files found.
+          </p>
+        )}
+        {result.scratch.length > 0 ? (
+          <div className="border-border/70 overflow-hidden rounded-lg border">
+            <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">
+              Drafts · {String(result.scratch.length)}
+            </p>
+            <div className="divide-border divide-y">
+              {result.scratch.map((entry) => (
+                <div className="flex min-w-0 items-center gap-2.5 px-3 py-2" key={entry.name}>
+                  <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md border">
+                    <FileTextIcon className="size-4" />
+                  </span>
+                  <span className="min-w-0 truncate text-sm font-medium">{entry.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </ToolResultCard>
   )
 }
 
-function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
+function WriteFileRow({
+  activity,
+  defaultOpen,
+}: Pick<FileToolRowProps, "activity" | "defaultOpen">) {
   const result = writeFileResult(activity.result)
   if (!result) {
     return null
@@ -160,296 +158,311 @@ function WriteFileRow({ activity, compact, defaultOpen }: FileToolRowProps) {
   const file = fileEntityFromWriteResult(result)
   const isScratch = result.destination === "scratch"
   const scratchContent = isScratch ? writeFileContentArg(activity.args) : null
-  const label = isScratch ? `Saved Draft ${result.name}` : `Saved ${result.name} to Your Files`
-  const expandable = Boolean(file) || isScratch
-  const header = (
-    <ToolActivityRowHeader
-      expandable={expandable}
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FilePlus2Icon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{label}</span>
-        </span>
-      }
-      suffix={
-        <ActivityStatusSuffix status={activity.status} suffix={formatBytes(result.bytes_written)} />
-      }
-      supportLabel={null}
-    />
-  )
-
+  const heading = isScratch ? "Save Draft" : "Save File"
   return (
-    <ToolActivityRowShell
-      compact={compact}
+    <ToolResultCard
+      ariaLabel={isScratch ? `Saved draft ${result.name}` : `Saved file ${result.name}`}
       defaultOpen={defaultOpen}
-      expandable={expandable}
-      header={header}
+      details={[
+        { label: isScratch ? "Draft" : "File", value: result.name },
+        { label: "Size", value: formatBytes(result.bytes_written) },
+        ...(result.expires_at
+          ? [{ label: "Kept Until", value: formatDateTime(result.expires_at) }]
+          : []),
+      ]}
+      heading={<FileToolHeading icon={FilePlus2Icon}>{heading}</FileToolHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
     >
-      {file ? <FileOutcomeField file={file} /> : null}
-      {isScratch ? (
-        <ToolField
-          field={{
-            key: "draft",
-            label: "Draft",
-            value: `${result.name} · ${formatBytes(result.bytes_written)} · kept until ${
-              result.expires_at ? formatDateTime(result.expires_at) : "later"
-            }`,
-            format: "text",
-          }}
-        />
-      ) : null}
-      {scratchContent ? (
-        <ContentBlock label="Content" name={result.name} value={scratchContent} />
-      ) : null}
-    </ToolActivityRowShell>
+      <div className="grid min-w-0 gap-3">
+        {file ? <FileEntityRow file={file} /> : null}
+        {isScratch ? (
+          <p className="text-muted-foreground text-sm">
+            Saved {result.name} as a temporary draft
+            {result.expires_at ? ` until ${formatDateTime(result.expires_at)}` : ""}.
+          </p>
+        ) : null}
+        {scratchContent ? <FileContentBlock name={result.name} value={scratchContent} /> : null}
+      </div>
+    </ToolResultCard>
   )
 }
 
-function PromoteScratchRow({ activity, compact, defaultOpen }: FileToolRowProps) {
+function PromoteScratchRow({
+  activity,
+  defaultOpen,
+}: Pick<FileToolRowProps, "activity" | "defaultOpen">) {
   const result = promoteScratchResult(activity.result)
   if (!result) {
     return null
   }
 
-  const header = (
-    <ToolActivityRowHeader
-      expandable
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FilePlus2Icon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Saved {result.name} to Your Files</span>
-        </span>
-      }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
-      supportLabel={null}
-    />
-  )
-
   return (
-    <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileOutcomeField file={fileEntityFromPromoteResult(result)} />
-    </ToolActivityRowShell>
+    <ToolResultCard
+      ariaLabel={`Saved ${result.name} to workspace files`}
+      defaultOpen={defaultOpen}
+      details={[
+        { label: "File", value: result.name },
+        { label: "Draft Removed", value: result.deleted_scratch ? "Yes" : "No" },
+      ]}
+      heading={<FileToolHeading icon={FilePlus2Icon}>Save Draft to Files</FileToolHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      <FileEntityRow file={fileEntityFromPromoteResult(result)} />
+    </ToolResultCard>
   )
 }
 
-function ReadFileRow(props: FileToolRowProps) {
-  const urlResult = readFileUrlResult(props.activity.result)
+function ReadFileRow({
+  activity,
+  defaultOpen,
+}: Pick<FileToolRowProps, "activity" | "defaultOpen">) {
+  const urlResult = readFileUrlResult(activity.result)
   if (urlResult) {
-    return <ReadFileUrlRow {...props} result={urlResult} />
+    return <ReadFileUrlRow activity={activity} defaultOpen={defaultOpen} result={urlResult} />
   }
-  const contentResult = readFileContentResult(props.activity.result)
+  const contentResult = readFileContentResult(activity.result)
   if (contentResult) {
-    return <ReadFileContentRow {...props} result={contentResult} />
+    return (
+      <ReadFileContentRow activity={activity} defaultOpen={defaultOpen} result={contentResult} />
+    )
   }
-  const statusResult = readFileStatusResult(props.activity.result)
+  const statusResult = readFileStatusResult(activity.result)
   if (statusResult) {
-    return <ReadFileStatusRow {...props} result={statusResult} />
+    return <ReadFileStatusRow activity={activity} defaultOpen={defaultOpen} result={statusResult} />
   }
-  const imageResult = readFileImageResult(props.activity.result)
+  const imageResult = readFileImageResult(activity.result)
   if (imageResult) {
-    return <ReadFileImageRow {...props} result={imageResult} />
+    return <ReadFileImageRow activity={activity} defaultOpen={defaultOpen} result={imageResult} />
   }
   return null
 }
 
 function ReadFileUrlRow({
   activity,
-  compact,
   defaultOpen,
   result,
-}: FileToolRowProps & { result: ReadFileUrlToolResult }) {
-  const header = (
-    <ToolActivityRowHeader
-      expandable
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FileIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Loaded File</span>
-        </span>
-      }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
-      supportLabel={null}
-    />
-  )
-
+}: Pick<FileToolRowProps, "activity" | "defaultOpen"> & { result: ReadFileUrlToolResult }) {
   return (
-    <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileOutcomeField file={fileEntityFromReadUrlResult(result)} />
-      <ToolField
-        field={{
-          key: "expires_at",
-          label: "Link Available Until",
-          value: formatDateTime(result.expires_at),
-          format: "datetime",
-        }}
-      />
-    </ToolActivityRowShell>
+    <ReadFileCard
+      activity={activity}
+      defaultOpen={defaultOpen}
+      details={[
+        { label: "File", value: result.name },
+        { label: "Link Available Until", value: formatDateTime(result.expires_at) },
+      ]}
+      heading="Load File"
+      icon={FileIcon}
+    >
+      <FileEntityRow file={fileEntityFromReadUrlResult(result)} />
+    </ReadFileCard>
   )
 }
 
 function ReadFileContentRow({
   activity,
-  compact,
   defaultOpen,
   result,
-}: FileToolRowProps & { result: ReadFileContentToolResult }) {
+}: Pick<FileToolRowProps, "activity" | "defaultOpen"> & { result: ReadFileContentToolResult }) {
   const file = fileEntityFromReadContentResult(result)
   const isScratch = result.kind === "scratch" || (!result.file_id && Boolean(result.name))
-  const label = isScratch
-    ? result.name
-      ? `Read the Draft ${result.name}`
-      : "Read Draft"
-    : "Read File"
-  const header = (
-    <ToolActivityRowHeader
-      expandable
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <SearchIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">{label}</span>
-        </span>
-      }
-      suffix={
-        <ActivityStatusSuffix
-          status={activity.status}
-          suffix={formatBytes(result.end_offset - result.offset)}
-        />
-      }
-      supportLabel={null}
-    />
-  )
-
+  const bytesRead = result.end_offset - result.offset
   return (
-    <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      {file ? <FileOutcomeField file={file} /> : null}
-      {isScratch && result.name ? (
-        <ToolField
-          field={{
-            key: "draft",
-            label: "Draft",
-            value: `${result.name}${result.expires_at ? ` · kept until ${formatDateTime(result.expires_at)}` : ""}`,
-            format: "text",
-          }}
-        />
-      ) : null}
-      <ToolField
-        field={{
-          key: "content_read",
+    <ReadFileCard
+      activity={activity}
+      defaultOpen={defaultOpen}
+      details={[
+        ...(result.name ? [{ label: isScratch ? "Draft" : "File", value: result.name }] : []),
+        {
           label: "Content Read",
-          value: `${formatBytes(result.end_offset - result.offset)} of ${formatBytes(
-            result.total_bytes
-          )}${result.truncated ? " · more available" : ""}`,
-          format: "text",
-        }}
-      />
-      <ContentBlock
-        label="Content"
-        mediaType={result.media_type ?? null}
-        name={result.name ?? null}
-        value={result.content}
-      />
-    </ToolActivityRowShell>
+          value: `${formatBytes(bytesRead)} of ${formatBytes(result.total_bytes)}`,
+        },
+        {
+          label: "Range",
+          value: `${String(result.offset)}–${String(result.end_offset)} bytes`,
+        },
+        ...(result.expires_at
+          ? [{ label: "Kept Until", value: formatDateTime(result.expires_at), summary: false }]
+          : []),
+      ]}
+      heading={isScratch ? "Read Draft" : "Read File"}
+      icon={SearchIcon}
+    >
+      <div className="grid min-w-0 gap-3">
+        {file ? <FileEntityRow file={file} /> : null}
+        {result.truncated ? (
+          <p className="text-muted-foreground text-xs">
+            This view is truncated. More content is available.
+          </p>
+        ) : null}
+        {result.hint ? <p className="text-muted-foreground text-xs">{result.hint}</p> : null}
+        <FileContentBlock
+          mediaType={result.media_type ?? null}
+          name={result.name ?? null}
+          value={result.content}
+        />
+      </div>
+    </ReadFileCard>
   )
 }
 
 function ReadFileStatusRow({
   activity,
-  compact,
   defaultOpen,
   result,
-}: FileToolRowProps & { result: ReadFileStatusToolResult }) {
-  const header = (
-    <ToolActivityRowHeader
-      expandable
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FileIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Checked File</span>
-        </span>
-      }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
-      supportLabel={null}
-    />
-  )
-
+}: Pick<FileToolRowProps, "activity" | "defaultOpen"> & { result: ReadFileStatusToolResult }) {
   return (
-    <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileOutcomeField file={fileEntityFromReadStatusResult(result)} />
-      <ToolField
-        field={{
-          key: "status",
-          label: "File Status",
-          value: result.message,
-          format: "multiline",
-        }}
-      />
-    </ToolActivityRowShell>
+    <ReadFileCard
+      activity={activity}
+      defaultOpen={defaultOpen}
+      details={[
+        { label: "File", value: result.name },
+        { label: "File Status", value: result.status },
+      ]}
+      heading="Check File"
+      icon={FileIcon}
+    >
+      <div className="grid min-w-0 gap-3">
+        <FileEntityRow file={fileEntityFromReadStatusResult(result)} />
+        <p className="text-muted-foreground text-sm whitespace-pre-wrap">{result.message}</p>
+      </div>
+    </ReadFileCard>
   )
 }
 
 function ReadFileImageRow({
   activity,
-  compact,
   defaultOpen,
   result,
-}: FileToolRowProps & { result: ReadFileImageToolResult }) {
-  const header = (
-    <ToolActivityRowHeader
-      expandable
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <ImageIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Read Image</span>
-        </span>
-      }
-      suffix={<ActivityStatusSuffix status={activity.status} suffix={result.name} />}
-      supportLabel={null}
-    />
-  )
-
+}: Pick<FileToolRowProps, "activity" | "defaultOpen"> & { result: ReadFileImageToolResult }) {
   return (
-    <ToolActivityRowShell compact={compact} defaultOpen={defaultOpen} expandable header={header}>
-      <FileOutcomeField file={fileEntityFromReadImageResult(result)} />
-      <ToolField
-        field={{
-          key: "result",
-          label: "Result",
-          value: "The image was shared with the agent.",
-          format: "text",
-        }}
-      />
-    </ToolActivityRowShell>
+    <ReadFileCard
+      activity={activity}
+      defaultOpen={defaultOpen}
+      details={[{ label: "Image", value: result.name }]}
+      heading="Read Image"
+      icon={ImageIcon}
+    >
+      <div className="grid min-w-0 gap-3">
+        <FileEntityRow file={fileEntityFromReadImageResult(result)} />
+        <p className="text-muted-foreground text-sm">The image was shared with the agent.</p>
+      </div>
+    </ReadFileCard>
   )
 }
 
-function ContentBlock({
-  label,
+function ReadFileCard({
+  activity,
+  children,
+  defaultOpen,
+  details,
+  heading,
+  icon,
+}: Pick<FileToolRowProps, "activity" | "defaultOpen"> & {
+  children: ReactNode
+  details: ToolResultDetail[]
+  heading: string
+  icon: LucideIcon
+}) {
+  return (
+    <ToolResultCard
+      ariaLabel={heading}
+      defaultOpen={defaultOpen}
+      details={details}
+      heading={<FileToolHeading icon={icon}>{heading}</FileToolHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      {children}
+    </ToolResultCard>
+  )
+}
+
+function FileFailureRow({ activity }: Pick<FileToolRowProps, "activity">) {
+  const state = filePendingState(activity.name)
+  if (!state) {
+    return null
+  }
+  const message =
+    typeof activity.result === "string" && activity.result.trim()
+      ? activity.result
+      : activity.status === "denied"
+        ? "This file action was declined. Nothing was changed."
+        : "The file action did not finish. No result was confirmed."
+  return (
+    <ToolResultCard
+      ariaLabel={`${state.heading} failed`}
+      defaultOpen
+      details={[{ label: "Action", value: state.heading }]}
+      heading={<FileToolHeading icon={state.icon}>{state.heading}</FileToolHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      <Alert variant="destructive">
+        <AlertTitle>
+          {activity.status === "denied" ? "Action Declined" : "What Went Wrong"}
+        </AlertTitle>
+        <AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription>
+      </Alert>
+    </ToolResultCard>
+  )
+}
+
+function FileContentBlock({
   mediaType,
   name,
   value,
 }: {
-  label: string
   mediaType?: string | null
   name?: string | null
   value: string
 }) {
   return (
-    <ToolField field={{ key: "content", label, value, format: "multiline" }}>
+    <div className="border-border/70 overflow-hidden rounded-lg border">
+      <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Content</p>
       <FileContentView content={value} mediaType={mediaType ?? null} name={name ?? null} />
-    </ToolField>
+    </div>
   )
 }
 
-function FileOutcomeField({ file }: { file: Parameters<typeof FileEntityRow>[0]["file"] }) {
+function FileToolHeading({ children, icon: Icon }: { children: string; icon: LucideIcon }) {
   return (
-    <ToolField field={{ key: "file", label: "File", value: "", format: "text" }}>
-      <FileEntityRow file={file} />
-    </ToolField>
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <Icon className="text-muted-foreground size-4 shrink-0" />
+      <span className="truncate">{children}</span>
+    </span>
   )
+}
+
+function filePendingState(name: string) {
+  if (name === LIST_FILES_TOOL_NAME) {
+    return {
+      heading: "Workspace Files",
+      icon: FilesIcon,
+      runningLabel: "Listing files…",
+      waitingLabel: "Waiting to list files…",
+    }
+  }
+  if (name === WRITE_FILE_TOOL_NAME) {
+    return {
+      heading: "Save File",
+      icon: FilePlus2Icon,
+      runningLabel: "Saving file…",
+      waitingLabel: "Waiting to save file…",
+    }
+  }
+  if (name === PROMOTE_SCRATCH_TOOL_NAME) {
+    return {
+      heading: "Save Draft to Files",
+      icon: FilePlus2Icon,
+      runningLabel: "Saving draft…",
+      waitingLabel: "Waiting to save draft…",
+    }
+  }
+  if (name === READ_FILE_TOOL_NAME) {
+    return {
+      heading: "Read File",
+      icon: SearchIcon,
+      runningLabel: "Reading file…",
+      waitingLabel: "Waiting to read file…",
+    }
+  }
+  return null
 }

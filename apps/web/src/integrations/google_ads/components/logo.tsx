@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/logo.tsx
+// apps/web/src/integrations/google_ads/components/logo.tsx
 
 import type { SVGProps } from "react"
 

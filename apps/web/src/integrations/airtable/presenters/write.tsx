@@ -1,15 +1,18 @@
-// apps/web/src/integrations/airtable/write-presenter.tsx
+// apps/web/src/integrations/airtable/presenters/write.tsx
 
 import { ToolApprovalDecisionCard, type ApprovalField } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
-import { AirtableLogo } from "@/integrations/airtable/logo"
-import { isAirtableJson } from "@/integrations/airtable/record-data"
-import { AirtableFieldGrid } from "@/integrations/airtable/record-fields"
-import { airtableRecordDetails } from "@/integrations/airtable/tool-details"
-import { AirtableToolHeading } from "@/integrations/airtable/tool-heading"
-import { AirtableWriteFailure, AirtableWriteReceipt } from "@/integrations/airtable/write-outcome"
+import { AirtableLogo } from "@/integrations/airtable/components/logo"
+import { isAirtableJson } from "@/integrations/airtable/lib/record-data"
+import { AirtableFieldGrid } from "@/integrations/airtable/components/record-fields"
+import { airtableRecordDetails } from "@/integrations/airtable/lib/tool-details"
+import { AirtableToolHeading } from "@/integrations/airtable/components/tool-heading"
+import {
+  AirtableWriteFailure,
+  AirtableWriteReceipt,
+} from "@/integrations/airtable/components/write-outcome"
 import { isRecord } from "@/lib/guards"
 
 const CREATE_FIELDS: ApprovalField[] = [approvalField("table", "Table")]

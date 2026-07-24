@@ -16,12 +16,12 @@ import {
   loadIntegrationUiModules,
   providerKeyForToolName,
 } from "@/integrations/registry"
-import { gmailReadPresenter } from "@/integrations/gmail/read-presenter"
-import { gmailSearchMessageSelectHandler } from "@/integrations/gmail/search-interaction"
-import { gmailSearchPresenter } from "@/integrations/gmail/search-presenter"
-import { gmailSendPresenter } from "@/integrations/gmail/send-presenter"
-import { gmailSendDetails } from "@/integrations/gmail/tool-details"
-import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api"
+import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
+import { gmailSearchMessageSelectHandler } from "@/integrations/gmail/lib/search-interaction"
+import { gmailSearchPresenter } from "@/integrations/gmail/presenters/search"
+import { gmailSendPresenter } from "@/integrations/gmail/presenters/send"
+import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
+import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
 
 const NODE = (content: string, ref = "message-1") => ({
   node: "praxis_untrusted" as const,

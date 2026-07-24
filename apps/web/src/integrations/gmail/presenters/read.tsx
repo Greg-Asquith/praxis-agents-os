@@ -1,4 +1,4 @@
-// apps/web/src/integrations/gmail/read-presenter.tsx
+// apps/web/src/integrations/gmail/presenters/read.tsx
 
 import { ExternalContent } from "@/components/tool-ui/external-content"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
@@ -6,8 +6,8 @@ import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { MessageDetail } from "@/components/tool-ui/message"
 import { isUntrustedNode, nodeText, type UntrustedNode } from "@/components/tool-ui/untrusted-node"
 import type { ToolRowPresenter } from "@/integrations/contract"
-import { GmailMessageView } from "@/integrations/gmail/message-preview"
-import { GmailToolHeading } from "@/integrations/gmail/tool-heading"
+import { GmailMessageView } from "@/integrations/gmail/components/message-preview"
+import { GmailToolHeading } from "@/integrations/gmail/components/tool-heading"
 import { relativeDateTime } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

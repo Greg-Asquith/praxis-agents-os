@@ -132,54 +132,65 @@ describe("ToolCallRow lifecycle", () => {
   })
 
   it("renders file outcomes as actionable entity rows inside the shared field well", () => {
-    const html = renderRow({
-      id: "files-1",
-      kind: "result",
-      name: "list_files",
-      status: "completed",
-      result: {
-        files: [
-          {
-            id: "file-1",
-            name: "Quarterly plan.pdf",
-            category: "ingestible_document",
-            media_type: "application/pdf",
-            processing_status: "ready",
-            size_bytes: 4096,
-            updated_at: "2026-07-17T12:00:00Z",
-          },
-        ],
-        scratch: [],
-        total: 1,
+    const html = renderRow(
+      {
+        id: "files-1",
+        kind: "result",
+        name: "list_files",
+        status: "completed",
+        result: {
+          files: [
+            {
+              id: "file-1",
+              name: "Quarterly plan.pdf",
+              category: "ingestible_document",
+              media_type: "application/pdf",
+              processing_status: "ready",
+              size_bytes: 4096,
+              updated_at: "2026-07-17T12:00:00Z",
+            },
+          ],
+          scratch: [],
+          total: 1,
+        },
       },
-    })
+      false,
+      [presentation],
+      true
+    )
 
-    expect(html).toContain("Files · 1")
-    expect(html).toContain('data-slot="tool-field-well"')
+    expect(html).toContain("1 File")
+    expect(html).toContain(">Details<")
+    expect(html).not.toContain('data-slot="tool-field-well"')
     expect(html).toContain('aria-label="View details for Quarterly plan.pdf"')
     expect(html).toContain('aria-label="Actions for Quarterly plan.pdf"')
     expect(html).toContain("4.0 KB")
   })
 
   it("renders file read details as plain-language shared fields", () => {
-    const html = renderRow({
-      id: "read-1",
-      kind: "result",
-      name: "read_file",
-      status: "completed",
-      result: {
-        mode: "content",
-        content: "# Quarterly plan",
-        end_offset: 18,
-        name: "plan.md",
-        offset: 0,
-        total_bytes: 40,
-        truncated: true,
+    const html = renderRow(
+      {
+        id: "read-1",
+        kind: "result",
+        name: "read_file",
+        status: "completed",
+        result: {
+          mode: "content",
+          content: "# Quarterly plan",
+          end_offset: 18,
+          name: "plan.md",
+          offset: 0,
+          total_bytes: 40,
+          truncated: true,
+        },
       },
-    })
+      false,
+      [presentation],
+      true
+    )
 
     expect(html).toContain("Content Read")
-    expect(html).toContain("more available")
+    expect(html).toContain("More content is available.")
     expect(html).toContain(">Content</p>")
     expect(html).not.toContain("Byte range")
     expect(html).not.toContain("Next read")
@@ -218,54 +229,67 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).not.toContain('data-slot="plan-card"')
   })
 
-  it("renders skill document content in a shared Markdown field without JSON", () => {
-    const html = renderRow({
-      id: "skill-doc-1",
-      kind: "result",
-      name: "read_skill_document",
-      status: "completed",
-      args: { document: "guide", skill: "research" },
-      result: "<skill-document skill='research' document='guide'>\n# Guidance\n</skill-document>",
-    })
+  it("renders skill document content in a kit result card without JSON", () => {
+    const html = renderRow(
+      {
+        id: "skill-doc-1",
+        kind: "result",
+        name: "read_skill_document",
+        status: "completed",
+        args: { document: "guide", skill: "research" },
+        result: "<skill-document skill='research' document='guide'>\n# Guidance\n</skill-document>",
+      },
+      false,
+      [presentation],
+      true
+    )
 
-    expect(html).toContain("Document Content")
+    expect(html).toContain("Read Skill Document")
     expect(html).toContain("Guidance")
-    expect(html).toContain('data-slot="tool-field-well"')
+    expect(html).toContain(">Details<")
+    expect(html).not.toContain('data-slot="tool-field-well"')
     expect(html).not.toContain("&lt;skill-document")
   })
 
   it("renders available delegate agents as an identity-rich mini-view", () => {
-    const html = renderRow({
-      id: "delegate-list-1",
-      kind: "result",
-      name: "list_delegate_agents",
-      status: "completed",
-      result: [
-        {
-          id: "agent-1",
-          name: "Research Agent",
-          description: "Finds and checks source material.",
-          model: "claude-sonnet-5",
-          skill_count: 2,
-          slug: "research-agent",
-          tool_count: 1,
-        },
-      ],
-    })
+    const html = renderRow(
+      {
+        id: "delegate-list-1",
+        kind: "result",
+        name: "list_delegate_agents",
+        status: "completed",
+        result: [
+          {
+            id: "agent-1",
+            name: "Research Agent",
+            description: "Finds and checks source material.",
+            model: "claude-sonnet-5",
+            skill_count: 2,
+            slug: "research-agent",
+            tool_count: 1,
+          },
+        ],
+      },
+      false,
+      [presentation],
+      true
+    )
 
-    expect(html).toContain("Found Available Agents")
-    expect(html).toContain("Agents · 1")
+    expect(html).toContain("Available Agents")
+    expect(html).toContain("1 Agent")
     expect(html).toContain("Research Agent")
     expect(html).toContain("Finds and checks source material.")
     expect(html).not.toContain("research-agent")
     expect(html).not.toContain("claude-sonnet-5")
+    expect(html).not.toContain('data-slot="tool-field-well"')
   })
 })
 
 function renderRow(
   activity: ToolActivity,
   live = false,
-  presentations: ToolPresentationEntry[] = [presentation]
+  presentations: ToolPresentationEntry[] = [presentation],
+  defaultOpen = false
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -277,7 +301,7 @@ function renderRow(
   return renderToStaticMarkup(
     createElement(QueryClientProvider, {
       client: queryClient,
-      children: createElement(ToolCallRow, { activity, live }),
+      children: createElement(ToolCallRow, { activity, defaultOpen, live }),
     })
   )
 }

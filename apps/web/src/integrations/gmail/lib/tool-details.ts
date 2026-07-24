@@ -1,4 +1,4 @@
-// apps/web/src/integrations/gmail/tool-details.ts
+// apps/web/src/integrations/gmail/lib/tool-details.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import { isRecord } from "@/lib/guards"

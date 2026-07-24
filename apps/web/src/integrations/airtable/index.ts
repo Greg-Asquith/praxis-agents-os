@@ -4,12 +4,12 @@ import type { IntegrationUiModule } from "@/integrations/contract"
 import {
   airtableGetRecordPresenter,
   airtableListRecordsPresenter,
-} from "@/integrations/airtable/records-presenter"
-import { AirtableLogo } from "@/integrations/airtable/logo"
+} from "@/integrations/airtable/presenters/records"
+import { AirtableLogo } from "@/integrations/airtable/components/logo"
 import {
   airtableCreateRecordPresenter,
   airtableUpdateRecordPresenter,
-} from "@/integrations/airtable/write-presenter"
+} from "@/integrations/airtable/presenters/write"
 
 export default {
   catalogDescription: "Let agents work with your Airtable records.",

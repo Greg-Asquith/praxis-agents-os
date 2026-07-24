@@ -1,11 +1,14 @@
-// apps/web/src/integrations/gmail/message-preview.tsx
+// apps/web/src/integrations/gmail/components/message-preview.tsx
 
 import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { MailsIcon, TagIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { gmailMessagePreviewQueryOptions, type GmailMessagePreview } from "@/integrations/gmail/api"
+import {
+  gmailMessagePreviewQueryOptions,
+  type GmailMessagePreview,
+} from "@/integrations/gmail/api/message-preview"
 
 // Server-side sanitization (nh3) is the first layer; this opaque-origin,
 // script-less sandbox plus its CSP is the second. Do not add sandbox

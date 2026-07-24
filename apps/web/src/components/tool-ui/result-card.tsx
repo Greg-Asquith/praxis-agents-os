@@ -1,4 +1,5 @@
 // apps/web/src/components/tool-ui/result-card.tsx
+
 import { useState, type ReactNode } from "react"
 import { ChevronRightIcon } from "lucide-react"
 
@@ -12,6 +13,8 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
+const EMPTY_DETAILS: ToolResultDetail[] = []
+
 export type ToolResultDetail = {
   label: string
   summary?: boolean
@@ -22,14 +25,16 @@ export function ToolResultCard({
   ariaLabel,
   children,
   defaultOpen = false,
-  details,
+  details = EMPTY_DETAILS,
+  expandable = true,
   heading,
   trailing,
 }: {
   ariaLabel: string
-  children: ReactNode
+  children?: ReactNode
   defaultOpen?: boolean
-  details: ToolResultDetail[]
+  details?: ToolResultDetail[]
+  expandable?: boolean
   heading: ReactNode
   trailing?: ReactNode
 }) {
@@ -44,31 +49,35 @@ export function ToolResultCard({
       <header
         className={cn(
           "bg-muted/25 flex min-w-0 items-center gap-2 rounded-lg p-1",
-          open && "rounded-b-none border-b"
+          expandable && open && "rounded-b-none border-b"
         )}
       >
-        <Button
-          aria-expanded={open}
-          aria-label={open ? "Collapse results" : "Expand results"}
-          className="h-auto min-w-0 flex-1 justify-start px-1.5 py-0.5 text-left whitespace-normal"
-          onClick={() => {
-            setOpen((current) => !current)
-          }}
-          type="button"
-          variant="ghost"
-        >
-          <ChevronRightIcon className={cn("transition-transform", open && "rotate-90")} />
-          <span className="min-w-0 flex-1">
-            <span className="block min-w-0 text-sm font-medium">{heading}</span>
-            <span className="text-muted-foreground block truncate text-xs" title={summary}>
-              {summary}
+        {expandable ? (
+          <Button
+            aria-expanded={open}
+            aria-label={open ? "Collapse results" : "Expand results"}
+            className="h-auto min-w-0 flex-1 justify-start px-1.5 py-0.5 text-left whitespace-normal"
+            onClick={() => {
+              setOpen((current) => !current)
+            }}
+            type="button"
+            variant="ghost"
+          >
+            <ChevronRightIcon className={cn("transition-transform", open && "rotate-90")} />
+            <span className="min-w-0 flex-1">
+              <span className="block min-w-0 text-sm font-medium">{heading}</span>
+              <span className="text-muted-foreground block truncate text-xs" title={summary}>
+                {summary}
+              </span>
             </span>
-          </span>
-        </Button>
-        <ToolResultDetailsPopover details={details} />
+          </Button>
+        ) : (
+          <div className="min-w-0 flex-1 px-1.5 py-0.5 text-sm font-medium">{heading}</div>
+        )}
+        {expandable ? <ToolResultDetailsPopover details={details} /> : null}
         {trailing}
       </header>
-      {open ? <div className="min-w-0 p-3">{children}</div> : null}
+      {expandable && open ? <div className="min-w-0 p-3">{children}</div> : null}
     </section>
   )
 }

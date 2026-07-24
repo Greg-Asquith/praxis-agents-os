@@ -1,13 +1,13 @@
-// apps/web/src/integrations/gmail/send-presenter.tsx
+// apps/web/src/integrations/gmail/presenters/send.tsx
 
 import { ToolApprovalDecisionCard, type ApprovalField } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter } from "@/integrations/contract"
-import { GmailLogo } from "@/integrations/gmail/logo"
-import { GmailSendMessage, sentMessageArgs } from "@/integrations/gmail/sent-message"
-import { gmailSendDetails } from "@/integrations/gmail/tool-details"
-import { GmailToolHeading } from "@/integrations/gmail/tool-heading"
+import { GmailLogo } from "@/integrations/gmail/components/logo"
+import { GmailSendMessage, sentMessageArgs } from "@/integrations/gmail/components/sent-message"
+import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
+import { GmailToolHeading } from "@/integrations/gmail/components/tool-heading"
 import { isRecord } from "@/lib/guards"
 
 const SEND_FIELDS: ApprovalField[] = [

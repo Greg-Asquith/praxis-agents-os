@@ -1,4 +1,4 @@
-// apps/web/src/integrations/gmail/logo.tsx
+// apps/web/src/integrations/gmail/components/logo.tsx
 
 import type { SVGProps } from "react"
 

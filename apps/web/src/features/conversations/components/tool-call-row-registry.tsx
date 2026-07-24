@@ -76,22 +76,20 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     key: "delegate-agent-list",
     matches: (activity) =>
       activity.name === LIST_DELEGATE_AGENTS_TOOL_NAME &&
-      delegateAgentSummaries(activity.result) !== null,
-    render: ({ activity, compact, defaultOpen }) => (
-      <DelegateAgentListRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+      (activity.status === "running" || delegateAgentSummaries(activity.result) !== null),
+    render: ({ activity, defaultOpen }) => (
+      <DelegateAgentListRow activity={activity} defaultOpen={defaultOpen} />
     ),
   },
   {
     handlesApprovals: true,
     key: "delegation",
     matches: (activity) => Boolean(activity.delegate),
-    render: ({ activity, approvalDecision, compact, defaultOpen, live }) => (
+    render: ({ activity, approvalDecision, defaultOpen }) => (
       <DelegationToolRow
         activity={activity}
         {...(approvalDecision ? { approvalDecision } : {})}
-        compact={compact}
         defaultOpen={defaultOpen}
-        live={live}
       />
     ),
   },
@@ -100,13 +98,13 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     matches: (activity) =>
       (activity.toolKind === "capability-load" || activity.name === LOAD_CAPABILITY_TOOL_NAME) &&
       skillIdFromCapabilityArgs(activity.args) !== null,
-    render: ({ activity, compact }) => <SkillActivationRow activity={activity} compact={compact} />,
+    render: ({ activity }) => <SkillActivationRow activity={activity} />,
   },
   {
     key: "skill-document-read",
     matches: (activity) => activity.name === READ_SKILL_DOCUMENT_TOOL_NAME,
-    render: ({ activity, compact, defaultOpen }) => (
-      <SkillDocumentReadRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    render: ({ activity, defaultOpen }) => (
+      <SkillDocumentReadRow activity={activity} defaultOpen={defaultOpen} />
     ),
   },
   {
@@ -125,8 +123,8 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   {
     key: "file-tools",
     matches: fileToolRowMatches,
-    render: ({ activity, compact, defaultOpen }) => (
-      <FileToolRow activity={activity} compact={compact} defaultOpen={defaultOpen} />
+    render: ({ activity, defaultOpen }) => (
+      <FileToolRow activity={activity} defaultOpen={defaultOpen} />
     ),
   },
 ]
@@ -154,6 +152,15 @@ export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
 }
 
 function fileToolRowMatches(activity: ToolActivity) {
+  if (
+    (activity.name === LIST_FILES_TOOL_NAME ||
+      activity.name === WRITE_FILE_TOOL_NAME ||
+      activity.name === PROMOTE_SCRATCH_TOOL_NAME ||
+      activity.name === READ_FILE_TOOL_NAME) &&
+    activity.status !== "completed"
+  ) {
+    return true
+  }
   if (activity.name === LIST_FILES_TOOL_NAME) {
     return listFilesResult(activity.result) !== null
   }

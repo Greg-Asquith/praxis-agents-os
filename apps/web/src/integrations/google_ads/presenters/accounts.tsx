@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/account-presenter.tsx
+// apps/web/src/integrations/google_ads/presenters/accounts.tsx
 
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
@@ -6,8 +6,8 @@ import type { ToolRowPresenter } from "@/integrations/contract"
 import {
   GoogleAdsAccountHierarchy,
   type GoogleAdsAccount,
-} from "@/integrations/google_ads/account-hierarchy"
-import { GoogleAdsToolHeading } from "@/integrations/google_ads/tool-heading"
+} from "@/integrations/google_ads/components/account-hierarchy"
+import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
 import { formatGoogleAdsAccountId } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

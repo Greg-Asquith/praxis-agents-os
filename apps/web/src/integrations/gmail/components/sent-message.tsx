@@ -1,4 +1,5 @@
-// apps/web/src/integrations/gmail/sent-message.tsx
+// apps/web/src/integrations/gmail/components/sent-message.tsx
+
 import { MailCheckIcon, MailXIcon } from "lucide-react"
 
 import { isRecord } from "@/lib/guards"

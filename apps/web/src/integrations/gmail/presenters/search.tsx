@@ -1,4 +1,4 @@
-// apps/web/src/integrations/gmail/search-presenter.tsx
+// apps/web/src/integrations/gmail/presenters/search.tsx
 
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
@@ -7,9 +7,9 @@ import type { ToolRowPresenter } from "@/integrations/contract"
 import {
   GmailSearchMessageRow,
   type GmailMessageSummary,
-} from "@/integrations/gmail/search-message-row"
-import { gmailSearchDetails } from "@/integrations/gmail/tool-details"
-import { GmailToolHeading } from "@/integrations/gmail/tool-heading"
+} from "@/integrations/gmail/components/search-message-row"
+import { gmailSearchDetails } from "@/integrations/gmail/lib/tool-details"
+import { GmailToolHeading } from "@/integrations/gmail/components/tool-heading"
 import { pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 
-import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api"
+import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
 import { baseIntegrationQueryKeys } from "@/lib/integration-query-keys"
 import { setActiveWorkspaceSlug } from "@/lib/workspace"
 

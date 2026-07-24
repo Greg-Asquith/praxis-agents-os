@@ -1,4 +1,4 @@
-// apps/web/src/integrations/airtable/logo.tsx
+// apps/web/src/integrations/airtable/components/logo.tsx
 
 import type { SVGProps } from "react"
 

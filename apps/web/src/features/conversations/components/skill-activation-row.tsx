@@ -3,11 +3,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { SparklesIcon } from "lucide-react"
 
-import {
-  ToolActivityRowHeader,
-  ToolActivityRowShell,
-} from "@/features/conversations/components/tool-activity-row-shell"
-import { ActivityStatusIcon } from "@/features/conversations/components/tool-activity-status"
+import { ToolResultCard } from "@/components/tool-ui/result-card"
+import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   skillActivationDisplayName,
@@ -17,10 +14,9 @@ import { skillsQueryOptions } from "@/features/skills/api/list-skills"
 
 type SkillActivationRowProps = {
   activity: ToolActivity
-  compact?: boolean
 }
 
-export function SkillActivationRow({ activity, compact = false }: SkillActivationRowProps) {
+export function SkillActivationRow({ activity }: SkillActivationRowProps) {
   const skillId = skillIdFromCapabilityArgs(activity.args)
   const skillsQuery = useQuery({
     ...skillsQueryOptions({ includeInactive: true }),
@@ -32,25 +28,17 @@ export function SkillActivationRow({ activity, compact = false }: SkillActivatio
 
   const skill = skillsQuery.data?.skills.find((item) => item.id === skillId)
   const label = skillActivationDisplayName(skill, skillId)
-  const header = (
-    <ToolActivityRowHeader
+  return (
+    <ToolResultCard
+      ariaLabel={`Activated skill: ${label}`}
       expandable={false}
-      icon={<ActivityStatusIcon fallbackIcon="tool" status={activity.status} />}
-      label={
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <SparklesIcon className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">Activated Skill: {label}</span>
+      heading={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <SparklesIcon className="text-muted-foreground size-4 shrink-0" />
+          <span className="truncate">Activated Skill: {label}</span>
         </span>
       }
-      reserveChevronSpace={false}
-      suffix={null}
-      supportLabel={null}
+      trailing={<ActivityStatusBadge status={activity.status} />}
     />
-  )
-
-  return (
-    <ToolActivityRowShell compact={compact} defaultOpen={false} expandable={false} header={header}>
-      {null}
-    </ToolActivityRowShell>
   )
 }

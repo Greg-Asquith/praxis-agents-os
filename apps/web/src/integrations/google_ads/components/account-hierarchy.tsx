@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/account-hierachy.tsx
+// apps/web/src/integrations/google_ads/components/account-hierarchy.tsx
 
 import { Badge } from "@/components/ui/badge"
 import { formatGoogleAdsAccountId, titleCaseToken } from "@/lib/format"

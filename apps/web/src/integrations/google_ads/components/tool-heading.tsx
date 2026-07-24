@@ -1,6 +1,6 @@
-// apps/web/src/integrations/google_ads/tool-heading.tsx
+// apps/web/src/integrations/google_ads/components/tool-heading.tsx
 
-import { GoogleAdsLogo } from "@/integrations/google_ads/logo"
+import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 
 export function GoogleAdsToolHeading({ children }: { children: string }) {
   return (
