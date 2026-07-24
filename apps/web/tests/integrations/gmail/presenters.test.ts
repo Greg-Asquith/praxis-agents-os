@@ -404,7 +404,7 @@ describe("Gmail tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Unsent Gmail message"')
+    expect(html).toContain('aria-label="Unsent Gmail Message"')
     expect(html).toContain('aria-expanded="true"')
     expect(html).toContain("Collapse results")
     expect(html).toContain("Send Gmail Message")

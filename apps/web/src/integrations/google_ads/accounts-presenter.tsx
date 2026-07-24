@@ -8,6 +8,7 @@ import {
   type GoogleAdsAccount,
 } from "@/integrations/google_ads/account-hierarchy"
 import { GoogleAdsToolHeading } from "@/integrations/google_ads/tool-heading"
+import { formatGoogleAdsAccountId } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 export const googleAdsAccountsPresenter: ToolRowPresenter = {
@@ -77,7 +78,7 @@ function accountsData(value: unknown): GoogleAdsAccount[] | null {
     }
     accounts.push({
       currencyCode: item["currency_code"],
-      customerId: item["customer_id"],
+      customerId: formatGoogleAdsAccountId(item["customer_id"]),
       displayName: item["display_name"],
       enabled: item["enabled"],
       manager: item["manager"],

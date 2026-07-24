@@ -1,7 +1,5 @@
 // apps/web/src/integrations/google_ads/report-presenter.tsx
 
-import { ShieldCheckIcon } from "lucide-react"
-
 import {
   DataTable,
   isMicrosColumnKey,
@@ -11,7 +9,6 @@ import {
 } from "@/components/ui/data-table"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
-import { Badge } from "@/components/ui/badge"
 import type { ToolRowPresenter } from "@/integrations/contract"
 import { googleAdsReportDetails } from "@/integrations/google_ads/tool-details"
 import { GoogleAdsToolHeading } from "@/integrations/google_ads/tool-heading"
@@ -63,16 +60,6 @@ export const googleAdsReportPresenter: ToolRowPresenter = {
             }
             return (
               <div className="grid min-w-0 gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant="outline">
-                    <ShieldCheckIcon />
-                    External data · Google Ads · account{" "}
-                    {formatGoogleAdsAccountId(entry.externalId)}
-                  </Badge>
-                  <span className="text-muted-foreground text-xs">
-                    {String(report.rowCount)} {report.rowCount === 1 ? "row" : "rows"}
-                  </span>
-                </div>
                 {report.rows.length > 0 && report.columns.length > 0 ? (
                   <DataTable
                     columns={report.columns}

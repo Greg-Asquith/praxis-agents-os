@@ -7,7 +7,7 @@ import {
   listFilesResult,
   readFileImageResult,
   readFileUrlResult,
-} from "@/features/conversations/file-tools"
+} from "@/features/conversations/native-tools/file-tools"
 
 describe("file tool entities", () => {
   it("preserves the runtime file snapshot used by interactive transcript rows", () => {

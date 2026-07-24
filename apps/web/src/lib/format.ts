@@ -177,3 +177,29 @@ export function truncateText(value: string, limit: number, suffix = "...") {
   }
   return `${value.slice(0, limit)}${suffix}`
 }
+
+export function formatCurrency(
+  value: number,
+  currencyCode: string | null,
+  options: Intl.NumberFormatOptions & { fallbackMaximumFractionDigits?: number } = {
+    maximumFractionDigits: 2,
+  }
+): string {
+  const { fallbackMaximumFractionDigits, ...currencyOptions } = options
+  const fallbackOptions =
+    fallbackMaximumFractionDigits === undefined
+      ? currencyOptions
+      : { ...currencyOptions, maximumFractionDigits: fallbackMaximumFractionDigits }
+  if (!currencyCode) {
+    return new Intl.NumberFormat(undefined, fallbackOptions).format(value)
+  }
+  try {
+    return new Intl.NumberFormat(undefined, {
+      currency: currencyCode,
+      ...currencyOptions,
+      style: "currency",
+    }).format(value)
+  } catch {
+    return `${currencyCode} ${new Intl.NumberFormat(undefined, fallbackOptions).format(value)}`
+  }
+}

@@ -1,7 +1,7 @@
 // apps/web/src/components/ui/data-table-model.ts
 
 import { nodeText } from "@/components/tool-ui/untrusted-node"
-import { formatDateTime } from "@/lib/format"
+import { formatCurrency, formatDateTime } from "@/lib/format"
 import type { ExportTable } from "@/lib/table-export"
 
 export type DataColumnKind =
@@ -40,19 +40,9 @@ export function formatDataCell(column: DataColumn, value: unknown): string {
     }
     const amount =
       column.unit === "micros" || isMicrosColumnKey(column.key) ? numeric / 1_000_000 : numeric
-    if (!column.currencyCode) {
-      return new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(amount)
-    }
-    try {
-      return new Intl.NumberFormat(undefined, {
-        currency: column.currencyCode,
-        style: "currency",
-      }).format(amount)
-    } catch {
-      return `${column.currencyCode} ${new Intl.NumberFormat(undefined, {
-        maximumFractionDigits: 6,
-      }).format(amount)}`
-    }
+    return formatCurrency(amount, column.currencyCode ?? null, {
+      fallbackMaximumFractionDigits: 6,
+    })
   }
   if (column.kind === "percent") {
     const numeric = finiteNumber(text)

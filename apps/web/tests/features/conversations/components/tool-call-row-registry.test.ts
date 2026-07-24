@@ -14,6 +14,27 @@ afterEach(() => {
 })
 
 describe("renderCustomToolCallRow", () => {
+  it("renders a completed Build Chart result through the native chart presenter", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      activity: {
+        id: "chart-1",
+        kind: "result",
+        name: "build_chart",
+        status: "completed",
+        args: chartArgs(),
+        result: { title: "Revenue by region", points: 1, series: 1 },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Build Chart")
+    expect(html).toContain("Revenue by region")
+    expect(html).toContain("Download PNG")
+  })
+
   it("does not let a matching presenter replace the default approval row without opting in", () => {
     const render = vi.fn(() => createElement("p", null, "Custom presenter"))
     integrationToolRowPresenters.mockReturnValue([
@@ -103,5 +124,24 @@ function approvalDecision(): NonNullable<ToolRowPresenterProps["approvalDecision
     onRetry: () => undefined,
     pendingCount: 1,
     submitting: false,
+  }
+}
+
+function chartArgs() {
+  return {
+    chart_type: "bar",
+    title: "Revenue by region",
+    x_axis: {
+      data_key: "region",
+    },
+    series: [
+      {
+        data_key: "revenue",
+        label: "Revenue",
+        format: "currency",
+        currency_code: "GBP",
+      },
+    ],
+    data: [{ region: "North", revenue: 1250 }],
   }
 }

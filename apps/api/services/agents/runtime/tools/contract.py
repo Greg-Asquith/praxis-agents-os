@@ -78,6 +78,7 @@ VALID_TOOL_ICONS = frozenset(
         "gmail",
         "google_ads",
         "airtable",
+        "chart",
     }
 )
 

@@ -4,7 +4,7 @@ import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   supersededWriteTodoActivityIds,
   todoItemsFromActivity,
-} from "@/features/conversations/todo-tools"
+} from "@/features/conversations/native-tools/todo-tools"
 
 function activity(overrides: Partial<ToolActivity>): ToolActivity {
   return { id: "t1", kind: "call", status: "completed", name: "write_todos", ...overrides }

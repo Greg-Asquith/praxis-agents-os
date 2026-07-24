@@ -3,6 +3,7 @@
 import { createElement } from "react"
 import {
   BookOpenIcon,
+  BarChart3Icon,
   BotIcon,
   FileIcon,
   FilePlus2Icon,
@@ -21,6 +22,7 @@ import {
 import { integrationIcon } from "@/integrations/registry"
 
 const TOOL_UI_ICONS: Record<string, LucideIcon> = {
+  chart: BarChart3Icon,
   book: BookOpenIcon,
   bot: BotIcon,
   file: FileIcon,

@@ -4,6 +4,7 @@ import {
   DelegateAgentListRow,
   DelegationToolRow,
 } from "@/features/conversations/components/delegation-tool-row"
+import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
@@ -25,7 +26,7 @@ import {
   readFileStatusResult,
   readFileUrlResult,
   writeFileResult,
-} from "@/features/conversations/file-tools"
+} from "@/features/conversations/native-tools/file-tools"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   LIST_DELEGATE_AGENTS_TOOL_NAME,
@@ -34,13 +35,14 @@ import {
 import {
   LOAD_CAPABILITY_TOOL_NAME,
   skillIdFromCapabilityArgs,
-} from "@/features/conversations/skill-activation"
-import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skill-document-read"
+} from "@/features/conversations/skills/skill-activation"
+import { BUILD_CHART_TOOL_NAME } from "@/features/conversations/native-tools/chart-tool"
+import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skills/skill-document-read"
 import {
   READ_TODOS_TOOL_NAME,
   WRITE_TODOS_TOOL_NAME,
   todoItemsFromActivity,
-} from "@/features/conversations/todo-tools"
+} from "@/features/conversations/native-tools/todo-tools"
 import { integrationToolRowPresenters } from "@/integrations/registry"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 
@@ -52,6 +54,13 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 // runtime_tool definition.
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  {
+    key: "build-chart",
+    matches: (activity) =>
+      activity.name === BUILD_CHART_TOOL_NAME &&
+      (activity.status === "running" || activity.status === "completed"),
+    render: ({ activity }) => <ChartToolRow activity={activity} />,
+  },
   {
     key: "web-search",
     matches: (activity) =>

@@ -49,7 +49,10 @@
   presenter, discovered-account currency propagation, and production
   presenter registration are complete. Google Ads results remain ordinary
   typed values with no model-side untrusted framing or legacy-result decoder,
-  per operator decision. Slices E–F remain TODO.
+  per operator decision. Slice E is **DONE 2026-07-23**: the earlier
+  report-toggle design was superseded by an always-available core
+  `build_chart` runtime tool, a native Recharts v3 transcript renderer,
+  multi-axis and brand styling controls, and PNG export. Slice F remains TODO.
   Execution corrected one landed-state mismatch found during pre-flight:
   Gmail read results carried an undeclared duplicate body field, which is now
   removed. A later 2026-07-23 operator decision explicitly exempted all Google
@@ -108,7 +111,11 @@
   which stay hidden; internal refs like `resource_names` stay hidden);
   (3) Slice D ships the full data-table featureset (totals, CSV
   export, row detail sheet), not a lean first pass; (4) Slice E
-  (charts) stays in the plan as trailing polish.
+  (charts) stays in the plan as trailing polish. **Superseded
+  2026-07-23 for Slice E only:** charts are no longer derived inside
+  provider table presenters. The operator chose one engine-owned,
+  always-available `build_chart` tool so an agent can chart any
+  structured data explicitly and return a reusable PNG.
 
 ## Problem
 
@@ -169,7 +176,8 @@ in our styles:
   (currency from micros, percent, number, date, status badge, id),
   right-aligned `tabular-nums` metrics, zebra rows, a totals footer,
   truncation note, copy-CSV/download-CSV actions, row click → detail
-  sheet; a chart⇄table toggle lands in the trailing chart slice.
+  sheet. Charts are explicit `build_chart` tool calls rather than a
+  mode inside this provider presenter.
 - **Google Ads accounts** → the account hierarchy as an indented list
   with manager/status/writable badges.
 - **Google Ads campaign mutation** → an approval card with an explicit
@@ -428,20 +436,32 @@ rel="noopener noreferrer nofollow"`). The sanitized output is the
    do not grow this plan. Operator-facing Gmail workflows remain inside
    Praxis; provider message ids stay implementation data and are not shown
    as technical provenance chips or external deep links.
-7. **Charts: `recharts`, one wrapper, chart⇄table toggle — in a
-   trailing slice.** Operator decision: the trust-critical fix is the
-   table; the chart must not gate it. Slice E adds `recharts` (^2.x)
-   to `apps/web` as the single chart dependency, wrapped once in the
-   `chart` kit (`DataChart`: bar | line; themed via existing Tailwind
-   tokens; abbreviated K/M axis ticks with currency/percent awareness;
-   capped legend). `google_ads_run_report` presenters auto-derive a
-   chart from the parsed table: line when a `segments.date` column is
-   present, bar otherwise; up to 3 metric series; rendered behind a
-   chart⇄table toggle with the table as the default view. Charts
-   consume only numerically parsed node contents — a value that fails
-   numeric parsing is excluded from charting, never coerced.
-   Pie/combo variants, model-authored charts, and dashboards are out
-   of scope (FOLLOW_UPS).
+7. **Charts: one always-available `build_chart` tool and one Recharts
+   wrapper — DONE 2026-07-23.** This supersedes the earlier
+   Google-Ads-only chart⇄table toggle. `build_chart` is an engine-owned,
+   auto-mounted core runtime tool, so every agent can turn already-known
+   structured data into a chart without provider coupling or tool
+   configuration. Its bounded renderer-neutral schema supports line,
+   bar, area, scatter, pie/donut, and composed charts; up to four named
+   Y axes; optional per-series axis assignment; number/currency/percent/
+   date formatting; stacking groups; the small set of layout controls that
+   materially changes a chart; application-theme colour defaults; and
+   optional six-digit hex palettes, background, text, and grid colours for
+   branded output. The UI renders the validated call arguments through one
+   Recharts v3 `DataChart`, while the model receives only a compact
+   acknowledgement. PNG export composes the title, subtitle, plot, legend,
+   and caption into a 2× reusable image.
+
+   “All Recharts options” means all applicable declarative controls in
+   this stable tool contract, not raw Recharts prop passthrough. Recharts
+   also accepts callbacks, React elements, SVG/DOM event handlers, custom
+   scale functions, portals, and renderer internals; those are neither
+   JSON-schema tool inputs nor safe executable content and remain
+   deliberately unavailable. Data is capped at 200 rows, five series,
+   four Y axes, and 20 fields per row. Numeric strings are coerced, absent
+   series cells become null, and a single default Y axis needs no explicit
+   wiring.
+
 8. **Narrow, additive result-data enrichment — recorded, not
    forbidden.** The rule: _small additive metadata fields inside a
    provider `data` dict are allowed when they serve the model and the
@@ -621,8 +641,7 @@ error_code}]}` (partial failure at
 - **Design system**: shadcn-style primitives on `@base-ui/react`
   (`src/components/ui/`: table, sheet, badge, card, skeleton, tabs,
   tooltip, select, …), Tailwind v4 + CVA + `cn()`, `lucide-react`.
-  **No chart library** in `apps/web/package.json` (decision 7 adds
-  one in Slice E).
+  Recharts v3 is the single chart dependency added by Slice E.
 - **Route/auth precedent**:
   `routes/integrations/list_connection_resources.py` (require_read +
   workspace + connection scoping); audit precedent
@@ -668,13 +687,15 @@ record_integration_operation_audit_event` (041 Slice A). **No
   centred search-result popover), `index.ts` composition
 - `apps/web/src/integrations/google_ads/` (fill, Slice D): report
   table adapter, accounts list adapter, campaign-status
-  approval/result adapter; chart derivation in Slice E
+  approval/result adapter
 - `apps/web/src/integrations/airtable/` (fill, Slice F): record
   field-table adapters
 - `apps/web/src/features/conversations/components/` — extraction
   refactor only (decision 2); `ApprovalDecisionBlock` keeps its
   public behavior; default row renders nodes as their content text
-- `apps/web/package.json` — `recharts` (Slice E only)
+- `apps/api/services/agents/runtime/tools/charting.py` — the bounded,
+  always-auto-mounted `build_chart` contract (Slice E)
+- `apps/web/package.json` — Recharts v3 (Slice E only)
 - `apps/api/routes/integrations/` + `services/integrations/` — the
   decision-4 generic preview route, dispatch, and engine-owned enforcement
 - `apps/api/services/integrations/plugin.py` — preview contribution contract
@@ -706,7 +727,8 @@ record_integration_operation_audit_event` (041 Slice A). **No
   them)
 - Notifications, unread badges, or any inbox-like standalone surface —
   this plan renders tool activity, it does not build an email client
-- Dashboards, saved reports, model-authored charts (FOLLOW_UPS)
+- Dashboards, saved charts/reports, arbitrary executable Recharts props,
+  and provider-side chart derivation (FOLLOW_UPS)
 
 ## Git workflow
 
@@ -798,18 +820,18 @@ Blocked on 041 Slice B. Steps 7–8. No charts here.
   the approval card cannot weaken or bypass the approval flow (it
   renders the same controls contract).
 
-### Slice E — Report charts (`Web - Report Charts`)
+### Slice E — General Build Chart tool (`Cross - Build Chart`) — DONE 2026-07-23
 
-Trailing polish on Slice D; ship after the table has been used.
-Step 9.
+Superseded the provider-specific report-chart design by operator
+decision. Step 9.
 
-- `recharts`; the `chart` kit (`DataChart` + `ChartTableToggle`);
-  auto-derived chart for `google_ads_run_report` (line when
-  `segments.date` present, bar otherwise, ≤3 metric series), table
-  remains the default view.
-- **Gate**: `pnpm check` green (knip accepts recharts); chart tests —
-  date fixture → line offered, no-date fixture → bar, non-numeric
-  cells excluded never coerced; toggle preserves table state.
+- Auto-mounted `build_chart` core runtime tool with a compact, forgiving,
+  renderer-neutral schema and ordinary read-effect audit semantics.
+- Recharts v3 `DataChart` native tool presenter with multiple named Y
+  axes, theme-token colour defaults, optional per-series hex colours,
+  brand palette/theme controls, and full-figure 2× PNG export.
+- **Gate**: runtime contract/registry/scenario tests; native presenter,
+  renderer, parser, formatting, and PNG-export tests; `make check`.
 
 ### Slice F — Airtable records + checklist closure (`Web - Airtable Record UI`)
 
@@ -1077,13 +1099,18 @@ backend test for `currency_code`; `pnpm check` + backend suites green.
 
 ### Step 9: Charts (Slice E)
 
-`chart.tsx`: the decision-7 `recharts` wrapper (bar | line) +
-`ChartTableToggle`. `google_ads_run_report` presenter derives the
-chart from the parsed table (line when `segments.date` present, bar
-otherwise, ≤3 metric series); table stays the default view.
+Add the auto-mounted core `build_chart` runtime tool and its validated,
+compact renderer-neutral input contract. Render completed calls from
+persisted tool arguments with the engine-owned Recharts v3 `DataChart`
+and return only a compact acknowledgement to the model; support the
+decision-7 bounded chart families, optional multiple named Y axes,
+theme-token defaults, optional hex brand colours, and full-figure PNG
+export. Provider table presenters remain tables and do not derive charts
+implicitly.
 
-**Verify**: chart tests per the Slice E gate; `pnpm check` green
-(knip accepts recharts).
+**Verify**: contract/auto-mount/runtime-scenario coverage plus parser,
+native-presenter, renderer, formatting, and PNG-export tests; `make
+check` green.
 
 ### Step 10 (Slice F): Airtable adapters, checklist closure
 
@@ -1106,7 +1133,7 @@ awaiting_approval / denied / failed-unknown / completed, honest copy
 for the non-success states).
 Amend packaging §8 with the decision-10 checklist line. Record
 FOLLOW_UPS (labels/threads/attachments, user-direct actions, micros
-pre-conversion, chart variants, tool playground, preview-seam
+pre-conversion, saved/exotic chart surfaces, tool playground, preview-seam
 generalization at provider #2). Update the `000_README.md` status
 row.
 
@@ -1157,8 +1184,9 @@ amended) boundary rules pass mechanically**.
 - [ ] Google Ads reports render as formatted tables with currency/
       percent/date cells, totals, truncation note, CSV export, and
       detail sheet; campaign mutations show an explicit write banner
-      at approval and per-campaign outcomes after; charts land in
-      Slice E behind the chart⇄table toggle
+      at approval and per-campaign outcomes after
+- [ ] Every agent has the `build_chart` core tool; completed charts
+      render natively with multi-axis/brand controls and export to PNG
 - [ ] Airtable records render as field tables (Slice F may trail 041
       Slice C — mark partial status accordingly)
 - [ ] `src/components/tool-ui/` exists with cruiser rules pinning its
@@ -1167,7 +1195,7 @@ amended) boundary rules pass mechanically**.
       the browser-rendering section + hostile HTML fixture; packaging
       note carries the §5.5 amendment and the §8 checklist line
 - [ ] FOLLOW_UPS records user-direct actions, attachments/labels/
-      threads, micros pre-conversion, chart growth, and preview-seam
+      threads, micros pre-conversion, saved/exotic chart surfaces, and preview-seam
       generalization as explicitly deferred
 - [ ] `make check` green; `docs/plans/000_README.md` row updated
 
@@ -1199,7 +1227,7 @@ Stop and report back (do not improvise) if:
   anything else.
 - `nh3` is unacceptable as a dependency and the fallback is hand-rolled
   HTML sanitization — never hand-roll; report instead. Same for
-  `recharts`: if it is rejected, stop rather than hand-rolling SVG
+  Recharts: if it is rejected, stop rather than hand-rolling SVG
   charts or picking a substitute unilaterally.
 - The §5.5 amendment (a `src/components/tool-ui` import lane) is
   rejected in review — the kit architecture depends on it; do not

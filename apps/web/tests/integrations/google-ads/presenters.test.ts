@@ -54,7 +54,6 @@ describe("Google Ads tool presenters", () => {
     )
 
     expect(html).toContain("Run Google Ads Report")
-    expect(html).toContain("External data · Google Ads · account 123-456-7890")
     expect(html).toContain("Customer ID")
     expect(html).toContain("123-456-7890")
     expect(html).toMatch(/£1\.25|GBP\s*1\.25/)

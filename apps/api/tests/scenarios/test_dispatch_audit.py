@@ -56,6 +56,51 @@ async def test_successful_tool_dispatch_writes_one_digest_only_audit(
     assert result.run.status == "completed"
 
 
+async def test_auto_mounted_chart_tool_dispatches_through_the_real_runtime(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(db_session_factory)
+    chart_args = {
+        "chart_type": "bar",
+        "title": "Tickets by priority",
+        "x_axis": {"data_key": "priority"},
+        "y_axes": [{"id": "tickets", "label": "Tickets"}],
+        "series": [
+            {
+                "data_key": "tickets",
+                "label": "Tickets",
+                "y_axis_id": "tickets",
+                "color": "#3659A7",
+            }
+        ],
+        "data": [
+            {"priority": "High", "tickets": 8},
+            {"priority": "Normal", "tickets": 14},
+        ],
+    }
+    model = scripted_model(
+        turns=[
+            ToolTurn((ToolCall("build_chart", chart_args, "chart-call"),)),
+            "I built the chart.",
+        ]
+    )
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=model,
+        prompt="Put these ticket counts in a chart.",
+    )
+
+    [audit] = result.audit_rows
+    assert audit.status == "success"
+    assert audit.details["outcome"] == "completed"
+    assert audit.details["tool_version"] == 1
+    assert len(result.tool_calls("build_chart")) == 1
+    assert result.output == "I built the chart."
+    assert result.run.status == "completed"
+
+
 async def test_retrying_tool_failure_audits_failed_and_completes_after_retry(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

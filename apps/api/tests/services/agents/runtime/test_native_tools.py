@@ -109,6 +109,7 @@ def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> Non
 
     assert capabilities == []
     assert [tool.name for tool in tools] == [
+        "build_chart",
         "list_files",
         "promote_scratch",
         "read_file",

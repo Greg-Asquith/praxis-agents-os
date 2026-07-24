@@ -161,6 +161,7 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
     delegation_tools = build_runtime_tools(agent, include_delegation=True)
 
     assert [tool.name for tool in base_tools] == [
+        "build_chart",
         "list_files",
         "promote_scratch",
         "read_file",
@@ -170,6 +171,7 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
         "test_runtime_context",
     ]
     assert [tool.name for tool in delegation_tools] == [
+        "build_chart",
         "list_files",
         "promote_scratch",
         "read_file",
