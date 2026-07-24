@@ -549,6 +549,15 @@ honest running/failure states, details popovers, fail-open guards, and
 unchanged approval controls. The final frontend gate passed with 64 test files
 and 319 tests; Plan 041b is complete and has moved to
 `docs/plans/complete/`.
+Plan 079 completed 2026-07-24 and moved to `docs/plans/complete/`: the
+provider-neutral receipt spine now verifies before parsing, rate-limits and
+bounds unauthenticated traffic, deduplicates into a compact event log, and
+processes through the generic jobs/retention harness. Airtable contributes
+opaque receipt registration, exact-byte MAC verification, reference-only
+secrets, webhook lifecycle, and durable payload-cursor polling. The `event`
+runtime principal is present for later subscriptions and cannot widen beyond
+`require_approval`. The complete API gate passed 936 tests; the complete web
+gate passed 65 test files / 322 tests.
 
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
@@ -684,7 +693,7 @@ can fetch the OpenAPI schema without re-enabling anonymous docs.
 | 076  | Bounded tool results — dispatch truncation + calibrated token estimation                                               | P1       | M      | 026, 066 (hard); before 056 (hard) and 041                             | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 077  | Inbound integration events — webhooks, verification, event-triggered runs (design note)                                | P2       | M      | 029, 030, 061, 054; binds before 037/041 execute                       | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 078  | Public launch readiness — README, community health, supply chain, first release (Lane P)                               | P1       | L      | C01; C05 done                                                          | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 079  | Inbound event receipt spine + Airtable webhooks                                                                        | P2       | L      | 030, 037–039, 041, 054, 077                                            | TODO (next numbered item; plan doc authoring is unblocked)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 079  | Inbound event receipt spine + Airtable webhooks                                                                        | P2       | L      | 030, 037–039, 041, 054, 077                                            | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 080  | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h)                        | P1       | S-M    | binds before Phase 4a/4b execute                                       | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 081  | Make agent file inspection content-first and truthful across images and documents                                      | P1       | M      | 034, 036 (before remaining Phase 4 work)                               | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 082  | Capability catalogue prerequisites — tool versioning, input schemas, workspace tool grants, authenticated schema route | P1       | S-M    | 025, 026 (immediate post-041 hardening; before 083/provider expansion) | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1125,11 +1134,11 @@ tests/services/conversations tests/routes/conversations -q`, and
   injection-resistance category. New model-visible untrusted content must
   add a threat-model channel row and shared-fixture coverage before
   shipping.
-- `079` has a reserved number and README row but no plan document yet. Plan
-  041, Plan 041b, and the sequenced 082 catalogue prerequisite have now
-  landed; 079 is the next numbered item. Re-check the recorded provider facts
-  when authoring it.
-  Nothing in 037–042 assumes 079 exists.
+- `079` completed 2026-07-24. It implements the plan 077 receipt reservation
+  with the shared route/event/job/retention substrate and Airtable's webhook
+  lifecycle, exact-byte MAC verifier, and payload cursor. Subscriptions and
+  event-triggered run creation remain deliberately deferred; 079 lands only
+  their non-widenable `event` principal vocabulary.
 - `080` is the pre-handoff amendment layer for Phases 4a/4b: read each
   target plan's `Amendment (plan 080, 2026-07-10)` block before executing.
   Notably: 040/046 runtime anchors are refreshed to the post-053/054/066
@@ -1223,8 +1232,8 @@ D11, 2026-07-10)` blocks in 037/038/039 before executing. No fake
   the 030 jobs harness. Event-triggered runs gain a reserved `event` trigger
   whose server-minted envelope must match scheduled runs (`require_approval`
   by default). Amendments in 037/041 reserve manifest values, webhook-secret
-  references, and provider `events.py` slots without adding code. `079` is the
-  first implementation slice: the shared receipt spine plus Airtable webhooks.
+  references, and provider `events.py` slots without adding code. `079`
+  completed the first implementation slice on 2026-07-24.
 
 - `062`–`066` ordering rationale: `062` first because it makes the local
   gate honest (today `make check` runs pytest without `TEST_DATABASE_URL`,

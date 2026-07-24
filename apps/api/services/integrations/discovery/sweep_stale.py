@@ -12,6 +12,7 @@ from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
     IntegrationDiscoveryRun,
+    IntegrationEvent,
     IntegrationOAuthState,
     IntegrationResource,
 )
@@ -29,7 +30,14 @@ async def sweep_stale(db: AsyncSession, *, job: Job) -> None:
     stale_cutoff = now - timedelta(days=settings.INTEGRATIONS_STALE_RETENTION_DAYS)
     revoked_cutoff = now - timedelta(days=settings.INTEGRATIONS_REVOKED_RETENTION_DAYS)
     auth_pending_cutoff = now - timedelta(days=AUTH_PENDING_RETENTION_DAYS)
+    event_cutoff = now - timedelta(days=settings.INTEGRATIONS_EVENT_RETENTION_DAYS)
 
+    await db.execute(
+        delete(IntegrationEvent).where(
+            IntegrationEvent.status.in_(("processed", "discarded")),
+            IntegrationEvent.processed_at < event_cutoff,
+        )
+    )
     await db.execute(
         delete(IntegrationDiscoveryRun).where(IntegrationDiscoveryRun.created_at < stale_cutoff)
     )

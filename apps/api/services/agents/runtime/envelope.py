@@ -12,11 +12,12 @@ from models.agent_run import AgentRun
 from services.agent_runs.domain import (
     ALL_RUN_TRIGGERS,
     RUN_TRIGGER_DELEGATED,
+    RUN_TRIGGER_EVENT,
     RUN_TRIGGER_INTERACTIVE,
     RUN_TRIGGER_SCHEDULED,
 )
 
-RunPrincipal = Literal["interactive", "scheduled", "delegated"]
+RunPrincipal = Literal["interactive", "scheduled", "delegated", "event"]
 SideEffectPolicy = Literal["allow", "require_approval", "deny"]
 _POLICY_RANK: dict[str, int] = {"allow": 0, "require_approval": 1, "deny": 2}
 
@@ -62,6 +63,8 @@ def _side_effect_policy_for_run(run: AgentRun) -> SideEffectPolicy:
         if configured is not None:
             return configured
         return settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY
+    if run.trigger == RUN_TRIGGER_EVENT:
+        return "require_approval"
     if run.trigger == RUN_TRIGGER_DELEGATED:
         inherited = _policy_from_metadata(run.metadata_json)
         if inherited is not None:

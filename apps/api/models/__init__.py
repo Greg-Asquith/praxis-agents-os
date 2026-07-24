@@ -26,8 +26,10 @@ from models.integrations import (  # noqa: F401
     ExternalCredential,
     IntegrationConnection,
     IntegrationDiscoveryRun,
+    IntegrationEvent,
     IntegrationOAuthState,
     IntegrationResource,
+    IntegrationWebhook,
 )
 from models.jobs import Job  # noqa: F401
 from models.notification import Notification  # noqa: F401

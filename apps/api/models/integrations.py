@@ -5,6 +5,7 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -250,4 +251,132 @@ class IntegrationDiscoveryRun(Base, UUIDMixin, TimestampMixin):
             name="ck_integration_discovery_runs_status",
         ),
         Index("ix_integration_discovery_runs_connection_created", "connection_id", "created_at"),
+    )
+
+
+class IntegrationWebhook(Base, UUIDMixin, TimestampMixin):
+    """Provider webhook registration with reference-only verification material."""
+
+    __tablename__ = "integration_webhooks"
+
+    provider_key = Column(String(64), nullable=False)
+    connection_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    resource_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_resources.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    external_resource_id = Column(String(255), nullable=False)
+    receipt_id = Column(String(64), nullable=False, unique=True)
+    external_webhook_id = Column(String(255), nullable=False)
+    secret_provider = Column(String(32), nullable=False)
+    secret_name = Column(String(255), nullable=False)
+    secret_version = Column(String(64), nullable=False)
+    payload_cursor = Column(BigInteger, nullable=True)
+    status = Column(String(16), nullable=False, default="active", server_default=text("'active'"))
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_refreshed_at = Column(DateTime(timezone=True), nullable=True)
+    last_error_code = Column(String(64), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'disabled', 'error')",
+            name="ck_integration_webhooks_status",
+        ),
+        UniqueConstraint(
+            "provider_key",
+            "external_webhook_id",
+            name="uq_integration_webhooks_provider_external",
+        ),
+        Index(
+            "ix_integration_webhooks_connection_status",
+            "connection_id",
+            "status",
+        ),
+        Index(
+            "ix_integration_webhooks_refresh_due",
+            "status",
+            "expires_at",
+            postgresql_where=text("status = 'active' AND expires_at IS NOT NULL"),
+        ),
+    )
+
+    @property
+    def secret_reference(self):
+        """Return the verification secret reference without resolving its value."""
+        from services.secrets.domain import SecretReference
+
+        return SecretReference(
+            provider=self.secret_provider,
+            name=self.secret_name,
+            version=self.secret_version,
+        )
+
+
+class IntegrationEvent(Base, UUIDMixin, TimestampMixin):
+    """Append-mostly authenticated provider event."""
+
+    __tablename__ = "integration_events"
+
+    provider_key = Column(String(64), nullable=False)
+    connection_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    webhook_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_webhooks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    external_event_id = Column(String(255), nullable=False)
+    external_resource_id = Column(String(255), nullable=True)
+    event_type = Column(String(128), nullable=False)
+    payload_digest = Column(String(64), nullable=False)
+    payload = Column(JSONB, nullable=True)
+    dedup_key = Column(String(255), nullable=False)
+    received_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=text("now()"),
+    )
+    status = Column(
+        String(16),
+        nullable=False,
+        default="received",
+        server_default=text("'received'"),
+    )
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    discard_reason = Column(String(128), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('received', 'processed', 'discarded')",
+            name="ck_integration_events_status",
+        ),
+        CheckConstraint(
+            "char_length(payload_digest) = 64",
+            name="ck_integration_events_payload_digest",
+        ),
+        UniqueConstraint(
+            "provider_key",
+            "dedup_key",
+            name="uq_integration_events_provider_dedup",
+        ),
+        Index(
+            "ix_integration_events_status_received",
+            "status",
+            "received_at",
+        ),
+        Index(
+            "ix_integration_events_connection_received",
+            "connection_id",
+            "received_at",
+        ),
+        Index("ix_integration_events_webhook_received", "webhook_id", "received_at"),
     )

@@ -6,6 +6,7 @@ from core.settings import settings
 from models.agent_run import AgentRun
 from services.agent_runs.domain import (
     RUN_TRIGGER_DELEGATED,
+    RUN_TRIGGER_EVENT,
     RUN_TRIGGER_INTERACTIVE,
     RUN_TRIGGER_SCHEDULED,
 )
@@ -48,6 +49,24 @@ def test_build_run_envelope_uses_scheduled_policy_metadata(
     )
 
     assert envelope.side_effect_policy == "allow"
+
+
+@pytest.mark.parametrize("configured_policy", ["allow", "require_approval", "deny"])
+def test_build_run_envelope_never_widens_event_runs(
+    configured_policy: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "AGENT_SCHEDULED_SIDE_EFFECT_POLICY", configured_policy)
+
+    envelope = build_run_envelope(
+        AgentRun(
+            trigger=RUN_TRIGGER_EVENT,
+            metadata_json={"envelope": {"side_effect_policy": "allow"}},
+        )
+    )
+
+    assert envelope.principal == RUN_TRIGGER_EVENT
+    assert envelope.side_effect_policy == "require_approval"
 
 
 @pytest.mark.parametrize("policy", ["allow", "require_approval", "deny"])

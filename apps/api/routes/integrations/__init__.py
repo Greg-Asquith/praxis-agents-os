@@ -19,6 +19,7 @@ from routes.integrations.list_connections import router as list_connections_rout
 from routes.integrations.list_context_groups import router as list_context_groups_router
 from routes.integrations.list_providers import router as list_providers_router
 from routes.integrations.oauth_callback import router as oauth_callback_router
+from routes.integrations.receive_event import router as receive_event_router
 from routes.integrations.refresh_connection import router as refresh_connection_router
 from routes.integrations.rename_connection import router as rename_connection_router
 from routes.integrations.revoke_connection import router as revoke_connection_router
@@ -51,6 +52,7 @@ router.include_router(connect_service_account_router)
 router.include_router(rename_connection_router)
 router.include_router(test_connection_router)
 router.include_router(refresh_connection_router)
+router.include_router(receive_event_router)
 router.include_router(revoke_connection_router)
 router.include_router(update_resource_selection_router)
 router.include_router(trigger_discovery_router)

@@ -15,7 +15,9 @@ from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
     IntegrationDiscoveryRun,
+    IntegrationEvent,
     IntegrationResource,
+    IntegrationWebhook,
 )
 from models.user import User
 from models.workspace import Workspace
@@ -87,6 +89,50 @@ def build_integration_discovery_run(
     }
     defaults.update(overrides)
     return IntegrationDiscoveryRun(**defaults)
+
+
+def build_integration_webhook(
+    *,
+    connection: IntegrationConnection,
+    resource: IntegrationResource | None = None,
+    **overrides,
+) -> IntegrationWebhook:
+    defaults = {
+        "id": uuid4(),
+        "provider_key": connection.provider_key,
+        "connection_id": connection.id,
+        "resource_id": resource.id if resource is not None else None,
+        "external_resource_id": resource.external_id if resource is not None else "resource-1",
+        "receipt_id": uuid4().hex,
+        "external_webhook_id": f"hook-{uuid4().hex}",
+        "secret_provider": "local",
+        "secret_name": "test/webhook/secret",
+        "secret_version": "00000001",
+        "status": "active",
+    }
+    defaults.update(overrides)
+    return IntegrationWebhook(**defaults)
+
+
+def build_integration_event(
+    *,
+    connection: IntegrationConnection,
+    webhook: IntegrationWebhook,
+    **overrides,
+) -> IntegrationEvent:
+    defaults = {
+        "id": uuid4(),
+        "provider_key": connection.provider_key,
+        "connection_id": connection.id,
+        "webhook_id": webhook.id,
+        "external_event_id": f"event-{uuid4().hex}",
+        "event_type": "test.event",
+        "payload_digest": "d" * 64,
+        "dedup_key": f"dedup-{uuid4().hex}",
+        "status": "received",
+    }
+    defaults.update(overrides)
+    return IntegrationEvent(**defaults)
 
 
 def build_integration_context_group(

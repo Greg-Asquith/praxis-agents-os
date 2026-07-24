@@ -5,8 +5,8 @@ import type { ActiveContextSelectionValue } from "@/features/integrations/types"
 export type AgentRunStatus =
   "pending" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled"
 
-type ConversationSource = "direct" | "scheduled" | "delegated"
-type AgentRunTrigger = "interactive" | "scheduled" | "delegated"
+type ConversationSource = "direct" | "scheduled" | "delegated" | "event"
+type AgentRunTrigger = "interactive" | "scheduled" | "delegated" | "event"
 
 export type Conversation = {
   id: string

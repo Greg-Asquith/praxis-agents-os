@@ -33,11 +33,21 @@ class AirtableClient:
     ) -> Any:
         return await self._request("GET", path, operation=operation, params=params)
 
-    async def post(self, path: str, *, operation: str, json: dict[str, Any]) -> Any:
-        return await self._request("POST", path, operation=operation, json=json)
+    async def post(
+        self,
+        path: str,
+        *,
+        operation: str,
+        json: dict[str, Any] | None = None,
+    ) -> Any:
+        kwargs = {"json": json} if json is not None else {}
+        return await self._request("POST", path, operation=operation, **kwargs)
 
     async def patch(self, path: str, *, operation: str, json: dict[str, Any]) -> Any:
         return await self._request("PATCH", path, operation=operation, json=json)
+
+    async def delete(self, path: str, *, operation: str) -> Any:
+        return await self._request("DELETE", path, operation=operation)
 
     async def _request(self, method: str, path: str, *, operation: str, **kwargs: Any) -> Any:
         token = await self._access_token()
@@ -50,6 +60,8 @@ class AirtableClient:
             headers={"Authorization": f"Bearer {token}"},
             **kwargs,
         )
+        if not response.content:
+            return None
         try:
             return response.json()
         except ValueError as exc:

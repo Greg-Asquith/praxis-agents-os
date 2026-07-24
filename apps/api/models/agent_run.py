@@ -98,7 +98,7 @@ class AgentRun(BaseModel):
 
     __table_args__ = (
         CheckConstraint(
-            "trigger IN ('interactive', 'scheduled', 'delegated')",
+            "trigger IN ('interactive', 'scheduled', 'delegated', 'event')",
             name="agent_runs_trigger_check",
         ),
         CheckConstraint("delegation_depth >= 0", name="agent_runs_delegation_depth_check"),

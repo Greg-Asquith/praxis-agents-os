@@ -61,6 +61,10 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
         raise RuntimeError(
             f"OAuth integration provider '{expected_key}' must own its OAuth configuration"
         )
+    if plugin.event_definition is not None and manifest.event_delivery == "none":
+        raise RuntimeError(
+            f"Integration provider '{expected_key}' contributes events but declares no delivery"
+        )
     for definition in plugin.tool_definitions:
         if definition.provider != expected_key:
             raise RuntimeError("Integration tool provider must match its package")

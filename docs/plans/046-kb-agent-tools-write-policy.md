@@ -29,6 +29,18 @@
 > done criteria gain the list route and the 075 eval-wiring item. Where
 > it conflicts with the body above, the amendment wins.
 >
+> **Amendment (operator, 2026-07-24) pre-flight**: the "Amendment
+> (operator, 2026-07-24)" block at the end of this file amends this plan —
+> the KB-specific marker vocabulary is cancelled in favor of the shared
+> untrusted-content substrate that landed with 041/041b
+> (`services/agents/runtime/untrusted.py`), framing becomes
+> source-aware (workspace-authored `manual`/`upload` content is NOT
+> framed; externally-fetched `url`/`conversation`/`integration` content
+> is), the plan 080 runtime anchors are refreshed to the
+> post-041/041b/082/UI-025 tree, and both tools must declare
+> presentations. Where it conflicts with the body above or the earlier
+> amendments, it wins.
+>
 > **Sibling pre-flight (run before Step 1)**: this plan was written in
 > parallel with plans 043 (embeddings), 044 (KB models + ingestion), and 045
 > (hybrid search + eval harness) against a dictated cross-plan contract
@@ -978,3 +990,152 @@ write target — internal in the run envelope), and
 `default_policy=TOOL_POLICY_APPROVAL`, and calls
 `enforce_kb_write_policy`. The maintenance-note prescription gains the
 `effect_scope` clause; the approval default is unchanged.
+
+## Amendment (operator, 2026-07-24): source-aware framing on the shared substrate, anchor refresh, presentations
+
+Where this block conflicts with the body above, the plan 075 blockquote
+deltas, or the plan 080 amendment, this block wins. Origin: operator
+decision during the pre-execution readiness review — framing
+workspace-authored KB content as untrusted taxes the operator's own
+documents for no threat delta, while the shared framing substrate this
+plan was told to build toward now exists (it landed with 041/041b as
+`services/agents/runtime/untrusted.py`).
+
+**1. The KB-specific marker vocabulary is cancelled (new decision 10).**
+Step 5's `KB_UNTRUSTED_OPEN_TEMPLATE` / `KB_UNTRUSTED_CLOSE` /
+`_KB_MARKER_FORGERY` / `frame_untrusted_kb_content` are not built —
+threat-model §3 forbids a second marker vocabulary, and its "the 046 KB
+helper moves there when its second consumer arrives" clause is
+discharged in reverse: the shared home arrived first. The plan 075
+blockquote delta (2) ("hoist on second consumer") is superseded — there
+is nothing to hoist. Done-criteria grep:
+`grep -rn "UNTRUSTED_KB" apps/api` → zero hits.
+
+**2. Framing is source-aware (new decision 11).** The trust boundary is
+who put the bytes in the KB, not the KB itself:
+
+- **Workspace-authored sources are NOT framed.** `manual` (a member
+  wrote it) and `upload` (a member deliberately chose the file) content
+  returns as plain strings. Rationale, recorded per threat-model §3's
+  provenance-class default rule: a workspace member who can author KB
+  content can equally paste the same text into a prompt — framing their
+  own documents adds ceremony, not defense. Accepted residual risk: a
+  member may manually curate third-party text; that is the member's
+  editorial act and carries their provenance.
+- **Externally-fetched sources ARE framed.** `url` today (the platform
+  fetched those bytes from an external origin), and `conversation`/
+  `integration` the moment their producers land. Framed content is
+  wrapped in `UntrustedContent(source_kind="kb",
+  source_ref="chunk:{chunk_id}"|"document:{document_id}")` carriers from
+  `services/agents/runtime/untrusted.py`; dispatch serializes carriers
+  to `UntrustedNode`s and `render_untrusted_frames` renders the one
+  shared vocabulary model-only. The KB tool module contains no framing
+  code beyond constructing carriers.
+- `services/kb/domain.py` gains
+  `KB_FRAMED_SOURCE_TYPES = frozenset({"url", "conversation", "integration"})`.
+  It deliberately parallels 045's `KB_SEARCH_RECENCY_SOURCE_TYPES`
+  (both classify external-origin content) but stays a separate constant —
+  recency eligibility and trust class must be tunable independently.
+- Per-hit classification uses the `source_type` already present on
+  every 045 search hit and document read; `context_line` (model-authored
+  annotation) follows its document's class.
+
+**3. Output models carry the union type.** Step 5's `content: str`
+fields become `str | UntrustedNode` — the shipped
+`integrations/gmail/tools/schemas.py:12` `UntrustedText` precedent.
+`ref`s remain stable and citable exactly as decision 2 intended; the
+`is_private`/`private_only` contract (amendment item 5 above) is
+unchanged. The Step 5 verify command that printed
+`frame_untrusted_kb_content` output is superseded — the registry sanity
+command plus Step 7's tests are the verification.
+
+**4. The `knowledge` prompt block shrinks to guidance (Step 6 rewrite).**
+`KNOWLEDGE_INSTRUCTIONS` now covers tool usage and citation only —
+e.g. "search before answering questions the workspace knowledge base
+may cover; iterate with refined queries; use read_document for full
+context; cite the document or chunk ref when you rely on retrieved
+content." It must NOT restate marker semantics: the standing
+`untrusted_content_policy` block (prompt.py:76,
+`UNTRUSTED_CONTENT_INSTRUCTIONS` at prompt.py:37) already declares the
+shared vocabulary data-not-instructions, and threat-model §3 mandates
+one standing block for the vocabulary, not one per tool. Placement: the
+`knowledge` block appends after `available_files` and before
+`untrusted_content_policy`, which stays last. The byte-identical
+no-KB-tools prompt assertion stands.
+
+**5. Runtime anchor refresh (verified 2026-07-24; supersedes the plan
+080 item 1 anchors — drift from THESE is a STOP).**
+
+- `tools/contract.py`: `RuntimeToolDefinition` at 124; since the 080
+  refresh it gained `version` (130, default 1 — correct for both new
+  tools, no override) from plan 082, and `presentation` (155) is now the
+  full UI-025 v2 contract (placeholders, closed options, secondary
+  placement, approval action labels, URL/list result formats).
+  `effect_scope` (135), `effect_scope_resolver` (144),
+  `max_result_chars` (147) as previously amended. `validate_definition`
+  at 229; the write-approval invariant at 304.
+- `tools/registry.py`: `RUNTIME_TOOL_CATALOG` (36), `@runtime_tool`
+  (48). The side-effect import block is at **328–333** and imports
+  `charting`, `files`, `native`, `planning` — add `kb` to that tuple.
+  `load_enabled_providers()` (336) loads integration provider packages;
+  leave it untouched.
+- `dispatch.py`: `check_envelope` (133), `validate_output` (174),
+  `dispatch_tool_execution` (252). Semantics unchanged; dispatch also
+  owns carrier→node serialization for tool results.
+- `prompt.py`: `runtime_prompt_blocks(agent, *, include_delegation,
+  available_files=(), active_context_block="")` at 52 returns **six**
+  blocks — `identity`, `active_context`, `planning`, `delegation`,
+  `available_files`, `untrusted_content_policy` (61–77).
+  `build_system_prompt` at 80. Single call site preserved.
+
+**6. Both tools declare presentations (UI-025/UI-031 catalog
+standard).** Each `@runtime_tool` entry sets
+`presentation=ToolPresentation(...)` with a semantic icon and full
+lifecycle copy (running/completed/failed verbs), following the shipped
+`native/web_search.py:115-132` declaration. Read tools declare no
+editable approval fields. Prefer declarative presentation richness here
+over a custom client row — 047's row decision depends on it.
+
+**7. Test deltas (Step 7, `test_kb_tools.py` rewrite of the framing
+mechanics).** Seed the 045 injection fixtures through the real
+pipeline, then flip `source_type='url'` (+ `external_url`) on the doc
+rows post-seed (the 045 `test_filters.py` post-seed mutation
+precedent). Assert:
+
+- url-source hits and reads return `content` as an `UntrustedNode`
+  (`node == "praxis_untrusted"`, `source_kind == "kb"`, the correct
+  chunk/document ref), with the fixture's injection text inside the
+  node's `content`;
+- `manual`-source hits and reads return plain-string `content`;
+- no KB-specific marker string appears anywhere in any payload.
+
+Marker rendering and neutralization mechanics are `untrusted.py`'s own
+pinned tests — do not re-pin them here. The privacy/visibility, clamp,
+and catalog-entry assertions stand. The plan 080 item 6 eval-wiring
+criterion stands with one delta: the `evals/` injection cases exercise
+a **url-source** hostile document (the framed class), since manual
+documents are deliberately unframed.
+
+**8. Threat-model upkeep (same PR, per its own rule).** Rewrite the
+§2(f) defense cell: retrieved KB content rides the shared
+`untrusted.py` substrate with **source-aware** application —
+externally-fetched sources framed, workspace-authored sources
+deliberately unframed with the decision-11 rationale recorded in the
+row. Update the 046 row in the plan-obligation table accordingly. Gate
+G6 remains satisfied: the channel stays listed and the adversarial
+fixtures exercise the framed class.
+
+**Done-criteria deltas.** The framing criteria are replaced by:
+
+- [ ] `grep -rn "UNTRUSTED_KB" apps/api` → zero hits; the KB tool
+      module contains no marker constants or framing regex
+- [ ] url-source content flows through `UntrustedContent` carriers and
+      arrives as `UntrustedNode`s; `manual`/`upload` content is plain
+      strings — both pinned by `test_kb_tools.py`
+- [ ] `KNOWLEDGE_INSTRUCTIONS` contains no marker vocabulary; the
+      `knowledge` block sits between `available_files` and
+      `untrusted_content_policy`
+- [ ] Both catalog entries declare `presentation` with icon and
+      lifecycle copy
+- [ ] `docs/architecture/threat-model.md` §2(f) records the
+      source-aware boundary in the same change

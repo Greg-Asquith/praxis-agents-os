@@ -45,7 +45,7 @@ PROVIDER = IntegrationProviderPlugin(
         capability_flags=frozenset({"read", "write"}),
         resource_types=("gmail_mailbox",),
         requires_discovery=True,
-        event_delivery="none",
+        event_delivery="pubsub_push",
     ),
     discover_resources=discover_resources,
     oauth_config=oauth_config,

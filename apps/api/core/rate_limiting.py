@@ -433,11 +433,13 @@ async def enforce_rate_limit(
     endpoint: str,
     custom_limit: int,
     custom_window: int,
+    limit_type: str = "requests_per_minute",
 ) -> None:
     """Apply one explicit fail-closed rate limit outside a generic dependency."""
     result = await rate_limiter.check_rate_limit(
         ip=subject_ip,
         endpoint=endpoint,
+        limit_type=limit_type,
         custom_limit=custom_limit,
         custom_window=custom_window,
     )

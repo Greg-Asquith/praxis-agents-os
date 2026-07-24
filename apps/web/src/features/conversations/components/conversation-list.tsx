@@ -7,6 +7,7 @@ import {
   ClockIcon,
   CornerDownRightIcon,
   MessageSquareTextIcon,
+  WebhookIcon,
 } from "lucide-react"
 
 import { EmptyState } from "@/components/ui/empty-state"
@@ -84,6 +85,12 @@ export function ConversationList({
                 <>
                   <CornerDownRightIcon aria-hidden="true" className="ml-1 size-3" />
                   <span className="sr-only">Delegated</span>
+                </>
+              ) : null}
+              {conversation.source === "event" ? (
+                <>
+                  <WebhookIcon aria-hidden="true" className="ml-1 size-3" />
+                  <span className="sr-only">Triggered by an event</span>
                 </>
               ) : null}
             </div>

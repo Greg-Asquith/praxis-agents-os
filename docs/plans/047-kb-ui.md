@@ -34,6 +34,16 @@
 > ride `createWorkspaceScopedQueryKeys` (plan 064), and the upload flow
 > is real end-to-end (044's plan-080 amendment); where it conflicts with
 > the body above, the amendment wins.
+>
+> **Amendment (operator, 2026-07-24) pre-flight**: the "Amendment
+> (operator, 2026-07-24)" block at the end of this file also amends this
+> plan — the tool-row registry was reshaped by UI-025→031/041b
+> (`TOOL_ROW_PRESENTERS` / `ToolRowPresenter`, server-declared
+> presentations first), the custom `search_knowledge` row is dropped
+> from the initial slice in favor of 046's declared presentation, and
+> retrieved-content payloads are plain strings or structured untrusted
+> nodes (no marker text reaches the client). Where it conflicts with the
+> body above or the plan 080 amendment, it wins.
 
 ## Status
 
@@ -636,3 +646,72 @@ progress through to `ready`.
 - [ ] Unit tests for the knowledge form models, query keys, and status
       mapping exist under `apps/web/tests/features/knowledge/`, and
       `pnpm check` (which includes `vitest run`) exits 0
+
+## Amendment (operator, 2026-07-24): presenter registry anchors, presentation-first chat row, clean payloads
+
+Where this block conflicts with the body above or the plan 080
+amendment, this block wins. Origin: operator decision during the
+pre-execution readiness review, alongside the same-day 046 amendment
+(source-aware framing on the shared untrusted-content substrate).
+
+**1. Tool-row registry anchors refreshed (verified 2026-07-24).** The
+plan 020 mechanism the body cites was reshaped by UI-025→031 and 041b.
+Current reality in
+`features/conversations/components/tool-call-row-registry.tsx`:
+
+- The list is `TOOL_ROW_PRESENTERS: ToolRowPresenter[]` (line 56), not
+  `TOOL_CALL_ROW_DEFINITIONS`; the types `ToolRowPresenter` /
+  `ToolRowPresenterProps` come from `@/integrations/contract`.
+- `renderCustomToolCallRow(props)` (line 132) consults the built-in
+  presenters and then provider-contributed ones via
+  `integrationToolRowPresenters(props.providerKey)`; presenters that
+  render approval UI set `handlesApprovals: true`.
+- Resolution is three-layer (registry file comment, lines 49–54): a
+  custom presenter wins, otherwise the default row renders from the
+  tool's **server-declared presentation** (`/tools/presentations`),
+  otherwise generic verb + label fallbacks.
+
+The body's working-tree note is discharged: the message-parts changes
+landed long ago, followed by the presentation contract v2 (UI-025), the
+shared field system (UI-026), the activity-card lifecycle (UI-028), and
+in-place ordered rows (UI-030). Router and navigation citations are
+structural — re-locate the skills routes and nav entry by pattern, not
+by the quoted line numbers.
+
+**2. Presentation-first: no custom `search_knowledge` row in the
+initial slice (supersedes decision 5's mandated row).** 046 now
+declares full presentations (icon, lifecycle copy) on both KB tools,
+and the default row renders arguments and results through the shared
+field system. Drop from scope:
+`features/conversations/knowledge-search.ts`,
+`features/conversations/components/knowledge-search-row.tsx`, and the
+registry entry. Step 7 keeps only the search panel. If the Step 5/7
+manual QA shows the default row is insufficient (e.g. the result list
+is unreadable as generic fields), add ONE presenter in the current
+registry mold as a separately committed follow-up — the registry
+doctrine is custom presenters only where declarative config cannot
+express the UI. The decision-5 constraint that matters is unchanged and
+now holds trivially: zero changes under `features/conversations/` in
+the initial slice, and `features/conversations/stream/` stays
+byte-identical in all cases.
+
+**3. Retrieved-content payloads are clean (046 operator amendment
+knock-on).** Search hits and document reads carry `content` as either a
+plain string (`manual`/`upload` sources) or a structured untrusted node
+(`{node: "praxis_untrusted", source_kind, source_ref, content}`) for
+externally-fetched sources — no marker text ever reaches the client.
+`types.ts` mirrors that union from the Step 0 real payloads; render
+node content through the existing shared node handling the provider
+kits use (041b) and never parse or strip marker strings client-side
+(none exist there). The search panel and detail view treat both shapes
+identically for display.
+
+**Done-criteria deltas.**
+
+- The `TOOL_CALL_ROW_DEFINITIONS` criterion is superseded: the initial
+  slice changes nothing under `features/conversations/`; a
+  QA-triggered presenter, if ever needed, lands as its own follow-up
+  commit against the `TOOL_ROW_PRESENTERS` registry.
+- `types.ts` models `content` as the string-or-node union, and the
+  search panel renders both shapes (pin the narrowing helper with a
+  Vitest unit test under `apps/web/tests/features/knowledge/`).

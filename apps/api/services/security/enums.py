@@ -33,6 +33,7 @@ class SecurityEventType(StrEnum):
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     CSRF_VALIDATION_FAILED = "csrf_validation_failed"
     INTEGRATION_OAUTH_STATE_INVALID = "integration_oauth_state_invalid"
+    INTEGRATION_WEBHOOK_REJECTED = "integration_webhook_rejected"
     WORKSPACE_MEMBERSHIP_CREATED = "workspace_membership_created"
     WORKSPACE_MEMBERSHIP_UPDATED = "workspace_membership_updated"
     WORKSPACE_MEMBERSHIP_DELETED = "workspace_membership_deleted"

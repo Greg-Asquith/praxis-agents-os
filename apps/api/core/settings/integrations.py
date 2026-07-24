@@ -2,7 +2,7 @@
 
 """Shared integration-engine and credential-vault settings."""
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 
 class IntegrationsSettingsMixin:
@@ -72,6 +72,47 @@ class IntegrationsSettingsMixin:
         gt=0,
         description="Maximum rows returned by one integration report operation.",
     )
+    INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES: int = Field(
+        default=1_048_576,
+        gt=0,
+        description="Hard byte cap for one inbound integration event receipt.",
+    )
+    INTEGRATIONS_EVENT_PAYLOAD_MAX_BYTES: int = Field(
+        default=65_536,
+        gt=0,
+        description="Maximum authenticated event payload persisted for processing.",
+    )
+    INTEGRATIONS_EVENT_RETENTION_DAYS: int = Field(
+        default=30,
+        gt=0,
+        description="Retention for processed or discarded integration events.",
+    )
+    INTEGRATIONS_EVENT_RECEIPTS_PER_MINUTE: int = Field(
+        default=120,
+        gt=0,
+        description="Per-provider and source-IP inbound event receipt limit.",
+    )
+    INTEGRATIONS_EVENT_PROCESS_TIMEOUT_SECONDS: float = Field(
+        default=120.0,
+        gt=0,
+        description="Maximum runtime for one provider event-processing job.",
+    )
+    INTEGRATIONS_WEBHOOK_REFRESH_INTERVAL_SECONDS: int = Field(
+        default=3600,
+        gt=0,
+        description="Interval between webhook refresh scans.",
+    )
+    INTEGRATIONS_WEBHOOK_REFRESH_MARGIN_SECONDS: int = Field(
+        default=86_400,
+        gt=0,
+        description="Refresh provider webhooks this long before expiry.",
+    )
+    INTEGRATIONS_EVENT_MAX_PAYLOAD_PAGES: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum provider payload pages processed from one notification.",
+    )
     CREDENTIAL_MASTER_KEY_SECRET_NAME: str = Field(
         default="credential-master-key",
         min_length=1,
@@ -81,3 +122,12 @@ class IntegrationsSettingsMixin:
         default=None,
         description="Local-only comma-separated Fernet credential root keys, newest first.",
     )
+
+    @model_validator(mode="after")
+    def validate_event_limits(self):
+        if self.INTEGRATIONS_EVENT_PAYLOAD_MAX_BYTES > self.INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES:
+            raise ValueError(
+                "INTEGRATIONS_EVENT_PAYLOAD_MAX_BYTES must not exceed "
+                "INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES"
+            )
+        return self

@@ -20,6 +20,7 @@ from services.agent_runs.cancel import cancel_agent_run
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
+    RUN_TRIGGER_EVENT,
     RUN_TRIGGER_SCHEDULED,
     RunUsageSnapshot,
     is_terminal,
@@ -238,5 +239,5 @@ def _mark_background_output_unread(
     *,
     persisted_messages_count: int,
 ) -> None:
-    if run.trigger == RUN_TRIGGER_SCHEDULED and persisted_messages_count > 0:
+    if run.trigger in {RUN_TRIGGER_SCHEDULED, RUN_TRIGGER_EVENT} and persisted_messages_count > 0:
         conversation.unread = True

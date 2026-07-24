@@ -1,13 +1,14 @@
 # Inbound Integration Events
 
-- **Status**: living document (binds inbound provider events and event-triggered runs)
+- **Status**: living document (receipt spine implemented; subscriptions pending)
 - **Written**: 2026-07-10 (plan 077)
 - **Rule**: implementing plans cite the section they implement and record any
   deviation back into this note in the same PR. Defaults stay visibly marked
   `[default — confirm at review]` until an implementing plan lands and replaces
   the marker with `[implemented: plan NNN]`.
-- This note reserves architecture and safety seams. It does not implement routes,
-  models, provider clients, subscriptions, or run creation.
+- Plan 079 implements the receipt, registration, provider-lifecycle, processing,
+  retention, and event-principal substrate. Subscription matching and run
+  creation remain reserved for a later plan.
 
 ## 1. Problem and non-goals
 
@@ -36,8 +37,11 @@ All provider push traffic enters one route family:
 
 `POST /api/v1/integrations/events/{provider_key}/{webhook_id}`
 
-The handler resolves the enabled provider package and webhook registration from
-the path, then performs only this sequence:
+The final path segment is a server-minted opaque receipt id, not a provider
+webhook id or secret. This is necessary because providers such as Airtable
+assign their webhook id only after Praxis has submitted the callback URL. The
+handler resolves the enabled provider package and registration from the path,
+then performs only this sequence:
 
 1. Apply the receipt rate limit.
 2. Read the bounded raw request body required by the provider verifier.
@@ -61,7 +65,7 @@ Receipt uses the existing Postgres-backed rate limiter with a fail-closed
 posture. Its key is bounded to provider key plus trusted source IP; it must not
 include attacker-controlled webhook ids or event ids. The first implementation
 adds an `integration_webhook_receipts` limit type and limit of 120 requests per
-minute per provider/source-IP pair `[default — confirm at review]`. Rejected
+minute per provider/source-IP pair `[implemented: plan 079]`. Rejected
 requests, including verification failures, consume the same budget so invalid
 traffic cannot become unbounded cryptographic or audit work.
 
@@ -73,7 +77,7 @@ seam; core code never imports a concrete provider. When event delivery is
 implemented, `IntegrationProviderPlugin` gains an optional verifier/watch seam
 whose input is provider-neutral request metadata plus raw bytes and whose output
 is a normalized, already-authenticated receipt. Providers with
-`event_delivery="none"` expose no verifier.
+`event_delivery="none"` expose no event contribution.
 
 The normalized verifier result contains only data needed before processing:
 `connection_id`, `external_event_id`, optional `external_resource_id`,
@@ -89,13 +93,18 @@ Rules:
   implementing provider may need a provider-specific canonical message but not
   a weaker comparison primitive.
 - Signed timestamps use a five-minute acceptance window
-  `[default — confirm at review]` when the provider supplies one. Schemes without
-  signed timestamps rely on their token lifetime plus deduplication.
+  `[default — confirm at review]` when the provider contract defines the
+  timestamp as a freshness claim. Airtable's MAC covers its complete
+  notification, but its timestamp identifies an at-least-once notification and
+  may be retried; it is validated for shape and deduplication, not rejected for
+  age.
 - Google Pub/Sub push verifies the Google-signed OIDC JWT, issuer, signature,
   expiry, and audience equal to the exact webhook endpoint URL. Token expiry is
   its replay window.
 - Airtable verifies its payload MAC using the per-webhook MAC secret, then uses
-  the webhook id plus notification cursor as its dedup identity.
+  the returned webhook id plus notification timestamp as its receipt dedup
+  identity. The notification does not contain the payload cursor; the
+  registration row stores the cursor returned by the payload-list operation.
 - Per-webhook secrets are references through `services/secrets`, named
   `integrations/{provider_key}/{connection_id}/webhook/{webhook_id}`. Secret
   values never enter model rows, application logs, audit details, or exception
@@ -116,10 +125,16 @@ verification so rejected floods cannot create an unbounded audit-table flood.
 and uses plain `Base + UUIDMixin + TimestampMixin` rows without soft-delete
 columns. The first event implementation owns the migration.
 
+`integration_webhooks` is the durable registration registry. It maps the
+server-minted receipt id to provider key, connection/resource, provider webhook
+id, verification-secret reference, provider payload cursor, expiry, and
+lifecycle status. Secret values never enter the row.
+
 | Column                 | Contract                                                     |
 | ---------------------- | ------------------------------------------------------------ |
 | `provider_key`         | Enabled provider key                                         |
 | `connection_id`        | FK to the verified integration connection                    |
+| `webhook_id`           | FK to the durable webhook registration                       |
 | `external_event_id`    | Provider event/message/cursor identifier                     |
 | `external_resource_id` | Nullable provider resource identifier                        |
 | `event_type`           | Provider-normalized event vocabulary                         |
@@ -131,8 +146,8 @@ columns. The first event implementation owns the migration.
 | `processed_at`         | Nullable terminal-processing timestamp                       |
 
 Payload persistence is capped by `INTEGRATIONS_EVENT_PAYLOAD_MAX_BYTES`, 64 KiB
-`[default — confirm at review]`. The HTTP layer also rejects bodies beyond a
-separate hard receipt cap of 1 MiB `[default — confirm at review]`, preventing
+`[implemented: plan 079]`. The HTTP layer also rejects bodies beyond a
+separate hard receipt cap of 1 MiB `[implemented: plan 079]`, preventing
 unbounded reads. An authenticated body above the persistence cap stores only its
 digest and normalized envelope; processing re-pulls authoritative data from the
 provider. Payloads are untrusted external data even after transport
@@ -141,14 +156,15 @@ authentication and never become instructions directly.
 Delivery is at least once. `dedup_key` is verifier-owned and unique:
 
 - Pub/Sub uses the message id from the authenticated push envelope.
-- Airtable uses webhook id plus notification cursor.
-- The fake provider uses a deterministic synthetic event id.
+- Airtable uses webhook id plus notification timestamp.
+- Suite-local provider tests use a deterministic synthetic event id; no fake
+  provider ships.
 
 Receipt uses insert-or-ignore. A duplicate returns 2xx and creates neither a
 second row nor a second job. `integrations.process_event` remains idempotent under
 job retry and checks the row status before effects.
 
-Terminal event rows are retained for 30 days `[default — confirm at review]`.
+Terminal event rows are retained for 30 days `[implemented: plan 079]`.
 Plan 039's `integrations.sweep_stale` job gains one deletion clause; receipt does
 not introduce a second sweeper.
 
@@ -188,28 +204,27 @@ runtime principal literal, and every exhaustive trigger branch must grow
 together in the implementing migration.
 
 The safety law is non-negotiable: an `event` run is unattended and receives the
-same side-effect posture as a scheduled run. Its server-minted envelope defaults
-to `require_approval` `[default — confirm at review]`; therefore an event-triggered
-run cannot execute an unapproved external write. Internal Praxis writes remain
-available, and tools that always require approval remain stricter. No client or
-prompt field can widen the envelope. There is no event-specific policy setting
-in v1 `[default — confirm at review]`; any future divergence requires a product
-decision and its own plan.
+same side-effect posture as a scheduled run. Its server-minted envelope is
+hard-coded to `require_approval` `[implemented: plan 079]`; therefore an
+event-triggered run cannot execute an unapproved external write. Internal Praxis
+writes remain available, and tools that always require approval remain stricter.
+No client or prompt field can widen the envelope. There is no event-specific
+policy setting in v1 `[implemented: plan 079]`; any future divergence requires a
+product decision and its own plan.
 
 ## 7. Provider posture
 
 | Provider   | Manifest `event_delivery`                                             | Verification and lifecycle                                                                                | First implementation posture                                                       |
 | ---------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Gmail      | `pubsub_push`                                                         | Google Pub/Sub OIDC push; `users.watch`; watches renew before their roughly seven-day expiry              | First reactive-email provider after the receipt spine                              |
-| Airtable   | `webhook`                                                             | Per-webhook MAC secret; notification cursor dedup; pull payloads endpoint; refresh expiring webhook state | First full receipt slice because it exercises verify/persist/dedup/process cheaply |
+| Airtable   | `webhook`                                                             | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice, implemented by plan 079                                  |
 | Google Ads | `none`                                                                | Google Ads has no push surface                                                                            | Poll-only; do not create a webhook placeholder                                     |
-| Fake       | `none` in plan 037; synthetic event support in the event test package | Deterministic signature and event id, local/test only                                                     | Exercises rejection, duplicate, retry, and event-run envelope tests                |
 
 Gmail watch renewal and Airtable webhook refresh ride registered job kinds, not
 API-process timers. Gmail renewal runs daily `[default — confirm at review]`,
 matching Google's current recommendation while remaining inside the seven-day
 maximum. Airtable refresh follows the provider-reported expiry with a 24-hour
-safety margin where supported `[default — confirm at review]`. Failures use the
+safety margin where supported `[implemented: plan 079]`. Failures use the
 existing connection status and notification policy rather than a
 provider-specific alert path.
 
@@ -225,7 +240,7 @@ Google Ads push surface is documented.
 
 Rollout order:
 
-1. Plan 079: central receipt spine plus Airtable webhooks — route,
+1. Plan 079 (DONE 2026-07-24): central receipt spine plus Airtable webhooks — route,
    verification contract, persistence/dedup, processing job, security audit,
    retention, and synthetic-provider coverage.
 2. Gmail `users.watch` + Pub/Sub verification, renewal, and reactive-email

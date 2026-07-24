@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/components/conversation-detail-header.tsx
 
-import { CalendarClockIcon, CornerDownRightIcon } from "lucide-react"
+import { CalendarClockIcon, CornerDownRightIcon, WebhookIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
@@ -41,6 +41,12 @@ export function ConversationDetailHeader({
             <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
               <CornerDownRightIcon aria-hidden="true" className="size-3.5" />
               Started by another agent
+            </span>
+          ) : null}
+          {conversation.source === "event" ? (
+            <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+              <WebhookIcon aria-hidden="true" className="size-3.5" />
+              Triggered by an event
             </span>
           ) : null}
         </div>

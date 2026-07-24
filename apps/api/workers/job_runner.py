@@ -26,6 +26,7 @@ from services.integrations.discovery.rediscover_stale import (
     ensure_integrations_rediscover_job,
 )
 from services.integrations.discovery.sweep_stale import ensure_integrations_sweep_job
+from services.integrations.events import ensure_refresh_webhooks_job
 from services.jobs.claim_jobs import claim_jobs
 from services.jobs.domain import JOB_STATUS_RUNNING
 from services.jobs.finalize_job import finalize_job_failure, finalize_job_success
@@ -56,6 +57,7 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
         await ensure_rate_limit_sweep_job(db)
         await ensure_integrations_sweep_job(db)
         await ensure_integrations_rediscover_job(db)
+        await ensure_refresh_webhooks_job(db)
         claimed_jobs = await claim_jobs(
             db,
             owner_instance_id=owner_id,

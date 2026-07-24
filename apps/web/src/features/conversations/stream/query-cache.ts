@@ -133,7 +133,9 @@ function buildStreamAgentRun(
         ? "scheduled"
         : conversation.source === "delegated"
           ? "delegated"
-          : "interactive",
+          : conversation.source === "event"
+            ? "event"
+            : "interactive",
     status,
     model_name: null,
     started_at: null,

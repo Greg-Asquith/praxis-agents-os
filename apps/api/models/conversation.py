@@ -22,12 +22,14 @@ from models.base import BaseModel
 CONVERSATION_SOURCE_DIRECT = "direct"
 CONVERSATION_SOURCE_SCHEDULED = "scheduled"
 CONVERSATION_SOURCE_DELEGATED = "delegated"
+CONVERSATION_SOURCE_EVENT = "event"
 
 ALL_CONVERSATION_SOURCES = frozenset(
     {
         CONVERSATION_SOURCE_DIRECT,
         CONVERSATION_SOURCE_SCHEDULED,
         CONVERSATION_SOURCE_DELEGATED,
+        CONVERSATION_SOURCE_EVENT,
     }
 )
 
@@ -94,7 +96,8 @@ class Conversation(BaseModel):
             "source IN ("
             f"'{CONVERSATION_SOURCE_DIRECT}', "
             f"'{CONVERSATION_SOURCE_SCHEDULED}', "
-            f"'{CONVERSATION_SOURCE_DELEGATED}'"
+            f"'{CONVERSATION_SOURCE_DELEGATED}', "
+            f"'{CONVERSATION_SOURCE_EVENT}'"
             ")",
             name="conversations_source_check",
         ),

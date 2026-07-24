@@ -49,6 +49,9 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
             settings.MAX_FILE_SIZE_DOCUMENT,
             settings.MAX_FILE_SIZE_VIDEO,
         ),
+        f"{settings.API_V1_PREFIX}/integrations/events/": (
+            settings.INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES
+        ),
     }
 
     def __init__(

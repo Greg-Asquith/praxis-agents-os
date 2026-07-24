@@ -11,6 +11,7 @@ from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
     IntegrationDiscoveryRun,
+    IntegrationEvent,
     IntegrationOAuthState,
     IntegrationResource,
 )
@@ -22,7 +23,9 @@ from tests.factories import (
     build_external_credential,
     build_integration_connection,
     build_integration_discovery_run,
+    build_integration_event,
     build_integration_resource,
+    build_integration_webhook,
 )
 
 
@@ -98,6 +101,57 @@ async def test_sweep_deletes_expired_history_and_removed_resources(
         )
     )
     assert next_job is not None
+
+
+async def test_sweep_deletes_only_old_terminal_integration_events(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+    now = datetime.now(UTC)
+    webhook = build_integration_webhook(connection=connection)
+    db_session.add(webhook)
+    await db_session.flush()
+    old_terminal = build_integration_event(
+        connection=connection,
+        webhook=webhook,
+        status="processed",
+        processed_at=now - timedelta(days=31),
+    )
+    fresh_terminal = build_integration_event(
+        connection=connection,
+        webhook=webhook,
+        status="discarded",
+        processed_at=now - timedelta(days=29),
+        discard_reason="test",
+    )
+    old_pending = build_integration_event(
+        connection=connection,
+        webhook=webhook,
+        received_at=now - timedelta(days=31),
+    )
+    job = Job(
+        kind="integrations.sweep_stale",
+        content_hash="event-retention-test",
+        payload={},
+        attempts=1,
+        max_attempts=5,
+    )
+    db_session.add_all([old_terminal, fresh_terminal, old_pending, job])
+    await db_session.flush()
+
+    await sweep_stale(db_session, job=job)
+
+    remaining = set(
+        (
+            await db_session.scalars(
+                select(IntegrationEvent.id).where(
+                    IntegrationEvent.id.in_([old_terminal.id, fresh_terminal.id, old_pending.id])
+                )
+            )
+        ).all()
+    )
+    assert remaining == {fresh_terminal.id, old_pending.id}
 
 
 async def test_sweep_enforces_revoked_auth_pending_and_oauth_state_boundaries(
