@@ -5,6 +5,17 @@
 import math
 
 
+def estimate_tokens_by_character_count(
+    text: str,
+    *,
+    chars_per_token: float = 4.0,
+) -> int:
+    """Estimate tokens using only a fixed character-count divisor."""
+    if chars_per_token <= 0:
+        raise ValueError("chars_per_token must be greater than zero")
+    return math.floor(len(text) / chars_per_token)
+
+
 def estimate_tokens(text: str, *, chars_per_token: float = 4.0) -> int:
     """Estimate tokens conservatively without a provider tokenizer.
 

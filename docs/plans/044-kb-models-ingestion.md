@@ -68,6 +68,13 @@
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md`
   §4 Phase 4b row 044; donor `DONOR_PORT_ROADMAP.md` §4.4 tables +
   ingestion / §6 row D2)
+- **Execution progress**: IN PROGRESS. Slice A completed 2026-07-24:
+  `core_0020` adds the KB document/chunk schema, generated lexical
+  indexes, and cosine HNSW collection; settings, the offset-preserving
+  markdown chunker, IP-pinned URL fetcher, and real file-revision
+  markdown seam are implemented. The Slice A migration round-trip,
+  drift check, index guard, focused tests, and full 986-test API gate
+  passed. Slice B (ingestion pipeline) remains pending.
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -210,8 +217,8 @@ fields while keeping the two-table owned storage design.
     the `services/conversations/naming.py:50-71` shape
     (`build_model(resolve(...))` + `output_type`), with new settings
     `KB_ANNOTATION_PROVIDER`/`KB_ANNOTATION_MODEL` (defaults
-    `openai`/`gpt-5.4-nano`, the naming-tier precedent from
-    `core/settings/models.py:35-42`). One call per chunk with the full
+    `openai`/`gpt-5.6-luna`, the current Luna utility-model tier in
+    `services/agents/models/registry.py`). One call per chunk with the full
     document in the prompt (prompt-cache-friendly ordering: document
     first, chunk last), bounded by `KB_ANNOTATION_MAX_CHUNKS` (200) —
     documents beyond the cap get their remaining chunks un-annotated
@@ -437,7 +444,7 @@ KB_URL_FETCH_TIMEOUT_SECONDS: float = 30.0
 KB_URL_MAX_BYTES: int = 5_000_000        # streamed fetch abort threshold
 KB_URL_MAX_REDIRECTS: int = 3
 KB_ANNOTATION_PROVIDER: str = "openai"   # utility-model pattern (decision 12)
-KB_ANNOTATION_MODEL: str = "gpt-5.4-nano"
+KB_ANNOTATION_MODEL: str = "gpt-5.6-luna"
 KB_ANNOTATION_MAX_CHUNKS: int = 200
 KB_SWEEP_INTERVAL_SECONDS: int = 3600
 KB_DELETED_RETENTION_DAYS: int = 30      # governance §3 KB row

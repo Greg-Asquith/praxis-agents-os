@@ -33,6 +33,7 @@ from models.integrations import (  # noqa: F401
     IntegrationWebhook,
 )
 from models.jobs import Job  # noqa: F401
+from models.kb import KBChunk, KBDocument  # noqa: F401
 from models.notification import Notification  # noqa: F401
 from models.rate_limiting import RateLimitAttempt  # noqa: F401
 from models.scratch import ScratchEntry  # noqa: F401

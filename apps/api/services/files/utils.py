@@ -2,9 +2,7 @@
 
 """Helpers specific to workspace file services."""
 
-import hashlib
 import logging
-from collections.abc import AsyncIterator
 from uuid import UUID
 
 from sqlalchemy import select
@@ -20,6 +18,7 @@ from services.storage.factory import get_storage_provider
 from services.storage.paths import validate_object_key
 from services.storage.provider import StorageProvider
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
+from utils.digests import sha256_hex as sha256_hex, sha256_hex_stream as sha256_hex_stream
 
 logger = logging.getLogger(__name__)
 
@@ -103,19 +102,6 @@ async def get_file_for_workspace(
     if file is None:
         raise NotFoundError("File not found", resource_type="file", resource_id=str(file_id))
     return file
-
-
-def sha256_hex(data: bytes) -> str:
-    """Return a lowercase sha256 hex digest for bytes."""
-    return hashlib.sha256(data).hexdigest()
-
-
-async def sha256_hex_stream(chunks: AsyncIterator[bytes]) -> str:
-    """Return a lowercase sha256 hex digest for an async byte stream."""
-    hasher = hashlib.sha256()
-    async for chunk in chunks:
-        hasher.update(chunk)
-    return hasher.hexdigest()
 
 
 def private_ref_from_key(object_key: str):

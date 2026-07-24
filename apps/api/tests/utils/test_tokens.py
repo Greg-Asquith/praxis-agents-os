@@ -4,7 +4,7 @@
 
 import pytest
 
-from utils.tokens import estimate_tokens
+from utils.tokens import estimate_tokens, estimate_tokens_by_character_count
 
 
 def test_estimate_tokens_counts_ascii_with_configured_divisor() -> None:
@@ -17,7 +17,16 @@ def test_estimate_tokens_counts_non_ascii_conservatively() -> None:
     assert estimate_tokens("abc漢字", chars_per_token=4.0) == 3
 
 
+def test_estimate_tokens_by_character_count_uses_one_fixed_divisor() -> None:
+    assert estimate_tokens_by_character_count("abc漢字かな") == 1
+    assert estimate_tokens_by_character_count("a" * 9) == 2
+    assert estimate_tokens_by_character_count("a" * 9, chars_per_token=3.0) == 3
+
+
 def test_estimate_tokens_handles_empty_text_and_rejects_invalid_divisor() -> None:
     assert estimate_tokens("") == 0
     with pytest.raises(ValueError, match="greater than zero"):
         estimate_tokens("text", chars_per_token=0)
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        estimate_tokens_by_character_count("text", chars_per_token=0)

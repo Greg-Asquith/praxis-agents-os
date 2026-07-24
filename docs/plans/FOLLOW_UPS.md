@@ -132,6 +132,9 @@ in production.
   behind manifest-declared token metadata instead of adding provider branches
   to the discovery engine. Until then, Gmail and Airtable keep their existing
   authentication modes.
+- **Update 2026-07-24**: the service-account generalization half is absorbed
+  by plan 089 (BigQuery is the second service-account provider; its decision
+  2 parameterizes the helper). The span-attribute half remains open here.
 
 ## 9. Rich integration surfaces beyond the first provider set
 

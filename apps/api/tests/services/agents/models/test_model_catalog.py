@@ -52,6 +52,35 @@ def test_get_model_returns_entry_with_qualified_id():
     assert info.qualified_id == "openai:gpt-5.4-mini"
 
 
+def test_gemini_3_6_flash_catalog_capabilities():
+    info = get_model("google", "gemini-3.6-flash")
+
+    assert info.display_name == "Gemini 3.6 Flash"
+    assert info.context_window == 1_048_576
+    assert info.supports_tools is True
+    assert info.supports_thinking is True
+    assert info.supports_vision is True
+    assert info.supports_structured_output is True
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "context_window"),
+    [
+        ("openai", "gpt-5.5", 1_050_000),
+        ("openai", "gpt-5.4", 1_050_000),
+        ("openai", "gpt-5.4-mini", 400_000),
+        ("openai", "gpt-5.4-nano", 400_000),
+        ("anthropic", "claude-opus-4-7", 1_000_000),
+        ("anthropic", "claude-opus-4-6", 1_000_000),
+        ("google", "gemini-3.5-flash", 1_048_576),
+        ("google", "gemini-3.1-pro", 1_048_576),
+        ("google", "gemini-3.1-flash-lite", 1_048_576),
+    ],
+)
+def test_catalog_context_windows_match_provider_specs(provider, model, context_window):
+    assert get_model(provider, model).context_window == context_window
+
+
 def test_get_model_unknown_raises():
     with pytest.raises(ModelConfigurationError):
         get_model("openai", "does-not-exist")
