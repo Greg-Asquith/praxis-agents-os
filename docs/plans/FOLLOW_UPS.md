@@ -132,3 +132,20 @@ in production.
   behind manifest-declared token metadata instead of adding provider branches
   to the discovery engine. Until then, Gmail and Airtable keep their existing
   authentication modes.
+
+## 9. Rich integration surfaces beyond the first provider set
+
+- **Source**: Plan 041b presenter-kit and safe-preview completion,
+  2026-07-24.
+- **Provider surface**: widen Gmail only in a separately governed provider
+  slice if operators need labels, threads, or attachments. User-direct writes
+  and a general tool playground remain out of scope until they have their own
+  principal, envelope, approval, and audit design.
+- **Reporting surface**: decide whether Google Ads micros should be
+  pre-converted in model-visible results; display-only conversion remains the
+  current contract. Saved charts, dashboards, and exotic chart controls need
+  a durable artifact/product surface rather than growth of `build_chart`.
+- **Preview surface**: generalize or extend the provider preview seam only
+  when a second provider earns a preview kind. The engine continues to own
+  scoping, bounds, sanitization, and audit; provider packages contribute only
+  fetch adapters.

@@ -346,7 +346,11 @@ Adding a provider touches:
    do not add provider routes or branches to shared services.
 5. Optionally `apps/web/src/integrations/<key>/` + **one line** in
    `src/integrations/registry.ts` — only if it earns custom UI.
-6. Governance §2 policy review: writes default `approval`; spend ops
+6. Ask whether any tool returns content a person would want to **see** rather
+   than read about. If so, name the engine-owned presenter kits and optional
+   preview kinds the provider package composes; provider packages contribute
+   adapters only and never add kit logic.
+7. Governance §2 policy review: writes default `approval`; spend ops
    `supports_auto=False`. No exceptions by packaging.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,

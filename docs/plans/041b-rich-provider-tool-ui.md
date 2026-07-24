@@ -52,7 +52,16 @@
   per operator decision. Slice E is **DONE 2026-07-23**: the earlier
   report-toggle design was superseded by an always-available core
   `build_chart` runtime tool, a native Recharts v3 transcript renderer,
-  multi-axis and brand styling controls, and PNG export. Slice F remains TODO.
+  multi-axis and brand styling controls, and PNG export. Slice F is
+  **DONE 2026-07-24**: Airtable list/get results render as defensive
+  record field tables, create/update presenters reuse the governed approval
+  card and cover all five lifecycle states, and the provider checklist and
+  deferred follow-ups are closed. The focused 16-test presenter suite and
+  full `pnpm check` gate (63 files, 310 tests) passed.
+  Slice G (added 2026-07-24 by operator request) migrates the built-in
+  delegation, skill, and file tool rows onto the kit substrate so the
+  internal tools match the provider presenters' polish; it is TODO, has
+  no provider dependency, and is now the remaining slice.
   Execution corrected one landed-state mismatch found during pre-flight:
   Gmail read results carried an undeclared duplicate body field, which is now
   removed. A later 2026-07-23 operator decision explicitly exempted all Google
@@ -690,9 +699,11 @@ record_integration_operation_audit_event` (041 Slice A). **No
   approval/result adapter
 - `apps/web/src/integrations/airtable/` (fill, Slice F): record
   field-table adapters
-- `apps/web/src/features/conversations/components/` — extraction
-  refactor only (decision 2); `ApprovalDecisionBlock` keeps its
-  public behavior; default row renders nodes as their content text
+- `apps/web/src/features/conversations/components/` — the decision-2
+  extraction refactor, plus the Slice G in-place migration of the
+  delegation, skill, and file rows onto the kits;
+  `ApprovalDecisionBlock` keeps its public behavior; default row
+  renders nodes as their content text
 - `apps/api/services/agents/runtime/tools/charting.py` — the bounded,
   always-auto-mounted `build_chart` contract (Slice E)
 - `apps/web/package.json` — Recharts v3 (Slice E only)
@@ -833,15 +844,38 @@ decision. Step 9.
 - **Gate**: runtime contract/registry/scenario tests; native presenter,
   renderer, parser, formatting, and PNG-export tests; `make check`.
 
-### Slice F — Airtable records + checklist closure (`Web - Airtable Record UI`)
+### Slice F — Airtable records + checklist closure (`Web - Airtable Record UI`) — DONE 2026-07-24
 
 Blocked on 041 Slice C. Step 10.
 
 - Airtable record/field-table adapters over the kits (verify the
   landed payload shapes first); packaging §8 checklist amendment;
-  FOLLOW_UPS entries; `000_README.md` row updated (plan-level done).
+  FOLLOW_UPS entries; `000_README.md` row updated. Plan-level completion
+  waits for Slice G.
 - **Gate**: `pnpm check` green; the decision-10 checklist line is in
   the packaging note.
+
+### Slice G — Internal tool rows on the kit substrate (`Web - Internal Tool Row Kits`)
+
+Added 2026-07-24 by operator request. Web only; no backend change and
+no provider dependency. Step 11.
+
+- Migrate the built-in delegation, skill, and file tool rows
+  (`delegation-tool-row.tsx`, `skill-activation-row.tsx`,
+  `skill-document-read-row.tsx`, `file-tool-row.tsx`) from the legacy
+  `ToolActivityRowShell` + stacked-`ToolField` chrome onto the
+  tool-ui kits, matching the polish of the web-search, chart, and
+  provider rows. Registration in `tool-call-row-registry.tsx` and the
+  `features/conversations/components/` locations do not change.
+- **Gate**: `pnpm check` + per-row tests green; existing
+  conversation/approval tests pass unchanged; running-status fixtures
+  render kit skeletons; a malformed payload still falls through to
+  the default row.
+- **Review focus**: delegation approval semantics unchanged (same
+  `ToolApprovalDecisionControls` contract, `handlesApprovals` kept);
+  `FileContentView`'s sandbox posture untouched; the declarative
+  default row and its shell primitives remain the guaranteed
+  fallback for every tool.
 
 ## Steps
 
@@ -1112,7 +1146,7 @@ implicitly.
 native-presenter, renderer, formatting, and PNG-export tests; `make
 check` green.
 
-### Step 10 (Slice F): Airtable adapters, checklist closure
+### Step 10 (Slice F): Airtable adapters, checklist closure — DONE 2026-07-24
 
 Verify the landed Airtable payload shapes first (041 Slice C — note
 the fan-out `data` is a loosely-typed `dict[str, UntrustedJsonValue]`,
@@ -1139,6 +1173,70 @@ row.
 
 **Verify**: `pnpm check` + presenter tests; packaging note updated.
 
+### Step 11: Internal tool rows on the kits (Slice G)
+
+The built-in rows registered in `tool-call-row-registry.tsx` predate
+the kit substrate: the delegation, skill, and file rows still compose
+`ToolActivityRowShell` + stacked `ToolField`s, so they read as an
+older generation next to the web-search, chart, and provider rows.
+Migrate their internals only — registration, `matches` guards, and
+file locations in `features/conversations/components/` stay put. The
+web-search and chart rows are the precedent: feature rows compose
+`@/components/tool-ui` kits directly, so no cruiser change is needed
+(kits still never import `features/`).
+
+Shared conventions, mirroring the provider modules: an icon + title
+heading (the per-provider `tool-heading.tsx` pattern), metadata moved
+off stacked fields into the `details` popover, status as a trailing
+badge, running states as `FanOutSkeleton` with honest labels, and
+guard-and-return-null fallback preserved everywhere.
+
+- `list_delegate_agents` → `ToolResultCard`: delegation heading,
+  agent-count trailing badge, agent list rows (keep
+  `AgentIdentityIcon`), empty state.
+- Delegation runs → `ToolResultCard` with the delegate's identity in
+  the heading and the lifecycle status as the trailing badge; Task /
+  Result through the shared field pipeline
+  (`resolveToolField`/`ToolFieldValue`), error in destructive tone,
+  the pending-approval count, and "Open Transcript" as the body's
+  action row. The approval state composes `ToolApprovalDecisionCard`
+  directly (Task multiline field + Tool field,
+  `approveLabel: "Approve & Delegate"`), replacing the
+  `ApprovalDecisionBlock` composition while preserving the
+  `ToolApprovalDecisionControls` contract; `handlesApprovals: true`
+  stays on the registry entry. Honest copy for denied/failed delegate
+  states, as in the provider write presenters.
+- Skill activation → stays a single non-expandable line, restyled as
+  a heading-only card. If `ToolResultCard` needs an optional
+  non-expandable mode (no chevron, no children, no Details trigger)
+  add it to the kit — do not fork a parallel card component.
+- Skill document read → `ToolResultCard`: document heading, `details`
+  = skill + document path, the markdown body in the existing
+  scrollable region, and the current what-went-wrong copy for error
+  results.
+- File tools → one `ToolResultCard` per variant (list, write,
+  promote, read url/content/status/image). `FileEntityRow` and
+  `FileContentView` render unchanged inside card bodies
+  (`FileContentView`'s sandbox posture is workspace-content policy,
+  not this slice's concern); bytes, dates, expiries, and read-range
+  metadata move into `details`; draft and truncation notes keep their
+  copy. File rows currently match only once a result parses, so
+  running calls fall to the default row — extend `matches` to the
+  running status and render `FanOutSkeleton` labels ("Reading
+  file…", "Saving file…", "Listing files…") the way the chart and
+  web-search rows do.
+- Out of scope: todo rows (their checklist treatment already reads
+  well), the chart and web-search rows (already kit-based), and the
+  declarative default row — `ToolActivityRowShell`, `ToolField`, and
+  their status helpers remain the default-row substrate and must not
+  be deleted; remove only consumers this migration orphans (knip
+  enforces).
+
+**Verify**: vitest fixtures per row — completed, running → skeleton,
+error, unexpected shape → null, delegation approval card renders and
+approve/decline controls fire; existing conversation/approval tests
+pass unchanged; `pnpm check` green.
+
 ## Test plan
 
 Pinned invariants: **the model-visible framed rendering is
@@ -1152,8 +1250,8 @@ null, never a crash) **and render pending states while running**,
 non-success copy and declare `handlesApprovals`** (an approval-capable
 presenter without the flag is a bug — the default approval UI would
 show instead of the custom card),
-**the approval-card extraction changes zero approval semantics**
-(existing approval tests unchanged), **preview HTML is sanitized
+**the approval-card extraction and the Slice G internal-row migration
+change zero approval semantics** (existing approval tests unchanged), **preview HTML is sanitized
 server-side AND rendered script-less in an opaque-origin sandbox**
 (both layers asserted independently, scripts never run; remote images
 load by default per the 2026-07-23 amendment),
@@ -1187,8 +1285,10 @@ amended) boundary rules pass mechanically**.
       at approval and per-campaign outcomes after
 - [ ] Every agent has the `build_chart` core tool; completed charts
       render natively with multi-axis/brand controls and export to PNG
-- [ ] Airtable records render as field tables (Slice F may trail 041
-      Slice C — mark partial status accordingly)
+- [x] Airtable records render as field tables
+- [ ] The built-in delegation, skill, and file rows render through
+      the tool-ui kits with running skeletons, details popovers, and
+      unchanged approval semantics (Slice G)
 - [ ] `src/components/tool-ui/` exists with cruiser rules pinning its
       imports; provider modules contain adapters only (no kit logic)
 - [ ] Threat model carries the framing enforcement-point amendment and

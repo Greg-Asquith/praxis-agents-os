@@ -32,7 +32,7 @@ describe("renderCustomToolCallRow", () => {
 
     expect(html).toContain("Build Chart")
     expect(html).toContain("Revenue by region")
-    expect(html).toContain("Download PNG")
+    expect(html).toContain("Loading chart…")
   })
 
   it("does not let a matching presenter replace the default approval row without opting in", () => {
