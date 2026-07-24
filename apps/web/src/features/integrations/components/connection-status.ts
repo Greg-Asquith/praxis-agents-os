@@ -1,6 +1,7 @@
 // apps/web/src/features/integrations/components/connection-status.ts
 
-type ConnectionStatusAction = "select_resources" | "reauthenticate" | "retry_test"
+type ConnectionStatusAction =
+  "select_resources" | "reauthenticate" | "retry_discovery" | "retry_test"
 
 export type ConnectionStatusPresentation = {
   action: ConnectionStatusAction | null
@@ -16,6 +17,12 @@ const CONNECTION_STATUS_PRESENTATIONS: Record<string, ConnectionStatusPresentati
     label: "Finding your accounts…",
     pending: true,
     variant: "secondary",
+  },
+  discovery_stalled: {
+    action: "retry_discovery",
+    label: "Setup needs attention",
+    pending: false,
+    variant: "warning",
   },
   needs_resource_selection: {
     action: "select_resources",

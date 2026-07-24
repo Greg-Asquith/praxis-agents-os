@@ -9,7 +9,11 @@ import { useRetryDiscoveryMutation } from "@/features/integrations/api/retry-dis
 import { useIntegrationResourcesForConnectionQuery } from "@/features/integrations/api/list-resources"
 import { useUpdateResourceSelectionMutation } from "@/features/integrations/api/update-resource-selection"
 import { ResourceRow } from "@/features/integrations/components/resource-row"
-import { discoveryStatusLabel } from "@/features/integrations/components/resource-discovery"
+import {
+  discoveryIsInFlight,
+  discoveryNeedsRecovery,
+  discoveryStatusLabel,
+} from "@/features/integrations/components/resource-discovery"
 import {
   enabledSelectableResourceIds,
   resourcesInHierarchyOrder,
@@ -61,7 +65,8 @@ function ResourceSelectionForm({
   const changed = initial.join("|") !== pending.join("|")
   const groups = groupResources(resources)
   const discoveryRun = connection.latest_discovery_run
-  const discoveryPending = connection.status === "discovery_pending"
+  const discoveryPending = discoveryIsInFlight(connection)
+  const discoveryStalled = discoveryNeedsRecovery(connection)
 
   async function save() {
     setError(null)
@@ -154,9 +159,11 @@ function ResourceSelectionForm({
           <span>
             {discoveryPending
               ? "Looking for resources…"
-              : discoveryRun
-                ? discoveryStatusLabel(discoveryRun.status)
-                : "Resources have not been checked yet"}
+              : discoveryStalled
+                ? "Discovery stopped before it finished"
+                : discoveryRun
+                  ? discoveryStatusLabel(discoveryRun.status)
+                  : "Resources have not been checked yet"}
           </span>
           {discoveryRun ? (
             <span>

@@ -24,6 +24,7 @@ ANNOTATION_DEFAULTS: dict[str, bool] = {
 }
 
 KB_COLLECTION_DIMS = 1024
+KB_DOCUMENT_TITLE_MAX_CHARS = 500
 
 
 @dataclass(frozen=True)

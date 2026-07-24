@@ -2,6 +2,8 @@
 
 """Closed integration status vocabulary and transition law."""
 
+DISCOVER_RESOURCES_JOB_KIND = "integrations.discover_resources"
+
 CONNECTION_STATUS_AUTH_PENDING = "auth_pending"
 CONNECTION_STATUS_DISCOVERY_PENDING = "discovery_pending"
 CONNECTION_STATUS_NEEDS_RESOURCE_SELECTION = "needs_resource_selection"

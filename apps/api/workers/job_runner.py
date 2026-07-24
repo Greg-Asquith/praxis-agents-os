@@ -22,6 +22,7 @@ from core.database import (
 from core.logging import setup_logging
 from core.settings import settings
 from models.jobs import Job
+from services.integrations.discovery.recover_orphaned import recover_orphaned_discoveries
 from services.integrations.discovery.rediscover_stale import (
     ensure_integrations_rediscover_job,
 )
@@ -51,6 +52,12 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
         reclaimed_count = await reclaim_stale_jobs(db)
         if reclaimed_count:
             logger.info("Reclaimed stale generic jobs", extra={"count": reclaimed_count})
+        recovered_count = await recover_orphaned_discoveries(db)
+        if recovered_count:
+            logger.warning(
+                "Recovered integration discoveries without in-flight jobs",
+                extra={"count": recovered_count},
+            )
         await ensure_sweep_job(db)
         await ensure_files_sweep_job(db)
         await ensure_scratch_sweep_job(db)

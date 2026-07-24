@@ -9,6 +9,7 @@ from services.jobs.registry import JOB_HANDLERS, job_handler
 from services.jobs.utils import (
     compute_content_hash,
     is_jobs_in_flight_integrity_error,
+    normalize_content_hash,
     retry_backoff,
 )
 
@@ -56,6 +57,11 @@ def test_job_handler_rejects_sync_function() -> None:
 
 def test_content_hash_is_key_order_independent() -> None:
     assert compute_content_hash({"b": 2, "a": 1}) == compute_content_hash({"a": 1, "b": 2})
+
+
+def test_content_hash_normalization_preserves_short_keys_and_hashes_long_ones() -> None:
+    assert normalize_content_hash("short-key") == "short-key"
+    assert len(normalize_content_hash("x" * 65)) == 64
 
 
 def test_retry_backoff_grows_caps_and_jitters(monkeypatch: pytest.MonkeyPatch) -> None:

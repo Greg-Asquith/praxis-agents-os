@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.integration import IntegrationAuthError, IntegrationNotFoundError
 from models.integrations import ExternalCredential, IntegrationConnection, IntegrationDiscoveryRun
+from models.jobs import Job
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.integrations.connections.schemas import (
@@ -18,7 +19,9 @@ from services.integrations.connections.schemas import (
     DiscoveryRunRead,
 )
 from services.integrations.credentials import find_duplicate_principals
+from services.integrations.domain import DISCOVER_RESOURCES_JOB_KIND
 from services.integrations.oauth import refresh_authorization_token
+from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.workspaces.utils import MANAGER_ROLES
 
 
@@ -88,6 +91,7 @@ async def connection_to_read(
     await db.refresh(connection)
     credential = await db.get(ExternalCredential, connection.credential_id)
     latest_discovery_runs = await latest_discovery_runs_for_connections(db, [connection.id])
+    discovery_in_flight = await discovery_in_flight_connection_ids(db, [connection.id])
     duplicates: list[UUID] = []
     if credential is not None and include_duplicates and credential.revoked_at is None:
         duplicates = await find_duplicate_principals(
@@ -104,6 +108,7 @@ async def connection_to_read(
         include_credential=include_credential,
         duplicates=duplicates,
         latest_discovery_run=latest_discovery_runs.get(connection.id),
+        discovery_in_flight=connection.id in discovery_in_flight,
     )
 
 
@@ -139,6 +144,23 @@ async def latest_discovery_runs_for_connections(
     return {run.connection_id: run for run in runs}
 
 
+async def discovery_in_flight_connection_ids(
+    db: AsyncSession,
+    connection_ids: list[UUID],
+) -> set[UUID]:
+    """Return connections backed by pending or running discovery work."""
+    if not connection_ids:
+        return set()
+    ids = await db.scalars(
+        select(Job.subject_id).where(
+            Job.kind == DISCOVER_RESOURCES_JOB_KIND,
+            Job.subject_id.in_(connection_ids),
+            Job.status.in_(IN_FLIGHT_JOB_STATUSES),
+        )
+    )
+    return {connection_id for connection_id in ids if connection_id is not None}
+
+
 def build_connection_read(
     connection: IntegrationConnection,
     credential: ExternalCredential | None,
@@ -146,6 +168,7 @@ def build_connection_read(
     include_credential: bool,
     duplicates: list[UUID] | None = None,
     latest_discovery_run: IntegrationDiscoveryRun | None = None,
+    discovery_in_flight: bool = False,
 ) -> ConnectionRead:
     metadata = None
     if credential is not None and include_credential:
@@ -179,6 +202,7 @@ def build_connection_read(
         updated_at=connection.updated_at,
         duplicate_of_connection_ids=duplicates or [],
         credential=metadata,
+        discovery_in_flight=discovery_in_flight,
         latest_discovery_run=(
             DiscoveryRunRead(
                 status=latest_discovery_run.status,

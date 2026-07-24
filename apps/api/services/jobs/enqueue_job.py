@@ -14,7 +14,11 @@ from core.settings import settings
 from models.jobs import Job
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.registry import get_job_handler
-from services.jobs.utils import compute_content_hash, is_jobs_in_flight_integrity_error
+from services.jobs.utils import (
+    compute_content_hash,
+    is_jobs_in_flight_integrity_error,
+    normalize_content_hash,
+)
 
 
 async def enqueue_job(
@@ -41,7 +45,9 @@ async def enqueue_job(
         )
 
     normalized_payload = payload or {}
-    normalized_hash = content_hash or compute_content_hash(normalized_payload)
+    normalized_hash = normalize_content_hash(
+        content_hash or compute_content_hash(normalized_payload)
+    )
     if max_attempts is not None and max_attempts <= 0:
         raise AppValidationError(
             "max_attempts must be greater than zero",

@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
+from core.exceptions.general import AppValidationError, ConflictError
 from models.jobs import Job
 from models.kb import KBChunk, KBDocument
 from services.files.utils import private_ref_from_key
@@ -169,6 +169,83 @@ async def test_upload_ingests_extracted_markdown(
     await db_session.refresh(document)
     assert document.status == "ready"
     assert "Extracted orbital knowledge" in (document.content_md or "")
+
+
+async def test_upload_ingest_rejects_secret_before_storing_extracted_content(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+) -> None:
+    detected_secret = "AKIA1234567890ABCDEF"
+    file = build_file(workspace=kb_actors.workspace)
+    revision = build_file_revision(
+        file,
+        markdown_object_key=f"private/{kb_actors.workspace.id}/kb-secret-source.md",
+    )
+    db_session.add_all([file, revision])
+    await db_session.flush()
+    await get_storage_provider().put_object(
+        private_ref_from_key(revision.markdown_object_key),
+        f"# Credentials\n\nDo not store {detected_secret}.".encode(),
+        content_type="text/markdown",
+    )
+    document = await create_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        source_type="upload",
+        title="Unsafe upload",
+        file_revision_id=revision.id,
+        annotate=False,
+    )
+
+    with pytest.raises(AppValidationError):
+        await _ingest(db_session, kb_actors, document)
+
+    await db_session.refresh(document)
+    assert document.status == "error"
+    assert document.content_md is None
+    assert document.content_hash == ""
+    assert detected_secret not in (document.processing_error or "")
+
+
+async def test_upload_ingest_rejects_duplicate_materialized_content(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+) -> None:
+    documents: list[KBDocument] = []
+    for index in range(2):
+        file = build_file(workspace=kb_actors.workspace)
+        revision = build_file_revision(
+            file,
+            markdown_object_key=(
+                f"private/{kb_actors.workspace.id}/kb-duplicate-source-{index}.md"
+            ),
+        )
+        db_session.add_all([file, revision])
+        await db_session.flush()
+        await get_storage_provider().put_object(
+            private_ref_from_key(revision.markdown_object_key),
+            b"# Shared source\n\nIdentical extracted knowledge.",
+            content_type="text/markdown",
+        )
+        documents.append(
+            await create_kb_document(
+                db_session,
+                workspace_id=kb_actors.workspace.id,
+                source_type="upload",
+                title=f"Upload {index}",
+                file_revision_id=revision.id,
+                annotate=False,
+            )
+        )
+
+    await _ingest(db_session, kb_actors, documents[0])
+    with pytest.raises(ConflictError):
+        await _ingest(db_session, kb_actors, documents[1])
+
+    await db_session.refresh(documents[1])
+    assert documents[1].status == "error"
+    assert documents[1].content_md is None
+    assert documents[1].content_hash == ""
 
 
 async def test_deleted_document_is_an_idempotent_noop(

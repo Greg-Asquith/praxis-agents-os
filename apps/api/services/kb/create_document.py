@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
-from core.settings import settings
 from models.files import FileRevision
 from models.kb import KBDocument
 from services.kb.domain import (
@@ -22,7 +21,12 @@ from services.kb.domain import (
     KB_SOURCE_URL,
 )
 from services.kb.ensure_sweep_job import ensure_kb_sweep_job
-from services.kb.utils import compute_markdown_hash, truncate_markdown, validate_source_url
+from services.kb.utils import compute_markdown_hash, validate_source_url
+from services.kb.write_policy import (
+    KBProvenance,
+    enforce_kb_write_policy,
+    lock_and_find_kb_duplicate,
+)
 
 
 async def create_kb_document(
@@ -38,6 +42,7 @@ async def create_kb_document(
     is_private: bool = False,
     annotate: bool | None = None,
     meta: dict[str, Any] | None = None,
+    provenance: KBProvenance | None = None,
 ) -> KBDocument:
     """Persist one private workspace document and queue its ingestion."""
     normalized_title = title.strip()
@@ -67,10 +72,7 @@ async def create_kb_document(
     if source_type == KB_SOURCE_MANUAL:
         if content is None or not content.strip():
             raise AppValidationError("Manual documents require content", field="content")
-        canonical_content = truncate_markdown(
-            content,
-            max_bytes=settings.KB_MAX_DOCUMENT_BYTES,
-        )
+        canonical_content = content
         content_hash = compute_markdown_hash(canonical_content)
         source_updated_at = datetime.now(UTC)
     elif source_type == KB_SOURCE_URL:
@@ -81,6 +83,29 @@ async def create_kb_document(
             workspace_id=workspace_id,
             file_revision_id=file_revision_id,
         )
+
+    effective_provenance = provenance or KBProvenance(
+        actor_kind="user" if created_by_user_id else "system",
+        user_id=created_by_user_id,
+        source_type=source_type,
+        origin_ref=external_url or (str(file_revision_id) if file_revision_id else None),
+    )
+    duplicate = None
+    if content_hash:
+        duplicate = await lock_and_find_kb_duplicate(
+            db,
+            workspace_id=workspace_id,
+            content_hash=content_hash,
+            is_private=is_private,
+        )
+    enforce_kb_write_policy(
+        workspace_id=workspace_id,
+        provenance=effective_provenance,
+        title=normalized_title,
+        content_md=canonical_content,
+        is_private=is_private,
+        duplicate=duplicate,
+    )
 
     document = KBDocument(
         workspace_id=workspace_id,

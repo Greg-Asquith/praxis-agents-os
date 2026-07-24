@@ -1,6 +1,7 @@
 // apps/web/src/features/integrations/components/provider-status.ts
 
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
+import { discoveryNeedsRecovery } from "@/features/integrations/components/resource-discovery"
 
 type ProviderSummaryVariant = "destructive" | "secondary" | "success" | "warning"
 
@@ -17,7 +18,11 @@ export function providerSummaryStatus(
   const currentConnections = connections.filter((connection) => connection.status !== "revoked")
   const statuses = new Set(currentConnections.map((connection) => connection.status))
 
-  if (statuses.has("needs_reauth") || statuses.has("error")) {
+  if (
+    statuses.has("needs_reauth") ||
+    statuses.has("error") ||
+    currentConnections.some(discoveryNeedsRecovery)
+  ) {
     return { label: "Needs attention", tone: "attention", variant: "destructive" }
   }
 

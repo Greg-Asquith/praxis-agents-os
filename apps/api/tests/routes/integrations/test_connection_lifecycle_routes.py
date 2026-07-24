@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.integration import IntegrationAuthError
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
+from models.jobs import Job
 from services.integrations.credentials import store_oauth_credential
 from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
 from tests.factories import build_integration_discovery_run
@@ -136,6 +137,34 @@ async def test_connection_list_includes_latest_discovery_run(
         "started_at": expected_started_at,
         "finished_at": expected_finished_at,
     }
+    assert response.json()["items"][0]["discovery_in_flight"] is False
+
+
+async def test_connection_list_reports_whether_pending_discovery_has_work(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    connection.status = "discovery_pending"
+    job = Job(
+        kind="integrations.discover_resources",
+        workspace_id=connection.owner_workspace_id,
+        subject_type="integration_connection",
+        subject_id=connection.id,
+        content_hash="connection-list-discovery",
+        payload={},
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    response = await db_async_client.get(
+        "/api/v1/integrations/connections",
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["discovery_in_flight"] is True
 
 
 async def test_refresh_and_test_connection_happy_paths(

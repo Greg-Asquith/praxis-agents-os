@@ -19,7 +19,8 @@ export function integrationConnectionsQueryOptions() {
     refetchInterval: (query) =>
       query.state.data?.items.some(
         (connection) =>
-          connection.status === "auth_pending" || connection.status === "discovery_pending"
+          connection.status === "auth_pending" ||
+          (connection.status === "discovery_pending" && connection.discovery_in_flight)
       )
         ? 5_000
         : false,

@@ -42,7 +42,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Select integration resources / set conversation context / edit context groups (039–040) *[implemented: plans 039–040]* | — | ✓ | ✓ | ✓ |
 | View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Create/edit KB documents (044/046) | — | ✓ | ✓ | ✓ |
+| Create/edit KB documents (044/046) *[implemented: plan 046 Slice A]* | — | ✓ | ✓ | ✓ |
 | Delete workspace-scope memories (049) | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) | — | ✓ | ✓ | ✓ |
 | Create artifacts via agents (050) | follows tool policy | ✓ | ✓ | ✓ |

@@ -102,6 +102,9 @@ it as pending instead of implying it works.
 Docker Compose expects local env files under `.local/`; they are intentionally
 not committed. `make bootstrap` creates them and installs dependencies;
 `make dev` starts Postgres, migrates, and runs the API, worker, and web dev
-servers. When changing Docker behavior: keep local services bound to
+servers. In that workflow only Postgres runs in Docker; the API, worker, and
+web processes run locally, and `make dev-kill` stops all three. `make
+compose-up` runs the complete stack in Docker instead. When changing Docker
+behavior: keep local services bound to
 `127.0.0.1`, keep production images small and non-root, and do not bake
 runtime secrets into images.

@@ -26,10 +26,16 @@ from services.kb.domain import (
 from services.kb.utils import (
     compute_markdown_hash,
     convert_html_to_markdown,
+    document_origin_ref,
     fetch_url,
     get_revision_markdown,
     require_kb_workspace_id,
     truncate_markdown,
+)
+from services.kb.write_policy import (
+    KBProvenance,
+    enforce_kb_write_policy,
+    lock_and_find_kb_duplicate,
 )
 
 
@@ -59,6 +65,26 @@ async def ingest_kb_document(
     try:
         markdown = await _load_markdown(db, document)
         content_hash = compute_markdown_hash(markdown)
+        duplicate = await lock_and_find_kb_duplicate(
+            db,
+            workspace_id=document.workspace_id,
+            content_hash=content_hash,
+            is_private=document.is_private,
+            existing_id=document.id,
+        )
+        enforce_kb_write_policy(
+            workspace_id=document.workspace_id,
+            provenance=KBProvenance(
+                actor_kind="system",
+                source_type=document.source_type,
+                origin_ref=document_origin_ref(document),
+            ),
+            title=document.title,
+            content_md=markdown,
+            is_private=document.is_private,
+            existing=document,
+            duplicate=duplicate,
+        )
         if content_hash == document.content_hash and document.chunk_count > 0:
             document.status = KB_STATUS_READY
             document.processing_error = None
@@ -70,6 +96,8 @@ async def ingest_kb_document(
         document.content_hash = content_hash
         if content_changed:
             document.source_updated_at = datetime.now(UTC)
+        # Publish the guarded hash and release its advisory lock before annotation work.
+        await db.commit()
         await db.execute(delete(KBChunk).where(KBChunk.document_id == document.id))
 
         drafts = chunk_markdown(

@@ -11,6 +11,7 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.integrations.connections.schemas import ConnectionListResponse
 from services.integrations.connections.utils import (
     build_connection_read,
+    discovery_in_flight_connection_ids,
     latest_discovery_runs_for_connections,
 )
 from services.workspaces.utils import MANAGER_ROLES
@@ -47,6 +48,9 @@ async def list_connections(
     latest_discovery_runs = await latest_discovery_runs_for_connections(
         db, [connection.id for connection, _credential in rows]
     )
+    discovery_in_flight = await discovery_in_flight_connection_ids(
+        db, [connection.id for connection, _credential in rows]
+    )
     return ConnectionListResponse(
         items=[
             build_connection_read(
@@ -54,6 +58,7 @@ async def list_connections(
                 credential,
                 include_credential=include_credential,
                 latest_discovery_run=latest_discovery_runs.get(connection.id),
+                discovery_in_flight=connection.id in discovery_in_flight,
             )
             for connection, credential in rows
         ],

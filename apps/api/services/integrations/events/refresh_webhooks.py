@@ -41,7 +41,6 @@ async def refresh_webhooks(db: AsyncSession, *, job: Job) -> None:
         db,
         kind=REFRESH_WEBHOOKS_KIND,
         payload={"scheduled_by_job_id": str(job.id)},
-        content_hash=f"integrations-refresh-webhooks:{job.id}",
         run_after=now + timedelta(seconds=settings.INTEGRATIONS_WEBHOOK_REFRESH_INTERVAL_SECONDS),
     )
 

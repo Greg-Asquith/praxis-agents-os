@@ -1,3 +1,5 @@
+# apps/api/tests/integration/retrieval_eval/test_recency.py
+
 """Weighted recency fusion remains a tie-breaker over relevant candidates."""
 
 from datetime import UTC, datetime
@@ -34,7 +36,7 @@ async def test_fresh_near_duplicate_outranks_stale_eligible_source(
         workspace=retrieval_corpus.workspace,
         creator=retrieval_corpus.creator,
         title="Second service ownership",
-        content=content,
+        content=content.replace("Escalate delayed exports", "Escalate any delayed exports"),
     )
     baseline = await search_chunks(
         retrieval_corpus.db,

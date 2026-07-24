@@ -7,9 +7,12 @@ from models.jobs import Job
 from services.integrations.connections.transition_connection_status import (
     transition_connection_status,
 )
-from services.integrations.domain import CONNECTION_STATUS_DISCOVERY_PENDING
+from services.integrations.domain import (
+    CONNECTION_STATUS_DISCOVERY_PENDING,
+    DISCOVER_RESOURCES_JOB_KIND,
+)
 
-DISCOVER_RESOURCES_KIND = "integrations.discover_resources"
+DISCOVER_RESOURCES_KIND = DISCOVER_RESOURCES_JOB_KIND
 
 
 async def enqueue_discovery(

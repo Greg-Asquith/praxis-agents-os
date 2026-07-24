@@ -61,6 +61,7 @@ export type IntegrationConnection = {
   duplicate_of_connection_ids: string[]
   credential: IntegrationCredentialMetadata | null
   latest_discovery_run: IntegrationDiscoveryRun | null
+  discovery_in_flight: boolean
 }
 
 export type ConnectionListResponse = {

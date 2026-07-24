@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from core.settings import settings
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
+MAX_CONTENT_HASH_LENGTH = 64
 JOBS_IN_FLIGHT_UNIQUE_INDEX = "uq_jobs_in_flight"
 
 
@@ -23,6 +24,13 @@ def compute_content_hash(payload: dict[str, object] | None) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def normalize_content_hash(value: str) -> str:
+    """Keep caller-supplied dedup keys within the persistence contract."""
+    if len(value) <= MAX_CONTENT_HASH_LENGTH:
+        return value
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def retry_backoff(attempts: int) -> float:

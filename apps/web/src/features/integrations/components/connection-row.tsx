@@ -25,6 +25,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRefreshConnectionMutation } from "@/features/integrations/api/refresh-connection"
 import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
+import { useRetryDiscoveryMutation } from "@/features/integrations/api/retry-discovery"
 import { useRevokeConnectionMutation } from "@/features/integrations/api/revoke-connection"
 import { useTestConnectionMutation } from "@/features/integrations/api/test-connection"
 import { ConnectOAuthButton } from "@/features/integrations/components/connect-oauth-button"
@@ -32,7 +33,10 @@ import { ConnectionLabelEditor } from "@/features/integrations/components/connec
 import { ConnectionStatusBadge } from "@/features/integrations/components/connection-status-badge"
 import { connectionStatusPresentation } from "@/features/integrations/components/connection-status"
 import { ResourceSelectionPanel } from "@/features/integrations/components/resource-selection-panel"
-import { discoveryFinished } from "@/features/integrations/components/resource-discovery"
+import {
+  discoveryFinished,
+  discoveryNeedsRecovery,
+} from "@/features/integrations/components/resource-discovery"
 import { connectionResourcesAreEditable } from "@/features/integrations/components/resource-selection-model"
 import {
   integrationAuthModeLabel,
@@ -54,11 +58,15 @@ export function ConnectionRow({
   const testMutation = useTestConnectionMutation()
   const queryClient = useQueryClient()
   const refreshMutation = useRefreshConnectionMutation()
+  const discoveryMutation = useRetryDiscoveryMutation()
   const revokeMutation = useRevokeConnectionMutation()
   const [expanded, setExpanded] = useState(connection.status === "needs_resource_selection")
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const status = connectionStatusPresentation(connection.status)
+  const discoveryStalled = discoveryNeedsRecovery(connection)
+  const status = connectionStatusPresentation(
+    discoveryStalled ? "discovery_stalled" : connection.status
+  )
   const canUseLifecycleActions = canEdit && connection.status !== "revoked"
   const canEditResources = connectionResourcesAreEditable(canEdit, connection.status)
   const previousStatus = useRef(connection.status)
@@ -158,6 +166,23 @@ export function ConnectionRow({
               variant="outline"
             >
               Try Again
+            </Button>
+          ) : null}
+          {status.action === "retry_discovery" && canEdit ? (
+            <Button
+              disabled={discoveryMutation.isPending}
+              onClick={() => void runAction(() => discoveryMutation.mutateAsync(connection.id))}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCwIcon
+                className={
+                  discoveryMutation.isPending ? "animate-spin motion-reduce:animate-none" : ""
+                }
+                data-icon="inline-start"
+              />
+              {discoveryMutation.isPending ? "Restarting" : "Try Again"}
             </Button>
           ) : null}
           {status.action === "reauthenticate" &&

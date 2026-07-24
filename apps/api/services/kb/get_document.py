@@ -38,19 +38,4 @@ async def get_kb_document(
             resource_id=str(document_id),
         )
 
-    return KBDocumentRead(
-        id=document.id,
-        title=document.title,
-        concept_id=document.concept_id,
-        source_type=document.source_type,
-        source_updated_at=document.source_updated_at,
-        status=document.status,
-        summary=document.summary,
-        external_url=document.external_url,
-        is_private=document.is_private,
-        chunk_count=document.chunk_count,
-        content_md=document.content_md,
-        meta=document.meta,
-        created_at=document.created_at,
-        updated_at=document.updated_at,
-    )
+    return KBDocumentRead.from_document(document)

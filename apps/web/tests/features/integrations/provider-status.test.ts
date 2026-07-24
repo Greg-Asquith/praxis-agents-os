@@ -22,6 +22,7 @@ function connection(status: IntegrationConnection["status"]): IntegrationConnect
     connected_by_user_id: "user-1",
     created_at: "2026-07-22T10:00:00Z",
     credential: null,
+    discovery_in_flight: status === "discovery_pending",
     duplicate_of_connection_ids: [],
     id: `connection-${status}`,
     label: "Work",
@@ -44,6 +45,16 @@ describe("providerSummaryStatus", () => {
     expect(
       providerSummaryStatus(provider, [connection("active"), connection("discovery_pending")])
     ).toEqual({ label: "Setting up…", tone: "pending", variant: "warning" })
+  })
+
+  it("treats pending status without a job as needing attention", () => {
+    const stalled = { ...connection("discovery_pending"), discovery_in_flight: false }
+
+    expect(providerSummaryStatus(provider, [stalled])).toEqual({
+      label: "Needs attention",
+      tone: "attention",
+      variant: "destructive",
+    })
   })
 
   it("counts connected accounts and excludes revoked connections", () => {

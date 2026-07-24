@@ -1,6 +1,7 @@
 """Discovery job enqueue and terminal notification behavior."""
 
 from dataclasses import replace
+from importlib import import_module
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -19,6 +20,7 @@ from models.user import User
 from models.workspace import Workspace
 from services.integrations.discovery.enqueue_discovery import enqueue_discovery
 from services.integrations.discovery.handlers import discover_resources
+from services.integrations.discovery.recover_orphaned import recover_orphaned_discoveries
 from services.jobs.registry import JOB_HANDLERS
 from tests.factories import (
     build_external_credential,
@@ -37,6 +39,63 @@ async def test_enqueue_discovery_deduplicates_in_flight_work(
     second = await enqueue_discovery(db_session, connection=connection)
     assert first.id == second.id
     assert first.initiated_by_user_id is None
+
+
+async def test_recover_orphaned_discovery_recreates_missing_work(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+
+    assert await recover_orphaned_discoveries(db_session) == 1
+    assert await recover_orphaned_discoveries(db_session) == 0
+
+    job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == "integrations.discover_resources",
+            Job.subject_id == connection.id,
+        )
+    )
+    assert job is not None
+    assert job.status == "pending"
+
+
+async def test_terminal_handler_failure_cannot_leave_pending_status(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = discovery_connection["connection"]
+    job = Job(
+        kind="integrations.discover_resources",
+        workspace_id=connection.owner_workspace_id,
+        subject_type="integration_connection",
+        subject_id=connection.id,
+        content_hash="terminal-before-discovery",
+        payload={},
+        attempts=1,
+        max_attempts=1,
+    )
+    db_session.add(job)
+    await db_session.flush()
+    handlers_module = import_module("services.integrations.discovery.handlers")
+
+    async def fail_before_discovery(*args, **kwargs):
+        raise RuntimeError("worker setup failed")
+
+    monkeypatch.setattr(handlers_module, "run_discovery", fail_before_discovery)
+
+    with pytest.raises(RuntimeError, match="worker setup failed"):
+        await discover_resources(db_session, job)
+
+    await db_session.refresh(connection)
+    failed_run = await db_session.scalar(
+        select(IntegrationDiscoveryRun).where(IntegrationDiscoveryRun.job_id == job.id)
+    )
+    assert connection.status == "error"
+    assert failed_run is not None
+    assert failed_run.status == "failed"
+    assert failed_run.error_code == "RuntimeError"
 
 
 async def test_handler_notifies_only_on_final_attempt(

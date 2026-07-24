@@ -125,6 +125,7 @@ class ConnectionRead(BaseModel):
     duplicate_of_connection_ids: list[UUID] = Field(default_factory=list)
     credential: CredentialMetadataRead | None = None
     latest_discovery_run: DiscoveryRunRead | None = None
+    discovery_in_flight: bool = False
 
 
 class OAuthCallbackResponse(BaseModel):

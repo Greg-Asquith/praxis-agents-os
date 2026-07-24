@@ -1,5 +1,15 @@
 // apps/web/src/features/integrations/components/resource-discovery.ts
 
+import type { IntegrationConnection } from "@/features/integrations/types"
+
+export function discoveryIsInFlight(connection: IntegrationConnection) {
+  return connection.status === "discovery_pending" && connection.discovery_in_flight
+}
+
+export function discoveryNeedsRecovery(connection: IntegrationConnection) {
+  return connection.status === "discovery_pending" && !connection.discovery_in_flight
+}
+
 export function discoveryFinished(previousStatus: string, currentStatus: string) {
   return previousStatus === "discovery_pending" && currentStatus !== "discovery_pending"
 }

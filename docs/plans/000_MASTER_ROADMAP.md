@@ -222,6 +222,15 @@ retrieval corpus covering relevance, lexical degradation, isolation/privacy,
 filters, collection guards, weighted recency, hostile-content round trips, and
 SQL-to-pure-RRF parity. Gate G4 is satisfied; the final focused gate passed 98
 tests and the complete API gate passed 1,062 tests.
+Plan 046 Slice A completed 2026-07-24. All human KB document writes now pass
+through one provenance, privacy, secret-blocking, size, and duplicate-content
+policy; member-gated manual, URL, and Files-backed sources plus list, update,
+delete, and reprocess operations are workspace-scoped and audited. URL fetching
+remains in the pinned-IP ingestion job, file sources pin the selected file's
+current revision, and soft deletion removes retrieval chunks immediately. The
+focused KB gate passed 90 tests and the complete API gate passed 1,091 tests.
+Plan 046 remains in place and pending Slice B (agent tools and source-aware
+untrusted-content handling).
 Plan 089 (Google BigQuery provider) was added 2026-07-24 by maintainer
 decision D14 as the first Phase 4a extension past the D4 set:
 workspace-shared service-account connections, dataset discovery into the
@@ -652,7 +661,7 @@ structure.
 | 043  | Embeddings provider service (ABC + OpenAI default + explicit Ollama option; model+dims echoed for collection stamping; atomic workspace-month token counter). **DONE 2026-07-24.** (Donor D1.)                                                                                                                                                                      |
 | 044  | OKF-compatible, Praxis-owned `kb_documents`/`kb_chunks` models + migrations (stable concept identifiers/frontmatter metadata, halfvec HNSW + tsvector from day one); ingestion pipeline via jobs (structure-aware chunking, optional contextual annotation). **DONE 2026-07-24.** Google Knowledge Catalog remains an optional integration target, not a dependency. (Donor D2 + D9.) |
 | 045  | Hybrid search engine (RRF merge, pending-embedding lexical fallback, SQL filters, reranker interface) + search/read routes + **the eval harness**: seed docs with expected citations, hybrid-search assertions, fallback tests, prompt-injection fixture documents. **DONE 2026-07-24; Gate G4 satisfied.** (Donor D3 + gaps-doc eval requirement.)                                             |
-| 046  | Agent tools (`search_knowledge`, `read_document`) with retrieved content framed as untrusted data in tool results; write-policy choke point (provenance, private-never-shared rule, secret blocking); document sources (upload via Files, URL, manual). **Gate G2 applies.** (Donor D4.)                                                                         |
+| 046  | Agent tools (`search_knowledge`, `read_document`) with retrieved content framed as untrusted data in tool results; write-policy choke point (provenance, private-never-shared rule, secret blocking); document sources (upload via Files, URL, manual). **Slice A DONE 2026-07-24:** write policy, document sources, management routes, RBAC, audit, and lifecycle. Slice B pending. **Gate G2 applies.** (Donor D4.)                                                                         |
 | 047  | KB UI: documents table, ingestion status, search. (Donor D5.)                                                                                                                                                                                                                                                                                                    |
 
 ### Phase 5 — Agent Memory (donor Phase E; gates G2, G3)

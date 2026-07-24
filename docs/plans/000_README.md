@@ -589,6 +589,16 @@ prompt-injection fixtures, and SQL-to-pure-RRF parity. The final focused gate
 passed 98 tests, the no-database path passed 7 pure tests with 13 clean skips,
 and the complete API gate passed 1,062 tests.
 
+Plan 046 Slice A completed 2026-07-24. The backend now has one write-policy
+choke point for provenance, private-never-shared enforcement, secret blocking,
+content bounds, and duplicate detection. Member-gated manual, URL, and
+Files-backed sources plus document list, update, delete, and reprocess
+operations are workspace-scoped and audited; URL fetches remain in the
+DNS-rebinding-resistant ingestion job and file sources pin the current
+revision. The focused KB service/route gate passed 90 tests and the complete
+API gate passed 1,091 tests. Per the plan's binding slice rule, the status row
+stays TODO and the plan remains under `docs/plans/` until Slice B lands.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and

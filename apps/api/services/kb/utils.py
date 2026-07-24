@@ -19,14 +19,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.files import FileRevision
+from models.kb import KBDocument
 from services.files.contract import is_editable
 from services.files.utils import private_ref_from_key
+from services.kb.domain import KB_SOURCE_UPLOAD, KB_SOURCE_URL
 from services.storage.factory import get_storage_provider
 from utils.digests import sha256_text as compute_markdown_hash
 from utils.document_markdown import convert_document_to_markdown, truncate_markdown
 from utils.tokens import estimate_tokens_by_character_count as estimate_tokens
 
-__all__ = ["compute_markdown_hash", "estimate_tokens", "truncate_markdown"]
+__all__ = [
+    "compute_markdown_hash",
+    "document_origin_ref",
+    "estimate_tokens",
+    "truncate_markdown",
+]
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
@@ -42,12 +49,32 @@ def require_kb_workspace_id(workspace_id: UUID | None) -> UUID:
     return workspace_id
 
 
+def document_origin_ref(document: KBDocument) -> str | None:
+    """Return the durable source reference used for write provenance."""
+    if document.source_type == KB_SOURCE_URL:
+        return document.external_url
+    if document.source_type == KB_SOURCE_UPLOAD and document.file_revision_id is not None:
+        return str(document.file_revision_id)
+    return None
+
+
 def validate_source_url(url: str | None) -> str:
     """Normalize and validate a URL before a source document is created."""
     if url is None or not url.strip():
         raise AppValidationError("URL documents require a URL", field="url")
     normalized = url.strip()
-    _require_fetch_url(normalized)
+    parsed = _require_fetch_url(normalized)
+    if parsed.host.lower() == "localhost":
+        raise AppValidationError(
+            "Knowledge-base URL must use a public host",
+            field="url",
+        )
+    try:
+        literal = ipaddress.ip_address(parsed.host)
+    except ValueError:
+        pass
+    else:
+        _require_public_address(literal.compressed)
     return normalized
 
 

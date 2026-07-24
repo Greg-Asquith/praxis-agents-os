@@ -47,6 +47,7 @@ class AuditResourceType(StrEnum):
     INTEGRATION_CONTEXT_GROUP = "integration_context_group"
     ACTIVE_CONTEXT_SELECTION = "active_context_selection"
     SECRET_REFERENCE = "secret_reference"
+    KB_DOCUMENT = "kb_document"
 
 
 class AuditActorType(StrEnum):

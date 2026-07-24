@@ -118,6 +118,16 @@ async def test_enqueue_rejects_invalid_max_attempts(db_session: AsyncSession) ->
         await enqueue_job(db_session, kind="jobs.sweep_terminal", max_attempts=0)
 
 
+async def test_enqueue_hashes_oversized_caller_dedup_key(db_session: AsyncSession) -> None:
+    job = await enqueue_job(
+        db_session,
+        kind="jobs.sweep_terminal",
+        content_hash="scheduled-job-prefix:" + ("a" * 64),
+    )
+
+    assert len(job.content_hash) == 64
+
+
 async def test_jobs_table_rejects_invalid_max_attempts(db_session: AsyncSession) -> None:
     db_session.add(build_job(max_attempts=0, payload={"invalid": True}))
 

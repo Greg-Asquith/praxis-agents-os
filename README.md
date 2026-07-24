@@ -116,10 +116,16 @@ make dev-kill
 ```
 
 `make dev` runs the API at `http://localhost:8000` and the web app at
-`http://localhost:3000`. `make check` runs the full quality gate for both
-apps: backend lint and format checks, the migration-drift check, the
-database-backed API test suite (provisioning the local test database
-automatically), and the complete frontend check.
+`http://localhost:3000`. It also runs `python -m workers.main` as a separate
+local process under `watchfiles`; only Postgres runs in Docker in this mode.
+The worker reloads when backend/provider code or `apps/api/.env` changes, and
+`make dev-kill` stops all three local processes. `make compose-up` is the
+alternative where API, worker, and web all run in Docker.
+
+`make check` runs the full quality gate for both apps: backend lint and format
+checks, the migration-drift check, the database-backed API test suite
+(provisioning the local test database automatically), and the complete
+frontend check.
 
 ## Backend Development
 

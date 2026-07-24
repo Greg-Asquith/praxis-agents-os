@@ -56,11 +56,17 @@ async def discover_resources(db: AsyncSession, job: Job) -> None:
         raise
     except IntegrationAuthError:
         raise
-    except Exception:
-        if job.subject_id is not None and job.attempts >= job.max_attempts:
+    except Exception as exc:
+        if subject_id is not None and is_final_attempt:
+            await _settle_terminal_discovery_failure(
+                db,
+                connection_id=subject_id,
+                job_id=job_id,
+                error=exc,
+            )
             await notify_connection_event(
                 db,
-                connection_id=job.subject_id,
+                connection_id=subject_id,
                 event="discovery_failed",
             )
             await db.commit()
@@ -128,3 +134,59 @@ async def _record_discovery_timeout(
             connection_id=connection.id,
             event="discovery_failed",
         )
+
+
+async def _settle_terminal_discovery_failure(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+    job_id: UUID,
+    error: Exception,
+) -> None:
+    """Ensure a terminal job cannot leave its connection looking in flight."""
+    connection = await db.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.id == connection_id,
+            IntegrationConnection.deleted.is_(False),
+        )
+    )
+    if connection is None or connection.status != CONNECTION_STATUS_DISCOVERY_PENDING:
+        return
+
+    prior_success = await db.scalar(
+        select(IntegrationDiscoveryRun.id)
+        .where(
+            IntegrationDiscoveryRun.connection_id == connection.id,
+            IntegrationDiscoveryRun.status == "succeeded",
+        )
+        .limit(1)
+    )
+    existing_run = await db.scalar(
+        select(IntegrationDiscoveryRun).where(IntegrationDiscoveryRun.job_id == job_id).limit(1)
+    )
+    now = datetime.now(UTC)
+    if existing_run is None:
+        db.add(
+            IntegrationDiscoveryRun(
+                connection_id=connection.id,
+                job_id=job_id,
+                status="failed",
+                error_code=error.__class__.__name__[:64],
+                error_message=(str(error) or error.__class__.__name__)[:1000],
+                started_at=now,
+                finished_at=now,
+            )
+        )
+    elif existing_run.status == "running":
+        existing_run.status = "failed"
+        existing_run.error_code = error.__class__.__name__[:64]
+        existing_run.error_message = (str(error) or error.__class__.__name__)[:1000]
+        existing_run.finished_at = now
+
+    await transition_connection_status(
+        db,
+        connection,
+        "degraded" if prior_success is not None else "error",
+        reason="resource_discovery_failed",
+        audit_status=AuditStatus.FAILURE,
+    )

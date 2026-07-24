@@ -2,21 +2,45 @@
 
 """Knowledge-base document creation tests."""
 
+import asyncio
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.exceptions.general import AppValidationError, NotFoundError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from models.jobs import Job
+from models.kb import KBDocument
+from models.workspace import Workspace
 from services.kb import create_kb_document, delete_kb_document
 from services.kb.utils import compute_markdown_hash
 from tests.factories import build_file, build_file_revision, build_workspace
 from tests.services.kb.conftest import KBActors
 
 pytestmark = pytest.mark.asyncio
+
+
+async def _create_concurrent_duplicate(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    workspace_id: UUID,
+) -> bool:
+    async with session_factory() as db:
+        try:
+            await create_kb_document(
+                db,
+                workspace_id=workspace_id,
+                source_type="manual",
+                title="Concurrent handbook",
+                content="The exact same concurrent content.",
+            )
+            await db.commit()
+        except ConflictError:
+            await db.rollback()
+            return False
+    return True
 
 
 async def test_manual_create_stores_content_and_enqueues_ids_only_job(
@@ -42,6 +66,44 @@ async def test_manual_create_stores_content_and_enqueues_ids_only_job(
     assert job is not None
     assert job.payload == {}
     assert job.initiated_by_user_id == kb_actors.user.id
+
+
+async def test_concurrent_identical_creates_allow_exactly_one_document(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    workspace = build_workspace(slug=f"kb-duplicate-{uuid4().hex[:8]}")
+    async with committed_db_session_factory() as setup:
+        setup.add(workspace)
+        await setup.commit()
+        workspace_id = workspace.id
+
+    try:
+        results = await asyncio.gather(
+            _create_concurrent_duplicate(
+                committed_db_session_factory,
+                workspace_id=workspace_id,
+            ),
+            _create_concurrent_duplicate(
+                committed_db_session_factory,
+                workspace_id=workspace_id,
+            ),
+        )
+        assert sorted(results) == [False, True]
+
+        async with committed_db_session_factory() as verify:
+            count = await verify.scalar(
+                select(func.count(KBDocument.id)).where(
+                    KBDocument.workspace_id == workspace_id,
+                    KBDocument.deleted.is_(False),
+                )
+            )
+            assert count == 1
+    finally:
+        async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(delete(Job).where(Job.workspace_id == workspace_id))
+            await cleanup.execute(delete(KBDocument).where(KBDocument.workspace_id == workspace_id))
+            await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await cleanup.commit()
 
 
 async def test_url_create_defers_fetch_and_supports_annotation_override(
