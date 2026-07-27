@@ -255,6 +255,12 @@ Plan 071 completed 2026-07-27 and moved to `docs/plans/complete/`. Plan 048
 now requires explicit agent resolution for near-duplicate memories, preserves
 and audits job-time duplicate pairs, exempts core memories from decay, marks
 decay constants provisional, and calibrates the dedup threshold under Gate G4.
+Plan 048 completed 2026-07-27 and moved to `docs/plans/complete/`. Scoped
+core and note memories now ride the shared embedding, hybrid retrieval, jobs,
+registry, approval, and audit infrastructure. The four memory tools are
+intrinsic and auto-mounted for every agent by operator decision; core writes
+remain conditionally approval-gated and workspace grants remain the
+administrative disable seam.
 Plan 089 (Google BigQuery provider) was added 2026-07-24 by maintainer
 decision D14 as the first Phase 4a extension past the D4 set:
 workspace-shared service-account connections, dataset discovery into the
@@ -370,7 +376,7 @@ Hard checkpoints — cheap to state now, expensive to discover later:
   unless `docs/architecture/threat-model.md` lists the channel and
   adversarial fixtures exercise it. Deterministic tests pin sanitization
   mechanics; behavioral resistance rides 055's graded eval layer. Binds
-  041/044/046/048/049/056/059 and every later content source (044 added
+  041/044/046/056/059 and every later external content source (044 added
   2026-07-10 by plan 080 for the ingestion annotation channel).
 - **G7 (applications ride the platform, not beside it)**: no
   application-facing capability ships except through the headless dispatch
@@ -692,7 +698,7 @@ structure.
 
 | Plan | Scope                                                                                                                                                                                                                                                               |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 048  | `agent_memories` model + write service (backend-minted provenance, explicit near-duplicate resolution, core-aware read-time decay, supersession) + memory tools through the registry (audit/approval for free) + memory eval tests (dedup/calibration, approval/audit) per Gate G4. Amended by 071. (Donor E1.) |
+| 048  | **DONE 2026-07-27.** `agent_memories` model + write service (backend-minted provenance, explicit near-duplicate resolution, core-aware read-time decay, supersession) + four intrinsic auto-mounted memory tools through the registry + memory eval tests (dedup/calibration, approval/audit) per Gate G4. Amended by 071. (Donor E1.) |
 | 049  | Core-memory prompt injection (budgeted formatter via the 018 assembler) + memory UI (view/edit/delete per scope). (Donor E2.)                                                                                                                                       |
 
 ### Phase 6 — Artifacts (donor Phase F; gate G3)

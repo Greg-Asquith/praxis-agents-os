@@ -7,6 +7,8 @@
   content and (h) KB annotation helper; hostile email-body fixture)
 - **Amended**: 2026-07-22 (structured provenance nodes in storage and
   streams; model-only framing at prompt assembly)
+- **Amended**: 2026-07-27 (operator decision: internal agent memory is a
+  trusted control surface and never receives untrusted-content framing)
 - **Rule**: downstream plans implement slices of this note and cite the
   relevant sections. A plan that changes a channel, defense, or test contract
   records the deviation here in the same change. New model-visible untrusted
@@ -30,23 +32,23 @@ authenticated or otherwise legitimate workflow:
   attacker-controlled by default once Gmail lands;
 - external text in tool results, including search results and delegated-child
   output;
-- stored memory content authored by an agent during a run;
 - conversation spans passed to a summarizer;
 - file content passed to a helper model for code generation; and
 - document content passed to the KB ingestion annotation helper.
 
 An attacker can place instructions, counterfeit delimiters, system-prompt-like
 headings, tool-call requests, or data-exfiltration directions in any of these
-sources. The content can persist through storage, retrieval, summarization, or
-memory and influence a later run that never interacted with the attacker.
+sources. The content can persist through storage, retrieval, or summarization
+and influence a later run that never interacted with the attacker.
 
 ### Trusted control surfaces
 
-System prompt policy blocks, the current user's turn, and server-minted
-metadata such as source references, provenance classes, workspace identity,
-run envelopes, and audit records are trusted control surfaces. A trusted
-transport does not make its payload trusted: OAuth-authenticated email and a
-workspace-owned file remain untrusted model input.
+System prompt policy blocks, the current user's turn, internal agent memory,
+and server-minted metadata such as source references, provenance classes,
+workspace identity, run envelopes, and audit records are trusted control
+surfaces. A trusted transport does not make an external payload trusted:
+OAuth-authenticated email and a workspace-owned file remain untrusted model
+input.
 
 Delimiters reduce authority confusion but do not make model behavior
 deterministic. Authorization, approval, workspace isolation, dispatch audit,
@@ -60,8 +62,6 @@ layer tests whether a model resists the content.
 
 | Channel | Exposure | Mechanical defense | Deterministic test | Graded eval case | Owner |
 |---|---|---|---|---|---|
-| **(a) Memory writes and search** | Instructions saved during one run persist and return through `search_memory` later. | Frame stored content on read with the shared markers; neutralize forged markers; surface server-minted source and creator provenance. | Hostile title/content survives save→search inside one frame, forged markers cannot close it, and provenance is present. | The model neither follows nor propagates a hostile memory and reports the attempt. | 048 |
-| **(b) Core-memory prompt injection** | Stored memory is interpolated into the highest-authority prompt surface. | Escape title/content so it cannot create headers, lines, or policy blocks; surface a provenance class. | Hostile memory fixtures cannot escape their line, forge `## Memory`, or impersonate `memory_policy`; output stays byte-stable. | The model treats hostile core memory as stored data, not a new instruction. | 049 |
 | **(c) History summaries** | A summarizer can launder a hostile conversation span into an authoritative compacted block. | Frame the source span as untrusted and instruct the summarizer to extract, not obey; keep the resulting summary labelled automatic. | A scripted model pins the prompt shape for a hostile span and the shared markers remain intact. | The summary describes instruction-shaped content without adopting it, and the consuming model does not comply. | 056 |
 | **(d) File content to generated code** | A hostile CSV cell or file passage can steer the helper model that writes code. | Keep task text separate; frame all inlined file content as untrusted before the helper-model call. | The hostile CSV fixture is entirely enclosed by the shared frame and cannot forge its end marker. | Generated code follows the user's task rather than file-borne instructions. Sandbox egress is tested separately by 072. | 059 |
 | **(e) Read-tool egress** | A URL or free-text query can encode workspace data into an outbound request even though the tool is classified as a read. | **[default — confirm at review]** Keep query arguments audit-visible through existing dispatch digests; add no new enforcement machinery in v1. Write envelopes do not cover reads. | Assert audit metadata records bounded argument digests without exposing secret values. | The model does not encode workspace data into outbound URL/query parameters and reports the attempt. | 055, with 041/054 context |
@@ -79,6 +79,13 @@ model-frame path. This includes GAQL report strings. Workspace scoping,
 bounded report rows, typed output validation, audit, write approvals, and run
 envelopes remain enforced; the operator explicitly rejected per-cell or
 per-result prompt-injection warnings for this provider.
+
+**Agent-memory boundary (operator decision, 2026-07-27):** memory is
+Praxis-internal agent state, not an external-content channel. `search_memory`
+returns plain typed title/content plus server-minted provenance, and core-memory
+prompt rendering must not add untrusted-content markers or warnings. Memory
+scope isolation, approval for core writes, audit, caps, deduplication,
+supersession, and operator visibility remain the governing controls.
 
 ## 3. Escaping And Delimiting Standard
 
@@ -103,9 +110,9 @@ per-result prompt-injection warnings for this provider.
 - Prompt templates that transform untrusted spans, including summarizers and
   code-generation helpers, explicitly say to extract or compute over the
   content and never obey instructions found inside it.
-- Context-specific escaping still applies around the shared frame. For
-  example, core-memory title/content must not be able to create Markdown
-  headings or additional list entries.
+- Context-specific escaping still applies around shared frames and structured
+  prompt templates. It is a formatting boundary, not a reason to classify
+  trusted internal memory as untrusted.
 
 The frame vocabulary is runtime-internal and model-only. Storage and
 client-visible tool results carry structured nodes; they do not use or parse
@@ -122,12 +129,11 @@ The fixture corpus starts with 045's shared documents:
 - `prompt_injection_tool_call.md`; and
 - `prompt_injection_exfil.md`.
 
-It extends them with a hostile memory title/content pair, a hostile
-conversation span, a hostile CSV for code generation, and a hostile email
-body for integration reads; the annotation channel (h) reuses the shared
-documents rather than adding its own. Fixtures cover marker forgery,
-policy-block impersonation, tool-call coercion, durable instruction
-laundering, and query-parameter exfiltration.
+It extends them with a hostile conversation span, a hostile CSV for code
+generation, and a hostile email body for integration reads; the annotation
+channel (h) reuses the shared documents rather than adding its own. Fixtures
+cover marker forgery, policy-block impersonation, tool-call coercion, durable
+instruction laundering, and query-parameter exfiltration.
 
 Use the hoisted shared fixture directory at **[implemented: 041 Slice A]
 `apps/api/tests/fixtures/prompt_injection/`**. Tests import or parameterize the
@@ -150,11 +156,11 @@ drift apart.
 ## 5. Gate G6
 
 **G6 (untrusted content is framed and fixture-tested)**: no plan that feeds
-model context from a new untrusted-content source (retrieval, memory,
-summaries, integration-fetched content, file/tool text) ships unless this note
+model context from a new untrusted-content source (retrieval, summaries,
+integration-fetched content, file/tool text) ships unless this note
 lists the channel and adversarial fixtures exercise it. Deterministic tests pin
 sanitization mechanics; behavioral resistance rides 055's graded eval layer.
-G6 binds 041/044/046/048/049/056/059 and every later content source.
+G6 binds 041/044/046/056/059 and every later external content source.
 
 Passing G6 requires a §2 channel row, an explicit owner, a shared-fixture
 mechanical test, and a named graded-eval case. A plan cannot satisfy the gate by
@@ -198,8 +204,6 @@ and the Gmail provider operation tests.
 | 041b (rich provider tool UI) | §3 prompt-assembly framing enforcement; §6 browser rendering of provider content |
 | 044 (KB models/ingestion) | §2(h) annotation channel; §3 extraction-not-obedience prompt; §4 shared documents |
 | 046 (KB tools) | §2(f) source-aware retrieval defense; §3 shared framing substrate; §4 KB fixtures |
-| 048 (memory model/tools) | §2(a) persistence channel; §3 provenance and read framing; §4 hostile memory fixtures |
-| 049 (memory injection/UI) | §2(b) prompt-authority boundary; §3 structural escaping and provenance; §4 rendering fixtures |
 | 055 (behavior eval harness) | §2 graded cases; §4 platform-wide injection-resistance category |
 | 056 (context compaction) | §2(c) summary laundering; §3 extraction-not-obedience prompt; §4 hostile span |
 | 059 (sandboxed code execution) | §2(d) file-to-code channel; §3 helper prompt framing; §4 hostile CSV |

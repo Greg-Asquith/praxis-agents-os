@@ -1,4 +1,4 @@
-# apps/api/services/conversation_summaries/domain.py 
+# apps/api/services/conversation_summaries/domain.py
 
 """Conversation history-summary contracts shared by runtime and jobs."""
 

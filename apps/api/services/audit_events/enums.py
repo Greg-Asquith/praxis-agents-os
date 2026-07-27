@@ -48,6 +48,7 @@ class AuditResourceType(StrEnum):
     ACTIVE_CONTEXT_SELECTION = "active_context_selection"
     SECRET_REFERENCE = "secret_reference"
     KB_DOCUMENT = "kb_document"
+    MEMORY = "memory"
 
 
 class AuditActorType(StrEnum):

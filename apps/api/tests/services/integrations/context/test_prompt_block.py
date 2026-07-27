@@ -79,6 +79,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
         "delegation",
         "available_files",
         "knowledge",
+        "memory_policy",
         "untrusted_content_policy",
     ]
     rendered = build_system_prompt([PromptBlock("context", content, budget=2000)])

@@ -71,9 +71,13 @@ point, per-agent `tool_policies`); this section is the policy law:
   require approval even though they do not cross the Praxis boundary, and
   agent-initiated KB document writes default `approval` through plan 046's
   write-policy choke point. [implemented: plan 028 for todos; implemented:
-  plans 034/054 for scratch and Praxis Files; memory notes pending. No agent
-  KB write tool ships in the v1 KB slice; this recorded default applies when
-  one does.]
+  plans 034/054 for scratch and Praxis Files; implemented: plan 048 for
+  auto-mounted memory notes. No agent KB write tool ships in the v1 KB slice;
+  this recorded default applies when one does.]
+- Core-memory saves and updates always require approval, even though memory is
+  Praxis-internal state and the tools are auto-mounted. The conditional check
+  remains inside the tool body so an agent policy cannot weaken it.
+  [implemented: plan 048]
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. [integrations implemented:
@@ -108,7 +112,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Scratch (034) | TTL expiry [implemented: plan 034] | 7 d rolling TTL; purge content on expiry; delete after promotion [implemented: plan 034] | n/a (DB text) [implemented: plan 034] | rows summarized [implemented: plan 034] | — |
 | Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
 | KB documents/chunks/embeddings (044) | ✓ [implemented: plan 044] | 30 d after soft-delete; chunks/vectors cascade on hard-delete [implemented: plan 044] | n/a (canonical markdown in Postgres) [implemented: plan 044] | ✓ (audit rows have no subject FK; mutation audit lands with routes) [implemented: plan 044 retention posture] | ✓ (canonical markdown) [implemented: plan 044] |
-| Memories (048) | supersession, never hard | archive at `expires_at`; hard-delete only by user action | n/a | ✓ | ✓ |
+| Memories (048) *[implemented: plan 048]* | supersession, never hard | archive at `expires_at`; hard-delete only by user action | n/a | ✓ | ✓ |
 | Credentials (037) | revoke = soft [implemented: plan 039] | 30 d after revoke; tokens crypto-shredded at revoke [implemented: plan 039] | n/a | metadata only, never values | — |
 | Integration resources/discovery runs (039) | ✓ / plain rows [implemented: plan 039] | 90 d [implemented: plan 039] | n/a | counters [implemented: plan 039] | — |
 | Artifact shares (051) | revocable | at `expires_at` (default 7 d) | n/a | ✓ | — |

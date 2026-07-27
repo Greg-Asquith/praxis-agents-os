@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from pgvector.sqlalchemy import HALFVEC
-from sqlalchemy import ARRAY, Integer, String, bindparam, text
+from sqlalchemy import ARRAY, String, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from services.kb.domain import ANNOTATION_DEFAULTS, KB_COLLECTION_DIMS
 from services.kb.schemas import KBSearchHit, KBSearchResult
 from services.retrieval import RerankItem, get_reranker
 from services.retrieval.domain import RRF_K
+from services.retrieval.utils import configure_hnsw_search
 
 logger = logging.getLogger(__name__)
 
@@ -192,16 +193,9 @@ async def search_chunks(
         query_vector = None
         embedding_model = None
 
-    await db.execute(text("SET LOCAL hnsw.iterative_scan = 'relaxed_order'"))
-    await db.execute(
-        text("SET LOCAL hnsw.ef_search = :ef").bindparams(
-            bindparam(
-                "ef",
-                value=settings.KB_SEARCH_EF_SEARCH,
-                type_=Integer(),
-                literal_execute=True,
-            )
-        )
+    await configure_hnsw_search(
+        db,
+        ef_search=settings.KB_SEARCH_EF_SEARCH,
     )
 
     params = {

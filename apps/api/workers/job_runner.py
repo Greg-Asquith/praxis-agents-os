@@ -37,6 +37,7 @@ from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_s
 from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import get_job_handler
+from services.memories.ensure_sweep_job import ensure_memory_sweep_job
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
         await ensure_scratch_sweep_job(db)
         await ensure_rate_limit_sweep_job(db)
         await ensure_integrations_sweep_job(db)
+        await ensure_memory_sweep_job(db)
         await ensure_integrations_rediscover_job(db)
         await ensure_refresh_webhooks_job(db)
         claimed_jobs = await claim_jobs(

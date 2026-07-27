@@ -635,6 +635,18 @@ save a distinct memory. Job-time dedup now preserves both rows and audits the
 pair, core memories do not decay, decay constants are explicitly provisional,
 and Gate G4 gains a labeled threshold-calibration fixture.
 
+Plan 048 completed 2026-07-27 and moved to `docs/plans/complete/`.
+The backend now stores scoped core and note memories with backend-minted
+provenance, hybrid lexical/vector retrieval, explicit near-duplicate
+resolution, read-time confidence decay, archival, supersession, audit events,
+and background embedding/expiry jobs. Its four registry tools are intrinsic
+and auto-mounted for every agent by operator decision; core writes retain
+conditional approval and workspace tool grants remain the administrative
+disable seam. The database-backed memory and agent suites passed, and the
+complete API runs each passed 1,163 tests; two unrelated stale-row/order
+assertions failed individually across the runs and both passed immediately
+when rerun in isolation.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and
@@ -748,7 +760,7 @@ service-account generalization trigger and rides the D10 packaging law.
 | 045  | Hybrid search engine, KB routes, and the Gate G4 eval harness                                                          | P1       | L      | 044                                                                    | DONE 2026-07-24 — Gate G4 satisfied                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 046  | KB agent tools, write-policy choke point, and document sources                                                         | P1       | L      | 044, 045                                                               | DONE 2026-07-24                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 047  | Knowledge base UI                                                                                                      | P1       | M      | 044, 045, 046                                                          | DONE 2026-07-24                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 048  | Agent memory model, write service, and registry memory tools                                                           | P1       | L      | 043, 045, 046                                                          | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 048  | Agent memory model, write service, and registry memory tools                                                           | P1       | L      | 043, 045, 046                                                          | DONE 2026-07-27                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 049  | Core-memory prompt injection, memory routes, and memory UI                                                             | P1       | L      | 048                                                                    | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 050  | Artifacts model, registry tools, and CSP-locked serving                                                                | P2       | L      | 031, 032, 034                                                          | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 051  | Chat artifact cards, versions UI, and share links                                                                      | P2       | L      | 050, 030 (soft: 035)                                                   | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1214,7 +1226,7 @@ tests/services/conversations tests/routes/conversations -q`, and
   shared `services/retrieval/` parts + the written RRF SQL shape, not a
   parameterized multi-table engine.
 - `075` is DONE and activates Gate G6 through
-  `docs/architecture/threat-model.md`: 041/044/046/048/049/056/059 own
+  `docs/architecture/threat-model.md`: 041/044/046/056/059 own
   deterministic framing and adversarial-fixture tests for their channels
   (041 and 044 were added by plan 080 as channels (g) integration-fetched
   content and (h) the KB annotation helper); 055 owns the opt-in behavioral
@@ -1241,12 +1253,14 @@ D11, 2026-07-10)` blocks in 037/038/039 before executing. No fake
 - `GET /api/v1/kb/documents` (list) is owned by `046` (assigned at the
   2026-07-06 reconciliation; `045` deliberately ships only search +
   get-document); `047` consumes it.
-- `048`/`049`: memory rides `043` embeddings and `045`'s engine parts;
+- `048` is DONE; `049` adds prompt injection of selected core-memory content
+  and the memory UI. Memory rides `043` embeddings and `045`'s engine parts;
   provenance is backend-minted from `RuntimeDeps` (the model never
-  supplies it); memory-note tools default `auto` per `governance.md` §2,
-  with the Gate G4 memory eval tests required before any write-policy
-  tuning. 071 amends 048's dedup resolution, calibration, and decay
-  semantics before implementation.
+  supplies it). All four memory tools are intrinsic and auto-mounted by
+  operator decision, while core writes still require conditional approval
+  and workspace grants can administratively disable a tool. Gate G4 memory
+  evals remain required before any write-policy tuning. 071's dedup
+  resolution, calibration, and decay amendment landed with 048.
 - `050` versions artifacts as `031` `FileRevision`s (agent provenance via
   `created_by_agent_id`; no new revision kind) and ships the CSP-locked
   serving pipeline `051` reuses (`connect-src 'none'`, opaque-origin

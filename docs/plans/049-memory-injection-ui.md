@@ -21,6 +21,14 @@
 > with byte-level assertions that fixture text cannot escape its line,
 > forge the `## Memory` header, or impersonate the `memory_policy` block.
 >
+> **Operator amendment (2026-07-27 — trusted internal memory)**:
+> memory is trusted Praxis-internal agent state and must never receive
+> untrusted-content markers or prompt-injection warnings. This supersedes the
+> plan-075 amendment above. The core-memory formatter still produces
+> deterministic, bounded Markdown, but its tests cover ordinary formatting,
+> truncation, provenance, and budget behavior rather than hostile-memory
+> framing or marker neutralization.
+>
 > **Gate pre-flights (run before Step 1)**:
 > - **048 is landed**: `agent_memories` exists, the four memory tools are in
 >   the registry, and `services/memories/` exposes the Step-4 seams 048's

@@ -100,7 +100,9 @@ Repo-wide expectations are in the root `AGENTS.md`.
   instead of hand-rolling setup. Live LLM calls are blocked in tests.
 - Live-model behavior evaluations live outside pytest under `apps/api/evals`
   and run only through the explicit `make evals` target with `EVALS_MODEL`
-  and matching provider credentials. They must never enter `make check`.
+  and matching provider credentials. The same command first runs live memory
+  dedup calibration through the configured embedding provider, so its
+  credential must also be available. These evals must never enter `make check`.
 
 ## Commands
 

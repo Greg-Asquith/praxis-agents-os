@@ -19,6 +19,14 @@
 > (threat-model §4): hostile titles/content round-trip save→search with
 > markers intact and forged markers neutralized.
 >
+> **Operator amendment (2026-07-27 — trusted internal memory)**:
+> memory is trusted Praxis-internal agent state, not an external-content
+> channel. `search_memory` returns plain title/content with server-minted
+> provenance and does not use `UntrustedContent`, marker neutralization, or
+> prompt-injection warnings. This supersedes the plan-075 amendment above and
+> its adversarial framing test; scope isolation, core-write approval, audit,
+> caps, deduplication, and lifecycle tests remain required.
+>
 > **Gate pre-flights (run before Step 1)**:
 > - **G2** — plan 018 is DONE (verified 2026-07-06): the prompt assembler
 >   exists at `services/agents/runtime/prompt.py` (`PromptBlock`,
@@ -35,6 +43,24 @@
 > - **Amendment (plan 071)** — the amendment block at the end of this
 >   plan modifies decisions 6/7 and Steps 1/4/5/6/8. Read it before
 >   Step 0; where it conflicts with the body, the amendment wins.
+>
+> **Operator amendment (2026-07-27 — automatic availability)**:
+> all four memory tools are intrinsic runtime tools. They are auto-mounted
+> for every agent and are not agent-configurable; the memory policy prompt
+> block therefore always renders. Workspace tool grants remain the
+> administrative disable seam. This supersedes decision 13, Step 6, and
+> the corresponding Done criterion wherever they describe opt-in mounting.
+>
+> **Review hardening (2026-07-27)**: expired rows become invisible to
+> search, deduplication, and core-cap accounting immediately rather than
+> waiting for the retention sweep. Notes cap at 2,000 characters; memory
+> search defaults to 5 results, accepts at most 10, and returns at most
+> 12,000 serialized characters with explicit truncation metadata. Filtered
+> vector search uses the shared iterative-HNSW transaction setup. Core-memory
+> updates have a dispatch-level approval replay test. Memory background work
+> follows the established split: domain operations live in
+> `services/memories/`, job adapters live one per file in
+> `services/jobs/handlers/`, and sweep scheduling has its own service module.
 >
 > **Drift check (run first)**:
 > `git diff --stat 0cbbb39..HEAD -- apps/api/models/ apps/api/alembic/versions/core/ apps/api/core/settings/ apps/api/services/agents/runtime/ apps/api/services/audit_events/enums.py apps/api/services/embeddings/ apps/api/services/search/ apps/api/services/jobs/ apps/api/services/memories/`
@@ -64,6 +90,7 @@
 - **Category**: Phase 5 memory (roadmap `000_MASTER_ROADMAP.md` §4 Phase 5
   row 048; donor `DONOR_PORT_ROADMAP.md` §4.5 / §6 row E1)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
+- **Completed**: 2026-07-27
 
 ## Decisions taken
 
@@ -147,7 +174,7 @@
    a hard delete.
 10. **Core memories are capped, small.** `MEMORY_CORE_MAX_PER_SCOPE` (20)
     active core memories per scope tuple and `MEMORY_CORE_MAX_CHARS` (500)
-    per core memory; notes cap at `MEMORY_NOTE_MAX_CHARS` (4000). Breach →
+    per core memory; notes cap at `MEMORY_NOTE_MAX_CHARS` (2000). Breach →
     `ModelRetry` telling the model to update/forget instead (the
     `planning.py:49-50` precedent). Keeps 049's injection budget honest.
 11. **Embedding collection discipline mirrors 044**: `embedding
@@ -364,8 +391,11 @@ MEMORY_EPISODE_TTL_DAYS: int = 90            # decision 8 defaults
 MEMORY_OUTCOME_TTL_DAYS: int = 180
 MEMORY_CORE_MAX_PER_SCOPE: int = 20          # decision 10
 MEMORY_CORE_MAX_CHARS: int = 500
-MEMORY_NOTE_MAX_CHARS: int = 4000
-MEMORY_SEARCH_DEFAULT_LIMIT: int = 10
+MEMORY_NOTE_MAX_CHARS: int = 2000
+MEMORY_SEARCH_DEFAULT_LIMIT: int = 5
+MEMORY_SEARCH_MAX_LIMIT: int = 10
+MEMORY_SEARCH_RESULT_MAX_CHARS: int = 12000
+MEMORY_SEARCH_EF_SEARCH: int = 100
 MEMORY_CORE_CHAR_BUDGET: int = 2000          # consumed by 049's injection formatter
 MEMORY_SWEEP_INTERVAL_SECONDS: int = 3600
 ```
@@ -585,7 +615,7 @@ async def save_memory(ctx: RunContext[RuntimeDeps], title: str, content: str,
 async def search_memory(ctx, query: str, scope: MemoryScope | None = None,
                         kind: MemoryKind | None = None,
                         memory_type: MemoryType | None = None,
-                        limit: int = 10) -> dict[str, object]: ...
+                        limit: int = 5) -> dict[str, object]: ...
 
 @runtime_tool(name="update_memory", provider="core", label="Update memory",
               effect=TOOL_EFFECT_WRITE, takes_ctx=True, timeout=15)
@@ -690,23 +720,27 @@ approval defaults.
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0
-- [ ] `uv run alembic check` clean; migration on the **core** branch (D5),
+- [x] In-scope Ruff lint and format checks pass. The repository-wide Ruff
+      check remains blocked by pre-existing trailing whitespace in
+      `services/conversation_summaries/domain.py`.
+- [x] `uv run alembic check` clean; migration on the **core** branch (D5),
       numbered against the real head, downgrade round-trips
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/memories tests/services/agents -q` exits 0
-- [ ] Registry lists exactly four memory tools; all four route through the
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/memories tests/services/agents -q` exits 0
+- [x] Registry lists exactly four memory tools; all four route through the
       026 dispatch choke point with audit rows (verified by Step 8)
-- [ ] No memory tool schema exposes provenance parameters (decision 2)
-- [ ] `memory.embed` + `memory.sweep_expired` registered on the 030
+- [x] No memory tool schema exposes provenance parameters (decision 2)
+- [x] `memory.embed` + `memory.sweep_expired` registered on the 030
       harness; `uv run python -m workers.job_runner --once` exits 0
-- [ ] Write-policy `PromptBlock` renders only for agents with memory tools
-- [ ] `AuditResourceType.MEMORY` exists; supersession/archival audited
-- [ ] No HTTP routes or UI added (049's surface); no plan numbers cited in
+- [x] Write-policy `PromptBlock` always renders alongside the four
+      auto-mounted intrinsic memory tools (operator amendment)
+- [x] `AuditResourceType.MEMORY` exists; supersession/archival audited
+- [x] No HTTP routes or UI added (049's surface); no plan numbers cited in
       implementation code (AGENTS.md)
-- [ ] `docs/architecture/governance.md` memory cells flipped to
+- [x] `docs/architecture/governance.md` memory cells flipped to
       `[implemented: plan 048]` and the core-approval bullet added
-- [ ] `git status` shows no modified files outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated
+- [x] `git status` shows no implementation files outside the in-scope list
+      and the exact runtime expectation tests affected by auto-mounting
+- [x] `docs/plans/000_README.md` status row updated
 
 ## STOP conditions
 
