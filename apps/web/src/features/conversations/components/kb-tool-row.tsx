@@ -145,7 +145,9 @@ function KnowledgeHitItem({ hit, rank }: { hit: KnowledgeSearchHit; rank: number
           </span>
         ) : null}
       </div>
-      {preview ? <p className="text-muted-foreground line-clamp-2 text-sm">{preview}</p> : null}
+      {preview ? (
+        <p className="text-muted-foreground line-clamp-2 text-sm whitespace-pre-line">{preview}</p>
+      ) : null}
     </li>
   )
 }

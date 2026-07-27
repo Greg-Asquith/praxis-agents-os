@@ -7,6 +7,7 @@ import {
 import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
+import { MemoryToolRow } from "@/features/conversations/components/memory-tool-row"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
 import { TodoListRow } from "@/features/conversations/components/todo-list-row"
@@ -45,6 +46,16 @@ import {
   readDocumentResult,
   searchKnowledgeResult,
 } from "@/features/conversations/native-tools/kb-tools"
+import {
+  FORGET_MEMORY_TOOL_NAME,
+  SAVE_MEMORY_TOOL_NAME,
+  SEARCH_MEMORY_TOOL_NAME,
+  UPDATE_MEMORY_TOOL_NAME,
+  forgetMemoryResult,
+  saveMemoryResult,
+  searchMemoryResult,
+  updateMemoryResult,
+} from "@/features/conversations/native-tools/memory-tools"
 import {
   READ_TODOS_TOOL_NAME,
   WRITE_TODOS_TOOL_NAME,
@@ -141,6 +152,13 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
       <KbToolRow activity={activity} defaultOpen={defaultOpen} />
     ),
   },
+  {
+    key: "memory-tools",
+    matches: memoryToolRowMatches,
+    render: ({ activity, defaultOpen }) => (
+      <MemoryToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
+  },
 ]
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
@@ -177,6 +195,31 @@ function kbToolRowMatches(activity: ToolActivity) {
   }
   if (activity.name === READ_DOCUMENT_TOOL_NAME) {
     return readDocumentResult(activity.result) !== null
+  }
+  return false
+}
+
+function memoryToolRowMatches(activity: ToolActivity) {
+  if (
+    (activity.name === SAVE_MEMORY_TOOL_NAME ||
+      activity.name === SEARCH_MEMORY_TOOL_NAME ||
+      activity.name === UPDATE_MEMORY_TOOL_NAME ||
+      activity.name === FORGET_MEMORY_TOOL_NAME) &&
+    activity.status !== "completed"
+  ) {
+    return true
+  }
+  if (activity.name === SAVE_MEMORY_TOOL_NAME) {
+    return saveMemoryResult(activity.result) !== null
+  }
+  if (activity.name === SEARCH_MEMORY_TOOL_NAME) {
+    return searchMemoryResult(activity.result) !== null
+  }
+  if (activity.name === UPDATE_MEMORY_TOOL_NAME) {
+    return updateMemoryResult(activity.result) !== null
+  }
+  if (activity.name === FORGET_MEMORY_TOOL_NAME) {
+    return forgetMemoryResult(activity.result) !== null
   }
   return false
 }

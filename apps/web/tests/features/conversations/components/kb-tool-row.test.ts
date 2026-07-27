@@ -64,7 +64,7 @@ describe("KbToolRow", () => {
     expect(html).not.toContain("Rank 2")
     expect(html).toContain('href="/knowledge/doc-1"')
     expect(html).toContain("Pricing guide 1")
-    expect(html).toContain("Plans See pricing for tier details.")
+    expect(html).toContain("Plans\nSee pricing for tier details.")
     expect(html).not.toContain("](https://example.com/pricing)")
     expect(html).toContain("&lt;script&gt;")
     expect(html).not.toContain("<script>")

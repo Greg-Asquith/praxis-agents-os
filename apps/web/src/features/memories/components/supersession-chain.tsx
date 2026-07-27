@@ -60,7 +60,7 @@ export function SupersessionChain({
               )}
               key={memory.id}
             >
-              <span className="bg-border absolute top-5 -left-[1.2rem] size-2 rounded-full" />
+              <span className="bg-border absolute top-5 left-[-1.2rem] size-2 rounded-full" />
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   className="h-auto p-0 font-medium"

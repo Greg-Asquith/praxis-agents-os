@@ -3,6 +3,7 @@
 import { isUntrustedNode, type UntrustedNode } from "@/components/tool-ui/untrusted-node"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { KbSourceType } from "@/features/knowledge/types"
+import { plainTextPreview } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 export const SEARCH_KNOWLEDGE_TOOL_NAME = "search_knowledge"
@@ -36,17 +37,7 @@ export type ReadDocumentToolResult = {
 
 export function knowledgeChunkPreview(content: string | UntrustedNode): string {
   const text = typeof content === "string" ? content : content.content
-  return text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/^\s{0,3}>\s?/gm, "")
-    .replace(/^\s{0,3}[-*+]\s+/gm, "")
-    .replace(/\*{1,3}|_{2,3}|~~/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
+  return plainTextPreview(text)
 }
 
 export function searchKnowledgeQueryArg(args: unknown): string | null {

@@ -171,6 +171,24 @@ export function normalizeOptionalText(value: string | null | undefined) {
   return normalized || null
 }
 
+// Strips markdown syntax but keeps line breaks so previews stay readable
+// under whitespace-pre-line + line-clamp.
+export function plainTextPreview(markdown: string) {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/\*{1,3}|_{2,3}|~~/g, "")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim()
+}
+
 export function truncateText(value: string, limit: number, suffix = "...") {
   if (value.length <= limit) {
     return value
