@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from models.agent_memories import AgentMemory
 from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace
@@ -44,6 +45,7 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
 
     assert [block.key for block in blocks] == [
         "identity",
+        "memory",
         "active_context",
         "planning",
         "delegation",
@@ -82,6 +84,59 @@ async def test_assigned_skill_is_advertised_to_the_model(
 
     assert result.run.status == "completed"
     assert "Scenario Skill" in str(seen[0][1])
+
+
+async def test_core_memory_is_injected_but_notes_are_not(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(db_session_factory)
+    async with db_session_factory() as db:
+        db.add_all(
+            [
+                _scenario_memory(
+                    context,
+                    title="Core preference",
+                    kind="core",
+                ),
+                _scenario_memory(
+                    context,
+                    title="Search-only note",
+                    kind="note",
+                ),
+            ]
+        )
+        await db.commit()
+    seen = []
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(turns=["done"], seen_requests=seen),
+    )
+
+    assert result.run.status == "completed"
+    request_text = str(seen[0][1])
+    assert "Core preference" in request_text
+    assert "Search-only note" not in request_text
+
+
+async def test_scheduled_run_receives_core_memory(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(db_session_factory, trigger="scheduled")
+    async with db_session_factory() as db:
+        db.add(_scenario_memory(context, title="Scheduled context", kind="core"))
+        await db.commit()
+    seen = []
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(turns=["done"], seen_requests=seen),
+    )
+
+    assert result.run.status == "completed"
+    assert "Scheduled context" in str(seen[0][1])
 
 
 async def test_loaded_skill_instructions_are_injected_after_load_capability(
@@ -134,3 +189,21 @@ async def _assign_skill(
         await db.commit()
         context.agent.skill_ids = [str(skill.id)]
     return context
+
+
+def _scenario_memory(context, *, title: str, kind: str) -> AgentMemory:
+    return AgentMemory(
+        workspace_id=context.workspace_id,
+        scope="agent",
+        agent_id=context.agent_id,
+        kind=kind,
+        memory_type="preference",
+        title=title,
+        content_md="Prefer concise operational answers.",
+        importance=4,
+        confidence=0.9,
+        status="active",
+        source="interactive",
+        created_by="agent",
+        created_by_user_id=context.user_id,
+    )

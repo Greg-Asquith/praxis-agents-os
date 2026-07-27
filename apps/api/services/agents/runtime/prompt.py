@@ -66,6 +66,7 @@ def runtime_prompt_blocks(
     agent: Agent,
     *,
     include_delegation: bool,
+    core_memory_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context_block: str = "",
 ) -> list[PromptBlock]:
@@ -75,6 +76,11 @@ def runtime_prompt_blocks(
             "identity",
             agent.instructions,
             budget=settings.AGENT_PROMPT_IDENTITY_BUDGET,
+        ),
+        PromptBlock(
+            "memory",
+            core_memory_block,
+            budget=settings.MEMORY_CORE_CHAR_BUDGET,
         ),
         PromptBlock(
             "active_context",

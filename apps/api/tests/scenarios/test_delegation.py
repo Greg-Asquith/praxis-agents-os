@@ -11,6 +11,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from models.agent_memories import AgentMemory
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
@@ -27,7 +28,30 @@ async def test_parent_delegates_to_child_run_and_receives_result(
 ) -> None:
     context = await build_scenario_agent(committed_db_session_factory)
     child = await add_scenario_delegate(committed_db_session_factory, context)
-    model = _delegation_model(child_id=str(child.id))
+    async with committed_db_session_factory() as db:
+        db.add(
+            AgentMemory(
+                workspace_id=context.workspace_id,
+                scope="agent",
+                agent_id=child.id,
+                kind="core",
+                memory_type="fact",
+                title="Delegate-only context",
+                content_md="Use the child agent's own memory.",
+                importance=4,
+                confidence=0.9,
+                status="active",
+                source="delegated",
+                created_by="agent",
+                created_by_user_id=context.user_id,
+            )
+        )
+        await db.commit()
+    child_requests: list[str] = []
+    model = _delegation_model(
+        child_id=str(child.id),
+        seen_child_requests=child_requests,
+    )
     monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
 
     result = await run_scenario(committed_db_session_factory, context, model=model)
@@ -44,6 +68,7 @@ async def test_parent_delegates_to_child_run_and_receives_result(
         child_conversation = await db.get(Conversation, child_run.conversation_id)
         assert child_conversation is not None
         assert child_conversation.source == "delegated"
+    assert any("Delegate-only context" in request for request in child_requests)
 
 
 async def test_child_approval_propagates_to_parent_suspension(
@@ -73,12 +98,19 @@ async def test_child_approval_propagates_to_parent_suspension(
     assert approvals[0]["delegation"]["parent_tool_call_id"] == "delegate-child"
 
 
-def _delegation_model(*, child_id: str, child_write: bool = False) -> FunctionModel:
+def _delegation_model(
+    *,
+    child_id: str,
+    child_write: bool = False,
+    seen_child_requests: list[str] | None = None,
+) -> FunctionModel:
     async def stream(
         messages: list[ModelMessage], info: AgentInfo
     ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
         names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in names:
+            if seen_child_requests is not None:
+                seen_child_requests.append(str(messages))
             if child_write and not _has_return(messages, "scenario_external_write"):
                 yield {
                     0: DeltaToolCall(

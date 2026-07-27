@@ -2,6 +2,7 @@
 
 import {
   BotIcon,
+  BrainIcon,
   CalendarClockIcon,
   FilesIcon,
   LayoutDashboardIcon,
@@ -44,6 +45,12 @@ const mainNavigation: NavigationItem[] = [
     label: "Skills",
     to: "/skills",
     icon: SparklesIcon,
+    disabled: false,
+  },
+  {
+    label: "Memory",
+    to: "/memories",
+    icon: BrainIcon,
     disabled: false,
   },
   {

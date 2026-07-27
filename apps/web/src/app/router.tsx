@@ -29,6 +29,7 @@ import { integrationConnectionsQueryOptions } from "@/features/integrations/api/
 import { integrationProvidersQueryOptions } from "@/features/integrations/api/list-providers"
 import { validateFilesSearch } from "@/features/files/search"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
+import { memoriesQueryOptions } from "@/features/memories/api/list-memories"
 import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
@@ -246,6 +247,25 @@ const skillDetailRoute = createRoute({
   ),
 })
 
+const memoriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/memories",
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(
+        agentsQueryOptions({ includeInactive: true, limit: 100 })
+      ),
+      context.queryClient.ensureQueryData(
+        memoriesQueryOptions({ status: "active", limit: 50, offset: 0 })
+      ),
+    ])
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/memories/routes/memories-route"),
+    "MemoriesRoute"
+  ),
+})
+
 const filesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/files",
@@ -425,6 +445,7 @@ const routeTree = rootRoute.addChildren([
     skillsRoute,
     newSkillRoute,
     skillDetailRoute,
+    memoriesRoute,
     knowledgeRoute,
     knowledgeDocumentRoute,
     filesRoute,

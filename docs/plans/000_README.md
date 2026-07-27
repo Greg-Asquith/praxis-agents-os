@@ -130,9 +130,9 @@ the receipt spine plus Airtable webhooks. Plan 077 moved to `plans/complete/`.
 Plan 075 was executed 2026-07-10 as the prompt-injection threat-model design
 note: `docs/architecture/threat-model.md` defines the shared framing and
 adversarial-fixture standard, Gate G6 is active, and binding amendments were
-added to 046/048/049/055/056/059. Those plans remain TODO and own the code,
-fixtures, deterministic tests, and graded eval cases. Plan 075 moved to
-`plans/complete/`.
+added to 046/048/049/055/056/059. Those plans own the code, fixtures,
+deterministic tests, and graded eval cases; 046/048/049/055/056 are now
+complete, while 059 remains pending. Plan 075 moved to `plans/complete/`.
 
 Plan 053 was executed 2026-07-09 as the cooperative run cancellation slice:
 workspace-scoped cancel route + audit, local task cancellation, heartbeat
@@ -654,6 +654,16 @@ read-path and search-ranking concern. The formatter keeps time explicitly
 inert, and the eventual determinism test must prove byte identity across both
 shuffled input and `now` values at least six weeks apart.
 
+Plan 049 completed 2026-07-27 and moved to `docs/plans/complete/`. Core
+memories now enter interactive, scheduled, and delegated runs through the
+shared prompt assembler as a deterministic hard-budgeted block, including in
+history-compaction pressure estimates. The memory HTTP surface and responsive
+Memory UI provide scoped listing, filtering, detail/version history,
+correction, archival, and explicit purge with the governance role matrix and
+personal-memory isolation enforced server-side. The relevant backend gate
+passed 353 tests; the final repository gate passed all 1,194 API tests and
+73 web files / 348 tests.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and
@@ -768,7 +778,7 @@ service-account generalization trigger and rides the D10 packaging law.
 | 046  | KB agent tools, write-policy choke point, and document sources                                                         | P1       | L      | 044, 045                                                               | DONE 2026-07-24                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 047  | Knowledge base UI                                                                                                      | P1       | M      | 044, 045, 046                                                          | DONE 2026-07-24                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 048  | Agent memory model, write service, and registry memory tools                                                           | P1       | L      | 043, 045, 046                                                          | DONE 2026-07-27                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 049  | Core-memory prompt injection, memory routes, and memory UI                                                             | P1       | L      | 048; 069 amendment                                                     | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 049  | Core-memory prompt injection, memory routes, and memory UI                                                             | P1       | L      | 048; 069 amendment                                                     | DONE 2026-07-27                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 050  | Artifacts model, registry tools, and CSP-locked serving                                                                | P2       | L      | 031, 032, 034                                                          | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 051  | Chat artifact cards, versions UI, and share links                                                                      | P2       | L      | 050, 030 (soft: 035)                                                   | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 052  | Action-driven homepage redesign                                                                                        | P2       | M      | -                                                                      | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1260,8 +1270,9 @@ D11, 2026-07-10)` blocks in 037/038/039 before executing. No fake
 - `GET /api/v1/kb/documents` (list) is owned by `046` (assigned at the
   2026-07-06 reconciliation; `045` deliberately ships only search +
   get-document); `047` consumes it.
-- `048` is DONE; `049` adds prompt injection of selected core-memory content
-  and the memory UI. Memory rides `043` embeddings and `045`'s engine parts;
+- `048` and `049` are DONE; selected core-memory content now enters the
+  assembled runtime prompt and the Memory UI exposes its lifecycle. Memory
+  rides `043` embeddings and `045`'s engine parts;
   provenance is backend-minted from `RuntimeDeps` (the model never
   supplies it). All four memory tools are intrinsic and auto-mounted by
   operator decision, while core writes still require conditional approval

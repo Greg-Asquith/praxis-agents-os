@@ -58,6 +58,7 @@ def build_runtime_agent(
     enable_delegation: bool = True,
     force_delegation_tools: bool = False,
     skills: Sequence[Skill] = (),
+    core_memory_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
     skipped_tool_names: list[str] | None = None,
@@ -74,6 +75,7 @@ def build_runtime_agent(
     instructions = _runtime_instructions(
         agent,
         include_delegation=include_delegation,
+        core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
         chars_per_token=model_context.chars_per_token,
@@ -128,6 +130,7 @@ def _runtime_instructions(
     agent: Agent,
     *,
     include_delegation: bool,
+    core_memory_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
     chars_per_token: float = 4.0,
@@ -138,6 +141,7 @@ def _runtime_instructions(
         runtime_prompt_blocks(
             agent,
             include_delegation=include_delegation,
+            core_memory_block=core_memory_block,
             available_files=available_files,
             active_context_block=(
                 render_active_context_block(active_context) if active_context is not None else ""

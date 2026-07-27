@@ -43,8 +43,8 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Create/edit KB documents (044/046) *[implemented: plan 046]* | — | ✓ | ✓ | ✓ |
-| Delete workspace-scope memories (049) | — | — | ✓ | ✓ |
-| Edit/delete own-scope (user/agent) memories (049) | — | ✓ | ✓ | ✓ |
+| Delete workspace-scope memories (049) *[implemented: plan 049]* | — | — | ✓ | ✓ |
+| Edit/delete own-scope (user/agent) memories (049) *[implemented: plan 049]* | — | ✓ | ✓ | ✓ |
 | Create artifacts via agents (050) | follows tool policy | ✓ | ✓ | ✓ |
 | Create/revoke artifact share links (051) | — | — | ✓ | ✓ |
 | View audit log *(enforced today: 023 MANAGER)* | — | — | ✓ | ✓ |
@@ -57,6 +57,13 @@ personal workspace, groups may additionally include connections owned by the
 current actor, but never connections owned by another workspace. Standalone
 resource context intentionally retains actor-or-workspace visibility, including
 personal connections selected while acting in a shared workspace.
+
+Memory authorization uses two explicit interpretations of the matrix. A
+user-scoped memory is visible and mutable only to its owning user, including
+when another workspace member is an admin or owner. Workspace-scoped memory
+edits are member+, matching KB document edits; archive and purge remain
+admin+. Agent-scoped memories are workspace-visible and member-editable.
+[implemented: plan 049]
 
 ## 2. Approval Defaults Per Tool Effect
 
@@ -112,7 +119,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Scratch (034) | TTL expiry [implemented: plan 034] | 7 d rolling TTL; purge content on expiry; delete after promotion [implemented: plan 034] | n/a (DB text) [implemented: plan 034] | rows summarized [implemented: plan 034] | — |
 | Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
 | KB documents/chunks/embeddings (044) | ✓ [implemented: plan 044] | 30 d after soft-delete; chunks/vectors cascade on hard-delete [implemented: plan 044] | n/a (canonical markdown in Postgres) [implemented: plan 044] | ✓ (audit rows have no subject FK; mutation audit lands with routes) [implemented: plan 044 retention posture] | ✓ (canonical markdown) [implemented: plan 044] |
-| Memories (048) *[implemented: plan 048]* | supersession, never hard | archive at `expires_at`; hard-delete only by user action | n/a | ✓ | ✓ |
+| Memories (048–049) *[implemented: plans 048–049]* | supersession and archive by default | archive at `expires_at`; hard-delete only by an explicit user purge [implemented: plan 049] | n/a | ✓ | ✓ |
 | Credentials (037) | revoke = soft [implemented: plan 039] | 30 d after revoke; tokens crypto-shredded at revoke [implemented: plan 039] | n/a | metadata only, never values | — |
 | Integration resources/discovery runs (039) | ✓ / plain rows [implemented: plan 039] | 90 d [implemented: plan 039] | n/a | counters [implemented: plan 039] | — |
 | Artifact shares (051) | revocable | at `expires_at` (default 7 d) | n/a | ✓ | — |

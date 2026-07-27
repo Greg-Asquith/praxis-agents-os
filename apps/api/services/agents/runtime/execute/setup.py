@@ -4,6 +4,7 @@
 
 import logging
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -50,6 +51,7 @@ from services.conversation_summaries.load_history_summary import load_history_su
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
+from services.memories.core_block import load_core_memories, render_core_memory_block
 from services.tools import get_disabled_tools
 
 from .types import BuiltRuntimeAgent, PreparedRuntime
@@ -67,6 +69,7 @@ class RuntimeAgentBuilder(Protocol):
         enable_delegation: bool = True,
         force_delegation_tools: bool = False,
         skills: Sequence[Skill] = (),
+        core_memory_block: str = "",
         available_files: Sequence[AvailableFile] = (),
         active_context: ResolvedActiveContext | None = None,
         skipped_tool_names: list[str] | None = None,
@@ -144,6 +147,18 @@ async def prepare_runtime(
     run_envelope_builder: RunEnvelopeBuilder,
 ) -> PreparedRuntime:
     user, workspace = await load_actor_context(db, run)
+    core_memories = await load_core_memories(
+        db,
+        workspace=workspace,
+        agent=agent,
+        user=user,
+    )
+    core_memory_block = render_core_memory_block(
+        core_memories,
+        now=datetime.now(UTC),
+        budget=settings.MEMORY_CORE_CHAR_BUDGET,
+        line_max_chars=settings.MEMORY_CORE_LINE_MAX_CHARS,
+    )
     try:
         active_context = await resolve_active_context(
             db,
@@ -174,6 +189,7 @@ async def prepare_runtime(
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
         skills=skills,
+        core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
         runtime_agent_builder=runtime_agent_builder,
@@ -242,6 +258,7 @@ async def build_agent_for_run(
     message_history: Sequence[ModelMessage] | None,
     deferred_tool_results: DeferredToolResults | None,
     skills: Sequence[Skill],
+    core_memory_block: str,
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     runtime_agent_builder: RuntimeAgentBuilder,
@@ -267,6 +284,7 @@ async def build_agent_for_run(
         conversation=conversation,
         history=history,
         include_delegation=enable_delegation,
+        core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
         exclude_run_id=run.id if message_history is not None else None,
@@ -278,6 +296,7 @@ async def build_agent_for_run(
         enable_delegation=enable_delegation,
         force_delegation_tools=force_delegation_tools,
         skills=skills,
+        core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
         skipped_tool_names=skipped_tool_names,
@@ -300,6 +319,7 @@ async def _prepare_history_compaction(
     conversation: Conversation,
     history: list[ModelMessage],
     include_delegation: bool,
+    core_memory_block: str,
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     exclude_run_id: UUID | None,
@@ -313,6 +333,7 @@ async def _prepare_history_compaction(
     system_prompt = _runtime_instructions(
         agent,
         include_delegation=include_delegation,
+        core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
         chars_per_token=model_context.chars_per_token,

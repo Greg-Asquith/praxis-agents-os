@@ -74,6 +74,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
 
     assert [block.key for block in blocks] == [
         "identity",
+        "memory",
         "active_context",
         "planning",
         "delegation",

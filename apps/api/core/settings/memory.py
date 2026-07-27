@@ -85,6 +85,11 @@ class MemorySettingsMixin:
     MEMORY_CORE_CHAR_BUDGET: int = Field(
         default=2000, gt=0, description="Prompt character budget reserved for core memories."
     )
+    MEMORY_CORE_LINE_MAX_CHARS: int = Field(
+        default=300,
+        ge=120,
+        description="Maximum characters rendered for one core-memory prompt line.",
+    )
     MEMORY_SWEEP_INTERVAL_SECONDS: int = Field(
         default=3600, gt=0, description="Interval between expired-memory sweeps."
     )

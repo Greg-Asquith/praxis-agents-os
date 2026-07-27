@@ -25,12 +25,14 @@ from services.embeddings.domain import (
     EmbeddingProviderError,
 )
 from services.memories.domain import (
+    ARCHIVE_REASON_USER_DELETED,
     MEMORY_EMBED_JOB_KIND,
     MEMORY_KIND_CORE,
     MEMORY_SCOPE_AGENT,
     MEMORY_SCOPE_USER,
     MEMORY_SCOPE_WORKSPACE,
     MEMORY_STATUS_ACTIVE,
+    MEMORY_STATUS_ARCHIVED,
     MEMORY_TYPE_EPISODE,
     MEMORY_TYPE_FACT,
     MEMORY_TYPE_OUTCOME,
@@ -198,6 +200,35 @@ async def lock_memory_scope(
     lock_material = f"{workspace_id}:{scope}:{scope_ref}:{kind}".encode()
     lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
     await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
+
+async def repair_memory_lineage_for_purge(
+    db: AsyncSession,
+    *,
+    memory: AgentMemory,
+    now: datetime,
+) -> int:
+    """Keep predecessor rows valid when one version is hard-deleted."""
+    predecessors = list(
+        await db.scalars(
+            select(AgentMemory)
+            .where(
+                AgentMemory.workspace_id == memory.workspace_id,
+                AgentMemory.superseded_by_id == memory.id,
+            )
+            .with_for_update()
+        )
+    )
+    if memory.superseded_by_id is not None:
+        for predecessor in predecessors:
+            predecessor.superseded_by_id = memory.superseded_by_id
+    else:
+        for predecessor in predecessors:
+            predecessor.status = MEMORY_STATUS_ARCHIVED
+            predecessor.superseded_by_id = None
+            predecessor.archived_at = now
+            predecessor.archive_reason = ARCHIVE_REASON_USER_DELETED
+    return len(predecessors)
 
 
 async def enqueue_memory_embedding(

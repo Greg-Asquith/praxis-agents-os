@@ -267,6 +267,16 @@ confidence with stable write-derived tiebreakers, leaving effective confidence
 to read surfaces and search ranking. The formatter's time parameter is
 explicitly inert, and the determinism contract now spans shuffled input and
 `now` values at least six weeks apart.
+Plan 049 completed 2026-07-27 and moved to `docs/plans/complete/`. The
+decomposed runtime now loads visible core memories once per run, injects one
+cache-stable hard-budgeted block through the shared prompt assembler, and uses
+the same block for compaction pressure estimates. Workspace-confined memory
+routes enforce owner-only personal scope, member edits, manager-only shared
+deletion, version-preserving content corrections, archival by default, and
+explicit audited purge. The Memory UI adds a responsive operational table,
+three-column filter grid, detail/version review, correction, archive, and
+purge flows. The relevant backend gate passed 353 tests; the final repository
+gate passed all 1,194 API tests and 73 web files / 348 tests.
 Plan 089 (Google BigQuery provider) was added 2026-07-24 by maintainer
 decision D14 as the first Phase 4a extension past the D4 set:
 workspace-shared service-account connections, dataset discovery into the
@@ -705,7 +715,7 @@ structure.
 | Plan | Scope                                                                                                                                                                                                                                                               |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 048  | **DONE 2026-07-27.** `agent_memories` model + write service (backend-minted provenance, explicit near-duplicate resolution, core-aware read-time decay, supersession) + four intrinsic auto-mounted memory tools through the registry + memory eval tests (dedup/calibration, approval/audit) per Gate G4. Amended by 071. (Donor E1.) |
-| 049  | Core-memory prompt injection (budgeted formatter via the 018 assembler) + memory UI (view/edit/delete per scope), amended by completed Plan 069 for cache-stable stored-confidence ranking. (Donor E2.)                                                               |
+| 049  | **DONE 2026-07-27.** Core-memory prompt injection (budgeted formatter via the 018 assembler) + memory routes and UI (view/edit/archive/purge per scope), amended by completed Plan 069 for cache-stable stored-confidence ranking. (Donor E2.)                          |
 
 ### Phase 6 — Artifacts (donor Phase F; gate G3)
 
@@ -863,7 +873,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). 089 (BigQuery provider, D14) depends only on the landed Phase 4a substrate and interleaves any time after 079; its semantic-schema-search follow-up waits on 045.
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). 089 (BigQuery provider, D14) depends only on the landed Phase 4a substrate and interleaves any time after 079; its semantic-schema-search follow-up waits on 045.
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should

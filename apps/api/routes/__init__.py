@@ -13,6 +13,7 @@ from routes.conversations import router as conversations_router
 from routes.files import router as files_router
 from routes.integrations import router as integrations_router
 from routes.kb import router as kb_router
+from routes.memories import router as memories_router
 from routes.meta import router as meta_router
 from routes.models import router as models_router
 from routes.schedules import router as schedules_router
@@ -32,6 +33,7 @@ api_router.include_router(conversations_router)
 api_router.include_router(files_router)
 api_router.include_router(integrations_router)
 api_router.include_router(kb_router)
+api_router.include_router(memories_router)
 api_router.include_router(meta_router)
 api_router.include_router(models_router)
 api_router.include_router(schedules_router)

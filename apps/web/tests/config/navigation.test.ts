@@ -17,6 +17,7 @@ describe("navigationItemsForRole", () => {
         { label: "Home", to: "/" },
         { label: "Agents", to: "/agents" },
         { label: "Skills", to: "/skills" },
+        { label: "Memory", to: "/memories" },
         { label: "Knowledge Base", to: "/knowledge" },
         { label: "Files", to: "/files" },
         { label: "Schedules", to: "/schedules" },

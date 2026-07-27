@@ -16,7 +16,8 @@ The core platform is wired end to end (API, worker, and UI):
   workspaces with memberships and invitations.
 - Agents and conversations: configurable agents, SSE chat with live tool
   calls, approval workflows with resume, delegation between agents, and run
-  cancellation.
+  cancellation, plus provenance-tracked memory with core-memory prompt
+  injection and operator review, correction, archive, and purge.
 - Tooling: a typed tool registry with a single audited dispatch choke point,
   a tool catalog surface, and per-agent tool policies.
 - Files, skills, and Knowledge Base: signed two-phase uploads, immutable
@@ -284,7 +285,8 @@ and remember, and hardening how they behave:
 - Knowledge Base: retrieval quality, richer source coverage, and operational
   evaluation on top of the shipped ingestion, hybrid search, agent tools, and
   operator UI.
-- Agent memory: provenance-tracked memories with human-legible editing.
+- Agent memory: evaluation-led retrieval and consolidation on top of the
+  shipped provenance, prompt-injection, and human-legible editing surfaces.
 - Artifacts: versioned, sandboxed agent-produced documents and pages.
 - Harness hardening: behavior scenario evals, context compaction, parallel
   delegation, and durable run event replay.

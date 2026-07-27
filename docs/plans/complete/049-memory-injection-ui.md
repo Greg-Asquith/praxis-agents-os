@@ -50,6 +50,18 @@
 > land in between). Re-verify every "Current state" excerpt against the
 > live code; treat an *unexplained* mismatch (one not accounted for by a
 > landed plan) as a STOP condition.
+>
+> **Re-anchor (2026-07-27 — decomposed runtime, operator-authorized)**:
+> the live code is the source of truth. Plan 066 moved execution setup into
+> `runtime/execute/`; Plan 056 made history compaction estimate the assembled
+> system prompt before the runtime agent is built. Step 2 therefore loads and
+> renders core memory in `runtime/execute/setup.py` after actor context
+> resolution, threads the rendered block through `build_agent_for_run`,
+> `RuntimeAgentBuilder`, and `build_runtime_agent`, and passes the same block
+> to `_prepare_history_compaction` so token-pressure budgeting uses the prompt
+> that will actually run. The compatibility `runtime/execute_run.py` remains
+> unchanged. Current frontend tests live under `apps/web/tests/`; focused
+> pure-model coverage is required in addition to `pnpm check`.
 
 ## Status
 
@@ -68,6 +80,9 @@
 - **Category**: Phase 5 memory (roadmap `000_MASTER_ROADMAP.md` §4 Phase 5
   row 049; donor `DONOR_PORT_ROADMAP.md` §4.5 / §6 row E2)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
+- **Completed**: 2026-07-27
+- **Verification**: relevant backend suite 353 passed; final repository
+  gate 1,194 API tests and 73 web files / 348 tests passed
 
 ## Decisions taken
 
@@ -175,13 +190,15 @@ Anchors verified at `0cbbb39` unless marked as an 048 deliverable.
   include_delegation)` (48-60) returns `identity`/`planning`/`delegation`
   blocks (048 adds `memory_policy`); `build_system_prompt` (63-70) joins
   non-empty blocks; soft-budget truncation in `_render_block` (73-85).
-- **Runtime construction**: `runtime/loop.py:40-78` `build_runtime_agent`
-  is sync; `skills: Sequence[Skill] = ()` at line 47 is the
-  caller-loads-and-passes precedent; `_runtime_instructions` (87-90) calls
-  the assembler. `runtime/execute_run.py:113` `load_agent_skills`, call
-  site 159-166, `RuntimeDeps` built at 176-186. Delegated runs re-enter
-  through the same `execute_run`, so injection lands for interactive,
-  scheduled, and delegated principals with zero extra wiring.
+- **Runtime construction (re-anchored 2026-07-27)**:
+  `runtime/loop.py` keeps synchronous `build_runtime_agent` and
+  `_runtime_instructions`; `runtime/execute/execute_run.py` loads skills and
+  files before calling `prepare_runtime`; `runtime/execute/setup.py` resolves
+  actor context, prepares history compaction, builds the runtime agent, and
+  constructs `RuntimeDeps`. Delegated runs re-enter this same execution path.
+  Core memory must be passed both to `_prepare_history_compaction` and the
+  final runtime-agent build so pressure estimation and provider instructions
+  stay byte-identical.
 - **048 deliverables this plan consumes** (verify at execution):
   `models/agent_memories.py` (status/kind/scope columns, partial
   core-lookup index `(workspace_id, scope, agent_id, user_id) WHERE
@@ -226,8 +243,9 @@ Anchors verified at `0cbbb39` unless marked as an 048 deliverable.
   `select.tsx`, `badge.tsx`, `pagination-controls.tsx`, `empty-state.tsx`
   — no sheet/drawer (decision 8). Audit detail dialog precedent:
   `features/audit/components/audit-event-detail.tsx:4-6`.
-- **Frontend gate**: no test framework; `pnpm check` (typecheck, eslint
-  zero-warnings, prettier, knip, dependency-cruiser, build) is the gate.
+- **Frontend gate**: Vitest coverage lives under `apps/web/tests/`;
+  `pnpm check` runs typecheck, eslint zero-warnings, Vitest, prettier, knip,
+  dependency-cruiser, and the production build.
 
 ## Commands you will need
 
@@ -250,7 +268,8 @@ Anchors verified at `0cbbb39` unless marked as an 048 deliverable.
 - `apps/api/services/agents/runtime/prompt.py` (edit —
   `core_memory_block` parameter + `memory` block),
   `runtime/loop.py` (edit — pass-through parameter),
-  `runtime/execute_run.py` (edit — load + pass, the skills pattern)
+  `runtime/execute/setup.py` (edit — load after actor context, pass through
+  compaction and runtime-agent construction)
 - `apps/api/routes/memories/` (create): `__init__.py`,
   `list_memories.py`, `get_memory.py`, `update_memory.py`,
   `delete_memory.py`; register in `routes/__init__.py`
@@ -339,7 +358,7 @@ appear in the output (decision 4).
 
 ### Step 2: Runtime wiring through the assembler
 
-Three small edits, mirroring the skills pattern exactly (decision 1):
+Re-anchor the same load-then-pass design onto the decomposed runtime:
 
 - `runtime/prompt.py` — `runtime_prompt_blocks(agent, *,
   include_delegation, core_memory_block: str = "")`; insert
@@ -350,7 +369,8 @@ Three small edits, mirroring the skills pattern exactly (decision 1):
   policy/planning are behavior).
 - `runtime/loop.py` — `build_runtime_agent(..., core_memory_block: str =
   "")` passed through `_runtime_instructions` to the assembler.
-- `runtime/execute_run.py` — next to `load_agent_skills` (line 113):
+- `runtime/execute/setup.py` — in `prepare_runtime`, immediately after
+  `load_actor_context`:
 
   ```python
   core_memories = await load_core_memories(db, workspace=workspace, agent=agent, user=user)
@@ -359,9 +379,11 @@ Three small edits, mirroring the skills pattern exactly (decision 1):
   )
   ```
 
-  passed into the `build_runtime_agent` call at 159-166. Note the ordering
-  constraint: `load_actor_context` (line 150) resolves `user`/`workspace`
-  — the memory load goes after it. Delegated and scheduled runs flow
+  Thread the rendered block through `build_agent_for_run`,
+  `RuntimeAgentBuilder`, and the `build_runtime_agent` call. Pass it to
+  `_prepare_history_compaction` and `_runtime_instructions` as well as the
+  final agent build; otherwise token-pressure trimming estimates a different
+  prompt from the one sent to the provider. Delegated and scheduled runs flow
   through this same function, so all three principals get injection; the
   delegate agent's *own* agent-scope memories load for the delegated run
   (its `agent` is the delegate), which is the intended isolation.
@@ -536,6 +558,9 @@ Delete flows use the existing confirm-dialog treatment; purge is a
 separate, explicitly-labeled destructive action inside the detail dialog
 ("Delete permanently"), never the default button.
 
+Add focused Vitest coverage for `memory-form-model.ts` under
+`apps/web/tests/features/memories/components/`.
+
 **Verify**: `pnpm dev` — `/memories` lists seeded memories; filters,
 edit (metadata and content paths), archive, and purge behave; a
 read_only member sees no mutation affordances.
@@ -554,7 +579,7 @@ from Step 4 green.
 
 ## Test plan
 
-Backend covered by Step 4 (~22–28 tests). Pinned invariants: **the budget
+Backend covered by Step 4. Pinned invariants: **the budget
 is hard** (no rendered block ever exceeds it, and the assembler's
 `[truncated]` backstop never fires in tests), **rendering is
 deterministic** (byte-identical output for identical rows — the
@@ -562,31 +587,31 @@ prompt-cache contract), **notes never render into the prompt**,
 **user-scope memories are invisible cross-user at every route**, **route
 deletes archive by default and only explicit purge hard-deletes, both
 audited**, and **the RBAC matrix matches governance §1 exactly**. Frontend
-has no test framework; `pnpm check` plus the Step 6 manual matrix is the
-gate (call out anything not manually verified).
+uses focused Vitest coverage plus `pnpm check`; the Step 6 interaction matrix
+remains the manual browser gate (call out anything not manually verified).
 
 ## Done criteria
 
-- [ ] Core memories render into the system prompt via a `PromptBlock`
+- [x] Core memories render into the system prompt via a `PromptBlock`
       through the 018 assembler — one assembly point, no side channel
-- [ ] Injection covers interactive, scheduled, and delegated runs (all via
+- [x] Injection covers interactive, scheduled, and delegated runs (all via
       `execute_run`); zero core memories → no `memory` block at all
-- [ ] Formatter enforces the hard budget with importance-ranked,
+- [x] Formatter enforces the hard budget with importance-ranked,
       deterministic, summary-plus-pointers output; omitted memories and
       clamped lines point at `search_memory`
-- [ ] `GET/PATCH/DELETE /api/v1/memories` live, route-per-file, thin, RFC
+- [x] `GET/PATCH/DELETE /api/v1/memories` live, route-per-file, thin, RFC
       7807 errors; RBAC per governance §1 with decision 6's
       interpretations recorded in the note
-- [ ] Delete archives; purge is the only hard delete and both are audited
+- [x] Delete archives; purge is the only hard delete and both are audited
       with `AuditResourceType.MEMORY`
-- [ ] `/memories` UI: filterable list (scope/kind/type/agent/status),
+- [x] `/memories` UI: filterable list (scope/kind/type/agent/status),
       detail dialog with provenance + supersession chain, edit form,
       role-gated delete/purge; Memory nav entry present
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/memories tests/routes/memories tests/services/agents -q` exits 0
-- [ ] `pnpm check` exits 0 with zero warnings
-- [ ] No plan numbers in implementation code; `governance.md` cells flipped
-- [ ] `git status` clean outside the in-scope list;
-      `docs/plans/000_README.md` row updated
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/memories tests/routes/memories tests/services/agents -q` exits 0
+- [x] `pnpm check` exits 0 with zero warnings
+- [x] No plan numbers in implementation code; `governance.md` cells flipped
+- [x] `git status` reviewed and unrelated concurrent frontend-plan edits
+      preserved; `docs/plans/000_README.md` row updated
 
 ## STOP conditions
 
@@ -600,8 +625,9 @@ Stop and report back (do not improvise) if:
   `runtime_prompt_blocks` / `build_system_prompt`
   (`runtime/prompt.py:39-70`) or the `_runtime_instructions` call path
   (`loop.py:87-90`) no longer match Current state.
-- `execute_run.py` no longer follows the load-then-pass skills shape
-  (`execute_run.py:113`, `159-166`) — the Step 2 seam assumed it.
+- The decomposed runtime no longer exposes one actor-resolved setup path where
+  the same core-memory block can feed both history-compaction estimation and
+  final runtime-agent construction.
 - A `routes/memories/` package or `features/memories/` directory already
   exists.
 - `governance.md` §1/§3 memory rows changed since `0cbbb39` — the note

@@ -113,6 +113,7 @@ Functional, but visibly unstyled.
 | 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | DONE |
 | 032 | Resilient conversation streams across navigation | P1 | M | — | DONE |
 | 033 | Integrations: calm app list & provider detail pages | P1 | L | — | DONE |
+| 034 | Sidebar consolidation: the Context hub | P1 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -188,6 +189,12 @@ Dependency notes:
   041b working tree, not around it — do not run it concurrently with
   any roadmap plan editing `src/features/integrations/` or
   `src/app/router.tsx`.
+- 034 (written 2026-07-27 against the working tree at `87d4953`, which
+  carries in-flight roadmap plan 049 changes — the Memory nav item and
+  `/memories` route exist only there) edits `src/config/navigation.ts`,
+  `src/app/router.tsx`, the shell breadcrumbs, and the navigation tests.
+  Do not run it concurrently with any roadmap plan touching those files;
+  land or reconcile plan 049's working tree first.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
   outstanding 017–020 (disjoint files) and may run in parallel
   worktrees with them. Within the set: 021 (conversation headers) and
@@ -395,6 +402,19 @@ Dependency notes:
   in both themes: this is the one sanctioned exception to the
   tokens-only rule, scoped to third-party trademarks. Still no raster
   assets, and non-integration tools keep the semantic lucide token set.
+- **The sidebar consolidates to Home, Agents, Context, Schedules,
+  Integrations** (maintainer direction, 2026-07-27; plan 034 — amends plan
+  009's five-work-sections decision). Skills, Memory, Knowledge Base,
+  Files, and Context Groups move behind a new `/context` hub page that
+  explains each section in plain language — what it is and when to use it —
+  because the non-technical operator cannot be assumed to know these
+  nouns. URLs do not change (Context Groups keeps
+  `/integrations/context-groups`); the hub is purely additive, though the
+  sidebar highlights Context, not Integrations, on the Context Groups
+  page. The earlier rejection of a
+  session-centric sidebar restructure still stands: workspace switcher
+  placement, the user menu, and everything else about the shell are
+  untouched.
 - **Service-account setup is a credential-file paste, not a JSON editor**
   (recorded 2026-07-22; plan 033). The field sits behind the Add Account
   dialog's collapsed Advanced disclosure and asks operators to paste the
