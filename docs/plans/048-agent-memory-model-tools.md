@@ -32,6 +32,9 @@
 > - **G4** — the memory eval tests in Step 8 are part of this plan's Done
 >   criteria. No write-policy tuning (dedup threshold, decay rates, approval
 >   defaults) may happen after this plan without those tests passing first.
+> - **Amendment (plan 071)** — the amendment block at the end of this
+>   plan modifies decisions 6/7 and Steps 1/4/5/6/8. Read it before
+>   Step 0; where it conflicts with the body, the amendment wins.
 >
 > **Drift check (run first)**:
 > `git diff --stat 0cbbb39..HEAD -- apps/api/models/ apps/api/alembic/versions/core/ apps/api/core/settings/ apps/api/services/agents/runtime/ apps/api/services/audit_events/enums.py apps/api/services/embeddings/ apps/api/services/search/ apps/api/services/jobs/ apps/api/services/memories/`
@@ -762,3 +765,52 @@ Stop and report back (do not improvise) if:
   transaction (a dedup hit must not poison the caller's transaction), the
   job-time dedup path (at-least-once embed jobs must stay idempotent), and
   that no tool schema grew a provenance or account parameter.
+
+## Amendment (2026-07-07, plan 071): dedup resolution, calibration, decay
+
+**Changed decisions.**
+
+- **Decision 6 (amended)**: a dedup hit (cosine ≥
+  `MEMORY_DEDUP_SIMILARITY`) never writes silently. `save_memory` returns
+  `{"status": "near_duplicate", "existing_memory": {...}, "similarity":
+  ...}` plus instructions: true duplicate → re-call with
+  `duplicate_of=<existing id>` (service verifies the id is the current
+  nearest neighbour in-scope, then reinforces: confidence step,
+  `last_reinforced_at`, `reinforcement_count`); correction/contradiction
+  → call `update_memory(<existing id>, content=...)` (decision 9
+  supersedes); genuinely distinct → re-call with `save_as_new=true`
+  (plain insert). Reinforcement only ever happens through an explicit
+  `duplicate_of`. Job-time (`memory.embed`) dedup hits do NOT reinforce
+  or supersede — no agent is present to resolve; stamp the vector, leave
+  both rows active, record a memory-resource audit event naming both ids.
+- **Decision 7 (amended)**: the four decay rates are provisional
+  constants with no empirical basis — say so in their settings `Field`
+  descriptions ("provisional; tune only with Gate G4 eval evidence").
+  `effective_confidence` returns `confidence` unchanged for
+  `kind='core'` rows (identity-level facts do not decay). No per-row
+  flag, no new column.
+- **Rejected**: lexical negation heuristics (brittle); a cheap-model
+  pair classifier at write time (deferred — the 028/056 helper-model
+  seam is the designated shape *if* G4 evals show agents resolving
+  near-duplicates badly; may not ship without those evals).
+
+**Step deltas.** Step 1: no new settings; amend the decay-rate
+descriptions. Step 4 (`save_memory`): implement the resolution flow;
+`duplicate_of` and `save_as_new` are mutually exclusive
+(`AppValidationError`). Step 5 (`memory.embed`): replace
+reinforce-and-supersede with stamp-and-audit per amended decision 6.
+Step 6: `save_memory` tool schema gains `duplicate_of: str | None` and
+`save_as_new: bool = False`; extend `MEMORY_INSTRUCTIONS`: on a
+near-duplicate response, reinforce true duplicates, `update_memory` the
+existing row for corrections, save distinct facts as new. Step 8
+(`test_save_memory_dedup.py`): near-dup first call writes nothing and
+returns the pair; `duplicate_of` reinforces; a contradiction resolved via
+`update_memory` supersedes the stale row (chain intact); `save_as_new`
+inserts; job-time hit leaves both rows active and audits. Step 8 also
+gains `test_dedup_calibration.py`: a labeled fixture of duplicate /
+contradiction / distinct pairs, run through the deterministic fake
+provider for the invariants and, gated like the 045 live-eval harness
+(skip without opt-in env), through the real default embedding model to
+report score distributions. Pin the finding that contradiction pairs
+score above the threshold. Gate G4 now additionally requires calibration
+output for any `MEMORY_DEDUP_SIMILARITY` change.
