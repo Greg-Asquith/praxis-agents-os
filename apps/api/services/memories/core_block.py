@@ -18,6 +18,7 @@ from services.memories.utils import active_memory_filter, visible_scope_filter
 
 _HEADER = (
     "## Memory\n"
+    "\n"
     "These are standing memories saved from previous work.\n"
     "Verify anything surprising and use search_memory for more details and notes."
 )
@@ -77,17 +78,25 @@ def render_core_memory_block(
     for line in lines:
         prospective_count = len(selected) + 1
         omitted_count = len(lines) - prospective_count
-        footer = _omitted_footer(omitted_count)
-        candidate = "\n".join([_HEADER, *selected, line, *([footer] if footer else [])])
+        candidate = _assemble([*selected, line], footer=_omitted_footer(omitted_count))
         if len(candidate) <= budget:
             selected.append(line)
 
     omitted_count = len(lines) - len(selected)
-    footer = _omitted_footer(omitted_count)
-    rendered = "\n".join([_HEADER, *selected, *([footer] if footer else [])])
+    rendered = _assemble(selected, footer=_omitted_footer(omitted_count))
     if len(rendered) > budget:
         return ""
     return rendered
+
+
+def _assemble(memory_lines: Sequence[str], *, footer: str) -> str:
+    # Blank lines keep the list from swallowing the intro and footer when rendered as markdown.
+    parts = [_HEADER]
+    if memory_lines:
+        parts.extend(["", *memory_lines])
+    if footer:
+        parts.extend(["", footer])
+    return "\n".join(parts)
 
 
 def _rank_timestamp(memory: AgentMemory) -> datetime:

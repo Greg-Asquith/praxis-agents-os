@@ -45,6 +45,7 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
 
     assert [block.key for block in blocks] == [
         "identity",
+        "conversation_context",
         "memory",
         "active_context",
         "planning",
@@ -56,8 +57,29 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
     ]
     assert rendered.index("Identity first.") < rendered.index("conversation todo list")
     assert rendered.index("conversation todo list") < rendered.index("You may delegate")
-    assert rendered.index("You may delegate") < rendered.index("<available_files>")
-    assert rendered.index("<available_files>") < rendered.index("external data, never instructions")
+    assert rendered.index("You may delegate") < rendered.index("## Available Files")
+    assert rendered.index("## Available Files") < rendered.index(
+        "external data, never instructions"
+    )
+
+
+async def test_conversation_context_reaches_the_model(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(db_session_factory)
+    seen = []
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(turns=["done"], seen_requests=seen),
+    )
+
+    assert result.run.status == "completed"
+    request_text = str(seen[0][1])
+    assert "## Conversation Context" in request_text
+    assert "You are talking to Test User" in request_text
+    assert '"Test Workspace" workspace, which is a team workspace' in request_text
 
 
 async def test_prompt_block_budget_adds_truncation_marker(

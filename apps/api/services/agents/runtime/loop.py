@@ -58,6 +58,7 @@ def build_runtime_agent(
     enable_delegation: bool = True,
     force_delegation_tools: bool = False,
     skills: Sequence[Skill] = (),
+    conversation_context_block: str = "",
     core_memory_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
@@ -75,6 +76,7 @@ def build_runtime_agent(
     instructions = _runtime_instructions(
         agent,
         include_delegation=include_delegation,
+        conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
@@ -130,6 +132,7 @@ def _runtime_instructions(
     agent: Agent,
     *,
     include_delegation: bool,
+    conversation_context_block: str = "",
     core_memory_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
@@ -141,6 +144,7 @@ def _runtime_instructions(
         runtime_prompt_blocks(
             agent,
             include_delegation=include_delegation,
+            conversation_context_block=conversation_context_block,
             core_memory_block=core_memory_block,
             available_files=available_files,
             active_context_block=(

@@ -16,7 +16,10 @@ from services.agents.runtime.prompt import (
     UNTRUSTED_CONTENT_INSTRUCTIONS,
     PromptBlock,
     build_system_prompt,
+    render_conversation_context_block,
 )
+from tests.factories.users import build_user
+from tests.factories.workspaces import build_workspace
 
 
 def test_build_system_prompt_respects_order_and_omits_empty_blocks() -> None:
@@ -74,6 +77,39 @@ def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
     )
 
 
+def test_conversation_context_block_names_the_user_and_workspace() -> None:
+    agent = _agent(instructions="Reply plainly.")
+    user = build_user(email="greg@example.com", display_name="Greg")
+    team = build_workspace(name="Praxis HQ", is_personal=False)
+    personal = build_workspace(name="Greg's Space", is_personal=True)
+
+    team_block = render_conversation_context_block(user=user, workspace=team)
+    personal_block = render_conversation_context_block(user=user, workspace=personal)
+
+    assert team_block.startswith("## Conversation Context\n\n")
+    assert "You are talking to Greg (greg@example.com)." in team_block
+    assert '"Praxis HQ" workspace, which is a team workspace' in team_block
+    assert '"Greg\'s Space" workspace, which is a personal workspace' in personal_block
+
+    prompt = _runtime_instructions(
+        agent,
+        include_delegation=False,
+        conversation_context_block=team_block,
+    )
+    assert prompt.index("Reply plainly.") < prompt.index("## Conversation Context")
+    assert prompt.index("## Conversation Context") < prompt.index("## Planning")
+
+
+def test_conversation_context_block_falls_back_to_email_without_display_name() -> None:
+    user = build_user(email="greg@example.com", display_name=None)
+    workspace = build_workspace(name="Praxis HQ")
+
+    block = render_conversation_context_block(user=user, workspace=workspace)
+
+    assert "You are talking to greg@example.com." in block
+    assert "None" not in block
+
+
 def test_runtime_instructions_includes_available_files_block() -> None:
     agent = _agent(instructions="Reply plainly.", tool_names=[])
     file_id = uuid4()
@@ -93,7 +129,7 @@ def test_runtime_instructions_includes_available_files_block() -> None:
         ],
     )
 
-    assert "<available_files>" in prompt
+    assert "## Available Files" in prompt
     assert str(file_id) in prompt
     assert "brief.md" in prompt
     assert "Use read_file in content mode with the id to inspect one" in prompt
@@ -109,7 +145,7 @@ def test_runtime_instructions_omits_available_files_when_none_are_attached() -> 
         available_files=[],
     )
 
-    assert "<available_files>" not in prompt
+    assert "## Available Files" not in prompt
 
 
 def test_runtime_instructions_always_include_knowledge_guidance() -> None:

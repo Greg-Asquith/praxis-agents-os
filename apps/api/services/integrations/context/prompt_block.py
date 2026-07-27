@@ -16,9 +16,11 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
     """Render the non-negotiable context law before its bounded listing."""
     if resolved.is_empty:
         return ""
-    lines = ["<active_integration_context>", ACTIVE_CONTEXT_LAW]
+    lines = ["## Active Integrations", "", ACTIVE_CONTEXT_LAW]
     if resolved.group_name:
-        lines.append(f'Context group: "{resolved.group_name}"')
+        lines.extend(["", f'Context group: "{resolved.group_name}"'])
+    if resolved.entries:
+        lines.append("")
     for entry in resolved.entries:
         provider = PROVIDER_MANIFESTS.get(entry.provider_key)
         provider_label = provider.display_name if provider is not None else entry.provider_key
@@ -33,10 +35,9 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
             f'connection "{entry.connection_label}"{suffix})'
         )
     if resolved.unavailable:
-        lines.append("Unavailable selections:")
+        lines.extend(["", "Unavailable selections:", ""])
         lines.extend(
             f"- {entry.display_name} ({entry.provider_key}): {entry.reason}"
             for entry in resolved.unavailable
         )
-    lines.append("</active_integration_context>")
     return "\n".join(lines)

@@ -46,6 +46,7 @@ from services.agents.runtime.persistence import (
     load_history_watermark_keys,
     load_message_history,
 )
+from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
 from services.conversation_summaries.load_history_summary import load_history_summary
 from services.files import build_attachment_user_content, resolve_chat_attachments
@@ -69,6 +70,7 @@ class RuntimeAgentBuilder(Protocol):
         enable_delegation: bool = True,
         force_delegation_tools: bool = False,
         skills: Sequence[Skill] = (),
+        conversation_context_block: str = "",
         core_memory_block: str = "",
         available_files: Sequence[AvailableFile] = (),
         active_context: ResolvedActiveContext | None = None,
@@ -147,6 +149,10 @@ async def prepare_runtime(
     run_envelope_builder: RunEnvelopeBuilder,
 ) -> PreparedRuntime:
     user, workspace = await load_actor_context(db, run)
+    conversation_context_block = render_conversation_context_block(
+        user=user,
+        workspace=workspace,
+    )
     core_memories = await load_core_memories(
         db,
         workspace=workspace,
@@ -189,6 +195,7 @@ async def prepare_runtime(
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
         skills=skills,
+        conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
@@ -258,6 +265,7 @@ async def build_agent_for_run(
     message_history: Sequence[ModelMessage] | None,
     deferred_tool_results: DeferredToolResults | None,
     skills: Sequence[Skill],
+    conversation_context_block: str,
     core_memory_block: str,
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
@@ -284,6 +292,7 @@ async def build_agent_for_run(
         conversation=conversation,
         history=history,
         include_delegation=enable_delegation,
+        conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
@@ -296,6 +305,7 @@ async def build_agent_for_run(
         enable_delegation=enable_delegation,
         force_delegation_tools=force_delegation_tools,
         skills=skills,
+        conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
@@ -319,6 +329,7 @@ async def _prepare_history_compaction(
     conversation: Conversation,
     history: list[ModelMessage],
     include_delegation: bool,
+    conversation_context_block: str,
     core_memory_block: str,
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
@@ -333,6 +344,7 @@ async def _prepare_history_compaction(
     system_prompt = _runtime_instructions(
         agent,
         include_delegation=include_delegation,
+        conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         available_files=available_files,
         active_context=active_context,
