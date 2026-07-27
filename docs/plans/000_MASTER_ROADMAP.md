@@ -277,6 +277,18 @@ explicit audited purge. The Memory UI adds a responsive operational table,
 three-column filter grid, detail/version review, correction, archive, and
 purge flows. The relevant backend gate passed 353 tests; the final repository
 gate passed all 1,194 API tests and 73 web files / 348 tests.
+Plan 057 was deferred by maintainer decision on 2026-07-27 after its required
+drift check found that the live runtime serializes all Pydantic AI tool calls
+to protect the shared run-scoped SQLAlchemy session. Selectively restoring
+parallel delegation would require a new session-isolation or per-tool barrier
+design; no runtime changes landed. Plan 057 is no longer in the active
+execution stream and remains in `docs/plans/` for possible future re-planning.
+Plan 070 completed 2026-07-27 and moved to `docs/plans/complete/`. Its binding
+amendment removes general-purpose CDN hosts from Plan 050's artifact CSP,
+defines self-contained HTML artifacts as the v1 contract, records the
+irreducible self-navigation exfiltration residual honestly, and pins the
+no-external-host rule with exact and structural tests for Plan 050 to
+implement.
 Plan 089 (Google BigQuery provider) was added 2026-07-24 by maintainer
 decision D14 as the first Phase 4a extension past the D4 set:
 workspace-shared service-account connections, dataset discovery into the
@@ -721,7 +733,7 @@ structure.
 
 | Plan | Scope                                                                                                                                                                                                                                                                                                                  |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 050  | `artifacts` model over FileRevisions + `create_artifact`/`update_artifact` registry tools + serving route with the three-layer defense (opaque-origin sandbox, `ARTIFACT_ORIGIN`, strict CSP with `connect-src 'none'`). Local dev: srcdoc + sandbox; separate origin required only when share links ship. (Donor F1.) |
+| 050  | `artifacts` model over FileRevisions + `create_artifact`/`update_artifact` registry tools + serving route with the three-layer defense (opaque-origin sandbox, `ARTIFACT_ORIGIN`, strict self-contained CSP with no external hosts and `connect-src 'none'`, amended by completed Plan 070). Local dev: srcdoc + sandbox; separate origin required only when share links ship. (Donor F1.) |
 | 051  | Chat artifact cards (sandboxed preview, version selector, diff/restore) + share links (≥128-bit tokens, version-pinned, expiry/revocation, audited, rate-limited per 029). (Donor F2.)                                                                                                                                 |
 
 ### Phase 7 — Internal Applications (added 2026-07-20; gates G3, G7; design note D13)
@@ -765,7 +777,7 @@ bracket Phases 4–6.
 | 054  | Run envelope enforcement: `effect_scope` (internal/external) on the tool contract, scheduled run grants stamped at mint time (`require_approval` by default, explicit `allow` for schedules expected to write), the missing `require_approval` dispatch branch, delegated inheritance recorded at mint time. **DONE 2026-07-09.**                                           | P1       | Complete       |
 | 055  | Agent behavior eval harness (delivers Gate G5): deterministic scenario suite (`tests/scenarios/`, FunctionModel-scripted `execute_run` end-to-end — dispatch/audit, approvals, envelopes, delegation, prompt assembly, trimming, multimodal) + graded evals layer on the already-installed `pydantic-evals` (`evals/`, opt-in `make evals`, never CI). **DONE 2026-07-21.** | P1       | Complete       |
 | 056  | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. **DONE 2026-07-24.**                                                                                     | P1       | Complete       |
-| 057  | Parallel delegation fan-out: depth stays 1; bound (per-run semaphore), prove (usage accounting, multi-child approval collapse, cancellation propagation — all as scenarios), and prompt the concurrency pydantic-ai already executes for parallel tool calls.                                                                                                               | P2       | After 054/055  |
+| 057  | Parallel delegation fan-out: depth stays 1; bound (per-run semaphore), prove usage/approval/cancellation behavior, and prompt parallel delegation. **DEFERRED 2026-07-27:** the live runtime serializes all tools to protect its shared SQLAlchemy session; selective concurrency needs a fresh design.                                                                        | P2       | Deferred       |
 | 058  | Model failover chain: catalog-defined `FallbackModel` chains, double opt-in (settings + agent), same-capability-class validation, actually-used model recorded. Supersedes the 2026-07-01 rejection — product decision taken 2026-07-07.                                                                                                                                    | P3       | Filler         |
 | 059  | Sandboxed code execution: `run_code` registry tool via the 028 helper-model pattern + `NativeTool(CodeExecutionTool())` (Anthropic/OpenAI/Google), 036-gated file inlining, outputs bounded + scratch-captured behind `promote_scratch`. e2b/Vercel/Cloudflare deferred as future integration providers behind the same seam.                                               | P2       | After Phase 6  |
 | 060  | Durable run event log + live stream replay: append-only `agent_run_events`, TeeSink batched writes, replay-then-live bridge with LISTEN/NOTIFY cross-instance wake-up, short retention sweep. Supersedes the streaming plan's live-replay non-goal.                                                                                                                         | P3       | Last           |
@@ -818,7 +830,7 @@ migration.
 | 067  | OAuth PKCE (S256) + single-use state via a server-side pending-state row; https redirect-URI enforcement outside local. **DONE 2026-07-10.** Amends 038.                                                                                                                                                                                               | P1       | Complete.  |
 | 068  | Credential encryption posture: root key through the secrets-provider seam, HKDF purpose-separated subkeys (fingerprints, artifact view URLs), re-encryption sweep job so rotation actually retires keys, `SecretStr` for the Ads developer token. **DONE 2026-07-10.** Amends 037/041/050.                                                             | P1       | Complete.  |
 | 069  | Memory block ordering determinism: rank on stored confidence, not wall-clock-decayed `effective_confidence` — decay-crossing reorders silently bust the prompt-cache prefix 049 exists to protect; two-`now` byte-identity test. **DONE 2026-07-27.** Amends 049.                                                                                     | P1       | Complete.  |
-| 070  | Artifact CSP: drop the general-purpose CDN whitelist (jsdelivr/unpkg serve every npm package — arbitrary script one URL away, and `connect-src 'none'` does not block self-navigation exfil); v1 artifacts are self-contained, self-hosted vetted bundles are the named follow-up. Amends 050.                                                         | P1       | Before 050 |
+| 070  | Artifact CSP: drop the general-purpose CDN whitelist (jsdelivr/unpkg serve every npm package — arbitrary script one URL away, and `connect-src 'none'` does not block self-navigation exfil); v1 artifacts are self-contained, self-hosted vetted bundles are the named follow-up. **DONE 2026-07-27.** Amends 050.                                    | P1       | Complete   |
 | 071  | Memory dedup contradiction resolution: near-duplicates surface to the writing agent (save-as-new / supersede / skip) instead of silently reinforcing the stale row; threshold calibration fixture; decay half-lives marked provisional under Gate G4. **DONE 2026-07-27.** Amends 048.                                                                 | P1       | Complete.  |
 | 072  | Sandbox egress verification: per-provider DNS/HTTP canary probe; `run_code`'s `internal`+`supports_auto` classification gated on an egress-verified provider allowlist; re-probe on SDK bumps; poisoned-file fixture. Amends 059.                                                                                                                      | P1       | Before 059 |
 | 073  | Cancellation terminal hardening: shield terminal persistence against double-cancel, tier-2 dedupe of already-cancelled tasks, `cancelled` disposition on the interrupted dispatch audit row. **DONE 2026-07-09.** Amends 053.                                                                                                                          | P1       | Complete.  |
@@ -873,7 +885,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 057 → 070 → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). 089 (BigQuery provider, D14) depends only on the landed Phase 4a substrate and interleaves any time after 079; its semantic-schema-search follow-up waits on 045.
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 070 (DONE) → 050 → 051 → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). Plan 057 is deferred outside this stream by the 2026-07-27 maintainer decision. 089 (BigQuery provider, D14) depends only on the landed Phase 4a substrate and interleaves any time after 079; its semantic-schema-search follow-up waits on 045.
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should
@@ -902,8 +914,8 @@ Lane H placement rationale: 053/054 sit between 014 and Phase 4a because
 the G1 extension binds them before 041; 055 runs parallel with Phase 4
 (it observes, it does not change the runtime) and must be green before
 048; 056 lands after Phase 4 starts but before 048/049 claim their prompt
-blocks; 057 needs 054's inheritance and 055's scenarios and pays off once
-delegates hold 041/046 tools; 059 follows Phase 6; 060 is last by
+blocks; 057 is deferred because the later run-scoped sequential tool guard
+invalidated its concurrency premise; 059 follows Phase 6; 060 is last by
 operator decision.
 
 With parallel capacity: one stream takes Lane O while another runs Phase 1

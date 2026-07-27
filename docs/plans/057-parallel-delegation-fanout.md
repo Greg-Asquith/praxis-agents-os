@@ -14,6 +14,7 @@
 
 ## Status
 
+- **Status**: DEFERRED 2026-07-27 by maintainer decision
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (concurrency over shared seams: usage accounting, DB pool,
@@ -25,6 +26,21 @@
 - **Category**: Lane H — harness hardening (post-roadmap additions
   053–060, added 2026-07-07)
 - **Planned at**: working tree at commit `c2f08cc`, 2026-07-07
+
+### Deferral decision (2026-07-27)
+
+Execution stopped at the required drift check. Since commit `158de0b`, the
+runtime has wrapped every Pydantic AI turn in
+`parallel_tool_call_execution_mode("sequential")` because runtime tools share
+one run-scoped SQLAlchemy `AsyncSession`, which cannot be used concurrently.
+That safeguard invalidates this plan's central assumption that adjacent
+`delegate_to_agent` calls already execute concurrently.
+
+The maintainer decided the selective-concurrency redesign is not worth its
+current complexity. Do not execute this plan unless a future maintainer first
+re-anchors it against the live runtime and explicitly chooses a safe session
+isolation or per-tool barrier design. No runtime, schema, SSE, or frontend
+changes were made.
 
 ## Product intent
 
