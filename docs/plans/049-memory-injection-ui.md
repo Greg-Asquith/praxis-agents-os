@@ -638,3 +638,36 @@ Stop and report back (do not improvise) if:
   purge path (hard delete + audit survival via SET-NULL FKs), and that the
   runtime memory load did not add a second DB round-trip per turn beyond
   the one core-lookup query.
+
+## Amendment (plan 069, 2026-07-07): cache-stable ranking
+
+Binding on execution. Where this section conflicts with decisions 3/4,
+Steps 1/2/4, or the Test plan above, this section wins.
+
+1. **Rank and select on stored confidence, never effective confidence.**
+   The Step 1 sort key becomes `(-importance, -confidence,
+   -(last_reinforced_at or created_at), id)`. Decision 3's
+   `effective_confidence desc` key is replaced by `confidence desc`
+   (stored, undecayed). Every key component changes only on a write, so
+   ordering, budget-clamp selection, and the omitted-count footer are
+   byte-stable between memory writes — the determinism claim in decision 3
+   now holds by construction instead of only at a frozen `now`.
+2. **Decision 4's allowance "decay-derived ordering may use them" is
+   revoked.** Neither the rendered text nor the ordering/selection/
+   clamping may depend on wall-clock time. `effective_confidence` remains
+   read-path only: list/detail responses (decision 11) and search ranking
+   (048 decision 7) keep it; the prompt block never computes it.
+3. **`render_core_memory_block(memories, *, now, budget)` keeps `now` as
+   an explicitly inert parameter.** Its docstring must state the
+   invariance contract: output is a pure function of the rows and the
+   budget; `now` exists so the contract is testable. Step 2's
+   `execute_run` call site is unchanged.
+4. **Step 4's determinism test gains a time axis**: render the block with
+   identical rows at two `now` values at least six weeks apart and assert
+   byte-identical output. This joins the shuffled-input test as part of
+   the prompt-cache contract; the Test plan's "rendering is deterministic"
+   invariant now means invariant across both input order and time.
+5. The maintenance note "the determinism test is the tripwire" now covers
+   time-invariance: reintroducing any wall-clock-derived value into
+   ranking or selection (including quantized decay buckets) is an
+   eval-gated decision that must update both tests first (Gate G4).
