@@ -69,9 +69,12 @@ class AgentRunSettingsMixin:
         description="Grace period before an unleased pending run is considered abandoned.",
     )
     AGENT_RUN_TOTAL_TOKENS_LIMIT: int | None = Field(
-        default=None,
+        default=1_000_000,
         gt=0,
-        description="Maximum total (input+output) tokens per agent run; None disables the cap.",
+        description=(
+            "Maximum total (input+output) tokens per agent run; None disables the runaway-loop "
+            "backstop."
+        ),
     )
     AGENT_TOOL_RESULT_MAX_CHARS: int | None = Field(
         default=16_000,
@@ -102,6 +105,55 @@ class AgentRunSettingsMixin:
         ge=50,
         le=5000,
         description="Max persisted messages loaded per turn before trimming.",
+    )
+    AGENT_HISTORY_CONTEXT_FRACTION: float = Field(
+        default=0.6,
+        gt=0,
+        le=1,
+        description="Fraction of the model context window available before history tightens.",
+    )
+    AGENT_HISTORY_SUMMARY_MAX_CHARS: int = Field(
+        default=2000,
+        gt=0,
+        description="Maximum stored characters in one automatic conversation summary.",
+    )
+    AGENT_HISTORY_SUMMARY_MODEL_PROVIDER: str = Field(
+        default="openai",
+        description="Provider for the out-of-band conversation history summarizer.",
+    )
+    AGENT_HISTORY_SUMMARY_MODEL: str = Field(
+        default="gpt-5.6-luna",
+        description="Model for the out-of-band conversation history summarizer.",
+    )
+    AGENT_PROMPT_IDENTITY_BUDGET: int = Field(
+        default=12_000,
+        gt=0,
+        description="Soft character budget for agent identity instructions.",
+    )
+    AGENT_PROMPT_ACTIVE_CONTEXT_BUDGET: int = Field(
+        default=2000,
+        gt=0,
+        description="Soft character budget for active integration context.",
+    )
+    AGENT_PROMPT_PLANNING_BUDGET: int = Field(
+        default=2000,
+        gt=0,
+        description="Soft character budget for planning instructions.",
+    )
+    AGENT_PROMPT_DELEGATION_BUDGET: int = Field(
+        default=2400,
+        gt=0,
+        description="Soft character budget for delegation instructions.",
+    )
+    AGENT_PROMPT_KNOWLEDGE_BUDGET: int = Field(
+        default=1200,
+        gt=0,
+        description="Soft character budget for knowledge instructions.",
+    )
+    AGENT_PROMPT_UNTRUSTED_POLICY_BUDGET: int = Field(
+        default=1200,
+        gt=0,
+        description="Soft character budget for the untrusted-content policy.",
     )
     AGENT_PROMPT_CACHE_ENABLED: bool = Field(
         default=True,

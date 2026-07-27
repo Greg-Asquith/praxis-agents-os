@@ -128,7 +128,7 @@ across conversations.
 When a conversation's history is trimmed (`services/agents/runtime/history.py`),
 a background job summarizes the trimmed span with a small model and the
 summary is injected as a synthetic user message at the trim watermark
-(`conversation_summaries` table, `services/conversations/summarize_history.py`).
+(`conversation_summaries` table and `services/conversation_summaries/`).
 This is per-conversation, derived, and has no user surface. It keeps long
 conversations coherent; it does not persist anything across conversations and
 should never be described as memory.

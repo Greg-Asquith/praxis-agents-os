@@ -14,6 +14,7 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.agent_runs.domain import (
+    RUN_STATUS_COMPLETED,
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_INTERACTIVE,
@@ -35,6 +36,9 @@ from services.agents.runtime.persistence import (
     persist_eager_user_prompt,
 )
 from services.agents.runtime.sinks import EventSink, NullSink
+from services.conversation_summaries.safe_enqueue_history_summary import (
+    safe_enqueue_history_summary,
+)
 
 from .finalize import (
     CANCEL_FINALIZE_TIMEOUT,
@@ -203,6 +207,13 @@ async def execute_run_with_builders(
             live_deferred_result_ids=live_deferred_result_ids,
             eager_tool_return_ids=eager_tool_return_ids,
         )
+        watermark_key = built_agent.runtime_agent.history_trimmer.watermark_key
+        if result.run.status == RUN_STATUS_COMPLETED and watermark_key is not None:
+            await safe_enqueue_history_summary(
+                conversation_id=conversation.id,
+                workspace_id=conversation.workspace_id,
+                watermark_key=watermark_key,
+            )
         eager_message_count += 1 if eager_tool_return_ids else 0
         if eager_message_count == 0:
             return result

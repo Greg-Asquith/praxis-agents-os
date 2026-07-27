@@ -9,6 +9,7 @@ from services.jobs.handlers import (
     integration_discovery,  # noqa: F401
     integration_events,  # noqa: F401
     rotate_credential_encryption,  # noqa: F401
+    summarize_conversation_history,  # noqa: F401
     sweep_deleted_files,  # noqa: F401
     sweep_deleted_kb_documents,  # noqa: F401
     sweep_expired_scratch,  # noqa: F401

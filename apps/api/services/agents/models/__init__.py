@@ -11,7 +11,12 @@ from services.agents.models.registry import (
     list_models,
     qualified_id,
 )
-from services.agents.models.resolution import resolve_agent_model, resolve_naming_model
+from services.agents.models.resolution import (
+    resolve_agent_model,
+    resolve_history_summary_model,
+    resolve_model_context_budget,
+    resolve_naming_model,
+)
 from services.agents.models.utils import provider_api_key, retrying_http_client
 
 __all__ = [
@@ -24,6 +29,8 @@ __all__ = [
     "provider_api_key",
     "qualified_id",
     "resolve_agent_model",
+    "resolve_history_summary_model",
+    "resolve_model_context_budget",
     "resolve_naming_model",
     "retrying_http_client",
 ]

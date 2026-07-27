@@ -62,6 +62,14 @@ class ModelInfo:
 
 
 @dataclass(frozen=True)
+class ModelContextBudget:
+    """Token-estimation inputs for one resolved runtime model."""
+
+    context_window: int
+    chars_per_token: float
+
+
+@dataclass(frozen=True)
 class ResolvedModel:
     """A fully-resolved model spec: which model, merged settings, step ceiling."""
 

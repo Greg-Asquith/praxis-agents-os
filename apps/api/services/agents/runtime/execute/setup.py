@@ -8,11 +8,15 @@ from typing import Protocol
 from uuid import UUID
 
 from pydantic_ai import DeferredToolResults
-from pydantic_ai.messages import ModelMessage, UserContent
+from pydantic_ai.messages import (
+    ModelMessage,
+    UserContent,
+)
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
+from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
@@ -24,14 +28,25 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND,
     DELEGATED_APPROVAL_KIND_KEY,
 )
+from services.agents.models import resolve_agent_model, resolve_model_context_budget
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
 from services.agents.runtime.dispatch import record_denied_approval_audit_events
 from services.agents.runtime.envelope import RunEnvelope
+from services.agents.runtime.history import (
+    HistoryCompaction,
+    history_exceeds_context_budget,
+    trim_boundary_count,
+    trim_watermark_key,
+)
 from services.agents.runtime.load_context import AvailableFile, load_actor_context
-from services.agents.runtime.loop import RuntimeAgent
-from services.agents.runtime.persistence import load_message_history
+from services.agents.runtime.loop import RuntimeAgent, _runtime_instructions
+from services.agents.runtime.persistence import (
+    load_history_watermark_keys,
+    load_message_history,
+)
 from services.agents.runtime.sinks import EventSink
+from services.conversation_summaries.load_history_summary import load_history_summary
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
@@ -57,6 +72,7 @@ class RuntimeAgentBuilder(Protocol):
         skipped_tool_names: list[str] | None = None,
         workspace: object | None = None,
         disabled_tool_names: frozenset[str] = frozenset(),
+        history_compaction: HistoryCompaction | None = None,
     ) -> RuntimeAgent: ...
 
 
@@ -240,6 +256,21 @@ async def build_agent_for_run(
     force_delegation_tools = has_delegated_deferred_results(deferred_tool_results)
     skipped_tool_names: list[str] = []
     disabled_tool_names = await get_disabled_tools(db, workspace)
+    history = (
+        list(message_history)
+        if message_history is not None
+        else await load_message_history(db, conversation_id=conversation.id)
+    )
+    history_compaction = await _prepare_history_compaction(
+        db,
+        agent=agent,
+        conversation=conversation,
+        history=history,
+        include_delegation=enable_delegation,
+        available_files=available_files,
+        active_context=active_context,
+        exclude_run_id=run.id if message_history is not None else None,
+    )
     runtime_agent = runtime_agent_builder(
         agent,
         model=model,
@@ -252,18 +283,71 @@ async def build_agent_for_run(
         skipped_tool_names=skipped_tool_names,
         workspace=workspace,
         disabled_tool_names=disabled_tool_names,
+        history_compaction=history_compaction,
     )
     _record_skipped_runtime_tools(run, skipped_tool_names)
     if run.model_name is None:
         run.model_name = runtime_agent.resolved_model.qualified_id
 
-    history = (
-        list(message_history)
-        if message_history is not None
-        else await load_message_history(db, conversation_id=conversation.id)
-    )
     await db.commit()
     return BuiltRuntimeAgent(runtime_agent=runtime_agent, history=history)
+
+
+async def _prepare_history_compaction(
+    db: AsyncSession,
+    *,
+    agent: Agent,
+    conversation: Conversation,
+    history: list[ModelMessage],
+    include_delegation: bool,
+    available_files: Sequence[AvailableFile],
+    active_context: ResolvedActiveContext,
+    exclude_run_id: UUID | None,
+) -> HistoryCompaction:
+    max_turns = settings.AGENT_HISTORY_MAX_TURNS
+    if max_turns is None:
+        return HistoryCompaction()
+
+    resolved_model = resolve_agent_model(agent)
+    model_context = resolve_model_context_budget(resolved_model)
+    system_prompt = _runtime_instructions(
+        agent,
+        include_delegation=include_delegation,
+        available_files=available_files,
+        active_context=active_context,
+        chars_per_token=model_context.chars_per_token,
+    )
+    token_pressure = history_exceeds_context_budget(
+        history,
+        system_prompt=system_prompt,
+        context_window=model_context.context_window,
+        chars_per_token=model_context.chars_per_token,
+        context_fraction=settings.AGENT_HISTORY_CONTEXT_FRACTION,
+    )
+    boundary_count = trim_boundary_count(history)
+    boundary_keys = await load_history_watermark_keys(
+        db,
+        conversation_id=conversation.id,
+        limit=boundary_count,
+        exclude_run_id=exclude_run_id,
+    )
+    watermark_key = trim_watermark_key(
+        history,
+        max_turns=max_turns,
+        keep_turns=settings.AGENT_HISTORY_KEEP_TURNS,
+        token_pressure=token_pressure,
+        boundary_keys=boundary_keys,
+    )
+    summary = await load_history_summary(
+        db,
+        conversation_id=conversation.id,
+        watermark_key=watermark_key,
+    )
+    return HistoryCompaction(
+        summary=summary,
+        token_pressure=token_pressure,
+        boundary_keys=boundary_keys,
+    )
 
 
 def _record_skipped_runtime_tools(run: AgentRun, skipped_tool_names: Sequence[str]) -> None:

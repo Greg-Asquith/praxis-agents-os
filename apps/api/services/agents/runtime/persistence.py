@@ -19,7 +19,7 @@ from pydantic_ai.messages import (
     UserContent,
     UserPromptPart,
 )
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
@@ -43,10 +43,7 @@ async def load_message_history(
         conversation_id=conversation_id,
         limit=settings.AGENT_HISTORY_DB_MAX_MESSAGES,
     )
-    stored = [row.parts for row in rows]
-    if not stored:
-        return []
-    return list(ModelMessagesTypeAdapter.validate_python(stored))
+    return _messages_from_rows(rows)
 
 
 async def _load_full_message_history(
@@ -63,14 +60,66 @@ async def _load_full_message_history(
         )
         .order_by(ConversationMessage.sequence)
     )
-    stored = [
-        row.parts
-        for row in rows
-        if (row.metadata_json or {}).get("source") == PYDANTIC_AI_MESSAGE_SOURCE
+    stored_rows = [
+        row for row in rows if (row.metadata_json or {}).get("source") == PYDANTIC_AI_MESSAGE_SOURCE
     ]
-    if not stored:
+    return _messages_from_rows(stored_rows)
+
+
+async def load_message_history_span(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    start_sequence: int | None = None,
+    end_sequence: int | None = None,
+) -> list[ModelMessage]:
+    """Load one persisted Pydantic AI message span by stable sequence bounds."""
+    stmt = (
+        select(ConversationMessage)
+        .where(*_pydantic_message_filters(conversation_id))
+        .order_by(ConversationMessage.sequence)
+    )
+    if start_sequence is not None:
+        stmt = stmt.where(ConversationMessage.sequence >= start_sequence)
+    if end_sequence is not None:
+        stmt = stmt.where(ConversationMessage.sequence < end_sequence)
+    return _messages_from_rows(list((await db.scalars(stmt)).all()))
+
+
+def _messages_from_rows(rows: Sequence[ConversationMessage]) -> list[ModelMessage]:
+    if not rows:
         return []
-    return list(ModelMessagesTypeAdapter.validate_python(stored))
+    return list(ModelMessagesTypeAdapter.validate_python([row.parts for row in rows]))
+
+
+async def load_history_watermark_keys(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    limit: int,
+    exclude_run_id: UUID | None = None,
+) -> tuple[UUID, ...]:
+    """Load stable ids for the most recent clean persisted user boundaries."""
+    if limit <= 0:
+        return ()
+    stmt = (
+        select(ConversationMessage.id)
+        .where(
+            *_pydantic_message_filters(conversation_id),
+            ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "user-prompt"}]}),
+            not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "tool-return"}]})),
+            not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "retry-prompt"}]})),
+        )
+        .order_by(ConversationMessage.sequence.desc())
+        .limit(limit)
+    )
+    if exclude_run_id is not None:
+        stmt = stmt.where(
+            ConversationMessage.metadata_json["agent_run_id"].astext != str(exclude_run_id)
+        )
+    keys = list((await db.scalars(stmt)).all())
+    keys.reverse()
+    return tuple(keys)
 
 
 async def _load_windowed_message_rows(

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.files import FILE_PROCESSING_STATUSES, File
 from models.workspace import Workspace
 from services.files.domain import FilesProcessingSummary
-from services.jobs import count_in_flight_jobs
+from services.jobs.count_jobs import count_in_flight_jobs
 
 
 async def get_files_processing_summary(

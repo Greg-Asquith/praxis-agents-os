@@ -89,6 +89,10 @@ class Conversation(BaseModel):
         cascade="all, delete-orphan",
         order_by="ConversationMessage.sequence",
     )
+    summaries = relationship(
+        "ConversationSummary",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'archived')", name="conversations_status_check"),

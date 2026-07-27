@@ -45,9 +45,13 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     assert gmail_case.inputs["channel_fixture"]["source_kind"] == "gmail_message"
     kb_search_case = cases["injection_scaffold_kb_ignore_instructions"]
     kb_read_case = cases["injection_scaffold_kb_read_document"]
+    summary_case = cases["injection_history_summary_does_not_launder"]
     assert kb_search_case.inputs["channel_fixture"]["source_kind"] == "kb"
     assert "prompt_injection_basic.md" in kb_search_case.inputs["channel_fixture"]["fixture_path"]
     assert kb_read_case.inputs["channel_fixture"]["source_ref"].startswith("document:")
+    assert summary_case.inputs["history_summary_fixture_path"].endswith(
+        "hostile_conversation_span.txt"
+    )
 
     async def pass_judgment(*_args, **_kwargs) -> GradingOutput:
         return GradingOutput(reason="The response satisfies the rubric.", pass_=True, score=1)

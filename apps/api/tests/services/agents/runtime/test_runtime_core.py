@@ -504,7 +504,7 @@ async def test_execute_run_persists_messages_usage_and_events(
             agent,
             model=TestModel(),
         ).usage_limits.total_tokens_limit
-        is None
+        == settings.AGENT_RUN_TOTAL_TOKENS_LIMIT
     )
 
     sink = CollectingSink(

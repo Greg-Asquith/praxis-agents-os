@@ -15,6 +15,7 @@ from models.agent_run import AgentRun  # noqa: F401
 from models.audit_event import AuditEvent  # noqa: F401
 from models.base import BaseModel  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
+from models.conversation_summary import ConversationSummary  # noqa: F401
 from models.conversation_todos import ConversationTodoList  # noqa: F401
 from models.embedding_usage import EmbeddingTokenUsage  # noqa: F401
 from models.files import File, FileReference, FileRevision, FileUpload  # noqa: F401

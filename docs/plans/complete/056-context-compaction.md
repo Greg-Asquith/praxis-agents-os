@@ -27,6 +27,7 @@
 
 ## Status
 
+- **Completed**: 2026-07-24
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MED-HIGH (touches what the model sees; a bad summary silently
@@ -307,16 +308,16 @@ that guards the whole design — treat it as the review centerpiece.
 
 ## Done criteria
 
-- [ ] Long conversations get an automatic, bounded, out-of-band summary
+- [x] Long conversations get an automatic, bounded, out-of-band summary
       injected exactly once, keyed to the trim watermark
-- [ ] Trimmed prefix is byte-stable across turns between watermark
+- [x] Trimmed prefix is byte-stable across turns between watermark
       advances (pinned by test)
-- [ ] Token pressure tightens trimming chunk-wise against the catalog
+- [x] Token pressure tightens trimming chunk-wise against the catalog
       `context_window`; turn floors unchanged
-- [ ] `AGENT_RUN_TOTAL_TOKENS_LIMIT` has a non-null default; capped runs
+- [x] `AGENT_RUN_TOTAL_TOKENS_LIMIT` has a non-null default; capped runs
       persist as before
-- [ ] Summaries are swept with their conversation; governance §3 updated
-- [ ] Full suite + scenarios green; `docs/plans/000_README.md` row updated
+- [x] Summaries are swept with their conversation; governance §3 updated
+- [x] Full suite + scenarios green; `docs/plans/000_README.md` row updated
 
 ## STOP conditions
 

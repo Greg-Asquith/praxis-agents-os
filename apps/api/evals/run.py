@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ToolCallPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_evals import Dataset
 from pydantic_evals.evaluators import LLMJudge
@@ -31,6 +32,7 @@ from evals.evaluators import (
     RequiredText,
 )
 from models.agent import Agent
+from services.agents.runtime.history import HistoryCompaction
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
 
@@ -74,14 +76,24 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
         tool_names=inputs.get("tool_names", []),
         allowed_agent_ids=[],
     )
-    runtime = build_runtime_agent(agent_config)
+    summary = _history_summary_fixture(inputs)
+    runtime = (
+        build_runtime_agent(
+            agent_config,
+            history_compaction=HistoryCompaction(summary=summary),
+        )
+        if summary is not None
+        else build_runtime_agent(agent_config)
+    )
     text_chunks: list[str] = []
     called_tools: list[str] = []
     tool_arguments: list[str] = []
     async with runtime.agent.run_stream_events(
         inputs["prompt"],
         deps=None,
-        message_history=_channel_fixture_history(inputs),
+        message_history=(
+            _summary_trigger_history() if summary is not None else _channel_fixture_history(inputs)
+        ),
     ) as stream:
         async for event in stream:
             if isinstance(event, FunctionToolCallEvent):
@@ -144,6 +156,28 @@ def _channel_fixture_history(inputs: EvalInputs):
             ]
         ),
     ]
+
+
+def _history_summary_fixture(inputs: EvalInputs) -> str | None:
+    fixture_path = inputs.get("history_summary_fixture_path")
+    if not fixture_path:
+        return None
+    path = (FIXTURE_ROOT / str(fixture_path)).resolve()
+    if not path.is_relative_to(FIXTURE_ROOT.resolve()):
+        raise ValueError("History-summary fixture path must stay under the shared fixture root")
+    return path.read_text(encoding="utf-8")
+
+
+def _summary_trigger_history() -> list[ModelRequest | ModelResponse]:
+    history: list[ModelRequest | ModelResponse] = []
+    for index in range(41):
+        history.extend(
+            [
+                ModelRequest(parts=[UserPromptPart(f"earlier turn {index}")]),
+                ModelResponse(parts=[TextPart(f"earlier reply {index}")]),
+            ]
+        )
+    return history
 
 
 def _load_dataset(judge_model: str) -> BehaviorDataset:

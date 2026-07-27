@@ -27,7 +27,7 @@ class LLMSettingsMixin:
         description="Provider used when an agent does not specify model_provider.",
     )
     DEFAULT_MODEL: str = Field(
-        default="gpt-5.4-mini",
+        default="gpt-5.6-luna",
         description="Model used when an agent does not specify model.",
     )
 
@@ -103,6 +103,18 @@ class LLMSettingsMixin:
     AZURE_OPENAI_API_VERSION: str = Field(
         default="2024-10-21", description="Azure OpenAI API version."
     )
+    AZURE_OPENAI_CONTEXT_WINDOW: int = Field(
+        default=128_000,
+        gt=0,
+        description=(
+            "Context window for Azure OpenAI deployments; override to match the deployed model."
+        ),
+    )
+    AZURE_OPENAI_CHARS_PER_TOKEN: float = Field(
+        default=4.0,
+        gt=0,
+        description="Calibrated character-to-token estimate for Azure OpenAI deployments.",
+    )
 
     @field_validator("OPENAI_BASE_URL", mode="before")
     @classmethod
@@ -116,16 +128,20 @@ class LLMSettingsMixin:
     def validate_llm_provider_credentials(self):
         """Require credentials for the active providers in production.
 
-        Active providers are those backing the default model and conversation
-        naming. Local/development may run without keys; tests construct settings
-        without them. Registry membership is validated at resolution time, not
-        here, to keep settings free of service imports.
+        Active providers back the default agent, conversation naming, or history
+        summarization. Local/development may run without keys; tests construct
+        settings without them. Registry membership is validated at resolution
+        time, not here, to keep settings free of service imports.
         """
         environment = getattr(self, "ENVIRONMENT", None)
         if environment != "production":
             return self
 
-        active_providers = {self.DEFAULT_MODEL_PROVIDER, self.CONVERSATION_NAMING_PROVIDER}
+        active_providers = {
+            self.DEFAULT_MODEL_PROVIDER,
+            self.CONVERSATION_NAMING_PROVIDER,
+            self.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER,
+        }
         missing: list[str] = []
         for provider in active_providers:
             if provider == "google" and self.GOOGLE_VERTEX_AI:

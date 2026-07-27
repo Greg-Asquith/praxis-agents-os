@@ -13,6 +13,7 @@ from services.agents.runtime.delegation.tool_names import (
     LIST_DELEGATE_AGENTS_TOOL_NAME,
 )
 from services.agents.runtime.load_context import AvailableFile
+from utils.tokens import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +67,25 @@ def runtime_prompt_blocks(
 ) -> list[PromptBlock]:
     """Return the canonical ordered prompt blocks for one runtime agent."""
     return [
-        PromptBlock("identity", agent.instructions),
-        PromptBlock("active_context", active_context_block, budget=2000),
+        PromptBlock(
+            "identity",
+            agent.instructions,
+            budget=settings.AGENT_PROMPT_IDENTITY_BUDGET,
+        ),
+        PromptBlock(
+            "active_context",
+            active_context_block,
+            budget=settings.AGENT_PROMPT_ACTIVE_CONTEXT_BUDGET,
+        ),
         PromptBlock(
             "planning",
             PLANNING_INSTRUCTIONS,
+            budget=settings.AGENT_PROMPT_PLANNING_BUDGET,
         ),
         PromptBlock(
             "delegation",
             DELEGATION_INSTRUCTIONS if include_delegation else "",
+            budget=settings.AGENT_PROMPT_DELEGATION_BUDGET,
         ),
         PromptBlock(
             "available_files",
@@ -84,18 +95,41 @@ def runtime_prompt_blocks(
         PromptBlock(
             "knowledge",
             KNOWLEDGE_INSTRUCTIONS,
-            budget=1200,
+            budget=settings.AGENT_PROMPT_KNOWLEDGE_BUDGET,
         ),
-        PromptBlock("untrusted_content_policy", UNTRUSTED_CONTENT_INSTRUCTIONS),
+        PromptBlock(
+            "untrusted_content_policy",
+            UNTRUSTED_CONTENT_INSTRUCTIONS,
+            budget=settings.AGENT_PROMPT_UNTRUSTED_POLICY_BUDGET,
+        ),
     ]
 
 
-def build_system_prompt(blocks: Sequence[PromptBlock]) -> str:
+def build_system_prompt(
+    blocks: Sequence[PromptBlock],
+    *,
+    chars_per_token: float = 4.0,
+) -> str:
     """Join non-empty prompt blocks with blank-line separators."""
     rendered_blocks = [_render_block(block) for block in blocks if block.content]
     if len(rendered_blocks) <= 1:
-        return rendered_blocks[0] if rendered_blocks else ""
-    return "\n\n".join([*(block.rstrip() for block in rendered_blocks[:-1]), rendered_blocks[-1]])
+        prompt = rendered_blocks[0] if rendered_blocks else ""
+    else:
+        prompt = "\n\n".join(
+            [*(block.rstrip() for block in rendered_blocks[:-1]), rendered_blocks[-1]]
+        )
+    logger.info(
+        "Assembled runtime system prompt",
+        extra={
+            "prompt_block_count": len(rendered_blocks),
+            "prompt_chars": len(prompt),
+            "prompt_estimated_tokens": estimate_tokens(
+                prompt,
+                chars_per_token=chars_per_token,
+            ),
+        },
+    )
+    return prompt
 
 
 def _render_block(block: PromptBlock) -> str:

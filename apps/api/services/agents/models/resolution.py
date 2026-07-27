@@ -16,6 +16,7 @@ from services.agents.models.domain import (
     PROVIDER_AZURE,
     PROVIDER_OPENAI,
     ModelConfigurationError,
+    ModelContextBudget,
     ResolvedModel,
 )
 from services.agents.models.registry import get_model
@@ -85,4 +86,32 @@ def resolve_naming_model() -> ResolvedModel:
         model=model,
         settings=dict(info.default_settings),
         max_steps=DEFAULT_MAX_STEPS,
+    )
+
+
+def resolve_history_summary_model() -> ResolvedModel:
+    """Resolve the fixed model used by out-of-band history compaction."""
+    provider = settings.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER
+    model = settings.AGENT_HISTORY_SUMMARY_MODEL
+    info = _require_active(provider, model)
+
+    return ResolvedModel(
+        provider=provider,
+        model=model,
+        settings=dict(info.default_settings),
+        max_steps=DEFAULT_MAX_STEPS,
+    )
+
+
+def resolve_model_context_budget(resolved_model: ResolvedModel) -> ModelContextBudget:
+    """Resolve calibrated context accounting for catalog and Azure deployment models."""
+    if resolved_model.provider == PROVIDER_AZURE:
+        return ModelContextBudget(
+            context_window=settings.AZURE_OPENAI_CONTEXT_WINDOW,
+            chars_per_token=settings.AZURE_OPENAI_CHARS_PER_TOKEN,
+        )
+    info = _require_active(resolved_model.provider, resolved_model.model)
+    return ModelContextBudget(
+        context_window=info.context_window,
+        chars_per_token=info.chars_per_token,
     )

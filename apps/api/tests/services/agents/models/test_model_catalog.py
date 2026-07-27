@@ -18,6 +18,8 @@ from services.agents.models import (
     list_models,
     qualified_id,
     resolve_agent_model,
+    resolve_history_summary_model,
+    resolve_model_context_budget,
     resolve_naming_model,
 )
 from services.agents.models.domain import (
@@ -206,6 +208,14 @@ def test_resolve_agent_model_falls_back_to_settings_defaults():
     assert resolved.max_steps == DEFAULT_MAX_STEPS
 
 
+def test_resolve_history_summary_model_uses_fixed_cheap_model_settings():
+    resolved = resolve_history_summary_model()
+
+    assert resolved.provider == settings.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER
+    assert resolved.model == settings.AGENT_HISTORY_SUMMARY_MODEL
+    assert resolved.max_steps == DEFAULT_MAX_STEPS
+
+
 def test_resolve_agent_model_rejects_unknown_model():
     with pytest.raises(ModelConfigurationError):
         resolve_agent_model(_agent(model_provider="anthropic", model="claude-nope"))
@@ -222,6 +232,32 @@ def test_resolve_agent_model_azure_skips_catalog_membership():
     assert resolved.provider == "azure"
     assert resolved.azure_deployment == "my-deployment"
     assert resolved.settings["temperature"] == 0.3
+
+
+def test_azure_context_budget_uses_explicit_deployment_settings(monkeypatch):
+    monkeypatch.setattr(settings, "AZURE_OPENAI_CONTEXT_WINDOW", 256_000)
+    monkeypatch.setattr(settings, "AZURE_OPENAI_CHARS_PER_TOKEN", 3.5)
+    resolved = resolve_agent_model(
+        _agent(
+            model_provider="azure",
+            model="gpt-5.6-luna",
+            azure_deployment="my-deployment",
+        )
+    )
+
+    budget = resolve_model_context_budget(resolved)
+
+    assert budget.context_window == 256_000
+    assert budget.chars_per_token == 3.5
+
+
+def test_catalog_context_budget_uses_model_calibration():
+    resolved = resolve_agent_model(_agent(model_provider="openai", model="gpt-5.6-luna"))
+
+    budget = resolve_model_context_budget(resolved)
+
+    assert budget.context_window == get_model("openai", "gpt-5.6-luna").context_window
+    assert budget.chars_per_token == get_model("openai", "gpt-5.6-luna").chars_per_token
 
 
 def test_resolve_naming_model_returns_configured_model():

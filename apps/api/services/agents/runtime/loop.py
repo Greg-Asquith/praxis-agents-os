@@ -16,10 +16,15 @@ from pydantic_ai.usage import UsageLimits
 from core.settings import settings
 from models.agent import Agent
 from models.skills import Skill
-from services.agents.models import build_model, resolve_agent_model
+from services.agents.models import (
+    build_model,
+    resolve_agent_model,
+    resolve_model_context_budget,
+)
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.capabilities import build_runtime_capabilities
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.history import HistoryCompaction, HistoryTrimmer
 from services.agents.runtime.load_context import AvailableFile
 from services.agents.runtime.prompt import (
     build_system_prompt,
@@ -42,6 +47,7 @@ class RuntimeAgent:
     agent: PydanticAgent[RuntimeDeps, str | DeferredToolRequests]
     resolved_model: ResolvedModel
     usage_limits: UsageLimits
+    history_trimmer: HistoryTrimmer
 
 
 def build_runtime_agent(
@@ -57,22 +63,27 @@ def build_runtime_agent(
     skipped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
+    history_compaction: HistoryCompaction | None = None,
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
     resolved_model = resolve_agent_model(agent)
     runtime_model = model or build_model(resolved_model)
     include_delegation = enable_delegation and (bool(delegate_agents) or force_delegation_tools)
+    model_context = resolve_model_context_budget(resolved_model)
+    trimmer_out: list[HistoryTrimmer] = []
+    instructions = _runtime_instructions(
+        agent,
+        include_delegation=include_delegation,
+        available_files=available_files,
+        active_context=active_context,
+        chars_per_token=model_context.chars_per_token,
+    )
 
     return RuntimeAgent(
         agent=PydanticAgent(
             runtime_model,
             name=_agent_name(agent),
-            instructions=_runtime_instructions(
-                agent,
-                include_delegation=include_delegation,
-                available_files=available_files,
-                active_context=active_context,
-            ),
+            instructions=instructions,
             deps_type=RuntimeDeps,
             output_type=[str, DeferredToolRequests],
             tools=build_runtime_tools(
@@ -84,7 +95,11 @@ def build_runtime_agent(
                 disabled_tool_names=disabled_tool_names,
             ),
             capabilities=[
-                *build_runtime_capabilities(agent),
+                *build_runtime_capabilities(
+                    agent,
+                    history_compaction=history_compaction,
+                    trimmer_out=trimmer_out,
+                ),
                 *build_runtime_native_capabilities(
                     agent,
                     resolved_model,
@@ -99,6 +114,7 @@ def build_runtime_agent(
             request_limit=resolved_model.max_steps,
             total_tokens_limit=settings.AGENT_RUN_TOTAL_TOKENS_LIMIT,
         ),
+        history_trimmer=trimmer_out[0],
     )
 
 
@@ -114,6 +130,7 @@ def _runtime_instructions(
     include_delegation: bool,
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
+    chars_per_token: float = 4.0,
 ) -> str:
     from services.integrations.context.prompt_block import render_active_context_block
 
@@ -125,5 +142,6 @@ def _runtime_instructions(
             active_context_block=(
                 render_active_context_block(active_context) if active_context is not None else ""
             ),
-        )
+        ),
+        chars_per_token=chars_per_token,
     )

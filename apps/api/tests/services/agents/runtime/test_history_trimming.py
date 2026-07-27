@@ -1,7 +1,8 @@
 # apps/api/tests/services/agents/runtime/test_history_trimming.py
 
-"""Tests for cache-stable runtime history trimming."""
+"""Tests for cache-stable runtime history trimming and compaction."""
 
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
@@ -11,6 +12,7 @@ from pydantic_ai.messages import (
     LoadCapabilityCallPart,
     LoadCapabilityReturnPart,
     ModelMessage,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -22,7 +24,14 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from core.settings import settings
 from models.agent import Agent
-from services.agents.runtime.history import history_trimmer, trim_history
+from services.agents.runtime.history import (
+    AUTOMATIC_SUMMARY_PREFIX,
+    PERSISTED_MESSAGE_ID_METADATA_KEY,
+    history_exceeds_context_budget,
+    history_trimmer,
+    trim_history,
+    trim_watermark_key,
+)
 from services.agents.runtime.loop import _runtime_instructions
 from services.agents.runtime.prompt import (
     KNOWLEDGE_INSTRUCTIONS,
@@ -129,6 +138,91 @@ async def test_trim_history_preserves_dropped_capability_loads_without_duplicate
         for part in synthetic_request.parts
         if isinstance(part, LoadCapabilityReturnPart)
     ] == ["load-skill-a"]
+
+
+async def test_summary_is_injected_once_after_the_kept_boundary() -> None:
+    trimmed = trim_history(
+        _history(41),
+        max_turns=40,
+        keep_turns=20,
+        summary="The operator chose the amber theme.",
+    )
+
+    summary_parts = [
+        part
+        for message in trimmed
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+        and isinstance(part.content, str)
+        and part.content.startswith(AUTOMATIC_SUMMARY_PREFIX)
+    ]
+    assert len(summary_parts) == 1
+    assert summary_parts[0].content.endswith("The operator chose the amber theme.")
+    assert _boundary_texts(trimmed)[0] == "turn 20"
+
+
+async def test_summary_prefix_is_byte_stable_at_a_fixed_watermark() -> None:
+    shared_history = _history(41)
+    first = trim_history(
+        shared_history,
+        max_turns=40,
+        keep_turns=20,
+        summary="Stable summary.",
+    )
+    second = trim_history(
+        [*shared_history, *_history(18)],
+        max_turns=40,
+        keep_turns=20,
+        summary="Stable summary.",
+    )
+
+    first_prefix = ModelMessagesTypeAdapter.dump_json(first[:2])
+    second_prefix = ModelMessagesTypeAdapter.dump_json(second[:2])
+    assert first_prefix == second_prefix
+
+
+async def test_token_pressure_advances_exactly_one_watermark_chunk() -> None:
+    normal = trim_history(_history(41), max_turns=40, keep_turns=20)
+    pressured = trim_history(
+        _history(41),
+        max_turns=40,
+        keep_turns=20,
+        token_pressure=True,
+    )
+
+    assert _boundary_texts(normal)[0] == "turn 20"
+    assert _boundary_texts(pressured)[0] == "turn 40"
+
+
+async def test_watermark_uses_the_persisted_boundary_message_id() -> None:
+    watermark_id = uuid4()
+    history = _history(41)
+    history[40] = replace(
+        history[40],
+        metadata={PERSISTED_MESSAGE_ID_METADATA_KEY: str(watermark_id)},
+    )
+
+    assert trim_watermark_key(history, max_turns=40, keep_turns=20) == watermark_id
+
+
+async def test_context_pressure_uses_model_calibrated_token_budget() -> None:
+    history = _history(3)
+
+    assert history_exceeds_context_budget(
+        history,
+        system_prompt="system",
+        context_window=100,
+        chars_per_token=4.0,
+        context_fraction=0.6,
+    )
+    assert not history_exceeds_context_budget(
+        [],
+        system_prompt="short",
+        context_window=100,
+        chars_per_token=4.0,
+        context_fraction=0.6,
+    )
 
 
 async def test_history_trimmer_processes_messages_seen_by_function_model(

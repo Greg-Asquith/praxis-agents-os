@@ -287,10 +287,12 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   one bounded automatic summary for the next turn. The closure injects at most
   that exact stored summary, so the prefix stays byte-stable between watermark
   advances. Catalog `context_window` and calibrated `chars_per_token` values can
-  advance trimming one additional chunk under token pressure; turn-count
-  trimming remains the floor. `load_message_history` retains its byte-identical
-  persisted-history contract, and summary watermark ids travel beside the
-  provider-visible messages rather than inside them.
+  advance trimming one additional chunk under token pressure; Azure deployments
+  use explicit context-window and estimator settings because their deployment
+  names are customer-defined. Turn-count trimming remains the floor.
+  `load_message_history` retains its byte-identical persisted-history contract,
+  and summary watermark ids travel beside the provider-visible messages rather
+  than inside them.
 - Use built-in capabilities such as `Thinking`, `WebSearch`, `WebFetch`, and
   `MCP` when they fit. For every optional or specialist capability, explicitly
   consider `defer_loading=True` so long-tail instructions and schemas do not bloat
