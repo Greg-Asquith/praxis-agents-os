@@ -60,7 +60,9 @@ export const bigQueryQueryPresenter: ToolRowPresenter = {
           />
         ) : (
           <p className="text-muted-foreground py-4 text-center text-sm">
-            The query returned no rows.
+            {result.truncated && result.totalRows > 0
+              ? "The result exceeded the safe output limit. Narrow the query or select fewer columns."
+              : "The query returned no rows."}
           </p>
         )}
       </ToolResultCard>

@@ -135,6 +135,29 @@ describe("BigQuery tool presenters", () => {
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
 
+  it("explains when the structured result limit excludes every row", () => {
+    const html = render(
+      bigQueryQueryPresenter.render(
+        props({
+          id: "query-limited",
+          kind: "result",
+          name: "bigquery_run_query",
+          status: "completed",
+          result: {
+            rows: [],
+            total_rows: 1,
+            truncated: true,
+            total_bytes_processed: 1,
+            cache_hit: false,
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("The result exceeded the safe output limit")
+    expect(html).not.toContain("The query returned no rows.")
+  })
+
   it("renders all loading states and falls through for malformed results", () => {
     for (const [presenter, name, expected] of [
       [bigQueryTablesPresenter, "bigquery_list_tables", "Listing BigQuery tables"],

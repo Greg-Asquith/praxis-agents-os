@@ -69,10 +69,10 @@ def dataset_location(entry: ResolvedContextEntry) -> str:
     return location
 
 
-async def bigquery_client(
+async def bigquery_query_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
-) -> BigQueryClient:
+) -> tuple[BigQueryClient, str]:
     connection = await get_visible_connection(
         ctx.deps.db,
         connection_id=entry.connection_id,
@@ -101,7 +101,7 @@ async def bigquery_client(
             scope=BIGQUERY_SCOPE,
         )
         _SERVICE_ACCOUNT_PROVIDERS[cache_key] = provider
-    return BigQueryClient(provider.access_token)
+    return BigQueryClient(provider.access_token), provider.credentials.project_id
 
 
 async def run_audited_operation(

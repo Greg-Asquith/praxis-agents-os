@@ -41,6 +41,21 @@ def test_google_service_account_validation_attributes_the_provider() -> None:
     assert exc_info.value.operation == "validate_service_account"
 
 
+def test_google_service_account_validation_retains_billing_project() -> None:
+    credentials = parse_google_service_account_json(
+        """{
+            "type": "service_account",
+            "project_id": "billing-project",
+            "client_email": "agent@example.iam.gserviceaccount.com",
+            "private_key": "private-key",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }""",
+        provider_key="bigquery",
+    )
+
+    assert credentials.project_id == "billing-project"
+
+
 async def test_client_refreshes_once_after_an_auth_failure() -> None:
     tokens = iter(("expired-token", "fresh-token"))
     force_values: list[bool] = []
@@ -147,7 +162,6 @@ class _DiscoveryClient:
             },
             ("projects", "projects-page-2"): {
                 "projects": [{"projectReference": {"projectId": "empty-project"}}],
-                "nextPageToken": "projects-page-2",
             },
             ("projects/analytics-prod/datasets", None): {
                 "datasets": [
@@ -188,6 +202,35 @@ class _DiscoveryClient:
         resolved_params = params or {}
         self.calls.append((path, resolved_params))
         return self._responses[(path, resolved_params.get("pageToken"))]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"projects": [], "unreachable": ["EU"]},
+        {"projects": [], "nextPageToken": "same"},
+        {"projects": "invalid"},
+    ],
+)
+async def test_discovery_rejects_incomplete_or_invalid_pages(response: dict[str, Any]) -> None:
+    class InvalidDiscoveryClient:
+        calls = 0
+
+        async def get(
+            self,
+            _path: str,
+            *,
+            operation: str,
+            params: dict[str, Any] | None = None,
+        ) -> Any:
+            assert operation == "list_projects"
+            self.calls += 1
+            if self.calls == 1 and response.get("nextPageToken") == "same":
+                return {"projects": [], "nextPageToken": "same"}
+            return response
+
+    with pytest.raises(IntegrationValidationError):
+        await discover_bigquery_resources(InvalidDiscoveryClient())
 
 
 async def _static_token(_force: bool) -> str:

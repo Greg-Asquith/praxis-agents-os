@@ -167,6 +167,23 @@ async def test_query_rejects_dry_run_above_byte_cap() -> None:
     assert len(client.calls) == 1
 
 
+async def test_query_rejects_persistent_routines_before_execution() -> None:
+    dry_run = _dry_run()
+    dry_run["statistics"]["query"]["referencedRoutines"] = [
+        {
+            "projectId": "analytics",
+            "datasetId": "shared",
+            "routineId": "remote_enrichment",
+        }
+    ]
+    client = _QueryClient(dry_run=dry_run)
+
+    with pytest.raises(ModelRetry, match="does not allow persistent routines"):
+        await _run_operation(client)
+
+    assert len(client.calls) == 1
+
+
 async def test_query_stamps_labels_location_and_caps_rows() -> None:
     client = _QueryClient(
         dry_run=_dry_run(total_bytes=512),
@@ -202,7 +219,28 @@ async def test_query_stamps_labels_location_and_caps_rows() -> None:
         "praxis_run": "run",
     }
     assert query_request["json"]["requestId"] == "00000000-0000-0000-0000-000000000089"
+    assert query_request["request_timeout"] == 65
     assert result["rows"][0]["campaign"] == "Quarterly revenue"
+
+
+async def test_query_bounds_structured_result_characters() -> None:
+    client = _QueryClient(
+        dry_run=_dry_run(),
+        query_response={
+            "jobComplete": True,
+            "schema": {"fields": [{"name": "large_value"}]},
+            "rows": [{"f": [{"v": "x" * 5000}]}],
+            "totalRows": "1",
+            "totalBytesProcessed": "1",
+            "cacheHit": False,
+        },
+    )
+
+    result = await _run_operation(client, max_result_chars=1000)
+
+    assert result["rows"] == []
+    assert result["total_rows"] == 1
+    assert result["truncated"] is True
 
 
 async def test_query_tool_rejects_multiple_bigquery_connections_before_provider_io() -> None:
@@ -235,8 +273,8 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
     )
     audit = AsyncMock()
     monkeypatch.setattr(
-        "integrations.bigquery.tools.run_query.bigquery_client",
-        AsyncMock(return_value=object()),
+        "integrations.bigquery.tools.run_query.bigquery_query_client",
+        AsyncMock(return_value=(object(), "billing-project")),
     )
     monkeypatch.setattr(
         "integrations.bigquery.tools.run_query.run_query",
@@ -251,6 +289,7 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
 
     BigQueryRunQueryOutput.model_validate(result)
     assert provider_run.await_args.kwargs["request_id"] == str(ctx.deps.run.id)
+    assert provider_run.await_args.kwargs["billing_project_id"] == "billing-project"
     assert set(provider_run.await_args.kwargs["allowed_datasets"]) == {
         ("analytics", "marketing"),
         ("analytics", "finance"),
@@ -266,6 +305,7 @@ async def _run_operation(
     *,
     max_bytes: int = 1024,
     max_rows: int = 10,
+    max_result_chars: int = 16_000,
 ):
     return await run_query(
         client,
@@ -286,6 +326,7 @@ async def _run_operation(
         request_id="00000000-0000-0000-0000-000000000089",
         max_bytes_billed=max_bytes,
         max_rows=max_rows,
+        max_result_chars=max_result_chars,
         timeout_seconds=60,
     )
 
@@ -338,8 +379,22 @@ class _QueryClient:
         )
         self.calls: list[dict] = []
 
-    async def post(self, path: str, *, operation: str, json: dict):
-        self.calls.append({"path": path, "operation": operation, "json": json})
+    async def post(
+        self,
+        path: str,
+        *,
+        operation: str,
+        json: dict,
+        request_timeout: float | None = None,
+    ):
+        self.calls.append(
+            {
+                "path": path,
+                "operation": operation,
+                "json": json,
+                "request_timeout": request_timeout,
+            }
+        )
         return next(self.responses)
 
 

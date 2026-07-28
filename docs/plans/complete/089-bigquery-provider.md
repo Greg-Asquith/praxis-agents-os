@@ -53,8 +53,12 @@
   trigger, migration, retention, and three-tool contract coverage passed.
   Cached table discovery and schema lookup are context-scoped, while query
   execution is dry-run-gated for SELECT-only statements, active-dataset
-  containment, at most 49 referenced tables, the configured byte ceiling,
-  and bounded rows. Warehouse values remain plain typed data under the
+  containment, no persistent routines, at most 49 referenced tables, the
+  configured byte ceiling, and bounded rows and serialized output. Query jobs
+  use the service account's own project for billing, and provider/runtime
+  timeouts are aligned. Partial discovery pages now fail closed. Connection
+  schema-sync jobs fan out into independently retryable per-dataset jobs.
+  Warehouse values remain plain typed data under the
   operator-authorized trusted-database boundary, and successful calls use the
   standard per-resource integration audit seam. Live sandbox QA was
   unavailable for Slice A because no BigQuery service-account credential is
@@ -95,8 +99,9 @@
    layered.** `connect_help` (plain-language, per the non-technical
    operator standard) tells the operator to grant the service account
    `roles/bigquery.jobUser` on its own project and
-   `roles/bigquery.dataViewer` on the projects or datasets it should
-   read — and nothing writable. Praxis does not trust that posture:
+   `roles/bigquery.metadataViewer` on each project Praxis should discover and
+   `roles/bigquery.dataViewer` on only the datasets it should read — and
+   nothing writable. Praxis does not trust that posture:
    SELECT-only is independently enforced at the API authority layer
    (decision 8), so an over-granted key still cannot be driven to write
    through Praxis tools.
@@ -137,9 +142,10 @@
    exist".
 6. **Schema ingestion is a job with a manifest-declared trigger seam.**
    New job kind `integrations.sync_table_schemas` (kind is generic;
-   payload is ids-only per 030 discipline; subject =
-   `integration_connection`, so the partial-unique in-flight index gives
-   one sync per connection for free). To avoid provider branches in the
+   payload is ids-only per 030 discipline). The generic trigger enqueues one
+   `integration_connection` coordinator, which fans out deduplicated
+   `integration_resource` jobs so each enabled dataset retries and completes
+   independently within the worker timeout. To avoid provider branches in the
    engine, `IntegrationProviderPlugin` gains one optional field,
    `metadata_sync_job_kind: str | None = None`; the discovery handler
    and the resource-selection service enqueue that kind after a
@@ -172,7 +178,7 @@
 8. **The query pipeline is dry-run-first; the dry run is the
    authorization and accuracy authority.** `bigquery_run_query` does
    not regex-guess at SQL. Pipeline:
-   1. Resolve the active context. All context BigQuery datasets must
+   1. Resolve the active context and service-account billing project. All context BigQuery datasets must
       belong to **one** connection (one credential signs the job); a
       context spanning two BigQuery connections raises `ModelRetry`
       telling the model to ask the user to narrow the context.
@@ -187,6 +193,9 @@
         enabled datasets. Anything else → `ModelRetry` naming the
         offending table. This — not string inspection — is the
         boundary that keeps agents inside their assigned context.
+      - `referencedRoutines` must be empty. Persistent routines are rejected
+        because BigQuery remote functions can call external HTTP services and
+        cannot run through an auto-approved read tool.
       - **Maintainer amendment (2026-07-28):** Google documents that
         `referencedTables` is incomplete above 50 tables and exposes no
         completeness flag. Fail closed when the dry run reports 50 or
@@ -198,7 +207,9 @@
         `BIGQUERY_MAX_BYTES_BILLED` (default 1 GiB
         [default — confirm at review]) → `ModelRetry` advising a
         narrower query or partition filter, quoting the estimate.
-   3. **Real job**: `maximumBytesBilled` set to the same cap (Google
+   3. **Real job**: the request path uses the service account key's
+      `project_id`, where the operator grants Job User. `maximumBytesBilled`
+      is set to the same cap (Google
       enforces the backstop even if our estimate was wrong), `location`
       from the dataset's cached metadata, job timeout from
       `BIGQUERY_QUERY_TIMEOUT_SECONDS` (default 60), `useQueryCache`
@@ -208,7 +219,9 @@
    4. **Results**: rows capped by the existing
       `INTEGRATION_REPORT_MAX_ROWS`; the typed `output_model` carries
       rows, `total_rows`, `truncated`, `total_bytes_processed`, and
-      `cache_hit`. Cell values are plain strings.
+      `cache_hit`. A provider-owned serialized-character ceiling prevents
+      structured results from bypassing the runtime free-text bound. Cell
+      values are plain strings.
 9. **Trusted warehouse boundary (operator decision, 2026-07-28).**
    BigQuery datasets connected to Praxis are the operator's own
    controlled databases. Their schema descriptions and query cells remain

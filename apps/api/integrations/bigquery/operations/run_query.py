@@ -20,6 +20,7 @@ class BigQueryQueryClient(Protocol):
         *,
         operation: str,
         json: dict[str, Any],
+        request_timeout: float | None = None,
     ) -> Any: ...
 
 
@@ -40,6 +41,7 @@ async def run_query(
     request_id: str,
     max_bytes_billed: int,
     max_rows: int,
+    max_result_chars: int,
     timeout_seconds: int,
 ) -> dict[str, Any]:
     dry_run = await client.post(
@@ -61,6 +63,14 @@ async def run_query(
         raise ModelRetry(
             "bigquery_run_query accepts one GoogleSQL SELECT statement. "
             f"BigQuery classified this query as {statement_type or 'unknown'}."
+        )
+
+    routines = _referenced_routines(query_statistics)
+    if routines:
+        raise ModelRetry(
+            "bigquery_run_query does not allow persistent routines because some "
+            "BigQuery routines can invoke external services. Rewrite the query "
+            "using tables and built-in GoogleSQL functions only."
         )
 
     references = _referenced_tables(query_statistics)
@@ -106,6 +116,7 @@ async def run_query(
             "labels": dict(labels),
             "requestId": request_id,
         },
+        request_timeout=timeout_seconds + 5,
     )
     _raise_query_errors(response)
     if response.get("jobComplete") is not True:
@@ -113,7 +124,11 @@ async def run_query(
             f"The BigQuery job did not complete within {timeout_seconds} seconds. "
             "Narrow the query and try again."
         )
-    return _query_result(response, max_rows=max_rows)
+    return _query_result(
+        response,
+        max_rows=max_rows,
+        max_result_chars=max_result_chars,
+    )
 
 
 def _query_statistics(payload: Any) -> dict[str, Any]:
@@ -147,6 +162,29 @@ def _referenced_tables(statistics: Mapping[str, Any]) -> list[tuple[str, str, st
     return references
 
 
+def _referenced_routines(statistics: Mapping[str, Any]) -> list[tuple[str, str, str]]:
+    raw_routines = statistics.get("referencedRoutines")
+    if raw_routines is None:
+        return []
+    if not isinstance(raw_routines, list):
+        raise ModelRetry("BigQuery returned invalid referenced-routine metadata. Revise the query.")
+    routines: list[tuple[str, str, str]] = []
+    for item in raw_routines:
+        if not isinstance(item, dict):
+            raise ModelRetry(
+                "BigQuery returned invalid referenced-routine metadata. Revise the query."
+            )
+        project_id = str(item.get("projectId", "")).strip()
+        dataset_id = str(item.get("datasetId", "")).strip()
+        routine_id = str(item.get("routineId", "")).strip()
+        if not project_id or not dataset_id or not routine_id:
+            raise ModelRetry(
+                "BigQuery returned incomplete referenced-routine metadata. Revise the query."
+            )
+        routines.append((project_id, dataset_id, routine_id))
+    return routines
+
+
 def _query_location(
     references: list[tuple[str, str, str]],
     allowed_datasets: Mapping[tuple[str, str], AllowedDataset],
@@ -176,7 +214,12 @@ def _raise_query_errors(payload: Any) -> None:
     raise ModelRetry("BigQuery reported a query error. Revise the query.")
 
 
-def _query_result(payload: dict[str, Any], *, max_rows: int) -> dict[str, Any]:
+def _query_result(
+    payload: dict[str, Any],
+    *,
+    max_rows: int,
+    max_result_chars: int,
+) -> dict[str, Any]:
     schema = payload.get("schema")
     raw_fields = schema.get("fields") if isinstance(schema, dict) else None
     column_names = _unique_column_names(raw_fields if isinstance(raw_fields, list) else [])
@@ -185,27 +228,32 @@ def _query_result(payload: dict[str, Any], *, max_rows: int) -> dict[str, Any]:
     total_rows = _nonnegative_int(payload.get("totalRows"))
     total_rows = total_rows if total_rows is not None else len(rows)
     truncated = len(rows) > max_rows or total_rows > max_rows or bool(payload.get("pageToken"))
-    bounded_rows: list[dict[str, str | None]] = []
-    for raw_row in rows[:max_rows]:
-        cells = raw_row.get("f") if isinstance(raw_row, dict) else None
-        values = cells if isinstance(cells, list) else []
-        bounded_rows.append(
-            {
-                column_name: (
-                    _cell_text(cell.get("v"))
-                    if isinstance(cell, dict) and cell.get("v") is not None
-                    else None
-                )
-                for column_name, cell in zip(column_names, values, strict=False)
-            }
-        )
-    return {
-        "rows": bounded_rows,
+    result: dict[str, Any] = {
+        "rows": [],
         "total_rows": total_rows,
         "truncated": truncated,
         "total_bytes_processed": _nonnegative_int(payload.get("totalBytesProcessed")) or 0,
         "cache_hit": bool(payload.get("cacheHit")),
     }
+    bounded_rows: list[dict[str, str | None]] = []
+    for raw_row in rows[:max_rows]:
+        cells = raw_row.get("f") if isinstance(raw_row, dict) else None
+        values = cells if isinstance(cells, list) else []
+        row = {
+            column_name: (
+                _cell_text(cell.get("v"))
+                if isinstance(cell, dict) and cell.get("v") is not None
+                else None
+            )
+            for column_name, cell in zip(column_names, values, strict=False)
+        }
+        candidate = {**result, "rows": [*bounded_rows, row]}
+        if _serialized_chars(candidate) > max_result_chars:
+            result["truncated"] = True
+            break
+        bounded_rows.append(row)
+    result["rows"] = bounded_rows
+    return result
 
 
 def _unique_column_names(fields: list[Any]) -> list[str]:
@@ -223,6 +271,10 @@ def _cell_text(value: Any) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return str(value)
+
+
+def _serialized_chars(value: object) -> int:
+    return len(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str))
 
 
 def _nonnegative_int(value: Any) -> int | None:

@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationTimeoutError, IntegrationValidationError
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
@@ -21,7 +21,7 @@ from .schemas import BigQueryRunQueryOutput
 from .utils import (
     BIGQUERY_BINDING,
     active_bigquery_entries,
-    bigquery_client,
+    bigquery_query_client,
     dataset_coordinates,
     dataset_location,
     query_labels,
@@ -60,10 +60,9 @@ async def bigquery_run_query(
             dataset_id=dataset_id,
             location=dataset_location(entry),
         )
-    billing_project_id = sorted(allowed_datasets)[0][0]
 
     async def execute():
-        client = await bigquery_client(ctx, entries[0])
+        client, billing_project_id = await bigquery_query_client(ctx, entries[0])
         try:
             return await run_query(
                 client,
@@ -74,9 +73,10 @@ async def bigquery_run_query(
                 request_id=str(ctx.deps.run.id),
                 max_bytes_billed=bigquery_settings.BIGQUERY_MAX_BYTES_BILLED,
                 max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
+                max_result_chars=bigquery_settings.BIGQUERY_MAX_RESULT_CHARS,
                 timeout_seconds=bigquery_settings.BIGQUERY_QUERY_TIMEOUT_SECONDS,
             )
-        except IntegrationValidationError as exc:
+        except (IntegrationTimeoutError, IntegrationValidationError) as exc:
             provider_message = str(exc).partition(" | ")[0]
             raise ModelRetry(provider_message) from exc
 
@@ -100,7 +100,7 @@ DEFINITION = RuntimeToolDefinition(
     label="Run BigQuery Query",
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
-    timeout=75,
+    timeout=bigquery_settings.BIGQUERY_QUERY_TIMEOUT_SECONDS + 15,
     output_model=BigQueryRunQueryOutput,
     integration_binding=BIGQUERY_BINDING,
     presentation=ToolPresentation(

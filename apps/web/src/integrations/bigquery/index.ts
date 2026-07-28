@@ -8,8 +8,7 @@ import { bigQueryTablesPresenter } from "@/integrations/bigquery/presenters/tabl
 import type { IntegrationUiModule } from "@/integrations/contract"
 
 export default {
-  catalogDescription:
-    "Let agents explore approved datasets and run read-only SQL queries.",
+  catalogDescription: "Let agents explore approved datasets and run read-only SQL queries.",
   ConnectHelp: BigQueryConnectHelp,
   icons: { bigquery: BigQueryLogo },
   providerKey: "bigquery",

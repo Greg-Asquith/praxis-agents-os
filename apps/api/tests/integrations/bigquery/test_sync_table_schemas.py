@@ -8,13 +8,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from integrations.bigquery.settings import bigquery_settings
-from integrations.bigquery.sync_table_schemas import sync_bigquery_table_schemas
+from integrations.bigquery.sync_table_schemas import (
+    SYNC_TABLE_SCHEMAS_KIND,
+    sync_bigquery_table_schemas,
+    sync_table_schemas_handler,
+)
 from models.integration_table_schema import IntegrationTableSchema
+from models.jobs import Job
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
     build_integration_resource,
     build_integration_table_schema,
+    build_job,
     build_user,
     build_workspace,
 )
@@ -278,6 +284,41 @@ async def test_sync_is_enabled_only_and_preserves_unseen_rows_when_truncated(
         "max_tables_per_dataset": 1,
         "truncated_datasets": ["analytics.enabled"],
     }
+
+
+async def test_connection_sync_job_fans_out_one_deduplicated_job_per_enabled_dataset(
+    db_session: AsyncSession,
+) -> None:
+    connection = await _bigquery_connection(db_session)
+    enabled = _dataset(connection, external_id="analytics.enabled")
+    disabled = _dataset(connection, external_id="analytics.disabled", enabled=False)
+    db_session.add_all([enabled, disabled])
+    await db_session.flush()
+    coordinator = build_job(
+        kind=SYNC_TABLE_SCHEMAS_KIND,
+        workspace_id=connection.owner_workspace_id,
+        subject_type="integration_connection",
+        subject_id=connection.id,
+        initiated_by_user_id=connection.connected_by_user_id,
+    )
+
+    await sync_table_schemas_handler(db_session, coordinator)
+    await sync_table_schemas_handler(db_session, coordinator)
+
+    jobs = list(
+        (
+            await db_session.scalars(
+                select(Job).where(
+                    Job.kind == SYNC_TABLE_SCHEMAS_KIND,
+                    Job.subject_type == "integration_resource",
+                )
+            )
+        ).all()
+    )
+    assert len(jobs) == 1
+    assert jobs[0].subject_id == enabled.id
+    assert jobs[0].workspace_id == connection.owner_workspace_id
+    assert jobs[0].initiated_by_user_id == connection.connected_by_user_id
 
 
 class _SchemaClient:

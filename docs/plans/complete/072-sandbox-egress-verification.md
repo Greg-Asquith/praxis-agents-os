@@ -1,7 +1,7 @@
 # Plan 072: Sandbox egress must be probed, not assumed (amendment to 059)
 
 > **Executor instructions**: This is an amendment plan in the 061 mold —
-> its deliverable is the amendment block drafted verbatim below, appended
+> its deliverable is the reconciled amendment block drafted below, appended
 > to `docs/plans/059-sandboxed-code-execution.md`, not code. The code
 > lands through the amended 059. When done, update the status row in
 > `docs/plans/000_README.md`.
@@ -52,19 +52,21 @@
    unattended exfiltration primitive: poisoned file content steers the
    generated code into encoding workspace data as outbound requests, and
    under `internal` + `auto` no human is in the loop. In 054 vocabulary
-   that provider's `run_code` is an external-effect write. But 054 puts
-   `effect_scope` on the `RuntimeToolDefinition` — one
-   `Literal["internal", "external"]` per definition, no per-provider
-   axis — so the honest v1 is an allowlist, not a scope split: **only
-   egress-isolated providers may be enabled for `run_code`**, enforced
-   where 059 decision 7 already validates the `model_provider` argument;
-   unverified providers are rejected until a per-provider scope
-   mechanism exists.
+   that provider's `run_code` is an external-effect write. Plan 054's
+   completed contract now supports argument-based per-call classification
+   through `effect_scope_resolver`, so `run_code` must resolve the effective
+   provider (including the configured default when `model_provider` is
+   omitted) to `internal` for egress-isolated providers and `external` for
+   providers where any egress is observed. Unverified providers are rejected
+   until probed. `supported_model_providers` remains the API-compatibility
+   set, not the security boundary.
 4. **Egress posture is externally mutable, so it is re-verified.**
    Providers change sandbox capabilities without notice. Probe (d) is
    re-run on any pydantic-ai upgrade or provider SDK/API version bump
    touching code execution; the dated posture record is refreshed in the
-   module docstring and mirrored in the governance §2 row.
+   module docstring and mirrored in the governance §2 row. The scope mapping
+   changes in the same revision; a provider whose current posture is not
+   verified fails closed.
 5. **The canonical attack gets a scenario.** A poisoned input file
    steering generated code toward exfiltration is the textbook attack on
    code-interpreter tools. The 055 harness gains a fixture + scenario
@@ -108,12 +110,17 @@ All anchors verified on the working tree at `c770a1c` (2026-07-07).
 - **054's contract does not decide provider egress posture**:
   `effect_scope` is now a tool-call side-effect classification (054 DONE
   2026-07-09), including argument-based resolution for mixed tools, but it
-  is not a provider egress-verification mechanism. This plan still owns
-  the provider allowlist and canary-probe decision for 059.
+  is not a provider egress-verification mechanism. This plan owns the canary
+  probe, fail-closed verification gate, and provider-to-scope mapping for
+  059. The original allowlist workaround was superseded during the
+  2026-07-28 drift check because the live contract now has the per-call axis
+  it lacked when this plan was drafted.
 - **The enforcement seam already exists in 059**: decision 7 validates
   the per-call `model_provider` argument against a supported set (the
-  `web_search` mechanics) — the natural choke point for an
-  egress-verified allowlist, with no new machinery.
+  `web_search` mechanics), while 054's landed `effect_scope_resolver`
+  classifies argument-dependent writes before the envelope check. Together
+  they provide the fail-closed verification gate and provider-to-scope
+  mapping with no new contract machinery.
 - **055 harness**: deterministic scenarios via `FunctionModel`-scripted
   helpers under `tests/scenarios/`; live LLM calls are blocked in tests.
 
@@ -121,14 +128,19 @@ All anchors verified on the working tree at `c770a1c` (2026-07-07).
 
 **In scope:**
 
-- The amendment block below, appended verbatim to
+- The reconciled amendment block below, appended character-for-character to
   `docs/plans/059-sandboxed-code-execution.md`
 - `docs/plans/000_README.md`: row for 072; note on 059's dependency line
+- `docs/plans/000_MASTER_ROADMAP.md`: completion/order update and the
+  maintainer-directed deferral of plans 083–088
+- This plan's decision/amendment text, reconciled to the live
+  `effect_scope_resolver` contract after its STOP condition triggered
 
 **Out of scope:**
 
-- Any code. The probe, allowlist enforcement, docstring posture record,
-  and scenarios land inside 059's execution per the amendment.
+- Any code. The probe, verification gate, provider-to-scope mapping,
+  docstring posture record, and scenarios land inside 059's execution per
+  the amendment.
 - Changes to 054 or to the `effect_scope` contract (a per-provider scope
   axis is a possible future plan, not this one).
 - External sandbox vendors (059 decision 6) — covered by a maintenance
@@ -149,10 +161,10 @@ All anchors verified on the working tree at `c770a1c` (2026-07-07).
 3. Update `docs/plans/000_README.md`: add the 072 row (Lane B), and
    append "amended by 072 (egress verification)" to 059's row notes.
 
-## Amendment text (append to 059 verbatim)
+## Amendment text (append to 059 character-for-character)
 
 ```markdown
-## Amendment: sandbox egress verification (plan 072, 2026-07-07)
+## Amendment: sandbox egress verification (plan 072, reconciled 2026-07-28)
 
 Binding on execution. Decision 2's `effect_scope="internal"` +
 `supports_auto=True` classification silently assumes every enabled
@@ -169,40 +181,51 @@ externally mutable fact — probe it, gate on it, and re-check it.
 2. **Classification gates on probe (d).** A provider whose sandbox shows
    ANY egress (DNS or HTTP) cannot carry the `internal` classification —
    for that provider `run_code` is an external-effect write (054
-   vocabulary) and must not run unattended. Because `effect_scope` is
-   per-definition, v1 does not split the scope: the decision 7 supported
-   set becomes the **egress-verified set**, and a `model_provider`
-   naming an unverified provider is rejected at validation time with an
-   explicit error. Do not classify the definition `external` for
-   everyone instead — that would put scheduled digests behind approval
-   on providers that earned `internal`.
+   vocabulary) and must not run unattended. Use the landed
+   `effect_scope_resolver` seam to classify each call from its effective
+   provider: `internal` only for a currently verified egress-isolated
+   provider; `external` for a verified provider where any egress is
+   observed. Resolve the settings-pinned default when `model_provider` is
+   omitted. A provider with no current probe result is rejected at
+   validation time with an explicit error. Decision 7's
+   `supported_model_providers` remains the provider/API compatibility set,
+   not an egress allowlist.
 3. **Re-verification rule.** Re-run probe (d) on any pydantic-ai upgrade
    or provider SDK/API change touching code execution; refresh the dated
    posture record in the module docstring and mirror it in the
-   governance §2 row this plan updates. A provider that loses isolation
-   leaves the verified set in the same change.
+   governance §2 row this plan updates. Update the provider-to-scope
+   mapping in the same change; any provider without a current result
+   fails closed.
 4. **Test-plan delta (055 scenarios).** Add: (a) a poisoned-input
    fixture — a CSV whose cell content instructs exfiltration of the
    other rows to a URL — driven through a scripted helper emitting
    exfiltration-shaped code, asserting the boundary controls (audit
-   rows, output bounding, and rejection of unverified providers); (b) a
-   validation test that an unverified `model_provider` is rejected. Live
-   egress cannot be asserted in tests (live LLM calls are blocked); it
-   is pinned by probe (d), and the Step 4 manual smoke must include the
-   poisoned CSV producing no canary hit on any verified provider.
+   rows, output bounding, and rejection of unverified providers); (b)
+   scope-resolution tests proving an isolated provider is `internal`, an
+   egress-capable provider is `external`, and the omitted argument uses
+   the configured default; (c) a scheduled/delegated
+   `require_approval` scenario proving an external-classified call
+   suspends while an isolated internal call may execute under `auto`.
+   Live egress cannot be asserted in tests (live LLM calls are blocked);
+   it is pinned by probe (d), and the Step 4 manual smoke must include
+   the poisoned CSV. An isolated provider must produce no canary hit; an
+   egress-capable provider must never execute that smoke unattended.
 
-Additional STOP condition: probe (d) shows egress on all three
-providers — `run_code` has no enableable provider and needs the operator
-before anything ships.
+Additional STOP condition: the effective provider cannot be resolved
+before the envelope check, including when `model_provider` is omitted —
+do not default such a call to `internal`; fail closed and report.
 ```
 
 ## Done criteria
 
 - [ ] `docs/plans/059-sandboxed-code-execution.md` ends with the
-      amendment block above, character-for-character
-- [ ] `docs/plans/000_README.md` has a 072 row and 059's row notes the
+      reconciled amendment block above, character-for-character
+- [ ] `docs/plans/000_README.md` has a DONE 072 row and 059's row notes the
       amendment
-- [ ] No code changed; no other plan file changed
+- [ ] `docs/plans/000_MASTER_ROADMAP.md` records 072 complete, makes 059
+      next in the serial stream, and records plans 083–088 deferred
+- [ ] This plan is in `docs/plans/complete/`
+- [ ] No code changed
 
 ## STOP conditions
 
@@ -212,16 +235,19 @@ before anything ships.
   excerpts — reconcile before appending.
 - 054 has grown a per-provider or per-call `effect_scope` mechanism —
   the allowlist workaround in decision 3 may be obsolete; reconcile the
-  amendment text with the real contract first.
+  amendment text with the real contract first. **Triggered and resolved
+  2026-07-28:** the landed `effect_scope_resolver` now owns the per-call
+  provider classification; unverified providers still fail closed.
 
 ## Maintenance notes
 
 - When external sandbox executors arrive (059 decision 6), probe (d) is
   a precondition for enabling each one — same rule, same recording
   places.
-- If a future plan adds per-provider `effect_scope`, migrate the
-  allowlist gate to real scope classification in the same change.
+- If the effect-scope contract changes again, preserve the fail-closed
+  provider verification and re-audit default-provider resolution before
+  the envelope check.
 - Reviewers of 059's execution should scrutinize: probe (d) results
-  dated and per-provider, the verified set enforced at the decision 7
-  validation seam (not documentation), and the poisoned CSV smoke run
-  against every enabled provider.
+  dated and per-provider, unverified-provider rejection, the per-call scope
+  mapping enforced at dispatch (not documentation), and the poisoned CSV
+  smoke posture for every enabled provider.

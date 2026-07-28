@@ -13,7 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
-from core.settings import settings
 from models.integration_table_schema import IntegrationTableSchema
 from models.integrations import ExternalCredential, IntegrationConnection, IntegrationResource
 from models.jobs import Job
@@ -21,6 +20,7 @@ from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     parse_google_service_account_json,
 )
+from services.integrations.enqueue_resource_metadata_sync import enqueue_resource_metadata_sync
 from services.jobs.registry import job_handler
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
@@ -66,13 +66,83 @@ class _CachedTable:
 
 @job_handler(
     kind=SYNC_TABLE_SCHEMAS_KIND,
-    timeout=settings.INTEGRATIONS_DISCOVERY_TIMEOUT_SECONDS,
+    timeout=bigquery_settings.BIGQUERY_SCHEMA_SYNC_TIMEOUT_SECONDS,
 )
 async def sync_table_schemas_handler(db: AsyncSession, job: Job) -> None:
     """Run one provider-owned metadata synchronization job."""
-    if job.subject_type != "integration_connection" or job.subject_id is None:
-        raise ValueError("Integration table schema sync requires a connection subject")
-    await sync_bigquery_table_schemas(db, connection_id=job.subject_id)
+    if job.subject_id is None:
+        raise ValueError("Integration table schema sync requires a subject")
+    if job.subject_type == "integration_connection":
+        await enqueue_bigquery_table_schema_resource_jobs(
+            db,
+            connection_id=job.subject_id,
+            initiated_by_user_id=job.initiated_by_user_id,
+        )
+        return
+    if job.subject_type == "integration_resource":
+        await sync_bigquery_table_schema_resource(db, resource_id=job.subject_id)
+        return
+    raise ValueError("Integration table schema sync requires a connection or resource subject")
+
+
+async def enqueue_bigquery_table_schema_resource_jobs(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+    initiated_by_user_id: UUID | None = None,
+) -> None:
+    """Fan one connection-level request into independently retryable dataset jobs."""
+    connection = await _get_bigquery_connection(db, connection_id=connection_id)
+    if connection is None:
+        return
+    resources = await _enabled_resources(db, connection_id=connection.id)
+    for resource in resources:
+        await enqueue_resource_metadata_sync(
+            db,
+            connection=connection,
+            resource_id=resource.id,
+            kind=SYNC_TABLE_SCHEMAS_KIND,
+            initiated_by_user_id=initiated_by_user_id,
+        )
+
+
+async def sync_bigquery_table_schema_resource(
+    db: AsyncSession,
+    *,
+    resource_id: UUID,
+    client: BigQuerySchemaClient | None = None,
+) -> None:
+    """Synchronize one enabled dataset within a bounded worker job."""
+    resource = await db.scalar(
+        select(IntegrationResource).where(
+            IntegrationResource.id == resource_id,
+            IntegrationResource.resource_type == "bigquery_dataset",
+            IntegrationResource.enabled.is_(True),
+            IntegrationResource.availability == "available",
+            IntegrationResource.deleted.is_(False),
+        )
+    )
+    if resource is None:
+        return
+    connection = await _get_bigquery_connection(db, connection_id=resource.connection_id)
+    if connection is None:
+        return
+    schema_client = client or await _build_client(db, connection)
+    now = datetime.now(UTC)
+    truncated = await _sync_resource_tables(
+        db,
+        resource=resource,
+        client=schema_client,
+        now=now,
+    )
+    await _record_resource_sync_metadata(
+        db,
+        connection_id=connection.id,
+        external_id=resource.external_id,
+        truncated=truncated,
+        now=now,
+    )
+    await db.flush()
 
 
 async def sync_bigquery_table_schemas(
@@ -82,56 +152,21 @@ async def sync_bigquery_table_schemas(
     client: BigQuerySchemaClient | None = None,
 ) -> None:
     """Reconcile cached schemas for every currently enabled dataset."""
-    connection = await db.scalar(
-        select(IntegrationConnection).where(
-            IntegrationConnection.id == connection_id,
-            IntegrationConnection.deleted.is_(False),
-        )
-    )
+    connection = await _get_bigquery_connection(db, connection_id=connection_id)
     if connection is None:
         return
-    if connection.provider_key != "bigquery":
-        raise IntegrationValidationError(
-            "Table schema sync requires a BigQuery connection",
-            provider_key=connection.provider_key,
-            connection_id=str(connection.id),
-            operation="sync_table_schemas",
-        )
-
-    resources = list(
-        (
-            await db.scalars(
-                select(IntegrationResource)
-                .where(
-                    IntegrationResource.connection_id == connection.id,
-                    IntegrationResource.resource_type == "bigquery_dataset",
-                    IntegrationResource.enabled.is_(True),
-                    IntegrationResource.availability == "available",
-                    IntegrationResource.deleted.is_(False),
-                )
-                .order_by(IntegrationResource.external_id)
-            )
-        ).all()
-    )
+    resources = await _enabled_resources(db, connection_id=connection.id)
     schema_client = client
     now = datetime.now(UTC)
     truncated_datasets: list[str] = []
     for resource in resources:
         if schema_client is None:
             schema_client = await _build_client(db, connection)
-        project_id, dataset_id = _dataset_coordinates(resource)
-        tables, truncated = await _fetch_tables(
-            schema_client,
-            project_id=project_id,
-            dataset_id=dataset_id,
-            max_tables=bigquery_settings.BIGQUERY_SCHEMA_SYNC_MAX_TABLES,
-        )
-        await _reconcile_tables(
+        truncated = await _sync_resource_tables(
             db,
             resource=resource,
-            tables=tables,
+            client=schema_client,
             now=now,
-            complete=not truncated,
         )
         if truncated:
             truncated_datasets.append(resource.external_id)
@@ -144,6 +179,108 @@ async def sync_bigquery_table_schemas(
     }
     connection.provider_metadata = provider_metadata
     await db.flush()
+
+
+async def _get_bigquery_connection(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+) -> IntegrationConnection | None:
+    connection = await db.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.id == connection_id,
+            IntegrationConnection.deleted.is_(False),
+        )
+    )
+    if connection is None:
+        return None
+    if connection.provider_key != "bigquery":
+        raise IntegrationValidationError(
+            "Table schema sync requires a BigQuery connection",
+            provider_key=connection.provider_key,
+            connection_id=str(connection.id),
+            operation="sync_table_schemas",
+        )
+    return connection
+
+
+async def _enabled_resources(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+) -> list[IntegrationResource]:
+    return list(
+        (
+            await db.scalars(
+                select(IntegrationResource)
+                .where(
+                    IntegrationResource.connection_id == connection_id,
+                    IntegrationResource.resource_type == "bigquery_dataset",
+                    IntegrationResource.enabled.is_(True),
+                    IntegrationResource.availability == "available",
+                    IntegrationResource.deleted.is_(False),
+                )
+                .order_by(IntegrationResource.external_id)
+            )
+        ).all()
+    )
+
+
+async def _sync_resource_tables(
+    db: AsyncSession,
+    *,
+    resource: IntegrationResource,
+    client: BigQuerySchemaClient,
+    now: datetime,
+) -> bool:
+    project_id, dataset_id = _dataset_coordinates(resource)
+    tables, truncated = await _fetch_tables(
+        client,
+        project_id=project_id,
+        dataset_id=dataset_id,
+        max_tables=bigquery_settings.BIGQUERY_SCHEMA_SYNC_MAX_TABLES,
+    )
+    await _reconcile_tables(
+        db,
+        resource=resource,
+        tables=tables,
+        now=now,
+        complete=not truncated,
+    )
+    return truncated
+
+
+async def _record_resource_sync_metadata(
+    db: AsyncSession,
+    *,
+    connection_id: UUID,
+    external_id: str,
+    truncated: bool,
+    now: datetime,
+) -> None:
+    connection = await db.scalar(
+        select(IntegrationConnection)
+        .where(IntegrationConnection.id == connection_id)
+        .with_for_update()
+    )
+    if connection is None:
+        return
+    provider_metadata = dict(connection.provider_metadata or {})
+    prior = provider_metadata.get("table_schema_sync")
+    prior_state = prior if isinstance(prior, dict) else {}
+    truncated_datasets = {
+        str(item) for item in prior_state.get("truncated_datasets", []) if isinstance(item, str)
+    }
+    if truncated:
+        truncated_datasets.add(external_id)
+    else:
+        truncated_datasets.discard(external_id)
+    provider_metadata["table_schema_sync"] = {
+        "last_synced_at": now.isoformat(),
+        "max_tables_per_dataset": bigquery_settings.BIGQUERY_SCHEMA_SYNC_MAX_TABLES,
+        "truncated_datasets": sorted(truncated_datasets),
+    }
+    connection.provider_metadata = provider_metadata
 
 
 async def _build_client(

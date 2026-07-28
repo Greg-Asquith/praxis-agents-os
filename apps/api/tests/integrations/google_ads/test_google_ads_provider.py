@@ -312,6 +312,7 @@ async def test_service_account_assertion_claims_and_token_cache() -> None:
     raw = json.dumps(
         {
             "type": "service_account",
+            "project_id": "praxis-ads",
             "client_email": "agent@example.iam.gserviceaccount.com",
             "private_key": private_pem,
             "token_uri": GOOGLE_TOKEN_URL,

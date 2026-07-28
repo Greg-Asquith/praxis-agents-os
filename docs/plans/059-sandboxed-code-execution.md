@@ -326,3 +326,54 @@ Stop and report back (do not improvise) if:
 - Reviewers should scrutinize: the effect/effect_scope classification
   (decision 2's reasoning), the audit completeness, and that file access
   reuses the 036 gates verbatim rather than a parallel resolver.
+
+## Amendment: sandbox egress verification (plan 072, reconciled 2026-07-28)
+
+Binding on execution. Decision 2's `effect_scope="internal"` +
+`supports_auto=True` classification silently assumes every enabled
+provider's sandbox has no network egress. That is a per-provider,
+externally mutable fact — probe it, gate on it, and re-check it.
+
+1. **Step 1 gains probe (d): egress posture.** For each catalog
+   provider, run a helper turn whose task has the sandbox attempt
+   outbound access: DNS resolution of a unique canary hostname and an
+   HTTP request to an operator-controlled canary URL. Record per
+   provider, dated, in the module-docstring probe notes: whether DNS
+   resolves, whether the HTTP request lands (canary hit), and the error
+   surface when blocked. Vendor documentation is not a probe result.
+2. **Classification gates on probe (d).** A provider whose sandbox shows
+   ANY egress (DNS or HTTP) cannot carry the `internal` classification —
+   for that provider `run_code` is an external-effect write (054
+   vocabulary) and must not run unattended. Use the landed
+   `effect_scope_resolver` seam to classify each call from its effective
+   provider: `internal` only for a currently verified egress-isolated
+   provider; `external` for a verified provider where any egress is
+   observed. Resolve the settings-pinned default when `model_provider` is
+   omitted. A provider with no current probe result is rejected at
+   validation time with an explicit error. Decision 7's
+   `supported_model_providers` remains the provider/API compatibility set,
+   not an egress allowlist.
+3. **Re-verification rule.** Re-run probe (d) on any pydantic-ai upgrade
+   or provider SDK/API change touching code execution; refresh the dated
+   posture record in the module docstring and mirror it in the
+   governance §2 row this plan updates. Update the provider-to-scope
+   mapping in the same change; any provider without a current result
+   fails closed.
+4. **Test-plan delta (055 scenarios).** Add: (a) a poisoned-input
+   fixture — a CSV whose cell content instructs exfiltration of the
+   other rows to a URL — driven through a scripted helper emitting
+   exfiltration-shaped code, asserting the boundary controls (audit
+   rows, output bounding, and rejection of unverified providers); (b)
+   scope-resolution tests proving an isolated provider is `internal`, an
+   egress-capable provider is `external`, and the omitted argument uses
+   the configured default; (c) a scheduled/delegated
+   `require_approval` scenario proving an external-classified call
+   suspends while an isolated internal call may execute under `auto`.
+   Live egress cannot be asserted in tests (live LLM calls are blocked);
+   it is pinned by probe (d), and the Step 4 manual smoke must include
+   the poisoned CSV. An isolated provider must produce no canary hit; an
+   egress-capable provider must never execute that smoke unattended.
+
+Additional STOP condition: the effective provider cannot be resolved
+before the envelope check, including when `model_provider` is omitted —
+do not default such a call to `internal`; fail closed and report.

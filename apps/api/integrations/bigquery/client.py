@@ -39,8 +39,12 @@ class BigQueryClient:
         *,
         operation: str,
         json: dict[str, Any],
+        request_timeout: float | None = None,
     ) -> Any:
-        return await self._request("POST", path, operation=operation, json=json)
+        kwargs: dict[str, Any] = {"json": json}
+        if request_timeout is not None:
+            kwargs["timeout"] = request_timeout
+        return await self._request("POST", path, operation=operation, **kwargs)
 
     async def _request(
         self,

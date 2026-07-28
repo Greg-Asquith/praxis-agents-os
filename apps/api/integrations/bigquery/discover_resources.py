@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Protocol
 from urllib.parse import quote
 
+from core.exceptions.integration import IntegrationValidationError
 from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     parse_google_service_account_json,
@@ -80,16 +81,45 @@ async def _pages(
             operation=f"list_{collection_key}",
             params=params,
         )
-        items = payload.get(collection_key) if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            raise IntegrationValidationError(
+                f"BigQuery returned an invalid {collection_key} page",
+                provider_key="bigquery",
+                operation=f"list_{collection_key}",
+            )
+        unreachable = payload.get("unreachable")
+        if unreachable is not None and not isinstance(unreachable, list):
+            raise IntegrationValidationError(
+                "BigQuery returned invalid unreachable-location metadata",
+                provider_key="bigquery",
+                operation=f"list_{collection_key}",
+            )
+        if unreachable:
+            raise IntegrationValidationError(
+                "BigQuery returned an incomplete dataset listing; retry discovery",
+                provider_key="bigquery",
+                operation=f"list_{collection_key}",
+            )
+        items = payload.get(collection_key)
+        if items is not None and not isinstance(items, list):
+            raise IntegrationValidationError(
+                f"BigQuery returned an invalid {collection_key} collection",
+                provider_key="bigquery",
+                operation=f"list_{collection_key}",
+            )
         if isinstance(items, list):
             for item in items:
                 if isinstance(item, dict):
                     yield item
-        next_token = (
-            str(payload.get("nextPageToken", "")).strip() if isinstance(payload, dict) else ""
-        )
-        if not next_token or next_token in seen_tokens:
+        next_token = str(payload.get("nextPageToken", "")).strip()
+        if not next_token:
             return
+        if next_token in seen_tokens:
+            raise IntegrationValidationError(
+                f"BigQuery repeated a {collection_key} page token; retry discovery",
+                provider_key="bigquery",
+                operation=f"list_{collection_key}",
+            )
         seen_tokens.add(next_token)
         page_token = next_token
 

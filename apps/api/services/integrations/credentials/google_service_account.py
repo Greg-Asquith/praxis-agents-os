@@ -25,6 +25,7 @@ JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 class GoogleServiceAccountCredentials:
     client_email: str
     private_key: str
+    project_id: str
     token_uri: str = GOOGLE_TOKEN_URL
 
 
@@ -50,11 +51,13 @@ def parse_google_service_account_json(
         )
     client_email = str(payload.get("client_email", "")).strip()
     private_key = str(payload.get("private_key", "")).strip()
+    project_id = str(payload.get("project_id", "")).strip()
     token_uri = str(payload.get("token_uri", GOOGLE_TOKEN_URL)).strip()
     if (
         payload.get("type") != "service_account"
         or not client_email
         or not private_key
+        or not project_id
         or token_uri != GOOGLE_TOKEN_URL
     ):
         raise IntegrationValidationError(
@@ -65,6 +68,7 @@ def parse_google_service_account_json(
     return GoogleServiceAccountCredentials(
         client_email=client_email,
         private_key=private_key,
+        project_id=project_id,
         token_uri=token_uri,
     )
 

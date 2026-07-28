@@ -85,7 +85,8 @@ connected to Praxis are treated as operator-controlled databases. Cached
 schema descriptions and query result cells remain ordinary typed tool data
 without provenance nodes, model frames, warning markers, or a provider-specific
 injection eval. Workspace scoping, dry-run statement/context authorization,
-query byte and row caps, typed output validation, and audit remain enforced.
+rejection of persistent routines, query byte/row/serialized-result caps, typed
+output validation, and audit remain enforced.
 
 **Agent-memory boundary (operator decision, 2026-07-27):** memory is
 Praxis-internal agent state, not an external-content channel. `search_memory`

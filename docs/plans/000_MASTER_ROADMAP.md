@@ -85,6 +85,13 @@ Plan 077 was completed 2026-07-10 and moved to `docs/plans/complete/`;
 verification, deduplication, jobs processing, and the unattended-run envelope
 law before plans 037/041 execute. Plan 079 is reserved as the first
 implementation slice (receipt spine + Airtable webhooks).
+Plan 072 was completed 2026-07-28 and moved to `docs/plans/complete/`; its
+amendment gates 059's provider-native code execution on dated DNS and HTTP
+canary probes. The 2026-07-28 drift check reconciled the original allowlist
+workaround with 054's landed per-call `effect_scope_resolver`: unverified
+providers fail closed, verified isolated providers classify as `internal`,
+and verified egress-capable providers classify as `external` so unattended
+`require_approval` runs suspend them.
 Plan 080 was written and executed 2026-07-10 as the Phase 4a/4b handoff
 readiness sweep (docs-only, the 074 mold): it refreshed the stale
 post-053/054/066 runtime anchors in 040/046, registered threat-model
@@ -339,7 +346,10 @@ sandboxed inside the Praxis shell under contract-scoped tokens. 082 is the
 cheap catalogue-prerequisites slice that interleaves with Phase 4a; 083–088
 follow Phase 4a/4b product value and the artifacts serving substrate
 (050/051, which carries a D13 forward-compatibility amendment; 078 carries
-a coordinating amendment on the OpenAPI posture).
+a coordinating amendment on the OpenAPI posture). On 2026-07-28 the
+maintainer deferred 083–088 because they are a new app-building product
+vertical; revisit them only when internal applications are explicitly
+reprioritized. Plan 082 remains completed catalogue substrate.
 
 ---
 
@@ -778,17 +788,18 @@ into the note in the same PR. Ordering: 082 interleaves with Phase 4a
 value (040–042) and after the artifacts serving substrate (050/051 — 050
 carries the D13 forward-compatibility amendment). Open decisions from the
 note's §11 are distributed into the plans as `[default — confirm at
-review]` markers or STOP conditions.
+review]` markers or STOP conditions. Maintainer decision 2026-07-28 defers
+083–088 until app building is explicitly reprioritized.
 
 | Plan | Scope                                                                                                                                                                                                                                                                                                                     | When                         |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | 082  | Capability catalogue prerequisites: tool contract `version`, serialized input JSON schemas on the catalog, a real `is_tool_allowed` workspace grant store (default-allow + explicit disables), authenticated OpenAPI schema route (amends 078's posture). **DONE 2026-07-22.** (Note §10 prerequisites.)                  | Complete                     |
-| 083  | Headless dispatch entrypoint over the existing choke point, app-principal envelopes (user ∩ contract scopes; external writes `require_approval`), and the generic approval primitive (rows, not paused conversations) surfaced in the approvals UI. Gate G7 registers here. (Note §5.2–§5.3.)                             | First Phase 7 code slice     |
-| 084  | Scoped application tokens: one verifier, two mint paths — short-lived signed frame tokens minted from the session; hashed, revocable, read-default dev tokens — with per-route scope enforcement. CORS/CSRF posture untouched. (Note §4.)                                                                                 | After 083 (prefer after 085) |
-| 085  | Application model + machine-enforced contract + immutable versioned bundles over Files + sandboxed serving on the 050 substrate with `connect-src` = API origin; publish/rollback/disable as audited row-state changes; publish-time scope-diff. (Note §2, §5.1, §7.)                                                     | After 050/051                |
-| 086  | App data collections: first `app`-schema tables (D5), schemaless JSONB v1 with quotas and live/dev namespaces, contract-declared, digest-audited, retention-swept. (Note §5.2.)                                                                                                                                           | After 084/085                |
-| 087  | Application kit + publish gates: in-repo template (Vite + vendored UI baseline), token-server-side dev proxy, coding-agent instructions + machine-readable catalogue snapshot, typed client off 082's schema route, `push` CLI, and the server-side validation gate set with machine-readable failure reports. (Note §6.) | After 082/084/085            |
-| 088  | Applications catalogue + audience surface + frame host page + owner lifecycle/dev-token UI + generic approvals wiring, and the reference application built from the kit through the full loop — the phase's acceptance test. Reference-app choice is a maintainer STOP. (Note §10 slice 6.)                               | Last; closes Phase 7         |
+| 083  | Headless dispatch entrypoint over the existing choke point, app-principal envelopes (user ∩ contract scopes; external writes `require_approval`), and the generic approval primitive (rows, not paused conversations) surfaced in the approvals UI. Gate G7 registers here. (Note §5.2–§5.3.)                             | Deferred 2026-07-28          |
+| 084  | Scoped application tokens: one verifier, two mint paths — short-lived signed frame tokens minted from the session; hashed, revocable, read-default dev tokens — with per-route scope enforcement. CORS/CSRF posture untouched. (Note §4.)                                                                                 | Deferred 2026-07-28          |
+| 085  | Application model + machine-enforced contract + immutable versioned bundles over Files + sandboxed serving on the 050 substrate with `connect-src` = API origin; publish/rollback/disable as audited row-state changes; publish-time scope-diff. (Note §2, §5.1, §7.)                                                     | Deferred 2026-07-28          |
+| 086  | App data collections: first `app`-schema tables (D5), schemaless JSONB v1 with quotas and live/dev namespaces, contract-declared, digest-audited, retention-swept. (Note §5.2.)                                                                                                                                           | Deferred 2026-07-28          |
+| 087  | Application kit + publish gates: in-repo template (Vite + vendored UI baseline), token-server-side dev proxy, coding-agent instructions + machine-readable catalogue snapshot, typed client off 082's schema route, `push` CLI, and the server-side validation gate set with machine-readable failure reports. (Note §6.) | Deferred 2026-07-28          |
+| 088  | Applications catalogue + audience surface + frame host page + owner lifecycle/dev-token UI + generic approvals wiring, and the reference application built from the kit through the full loop — the phase's acceptance test. Reference-app choice is a maintainer STOP. (Note §10 slice 6.)                               | Deferred 2026-07-28          |
 
 Explicit non-goals stand (note §9): no hosted backend code, no external
 identity, no externally-deployed consumers, no public exposure of
@@ -811,7 +822,7 @@ bracket Phases 4–6.
 | 056  | Context compaction: out-of-band watermark-keyed summaries (jobs harness; cache-stable by construction — summarize only below the 013 trim watermark), token-pressure trimming against catalog `context_window`, non-null default for the per-run token cap. **DONE 2026-07-24.**                                                                                     | P1       | Complete       |
 | 057  | Parallel delegation fan-out: depth stays 1; bound (per-run semaphore), prove usage/approval/cancellation behavior, and prompt parallel delegation. **DEFERRED 2026-07-27:** the live runtime serializes all tools to protect its shared SQLAlchemy session; selective concurrency needs a fresh design.                                                                        | P2       | Deferred       |
 | 058  | Model failover chain: catalog-defined `FallbackModel` chains, double opt-in (settings + agent), same-capability-class validation, actually-used model recorded. Supersedes the 2026-07-01 rejection — product decision taken 2026-07-07.                                                                                                                                    | P3       | Filler         |
-| 059  | Sandboxed code execution: `run_code` registry tool via the 028 helper-model pattern + `NativeTool(CodeExecutionTool())` (Anthropic/OpenAI/Google), 036-gated file inlining, outputs bounded + captured as artifacts or durable Files through the Plan 050 seams. e2b/Vercel/Cloudflare deferred as future integration providers behind the same seam.                                               | P2       | After Phase 6  |
+| 059  | Sandboxed code execution: `run_code` registry tool via the 028 helper-model pattern + `NativeTool(CodeExecutionTool())` (Anthropic/OpenAI/Google), 036-gated file inlining, outputs bounded + captured as artifacts or durable Files through the Plan 050 seams, with 072's probe-gated per-provider effect scope. e2b/Vercel/Cloudflare deferred behind the same seam.                       | P2       | After Phase 6  |
 | 060  | Durable run event log + live stream replay: append-only `agent_run_events`, TeeSink batched writes, replay-then-live bridge with LISTEN/NOTIFY cross-instance wake-up, short retention sweep. Supersedes the streaming plan's live-replay non-goal.                                                                                                                         | P3       | Last           |
 
 Not in Lane H but recorded 2026-07-07 as named follow-ups: email/Slack
@@ -864,7 +875,7 @@ migration.
 | 069  | Memory block ordering determinism: rank on stored confidence, not wall-clock-decayed `effective_confidence` — decay-crossing reorders silently bust the prompt-cache prefix 049 exists to protect; two-`now` byte-identity test. **DONE 2026-07-27.** Amends 049.                                                                                     | P1       | Complete.  |
 | 070  | Artifact CSP: drop the general-purpose CDN whitelist (jsdelivr/unpkg serve every npm package — arbitrary script one URL away, and `connect-src 'none'` does not block self-navigation exfil); v1 artifacts are self-contained, self-hosted vetted bundles are the named follow-up. **DONE 2026-07-27.** Amends 050.                                    | P1       | Complete   |
 | 071  | Memory dedup contradiction resolution: near-duplicates surface to the writing agent (save-as-new / supersede / skip) instead of silently reinforcing the stale row; threshold calibration fixture; decay half-lives marked provisional under Gate G4. **DONE 2026-07-27.** Amends 048.                                                                 | P1       | Complete.  |
-| 072  | Sandbox egress verification: per-provider DNS/HTTP canary probe; `run_code`'s `internal`+`supports_auto` classification gated on an egress-verified provider allowlist; re-probe on SDK bumps; poisoned-file fixture. Amends 059.                                                                                                                      | P1       | Before 059 |
+| 072  | Sandbox egress verification: per-provider DNS/HTTP canary probe; unverified providers fail closed; verified isolated providers resolve `internal` and verified egress-capable providers resolve `external` through 054's per-call scope seam; re-probe on SDK bumps; poisoned-file fixture. **DONE 2026-07-28.** Amends 059.                                                        | P1       | Complete.  |
 | 073  | Cancellation terminal hardening: shield terminal persistence against double-cancel, tier-2 dedupe of already-cancelled tasks, `cancelled` disposition on the interrupted dispatch audit row. **DONE 2026-07-09.** Amends 053.                                                                                                                          | P1       | Complete.  |
 | 074  | Consistency sweep: scheduled re-discovery job for permission staleness (039), `top_k`/CTE-limit cross-check (045), deliberate truncate-only `text-embedding-3-large` registry posture (043), connection-rename route reconciliation (042↔038), IP-pinned connects for DNS-rebinding TOCTOU (044). **DONE 2026-07-10.** Amends 038/039/042/043/044/045. | P1       | Complete.  |
 
@@ -917,7 +928,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 089 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 070 (DONE) → 050 (DONE) → 051 (DONE) → 083 → 084 → 085 → 086 → 087 → 088 → 072 → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). Plan 057 is deferred outside this stream by the 2026-07-27 maintainer decision. Plan 089's semantic-schema-search follow-up waits on 045.
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 089 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 070 (DONE) → 050 (DONE) → 051 (DONE) → 072 (DONE) → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). Plans 083–088 are deferred outside this stream by the 2026-07-28 maintainer decision; plan 057 is deferred by the 2026-07-27 maintainer decision. Plan 089's semantic-schema-search follow-up waits on 045.
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should
@@ -927,7 +938,8 @@ applications compose working integrations (product value lands in
 040–042) and 085 serves bundles on the artifact substrate; within the
 phase the order is fixed by hard dependencies (dispatch → tokens → model/
 serving → data → kit → catalogue/reference app), with 084/085 order
-swappable per 084's decision 6.
+swappable per 084's decision 6. That ordering remains binding when the
+deferred phase resumes.
 
 Lane B placement rationale: each amendment lands immediately before the
 plan it binds — 073 before 053 (both done), 067/068/074/077/075 (done)

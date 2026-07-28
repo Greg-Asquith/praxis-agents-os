@@ -27,6 +27,7 @@ async def test_service_account_is_persisted_by_reference_only(
     raw = json.dumps(
         {
             "type": "service_account",
+            "project_id": "praxis-analytics",
             "client_email": "agent@example.iam.gserviceaccount.com",
             "private_key": private_key,
             "token_uri": "https://oauth2.googleapis.com/token",
