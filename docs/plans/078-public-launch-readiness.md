@@ -73,7 +73,7 @@ minimum credible public storefront and makes the act of publishing safe.
    comment, with `dependabot.yml`'s `github-actions` ecosystem keeping the
    pins current. Resolve the SHAs at execution time (e.g.
    `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`) — this plan does not
-   guess them. **Ownership note**: `docs/plans/deployment/000_SECURITY_REVIEW.md`
+   guess them. **Ownership note**: `docs/plans/complete/deployment-000-security-review.md`
    lists "pin third-party Actions by SHA" under CI/CD hardening — this plan
    owns that task; Step 6 ticks it there so the two plans do not collide.
 6. **Release images: API only in v1; web is a per-environment build.** The
@@ -213,7 +213,7 @@ the revision-pass reports; the anchors below are what the steps rely on.
   (`core/settings/security.py:16,19,25,85-94`); `make bootstrap` copies
   them verbatim, regenerating only `CREDENTIAL_MASTER_KEYS`
   (`makefiles/local.mk:15-26`). Independently flagged by
-  `docs/plans/deployment/000_SECURITY_REVIEW.md:50-57`.
+  `docs/plans/complete/deployment-000-security-review.md:50-57`.
 - `pnpm audit --prod`: 4 vulnerabilities (3 high), all reached via `shadcn`
   in `dependencies` (`apps/web/package.json:39`) — a scaffolding CLI that
   never enters the browser bundle.
@@ -314,7 +314,7 @@ the revision-pass reports; the anchors below are what the steps rely on.
    existing settings-validation tests (auth/session handling is a
    high-risk area — test both rejection and the local-environment pass).
    This executes the first high-priority task in
-   `docs/plans/deployment/000_SECURITY_REVIEW.md`; tick it there with a
+   `docs/plans/complete/deployment-000-security-review.md`; tick it there with a
    note that it landed via Lane P (Step 6).
 3. **`shadcn` → `devDependencies`** in `apps/web/package.json`; run
    `pnpm install` to refresh the lockfile.
@@ -506,7 +506,7 @@ Lane P already exists in both index docs, so this step is reconciliation:
 2. `docs/plans/000_MASTER_ROADMAP.md`: the roadmap never mentions
    `docs/plans/deployment/` — add one sentence to the Lane P section
    pointing at it and at the launch gates in this plan.
-3. `docs/plans/deployment/000_SECURITY_REVIEW.md`: tick the
+3. `docs/plans/complete/deployment-000-security-review.md`: tick the
    placeholder-secret task (landed via Step 0) and annotate the "pin
    third-party Actions by SHA" bullet as owned/done by Lane P (decision 5)
    so 002 Stage 3 does not redo it.

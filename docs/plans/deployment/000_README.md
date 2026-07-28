@@ -9,7 +9,7 @@ later:
 
 | Plan | Target | Status |
 | --- | --- | --- |
-| [000_SECURITY_REVIEW.md](000_SECURITY_REVIEW.md) | Cross-cutting — InfoSec-questionnaire hardening tasks that amend the plans below; records the per-customer-project tenancy decision | Planned |
+| [deployment-000-security-review.md](../complete/deployment-000-security-review.md) | Cross-cutting — InfoSec-questionnaire hardening tasks that amend the plans below; records the per-customer-project tenancy decision | Complete 2026-07-28 |
 | [001-local-quickstart.md](001-local-quickstart.md) | Local — foolproof single-command spin-up for someone who just cloned the repo | Planned |
 | [002-gcp-cloud-run.md](002-gcp-cloud-run.md) | GCP — Cloud Run services (API, web) + Cloud Run Jobs (worker, migrate), scale to zero | Planned |
 | 003 (future) | Azure — Container Apps + Container Apps Jobs | Not started |
@@ -26,7 +26,7 @@ do not cite plan files from implementation code.
 ## The deployment target contract
 
 The codebase is already deliberately deployment-agnostic. Every cloud target
-must supply the same nine capabilities; everything else is provider glue. This
+must supply the same ten capabilities; everything else is provider glue. This
 contract is what makes the GCP plan copyable to Azure/AWS/Cloudflare.
 
 | # | Capability | What the code expects | Where it's abstracted |
@@ -40,6 +40,7 @@ contract is what makes the GCP plan copyable to Azure/AWS/Cloudflare.
 | 7 | Object storage with signed URLs | `STORAGE_PROVIDER` = `gcs` \| `azure_blob` \| `s3`; public + private buckets | `services/storage/`, `services/assets/` |
 | 8 | Email | `EMAIL_PROVIDER` = `ses` \| `smtp` \| `sendgrid` (console is local-only, enforced by settings validation) | `core/settings/providers.py` |
 | 9 | DNS / TLS / same-site origins | Session cookies are `samesite="lax"` (`core/auth/sessions/cookies.py`), so web and API must be same-site: sibling subdomains with `COOKIE_DOMAIN` set to the parent domain, or same-origin behind path routing | `core/settings/urls.py`, CORS/CSRF middleware |
+| 10 | Audit/security log retention | Production keeps provider/application logs and append-only `audit_events`/`security_events` for 400 days; staging keeps provider logs for 90 days. Every target must configure provider retention and run application-table sweepers without deleting rows still inside the window. | Cloud logging service + plan-030 jobs harness; application sweepers land as provider-independent Stage 0 work in 002 |
 
 Settings validation (`core/settings/__init__.py::validate_runtime_provider_config`)
 enforces the boundary: `local_fs` storage, `console` email, `local` secrets,
@@ -66,6 +67,15 @@ plans; do each once:
 - **Web API base URL strategy** — `VITE_API_BASE_URL` is baked at build time
   (`apps/web/src/config/env.ts`). Either build per environment in CI or add
   runtime injection; each target plan states which it uses.
+- **Audit/security retention** — add settings-owned 400-day production
+  retention and jobs-harness sweepers for `audit_events` and
+  `security_events`. Provider log stores independently retain production
+  records for 400 days and staging records for 90 days.
+- **Rotatable application encryption** — the credential vault already has a
+  multi-key root plus an audited re-encryption job. The separate
+  `ENCRYPTION_KEY` used by TOTP, backup codes, and user OAuth credentials is
+  single-key today; make it a multi-key setting with a convergent
+  re-encryption path before the first customer deployment.
 
 ## Execution aids: provider agent skills
 

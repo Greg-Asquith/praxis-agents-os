@@ -760,6 +760,16 @@ services + Jobs, scale to zero), and a provider template for the later
 Azure/AWS/Cloudflare targets. They support Lane P (078 public launch
 readiness) but are tracked in that subdirectory, not in the numbered
 roadmap sequence.
+The deployment security review completed 2026-07-28 and moved to
+`plans/complete/deployment-000-security-review.md`. It amended 001, 002, the
+deployment target contract, and the provider template with the decided
+customer-project tenancy boundary; web headers and client-IP proof; 400-day
+production audit/security retention; Data Access logs; rotatable-key
+prerequisites; 15-minute RPO / 4-hour RTO plus quarterly restore rehearsal;
+residency/subprocessor and incident-response records; explicit v1 edge and
+metrics risks; supply-chain patch targets; bucket constraints; and protected
+production CI. The later deployment plans retain responsibility for executing
+and evidencing those requirements.
 
 ## Corrective Follow-up Status
 

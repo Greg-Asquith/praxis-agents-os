@@ -37,5 +37,5 @@ For a new deployment:
 Never use the public `.env.example` secret values outside
 `ENVIRONMENT=local`. Production deployments must use secure cookies,
 cloud-backed storage, and a cloud secret manager. See the
-[deployment security review](docs/plans/deployment/000_SECURITY_REVIEW.md)
-for the wider deployment-hardening backlog and accepted-risk process.
+[completed deployment security review](docs/plans/complete/deployment-000-security-review.md)
+for the deployment-hardening decisions and accepted-risk process.

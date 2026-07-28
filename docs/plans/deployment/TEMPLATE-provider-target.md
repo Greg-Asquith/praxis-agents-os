@@ -31,6 +31,7 @@ Fill in the concrete service for each contract capability
 | 7 | Object storage + signed URLs | GCS (`STORAGE_PROVIDER=gcs`) | `azure_blob` (needs user-delegation-key permissions — see `.env.example` note) / `s3` — already implemented in `services/storage/` |
 | 8 | Email | SES/SendGrid (D10 of 002) | provider or keep the cross-cloud choice from 002 |
 | 9 | DNS/TLS/same-site origins | Domain mappings, `COOKIE_DOMAIN` | provider TLS + the same subdomain/cookie shape (D1 of 002) |
+| 10 | Audit/security log retention | Cloud Logging: 400 d production / 90 d staging; application events: 400 d | provider log retention + the shared application sweepers; preserve or exceed the same windows |
 | — | Build extra | `--build-arg CLOUD_EXTRA=gcp` | `CLOUD_EXTRA=azure` / `CLOUD_EXTRA=aws` (pyproject extras exist) |
 | — | CI identity | Workload Identity Federation | e.g. Azure federated credentials / AWS OIDC role |
 | — | Execution toolkit | `google/skills` skill map (002 "Execution toolkit" section) | find the vendor's equivalent agent-skill set, map plan stages to skills, and adopt its CLI guardrails as plan rules; record explicitly if none exists |
@@ -41,10 +42,16 @@ API/worker elsewhere" — decide that split before copying this template.
 
 ## Design decisions
 
-Copy D1–D10 from 002 and re-answer each for this provider. Keep the same
+Copy D1–D13 from 002 and re-answer each for this provider. Keep the same
 numbering so the plans stay comparable. Flag any decision where the
 provider forces a different answer than GCP — those differences are the
 whole content of this plan.
+
+Keep D11's per-customer production account/project/subscription boundary,
+D12's retention and incident-response floor, and D13's RPO/RTO,
+restore-rehearsal, residency, and subprocessor record unless a provider can
+offer a stronger answer. A weaker answer is a named accepted risk, not an
+implicit provider difference.
 
 ## Tasks
 
@@ -58,12 +65,22 @@ the shared contract.
 - Stage 4 — fast-follows (event-driven job trigger, cost review, record
   decisions taken)
 
+Every provider plan also carries these security invariants: verify client IP
+integrity against a forged forwarding header; serve and externally scan the
+web security headers; enable provider Data Access equivalents; constrain both
+public and private object stores; protect production CI environments; produce
+SBOMs with the 7-day critical/30-day high patch targets; and keep the public
+metrics endpoint disabled unless actively scraped. The WAF may remain deferred
+only under D1's explicit trigger for adopting the complete hardened edge.
+
 ## Verification
 
 Use 002's verification list verbatim — it is provider-independent by
 design (SSE conversation with approval, drain-on-redeploy, failing
 migration blocks deploy, overlapping worker runs process once, settings
-validation boots with this provider's env shape).
+validation boots with this provider's env shape). Include the external
+header/TLS scan, client-IP spoof test, retention/Data Access read-backs,
+restore-rehearsal evidence, and dry-run questionnaire pass.
 
 ## STOP conditions
 

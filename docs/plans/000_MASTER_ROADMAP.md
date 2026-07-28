@@ -918,6 +918,14 @@ baseline.
 Cross-provider deployment work is tracked separately under
 `docs/plans/deployment/`; its local-quickstart plan and security review own
 the launch dependencies summarized by 078's launch gates.
+The cross-cutting deployment security review completed 2026-07-28 and moved
+to `docs/plans/complete/deployment-000-security-review.md`. It binds
+per-customer production projects, web headers, verified proxy/IP handling,
+400-day production audit retention, Data Access logs, key rotation,
+15-minute RPO / 4-hour RTO with restore rehearsals, residency/subprocessor
+records, incident response, explicit v1 edge/metrics risks, supply-chain
+SLAs, bucket constraints, and protected production CI into deployment plans
+001/002 and the provider template. Those target plans still own execution.
 
 ### Rolling polish lane (P3, unnumbered)
 

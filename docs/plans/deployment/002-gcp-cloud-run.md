@@ -7,6 +7,10 @@ Written: 2026-07-27
 Depends on: 001 Stage 1 (health endpoints, migrate-before-serve pattern);
 the worker drain mode below is shared cross-cutting work from `000_README.md`.
 
+Security-review amendment (2026-07-28): the decisions and tasks below bind the
+completed cross-cutting review. They are part of this plan's acceptance
+criteria, not optional production polish.
+
 ## Goal
 
 First cloud target. API and web run as Cloud Run **services**; the worker
@@ -67,6 +71,13 @@ What does not fit Cloud Run yet:
   if unavailable, fall back to the LB option. When the LB is adopted, take
   the full hardened posture in one move (see "Growth path: hardened
   network posture" below) rather than LB-only.
+  **Accepted v1 edge risk:** edge protection is Google Front End TLS
+  termination plus the application's fail-closed auth rate limits and general
+  per-IP rate limits; there is no customer-configurable WAF in front of the
+  direct domain mappings. Adopt the complete LB + Cloud Armor posture before
+  a contract requires WAF controls, or sooner if observed layer-7 abuse
+  repeatedly reaches application limits or threatens availability. Do not add
+  an LB alone.
 - **D2 — Database: Cloud SQL for PostgreSQL 17 with pgvector, connected
   via the built-in Cloud SQL connection (unix socket).** No VPC connector
   needed. `DATABASE_URL=postgresql+asyncpg://praxis:<pw>@/praxis?host=/cloudsql/<project>:<region>:<instance>`
@@ -138,6 +149,17 @@ What does not fit Cloud Run yet:
   Non-secret config rides as plain Cloud Run env vars, declared in the
   deploy config (see D9). Settings validation already refuses
   `CREDENTIAL_MASTER_KEYS` inline outside local — good.
+  Secret Manager automatic rotation is not a substitute for application
+  convergence. The deployment runbook must distinguish three paths:
+  `SECRET_KEY` rotation invalidates signed transient tokens and CSRF tokens
+  (database-backed session tokens themselves are random hashes; emergency
+  rotation explicitly purges sessions), credential-root rotation deploys
+  `new,old`, runs `integrations.rotate_credential_encryption`, proves no live
+  stale `encryption_key_id`, then removes `old`, and application
+  `ENCRYPTION_KEY` rotation uses the Stage 0 key-ring/sweep prerequisite
+  below. Rotate routine application and credential roots annually, provider
+  credentials at least every 90 days where the provider permits, and any
+  affected secret immediately after suspected exposure.
 - **D8 — IAM: one service account per runtime** (`praxis-api`,
   `praxis-worker`, `praxis-migrate`, deploy SA for CI), least privilege:
   `roles/cloudsql.client`, `roles/secretmanager.secretAccessor` (scoped to
@@ -151,6 +173,12 @@ What does not fit Cloud Run yet:
   from day one. CI authenticates via Workload Identity Federation from
   GitHub Actions; human operators use `gcloud auth login` + service
   account impersonation, never downloaded JSON keys.
+  Enable Data Access audit logs for Secret Manager, Cloud Storage, and Cloud
+  SQL. Supply-chain policy is: pin base images by digest, generate and retain
+  an SPDX or CycloneDX SBOM for each released image, scan before deployment,
+  and block known exploitable critical findings unless a maintainer records a
+  time-bounded exception. Critical fixes/rebuilds target 7 calendar days;
+  high-severity fixes target 30 days.
 - **D9 — IaC: start with declarative `gcloud`-driven config committed to
   the repo** (`deploy/gcp/` — service YAMLs via
   `gcloud run services replace`, plus a small bootstrap doc/script for the
@@ -161,12 +189,48 @@ What does not fit Cloud Run yet:
   and start from the maintained Terraform references the skills carry
   (`cloud-run-basics` references/iac-usage.md, `cloud-sql-basics`,
   `n-tier-serverless-web-app` assets/main.tf) rather than hand-writing.
+  Under D11 the bootstrap must accept explicit customer, environment,
+  project, region, and billing inputs and be safely repeatable; a one-off
+  project bootstrap is not acceptable.
 - **D10 — Email: SendGrid or SES over SMTP — pick at execution time.**
   GCP has no first-party transactional email. Both `ses` and `sendgrid`
   providers exist in settings; whichever account is easiest to provision
   wins, and the choice is one env var. Not a blocker for a staging deploy
   (`EMAIL_PROVIDER=disabled` exists for pre-DNS smoke tests — confirm
   invitation/reset flows degrade acceptably before relying on it).
+- **D11 — Tenancy: one production GCP project per customer.** Each customer
+  receives its own Cloud SQL instance, buckets, secrets, service accounts,
+  log stores, and production project, for example
+  `praxis-<customer>-prod`. Internal staging may remain one shared Praxis
+  project and must contain no customer production data. Record the selected
+  region on the customer deployment record. Offboarding is an approved,
+  two-person project-shutdown operation after export/legal-hold checks;
+  verify the project reaches `DELETE_REQUESTED`, record the 30-day recovery
+  window, and do not claim that every service remains recoverable for all 30
+  days. The runbook must verify deletion completion because some resources,
+  including Cloud Storage data, can disappear earlier.
+- **D12 — Retention and monitoring floor.** Production Cloud Logging
+  `_Default` retention is 400 days; staging is 90 days. Application
+  `audit_events` and `security_events` retain 400 days and are removed only
+  by the Stage 0 jobs-harness sweepers. Alert on auth-failure/security-event
+  spikes as well as worker failures and API 5xx.
+  `deploy/gcp/incident-response.md` owns the contact path, severity/triage
+  checklist, containment, evidence preservation, customer-notification
+  decision, recovery, and post-incident review.
+- **D13 — Backup, recovery, residency, and availability.** Customer
+  production targets an RPO of 15 minutes and an RTO of 4 hours for a
+  regional restore. Cloud SQL automated backups and PITR are enabled with
+  deletion protection; private object storage uses versioning plus a 30-day
+  soft-delete policy. Rehearse a restore into an isolated project before
+  production and quarterly thereafter, verifying database migrations,
+  object access, and a representative conversation/file flow. The honest v1
+  availability posture is single-region, max-one API instance, with no
+  contractual multi-region SLA. Cloud SQL, buckets, secrets, and log buckets
+  stay in the recorded customer region where the service supports it.
+  LLM/email/integration providers are separate subprocessors and may process
+  data elsewhere; customer go-live is blocked until
+  `docs/security/subprocessors.md` records each enabled provider, purpose,
+  data categories, and available processing regions.
 
 ## Execution toolkit: Google agent skills
 
@@ -217,23 +281,50 @@ only if Praxis lands in a Google Cloud Organization with multiple teams.
 - [ ] Verify SSE behaves through Cloud Run (heartbeats exist? if streams
       can idle > idle-timeout without frames, add a keepalive comment
       frame) — check `services/agents/runtime/events` before assuming.
+- [ ] Add settings-owned retention plus idempotent jobs-harness sweepers for
+      append-only `audit_events` and `security_events`: 400 days in
+      production, with boundary, batching, audit-survival, and repeat-run
+      tests. This implements deployment contract capability #10; do not
+      cascade into subject rows or weaken the append-only write path.
+- [ ] Make the legacy application encryption key safely rotatable before a
+      customer deployment. Today `utils/security.py` constructs one Fernet
+      from `ENCRYPTION_KEY`; TOTP secrets, backup codes, and user OAuth
+      credentials cannot survive a blind key replacement. Add a newest-first
+      key ring sourced from Secret Manager, stamp/converge encrypted rows
+      through a bounded locked jobs-harness sweep, prove old-key removal, and
+      keep the credential vault's existing
+      `integrations.rotate_credential_encryption` path separate.
 
 ### Stage 1 — GCP foundation (one-time, per environment)
 
-- [ ] Project(s): decide single project with env-suffixed resources vs
-      project-per-env (recommend project-per-env: `praxis-staging`,
-      `praxis-prod`; staging first). Pick one region (e.g. `europe-west2`
-      given the team's UK base; confirm domain-mapping support per D1).
+- [ ] Projects follow D11: one internal staging project and one production
+      project per customer, parameterized as
+      `praxis-<customer>-<environment>`. Pick and record the customer data
+      region (e.g. `europe-west2` for a UK commitment), confirm domain
+      mapping support, and keep Cloud SQL, buckets, secrets, and log buckets
+      there where supported. Create `docs/security/subprocessors.md` before
+      customer go-live and record the enabled external providers/data flows.
 - [ ] Artifact Registry repo for images.
 - [ ] Cloud SQL Postgres 17 instance per D2; create `praxis` DB + user;
-      enable pgvector flag; automated backups + PITR on for prod.
+      enable pgvector, automated backups, PITR, retained backups, and deletion
+      protection for production. Configure the D13 RPO/RTO and isolated
+      restore-rehearsal procedure rather than treating backup enablement as
+      proof of recoverability.
 - [ ] GCS buckets: `praxis-<env>-public-assets` (public read via
       `PUBLIC_ASSETS_BASE_URL`), `praxis-<env>-private-assets` (signed URLs
-      only, uniform access, no public access).
+      only, uniform access, no public access). Both use uniform bucket-level
+      access, versioning, and 30-day soft delete; the private bucket also
+      enforces public-access prevention. The public bucket uses a conditional
+      anonymous object-viewer grant limited to the application-owned asset
+      prefix: prove bucket listing is denied and no anonymous
+      create/update/delete is possible.
 - [ ] Secret Manager secrets per D7, values generated per `.env.example`
       instructions.
 - [ ] Service accounts + IAM bindings per D8; WIF pool/provider for GitHub
       Actions.
+- [ ] Enable Cloud Audit Logs Data Access for Secret Manager, Cloud Storage,
+      and Cloud SQL; grant log readers `roles/logging.privateLogViewer` only
+      where their incident/audit role requires access.
 
 ### Stage 2 — Services and jobs
 
@@ -246,19 +337,49 @@ only if Praxis lands in a Google Cloud Organization with multiple teams.
       (`CLOUD_EXTRA=gcp` for api), push, run migrate job, deploy services,
       run worker job once by hand; smoke-test sign-up → agent chat (SSE) →
       file upload (GCS signed URL) → schedule fires within cadence.
+- [ ] Prove client-IP integrity on the direct Cloud Run path before enabling
+      production rate limits. The app already ignores forwarding headers
+      unless the immediate socket peer is in `TRUSTED_PROXY_CIDRS`; do not
+      set `*`. Keep Uvicorn from rewriting `request.client` ahead of that
+      check, capture the actual direct-domain-mapping socket/X-Forwarded-For
+      shape in staging, configure only the verified proxy boundary, and test
+      both a known external source and a forged leading
+      `X-Forwarded-For`. Rate-limit, request-log, audit, CSRF-rejection, and
+      security-event IPs must agree. If Google exposes no stable source CIDR
+      for that boundary, add and test an explicit Cloud Run chain mode that
+      selects the platform-appended client hop; never trust the left-most
+      caller-supplied value.
 - [ ] Domain mappings + DNS for `app.` and `api.`; flip
       `SECURE_COOKIES=true`, `COOKIE_DOMAIN`, CORS, OAuth redirect URIs
       (Google/GitHub/Microsoft consoles) to the real origins.
+- [ ] Run an external header/TLS scan against `app.` and `api.`. Confirm the
+      web policy from 001 survives Cloud Run on `/`, an SPA fallback route,
+      `/index.html`, and a fingerprinted asset, and that HSTS covers both
+      sibling origins before `includeSubDomains` ships. Record any exception
+      as an accepted risk with an owner and revisit date.
 - [ ] Observability floor: log-based alert on worker job failures and API
       5xx rate; uptime check on `/healthz`. Decide whether `/api/metrics`
       gets scraped (Managed Prometheus) or stays dormant for v1. Use the
       logging/monitoring skills from the toolkit table to write the
       queries and pick alert metrics.
+      Set `_Default` retention to 90 days in staging and 400 days in every
+      customer production project, then verify both with a read-back command.
+      Add a log-based security alert for failed-login/security-event spikes
+      (initial threshold: 10 events for one source or 50 total in 5 minutes;
+      tune from staging without weakening the auth limit).
+- [ ] Keep `/api/metrics` disabled unless it is actively scraped. If enabled
+      on the public API origin, require a high-entropy Secret Manager bearer
+      token, never accept it in the query string, redact authorization
+      headers, and monitor 401s. This is an accepted v1 exposure; move metrics
+      to private monitoring ingress when the hardened LB posture is adopted.
 - [ ] Deploy-failure triage runbook in `deploy/gcp/README`: the
       crash-on-boot logs command
       (`gcloud logging read "resource.labels.service_name=<svc>" --limit=20`),
       the 0.0.0.0/`PORT` container contract rule, and revision rollback —
       so a failed deploy at 6pm doesn't require re-deriving any of it.
+      The same runbook records D7 rotation, D11 offboarding and deletion
+      verification, D13 restore commands/evidence, and the customer region.
+      Add the one-page `deploy/gcp/incident-response.md` required by D12.
 
 ### Stage 3 — CI/CD
 
@@ -266,10 +387,21 @@ only if Praxis lands in a Google Cloud Organization with multiple teams.
       build+push images (tag = git SHA), run `praxis-migrate` and wait for
       success, then deploy api/worker/web to staging. Manual
       approval/workflow-dispatch promotes the same SHA to prod. Auth via
-      WIF; no JSON keys anywhere.
+      WIF; no JSON keys anywhere. Production uses a protected GitHub
+      environment with required human reviewers, branch/tag restrictions,
+      and environment-scoped credentials. Keep every third-party Action
+      pinned to a full commit SHA.
+- [ ] Pin runtime base images by digest; generate an SPDX or CycloneDX SBOM
+      for both images, attach it to the immutable SHA/release evidence, and
+      enforce D8's vulnerability exception and 7/30-day patch targets.
 - [ ] Rollback procedure documented and rehearsed once: Cloud Run revision
       pinning for services; migrations are roll-forward-only (note this in
       the deploy doc).
+- [ ] Before production and quarterly thereafter, restore Cloud SQL PITR and
+      representative private/public objects into an isolated project, run
+      migrations, complete the D13 representative flow, record achieved
+      RPO/RTO, then destroy the rehearsal project through the approved
+      deletion process.
 
 ### Stage 4 — Fast-follows
 
@@ -280,7 +412,9 @@ only if Praxis lands in a Google Cloud Organization with multiple teams.
 - [ ] Cost review after 2–4 weeks of staging: confirm the always-on floor
       is Cloud SQL only, and everything else bills near zero at idle.
 - [ ] Record in this file the decisions actually taken (region, tiers,
-      email provider, single-vs-multi project) for the Azure/AWS copies.
+      email provider, customer-project naming, retention configuration,
+      achieved restore timings, and subprocessor regions) for the Azure/AWS
+      copies.
 - [ ] Before the prod cutover, run the Well-Architected review lenses
       (waf-security, waf-reliability, waf-cost-optimization skills) against
       the deployed staging stack and file findings as tasks or explicit
@@ -304,6 +438,8 @@ justifies it, adopt it as one coherent move, guided by the
   authentication (no DB password), Direct VPC egress from Cloud Run, and
   least-privilege egress firewalls.
 - One origin (path routing) removes CORS and `COOKIE_DOMAIN` entirely.
+- Metrics ingress becomes private or restricted to the monitoring path;
+  retire the accepted public bearer-token exposure.
 
 None of this changes app code — it is all provider posture, which is why it
 stays out of v1 and out of the deployment target contract.
@@ -322,6 +458,16 @@ stays out of v1 and out of the deployment target contract.
   fires) process each item exactly once.
 - `make check` green; settings validation exercised with the production
   env shape in a test (non-local env + gcp providers boots).
+- A forged `X-Forwarded-For` cannot alter the IP used by rate limiting,
+  request/audit/security logging, or CSRF rejection; a known external
+  staging request records its real source consistently.
+- Read-back checks prove 400-day production/90-day staging Cloud Logging
+  retention and enabled Data Access logs for Secret Manager, GCS, and Cloud
+  SQL. Application sweep tests prove the 400-day boundary.
+- The web/TLS external scan is clean or contains only the D1/D12 accepted
+  risks with owners and triggers. A dry-run questionnaire links tenancy,
+  encryption, rotation, RPO/RTO and restore evidence, retention, incident
+  response, residency, and subprocessors to D7 and D11–D13 plus the runbooks.
 
 ## STOP conditions
 

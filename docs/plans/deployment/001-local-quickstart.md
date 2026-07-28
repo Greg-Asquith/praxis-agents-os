@@ -106,6 +106,26 @@ Two audiences, two paths, both foolproof:
       as a build arg (Vite env must be present at build time — add the
       `ARG`/`ENV` plumbing to `apps/web/Dockerfile` build stage), `api`
       with `target: production`.
+- [ ] Harden the nginx-served document, including every cache-specific
+      location: `Strict-Transport-Security` in HTTPS deployments,
+      `Content-Security-Policy` with `default-src 'self'`,
+      `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`,
+      `form-action 'self'`, `script-src 'self'`,
+      `style-src 'self' 'unsafe-inline'`, and `connect-src`/`frame-src`
+      generated from the validated `VITE_API_BASE_URL`. Limit
+      `img-src`/`media-src` to `'self'`, `data:`, `blob:`, and the validated
+      public/signed-storage origins needed by Files, avatars, and previews;
+      do not use a scheme or host wildcard. Emit the policy from the same
+      per-environment build inputs as the Vite API URL so browser and nginx
+      configuration cannot drift. Also set `X-Content-Type-Options: nosniff`,
+      `X-Frame-Options: DENY`, and
+      `Referrer-Policy: strict-origin-when-cross-origin`. Use `always` and
+      account for nginx `add_header` inheritance so `/`, `/index.html`, and
+      `/assets/*` all receive the policy. Add an nginx-config/container
+      test that proves those three path classes and rejects a wildcard
+      script or connect source. Local HTTP may omit HSTS; production must
+      emit `max-age=31536000; includeSubDomains` after both sibling
+      subdomains are HTTPS-only.
 - [ ] `make quickstart`: one target that checks Docker is present, prompts
       for/validates an LLM key into `.local/targets/local.secrets.env` if
       absent, then `docker compose --profile try up`. Print the URL and
@@ -137,6 +157,9 @@ Two audiences, two paths, both foolproof:
 - `make dev` contributor path unchanged and green.
 - `make check` passes; migration ordering verified by the compose `migrate`
   service logs on first boot.
+- The production web container returns the required security headers on the
+  SPA shell, fallback routes, and fingerprinted assets; the GCP staging smoke
+  test in 002 confirms that Cloud Run/domain mapping preserves them.
 - README quickstart followed verbatim by someone (or a clean-room agent
   session) who hasn't seen the repo.
 
