@@ -119,7 +119,8 @@ DEFINITION = RuntimeToolDefinition(
     name="bigquery_get_table_schema",
     function=bigquery_get_table_schema,
     description=(
-        "Read cached fields and partitioning for one BigQuery table. "
+        "Read cached fields and partitioning for one table in the active BigQuery datasets. "
+        "This targets one table and does not repeat across every dataset. "
         "Use GoogleSQL with the returned fully qualified backticked table name."
     ),
     provider="bigquery",

@@ -20,7 +20,7 @@ from .utils import BIGQUERY_BINDING, active_bigquery_entries, run_audited_operat
 
 
 async def bigquery_list_tables(ctx: RunContext[RuntimeDeps]) -> dict[str, Any]:
-    """List cached BigQuery tables without making a provider request."""
+    """List cached tables for every active BigQuery dataset in one tool call."""
     entries = active_bigquery_entries(ctx)
     datasets: list[dict[str, Any]] = []
     for entry in entries:
@@ -61,7 +61,7 @@ DEFINITION = RuntimeToolDefinition(
     name="bigquery_list_tables",
     function=bigquery_list_tables,
     description=(
-        "List cached tables in the active BigQuery datasets. "
+        "List cached tables for every active BigQuery dataset in one discovery call. "
         "Use GoogleSQL with fully qualified `project.dataset.table` names."
     ),
     provider="bigquery",

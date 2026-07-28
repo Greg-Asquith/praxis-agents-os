@@ -55,6 +55,15 @@ def test_tool_contracts_are_cache_or_context_bound_read_tools() -> None:
         assert definition.presentation.running_label
         assert definition.presentation.completed_label
         assert definition.presentation.failed_label
+    assert (
+        "every active BigQuery dataset in one discovery call"
+        in definitions["bigquery_list_tables"].description
+    )
+    assert (
+        "targets one table and does not repeat"
+        in definitions["bigquery_get_table_schema"].description
+    )
+    assert "query is not repeated for each dataset" in definitions["bigquery_run_query"].description
 
 
 async def test_cache_tools_scope_rows_to_active_resources(
@@ -84,6 +93,7 @@ async def test_cache_tools_scope_rows_to_active_resources(
         "list_cached_tables",
         "get_cached_table_schema",
     }
+    assert all(call.kwargs["external_ref"] is None for call in audit.await_args_list)
 
 
 async def test_get_schema_requires_qualification_when_table_name_is_ambiguous(
@@ -288,6 +298,7 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
     result = await bigquery_run_query(ctx, "SELECT 1")
 
     BigQueryRunQueryOutput.model_validate(result)
+    provider_run.assert_awaited_once()
     assert provider_run.await_args.kwargs["request_id"] == str(ctx.deps.run.id)
     assert provider_run.await_args.kwargs["billing_project_id"] == "billing-project"
     assert set(provider_run.await_args.kwargs["allowed_datasets"]) == {
@@ -298,6 +309,7 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
     assert {call.kwargs["integration_resource_id"] for call in audit.await_args_list} == {
         entry.integration_resource_id for entry in entries
     }
+    assert all(call.kwargs["external_ref"] is None for call in audit.await_args_list)
 
 
 async def _run_operation(

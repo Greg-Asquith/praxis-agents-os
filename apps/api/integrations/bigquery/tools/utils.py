@@ -155,6 +155,7 @@ async def _record_operation_for_entries(
             external_id=entry.external_id,
             operation=operation,
             status=status,
+            external_ref=None,
             error_code=error_code,
         )
 

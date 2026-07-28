@@ -41,7 +41,7 @@ async def bigquery_run_query(
         ),
     ],
 ) -> dict[str, Any]:
-    """Run one bounded GoogleSQL SELECT query after BigQuery dry-run authorization."""
+    """Run exactly one bounded GoogleSQL SELECT within the active dataset boundary."""
     normalized = query.strip()
     if not normalized:
         raise ModelRetry("bigquery_run_query requires a GoogleSQL SELECT query.")
@@ -93,7 +93,8 @@ DEFINITION = RuntimeToolDefinition(
     name="bigquery_run_query",
     function=bigquery_run_query,
     description=(
-        "Run one bounded GoogleSQL SELECT query across active BigQuery datasets. "
+        "Run exactly one bounded GoogleSQL SELECT query. Active BigQuery datasets define which "
+        "tables that query may reference; the query is not repeated for each dataset. "
         "Use fully qualified backticked `project.dataset.table` names."
     ),
     provider="bigquery",

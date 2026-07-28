@@ -54,6 +54,9 @@ def test_prompt_renders_law_entries_and_unavailable_reasons() -> None:
     )
 
     assert rendered.index(ACTIVE_CONTEXT_LAW) < rendered.index("Account")
+    assert "authorization boundary" in rendered
+    assert "some tools run once per compatible resource" in rendered
+    assert "others perform one operation constrained to the listed resources" in rendered
     assert 'Context group: "Morning review"' in rendered
     assert "degraded, read-only" in rendered
     assert "connection_needs_reauth" in rendered

@@ -6,9 +6,10 @@ from services.integrations.context.domain import ResolvedActiveContext
 from services.integrations.manifest import PROVIDER_MANIFESTS
 
 ACTIVE_CONTEXT_LAW = (
-    "You are operating on the following active context. You cannot choose different accounts "
-    "or connections; integration tools run against every compatible resource below and return "
-    "per-resource results."
+    "You are operating on the following active context. The listed resources are your "
+    "authorization boundary; you cannot use different accounts, connections, or resources. "
+    "Follow each integration tool's description for execution scope: some tools run once per "
+    "compatible resource, while others perform one operation constrained to the listed resources."
 )
 
 
