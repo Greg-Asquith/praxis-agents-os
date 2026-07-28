@@ -48,7 +48,7 @@ export function MessageRow({
 }: MessageRowProps) {
   if (pendingMessage) {
     return (
-      <UserMessageShell createdAt={pendingMessage.createdAt} pending>
+      <UserMessageShell copyText={pendingMessage.text} createdAt={pendingMessage.createdAt} pending>
         <MarkdownContent content={pendingMessage.text} />
         <AttachmentCards attachments={pendingMessage.attachments ?? []} />
       </UserMessageShell>
@@ -57,7 +57,7 @@ export function MessageRow({
 
   if (message.role === "user") {
     return (
-      <UserMessageShell createdAt={message.createdAt}>
+      <UserMessageShell copyText={messageCopyText([message])} createdAt={message.createdAt}>
         <MessageTextParts message={message} />
         <AttachmentCards attachments={message.attachments} />
       </UserMessageShell>
@@ -68,6 +68,7 @@ export function MessageRow({
     return (
       <AssistantMessageShell
         agentId={assistantAgentId}
+        copyText={messageCopyText([message])}
         createdAt={message.createdAt}
         label={assistantLabel}
         streaming={streaming}
@@ -143,7 +144,12 @@ export function AssistantTurnRow({
   )
 
   return (
-    <AssistantMessageShell agentId={assistantAgentId} createdAt={createdAt} label={assistantLabel}>
+    <AssistantMessageShell
+      agentId={assistantAgentId}
+      copyText={messageCopyText(messages)}
+      createdAt={createdAt}
+      label={assistantLabel}
+    >
       <ThinkingBlock
         content={thinkingContent}
         idPrefix={`assistant-turn:${messages[0]?.id ?? "unknown"}:thinking`}
@@ -247,6 +253,13 @@ function renderMessagePart(
     )
   }
   return <MarkdownContent key={part.id} content={part.content} />
+}
+
+function messageCopyText(messages: ParsedConversationMessage[]) {
+  return messages
+    .flatMap((message) => message.text)
+    .join("\n\n")
+    .trim()
 }
 
 function visibleMessageParts(message: ParsedConversationMessage): ParsedMessagePart[] {
