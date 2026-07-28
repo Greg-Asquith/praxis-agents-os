@@ -433,5 +433,10 @@ credential layer to either Google Ads or BigQuery. The schema-cache plugin
 seam and provider-owned sync job landed next: the plugin declares only its
 metadata job kind, the generic discovery and selection paths enqueue it, and
 the provider registers the handler through the narrow jobs-registry seam
-listed in §4.6. Runtime tools and the frontend icon remain pending in later
-BigQuery slices.
+listed in §4.6. The provider now registers three read tools through the same
+package surface: cache-backed table listing and schema lookup plus a
+dry-run-gated SELECT query bounded by active datasets, reference count, bytes,
+rows, and location. Warehouse values remain plain typed data under the
+operator-controlled database exception recorded in the threat model. The
+frontend icon and custom tool presentation remain pending in the final
+BigQuery slice.

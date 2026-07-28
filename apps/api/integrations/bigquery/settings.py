@@ -15,6 +15,8 @@ class BigQuerySettings(BaseSettings):
     """Environment-backed limits used only by the BigQuery provider."""
 
     BIGQUERY_SCHEMA_SYNC_MAX_TABLES: int = Field(default=500, ge=1)
+    BIGQUERY_MAX_BYTES_BILLED: int = Field(default=1024**3, ge=1)
+    BIGQUERY_QUERY_TIMEOUT_SECONDS: int = Field(default=60, ge=1, le=300)
 
     model_config = SettingsConfigDict(
         env_file=".env",

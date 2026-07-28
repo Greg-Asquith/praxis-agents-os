@@ -25,7 +25,11 @@ def test_manifest_declares_read_only_workspace_dataset_provider() -> None:
     assert manifest.requires_discovery is True
     assert manifest.capability_flags == frozenset({"read"})
     assert PROVIDER.metadata_sync_job_kind == SYNC_TABLE_SCHEMAS_KIND
-    assert PROVIDER.tool_definitions == ()
+    assert {definition.name for definition in PROVIDER.tool_definitions} == {
+        "bigquery_list_tables",
+        "bigquery_get_table_schema",
+        "bigquery_run_query",
+    }
     _validate_plugin(PROVIDER, expected_key="bigquery")
 
 
@@ -62,6 +66,36 @@ async def test_client_refreshes_once_after_an_auth_failure() -> None:
     assert result == {"projects": []}
     assert force_values == [False, True]
     assert seen_authorization == ["Bearer expired-token", "Bearer fresh-token"]
+
+
+async def test_client_preserves_bigquery_validation_message_for_model_retry() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            400,
+            json={
+                "error": {
+                    "errors": [
+                        {
+                            "message": "Unrecognized name: campain_id at [1:8]",
+                            "reason": "invalidQuery",
+                        }
+                    ]
+                }
+            },
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = BigQueryClient(_static_token, client=http_client)
+        with pytest.raises(
+            IntegrationValidationError,
+            match="Unrecognized name: campain_id at \\[1:8\\]",
+        ):
+            await client.post(
+                "projects/analytics/jobs",
+                operation="dry_run_query",
+                json={"configuration": {"dryRun": True}},
+            )
 
 
 async def test_discovery_pages_projects_and_datasets_into_read_only_resources() -> None:
@@ -154,3 +188,7 @@ class _DiscoveryClient:
         resolved_params = params or {}
         self.calls.append((path, resolved_params))
         return self._responses[(path, resolved_params.get("pageToken"))]
+
+
+async def _static_token(_force: bool) -> str:
+    return "access-token"

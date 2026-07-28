@@ -49,10 +49,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `__init__.py` only composes exported definitions; do not accumulate a
   provider's catalog in one `tools.py` module.
 - Packaged integrations are Gmail, Google Ads, Airtable, and BigQuery.
-  BigQuery currently contributes service-account dataset discovery and a
-  job-synchronized table-schema cache for enabled datasets. Its agent tools
-  remain pending, so do not advertise them as available until that slice
-  lands.
+  BigQuery contributes service-account dataset discovery, a job-synchronized
+  table-schema cache for enabled datasets, two cache-backed schema tools, and
+  a dry-run-gated SELECT query tool with active-dataset, reference-count,
+  byte, and row bounds. BigQuery warehouse values are plain typed data under
+  the operator-controlled database trust boundary.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

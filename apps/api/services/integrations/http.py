@@ -8,6 +8,7 @@ integration calls use httpx2 and the integration policy below.
 """
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -33,6 +34,7 @@ async def request_with_retries(
     operation: str,
     provider_key: str,
     client: httpx2.AsyncClient | None = None,
+    validation_error_detail: Callable[[httpx2.Response], str | None] | None = None,
     **kwargs: Any,
 ) -> httpx2.Response:
     """Issue one bounded provider request and map failures to typed errors."""
@@ -44,6 +46,7 @@ async def request_with_retries(
             url,
             operation=operation,
             provider_key=provider_key,
+            validation_error_detail=validation_error_detail,
             kwargs=kwargs,
         )
     async with httpx2.AsyncClient() as owned_client:
@@ -53,6 +56,7 @@ async def request_with_retries(
             url,
             operation=operation,
             provider_key=provider_key,
+            validation_error_detail=validation_error_detail,
             kwargs=kwargs,
         )
 
@@ -64,6 +68,7 @@ async def _request_with_client(
     *,
     operation: str,
     provider_key: str,
+    validation_error_detail: Callable[[httpx2.Response], str | None] | None,
     kwargs: dict[str, Any],
 ) -> httpx2.Response:
     last_status: int | None = None
@@ -98,8 +103,13 @@ async def _request_with_client(
                     operation=operation,
                 )
             if 400 <= response.status_code < 500 and response.status_code != 429:
+                detail = (
+                    validation_error_detail(response)
+                    if validation_error_detail is not None
+                    else None
+                )
                 raise IntegrationValidationError(
-                    "Integration request was rejected",
+                    detail or "Integration request was rejected",
                     provider_key=provider_key,
                     operation=operation,
                 )

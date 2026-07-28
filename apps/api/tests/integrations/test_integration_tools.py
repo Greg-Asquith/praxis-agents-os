@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.integration import IntegrationAuthError
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
+from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS
 from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
@@ -40,6 +41,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *TOOL_DEFINITIONS,
             *GOOGLE_ADS_TOOL_DEFINITIONS,
             *AIRTABLE_TOOL_DEFINITIONS,
+            *BIGQUERY_TOOL_DEFINITIONS,
         )
     }
     expected = {
@@ -53,6 +55,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "airtable_get_record": ("read", "internal", "auto", False),
         "airtable_create_record": ("write", "external", "approval", True),
         "airtable_update_record": ("write", "external", "approval", True),
+        "bigquery_list_tables": ("read", "internal", "auto", False),
+        "bigquery_get_table_schema": ("read", "internal", "auto", False),
+        "bigquery_run_query": ("read", "internal", "auto", False),
     }
     assert set(definitions) == set(expected)
     denylisted = {

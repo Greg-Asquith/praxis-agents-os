@@ -2,8 +2,10 @@
 
 """BigQuery runtime tool contributions."""
 
-from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from .get_table_schema import DEFINITION as GET_TABLE_SCHEMA
+from .list_tables import DEFINITION as LIST_TABLES
+from .run_query import DEFINITION as RUN_QUERY
 
-TOOL_DEFINITIONS: tuple[RuntimeToolDefinition, ...] = ()
+TOOL_DEFINITIONS = (LIST_TABLES, GET_TABLE_SCHEMA, RUN_QUERY)
 
 __all__ = ["TOOL_DEFINITIONS"]

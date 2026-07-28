@@ -31,21 +31,42 @@ class BigQueryClient:
         operation: str,
         params: dict[str, Any] | None = None,
     ) -> Any:
+        return await self._request("GET", path, operation=operation, params=params)
+
+    async def post(
+        self,
+        path: str,
+        *,
+        operation: str,
+        json: dict[str, Any],
+    ) -> Any:
+        return await self._request("POST", path, operation=operation, json=json)
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        operation: str,
+        **kwargs: Any,
+    ) -> Any:
         token = await self._access_token(False)
         try:
             response = await self._send(
+                method,
                 path,
                 operation=operation,
                 token=token,
-                params=params,
+                **kwargs,
             )
         except IntegrationAuthError:
             token = await self._access_token(True)
             response = await self._send(
+                method,
                 path,
                 operation=operation,
                 token=token,
-                params=params,
+                **kwargs,
             )
         try:
             return response.json()
@@ -59,18 +80,38 @@ class BigQueryClient:
 
     async def _send(
         self,
+        method: str,
         path: str,
         *,
         operation: str,
         token: str,
-        params: dict[str, Any] | None,
+        **kwargs: Any,
     ) -> httpx2.Response:
         return await request_with_retries(
-            "GET",
+            method,
             f"{BIGQUERY_API_BASE_URL}/{path.lstrip('/')}",
             operation=operation,
             provider_key="bigquery",
             client=self._client,
             headers={"Authorization": f"Bearer {token}"},
-            params=params,
+            validation_error_detail=_bigquery_error_detail,
+            **kwargs,
         )
+
+
+def _bigquery_error_detail(response: httpx2.Response) -> str | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return None
+    errors = error.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            message = str(item.get("message", "")).strip() if isinstance(item, dict) else ""
+            if message:
+                return message
+    message = str(error.get("message", "")).strip()
+    return message or None

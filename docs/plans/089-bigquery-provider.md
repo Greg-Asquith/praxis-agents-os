@@ -41,8 +41,8 @@
   set, under decision D14 (roadmap §2) and the D10 packaging law.
 - **Planned at**: commit `c9a8cfd`, 2026-07-24. Anchors verified against
   that tree.
-- **Execution progress**: **Slices A–B complete 2026-07-28**; Slices C–D
-  remain TODO. BigQuery now loads from the provider allowlist, reuses the
+- **Execution progress**: **Slices A–C complete 2026-07-28**; Slice D
+  remains TODO. BigQuery now loads from the provider allowlist, reuses the
   provider-attributed Google service-account helper, and discovers paginated
   project datasets as read-only `bigquery_dataset` resources with location
   metadata. The provider-neutral `integration_table_schemas` cache now
@@ -50,12 +50,18 @@
   `integrations.sync_table_schemas` job after discovery and selection;
   bounded partial listings are recorded without falsely removing unseen
   cache rows. Transport-mocked provider, loader/import-law, DB-backed sync,
-  trigger, migration, and retention coverage passed. Live sandbox QA was
+  trigger, migration, retention, and three-tool contract coverage passed.
+  Cached table discovery and schema lookup are context-scoped, while query
+  execution is dry-run-gated for SELECT-only statements, active-dataset
+  containment, at most 49 referenced tables, the configured byte ceiling,
+  and bounded rows. Warehouse values remain plain typed data under the
+  operator-authorized trusted-database boundary, and successful calls use the
+  standard per-resource integration audit seam. Live sandbox QA was
   unavailable for Slice A because no BigQuery service-account credential is
   configured in the local environment; the plan's tests remain
-  credential-free as required. The full repository gate passed 1,240 API
+  credential-free as required. The full repository gate passed 1,253 API
   tests and 78 web test files / 374 tests. The plan stays in `docs/plans/`
-  until Slices C–D complete.
+  until Slice D completes.
 
 ## Decisions taken
 
@@ -176,6 +182,13 @@
         enabled datasets. Anything else → `ModelRetry` naming the
         offending table. This — not string inspection — is the
         boundary that keeps agents inside their assigned context.
+      - **Maintainer amendment (2026-07-28):** Google documents that
+        `referencedTables` is incomplete above 50 tables and exposes no
+        completeness flag. Fail closed when the dry run reports 50 or
+        more table references and ask for a narrower query. This
+        deliberately rejects the exactly-50-table case rather than
+        allowing a potentially truncated authorization set; local SQL
+        parsing remains rejected.
       - `totalBytesProcessed` must not exceed
         `BIGQUERY_MAX_BYTES_BILLED` (default 1 GiB
         [default — confirm at review]) → `ModelRetry` advising a
@@ -190,13 +203,14 @@
    4. **Results**: rows capped by the existing
       `INTEGRATION_REPORT_MAX_ROWS`; the typed `output_model` carries
       rows, `total_rows`, `truncated`, `total_bytes_processed`, and
-      `cache_hit`. Cell values are strings; result content is wrapped
-      in the 041 shared untrusted-content carrier (decision 9).
-9. **Gate G6**: warehouse cell values are integration-fetched content —
-   threat-model channel (g) covers the class; this plan adds the
-   BigQuery adversarial fixture (a query whose result cell contains an
-   injection payload) and pins the carrier framing deterministically,
-   with a graded case in the 055 eval layer.
+      `cache_hit`. Cell values are plain strings.
+9. **Trusted warehouse boundary (operator decision, 2026-07-28).**
+   BigQuery datasets connected to Praxis are the operator's own
+   controlled databases. Their schema descriptions and query cells remain
+   plain typed tool data and do not use the shared untrusted-content
+   carrier, warning markers, adversarial fixture, or graded injection
+   case. Workspace scoping, dry-run authorization, query/row/byte bounds,
+   typed output validation, and audit remain enforced independently.
 10. **Packaging per D10**: everything provider-specific lives in
     `apps/api/integrations/bigquery/` (manifest, settings mixin,
     client, discovery, sync handler registration, `tools/` one module
@@ -361,20 +375,29 @@ without explicit human approval per AGENTS.md.
   DB-backed reconciliation, trigger, and cascade-retention tests passed, and
   Alembic reported no schema drift. The full repository gate passed 1,240 API
   tests and 78 web test files / 374 tests.
-- **Slice C — tools**: `bigquery_list_tables`,
+- **Slice C — tools — DONE 2026-07-28**: `bigquery_list_tables`,
   `bigquery_get_table_schema` (cache-only),
   `bigquery_run_query` with the decision-8 pipeline; typed output
-  models; untrusted-content wrapping; G6 fixture + eval case; audit
+  models; plain typed warehouse results per decision 9; audit
   via the standard per-call integration audit seam. Gate: DML/DDL and
   out-of-context tables are rejected in tests via recorded dry-run
-  responses; byte-cap and row-cap truncation are pinned.
+  responses; the maintainer-authorized 50-reference fail-closed guard,
+  byte cap, and row-cap truncation are pinned. The three tools are registered
+  through the provider package, cache lookups are limited to server-resolved
+  active datasets, and query jobs carry the resolved location, byte ceiling,
+  run label, and idempotent request ID. BigQuery validation details round-trip
+  as `ModelRetry`; successful query calls emit one integration audit record
+  per active dataset resource. Focused provider and shared-contract coverage
+  passed, followed by the full repository gate: 1,253 API tests and 78 web
+  test files / 374 tests.
 - **Slice D — UI + docs + live QA**: `bigquery` icon token + frontend
-  icon entry; verify the integrations UI service-account connect path
+  icon entry; custom tool UIs in line with other integration providers;
+   verify the integrations UI service-account connect path
   (the JSON paste form is write-only, mirroring the API-key flow — if
   042 shipped no service-account form, add it here as the generic
   manifest-driven form, not a BigQuery-specific one); plain-language
   connect help; docs; live QA checklist (connect, discover, group,
-  query, cap-hit, injection fixture).
+  query, cap-hit, plain trusted-result rendering).
 
 ## Test plan
 
@@ -389,21 +412,22 @@ without explicit human approval per AGENTS.md.
   estimate, multi-connection context rejection, label stamping, row
   truncation metadata, location passed from cached dataset metadata —
   all against recorded dry-run/job fixtures.
-- G6: injection payload in a result cell arrives framed; deterministic
-  carrier test + graded eval case.
+- Trusted warehouse boundary: schema descriptions and result cells remain
+  plain typed values with no untrusted-content framing or warning markers.
 - RBAC: selection and connect remain owner/editor-gated exactly as the
   landed routes enforce; no new routes are added.
 
 ## Done criteria
 
-- [ ] `bigquery` loads from the allowlist; manifest validates;
+- [x] `bigquery` loads from the allowlist; manifest validates;
       packaging import laws hold.
-- [ ] Datasets discover, select, and join context groups end to end.
-- [ ] `integration_table_schemas` populated by the job; cache answers
+- [x] Datasets discover, select, and join context groups end to end.
+- [x] `integration_table_schemas` populated by the job; cache answers
       both schema tools with no provider I/O.
-- [ ] `bigquery_run_query` enforces SELECT-only, context containment,
+- [x] `bigquery_run_query` enforces SELECT-only, context containment,
       and byte/row caps via dry run; errors round-trip as `ModelRetry`.
-- [ ] Results are untrusted-framed; fixture and eval case land.
+- [x] Results remain plain typed warehouse values per the operator's
+      trusted-database decision.
 - [ ] `make check` green; live QA checklist executed against a real
       sandbox project (or its unavailability recorded in this plan).
 - [ ] FOLLOW_UPS item 8 updated (absorbed here); README status row

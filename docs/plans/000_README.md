@@ -760,7 +760,8 @@ context-group machinery, a Praxis-side table-schema cache synced by a
 background job (agents never call the BigQuery API for schema lookups),
 and a dry-run-gated SELECT-only query tool bounded by
 `maximumBytesBilled` and the shared row cap, its results
-untrusted-framed under Gate G6. It absorbs FOLLOW_UPS item 8's
+returned as plain typed warehouse data under the operator-authorized
+trusted-database boundary. It absorbs FOLLOW_UPS item 8's
 service-account generalization trigger and rides the D10 packaging law.
 Slice A completed 2026-07-28: the allowlist-loaded, tool-free provider
 package now reuses the provider-attributed Google service-account helper and
@@ -768,9 +769,14 @@ discovers paginated projects and datasets as read-only resources with cached
 location metadata. Slice B completed 2026-07-28: enabled datasets now feed the
 provider-neutral schema cache through the bounded, provider-owned
 `integrations.sync_table_schemas` job, triggered generically after discovery
-and resource selection with cascade retention. Slices C–D (tools and
-UI/docs/live QA) remain pending; live sandbox QA for Slice A was unavailable
-because no BigQuery credential is configured locally.
+and resource selection with cascade retention. Slice C completed 2026-07-28:
+three provider-registered read tools now answer table and schema requests from
+the active-context cache and run dry-run-gated SELECT queries with dataset,
+49-reference, byte, row, and location bounds plus per-resource audit records.
+Provider validation errors round-trip as model-retryable details, and the
+trusted warehouse values carry no untrusted-content framing or warnings.
+Slice D (UI/docs/live QA) remains pending; live sandbox QA for Slice A was
+unavailable because no BigQuery credential is configured locally.
 
 ## Execution Order & Status
 
@@ -870,7 +876,7 @@ because no BigQuery credential is configured locally.
 | 086  | App data collections on the `app` schema                                                                               | P1       | M      | 084, 085                                                               | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 087  | Application kit, dev harness, and publish validation gates                                                             | P1       | L      | 082, 084, 085 (soft: 086, 078)                                         | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 088  | Applications catalogue, audience surface, and the reference application                                                | P1       | L      | 083–087 (reference-app choice is a maintainer STOP)                    | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 089  | Google BigQuery provider — service accounts, dataset context, cached schemas, SELECT-only queries (D14)                | P2       | L      | 030, 037–041 (all DONE); interleaves after 079; no Phase 4b dependency | IN PROGRESS — Slices A–B DONE 2026-07-28; Slices C–D TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 089  | Google BigQuery provider — service accounts, dataset context, cached schemas, SELECT-only queries (D14)                | P2       | L      | 030, 037–041 (all DONE); interleaves after 079; no Phase 4b dependency | IN PROGRESS — Slices A–C DONE 2026-07-28; Slice D TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 Status values: TODO | IN PROGRESS | DONE | DEFERRED (with decision and revisit trigger) | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
