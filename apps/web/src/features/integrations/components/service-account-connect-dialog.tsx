@@ -59,8 +59,8 @@ export function ServiceAccountConnectForm({
       <DialogHeader>
         <DialogTitle>Connect with a service account</DialogTitle>
         <DialogDescription>
-          Use a Google Cloud service account that can access the required Google Ads manager
-          account. The key is stored securely and cannot be viewed again.
+          Use a Google Cloud service account that can access {provider.display_name}. The key is
+          stored securely and cannot be viewed again.
         </DialogDescription>
       </DialogHeader>
       <form
@@ -88,7 +88,7 @@ export function ServiceAccountConnectForm({
                 const label = event.currentTarget.value
                 setForm((current) => ({ ...current, label }))
               }}
-              placeholder="Shared Google Ads account"
+              placeholder={`Shared ${provider.display_name} connection`}
               value={form.label}
             />
             <FieldError>{fieldErrors["integration-connection-label"]}</FieldError>

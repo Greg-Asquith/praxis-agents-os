@@ -438,5 +438,7 @@ package surface: cache-backed table listing and schema lookup plus a
 dry-run-gated SELECT query bounded by active datasets, reference count, bytes,
 rows, and location. Warehouse values remain plain typed data under the
 operator-controlled database exception recorded in the threat model. The
-frontend icon and custom tool presentation remain pending in the final
-BigQuery slice.
+final slice adds a separate lazy frontend module with a BigQuery icon,
+plain-language connection guidance, and guarded table, schema, and query
+presenters. The shared service-account form stays manifest-driven and
+write-only; provider-specific UI remains inside `src/integrations/bigquery/`.

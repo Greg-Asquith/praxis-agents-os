@@ -9,6 +9,7 @@ type IntegrationUiModuleLoader = () => Promise<IntegrationUiModuleImport>
 
 const MODULE_LOADERS: Record<string, IntegrationUiModuleLoader> = {
   airtable: () => import("@/integrations/airtable"),
+  bigquery: () => import("@/integrations/bigquery"),
   gmail: () => import("@/integrations/gmail"),
   google_ads: () => import("@/integrations/google_ads"),
 }

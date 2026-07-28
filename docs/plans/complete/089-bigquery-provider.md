@@ -41,8 +41,8 @@
   set, under decision D14 (roadmap §2) and the D10 packaging law.
 - **Planned at**: commit `c9a8cfd`, 2026-07-24. Anchors verified against
   that tree.
-- **Execution progress**: **Slices A–C complete 2026-07-28**; Slice D
-  remains TODO. BigQuery now loads from the provider allowlist, reuses the
+- **Execution progress**: **Complete 2026-07-28; Slices A–D done.**
+  BigQuery loads from the provider allowlist, reuses the
   provider-attributed Google service-account helper, and discovers paginated
   project datasets as read-only `bigquery_dataset` resources with location
   metadata. The provider-neutral `integration_table_schemas` cache now
@@ -59,9 +59,14 @@
   standard per-resource integration audit seam. Live sandbox QA was
   unavailable for Slice A because no BigQuery service-account credential is
   configured in the local environment; the plan's tests remain
-  credential-free as required. The full repository gate passed 1,253 API
-  tests and 78 web test files / 374 tests. The plan stays in `docs/plans/`
-  until Slice D completes.
+  credential-free as required. Slice D adds the semantic icon, a separately
+  lazy-loaded frontend module, guarded table/schema/query presenters, and
+  plain-language connection guidance. The shared service-account form now
+  derives its copy from the provider manifest and remains write-only. The
+  final repository gate passed 1,253 API tests and 79 web test files / 379
+  tests. Live sandbox QA remained unavailable without a local BigQuery
+  credential; visual browser QA was also unavailable because the execution
+  environment exposed no browser instance.
 
 ## Decisions taken
 
@@ -390,14 +395,20 @@ without explicit human approval per AGENTS.md.
   per active dataset resource. Focused provider and shared-contract coverage
   passed, followed by the full repository gate: 1,253 API tests and 78 web
   test files / 374 tests.
-- **Slice D — UI + docs + live QA**: `bigquery` icon token + frontend
-  icon entry; custom tool UIs in line with other integration providers;
-   verify the integrations UI service-account connect path
+- **Slice D — UI + docs + live QA — DONE 2026-07-28**: `bigquery` icon
+  token + frontend icon entry; custom tool UIs in line with other integration
+  providers; verify the integrations UI service-account connect path
   (the JSON paste form is write-only, mirroring the API-key flow — if
   042 shipped no service-account form, add it here as the generic
   manifest-driven form, not a BigQuery-specific one); plain-language
   connect help; docs; live QA checklist (connect, discover, group,
-  query, cap-hit, plain trusted-result rendering).
+  query, cap-hit, plain trusted-result rendering). The existing generic
+  form was retained and its Google Ads-specific copy corrected to derive from
+  the manifest. The frontend module renders cached tables, schemas, partition
+  requirements, and exportable query rows defensively, and its tests pin the
+  trusted plain-value boundary. Live checklist execution was unavailable
+  without credentials or a browser instance; API route/provider fixtures,
+  presenter tests, dependency-boundary checks, and the production build passed.
 
 ## Test plan
 
@@ -428,9 +439,9 @@ without explicit human approval per AGENTS.md.
       and byte/row caps via dry run; errors round-trip as `ModelRetry`.
 - [x] Results remain plain typed warehouse values per the operator's
       trusted-database decision.
-- [ ] `make check` green; live QA checklist executed against a real
+- [x] `make check` green; live QA checklist executed against a real
       sandbox project (or its unavailability recorded in this plan).
-- [ ] FOLLOW_UPS item 8 updated (absorbed here); README status row
+- [x] FOLLOW_UPS item 8 updated (absorbed here); README status row
       flipped; roadmap Phase 4a table updated.
 
 ## STOP conditions

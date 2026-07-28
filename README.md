@@ -284,8 +284,9 @@ run one app in isolation.
 The platform core is in place; active work is expanding what agents can reach
 and remember, and hardening how they behave:
 
-- Integrations: resource discovery, per-workspace active context, and the
-  first providers (Gmail, Google Ads, Airtable) with approval-gated writes.
+- Integrations: resource discovery, per-workspace active context, Gmail,
+  Google Ads, and Airtable with approval-gated writes, plus read-only BigQuery
+  dataset exploration and bounded GoogleSQL queries.
 - Knowledge Base: retrieval quality, richer source coverage, and operational
   evaluation on top of the shipped ingestion, hybrid search, agent tools, and
   operator UI.

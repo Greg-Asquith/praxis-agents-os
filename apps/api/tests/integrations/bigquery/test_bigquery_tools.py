@@ -46,6 +46,7 @@ def test_tool_contracts_are_cache_or_context_bound_read_tools() -> None:
     for definition in definitions.values():
         assert definition.effect == "read"
         assert definition.default_policy == "auto"
+        assert definition.presentation.icon == "bigquery"
         assert definition.supports_approval is True
         assert definition.integration_binding is not None
         assert definition.integration_binding.provider_keys == frozenset({"bigquery"})
