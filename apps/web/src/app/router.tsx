@@ -112,6 +112,12 @@ const homeRoute = createRoute({
   component: lazyRouteComponent(() => import("@/routes/home"), "HomeRoute"),
 })
 
+const contextRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/context",
+  component: lazyRouteComponent(() => import("@/routes/context"), "ContextRoute"),
+})
+
 const workspacesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspaces",
@@ -463,6 +469,7 @@ const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute, oauthLoginCallbackRoute]),
   appRoute.addChildren([
     homeRoute,
+    contextRoute,
     conversationsRoute,
     conversationRuntimeRoute.addChildren([newConversationRoute, conversationRoute]),
     agentsRoute,

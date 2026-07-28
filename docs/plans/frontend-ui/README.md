@@ -113,7 +113,7 @@ Functional, but visibly unstyled.
 | 031 | Catalog sweep: every tool a full surface | P1 | M | 025–030 | DONE |
 | 032 | Resilient conversation streams across navigation | P1 | M | — | DONE |
 | 033 | Integrations: calm app list & provider detail pages | P1 | L | — | DONE |
-| 034 | Sidebar consolidation: the Context hub | P1 | M | — | TODO |
+| 034 | Sidebar consolidation: the Context hub | P1 | M | — | IN PROGRESS — implementation and static gate complete; visual QA pending (no browser instance available 2026-07-28) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)

@@ -2,7 +2,7 @@
 
 import { Link } from "@tanstack/react-router"
 
-import { navigationItemsForRole } from "@/config/navigation"
+import { navigationItemsForRole, type NavigationItem } from "@/config/navigation"
 import { cn } from "@/lib/utils"
 
 export function PrimaryNavigation({
@@ -14,9 +14,12 @@ export function PrimaryNavigation({
   pathname: string
   workspaceRole: string | null
 }) {
+  const navigationItems = navigationItemsForRole(workspaceRole)
+  const activeLabel = activeNavigationLabel(pathname, navigationItems)
+
   return (
     <nav className="flex shrink-0 flex-col gap-1" aria-label="Primary">
-      {navigationItemsForRole(workspaceRole).map((item) => {
+      {navigationItems.map((item) => {
         const Icon = item.icon
 
         if (item.disabled) {
@@ -34,7 +37,7 @@ export function PrimaryNavigation({
           )
         }
 
-        const isActive = isNavigationActive(pathname, item.to)
+        const isActive = item.label === activeLabel
 
         return (
           <Link
@@ -55,10 +58,25 @@ export function PrimaryNavigation({
   )
 }
 
-function isNavigationActive(pathname: string, itemPath: string) {
-  if (itemPath === "/") {
-    return pathname === "/"
+function activeNavigationLabel(pathname: string, items: NavigationItem[]) {
+  let activeLabel: string | null = null
+  let activePrefixLength = -1
+
+  for (const item of items) {
+    if (item.disabled) {
+      continue
+    }
+
+    for (const prefix of [item.to, ...(item.activeWhen ?? [])]) {
+      const matches =
+        prefix === "/" ? pathname === "/" : pathname === prefix || pathname.startsWith(`${prefix}/`)
+
+      if (matches && prefix.length > activePrefixLength) {
+        activeLabel = item.label
+        activePrefixLength = prefix.length
+      }
+    }
   }
 
-  return pathname === itemPath || pathname.startsWith(`${itemPath}/`)
+  return activeLabel
 }

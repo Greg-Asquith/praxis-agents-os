@@ -11,5 +11,6 @@ describe("conversation route pending behavior", () => {
     expect(router.routesByPath["/conversations/$conversationId"].options.pendingMs).toBe(Infinity)
     expect(router.options.defaultPendingComponent).toBeDefined()
     expect(router.routesByPath["/integrations"]).toBeDefined()
+    expect(router.routesByPath["/context"]).toBeDefined()
   })
 })

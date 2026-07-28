@@ -2,23 +2,20 @@
 
 import {
   BotIcon,
-  BrainIcon,
   CalendarClockIcon,
-  FileStackIcon,
-  FilesIcon,
   LayoutDashboardIcon,
-  LibraryIcon,
+  LibraryBigIcon,
   PlugIcon,
   type LucideIcon,
-  SparklesIcon,
 } from "lucide-react"
 
-type NavigationItem =
+export type NavigationItem =
   | {
       label: string
       to: string
       icon: LucideIcon
       disabled: false
+      activeWhen?: readonly string[]
       managerOnly?: boolean
     }
   | {
@@ -43,34 +40,18 @@ const mainNavigation: NavigationItem[] = [
     disabled: false,
   },
   {
-    label: "Skills",
-    to: "/skills",
-    icon: SparklesIcon,
+    label: "Context",
+    to: "/context",
+    icon: LibraryBigIcon,
     disabled: false,
-  },
-  {
-    label: "Memory",
-    to: "/memories",
-    icon: BrainIcon,
-    disabled: false,
-  },
-  {
-    label: "Knowledge Base",
-    to: "/knowledge",
-    icon: LibraryIcon,
-    disabled: false,
-  },
-  {
-    label: "Files",
-    to: "/files",
-    icon: FilesIcon,
-    disabled: false,
-  },
-  {
-    label: "Artifacts",
-    to: "/artifacts",
-    icon: FileStackIcon,
-    disabled: false,
+    activeWhen: [
+      "/skills",
+      "/memories",
+      "/knowledge",
+      "/files",
+      "/artifacts",
+      "/integrations/context-groups",
+    ],
   },
   {
     label: "Schedules",

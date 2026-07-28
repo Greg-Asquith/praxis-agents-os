@@ -9,6 +9,7 @@ later:
 
 | Plan | Target | Status |
 | --- | --- | --- |
+| [000_SECURITY_REVIEW.md](000_SECURITY_REVIEW.md) | Cross-cutting — InfoSec-questionnaire hardening tasks that amend the plans below; records the per-customer-project tenancy decision | Planned |
 | [001-local-quickstart.md](001-local-quickstart.md) | Local — foolproof single-command spin-up for someone who just cloned the repo | Planned |
 | [002-gcp-cloud-run.md](002-gcp-cloud-run.md) | GCP — Cloud Run services (API, web) + Cloud Run Jobs (worker, migrate), scale to zero | Planned |
 | 003 (future) | Azure — Container Apps + Container Apps Jobs | Not started |

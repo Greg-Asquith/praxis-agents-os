@@ -8,7 +8,8 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: IN PROGRESS — implementation and `pnpm check` complete;
+  visual QA pending because no browser instance was available on 2026-07-28.
 - **Written**: 2026-07-27; re-verified and updated 2026-07-28 against
   HEAD `c65f946` (clean web working tree). Roadmap plan 049 (Memory) has
   landed and is committed; roadmap plans 050/051 (Artifacts) also landed

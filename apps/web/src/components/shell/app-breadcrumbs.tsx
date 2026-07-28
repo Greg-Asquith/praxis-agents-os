@@ -17,9 +17,13 @@ import { cn } from "@/lib/utils"
 type BreadcrumbRoute =
   | "/"
   | "/agents"
+  | "/artifacts"
   | "/conversations"
+  | "/context"
   | "/integrations"
+  | "/knowledge"
   | "/schedules"
+  | "/skills"
   | "/workspaces"
   | "/workspace-settings"
 
@@ -165,6 +169,71 @@ function getBreadcrumbs({
       : [{ key: "conversations", label: "Conversations" }]
   }
 
+  if (section === "context") {
+    return [{ key: "context", label: "Context" }]
+  }
+
+  if (section === "skills") {
+    if (detail === "new") {
+      return [
+        { key: "context", label: "Context", to: "/context" },
+        { key: "skills", label: "Skills", to: "/skills" },
+        { key: "skills-new", label: "New Skill" },
+      ]
+    }
+
+    return detail
+      ? [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "skills", label: "Skills", to: "/skills" },
+          { key: "skills-detail", label: "Skill" },
+        ]
+      : [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "skills", label: "Skills" },
+        ]
+  }
+
+  if (section === "knowledge") {
+    return detail
+      ? [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "knowledge", label: "Knowledge Base", to: "/knowledge" },
+          { key: "knowledge-detail", label: "Document" },
+        ]
+      : [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "knowledge", label: "Knowledge Base" },
+        ]
+  }
+
+  if (section === "memories") {
+    return [
+      { key: "context", label: "Context", to: "/context" },
+      { key: "memory", label: "Memory" },
+    ]
+  }
+
+  if (section === "files") {
+    return [
+      { key: "context", label: "Context", to: "/context" },
+      { key: "files", label: "Files" },
+    ]
+  }
+
+  if (section === "artifacts") {
+    return detail
+      ? [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "artifacts", label: "Artifacts", to: "/artifacts" },
+          { key: "artifacts-detail", label: "Artifact" },
+        ]
+      : [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "artifacts", label: "Artifacts" },
+        ]
+  }
+
   if (section === "schedules") {
     if (detail === "new") {
       return [
@@ -182,6 +251,13 @@ function getBreadcrumbs({
   }
 
   if (section === "integrations") {
+    if (detail === "context-groups") {
+      return [
+        { key: "context", label: "Context", to: "/context" },
+        { key: "context-groups", label: "Context Groups" },
+      ]
+    }
+
     return detail && detail !== "oauth"
       ? [
           { key: "integrations", label: "Integrations", to: "/integrations" },
