@@ -103,7 +103,7 @@ migrate: local-env ## Apply all Alembic migrations
 
 .PHONY: api-dev
 api-dev: local-env ## Run the FastAPI development server on http://localhost:8000
-	cd $(API_DIR) && uv run uvicorn main:app --reload --host 127.0.0.1 --port $(API_PORT)
+	cd $(API_DIR) && uv run uvicorn main:app --reload --host 127.0.0.1 --port $(API_PORT) --no-access-log
 
 .PHONY: worker-dev
 worker-dev: local-env ## Run the scheduled agent runner with auto-reload

@@ -116,7 +116,7 @@ uv run alembic upgrade heads
 uv run pytest
 # From the repository root, opt-in only:
 EVALS_MODEL=openai:gpt-5.6-luna make evals
-uv run uvicorn main:app --reload --port 8000
+uv run uvicorn main:app --reload --port 8000 --no-access-log
 ```
 
 `make api-test` (from the repo root) is the reliable way to run the full

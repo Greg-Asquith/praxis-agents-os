@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/components/markdown-table.tsx
+// apps/web/src/components/markdown-table.tsx
 
 import { isValidElement, memo, useCallback, useMemo, type ReactNode } from "react"
 import { CheckIcon, CopyIcon, DownloadIcon } from "lucide-react"

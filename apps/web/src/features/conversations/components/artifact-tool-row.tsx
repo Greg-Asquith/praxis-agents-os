@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/artifact-tool-row.tsx
 
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   ExternalLinkIcon,
   FileCode2Icon,
@@ -17,6 +18,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { createArtifactViewUrl } from "@/features/artifacts/api/create-view-url"
+import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
+import { artifactVersionContentQueryOptions } from "@/features/artifacts/api/get-artifact-version-content"
+import { ArtifactPreviewFrame } from "@/features/artifacts/components/artifact-preview-frame"
+import { ArtifactVersionSelector } from "@/features/artifacts/components/artifact-version-selector"
+import { artifactTypeLabel } from "@/features/artifacts/format"
 import type { ArtifactType } from "@/features/artifacts/types"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -117,6 +123,18 @@ function CompletedArtifactRow({
           </span>
           <Badge variant="secondary">{artifactTypeLabel(result.artifact_type)}</Badge>
           <Button
+            render={
+              <a
+                aria-label={`Manage artifact ${result.title}`}
+                href={`/artifacts/${result.artifact_id}`}
+              />
+            }
+            size="sm"
+            variant="ghost"
+          >
+            Manage
+          </Button>
+          <Button
             aria-label={`Open artifact ${result.title}`}
             disabled={opening}
             onClick={() => {
@@ -130,6 +148,11 @@ function CompletedArtifactRow({
             {opening ? "Opening…" : "Open"}
           </Button>
         </div>
+        <InlineArtifactPreview
+          artifactId={result.artifact_id}
+          initialVersionId={result.version_id}
+          title={result.title}
+        />
         {error ? (
           <p className="text-destructive text-xs" role="alert">
             {error}
@@ -137,6 +160,47 @@ function CompletedArtifactRow({
         ) : null}
       </div>
     </ToolResultCard>
+  )
+}
+
+function InlineArtifactPreview({
+  artifactId,
+  initialVersionId,
+  title,
+}: {
+  artifactId: string
+  initialVersionId: string
+  title: string
+}) {
+  const [versionId, setVersionId] = useState(initialVersionId)
+  const artifactQuery = useQuery(artifactQueryOptions(artifactId))
+  const contentQuery = useQuery(artifactVersionContentQueryOptions(artifactId, versionId))
+  if (artifactQuery.isError || contentQuery.isError) {
+    return (
+      <p className="text-muted-foreground text-xs">
+        Preview unavailable. Open the artifact to inspect it.
+      </p>
+    )
+  }
+  if (!artifactQuery.data || !contentQuery.data) {
+    return <div className="bg-muted/30 h-28 animate-pulse rounded-lg" />
+  }
+  return (
+    <div className="grid gap-2">
+      {artifactQuery.data.versions.length > 1 ? (
+        <ArtifactVersionSelector
+          currentVersionId={artifactQuery.data.current_version_id}
+          onValueChange={setVersionId}
+          value={versionId}
+          versions={artifactQuery.data.versions}
+        />
+      ) : null}
+      <ArtifactPreviewFrame
+        artifactType={artifactQuery.data.artifact_type}
+        content={contentQuery.data}
+        title={`${title} preview`}
+      />
+    </div>
   )
 }
 
@@ -202,16 +266,6 @@ function ArtifactHeading({ children, icon: Icon }: { children: string; icon: Luc
       <span className="truncate">{children}</span>
     </span>
   )
-}
-
-function artifactTypeLabel(type: ArtifactType): string {
-  if (type === "html") {
-    return "HTML"
-  }
-  if (type === "csv") {
-    return "CSV"
-  }
-  return type === "mermaid" ? "Mermaid" : "Markdown"
 }
 
 function ArtifactTypeIcon({ type }: { type: ArtifactType }) {

@@ -4,7 +4,7 @@ import { ShieldCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { isUntrustedNode } from "@/components/tool-ui/untrusted-node"
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { DocumentStatusBadge } from "@/features/knowledge/components/document-status-badge"
 import { knowledgeContentText } from "@/features/knowledge/content"
 import type { KbDocumentDetail } from "@/features/knowledge/types"
@@ -33,7 +33,7 @@ export function DocumentMarkdownView({ document }: { document: KbDocumentDetail 
           External Content
         </Badge>
       ) : null}
-      <MessageMarkdown content={content} />
+      <MarkdownContent content={content} />
     </article>
   )
 }

@@ -4,6 +4,7 @@ import {
   BotIcon,
   BrainIcon,
   CalendarClockIcon,
+  FileStackIcon,
   FilesIcon,
   LayoutDashboardIcon,
   LibraryIcon,
@@ -63,6 +64,12 @@ const mainNavigation: NavigationItem[] = [
     label: "Files",
     to: "/files",
     icon: FilesIcon,
+    disabled: false,
+  },
+  {
+    label: "Artifacts",
+    to: "/artifacts",
+    icon: FileStackIcon,
     disabled: false,
   },
   {

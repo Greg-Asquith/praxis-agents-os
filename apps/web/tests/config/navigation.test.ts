@@ -20,6 +20,7 @@ describe("navigationItemsForRole", () => {
         { label: "Memory", to: "/memories" },
         { label: "Knowledge Base", to: "/knowledge" },
         { label: "Files", to: "/files" },
+        { label: "Artifacts", to: "/artifacts" },
         { label: "Schedules", to: "/schedules" },
         { label: "Integrations", to: "/integrations" },
       ])

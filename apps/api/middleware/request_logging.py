@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.observability import track_request
 from core.rate_limiting import get_client_ip
+from core.request_paths import redact_capability_path
 from middleware.utils import _sanitize_headers_for_logging
 
 logger = logging.getLogger(__name__)
@@ -58,11 +59,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         include_exc_info: bool = False,
     ) -> None:
         workspace_id = request.headers.get("x-workspace")
+        endpoint_template = _endpoint_template_for_metrics(request)
 
         try:
             track_request(
                 method=request.method,
-                endpoint=_endpoint_template_for_metrics(request),
+                endpoint=endpoint_template,
                 status_code=status_code,
                 duration=process_time,
             )
@@ -71,7 +73,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         log_data = {
             "method": request.method,
-            "url": request.url.path or "/",
+            "url": redact_capability_path(request.url.path or "/"),
             "has_query_params": bool(request.url.query),
             "client_ip": client_ip,
             "status_code": status_code,

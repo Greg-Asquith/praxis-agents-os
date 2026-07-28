@@ -7,6 +7,9 @@ Loads configuration from environment variables with validation.
 All secrets should be loaded from environment variables or secret management systems.
 """
 
+from ipaddress import ip_address
+from urllib.parse import urlsplit
+
 from pydantic import model_validator
 from pydantic_settings import SettingsConfigDict
 
@@ -96,6 +99,48 @@ class Settings(
 
         if self.CREDENTIAL_MASTER_KEYS and self.ENVIRONMENT != "local":
             raise ValueError("CREDENTIAL_MASTER_KEYS is only allowed when ENVIRONMENT=local")
+
+        if self.ARTIFACT_SHARE_DEFAULT_TTL_DAYS > self.ARTIFACT_SHARE_MAX_TTL_DAYS:
+            raise ValueError(
+                "ARTIFACT_SHARE_DEFAULT_TTL_DAYS must not exceed ARTIFACT_SHARE_MAX_TTL_DAYS"
+            )
+
+        if self.ARTIFACT_SHARING_ENABLED and self.ENVIRONMENT != "local":
+            artifact_origin = urlsplit(self.ARTIFACT_ORIGIN)
+            artifact_host = artifact_origin.hostname
+            if not artifact_host:
+                raise ValueError(
+                    "ARTIFACT_ORIGIN is required when artifact sharing is enabled "
+                    "outside local environments"
+                )
+            if artifact_origin.scheme != "https":
+                raise ValueError(
+                    "ARTIFACT_ORIGIN must use HTTPS when artifact sharing is enabled "
+                    "outside local environments"
+                )
+            if not self.RATE_LIMIT_ENABLED:
+                raise ValueError(
+                    "RATE_LIMIT_ENABLED must be true when artifact sharing is enabled "
+                    "outside local environments"
+                )
+            for setting_name, value in (
+                ("APP_BASE_URL", self.APP_BASE_URL),
+                ("FRONTEND_URL", self.FRONTEND_URL),
+            ):
+                app_host = urlsplit(value).hostname
+                if app_host and _hosts_share_site(artifact_host, app_host):
+                    raise ValueError(
+                        "ARTIFACT_ORIGIN must use a distinct site from "
+                        f"{setting_name} when artifact sharing is enabled"
+                    )
+            cookie_domain = (self.COOKIE_DOMAIN or "").lstrip(".").rstrip(".").lower()
+            if cookie_domain and (
+                artifact_host == cookie_domain or artifact_host.endswith(f".{cookie_domain}")
+            ):
+                raise ValueError(
+                    "ARTIFACT_ORIGIN must not be covered by COOKIE_DOMAIN "
+                    "when artifact sharing is enabled"
+                )
 
         if (
             self.ENVIRONMENT != "local"
@@ -194,6 +239,22 @@ class Settings(
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+
+def _hosts_share_site(left: str, right: str) -> bool:
+    """Conservatively approximate registrable-domain equality without a PSL."""
+    left = left.rstrip(".").lower()
+    right = right.rstrip(".").lower()
+    return _site_suffix(left) == _site_suffix(right)
+
+
+def _site_suffix(host: str) -> str:
+    try:
+        ip_address(host)
+    except ValueError:
+        labels = host.split(".")
+        return ".".join(labels[-2:]) if len(labels) > 1 else host
+    return host
 
 
 # Global instance

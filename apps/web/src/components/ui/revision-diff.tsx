@@ -1,6 +1,6 @@
-// apps/web/src/features/files/components/revision-diff.ts
+// apps/web/src/components/revision-diff.tsx
 
-import { diffTooLarge, lineDiff, type LineDiffItem } from "@/features/files/diff"
+import { diffTooLarge, lineDiff, type LineDiffItem } from "@/lib/line-diff"
 
 export function RevisionDiff({
   leftContent,

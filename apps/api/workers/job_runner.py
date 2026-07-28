@@ -32,6 +32,9 @@ from services.jobs.claim_jobs import claim_jobs
 from services.jobs.domain import JOB_STATUS_RUNNING
 from services.jobs.finalize_job import finalize_job_failure, finalize_job_success
 from services.jobs.handlers.sweep_deleted_files import ensure_files_sweep_job
+from services.jobs.handlers.sweep_expired_artifact_shares import (
+    ensure_artifact_shares_sweep_job,
+)
 from services.jobs.handlers.sweep_expired_scratch import ensure_scratch_sweep_job
 from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_sweep_job
 from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
@@ -61,6 +64,7 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
             )
         await ensure_sweep_job(db)
         await ensure_files_sweep_job(db)
+        await ensure_artifact_shares_sweep_job(db)
         await ensure_scratch_sweep_job(db)
         await ensure_rate_limit_sweep_job(db)
         await ensure_integrations_sweep_job(db)

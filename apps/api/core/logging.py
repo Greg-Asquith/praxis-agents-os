@@ -170,7 +170,9 @@ def setup_logging() -> None:
         "core.exceptions": logging.DEBUG if is_development else logging.INFO,
         # FastAPI and Uvicorn
         "uvicorn": logging.INFO if is_development else logging.WARNING,
-        "uvicorn.access": logging.INFO if is_development else logging.WARNING,
+        # RequestLoggingMiddleware is the sole access log so capability paths
+        # receive its centralized redaction before they reach output.
+        "uvicorn.access": logging.WARNING,
         "uvicorn.error": logging.WARNING,
         # SQLAlchemy
         "sqlalchemy.engine": logging.INFO if settings.SQL_DEBUG else logging.WARNING,

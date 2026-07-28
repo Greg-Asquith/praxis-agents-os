@@ -1,6 +1,6 @@
 // apps/web/src/features/files/components/file-content-view.tsx
 
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { cn } from "@/lib/utils"
 
 type FileContentViewProps = {
@@ -21,7 +21,7 @@ export function FileContentView({ content, name, mediaType, className }: FileCon
           className
         )}
       >
-        <MessageMarkdown className="text-xs leading-relaxed" content={content} />
+        <MarkdownContent className="text-xs leading-relaxed" content={content} />
       </div>
     )
   }

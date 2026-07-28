@@ -1,4 +1,4 @@
-// apps/web/src/features/files/diff.ts
+// apps/web/src/lib/line-diff.ts
 
 export type LineDiffItem = {
   kind: "same" | "added" | "removed"

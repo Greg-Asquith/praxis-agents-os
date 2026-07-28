@@ -1,4 +1,4 @@
-// apps/web/src/features/files/components/file-revisions-list.ts
+// apps/web/src/features/files/components/file-revisions-list.tsx
 
 import { useMemo, useState } from "react"
 import { useSuspenseQueries } from "@tanstack/react-query"
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { agentsQueryOptions } from "@/features/agents/api/list-agents"
 import { useRevisionContentQuery } from "@/features/files/api/get-revision-content"
 import { useRestoreFileRevisionMutation } from "@/features/files/api/restore-file-revision"
-import { RevisionDiff } from "@/features/files/components/revision-diff"
+import { RevisionDiff } from "@/components/ui/revision-diff"
 import { fileRevisionKindLabel } from "@/features/files/format"
 import type { FileRevision, WorkspaceFile } from "@/features/files/types"
 import { workspaceMembershipsQueryOptions } from "@/features/workspaces/api/list-memberships"

@@ -25,8 +25,9 @@ The core platform is wired end to end (API, worker, and UI):
   management with document pipelines, and pgvector-backed document retrieval
   with hybrid search, agent tools, and an operator UI.
 - Artifacts: dedicated immutable revisions, approval-gated agent creation and
-  updates, first-party conversation rows, and signed cookie-free serving
-  behind a self-contained CSP.
+  updates, first-party conversation cards, workspace list/detail/version
+  management, append-only edit and restore flows, and expiring, revocable
+  anonymous share links served cookie-free behind a self-contained CSP.
 - Operations: agent schedules with a leased background worker, a generic jobs
   worker, audit and security event viewers, an LLM model catalog, and
   integration connections (OAuth with PKCE, API keys, encrypted credentials).
@@ -146,7 +147,7 @@ From `apps/api`:
 cp .env.example .env
 uv sync
 uv run alembic upgrade heads
-uv run uvicorn main:app --reload --port 8000
+uv run uvicorn main:app --reload --port 8000 --no-access-log
 ```
 
 The API reads configuration from environment variables or `.env`. Local

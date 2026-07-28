@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError, NotFoundError
+from core.rate_limiting import _build_rate_limit_error, rate_limiter
 from core.settings import settings
 from models.artifacts import Artifact, ArtifactRevision
 from services.artifacts.domain import CREATABLE_ARTIFACT_TYPES
@@ -56,6 +57,24 @@ def artifact_revision_ref(object_key: str) -> StorageObjectRef:
 def artifact_content_hash(content: bytes) -> str:
     """Return the lowercase SHA-256 digest for artifact content."""
     return sha256_hex(content)
+
+
+async def check_workspace_share_rate_limit(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+) -> None:
+    """Apply the governance creation limit through the existing IP-keyed store."""
+    result = await rate_limiter.check_rate_limit(
+        ip="0.0.0.0",  # noqa: S104 - documented sentinel for a workspace subject key
+        endpoint=f"artifact_share_create:{workspace_id}",
+        limit_type="artifact_share_creation",
+        custom_limit=10,
+        custom_window=3600,
+        db=db,
+    )
+    if not result.allowed:
+        raise _build_rate_limit_error(result)
 
 
 def validate_artifact_content(*, artifact_type: str, title: str, content: str) -> bytes:
@@ -175,6 +194,9 @@ def artifact_to_read(
                 created_by_agent_id=revision.created_by_agent_id,
                 created_by_system=revision.created_by_system,
                 size_bytes=revision.size_bytes,
+                revision_number=revision.revision_number,
+                revision_kind=revision.revision_kind,
+                restored_from_revision_id=revision.restored_from_revision_id,
             )
             for revision in revisions
         ],

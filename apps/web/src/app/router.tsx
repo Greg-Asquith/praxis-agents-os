@@ -13,6 +13,8 @@ import {
 
 import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { agentsQueryOptions } from "@/features/agents/api/list-agents"
+import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
+import { artifactsQueryOptions } from "@/features/artifacts/api/list-artifacts"
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
 import { validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
@@ -273,6 +275,30 @@ const filesRoute = createRoute({
   component: lazyRouteComponent(() => import("@/features/files/routes/files-route"), "FilesRoute"),
 })
 
+const artifactsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/artifacts",
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(artifactsQueryOptions())
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/artifacts/routes/artifacts-route"),
+    "ArtifactsRoute"
+  ),
+})
+
+const artifactDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/artifacts/$artifactId",
+  loader: async ({ context, params }) => {
+    await context.queryClient.ensureQueryData(artifactQueryOptions(params.artifactId))
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/artifacts/routes/artifact-detail-route"),
+    "ArtifactDetailRoute"
+  ),
+})
+
 const knowledgeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/knowledge",
@@ -449,6 +475,8 @@ const routeTree = rootRoute.addChildren([
     knowledgeRoute,
     knowledgeDocumentRoute,
     filesRoute,
+    artifactsRoute,
+    artifactDetailRoute,
     schedulesRoute,
     integrationsRoute,
     integrationContextGroupsRoute,

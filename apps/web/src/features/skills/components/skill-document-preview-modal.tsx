@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { skillDocumentMarkdownQueryOptions } from "@/features/skills/api/get-skill-document-markdown"
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import type { SkillDocument } from "@/features/skills/types"
 import { getErrorMessage } from "@/lib/api/errors"
 
@@ -102,7 +102,7 @@ function SkillDocumentPreviewDialog({
                 </Alert>
               ) : null}
               <article className="min-w-0">
-                <MessageMarkdown content={markdownQuery.data.content} />
+                <MarkdownContent content={markdownQuery.data.content} />
               </article>
             </div>
           )}

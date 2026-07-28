@@ -22,6 +22,9 @@ class ArtifactVersionRead(BaseModel):
     created_by_agent_id: UUID | None
     created_by_system: bool
     size_bytes: int
+    revision_number: int
+    revision_kind: str
+    restored_from_revision_id: UUID | None
 
 
 class ArtifactBaseRead(BaseModel):
@@ -64,3 +67,38 @@ class ArtifactVersionContentRead(BaseModel):
 class ArtifactViewUrl(BaseModel):
     url: str
     expires_at: datetime
+
+
+class ArtifactUpdateRequest(BaseModel):
+    content: str
+    title: str | None = None
+
+
+class ArtifactShareCreateRequest(BaseModel):
+    expires_in_days: int | None = Field(default=None, ge=1)
+
+
+class ArtifactShareCreated(BaseModel):
+    id: UUID
+    share_url: str
+    token_prefix: str
+    expires_at: datetime
+    version_id: UUID
+
+
+class ArtifactShareRead(BaseModel):
+    id: UUID
+    token_prefix: str
+    expires_at: datetime
+    version_id: UUID
+    created_at: datetime
+    created_by_user_id: UUID | None
+    creator_display: str | None
+    revoked_at: datetime | None
+    revoked_by_user_id: UUID | None
+    last_accessed_at: datetime | None
+    access_count: int
+
+
+class ArtifactShareListResponse(BaseModel):
+    items: list[ArtifactShareRead]

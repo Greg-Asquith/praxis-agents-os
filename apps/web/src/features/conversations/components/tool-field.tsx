@@ -4,7 +4,7 @@ import { useId, type ReactNode } from "react"
 
 import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import type { ResolvedToolField } from "@/features/conversations/tool-ui"
 import { cn } from "@/lib/utils"
 
@@ -51,7 +51,7 @@ export function ToolField({
         ) : (
           <ToolFieldValue
             field={field}
-            renderMarkdown={(value) => <MessageMarkdown content={value} />}
+            renderMarkdown={(value) => <MarkdownContent content={value} />}
             urlAction={urlAction}
           />
         )}

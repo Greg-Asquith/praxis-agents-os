@@ -5,7 +5,7 @@ import { FileTextIcon } from "lucide-react"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { skillDocumentReadArgs } from "@/features/conversations/skills/skill-document-read"
@@ -46,7 +46,7 @@ export function SkillDocumentReadRow({ activity, defaultOpen = false }: SkillDoc
     >
       {completed ? (
         <div className="max-h-96 min-w-0 overflow-auto py-1">
-          <MessageMarkdown content={documentContentFromResult(activity.result)} />
+          <MarkdownContent content={documentContentFromResult(activity.result)} />
         </div>
       ) : (
         <Alert variant="destructive">

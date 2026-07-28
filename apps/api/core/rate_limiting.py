@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_async_db_session_factory
 from core.exceptions.general import RateLimitError
+from core.request_paths import redact_capability_path
 from core.settings import settings
 from models.rate_limiting import RateLimitAttempt
 
@@ -278,6 +279,7 @@ _NUMERIC_SEGMENT = re.compile(r"^\d+$")
 
 def normalize_endpoint(path: str) -> str:
     """Collapse path-parameter segments so rate-limit buckets stay bounded."""
+    path = redact_capability_path(path)
     segments = [
         "{id}" if _UUID_SEGMENT.match(segment) or _NUMERIC_SEGMENT.match(segment) else segment
         for segment in path.split("/")

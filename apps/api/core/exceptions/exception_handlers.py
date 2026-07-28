@@ -29,6 +29,7 @@ from core.exceptions.general import (
 )
 from core.exceptions.integration import IntegrationError
 from core.exceptions.oauth import OAuthError
+from core.request_paths import redact_capability_path
 
 logger = logging.getLogger("core.exception_handlers")
 
@@ -123,7 +124,7 @@ async def app_exception_handler(
         _log_level_for_status(status_code),
         "Handled app exception",
         extra={
-            "path": str(request.url.path),
+            "path": redact_capability_path(request.url.path),
             "status_code": status_code,
             "exc_type": exc.__class__.__name__,
         },
@@ -142,7 +143,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.info(
             "Handled SQLAlchemy NoResultFound",
             extra={
-                "path": str(request.url.path),
+                "path": redact_capability_path(request.url.path),
                 "exc_type": exc.__class__.__name__,
             },
         )
@@ -195,7 +196,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.info(
             "Handled RequestValidationError",
             extra={
-                "path": str(request.url.path),
+                "path": redact_capability_path(request.url.path),
                 "num_errors": len(problem["errors"]),
             },
         )
@@ -233,7 +234,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.warning(
             "Handled HTTPException",
             extra={
-                "path": str(request.url.path),
+                "path": redact_capability_path(request.url.path),
                 "status_code": status,
                 "detail": problem.get("detail"),
                 "request_id": request.headers.get("x-request-id")

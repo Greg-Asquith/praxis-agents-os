@@ -16,7 +16,7 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { supportIdentifier } from "@/features/conversations/format"
 import { delegateAgentSummaries } from "@/features/conversations/delegation-agent-list"
@@ -293,7 +293,7 @@ function DelegationField({ field }: { field: ResolvedToolField | null }) {
       >
         <ToolFieldValue
           field={field}
-          renderMarkdown={(value) => <MessageMarkdown content={value} />}
+          renderMarkdown={(value) => <MarkdownContent content={value} />}
         />
       </div>
     </div>

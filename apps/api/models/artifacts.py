@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -18,7 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 
-from models.base import Base, BaseModel, CreatedAtMixin, UUIDMixin
+from models.base import Base, BaseModel, CreatedAtMixin, TimestampMixin, UUIDMixin
 
 ARTIFACT_TYPES = ("html", "markdown", "mermaid", "csv", "image-ref")
 ARTIFACT_REVISION_KINDS = ("create", "edit", "restore")
@@ -128,6 +129,52 @@ class ArtifactRevision(Base, UUIDMixin, CreatedAtMixin):
             "revision_number",
             name="uq_artifact_revisions_artifact_number",
         ),
+    )
+
+
+class ArtifactShare(Base, UUIDMixin, TimestampMixin):
+    """Revocable, version-pinned anonymous access to an artifact."""
+
+    __tablename__ = "artifact_shares"
+
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    artifact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("artifacts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("artifact_revisions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash = Column(String(64), nullable=False, unique=True)
+    token_prefix = Column(String(8), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    created_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revoked_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    last_accessed_at = Column(DateTime(timezone=True), nullable=True)
+    access_count = Column(Integer, nullable=False, server_default=text("0"))
+
+    __table_args__ = (
+        CheckConstraint("access_count >= 0", name="artifact_shares_access_count_check"),
+        Index("ix_artifact_shares_expires_at", "expires_at"),
+        Index("ix_artifact_shares_workspace_created", "workspace_id", "created_at"),
     )
 
 

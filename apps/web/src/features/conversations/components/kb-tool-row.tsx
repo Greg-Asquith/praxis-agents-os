@@ -11,7 +11,7 @@ import { isUntrustedNode } from "@/components/tool-ui/untrusted-node"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MessageMarkdown } from "@/features/conversations/components/message-markdown"
+import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
@@ -192,7 +192,7 @@ function ReadDocumentRow({ activity, defaultOpen }: KbToolRowProps) {
           <div className="border-border/70 overflow-hidden rounded-lg border">
             <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Content</p>
             <div className="max-h-96 min-w-0 overflow-auto px-3 py-2">
-              <MessageMarkdown content={result.content} />
+              <MarkdownContent content={result.content} />
             </div>
           </div>
         )}

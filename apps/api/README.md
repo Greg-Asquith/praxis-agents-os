@@ -11,7 +11,7 @@ uv sync
 # Run locally
 uv run python main.py
 # or directly via uvicorn
-uv run uvicorn main:app --reload --port 8080
+uv run uvicorn main:app --reload --port 8080 --no-access-log
 ```
 
 ## Notes

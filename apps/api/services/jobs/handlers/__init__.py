@@ -13,6 +13,7 @@ from services.jobs.handlers import (
     summarize_conversation_history,  # noqa: F401
     sweep_deleted_files,  # noqa: F401
     sweep_deleted_kb_documents,  # noqa: F401
+    sweep_expired_artifact_shares,  # noqa: F401
     sweep_expired_memories,  # noqa: F401
     sweep_expired_scratch,  # noqa: F401
     sweep_rate_limit_attempts,  # noqa: F401

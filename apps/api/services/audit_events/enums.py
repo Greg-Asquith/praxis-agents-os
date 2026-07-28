@@ -49,6 +49,7 @@ class AuditResourceType(StrEnum):
     SECRET_REFERENCE = "secret_reference"
     KB_DOCUMENT = "kb_document"
     MEMORY = "memory"
+    ARTIFACT_SHARE = "artifact_share"
 
 
 class AuditActorType(StrEnum):

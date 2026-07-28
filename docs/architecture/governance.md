@@ -46,7 +46,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Delete workspace-scope memories (049) *[implemented: plan 049]* | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) *[implemented: plan 049]* | — | ✓ | ✓ | ✓ |
 | Create artifacts via agents (050) *[implemented: plan 050]* | follows tool policy | ✓ | ✓ | ✓ |
-| Create/revoke artifact share links (051) | — | — | ✓ | ✓ |
+| Create/revoke artifact share links (051) *[implemented: plan 051]* | — | — | ✓ | ✓ |
 | View audit log *(enforced today: 023 MANAGER)* | — | — | ✓ | ✓ |
 | View security events *(enforced today: 023 super-admin only — `security_events` has no workspace column)* | — | — | — | — |
 | Configure agent tool policies *(enforced today: EDITOR via agents)* | — | ✓ | ✓ | ✓ |
@@ -122,7 +122,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Memories (048–049) *[implemented: plans 048–049]* | supersession and archive by default | archive at `expires_at`; hard-delete only by an explicit user purge [implemented: plan 049] | n/a | ✓ | ✓ |
 | Credentials (037) | revoke = soft [implemented: plan 039] | 30 d after revoke; tokens crypto-shredded at revoke [implemented: plan 039] | n/a | metadata only, never values | — |
 | Integration resources/discovery runs (039) | ✓ / plain rows [implemented: plan 039] | 90 d [implemented: plan 039] | n/a | counters [implemented: plan 039] | — |
-| Artifact shares (051) | revocable | at `expires_at` (default 7 d) | n/a | ✓ | — |
+| Artifact shares (051) *[implemented: plan 051]* | revocable [implemented: plan 051] | at `expires_at` (default 7 d) [implemented: plan 051] | n/a | ✓ [implemented: plan 051] | — |
 | Audit events | append-only | 400 d | n/a | n/a | ✓ (super-admin) |
 | Security events | append-only | 400 d | n/a | n/a | super-admin only |
 | Conversation todos (028) | rides conversation | with conversation | n/a | digest rows | — |
@@ -141,7 +141,7 @@ enforcement second**. Each counter names the plan that adds it. All values
 | Embedding budget | 2 M tokens/month/workspace | 043 [implemented: plan 043] |
 | Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings [implemented: plan 030 counter + warning, plan 033 claim-seam enforcement and files surface] | 030 (counter implemented), 033 (first enforcement seam) |
 | Per-run token/step caps | plan 011 `UsageLimits` + `max_steps` *(enforced today)* | — |
-| Artifact-share creation | 10/hour/workspace | 051 |
+| Artifact-share creation | 10/hour/workspace [implemented: plan 051] | 051 |
 | Integration API retries | `Retry-After`-aware, bounded attempts | 037 [implemented: plan 037] |
 
 ## 5. Secrets Operating Model

@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.database import get_async_db_session_factory
 from core.rate_limiting import get_client_ip, normalize_endpoint, rate_limiter
+from core.request_paths import redact_capability_path
 from services.security import SecurityEventType, safe_record_security_event
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Get client IP
         client_ip = get_client_ip(request)
-        endpoint = request.url.path
+        endpoint = redact_capability_path(request.url.path)
         rate_limit_endpoint = normalize_endpoint(endpoint)
         method = request.method
 
@@ -154,9 +155,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # No limit (rate limiting disabled) → nothing meaningful to advertise.
         if result.limit is None:
             return
-        response.headers["X-RateLimit-Limit"] = str(result.limit)
-        response.headers["X-RateLimit-Remaining"] = str(max(0, result.limit - result.attempts))
-        response.headers["X-RateLimit-Reset"] = str(int(result.reset_time.timestamp()))
+        response.headers.setdefault("X-RateLimit-Limit", str(result.limit))
+        response.headers.setdefault(
+            "X-RateLimit-Remaining",
+            str(max(0, result.limit - result.attempts)),
+        )
+        response.headers.setdefault(
+            "X-RateLimit-Reset",
+            str(int(result.reset_time.timestamp())),
+        )
 
     def _get_limit_type(self, endpoint: str, method: str) -> str:
         """Determine rate limit type based on endpoint and method."""

@@ -1,4 +1,4 @@
-<!-- docs/plans/051-artifact-cards-share-links.md -->
+<!-- docs/plans/complete/051-artifact-cards-share-links.md -->
 
 # Plan 051: Chat artifact cards, versions UI, and share links
 
@@ -633,16 +633,16 @@ tests/routes/artifacts tests/middleware -q` all pass;
 
 ## Test plan
 
-Covered by Step 8 (~26–30 API tests; the frontend gate is `pnpm check` —
-no test framework exists). Pinned invariants: **tokens exist in exactly
-one response and nowhere else** (not rows, not audits, not logs, not query
-cache), **anonymous responses are uniform and cookie-free** (identical
-404s; 050 header set byte-matched; no Set-Cookie), **shares are pinned,
-expiring, revocable, and swept** (pin survives edits; revoke/expiry →
-404; sweeper hard-deletes per governance §3 while audit rows survive),
-**limits hold per workspace** (10/h creation via the sentinel key; per-IP
-access throttle), and **the revision chain stays append-only** (edits and
-restores add revisions; nothing mutates).
+Covered by Step 8's focused API suite plus frontend unit coverage for
+artifact preview safety, bounded markdown rendering, and quoted CSV parsing.
+Pinned invariants: **tokens exist in exactly one response and nowhere else**
+(not rows, not audits, not logs, not query cache), **anonymous responses are
+uniform and cookie-free** (identical 404s; 050 header set byte-matched; no
+Set-Cookie), **shares are pinned, expiring, revocable, and swept** (pin
+survives edits; revoke/expiry → 404; sweeper hard-deletes per governance §3
+while audit rows survive), **limits hold per workspace** (10/h creation via
+the sentinel key; per-IP access throttle), and **the revision chain stays
+append-only** (edits and restores add revisions; nothing mutates).
 
 ## Done criteria
 
@@ -726,3 +726,32 @@ Stop and report back (do not improvise) if:
   shadow the delegation/skill rows (registry order in
   `tool-call-row-registry.tsx` is first-match-wins), and that the sweep
   deletes revoked-but-unexpired rows only after `expires_at`.
+
+## Execution record (2026-07-28)
+
+Completed as the next serial roadmap item. The implementation uses the
+dedicated `ArtifactRevision` aggregate landed by 050; the plan's stale
+`file_revisions` foreign-key wording was resolved to `artifact_revisions`
+without crossing into Files ownership.
+
+The mandatory independent security audit initially found raw capability paths
+in rate-limit keys and secondary logs, per-token rather than shared guess
+budgets, malformed-token 422s, incomplete same-site isolation, and a
+configurable TTL above the 30-day ceiling. Its re-audits additionally required
+HTTPS, active rate limiting, and suppression of Uvicorn's raw access log.
+All findings were fixed and regression-tested; the final audit reported no
+remaining findings.
+
+Verification completed with a core migration upgrade/downgrade/upgrade
+round-trip, Alembic drift check, registered sweep and one-pass worker smoke,
+the focused database-backed artifact/middleware suite, the full API and web
+repository gate, grep checks for sandbox/HTML injection constraints, and
+unchanged CSRF/SSE protocol files.
+
+A post-completion implementation review fixed two operator-facing version
+ambiguities: share creation now states explicitly that it pins the current
+head revision, including while an older revision is selected, and successful
+edits move the detail view to the newly appended revision. The same follow-up
+consolidated markdown and diff rendering into shared components, added bounded
+markdown and standards-compliant quoted CSV previews, expanded the pinned API
+invariant coverage, and refreshed the root capability documentation.

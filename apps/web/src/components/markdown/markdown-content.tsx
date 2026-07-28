@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/components/message-markdown.tsx
+// apps/web/src/components/markdown-content.tsx
 
 import { isValidElement, memo, useMemo, type ReactNode } from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"
@@ -15,7 +15,7 @@ import {
   MarkdownTableHead,
   MarkdownTableHeader,
   MarkdownTableRow,
-} from "@/features/conversations/components/markdown-table"
+} from "@/components/markdown/markdown-table"
 import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { reactNodeToText } from "@/lib/react-node"
 import { cn } from "@/lib/utils"
@@ -35,7 +35,7 @@ const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [
   [rehypeSanitize, SANITIZE_SCHEMA],
 ]
 
-export const MessageMarkdown = memo(function MessageMarkdown({
+export const MarkdownContent = memo(function MarkdownContent({
   className,
   content,
 }: {

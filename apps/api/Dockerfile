@@ -51,7 +51,7 @@ FROM runtime AS dev
 
 ENV WATCHFILES_FORCE_POLLING=true
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --reload --reload-dir /app"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --reload --reload-dir /app --no-access-log"]
 
 # --- Production ---
 FROM runtime AS production
@@ -62,4 +62,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD python -c "import socket, os; s=socket.create_connection(('localhost', int(os.getenv('PORT','8080'))), timeout=5); s.close()"
 
 # Respect Cloud Run's PORT and bind to all interfaces.
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]
