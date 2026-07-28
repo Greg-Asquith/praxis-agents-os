@@ -64,7 +64,9 @@ What does not fit Cloud Run yet:
   path routing (`/api/*` → API) collapses to one origin and removes CORS
   entirely, at ~$18+/month fixed — adopt when adding CDN or multi-region.
   Check domain-mapping availability in the chosen region before committing;
-  if unavailable, fall back to the LB option.
+  if unavailable, fall back to the LB option. When the LB is adopted, take
+  the full hardened posture in one move (see "Growth path: hardened
+  network posture" below) rather than LB-only.
 - **D2 — Database: Cloud SQL for PostgreSQL 17 with pgvector, connected
   via the built-in Cloud SQL connection (unix socket).** No VPC connector
   needed. `DATABASE_URL=postgresql+asyncpg://praxis:<pw>@/praxis?host=/cloudsql/<project>:<region>:<instance>`
@@ -74,6 +76,17 @@ What does not fit Cloud Run yet:
   it. Note: Cloud SQL does not scale to zero — it is the one always-on
   cost (~$10–30/month at the small end). Accept this for v1; revisit
   (e.g. scheduled stop for staging) only if it matters.
+  Version note: Google's current golden paths provision `POSTGRES_18`;
+  local dev runs the pgvector pg17 image. Pick the newest major both
+  Cloud SQL and the local pgvector image support at execution time and
+  align `docker-compose.yml` with it — do not run different majors
+  locally and in cloud.
+  Hardening follow-up (recorded, not v1): Google's reference serverless
+  architecture connects via Private Service Connect with IAM database
+  authentication (no password at all) and the Cloud SQL Auth Proxy
+  sidecar. Our v1 keeps the simpler built-in Cloud SQL connection +
+  Secret Manager password; adopt PSC + IAM DB auth when the hardened
+  network posture below is taken up.
 - **D3 — Worker: drain-mode Cloud Run Job on a Cloud Scheduler cadence.**
   Add `WORKER_MODE=drain` (or `--once`) to `workers/main.py`: run both
   loops until the schedule queue and jobs queue report empty (or a
@@ -88,6 +101,20 @@ What does not fit Cloud Run yet:
   lease/claim semantics (`AGENT_SCHEDULE_RUN_CLAIM_TTL_SECONDS`, stale-job
   reclaim) already make overlapping drain executions safe — verify, don't
   assume.
+  Job flags to set explicitly (defaults bite otherwise): `--task-timeout`
+  defaults to 10 minutes — set it to `WORKER_DRAIN_MAX_SECONDS` plus
+  shutdown headroom; `--max-retries` defaults to 3 — set 0 or 1, because
+  Scheduler re-fires every minute anyway and leases make retries safe but
+  pointless; `--tasks`/`--parallelism` stay 1.
+  **Considered alternative — Cloud Run worker pools.** Cloud Run has a
+  third resource type built for exactly what `workers/main.py` is today:
+  always-on pull-based background processing, deployable with the
+  unchanged run-forever supervisor (`gcloud run worker-pools deploy`).
+  Rejected for v1 because worker pools are manually scaled (always-on
+  while scaled up — no autoscale-to-zero), which conflicts with the
+  scale-to-zero goal. Recorded as the escape hatch: if drain-mode latency
+  ever hurts, run the supervisor unchanged as a worker pool scaled 0/1 on
+  demand instead of re-architecting the drain loop.
 - **D4 — Migrations: a dedicated Cloud Run Job (`praxis-migrate`), run by
   the deploy pipeline before new revisions go live.** Same API image,
   command `alembic upgrade heads`. Deploy order: build → run migrate job →
@@ -115,21 +142,63 @@ What does not fit Cloud Run yet:
   `praxis-worker`, `praxis-migrate`, deploy SA for CI), least privilege:
   `roles/cloudsql.client`, `roles/secretmanager.secretAccessor` (scoped to
   the praxis secrets), storage `objectAdmin` on the two buckets only.
-  Never the default compute SA. CI authenticates via Workload Identity
-  Federation from GitHub Actions.
+  Never the default compute SA — and enforce the
+  `iam.automaticIamGrantsForDefaultServiceAccounts` org policy (default
+  since May 2024 orgs) so the default SA never silently holds Editor.
+  Public access to the api/web services uses "disable the IAM invoker
+  check" (Google's recommended form of `--allow-unauthenticated`), not an
+  `allUsers` role grant. Enable Artifact Registry vulnerability scanning
+  from day one. CI authenticates via Workload Identity Federation from
+  GitHub Actions; human operators use `gcloud auth login` + service
+  account impersonation, never downloaded JSON keys.
 - **D9 — IaC: start with declarative `gcloud`-driven config committed to
   the repo** (`deploy/gcp/` — service YAMLs via
   `gcloud run services replace`, plus a small bootstrap doc/script for the
   one-time resources: project, SQL instance, buckets, secrets, scheduler,
   domain mappings). Terraform is deliberately deferred: one target, small
   team, and the service YAML is the part that changes often. Record this
-  as reversible; if/when Azure/AWS land, revisit IaC once across targets.
+  as reversible; if/when Azure/AWS land, revisit IaC once across targets —
+  and start from the maintained Terraform references the skills carry
+  (`cloud-run-basics` references/iac-usage.md, `cloud-sql-basics`,
+  `n-tier-serverless-web-app` assets/main.tf) rather than hand-writing.
 - **D10 — Email: SendGrid or SES over SMTP — pick at execution time.**
   GCP has no first-party transactional email. Both `ses` and `sendgrid`
   providers exist in settings; whichever account is easiest to provision
   wins, and the choice is one env var. Not a blocker for a staging deploy
   (`EMAIL_PROVIDER=disabled` exists for pre-DNS smoke tests — confirm
   invitation/reset flows degrade acceptably before relying on it).
+
+## Execution toolkit: Google agent skills
+
+The `google/skills` repository (install with `npx skills add google/skills`;
+local checkout at `~/Desktop/Coding/ai_niche_skills/google-skills`) ships
+agent skills that cover this plan's surface. Whoever executes this plan —
+human or agent — should load the matching skill per stage instead of working
+from memory:
+
+| Plan area | Skill | What it provides |
+| --- | --- | --- |
+| All `gcloud` work | `cloud/gcloud` | Guardrails: validate leaf-level syntax with `gcloud help <command>` before proposing/executing anything; `--quiet` + explicit `--project`/`--region` everywhere; data-reduction flags on every `list`; `--dry-run` when supported |
+| Services, jobs, worker pools | `cloud/cloud-run-basics` | Deploy commands, job flags (`--task-timeout`, `--max-retries`, `--execute-now`, `--wait`), failure triage (`gcloud logging read "resource.labels.service_name=..."` on crash-on-boot), IAM/ingress references |
+| Cloud SQL | `cloud/cloud-sql-basics` | Instance/user/database creation, `connectionName` retrieval, Auth Proxy for local access, backup/PITR references |
+| GCS buckets | `cloud/google-cloud-storage-basics` | Bucket creation, signed URLs, IAM/access control; note its command-attribution convention (`CLOUDSDK_METRICS_ENVIRONMENT` prefix) when running commands through it |
+| Auth model (Stage 1/3) | `cloud/google-cloud-recipe-auth` | WIF, ADC, and the impersonation-over-JSON-keys rule baked into D8 |
+| Observability (Stage 2/3) | `cloud/cloud-logging-query-generation`, `cloud/cloud-monitoring-metric-selection` | Writing log queries and picking alert metrics for the Stage 2 observability floor |
+| LB/CDN/Armor growth path | `cloud/google-cloud-global-frontend-configuration` | Guided 6-step design for the global external ALB + Cloud CDN + Cloud Armor described below |
+| Hardened architecture reference | `cloud/google-cloud-solution-n-tier-serverless-web-app` | Google's opinionated secure serverless golden path (PSC, internal-only ingress, IAM DB auth) — source for the growth-path posture below |
+| Pre-prod review lenses | `cloud/google-cloud-waf-security`, `-reliability`, `-cost-optimization`, `-operational-excellence` | Well-Architected review checklists before the prod cutover |
+
+Two of the `gcloud` skill's guardrails are adopted as rules of this plan, not
+suggestions: **(1)** no autonomous IAM policy changes, deletions, billing
+operations, or API enablement — those steps always get explicit human
+approval (they're also natural Terraform-later candidates per D9); **(2)**
+never run an unvalidated `gcloud` invocation — check `gcloud help` for the
+exact leaf command first, since flags drift.
+
+Not needed for this plan: `google-cloud-recipe-foundation-builder` builds an
+org-level landing zone (folders, org policies, centralized logging). We are
+a small team deploying project-per-env without an org hierarchy; revisit
+only if Praxis lands in a Google Cloud Organization with multiple teams.
 
 ## Tasks
 
@@ -182,7 +251,14 @@ What does not fit Cloud Run yet:
       (Google/GitHub/Microsoft consoles) to the real origins.
 - [ ] Observability floor: log-based alert on worker job failures and API
       5xx rate; uptime check on `/healthz`. Decide whether `/api/metrics`
-      gets scraped (Managed Prometheus) or stays dormant for v1.
+      gets scraped (Managed Prometheus) or stays dormant for v1. Use the
+      logging/monitoring skills from the toolkit table to write the
+      queries and pick alert metrics.
+- [ ] Deploy-failure triage runbook in `deploy/gcp/README`: the
+      crash-on-boot logs command
+      (`gcloud logging read "resource.labels.service_name=<svc>" --limit=20`),
+      the 0.0.0.0/`PORT` container contract rule, and revision rollback —
+      so a failed deploy at 6pm doesn't require re-deriving any of it.
 
 ### Stage 3 — CI/CD
 
@@ -205,6 +281,32 @@ What does not fit Cloud Run yet:
       is Cloud SQL only, and everything else bills near zero at idle.
 - [ ] Record in this file the decisions actually taken (region, tiers,
       email provider, single-vs-multi project) for the Azure/AWS copies.
+- [ ] Before the prod cutover, run the Well-Architected review lenses
+      (waf-security, waf-reliability, waf-cost-optimization skills) against
+      the deployed staging stack and file findings as tasks or explicit
+      rejections here.
+
+## Growth path: hardened network posture (recorded, not v1)
+
+Google's reference architecture for exactly this shape (serverless web app +
+Cloud SQL) goes further than v1 needs; when scale or a security review
+justifies it, adopt it as one coherent move, guided by the
+`google-cloud-global-frontend-configuration` and
+`n-tier-serverless-web-app` skills:
+
+- Global external Application Load Balancer in front, with Cloud CDN for
+  the static web tier and Cloud Armor WAF (OWASP preconfigured rules +
+  per-IP rate limiting; note the app also has its own application-level
+  rate limiting — tune `TRUSTED_PROXY_CIDRS` so client IPs survive the LB).
+- API ingress tightens from `all` to `internal-and-cloud-load-balancing`;
+  web could move to a GCS backend bucket + CDN, dropping the nginx service.
+- Cloud SQL moves to Private Service Connect with IAM database
+  authentication (no DB password), Direct VPC egress from Cloud Run, and
+  least-privilege egress firewalls.
+- One origin (path routing) removes CORS and `COOKIE_DOMAIN` entirely.
+
+None of this changes app code — it is all provider posture, which is why it
+stays out of v1 and out of the deployment target contract.
 
 ## Verification
 

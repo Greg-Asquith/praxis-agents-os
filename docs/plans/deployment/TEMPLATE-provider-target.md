@@ -33,6 +33,7 @@ Fill in the concrete service for each contract capability
 | 9 | DNS/TLS/same-site origins | Domain mappings, `COOKIE_DOMAIN` | provider TLS + the same subdomain/cookie shape (D1 of 002) |
 | — | Build extra | `--build-arg CLOUD_EXTRA=gcp` | `CLOUD_EXTRA=azure` / `CLOUD_EXTRA=aws` (pyproject extras exist) |
 | — | CI identity | Workload Identity Federation | e.g. Azure federated credentials / AWS OIDC role |
+| — | Execution toolkit | `google/skills` skill map (002 "Execution toolkit" section) | find the vendor's equivalent agent-skill set, map plan stages to skills, and adopt its CLI guardrails as plan rules; record explicitly if none exists |
 
 Cloudflare note: rows 1/3/5 have no native Cloudflare answer for a Python
 container; a Cloudflare target is realistically "web on Pages/Workers +

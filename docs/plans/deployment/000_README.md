@@ -66,6 +66,19 @@ plans; do each once:
   (`apps/web/src/config/env.ts`). Either build per environment in CI or add
   runtime injection; each target plan states which it uses.
 
+## Execution aids: provider agent skills
+
+Cloud-target plans name a per-provider skill toolkit that executors (human
+or agent) load at execution time instead of working from memory. For GCP
+this is the `google/skills` repository (`npx skills add google/skills`;
+local checkout at `~/Desktop/Coding/ai_niche_skills/google-skills`) — the
+GCP plan's "Execution toolkit" section maps its stages to specific skills
+and adopts two of the `gcloud` skill's guardrails as plan rules (no
+autonomous IAM/delete/billing operations; validate every command against
+`gcloud help` first). Future targets should identify the equivalent
+vendor skill set (or record that none exists) in the same section of
+their plan.
+
 ## Known constraint: API horizontal scaling
 
 Agent runs execute in-process in the API (`run_task_registry` in
