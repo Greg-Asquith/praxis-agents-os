@@ -6,6 +6,7 @@ from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin
 
 from .discover_resources import discover_resources
+from .sync_table_schemas import SYNC_TABLE_SCHEMAS_KIND
 
 PROVIDER = IntegrationProviderPlugin(
     manifest=IntegrationProviderManifest(
@@ -18,4 +19,5 @@ PROVIDER = IntegrationProviderPlugin(
         capability_flags=frozenset({"read"}),
     ),
     discover_resources=discover_resources,
+    metadata_sync_job_kind=SYNC_TABLE_SCHEMAS_KIND,
 )

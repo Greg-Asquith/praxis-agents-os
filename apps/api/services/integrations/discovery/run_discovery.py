@@ -35,6 +35,7 @@ from services.integrations.domain import (
     CONNECTION_STATUS_NEEDS_REAUTH,
     CONNECTION_STATUS_REVOKED,
 )
+from services.integrations.enqueue_metadata_sync import enqueue_metadata_sync
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.plugin import PROVIDER_PLUGINS, DiscoveredIntegrationResource
 from services.integrations.utils import record_integration_audit
@@ -144,6 +145,7 @@ async def run_discovery(
             resource_id=connection.id,
             details={"provider_key": connection.provider_key, **counters},
         )
+        await enqueue_metadata_sync(db, connection=connection)
         await db.flush()
         return discovery_run
     except IntegrationAuthError as exc:

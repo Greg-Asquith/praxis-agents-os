@@ -10,6 +10,7 @@ ALLOWED_PROVIDER_SERVICE_PREFIXES = (
     "services.agents.runtime.untrusted",
     "services.audit_events",
     "services.integrations",
+    "services.jobs.registry",
     "services.secrets",
 )
 

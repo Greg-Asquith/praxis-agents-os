@@ -23,6 +23,7 @@ from services.integrations.connections.utils import (
     get_visible_connection,
     require_connection_mutation_allowed,
 )
+from services.integrations.enqueue_metadata_sync import enqueue_metadata_sync
 from services.integrations.utils import record_integration_audit
 
 
@@ -90,6 +91,11 @@ async def update_resource_selection(
         },
     )
     await recompute_connection_status(db, connection)
+    await enqueue_metadata_sync(
+        db,
+        connection=connection,
+        initiated_by_user_id=actor.id,
+    )
     return ResourceSelectionResponse(
         connection_id=connection.id,
         enabled_resource_ids=sorted(requested_ids, key=str),

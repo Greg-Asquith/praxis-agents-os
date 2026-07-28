@@ -9,6 +9,7 @@ from core.exceptions.integration import IntegrationValidationError
 from integrations.bigquery import PROVIDER
 from integrations.bigquery.client import BigQueryClient
 from integrations.bigquery.discover_resources import discover_bigquery_resources
+from integrations.bigquery.sync_table_schemas import SYNC_TABLE_SCHEMAS_KIND
 from services.integrations.credentials import parse_google_service_account_json
 from services.integrations.loader import _validate_plugin
 
@@ -23,6 +24,7 @@ def test_manifest_declares_read_only_workspace_dataset_provider() -> None:
     assert manifest.resource_types == ("bigquery_dataset",)
     assert manifest.requires_discovery is True
     assert manifest.capability_flags == frozenset({"read"})
+    assert PROVIDER.metadata_sync_job_kind == SYNC_TABLE_SCHEMAS_KIND
     assert PROVIDER.tool_definitions == ()
     _validate_plugin(PROVIDER, expected_key="bigquery")
 

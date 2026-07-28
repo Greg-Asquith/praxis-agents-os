@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_event import AuditEvent
+from models.integration_table_schema import IntegrationTableSchema
 from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
@@ -25,6 +26,7 @@ from tests.factories import (
     build_integration_discovery_run,
     build_integration_event,
     build_integration_resource,
+    build_integration_table_schema,
     build_integration_webhook,
 )
 
@@ -58,6 +60,10 @@ async def test_sweep_deletes_expired_history_and_removed_resources(
     )
     db_session.add_all([old_run, fresh_run, old_resource, fresh_resource, job])
     await db_session.flush()
+    old_schema = build_integration_table_schema(resource=old_resource)
+    fresh_schema = build_integration_table_schema(resource=fresh_resource)
+    db_session.add_all([old_schema, fresh_schema])
+    await db_session.flush()
     await db_session.execute(
         IntegrationDiscoveryRun.__table__.update()
         .where(IntegrationDiscoveryRun.id == old_run.id)
@@ -90,10 +96,22 @@ async def test_sweep_deletes_expired_history_and_removed_resources(
         .select_from(IntegrationResource)
         .where(IntegrationResource.id == fresh_resource.id)
     )
+    old_schema_count = await db_session.scalar(
+        select(func.count())
+        .select_from(IntegrationTableSchema)
+        .where(IntegrationTableSchema.id == old_schema.id)
+    )
+    fresh_schema_count = await db_session.scalar(
+        select(func.count())
+        .select_from(IntegrationTableSchema)
+        .where(IntegrationTableSchema.id == fresh_schema.id)
+    )
     assert old_run_count == 0
     assert fresh_run_count == 1
     assert old_resource_count == 0
     assert fresh_resource_count == 1
+    assert old_schema_count == 0
+    assert fresh_schema_count == 1
     next_job = await db_session.scalar(
         select(Job).where(
             Job.kind == "integrations.sweep_stale",

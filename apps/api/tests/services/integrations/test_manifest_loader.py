@@ -161,6 +161,24 @@ def test_loader_requires_discovery_callable_when_manifest_advertises_it() -> Non
         _validate_plugin(plugin, expected_key="example")
 
 
+def test_loader_requires_a_registered_valid_metadata_sync_handler() -> None:
+    invalid_kind = IntegrationProviderPlugin(
+        manifest=_api_key_manifest(),
+        discover_resources=None,
+        metadata_sync_job_kind="Invalid-Kind",
+    )
+    with pytest.raises(RuntimeError, match="invalid metadata sync job kind"):
+        _validate_plugin(invalid_kind, expected_key="example")
+
+    missing_handler = IntegrationProviderPlugin(
+        manifest=_api_key_manifest(),
+        discover_resources=None,
+        metadata_sync_job_kind="integrations.missing_handler",
+    )
+    with pytest.raises(RuntimeError, match="handler is not registered"):
+        _validate_plugin(missing_handler, expected_key="example")
+
+
 def test_loader_validates_provider_preview_definitions() -> None:
     async def fetch_preview(db, connection, ref) -> IntegrationPreviewPayload:
         return IntegrationPreviewPayload(content_type="text", content=ref, meta={})

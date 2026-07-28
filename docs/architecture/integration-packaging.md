@@ -133,6 +133,7 @@ are a package boundary, not a subdirectory convention. Tests mirror it at
 class IntegrationProviderPlugin:
     manifest: IntegrationProviderManifest          # 037 shape, unchanged
     discover_resources: DiscoverResourcesFn | None # required iff manifest.requires_discovery
+    metadata_sync_job_kind: str | None = None       # provider-owned metadata handler
     tool_definitions: tuple[RuntimeToolDefinition, ...]
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
 ```
@@ -144,10 +145,11 @@ contain a kind, audit operation name, and raw-content fetch function; the
 engine retains connection scoping, response bounds, HTML sanitization, and
 audit. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
-don't grow the contract ad hoc. (Addendum §9 adds one optional
+don't grow the contract ad hoc. The optional metadata job kind was added by
+the first warehouse provider so discovery and selection can trigger
+provider-owned cache refresh without an engine branch. (Addendum §9 adds one optional
 attribute: `oauth_operations`, default `None`.) *(superseded — see §10
-(decision D11): §9 is withdrawn; the contract stays `manifest +
-discover_resources + tool_definitions`)*
+(decision D11): §9 is withdrawn; no OAuth-operations field exists.)*
 
 ### 4.3 The loader
 
@@ -212,6 +214,7 @@ v1, per 041 decision 3) declare no extra.
    seams (plugin contract, `http.py` retries, credential accessors,
    domain vocabulary), `services/secrets/` ops,
    `services/agents/runtime/tools/` contract + decorator,
+   `services/jobs/registry.py` solely to register a provider-owned handler,
    `core/exceptions/`, `core/settings`, and `utils/`. Nothing else in
    `services/` without adding the seam to this list first.
 3. `integrations.<a>` never imports `integrations.<b>`.
@@ -344,13 +347,15 @@ Adding a provider touches:
    only if OAuth/config-gated.
 4. Optionally contribute preview definitions from the provider package;
    do not add provider routes or branches to shared services.
-5. Optionally `apps/web/src/integrations/<key>/` + **one line** in
+5. If the provider owns a metadata cache, register its handler through
+   `services/jobs/registry.py` and declare only the kind on the plugin.
+6. Optionally `apps/web/src/integrations/<key>/` + **one line** in
    `src/integrations/registry.ts` — only if it earns custom UI.
-6. Ask whether any tool returns content a person would want to **see** rather
+7. Ask whether any tool returns content a person would want to **see** rather
    than read about. If so, name the engine-owned presenter kits and optional
    preview kinds the provider package composes; provider packages contribute
    adapters only and never add kit logic.
-7. Governance §2 policy review: writes default `approval`; spend ops
+8. Governance §2 policy review: writes default `approval`; spend ops
    `supports_auto=False`. No exceptions by packaging.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,
@@ -425,5 +430,8 @@ engine branch, frontend module, or registration edit. The shared Google
 service-account helper now receives the provider key from each caller so
 validation and token errors remain correctly attributed without coupling the
 credential layer to either Google Ads or BigQuery. The schema-cache plugin
-seam, runtime tools, and frontend icon remain pending in later BigQuery
-slices.
+seam and provider-owned sync job landed next: the plugin declares only its
+metadata job kind, the generic discovery and selection paths enqueue it, and
+the provider registers the handler through the narrow jobs-registry seam
+listed in §4.6. Runtime tools and the frontend icon remain pending in later
+BigQuery slices.

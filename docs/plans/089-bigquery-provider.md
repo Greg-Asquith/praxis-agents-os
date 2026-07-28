@@ -41,15 +41,21 @@
   set, under decision D14 (roadmap §2) and the D10 packaging law.
 - **Planned at**: commit `c9a8cfd`, 2026-07-24. Anchors verified against
   that tree.
-- **Execution progress**: **Slice A complete 2026-07-28**; Slices B–D
+- **Execution progress**: **Slices A–B complete 2026-07-28**; Slices C–D
   remain TODO. BigQuery now loads from the provider allowlist, reuses the
   provider-attributed Google service-account helper, and discovers paginated
   project datasets as read-only `bigquery_dataset` resources with location
-  metadata. Transport-mocked provider, loader, import-law, Google Ads
-  regression, and shared service-account route tests passed. Live sandbox QA
-  was unavailable because no BigQuery service-account credential is
-  configured in the local environment; the plan's tests remain credential-free
-  as required. The plan stays in `docs/plans/` until Slices B–D complete.
+  metadata. The provider-neutral `integration_table_schemas` cache now
+  reconciles enabled datasets through the provider-declared
+  `integrations.sync_table_schemas` job after discovery and selection;
+  bounded partial listings are recorded without falsely removing unseen
+  cache rows. Transport-mocked provider, loader/import-law, DB-backed sync,
+  trigger, migration, and retention coverage passed. Live sandbox QA was
+  unavailable for Slice A because no BigQuery service-account credential is
+  configured in the local environment; the plan's tests remain
+  credential-free as required. The full repository gate passed 1,240 API
+  tests and 78 web test files / 374 tests. The plan stays in `docs/plans/`
+  until Slices C–D complete.
 
 ## Decisions taken
 
@@ -341,12 +347,20 @@ without explicit human approval per AGENTS.md.
   Deterministic transport and generic selection/context coverage passed;
   live sandbox QA was unavailable because local BigQuery credentials were
   not configured.
-- **Slice B — schema cache + sync job**: migration + model (decision
+- **Slice B — schema cache + sync job — DONE 2026-07-28**: migration + model (decision
   5), `metadata_sync_job_kind` seam (decision 6), sync handler with
   idempotent reconcile + bounds, trigger wiring (post-discovery,
   post-selection, periodic), retention. Gate: cache rows exist for
   enabled datasets only; re-running the job is a no-op; disabling a
-  dataset stops future syncs.
+  dataset stops future syncs. The provider-owned handler pages
+  `tables.list`, fetches full metadata through `tables.get`, flattens nested
+  fields, and preserves unseen rows when the configured cap makes coverage
+  partial. The generic trigger uses a stable connection-scoped job identity,
+  so repeated discovery/selection requests deduplicate while in flight;
+  periodic rediscovery reaches the same post-discovery seam. Focused
+  DB-backed reconciliation, trigger, and cascade-retention tests passed, and
+  Alembic reported no schema drift. The full repository gate passed 1,240 API
+  tests and 78 web test files / 374 tests.
 - **Slice C — tools**: `bigquery_list_tables`,
   `bigquery_get_table_schema` (cache-only),
   `bigquery_run_query` with the decision-8 pipeline; typed output

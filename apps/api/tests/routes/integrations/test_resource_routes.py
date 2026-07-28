@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_event import AuditEvent
 from models.integrations import IntegrationConnection, IntegrationResource
+from models.jobs import Job
 from models.workspace import WorkspaceRole
 from services.integrations.manifest import (
     PROVIDER_MANIFESTS,
@@ -24,6 +25,7 @@ from services.integrations.plugin import (
     IntegrationProviderPlugin,
     register_provider_plugin,
 )
+from services.jobs.registry import JOB_HANDLERS, job_handler
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -37,6 +39,13 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(autouse=True)
 def discoverable_route_provider() -> Iterator[None]:
+    kind = "tests.sync_selected_metadata"
+
+    async def metadata_handler(_db, _job) -> None:
+        return None
+
+    job_handler(kind=kind)(metadata_handler)
+
     async def discover_resources(_credential: str, _principal_label: str | None = None):
         return ()
 
@@ -51,12 +60,14 @@ def discoverable_route_provider() -> Iterator[None]:
             required_form_fields=("api_key",),
         ),
         discover_resources=discover_resources,
+        metadata_sync_job_kind=kind,
     )
     register_provider_plugin(plugin)
     register_provider_manifest(plugin.manifest)
     yield
     PROVIDER_PLUGINS.pop(plugin.manifest.provider_key, None)
     PROVIDER_MANIFESTS.pop(plugin.manifest.provider_key, None)
+    JOB_HANDLERS.pop(kind, None)
 
 
 async def _connection_with_resources(
@@ -139,6 +150,7 @@ async def test_selection_replace_set_recomputes_status_and_audits_diff(
         role=WorkspaceRole.MEMBER,
         workspace=integration_identity["workspace"],
     )
+    member_id = _member.id
 
     selected = await db_async_client.put(
         f"/api/v1/integrations/connections/{connection.id}/resources/selection",
@@ -173,6 +185,15 @@ async def test_selection_replace_set_recomputes_status_and_audits_diff(
         "enabled_added": [str(available_id)],
         "enabled_removed": [str(removed_id)],
     }
+    metadata_job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == "tests.sync_selected_metadata",
+            Job.subject_type == "integration_connection",
+            Job.subject_id == connection_id,
+        )
+    )
+    assert metadata_job is not None
+    assert metadata_job.initiated_by_user_id == member_id
 
     cleared = await db_async_client.put(
         f"/api/v1/integrations/connections/{connection_id}/resources/selection",

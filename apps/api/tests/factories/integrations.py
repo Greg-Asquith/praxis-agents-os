@@ -11,6 +11,7 @@ from models.integration_context import (
     IntegrationContextGroup,
     IntegrationContextGroupMember,
 )
+from models.integration_table_schema import IntegrationTableSchema
 from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
@@ -73,6 +74,28 @@ def build_integration_resource(
     }
     defaults.update(overrides)
     return IntegrationResource(**defaults)
+
+
+def build_integration_table_schema(
+    *,
+    resource: IntegrationResource,
+    **overrides,
+) -> IntegrationTableSchema:
+    now = datetime.now(UTC)
+    defaults = {
+        "id": uuid4(),
+        "resource_id": resource.id,
+        "table_external_id": "table_1",
+        "table_type": "table",
+        "schema_fields": [],
+        "partitioning": {},
+        "clustering_fields": [],
+        "availability": "available",
+        "first_synced_at": now,
+        "last_synced_at": now,
+    }
+    defaults.update(overrides)
+    return IntegrationTableSchema(**defaults)
 
 
 def build_integration_discovery_run(

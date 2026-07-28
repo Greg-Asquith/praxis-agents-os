@@ -17,6 +17,7 @@ from tests.factories.integrations import (
     build_integration_discovery_run,
     build_integration_event,
     build_integration_resource,
+    build_integration_table_schema,
     build_integration_webhook,
 )
 from tests.factories.jobs import build_job
@@ -41,6 +42,7 @@ __all__ = [
     "build_integration_discovery_run",
     "build_integration_event",
     "build_integration_resource",
+    "build_integration_table_schema",
     "build_integration_webhook",
     "build_job",
     "build_kb_chunk",

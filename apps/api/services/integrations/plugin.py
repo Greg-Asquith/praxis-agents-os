@@ -150,6 +150,7 @@ class IntegrationEventDefinition:
 class IntegrationProviderPlugin:
     manifest: IntegrationProviderManifest
     discover_resources: DiscoverResourcesFn | None
+    metadata_sync_job_kind: str | None = None
     oauth_config: OAuthConfigFn | None = None
     tool_definitions: tuple["RuntimeToolDefinition", ...] = ()
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()

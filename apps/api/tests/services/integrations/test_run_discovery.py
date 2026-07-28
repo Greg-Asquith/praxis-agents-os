@@ -1,15 +1,18 @@
 """Discovery reconciliation behavior."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.integration import IntegrationValidationError
 from models.integrations import IntegrationDiscoveryRun, IntegrationResource
+from models.jobs import Job
 from services.integrations.discovery import run_discovery
-from services.integrations.plugin import DiscoveredIntegrationResource
+from services.integrations.plugin import PROVIDER_PLUGINS, DiscoveredIntegrationResource
+from services.jobs.registry import JOB_HANDLERS, job_handler
 
 
 async def test_run_discovery_is_idempotent_and_persists_permissions(
@@ -42,6 +45,40 @@ async def test_run_discovery_is_idempotent_and_persists_permissions(
     assert second.resources_unchanged == 1
     assert rows[0].id == row_id
     assert rows[0].first_seen_at == first_seen_at
+
+
+async def test_successful_discovery_enqueues_one_provider_metadata_sync(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+    kind = "tests.sync_provider_metadata"
+
+    async def handler(_db, _job) -> None:
+        return None
+
+    job_handler(kind=kind)(handler)
+    original = PROVIDER_PLUGINS[connection.provider_key]
+    PROVIDER_PLUGINS[connection.provider_key] = replace(
+        original,
+        metadata_sync_job_kind=kind,
+    )
+    try:
+        await run_discovery(db_session, connection_id=connection.id)
+        await run_discovery(db_session, connection_id=connection.id)
+
+        count = await db_session.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(
+                Job.kind == kind,
+                Job.subject_type == "integration_connection",
+                Job.subject_id == connection.id,
+            )
+        )
+        assert count == 1
+    finally:
+        JOB_HANDLERS.pop(kind, None)
 
 
 async def test_run_discovery_removes_and_resurrects_without_losing_selection(
@@ -116,7 +153,7 @@ async def test_runtime_registry_without_discovery_callable_is_defensively_reject
     db_session: AsyncSession,
     discovery_connection: dict[str, object],
 ) -> None:
-    from services.integrations.plugin import PROVIDER_PLUGINS, IntegrationProviderPlugin
+    from services.integrations.plugin import IntegrationProviderPlugin
 
     connection = discovery_connection["connection"]
     plugin = PROVIDER_PLUGINS[connection.provider_key]

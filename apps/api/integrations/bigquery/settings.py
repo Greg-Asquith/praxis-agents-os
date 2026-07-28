@@ -4,4 +4,23 @@
 
 from typing import Final
 
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 BIGQUERY_DISCOVERY_PAGE_SIZE: Final = 1000
+BIGQUERY_TABLE_LIST_PAGE_SIZE: Final = 1000
+
+
+class BigQuerySettings(BaseSettings):
+    """Environment-backed limits used only by the BigQuery provider."""
+
+    BIGQUERY_SCHEMA_SYNC_MAX_TABLES: int = Field(default=500, ge=1)
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+bigquery_settings = BigQuerySettings()

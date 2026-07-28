@@ -8,6 +8,8 @@ import re
 from core.settings import settings
 from services.integrations.manifest import register_provider_manifest
 from services.integrations.plugin import IntegrationProviderPlugin, register_provider_plugin
+from services.jobs.domain import is_valid_job_kind
+from services.jobs.registry import get_job_handler
 
 PREVIEW_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -65,6 +67,15 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
         raise RuntimeError(
             f"Integration provider '{expected_key}' contributes events but declares no delivery"
         )
+    if plugin.metadata_sync_job_kind is not None:
+        if not is_valid_job_kind(plugin.metadata_sync_job_kind):
+            raise RuntimeError(
+                f"Integration provider '{expected_key}' declares an invalid metadata sync job kind"
+            )
+        if get_job_handler(plugin.metadata_sync_job_kind) is None:
+            raise RuntimeError(
+                f"Integration provider '{expected_key}' metadata sync handler is not registered"
+            )
     for definition in plugin.tool_definitions:
         if definition.provider != expected_key:
             raise RuntimeError("Integration tool provider must match its package")

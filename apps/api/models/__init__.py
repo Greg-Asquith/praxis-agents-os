@@ -26,6 +26,7 @@ from models.integration_context import (  # noqa: F401
     IntegrationContextGroup,
     IntegrationContextGroupMember,
 )
+from models.integration_table_schema import IntegrationTableSchema  # noqa: F401
 from models.integrations import (  # noqa: F401
     ExternalCredential,
     IntegrationConnection,
