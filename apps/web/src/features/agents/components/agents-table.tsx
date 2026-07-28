@@ -1,7 +1,7 @@
 // apps/web/src/features/agents/components/agents-table.tsx
 
 import { Link } from "@tanstack/react-router"
-import { BotIcon, PencilIcon, PlusIcon } from "lucide-react"
+import { BotIcon, MessageSquarePlusIcon, PencilIcon, PlusIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -103,15 +103,27 @@ export function AgentsTable({
                     />
                   </TableCell>
                   <TableCell>{formatDateTime(agent.updated_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
-                    >
-                      <PencilIcon data-icon="inline-start" />
-                      Edit
-                    </Button>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-2">
+                      {agent.is_active ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          render={<Link to="/conversations/new" search={{ agent: agent.id }} />}
+                        >
+                          <MessageSquarePlusIcon data-icon="inline-start" />
+                          Chat
+                        </Button>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
+                      >
+                        <PencilIcon data-icon="inline-start" />
+                        Edit
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               )
@@ -166,14 +178,26 @@ function AgentMobileRow({
           </ResponsiveListMeta>
         </dl>
 
-        <Button
-          className="w-full"
-          variant="outline"
-          render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
-        >
-          <PencilIcon data-icon="inline-start" />
-          Edit
-        </Button>
+        <div className="flex gap-2">
+          {agent.is_active ? (
+            <Button
+              className="flex-1"
+              variant="outline"
+              render={<Link to="/conversations/new" search={{ agent: agent.id }} />}
+            >
+              <MessageSquarePlusIcon data-icon="inline-start" />
+              Chat
+            </Button>
+          ) : null}
+          <Button
+            className="flex-1"
+            variant="outline"
+            render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
+          >
+            <PencilIcon data-icon="inline-start" />
+            Edit
+          </Button>
+        </div>
       </div>
     </ResponsiveListItem>
   )

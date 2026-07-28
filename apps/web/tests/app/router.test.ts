@@ -13,4 +13,19 @@ describe("conversation route pending behavior", () => {
     expect(router.routesByPath["/integrations"]).toBeDefined()
     expect(router.routesByPath["/context"]).toBeDefined()
   })
+
+  it("keeps only UUID agent preselection values", () => {
+    const router = createAppRouter(new QueryClient())
+    const validateSearch = router.routesByPath["/conversations/new"].options.validateSearch
+    const agentId = "f81d4fae-7dec-4d0a-9658-9e8a9ad91a3d"
+
+    expect(validateSearch).toBeTypeOf("function")
+    if (typeof validateSearch !== "function") {
+      throw new Error("Expected a function search validator")
+    }
+
+    expect(validateSearch({ agent: agentId })).toEqual({ agent: agentId })
+    expect(validateSearch({ agent: "not-an-agent-id" })).toEqual({})
+    expect(validateSearch({})).toEqual({})
+  })
 })

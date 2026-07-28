@@ -33,47 +33,47 @@ const contextSections: readonly ContextSection[] = [
     label: "Skills",
     to: "/skills",
     icon: SparklesIcon,
-    description: "Step-by-step instructions that teach agents how to do a repeatable job your way.",
-    when: "Use it when an agent should do a task the same way every time - like producing the weekly report in your format.",
+    description: "Teach your agents how you like a job done, so they do it your way every time.",
+    when: "Use it for repeatable work - like producing the weekly report in exactly your format.",
   },
   {
     label: "Knowledge Base",
     to: "/knowledge",
     icon: LibraryIcon,
     description:
-      "A searchable library of reference documents agents look up and cite when they answer.",
-    when: "Use it for facts agents should check rather than guess - policies, product details, pricing.",
+      "A library of documents your agents check before answering, so they get the facts right.",
+    when: "Use it for information that must be accurate - your policies, product details, and pricing.",
   },
   {
     label: "Memory",
     to: "/memories",
     icon: BrainIcon,
-    description: "Details agents have saved while working, so they don't ask twice.",
-    when: "Come here to review what agents have remembered, correct anything wrong, and remove what no longer applies.",
+    description:
+      "Things your agents have learned about you and your work, so you never have to repeat yourself.",
+    when: "Come here to see what they've remembered, fix anything wrong, and clear out anything out of date.",
   },
   {
     label: "Files",
     to: "/files",
     icon: FilesIcon,
-    description:
-      "Working documents you and your agents share - things you upload for agents to read and use.",
-    when: "Use it for the raw materials of a task - like a spreadsheet to process or a brief to work from.",
+    description: "Documents and spreadsheets you upload for your agents to work with.",
+    when: "Use it to hand an agent the materials for a job - like a spreadsheet to tidy up or a brief to write from.",
   },
   {
     label: "Artifacts",
     to: "/artifacts",
     icon: FileStackIcon,
     description:
-      "Finished work agents produce, kept in versions you can review, restore, and share.",
-    when: "Come here to find what agents have made - like a report you can send on with a share link.",
+      "The finished work your agents produce, with every earlier version kept safe so nothing is lost.",
+    when: "Come here to open, share, or go back to an earlier version of anything an agent has made.",
   },
   {
     label: "Context Groups",
     to: "/integrations/context-groups",
     icon: Layers3Icon,
     description:
-      "Named sets of connected accounts and resources that tell an agent exactly which ones to work with.",
-    when: "Use it when different agents or schedules should use different accounts - like one agent per client.",
+      "Bundles of accounts and resources you name once, so an agent always knows which ones to use.",
+    when: "Use it when different agents should work with different accounts - like one agent for each client.",
   },
 ]
 
@@ -95,13 +95,15 @@ export function ContextRoute() {
               key={section.to}
               to={section.to}
             >
-              <span className="border-border bg-background flex size-10 shrink-0 items-center justify-center rounded-xl border shadow-xs">
-                <Icon className="size-5" aria-hidden="true" />
+              <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg">
+                <Icon className="size-4" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-medium">{section.label}</span>
-                <span className="mt-0.5 block text-sm">{section.description}</span>
-                <span className="text-muted-foreground mt-1 block text-sm">{section.when}</span>
+                <span className="block text-sm font-medium">{section.label}</span>
+                <span className="text-muted-foreground mt-0.5 block text-sm">
+                  {section.description}
+                </span>
+                <span className="text-muted-foreground mt-1 block text-xs">{section.when}</span>
               </span>
               <ChevronRightIcon
                 className="text-muted-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5"

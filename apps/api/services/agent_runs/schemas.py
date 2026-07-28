@@ -67,6 +67,22 @@ class AgentRunApprovalStateResponse(BaseModel):
     delegations: list[PendingDelegatedApprovalRead] = Field(default_factory=list)
 
 
+class PendingApprovalRunRead(BaseModel):
+    run_id: UUID
+    conversation_id: UUID
+    conversation_title: str | None
+    agent_id: UUID | None
+    agent_name: str | None
+    awaiting_since: datetime
+    pending_tool_names: list[str]
+    delegated_agent_names: list[str]
+
+
+class PendingApprovalsListResponse(BaseModel):
+    items: list[PendingApprovalRunRead]
+    total: int
+
+
 class AgentRunRead(BaseModel):
     id: UUID
     conversation_id: UUID

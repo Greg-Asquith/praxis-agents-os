@@ -9,6 +9,7 @@ from services.agent_runs.create import create_agent_run
 from services.agent_runs.fail import fail_agent_run
 from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.link_schedule_run import link_schedule_run
+from services.agent_runs.list_pending_approvals import list_pending_agent_run_approvals
 from services.agent_runs.reap_abandoned import reap_abandoned_runs
 from services.agent_runs.record_usage import record_run_usage
 from services.agent_runs.renew_lease import renew_agent_run_lease
@@ -24,6 +25,7 @@ __all__ = [
     "fail_agent_run",
     "get_agent_run_approval_state",
     "link_schedule_run",
+    "list_pending_agent_run_approvals",
     "mark_run_awaiting_approval",
     "reap_abandoned_runs",
     "record_run_usage",

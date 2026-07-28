@@ -134,3 +134,19 @@ export type AgentRunApprovalStateResponse = {
   approvals: PendingToolApproval[]
   delegations: PendingDelegatedApproval[]
 }
+
+type PendingApprovalRun = {
+  run_id: string
+  conversation_id: string
+  conversation_title: string | null
+  agent_id: string | null
+  agent_name: string | null
+  awaiting_since: string
+  pending_tool_names: string[]
+  delegated_agent_names: string[]
+}
+
+export type PendingApprovalsListResponse = {
+  items: PendingApprovalRun[]
+  total: number
+}

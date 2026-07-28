@@ -32,6 +32,8 @@ export const conversationsQueryKeys = {
     [...conversationsQueryKeys.workspace(), conversationId, "active-run"] as const,
   approvalState: (runId: string) =>
     [...conversationsQueryKeys.workspace(), "agent-run", runId, "approval-state"] as const,
+  pendingApprovals: () =>
+    [...conversationsQueryKeys.workspace(), "agent-runs", "pending-approvals"] as const,
 }
 
 async function listConversations({ limit = 100, offset = 0 }: ListConversationsParams = {}) {

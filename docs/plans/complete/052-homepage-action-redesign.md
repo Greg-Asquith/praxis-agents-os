@@ -33,6 +33,15 @@
   added a third `/agent-runs/{run_id}` route, and the web app grew a
   real Vitest suite (SSR-string component tests). All anchors below
   reflect `c65f946`.
+- **Execution progress**: **Complete 2026-07-28.** The actor-scoped
+  pending-approvals endpoint, action-led Home composition, polling query,
+  schedule/unread/recent partitions, agent launcher, and validated
+  composer preselection are implemented. API lint/format passed; the
+  complete agent-run service/route slice passed 34 tests; and `pnpm check`
+  passed 84 web test files / 408 tests plus typecheck, lint, formatting,
+  dead-code, architecture, and production-build gates. The local web app
+  responded on port 3000, but interactive visual QA was unavailable
+  because the execution environment exposed no browser instance.
 
 ## Product intent
 
@@ -506,25 +515,26 @@ script.
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` and `uv run ruff format --check .` exit 0; no
+- [x] `uv run ruff check .` and `uv run ruff format --check .` exit 0; no
       migrations added (read-only endpoint)
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/agent_runs
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/agent_runs
       tests/routes/agent_runs -q` exits 0
-- [ ] `GET /api/v1/agent-runs/pending-approvals` returns tool names for a
+- [x] `GET /api/v1/agent-runs/pending-approvals` returns tool names for a
       suspended run and exactly one row for a delegated parent+child pair
-- [ ] `cd apps/web && pnpm check` exits 0 (includes the new home
+- [x] `cd apps/web && pnpm check` exits 0 (includes the new home
       component tests)
-- [ ] `routes/home.tsx` is a thin shell over `features/home/`; the page
+- [x] `routes/home.tsx` is a thin shell over `features/home/`; the page
       title is "Home"; no stats, counts, or nav-duplicate cards return;
       every section on the page links to an action
-- [ ] Approvals render with tool names and deep-link to the conversation;
+- [x] Approvals render with tool names and deep-link to the conversation;
       no approve/deny controls exist on home
-- [ ] `/conversations/new?agent=<id>` preselects the agent in the
+- [x] `/conversations/new?agent=<id>` preselects the agent in the
       composer; invalid values degrade silently
-- [ ] No SSE protocol changes (`stream/protocol.ts` untouched); no new
+- [x] No SSE protocol changes (`stream/protocol.ts` untouched); no new
       conversation list filters
-- [ ] `git status` clean outside the in-scope list;
-      `docs/plans/000_README.md` row updated
+- [x] Plan-owned changes remain within the in-scope list;
+      `docs/plans/000_README.md` row updated. Concurrent unrelated
+      worktree edits were preserved unchanged.
 
 ## STOP conditions
 

@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/routes/new-conversation-route.tsx
 
+import { useRouterState } from "@tanstack/react-router"
 import { CircleDashedIcon, MessageSquarePlusIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -12,6 +13,9 @@ import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 const MAX_AGENT_ICONS = 5
 
 export function NewConversationRoute() {
+  const search = useRouterState({
+    select: (state): { agent?: string } => state.location.search,
+  })
   const { data: agentsData } = useAgentsQuery({ includeInactive: false, limit: 100 })
   const { data: modelCatalog } = useModelCatalogQuery()
   const { stream } = useConversationWorkspace()
@@ -72,6 +76,7 @@ export function NewConversationRoute() {
           <ConversationComposer
             mode="create"
             agents={agentsData.agents}
+            {...(search.agent ? { initialAgentId: search.agent } : {})}
             modelCatalog={modelCatalog}
           />
         </div>

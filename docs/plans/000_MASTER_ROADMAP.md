@@ -37,6 +37,9 @@ Gate G5. Plan 061 (integration provider packaging, decision D10) was
 written and executed 2026-07-07 as a design-note plan in the 029 mold —
 it produced `docs/architecture/integration-packaging.md` and amended
 037/039/041/042 before any Phase 4a code exists.
+Plan 052 completed 2026-07-28 and moved to `docs/plans/complete/`; Home is
+now an action surface for approval waits, failing schedules, unread results,
+recent conversations, and agent launch.
 Plan 014 was completed 2026-07-07: agent-run tracing is config-gated,
 content capture is off by default and production-guarded, and API/worker
 startup share one idempotent Logfire/OTel setup path.
@@ -518,6 +521,7 @@ Not a numbered plan; a checklist chore:
 | 022  | Schedules management UI: list, editor (prompt/cadence/timezone), run history with statuses, approval-resume visibility. Active-context selection is added later by 040. **DONE 2026-07-03.**                                                                                                        | P1       |
 | 023  | Audit & security log read API + viewer UI: workspace-scoped audit list with action/resource/status/actor/date filters, event detail drawer, security event list; owner/admin-only. Backend write/query services already exist. **DONE 2026-07-03; viewer lives in Workspace Settings → Audit log.** | P1       |
 | 024  | Workspace default & invite UX: persist active workspace to `users.default_workspace_id` on switch, accept pending invites after sign-in, copy-invite-URL/code buttons, personal-vs-team switcher behavior. **DONE 2026-07-07.**                                                                     | P2       |
+| 052  | Action-driven Home: pending approvals with tool names, failing schedules, unread results, recent conversations, and direct agent launch. **DONE 2026-07-28.**                                                                                                                                        | P2       |
 
 ### Frontend visual refinement track (auxiliary, added 2026-07-16)
 
@@ -938,7 +942,7 @@ management (043–049).
 
 If work proceeds roughly serially, the default order is:
 
-`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 089 (DONE) → 090 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 070 (DONE) → 050 (DONE) → 051 (DONE) → 072 (DONE) → 059 → 060` — with 015, 052, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). Plans 083–088 are deferred outside this stream by the 2026-07-28 maintainer decision; plan 057 is deferred by the 2026-07-27 maintainer decision. Plan 089's semantic-schema-search follow-up waits on 045.
+`0 → 012 (DONE) → 011 (DONE) → 021 (DONE) → 022 (DONE) → 023 (DONE) → 025 (DONE) → 026 (DONE) → 027 (DONE) → 016 (DONE) → 017 (DONE) → 018 (DONE) → 028 (DONE) → 019 (DONE) → 020 (DONE) → 013 (DONE) → 029 (DONE) → 030 (DONE) → 031 (DONE) → 032 (DONE) → 033 (DONE) → C01 (DONE) → C02 (DONE) → C03 (DONE) → C04 (DONE) → 034 (DONE) → 035 (DONE) → 036 (DONE) → 024 (DONE) → 061 (DONE) → 014 (DONE) → 062 (DONE) → 063 (DONE) → 064 (DONE) → 065 (DONE) → 066 (DONE) → 073 (DONE) → 053 (DONE) → 054 (DONE) → 076 (DONE) → C05 (DONE) → 067 (DONE) → 068 (DONE) → 074 (DONE) → 077 (DONE) → 075 (DONE) → 080 (DONE) → 037 (DONE) → 038 (DONE) → 081 (DONE) → 039 (DONE) → 040 (DONE) → 055 (DONE) → {041–042 (DONE) ∥ 043 (DONE) → 044 (DONE) → 045 (DONE) → 046 (DONE) → 047 (DONE)} → 082 (DONE) → 041b (DONE) → 079 (DONE) → 089 (DONE) → 090 (DONE) → 056 (DONE) → 071 (DONE) → 048 (DONE) → 069 (DONE) → 049 (DONE) → 070 (DONE) → 050 (DONE) → 051 (DONE) → 072 (DONE) → 052 (DONE) → 059 → 060` — with 015, 058, 078, and the polish lane as filler (078 is P1 filler: no dependencies, land it early). Plans 083–088 are deferred outside this stream by the 2026-07-28 maintainer decision; plan 057 is deferred by the 2026-07-27 maintainer decision. Plan 089's semantic-schema-search follow-up waits on 045.
 
 Phase 7 placement rationale: 082 sits directly after the Phase 4a/4b fork
 because the catalogue fields it adds (`version`, input schemas) should

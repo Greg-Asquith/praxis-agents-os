@@ -51,6 +51,7 @@ type ConversationComposerProps =
       mode: "create"
       agents: Agent[]
       modelCatalog: ModelCatalogResponse
+      initialAgentId?: string
       conversationId?: never
       disabledReason?: string | null
     }
@@ -81,7 +82,16 @@ export function ConversationComposer(props: ConversationComposerProps) {
   const { addPendingUserMessage, removePendingUserMessage, stream } = useConversationWorkspace()
   const activeAgents =
     props.mode === "create" ? props.agents.filter((agent) => agent.is_active) : []
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(() => {
+    if (
+      props.mode === "create" &&
+      props.initialAgentId &&
+      activeAgents.some((agent) => agent.id === props.initialAgentId)
+    ) {
+      return props.initialAgentId
+    }
+    return null
+  })
   const [activeContext, setActiveContext] = useState<ActiveContextSelectionValue | null>(null)
   const [prompt, setPrompt] = useState("")
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
