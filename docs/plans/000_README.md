@@ -799,6 +799,21 @@ BigQuery credential is configured locally; visual browser QA was unavailable
 because the execution environment exposed no browser instance. Plan 089 is
 complete and moved to `docs/plans/complete/`.
 
+Plan 090 was written 2026-07-28 after a Google Ads service-account connection
+displayed the OAuth-only instruction "Sign in again." The persisted failure
+was not a Google login expiry: a prior-success discovery run could not resolve
+its local encrypted secret reference, but the local provider raised
+`IntegrationAuthError`, discovery mapped every such error to `needs_reauth`,
+and the frontend selected recovery from provider capabilities rather than the
+connection's actual auth mode. Plan 090 separates vault availability from
+provider authentication, makes `needs_reauth` OAuth-only, adds a
+`needs_credential` state and in-place reference-credential replacement,
+hardens the local encrypted store for deterministic cross-process use, guards
+OAuth refresh server-side, makes UI actions auth-mode aware, and fixes the
+visible "Service Account Ley" typo. It completed 2026-07-28 with 1,292 API
+tests and 80 web test files / 383 tests passing, and has moved to
+`docs/plans/complete/`.
+
 ## Execution Order & Status
 
 | Plan | Title                                                                                                                  | Priority | Effort | Depends on                                                             | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -898,6 +913,7 @@ complete and moved to `docs/plans/complete/`.
 | 087  | Application kit, dev harness, and publish validation gates                                                             | P1       | L      | 082, 084, 085 (soft: 086, 078)                                         | DEFERRED 2026-07-28 — internal-application product work paused; revisit when app building is explicitly reprioritized                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 088  | Applications catalogue, audience surface, and the reference application                                                | P1       | L      | 083–087 (reference-app choice is a maintainer STOP)                    | DEFERRED 2026-07-28 — internal-application product work paused; revisit when app building is explicitly reprioritized                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 089  | Google BigQuery provider — service accounts, dataset context, cached schemas, SELECT-only queries (D14)                | P2       | L      | 030, 037–041 (all DONE); interleaves after 079; no Phase 4b dependency | DONE 2026-07-28                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 090  | Auth-mode-aware integration failures, credential replacement, and local secret-store reliability                     | P1       | M-L    | 037–042, 089 (all DONE)                                                 | DONE 2026-07-28                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Status values: TODO | IN PROGRESS | DONE | DEFERRED (with decision and revisit trigger) | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

@@ -189,12 +189,12 @@ Dependency notes:
   041b working tree, not around it — do not run it concurrently with
   any roadmap plan editing `src/features/integrations/` or
   `src/app/router.tsx`.
-- 034 (written 2026-07-27 against the working tree at `87d4953`, which
-  carries in-flight roadmap plan 049 changes — the Memory nav item and
-  `/memories` route exist only there) edits `src/config/navigation.ts`,
-  `src/app/router.tsx`, the shell breadcrumbs, and the navigation tests.
-  Do not run it concurrently with any roadmap plan touching those files;
-  land or reconcile plan 049's working tree first.
+- 034 (written 2026-07-27; re-verified 2026-07-28 at `c65f946`, after
+  roadmap plans 049 Memory and 050/051 Artifacts landed — the plan now
+  folds the Artifacts sidebar entry into the Context hub) edits
+  `src/config/navigation.ts`, `src/app/router.tsx`, the shell
+  breadcrumbs, and the navigation tests. Do not run it concurrently with
+  any roadmap plan touching those files.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
   outstanding 017–020 (disjoint files) and may run in parallel
   worktrees with them. Within the set: 021 (conversation headers) and
@@ -405,13 +405,15 @@ Dependency notes:
 - **The sidebar consolidates to Home, Agents, Context, Schedules,
   Integrations** (maintainer direction, 2026-07-27; plan 034 — amends plan
   009's five-work-sections decision). Skills, Memory, Knowledge Base,
-  Files, and Context Groups move behind a new `/context` hub page that
-  explains each section in plain language — what it is and when to use it —
-  because the non-technical operator cannot be assumed to know these
-  nouns. URLs do not change (Context Groups keeps
-  `/integrations/context-groups`); the hub is purely additive, though the
-  sidebar highlights Context, not Integrations, on the Context Groups
-  page. The earlier rejection of a
+  Files, Artifacts, and Context Groups move behind a new `/context` hub
+  page that explains each section in plain language — what it is and when
+  to use it — because the non-technical operator cannot be assumed to
+  know these nouns. (Artifacts, which gained its own sidebar entry via
+  roadmap plans 050/051 after 034 was written, joins the hub rather than
+  staying a sixth sidebar item — maintainer decision, 2026-07-28.) URLs
+  do not change (Context Groups keeps `/integrations/context-groups`);
+  the hub is purely additive, though the sidebar highlights Context, not
+  Integrations, on the Context Groups page. The earlier rejection of a
   session-centric sidebar restructure still stands: workspace switcher
   placement, the user menu, and everything else about the shell are
   untouched.

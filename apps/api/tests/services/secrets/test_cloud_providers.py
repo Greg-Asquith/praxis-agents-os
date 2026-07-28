@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.exceptions.integration import IntegrationCredentialUnavailableError
 from services.secrets.domain import SecretReference
 from services.secrets.providers.aws_secrets_manager import AwsSecretsManagerProvider
 from services.secrets.providers.azure_key_vault import AzureKeyVaultProvider
@@ -75,3 +76,26 @@ async def test_cloud_provider_resolve_and_write(provider, reference, expected, v
     assert written.provider == provider.provider_key
     assert written.name == reference.name
     assert written.version == version
+
+
+class _UnavailableClient:
+    def __getattr__(self, name):
+        def unavailable(*args, **kwargs):
+            raise RuntimeError("provider unavailable")
+
+        return unavailable
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        GcpSecretManagerProvider(project_id="project", client=_UnavailableClient()),
+        AzureKeyVaultProvider(vault_url="https://vault.example", client=_UnavailableClient()),
+        AwsSecretsManagerProvider(region="eu-west-2", client=_UnavailableClient()),
+    ],
+)
+async def test_cloud_resolution_failures_are_operational(provider) -> None:
+    with pytest.raises(IntegrationCredentialUnavailableError):
+        await provider.resolve_secret(
+            SecretReference(provider=provider.provider_key, name="path/name", version="latest")
+        )

@@ -32,6 +32,7 @@ from services.integrations.credentials import ensure_fresh_credential
 from services.integrations.domain import (
     CONNECTION_STATUS_AUTH_PENDING,
     CONNECTION_STATUS_DISCOVERY_PENDING,
+    CONNECTION_STATUS_NEEDS_CREDENTIAL,
     CONNECTION_STATUS_NEEDS_REAUTH,
     CONNECTION_STATUS_REVOKED,
 )
@@ -71,7 +72,11 @@ async def run_discovery(
             connection_id=str(connection.id),
             operation="discover_resources",
         )
-    if connection.status in {CONNECTION_STATUS_AUTH_PENDING, CONNECTION_STATUS_NEEDS_REAUTH}:
+    if connection.status in {
+        CONNECTION_STATUS_AUTH_PENDING,
+        CONNECTION_STATUS_NEEDS_REAUTH,
+        CONNECTION_STATUS_NEEDS_CREDENTIAL,
+    }:
         raise IntegrationConnectionError(
             "Connection authentication must complete before resource discovery",
             provider_key=connection.provider_key,
@@ -150,11 +155,22 @@ async def run_discovery(
         return discovery_run
     except IntegrationAuthError as exc:
         await db.refresh(connection)
-        if connection.status != CONNECTION_STATUS_NEEDS_REAUTH:
+        auth_mode = await db.scalar(
+            select(ExternalCredential.auth_mode).where(
+                ExternalCredential.id == connection.credential_id,
+                ExternalCredential.deleted.is_(False),
+            )
+        )
+        target = (
+            CONNECTION_STATUS_NEEDS_REAUTH
+            if auth_mode == "oauth"
+            else CONNECTION_STATUS_NEEDS_CREDENTIAL
+        )
+        if connection.status != target:
             await transition_connection_status(
                 db,
                 connection,
-                CONNECTION_STATUS_NEEDS_REAUTH,
+                target,
                 reason="resource_discovery_auth_failed",
                 audit_status=AuditStatus.FAILURE,
             )

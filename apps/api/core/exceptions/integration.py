@@ -102,6 +102,13 @@ class IntegrationAuthError(IntegrationError):
     _title_override = "Integration Authentication Error"
 
 
+class IntegrationCredentialUnavailableError(IntegrationError):
+    """Raised when the configured secret store cannot resolve a credential."""
+
+    _status_override = 503
+    _title_override = "Integration Credential Unavailable"
+
+
 class IntegrationRateLimitError(IntegrationError):
     """Raised when rate limit is exceeded."""
 

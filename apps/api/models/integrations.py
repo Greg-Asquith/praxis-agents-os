@@ -131,7 +131,7 @@ class IntegrationConnection(BaseModel):
         CheckConstraint(
             "status IN ('auth_pending', 'discovery_pending', "
             "'needs_resource_selection', 'active', 'degraded', 'error', "
-            "'revoked', 'needs_reauth')",
+            "'revoked', 'needs_reauth', 'needs_credential')",
             name="ck_integration_connections_status",
         ),
         Index(

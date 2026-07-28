@@ -7,7 +7,10 @@ import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationAuthError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationCredentialUnavailableError,
+)
 from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
@@ -149,7 +152,7 @@ async def test_handler_notifies_only_on_final_attempt(
     assert generic_count == 0
 
 
-async def test_auth_failure_uses_reauth_notification_not_discovery_failure(
+async def test_reference_auth_failure_uses_replacement_notification(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],
 ) -> None:
@@ -176,12 +179,48 @@ async def test_auth_failure_uses_reauth_notification_not_discovery_failure(
     with pytest.raises(IntegrationAuthError):
         await discover_resources(db_session, job)
     await db_session.refresh(connection)
-    assert connection.status == "needs_reauth"
+    assert connection.status == "needs_credential"
     notification_types = set(
         (await db_session.scalars(select(Notification.notification_type))).all()
     )
-    assert "integration_needs_reauth" in notification_types
+    assert "integration_needs_credential" in notification_types
+    assert "integration_needs_reauth" not in notification_types
     assert "integration_discovery_failed" not in notification_types
+
+
+async def test_vault_unavailability_uses_terminal_discovery_notification(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+    provider = discovery_connection["provider"]
+    provider["error"] = IntegrationCredentialUnavailableError(
+        "Credential unavailable",
+        provider_key="local",
+        operation="resolve_secret",
+    )
+    job = Job(
+        kind="integrations.discover_resources",
+        workspace_id=connection.owner_workspace_id,
+        subject_type="integration_connection",
+        subject_id=connection.id,
+        content_hash="handler-vault-failure",
+        payload={},
+        attempts=3,
+        max_attempts=3,
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    with pytest.raises(IntegrationCredentialUnavailableError):
+        await discover_resources(db_session, job)
+
+    notification_types = set(
+        (await db_session.scalars(select(Notification.notification_type))).all()
+    )
+    assert "integration_discovery_failed" in notification_types
+    assert "integration_needs_credential" not in notification_types
+    assert "integration_needs_reauth" not in notification_types
 
 
 async def test_enqueued_discovery_executes_through_real_worker(

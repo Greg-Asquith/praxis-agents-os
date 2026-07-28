@@ -5,7 +5,7 @@
 import asyncio
 from typing import Any
 
-from core.exceptions.integration import IntegrationAuthError
+from core.exceptions.integration import IntegrationCredentialUnavailableError
 from core.settings import settings
 from services.secrets.domain import SecretReference, validate_secret_name
 from services.secrets.utils import gcp_secret_id
@@ -17,7 +17,7 @@ class GcpSecretManagerProvider:
     def __init__(self, *, project_id: str | None = None, client: Any | None = None) -> None:
         self.project_id = (project_id or settings.GCP_PROJECT_ID or "").strip()
         if not self.project_id:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "GCP project is not configured",
                 provider_key=self.provider_key,
                 operation="configure",
@@ -30,7 +30,7 @@ class GcpSecretManagerProvider:
         try:
             from google.cloud import secretmanager
         except ImportError as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "GCP Secret Manager support requires the gcp extra",
                 provider_key=self.provider_key,
                 operation="configure",
@@ -50,8 +50,8 @@ class GcpSecretManagerProvider:
             )
             return response.payload.data.decode("utf-8")
         except Exception as exc:
-            raise IntegrationAuthError(
-                "Secret reference could not be resolved",
+            raise IntegrationCredentialUnavailableError(
+                "Integration credential is temporarily unavailable",
                 provider_key=self.provider_key,
                 operation="resolve_secret",
                 original_error=exc,
@@ -82,7 +82,7 @@ class GcpSecretManagerProvider:
                 request={"parent": secret_name, "payload": {"data": value.encode("utf-8")}},
             )
         except Exception as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Secret could not be written",
                 provider_key=self.provider_key,
                 operation="write_secret",
@@ -99,7 +99,7 @@ class GcpSecretManagerProvider:
         try:
             await asyncio.to_thread(self._get_client().delete_secret, request={"name": name})
         except Exception as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Secret could not be deleted",
                 provider_key=self.provider_key,
                 operation="delete_secret",

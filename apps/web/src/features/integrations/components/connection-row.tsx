@@ -32,6 +32,7 @@ import { ConnectOAuthButton } from "@/features/integrations/components/connect-o
 import { ConnectionLabelEditor } from "@/features/integrations/components/connection-label-editor"
 import { ConnectionStatusBadge } from "@/features/integrations/components/connection-status-badge"
 import { connectionStatusPresentation } from "@/features/integrations/components/connection-status"
+import { CredentialReplacementDialog } from "@/features/integrations/components/credential-replacement-dialog"
 import { ResourceSelectionPanel } from "@/features/integrations/components/resource-selection-panel"
 import {
   discoveryFinished,
@@ -48,10 +49,12 @@ import { formatDateTime } from "@/lib/format"
 
 export function ConnectionRow({
   canEdit,
+  canManageCredentials,
   connection,
   provider,
 }: {
   canEdit: boolean
+  canManageCredentials: boolean
   connection: IntegrationConnection
   provider: IntegrationProvider
 }) {
@@ -62,14 +65,19 @@ export function ConnectionRow({
   const revokeMutation = useRevokeConnectionMutation()
   const [expanded, setExpanded] = useState(connection.status === "needs_resource_selection")
   const [confirmRevoke, setConfirmRevoke] = useState(false)
+  const [replacementOpen, setReplacementOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const discoveryStalled = discoveryNeedsRecovery(connection)
-  const status = connectionStatusPresentation(
-    discoveryStalled ? "discovery_stalled" : connection.status
-  )
+  const status = connectionStatusPresentation({
+    authMode: connection.credential?.auth_mode,
+    discoveryStalled,
+    status: connection.status,
+    supportsDiscovery: provider.requires_discovery,
+  })
   const canUseLifecycleActions = canEdit && connection.status !== "revoked"
   const canEditResources = connectionResourcesAreEditable(canEdit, connection.status)
   const previousStatus = useRef(connection.status)
+  const replacementTriggerRef = useRef<HTMLButtonElement>(null)
   const hasMultipleAuthModes =
     Object.values(provider.configured_auth_modes).filter(Boolean).length > 1
 
@@ -94,6 +102,15 @@ export function ConnectionRow({
   async function revoke() {
     await runAction(() => revokeMutation.mutateAsync(connection.id))
     setConfirmRevoke(false)
+  }
+
+  function handleReplacementOpenChange(nextOpen: boolean) {
+    setReplacementOpen(nextOpen)
+    if (!nextOpen) {
+      requestAnimationFrame(() => {
+        replacementTriggerRef.current?.focus()
+      })
+    }
   }
 
   return (
@@ -121,7 +138,11 @@ export function ConnectionRow({
                 connectionId={connection.id}
                 label={connection.label}
               />
-              <ConnectionStatusBadge status={connection.status} />
+              <ConnectionStatusBadge
+                connection={connection}
+                discoveryStalled={discoveryStalled}
+                supportsDiscovery={provider.requires_discovery}
+              />
             </div>
             <p className="text-muted-foreground text-xs">
               {integrationOwnershipDescription(connection.owner_scope)} · Added{" "}
@@ -187,12 +208,27 @@ export function ConnectionRow({
           ) : null}
           {status.action === "reauthenticate" &&
           canEdit &&
-          provider.auth_modes.includes("oauth") ? (
+          connection.credential?.auth_mode === "oauth" ? (
             <ConnectOAuthButton
               connectionId={connection.id}
               connectionLabel={connection.label}
               provider={provider}
             />
+          ) : null}
+          {status.action === "replace_credential" && canManageCredentials ? (
+            <Button
+              onClick={() => {
+                setReplacementOpen(true)
+              }}
+              ref={replacementTriggerRef}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {connection.credential?.auth_mode === "service_account"
+                ? "Replace Service Account Key"
+                : "Replace API Key"}
+            </Button>
           ) : null}
           {canUseLifecycleActions ? (
             <DropdownMenu>
@@ -213,15 +249,19 @@ export function ConnectionRow({
                   onClick={() => void runAction(() => testMutation.mutateAsync(connection.id))}
                 >
                   <WrenchIcon />
-                  Check Connection
+                  {connection.credential?.auth_mode === "oauth"
+                    ? "Check Connection"
+                    : "Check Stored Credential"}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={refreshMutation.isPending}
-                  onClick={() => void runAction(() => refreshMutation.mutateAsync(connection.id))}
-                >
-                  <RefreshCwIcon />
-                  Refresh Access
-                </DropdownMenuItem>
+                {connection.credential?.auth_mode === "oauth" ? (
+                  <DropdownMenuItem
+                    disabled={refreshMutation.isPending}
+                    onClick={() => void runAction(() => refreshMutation.mutateAsync(connection.id))}
+                  >
+                    <RefreshCwIcon />
+                    Refresh Access
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => {
@@ -253,6 +293,14 @@ export function ConnectionRow({
         open={confirmRevoke}
         title="Disconnect this account?"
       />
+      {replacementOpen ? (
+        <CredentialReplacementDialog
+          connection={connection}
+          onOpenChange={handleReplacementOpenChange}
+          open={replacementOpen}
+          provider={provider}
+        />
+      ) : null}
     </div>
   )
 }

@@ -6,7 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationConnectionError
+from core.exceptions.integration import IntegrationConnectionError, IntegrationValidationError
+from models.integrations import ExternalCredential
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
@@ -38,6 +39,21 @@ async def refresh_connection(
     if connection.status == "revoked":
         raise IntegrationConnectionError(
             "Revoked connections cannot be refreshed",
+            provider_key=connection.provider_key,
+            connection_id=str(connection.id),
+            operation="refresh_connection",
+        )
+    credential = await db.get(ExternalCredential, connection.credential_id)
+    if credential is None or credential.deleted:
+        raise IntegrationConnectionError(
+            "Connection credential is missing",
+            provider_key=connection.provider_key,
+            connection_id=str(connection.id),
+            operation="refresh_connection",
+        )
+    if credential.auth_mode != "oauth":
+        raise IntegrationValidationError(
+            "Only OAuth connections can refresh access; replace this connection's credential instead",
             provider_key=connection.provider_key,
             connection_id=str(connection.id),
             operation="refresh_connection",

@@ -3,7 +3,7 @@ bootstrap: local-env install ## Create local env files and install app dependenc
 
 .PHONY: local-env
 local-env: ## Create local env files and storage folders if they are missing
-	@mkdir -p .local/generated .local/targets .local/storage
+	@mkdir -p .local/generated .local/targets .local/storage "$(API_DIR)/.local"
 	@if [ ! -s "$(API_DIR)/.env" ]; then \
 		cp "$(API_DIR)/.env.example" "$(API_DIR)/.env"; \
 		echo "Created $(API_DIR)/.env"; \

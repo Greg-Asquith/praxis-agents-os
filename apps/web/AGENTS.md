@@ -61,6 +61,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   operator: state outcomes in plain language, lean on defaults instead of
   exposing configuration, and put expert options behind Advanced
   disclosures. Prefer simple, accessible controls over custom widgets.
+- Integration recovery actions derive from the connection credential's
+  `auth_mode`, never from the provider's supported-mode list. OAuth may offer
+  sign-in/refresh; API-key and service-account connections offer obscured,
+  in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
 - The conversation composer exposes active integration context for both new

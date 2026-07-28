@@ -71,6 +71,12 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as
   optional extras (`gcp`, `aws`, `azure`).
+- Non-OAuth integration credentials remain secret references. Admins replace
+  API keys and service-account keys in place through
+  `PUT /integrations/connections/{connection_id}/credential`; discovery
+  validates the new version asynchronously. The local-only encrypted secret
+  store uses `LOCAL_SECRET_STORE_PATH`, anchored to the API root and separate
+  from `LOCAL_STORAGE_ROOT`.
 - The runtime HTTP dependency is `httpx2`; plain `httpx` is dev-only.
 
 ## Auth And Request Handling

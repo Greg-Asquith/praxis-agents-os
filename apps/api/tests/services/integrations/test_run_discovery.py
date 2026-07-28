@@ -7,7 +7,11 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationCredentialUnavailableError,
+    IntegrationValidationError,
+)
 from models.integrations import IntegrationDiscoveryRun, IntegrationResource
 from models.jobs import Job
 from services.integrations.discovery import run_discovery
@@ -147,6 +151,107 @@ async def test_provider_failure_persists_and_retry_keeps_credential(
     succeeded = await run_discovery(db_session, connection_id=connection.id)
     assert succeeded.status == "succeeded"
     assert connection.status == "needs_resource_selection"
+
+
+async def test_reference_provider_auth_failure_requires_credential_replacement(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+    provider = discovery_connection["provider"]
+    provider["error"] = IntegrationAuthError(
+        "Credential rejected",
+        provider_key=connection.provider_key,
+        operation="discover_resources",
+    )
+
+    with pytest.raises(IntegrationAuthError):
+        await run_discovery(db_session, connection_id=connection.id)
+
+    assert connection.status == "needs_credential"
+
+
+async def test_oauth_provider_auth_failure_requires_sign_in(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = discovery_connection["connection"]
+    credential = discovery_connection["credential"]
+    provider = discovery_connection["provider"]
+    credential.auth_mode = "oauth"
+    credential.secret_provider = None
+    credential.secret_name = None
+    credential.secret_version = None
+    credential.access_token_encrypted = "ciphertext"
+    await db_session.flush()
+    provider["error"] = IntegrationAuthError(
+        "OAuth rejected",
+        provider_key=connection.provider_key,
+        operation="discover_resources",
+    )
+
+    async def resolve_oauth(*args, **kwargs):
+        return "test-secret", frozenset(), None
+
+    module = __import__(
+        "services.integrations.discovery.run_discovery",
+        fromlist=["_resolve_credential_value"],
+    )
+    monkeypatch.setattr(module, "_resolve_credential_value", resolve_oauth)
+
+    with pytest.raises(IntegrationAuthError):
+        await run_discovery(db_session, connection_id=connection.id)
+
+    assert connection.status == "needs_reauth"
+
+
+async def test_vault_unavailability_preserves_prior_success_and_recovers(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = discovery_connection["connection"]
+    credential = discovery_connection["credential"]
+    first = await run_discovery(db_session, connection_id=connection.id)
+    resource = await db_session.scalar(
+        select(IntegrationResource).where(IntegrationResource.connection_id == connection.id)
+    )
+    assert first.status == "succeeded"
+    assert resource is not None
+    resource.enabled = True
+    connection.status = "active"
+
+    module = __import__(
+        "services.integrations.discovery.run_discovery",
+        fromlist=["resolve_secret"],
+    )
+
+    async def unavailable(*args, **kwargs):
+        raise IntegrationCredentialUnavailableError(
+            "Credential unavailable",
+            provider_key="local",
+            operation="resolve_secret",
+        )
+
+    monkeypatch.setattr(module, "resolve_secret", unavailable)
+    with pytest.raises(IntegrationCredentialUnavailableError):
+        await run_discovery(db_session, connection_id=connection.id)
+
+    await db_session.refresh(credential)
+    await db_session.refresh(resource)
+    assert connection.status == "degraded"
+    assert credential.deleted is False
+    assert resource.enabled is True
+    assert resource.availability == "available"
+
+    async def available(*args, **kwargs):
+        return "test-secret"
+
+    monkeypatch.setattr(module, "resolve_secret", available)
+    recovered = await run_discovery(db_session, connection_id=connection.id)
+    assert recovered.status == "succeeded"
+    assert connection.status == "active"
 
 
 async def test_runtime_registry_without_discovery_callable_is_defensively_rejected(

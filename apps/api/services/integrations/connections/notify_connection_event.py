@@ -11,7 +11,7 @@ from core.exceptions.integration import IntegrationNotFoundError
 from models.integrations import IntegrationConnection
 from services.notifications import create_notification
 
-ConnectionEvent = Literal["needs_reauth", "discovery_failed"]
+ConnectionEvent = Literal["needs_reauth", "needs_credential", "discovery_failed"]
 
 
 async def notify_connection_event(
@@ -29,6 +29,7 @@ async def notify_connection_event(
         )
     titles = {
         "needs_reauth": "Reconnect integration",
+        "needs_credential": "Replace integration credential",
         "discovery_failed": "Integration refresh failed",
     }
     await create_notification(

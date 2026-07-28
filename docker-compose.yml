@@ -48,6 +48,7 @@ services:
       - ./.local/targets/local.secrets.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
+      LOCAL_SECRET_STORE_PATH: .local/secrets.enc.json
     networks:
       - praxis-agents-template-network
     depends_on:
@@ -69,6 +70,7 @@ services:
       - ./.local/targets/local.secrets.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
+      LOCAL_SECRET_STORE_PATH: .local/secrets.enc.json
     networks:
       - praxis-agents-template-network
     depends_on:

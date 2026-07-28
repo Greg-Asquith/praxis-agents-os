@@ -4,9 +4,23 @@ import { LoaderCircleIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { connectionStatusPresentation } from "@/features/integrations/components/connection-status"
+import type { IntegrationConnection } from "@/features/integrations/types"
 
-export function ConnectionStatusBadge({ status }: { status: string }) {
-  const presentation = connectionStatusPresentation(status)
+export function ConnectionStatusBadge({
+  connection,
+  discoveryStalled,
+  supportsDiscovery,
+}: {
+  connection: IntegrationConnection
+  discoveryStalled: boolean
+  supportsDiscovery: boolean
+}) {
+  const presentation = connectionStatusPresentation({
+    authMode: connection.credential?.auth_mode,
+    discoveryStalled,
+    status: connection.status,
+    supportsDiscovery,
+  })
   return (
     <Badge variant={presentation.variant}>
       {presentation.pending ? (

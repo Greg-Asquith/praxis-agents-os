@@ -111,6 +111,9 @@ async def test_connection(
         connection_id=connection.id,
         status=connection.status,
         external_principal_label=principal_label,
+        verification_scope=(
+            "provider_identity" if credential.auth_mode == "oauth" else "credential_resolution"
+        ),
     )
 
 

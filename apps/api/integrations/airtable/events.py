@@ -335,7 +335,13 @@ async def _active_connection(
         connection is None
         or connection.deleted
         or connection.provider_key != "airtable"
-        or connection.status in {"revoked", "needs_reauth", "auth_pending"}
+        or connection.status
+        in {
+            "revoked",
+            "needs_reauth",
+            "needs_credential",
+            "auth_pending",
+        }
     ):
         raise IntegrationConnectionError(
             "Airtable webhook connection is not active",

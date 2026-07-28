@@ -16,6 +16,7 @@ from services.integrations.connections.recompute_connection_status import (
 )
 from services.integrations.connections.refresh_connection import refresh_connection
 from services.integrations.connections.rename_connection import rename_connection
+from services.integrations.connections.replace_credential import replace_credential
 from services.integrations.connections.revoke_connection import revoke_connection
 from services.integrations.connections.start_oauth_connect import start_oauth_connect
 from services.integrations.connections.test_connection import test_connection
@@ -38,6 +39,7 @@ __all__ = [
     "recompute_connection_status",
     "refresh_connection",
     "rename_connection",
+    "replace_credential",
     "revoke_connection",
     "start_oauth_connect",
     "test_connection",

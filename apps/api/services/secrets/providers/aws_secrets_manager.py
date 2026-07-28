@@ -5,7 +5,7 @@
 import asyncio
 from typing import Any
 
-from core.exceptions.integration import IntegrationAuthError
+from core.exceptions.integration import IntegrationCredentialUnavailableError
 from core.settings import settings
 from services.secrets.domain import SecretReference, validate_secret_name
 
@@ -16,7 +16,7 @@ class AwsSecretsManagerProvider:
     def __init__(self, *, region: str | None = None, client: Any | None = None) -> None:
         self.region = (region or settings.AWS_REGION or "").strip()
         if not self.region:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "AWS region is not configured",
                 provider_key=self.provider_key,
                 operation="configure",
@@ -29,7 +29,7 @@ class AwsSecretsManagerProvider:
         try:
             import boto3
         except ImportError as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "AWS Secrets Manager support requires the aws extra",
                 provider_key=self.provider_key,
                 operation="configure",
@@ -54,8 +54,8 @@ class AwsSecretsManagerProvider:
             response = await asyncio.to_thread(self._get_client().get_secret_value, **request)
             return response["SecretString"]
         except Exception as exc:
-            raise IntegrationAuthError(
-                "Secret reference could not be resolved",
+            raise IntegrationCredentialUnavailableError(
+                "Integration credential is temporarily unavailable",
                 provider_key=self.provider_key,
                 operation="resolve_secret",
                 original_error=exc,
@@ -80,7 +80,7 @@ class AwsSecretsManagerProvider:
                     SecretString=value,
                 )
         except Exception as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Secret could not be written",
                 provider_key=self.provider_key,
                 operation="write_secret",
@@ -100,7 +100,7 @@ class AwsSecretsManagerProvider:
                 ForceDeleteWithoutRecovery=True,
             )
         except Exception as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Secret could not be deleted",
                 provider_key=self.provider_key,
                 operation="delete_secret",

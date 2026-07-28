@@ -4,7 +4,7 @@
 
 import threading
 
-from core.exceptions.integration import IntegrationAuthError
+from core.exceptions.integration import IntegrationValidationError
 from core.settings import settings
 from services.secrets.provider import SecretsProvider
 from services.secrets.providers.aws_secrets_manager import AwsSecretsManagerProvider
@@ -35,7 +35,7 @@ def get_secrets_provider() -> SecretsProvider:
         elif provider_key == "aws_secrets_manager":
             resolved = AwsSecretsManagerProvider()
         else:  # pragma: no cover - Settings rejects unknown literals
-            raise IntegrationAuthError(
+            raise IntegrationValidationError(
                 "Unknown secrets provider",
                 provider_key=provider_key,
                 operation="get_secrets_provider",

@@ -35,6 +35,7 @@ export function ConnectionList({
       {connections.map((connection) => (
         <ConnectionRow
           canEdit={canWrite && (connection.owner_scope === "user" || canManageWorkspace)}
+          canManageCredentials={canManageWorkspace}
           connection={connection}
           key={connection.id}
           provider={provider}

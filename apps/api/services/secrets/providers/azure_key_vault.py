@@ -5,7 +5,7 @@
 import asyncio
 from typing import Any
 
-from core.exceptions.integration import IntegrationAuthError
+from core.exceptions.integration import IntegrationCredentialUnavailableError
 from core.settings import settings
 from services.secrets.domain import SecretReference, validate_secret_name
 from services.secrets.utils import cloud_secret_id
@@ -17,7 +17,7 @@ class AzureKeyVaultProvider:
     def __init__(self, *, vault_url: str | None = None, client: Any | None = None) -> None:
         self.vault_url = (vault_url or settings.AZURE_KEY_VAULT_URL or "").strip()
         if not self.vault_url:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Azure Key Vault URL is not configured",
                 provider_key=self.provider_key,
                 operation="configure",
@@ -31,7 +31,7 @@ class AzureKeyVaultProvider:
             from azure.identity import DefaultAzureCredential
             from azure.keyvault.secrets import SecretClient
         except ImportError as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Azure Key Vault support requires the azure extra",
                 provider_key=self.provider_key,
                 operation="configure",
@@ -53,8 +53,8 @@ class AzureKeyVaultProvider:
             )
             return secret.value
         except Exception as exc:
-            raise IntegrationAuthError(
-                "Secret reference could not be resolved",
+            raise IntegrationCredentialUnavailableError(
+                "Integration credential is temporarily unavailable",
                 provider_key=self.provider_key,
                 operation="resolve_secret",
                 original_error=exc,
@@ -69,7 +69,7 @@ class AzureKeyVaultProvider:
                 value,
             )
         except Exception as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Secret could not be written",
                 provider_key=self.provider_key,
                 operation="write_secret",
@@ -87,7 +87,7 @@ class AzureKeyVaultProvider:
             )
             await asyncio.to_thread(poller.wait)
         except Exception as exc:
-            raise IntegrationAuthError(
+            raise IntegrationCredentialUnavailableError(
                 "Secret could not be deleted",
                 provider_key=self.provider_key,
                 operation="delete_secret",

@@ -20,6 +20,7 @@ export function providerSummaryStatus(
 
   if (
     statuses.has("needs_reauth") ||
+    statuses.has("needs_credential") ||
     statuses.has("error") ||
     currentConnections.some(discoveryNeedsRecovery)
   ) {

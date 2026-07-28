@@ -42,6 +42,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Select integration resources / set conversation context / edit context groups (039–040) *[implemented: plans 039–040]* | — | ✓ | ✓ | ✓ |
 | View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
 | Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
+| Replace API keys / service-account keys on an existing connection *[implemented: plan 090]* | — | — | ✓ | ✓ |
 | Create/edit KB documents (044/046) *[implemented: plan 046]* | — | ✓ | ✓ | ✓ |
 | Delete workspace-scope memories (049) *[implemented: plan 049]* | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) *[implemented: plan 049]* | — | ✓ | ✓ | ✓ |
@@ -160,8 +161,17 @@ enforcement second**. Each counter names the plan that adds it. All values
   implemented: plan 037; api-key HTTP flow implemented: plan 038]
 - Only OAuth tokens are stored (encrypted) in Postgres; everything else is
   a reference resolved at call time. [implemented: plan 037]
-- Rotation = new secret version + connection re-test; the old version stays
-  readable until the new one is confirmed. [implemented: plan 038]
+- Rotation = new secret version + asynchronous connection discovery; the old
+  version stays readable while the new version is checked. Reference
+  credentials are replaced in place on the existing connection, without
+  changing auth mode or deleting externally owned secrets. [implemented:
+  plans 038/090]
+- The local-only encrypted store has its own API-root-anchored path, separate
+  from served object storage. API and worker processes coordinate through an
+  OS-level lock, and same-directory atomic replacement prevents partial or
+  lost writes. Secret-store availability failures are operational 503s; they
+  preserve credentials and prior resources for discovery retry rather than
+  requesting reauthentication. [implemented: plan 090]
 - Entry rights per §1 (admin+). [default — confirm at review]
 - Audited events: reference create/update/delete and every **resolve
   failure** — never secret values, and no audit on successful resolves (too
@@ -178,7 +188,9 @@ used by invites). Email stays out until a digest exists. All rows
 | Event | Notify (in-app) | Recipient | Emitting plan |
 |---|---|---|---|
 | Schedule run terminal failure / auto-disable | ✓ | schedule owner | 021-adjacent worker |
-| Integration `needs_reauth` / discovery failure | ✓ [implemented: plan 039] | connecting user [implemented: plan 039] | 039 |
+| OAuth integration `needs_reauth` | ✓ [implemented: plans 039/090] | connecting user [implemented: plan 039] | 039/090 |
+| Reference integration `needs_credential` | ✓ [implemented: plan 090] | connecting user | 090 |
+| Integration discovery terminal failure | ✓ [implemented: plans 039/090] | connecting user [implemented: plan 039] | 039/090 |
 | Job pipeline failure — only after final retry exhausted | ✓ [implemented: plan 030] | initiator (`initiated_by_user_id`) [implemented: plan 030] | 030 |
 | Every tool invocation, successful runs, routine refreshes | — (audit only) | — | — |
 
@@ -190,6 +202,7 @@ used by invites). Email stays out until a digest exists. All rows
 | 031/032 (files) | §1, §3 (files), §4 (storage counter) |
 | 034 (scratch + file tools) | §2, §3 (scratch) |
 | 037–039 (integrations core) | §1, §3 (credentials/resources), §4 (retries), §5, §6 |
+| 090 (credential recovery) | §1 (replacement RBAC), §5 (rotation/local store), §6 |
 | 054 (run envelopes) | §2 (non-interactive side-effect grants) |
 | 041 (first providers) | §2 (spend rule) |
 | 043–046 (KB) | §1, §3 (KB), §4 (embedding budget), §2 (KB writes) |

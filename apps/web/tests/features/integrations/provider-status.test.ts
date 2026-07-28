@@ -43,6 +43,9 @@ describe("providerSummaryStatus", () => {
       providerSummaryStatus(provider, [connection("active"), connection("needs_reauth")])
     ).toEqual({ label: "Needs attention", tone: "attention", variant: "destructive" })
     expect(
+      providerSummaryStatus(provider, [connection("active"), connection("needs_credential")])
+    ).toEqual({ label: "Needs attention", tone: "attention", variant: "destructive" })
+    expect(
       providerSummaryStatus(provider, [connection("active"), connection("discovery_pending")])
     ).toEqual({ label: "Setting up…", tone: "pending", variant: "warning" })
   })

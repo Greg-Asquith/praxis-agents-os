@@ -57,7 +57,7 @@ def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Ite
         "http://frontend.test/integrations/oauth/callback",
     )
     monkeypatch.setattr(settings, "CREDENTIAL_MASTER_KEYS", Fernet.generate_key().decode())
-    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path / "storage"))
+    monkeypatch.setattr(settings, "LOCAL_SECRET_STORE_PATH", str(tmp_path / "secrets.enc.json"))
     secrets_factory._provider = None
     secrets_factory._provider_key = None
     yield

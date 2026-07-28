@@ -9,11 +9,12 @@ import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/co
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useConnectApiKeyMutation } from "@/features/integrations/api/connect-api-key"
+import { useReplaceCredentialMutation } from "@/features/integrations/api/replace-credential"
 import {
   validateApiKeyConnectForm,
   type ApiKeyConnectFormState,
 } from "@/features/integrations/components/api-key-connect-form-model"
-import type { IntegrationProvider } from "@/features/integrations/types"
+import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { buildFieldErrors } from "@/lib/forms"
 
@@ -23,13 +24,22 @@ export function ApiKeyConnectForm({
   onCancel,
   onConnected,
   provider,
+  replacementConnection,
 }: {
   onCancel: () => void
   onConnected: () => void
   provider: IntegrationProvider
+  replacementConnection?: IntegrationConnection
 }) {
-  const [form, setForm] = useState<ApiKeyConnectFormState>(EMPTY_FORM)
+  const [form, setForm] = useState<ApiKeyConnectFormState>(() => ({
+    ...EMPTY_FORM,
+    label: replacementConnection?.label ?? "",
+  }))
   const connectMutation = useConnectApiKeyMutation(form.apiKey)
+  const replacementMutation = useReplaceCredentialMutation(replacementConnection?.id ?? "", {
+    api_key: form.apiKey,
+  })
+  const activeMutation = replacementConnection ? replacementMutation : connectMutation
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -44,26 +54,34 @@ export function ApiKeyConnectForm({
     }
 
     try {
-      await connectMutation.mutateAsync({
-        label: form.label.trim(),
-        provider_key: provider.provider_key,
-      })
+      if (replacementConnection) {
+        await replacementMutation.mutateAsync()
+      } else {
+        await connectMutation.mutateAsync({
+          label: form.label.trim(),
+          provider_key: provider.provider_key,
+        })
+      }
       onConnected()
     } catch (mutationError) {
       setError(getErrorMessage(mutationError))
     } finally {
       setForm((current) => ({ ...current, apiKey: "" }))
       connectMutation.reset()
+      replacementMutation.reset()
     }
   }
 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Connect {provider.display_name}</DialogTitle>
+        <DialogTitle>
+          {replacementConnection ? "Replace API key" : `Connect ${provider.display_name}`}
+        </DialogTitle>
         <DialogDescription>
-          Give this account a recognizable name, then enter the provider key. The key is stored
-          securely and cannot be viewed again.
+          {replacementConnection
+            ? `Enter a new key for ${replacementConnection.label}. We will check it in the background without changing the connection.`
+            : "Give this account a recognizable name, then enter the provider key. The key is stored securely and cannot be viewed again."}
         </DialogDescription>
       </DialogHeader>
       <form
@@ -75,27 +93,31 @@ export function ApiKeyConnectForm({
         <FieldGroup>
           {error ? (
             <Alert variant="destructive">
-              <AlertTitle>Connection not added</AlertTitle>
+              <AlertTitle>
+                {replacementConnection ? "Credential not replaced" : "Connection not added"}
+              </AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
-          <Field data-invalid={Boolean(fieldErrors["integration-connection-label"]) || undefined}>
-            <FieldLabel htmlFor={`connection-label-${provider.provider_key}`}>
-              Connection Name
-            </FieldLabel>
-            <Input
-              aria-invalid={Boolean(fieldErrors["integration-connection-label"]) || undefined}
-              id={`connection-label-${provider.provider_key}`}
-              maxLength={120}
-              onChange={(event) => {
-                const label = event.currentTarget.value
-                setForm((current) => ({ ...current, label }))
-              }}
-              placeholder="Client account"
-              value={form.label}
-            />
-            <FieldError>{fieldErrors["integration-connection-label"]}</FieldError>
-          </Field>
+          {replacementConnection ? null : (
+            <Field data-invalid={Boolean(fieldErrors["integration-connection-label"]) || undefined}>
+              <FieldLabel htmlFor={`connection-label-${provider.provider_key}`}>
+                Connection Name
+              </FieldLabel>
+              <Input
+                aria-invalid={Boolean(fieldErrors["integration-connection-label"]) || undefined}
+                id={`connection-label-${provider.provider_key}`}
+                maxLength={120}
+                onChange={(event) => {
+                  const label = event.currentTarget.value
+                  setForm((current) => ({ ...current, label }))
+                }}
+                placeholder="Client account"
+                value={form.label}
+              />
+              <FieldError>{fieldErrors["integration-connection-label"]}</FieldError>
+            </Field>
+          )}
           <Field data-invalid={Boolean(fieldErrors["integration-api-key"]) || undefined}>
             <FieldLabel htmlFor={`api-key-${provider.provider_key}`}>API Key</FieldLabel>
             <Input
@@ -119,7 +141,7 @@ export function ApiKeyConnectForm({
       </form>
       <DialogFooter>
         <Button
-          disabled={connectMutation.isPending}
+          disabled={activeMutation.isPending}
           onClick={onCancel}
           type="button"
           variant="outline"
@@ -127,11 +149,17 @@ export function ApiKeyConnectForm({
           Cancel
         </Button>
         <Button
-          disabled={connectMutation.isPending}
+          disabled={activeMutation.isPending}
           form={`connect-${provider.provider_key}-api-key`}
           type="submit"
         >
-          {connectMutation.isPending ? "Connecting" : "Connect"}
+          {activeMutation.isPending
+            ? replacementConnection
+              ? "Replacing"
+              : "Connecting"
+            : replacementConnection
+              ? "Replace API Key"
+              : "Connect"}
         </Button>
       </DialogFooter>
     </>

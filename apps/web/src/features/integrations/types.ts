@@ -12,6 +12,7 @@ type ConnectionStatus =
   | "error"
   | "revoked"
   | "needs_reauth"
+  | "needs_credential"
 
 export type IntegrationProvider = {
   provider_key: string
@@ -111,6 +112,7 @@ export type ConnectionTestResponse = {
   connection_id: string
   status: string
   external_principal_label?: string | null
+  verification_scope: "provider_identity" | "credential_resolution"
 }
 
 export type ConnectionRefreshResponse = {

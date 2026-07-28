@@ -31,3 +31,7 @@ class ProviderSettingsMixin:
         default=".local/storage",
         description="Root for local filesystem storage when STORAGE_PROVIDER=local_fs.",
     )
+    LOCAL_SECRET_STORE_PATH: str = Field(
+        default=".local/secrets.enc.json",
+        description="Encrypted secret-store file used only when SECRET_PROVIDER=local.",
+    )

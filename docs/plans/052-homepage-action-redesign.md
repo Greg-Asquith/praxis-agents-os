@@ -7,13 +7,11 @@
 > in `docs/plans/000_README.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat c2f08cc..HEAD -- apps/web/src/routes/home.tsx apps/web/src/features/conversations/ apps/web/src/features/schedules/ apps/web/src/features/agents/ apps/web/src/app/router.tsx apps/api/routes/agent_runs/ apps/api/services/agent_runs/`
-> Plan 036's working-tree changes (multimodal input) may not yet be committed
-> at execution time — they touch `features/conversations/` but not the files
-> this plan rewrites. Compare the "Current state" excerpts against live code
-> before proceeding; treat a structural mismatch (suspended-run-state seam,
-> conversation list response shape, schedule `health`/`latest_run` fields)
-> as a STOP condition.
+> `git diff --stat c65f946..HEAD -- apps/web/src/routes/home.tsx apps/web/src/features/conversations/ apps/web/src/features/schedules/ apps/web/src/features/agents/ apps/web/src/app/router.tsx apps/api/routes/agent_runs/ apps/api/services/agent_runs/`
+> Compare the "Current state" excerpts against live code before proceeding;
+> treat a structural mismatch (suspended-run-state seam, conversation list
+> response shape, schedule `health`/`latest_run` fields) as a STOP
+> condition.
 
 ## Status
 
@@ -27,8 +25,14 @@
 - **Category**: Lane O operational surfaces (post-roadmap addition; plan
   numbers 021–051 were reserved by `000_MASTER_ROADMAP.md`, this is the
   first plan past that range)
-- **Planned at**: working tree at commit `c2f08cc`, 2026-07-07 (036 in
-  flight on disk; its diff does not overlap this plan's files)
+- **Planned at**: working tree at commit `c2f08cc`, 2026-07-07.
+  **Re-verified and updated 2026-07-28 at `c65f946`** — since planning,
+  the stat tiles and nav-duplicate cards were already removed from
+  `home.tsx` by unrelated tidying commits, the new-conversation page
+  moved agent selection into `ConversationComposer`, run cancellation
+  added a third `/agent-runs/{run_id}` route, and the web app grew a
+  real Vitest suite (SSR-string component tests). All anchors below
+  reflect `c65f946`.
 
 ## Product intent
 
@@ -56,14 +60,14 @@ What that member actually needs, in priority order:
 
 ## Decisions taken
 
-1. **Kill all aggregate stats.** The four `SummaryTile`s
-   (`routes/home.tsx:87-112`) are removed, including the "Approval-gated
-   agents" tile that has been hardcoded to `value={0}` since it shipped
-   (`home.tsx:110`) — evidence that the stats row is decoration, not
-   information. The bottom card row (Workspace / Workspaces / Agents /
-   Account, `home.tsx:178-244`) is removed too: every one of those
-   destinations is already one click away in the sidebar
-   (`config/navigation.ts`), and none of them is daily work.
+1. **Kill all aggregate stats.** Largely already done: commits
+   `33427c8 Web - UI Tidying` and `b011664 Web - Remove Cards` deleted
+   the four `SummaryTile`s (including the "Approval-gated agents" tile
+   hardcoded to `value={0}`) and the nav-duplicate bottom card row after
+   this plan was written. The decision stands as the page's bar — no
+   stats, counts, or nav-duplicate cards come back — but the remaining
+   work is recomposition of what's left (two panels + a "Dashboard"
+   title), not demolition.
 2. **One aggregated pending-approvals read endpoint.**
    `GET /api/v1/agent-runs/pending-approvals` returns every top-level run
    awaiting approval for the actor in the workspace, with enough context to
@@ -99,9 +103,11 @@ What that member actually needs, in priority order:
    (`list_conversations.py:36` — `user_id == actor.id`), so home is
    inherently "my work" with no backend change. Unread conversations
    (`unread` flag) render as the results section with source badges
-   (scheduled/delegated completions are the interesting ones); recent
-   non-unread conversations render as the continue section. Client-side
-   partition of one query — no new API.
+   (scheduled/delegated/event completions are the interesting ones —
+   `ConversationSource` gained `"event"` for webhook-triggered runs, and
+   `ConversationList` already renders source badges for all three);
+   recent non-unread conversations render as the continue section.
+   Client-side partition of one query — no new API.
 6. **Failing schedules only, hidden when healthy.** A section listing
    workspace schedules whose `health` is `needs_attention` or `retrying`
    (fields already on `SchedulesListResponse` items with `latest_run`,
@@ -111,11 +117,18 @@ What that member actually needs, in priority order:
    action-only, no green "all systems normal" filler.
 7. **Agent launcher instead of agent counts.** Active agents render as
    launch tiles that navigate to `/conversations/new?agent=<id>`; the
-   new-conversation route gains a validated optional `agent` search param
-   that preselects that agent in the existing picker. Additive change to
-   `new-conversation-route.tsx` + the route definition in
-   `src/app/router.tsx:116`. Tiles show name + description line; capped
-   display (8) with a "All agents" link.
+   new-conversation route gains a validated optional `agent` search
+   param. There is no standalone agent picker on that page anymore —
+   selection lives inside `ConversationComposer` (create mode holds
+   `selectedAgentId` state defaulting to the first active agent,
+   `conversation-composer.tsx:84-94`) — so the param preselects via a
+   new optional `initialAgentId` prop on the composer that seeds that
+   state when it matches an active agent, ignored silently otherwise
+   (maintainer decision, 2026-07-28: adapt the preselect to the
+   composer rather than drop it). Additive change to
+   `new-conversation-route.tsx`, `conversation-composer.tsx`, and the
+   route definition in `src/app/router.tsx:157-173`. Tiles show name +
+   description line; capped display (8) with a "All agents" link.
 8. **Section order = decision priority.** Waiting on you → Failing
    schedules → New results → Continue → Start with an agent. The "New
    Conversation" primary CTA stays in the header. The page title changes
@@ -159,62 +172,99 @@ as a number.
 
 ## Current state
 
-All anchors verified on the working tree at `c2f08cc` (2026-07-07).
+All anchors re-verified at `c65f946` (2026-07-28).
 
-- **Homepage**: `apps/web/src/routes/home.tsx` — single route file holding
-  the whole dashboard: `useSuspenseQueries` over current user, agents
-  (`includeInactive: true, limit: 100`), and conversations (`limit: 10`)
-  (lines 44-50); four `SummaryTile`s incl. the hardcoded `value={0}`
-  approval tile (87-112); "Needs attention" panel filtering
-  `needs_approval || unread` client-side (58-62, 115-141); "Recent
-  conversations" panel (143-176); the four nav-duplicate cards (178-244);
-  local `SummaryTile`/`DashboardPanel` components (249-302).
+- **Homepage**: `apps/web/src/routes/home.tsx` — now a 131-line route
+  file: one `useSuspenseQuery(conversationsQueryOptions({ limit: 10 }))`
+  (line 20); "needs attention" filter `needs_approval || unread`
+  (lines 25-29); `PageHeader` titled "Dashboard" with a "New
+  Conversation" CTA (33-42); "Needs attention" panel (45-69); "Recent
+  conversations" panel (71-101); local `DashboardPanel` component
+  (107-130). The stat tiles, `SummaryTile`, and nav-duplicate cards are
+  already gone (removed by `33427c8`/`b011664`).
+  `apps/web/src/features/home/` does not exist yet.
 - **Conversation list data**: `GET /conversations/` is actor-scoped and
   excludes delegated conversations
-  (`services/conversations/list_conversations.py:33-38`); each row carries
+  (`services/conversations/list_conversations.py:34-39`; actor scope
+  line 36, delegated exclusion line 38; pagination now goes through
+  `utils.pagination.paginate`, contract unchanged); each row carries
   `unread`, `source`, `needs_approval`, `active_run_id`,
   `active_run_status`, `agent_name`, `last_message_at`
-  (`features/conversations/types.ts:9-29`). Frontend query:
-  `conversationsQueryOptions` with `staleTime` 15s and structured
-  workspace-scoped keys (`api/list-conversations.ts:20-34,74-80`).
+  (`features/conversations/types.ts:11-31`; `ConversationSource` now
+  includes `"event"`). Frontend query: `conversationsQueryOptions` with
+  `staleTime` 15s and structured workspace-scoped keys
+  (`api/list-conversations.ts:20-35,71-77`).
 - **Approval reads**: per-run only —
   `GET /agent-runs/{run_id}/approval-state`
   (`routes/agent_runs/get_approval_state.py`, router prefix `/agent-runs`
-  in `routes/agent_runs/__init__.py`). The service
-  (`services/agent_runs/get_approval_state.py:30-120`) loads
-  `load_suspended_run_state(run)` and projects
-  `PendingToolApprovalRead(tool_call_id, name, args, delegation)` +
-  `PendingDelegatedApprovalRead` — including walking delegated child runs
-  via `load_delegated_child_run_for_approval`. Schemas at
-  `services/agent_runs/schemas.py:61-65`. Existing service tests:
-  `tests/services/agent_runs/test_approval_state.py` (factories/support
-  helpers for suspended runs live there — reuse them).
+  in `routes/agent_runs/__init__.py`, which now composes three routers:
+  `cancel_run_router`, `get_approval_state_router`, `resume_run_router` —
+  all `/{run_id}/...` patterns, so the literal `/pending-approvals` must
+  register before all of them). The service
+  (`services/agent_runs/get_approval_state.py`, unchanged since
+  `c2f08cc`) loads `load_suspended_run_state(run)` at line 60 and
+  projects `PendingToolApprovalRead(tool_call_id, name, args,
+  delegation)` + `PendingDelegatedApprovalRead` (lines 63-113) —
+  including walking delegated child runs via
+  `load_delegated_child_run_for_approval` (`utils.py:143-172`). Schemas
+  at `services/agent_runs/schemas.py:56-67`. No pending-approvals
+  aggregate endpoint exists anywhere. Existing service tests:
+  `tests/services/agent_runs/test_approval_state.py` (the
+  `approval_context` fixture and suspended-run helpers live there —
+  reuse them). Frontend: `features/conversations/api/get-approval-state.ts`
+  exists; `list-pending-approvals.ts` does not.
 - **Run status vocabulary**: `RUN_STATUS_AWAITING_APPROVAL` et al. in
-  `services/agent_runs/domain.py`; the conversation list already builds an
-  awaiting-runs projection from the same statuses
-  (`list_conversations.py:20-22,40-58`).
+  `services/agent_runs/domain.py:15`; the conversation list already
+  builds an awaiting-runs projection from the same statuses
+  (`list_conversations.py:21-23,40-58`). `AgentRun` has `parent_run_id`
+  (`models/agent_run.py:45-49`), `deleted` via `SoftDeleteMixin`, and
+  **no dedicated awaiting-since column** (verified 2026-07-28:
+  timestamps are only `started_at`/`completed_at`/`failed_at`/
+  `lease_expires_at` + created/updated) — `updated_at` is the right
+  ordering column, and it is stamped at suspend time because
+  `transition_run_status` writes the row on the awaiting transition.
+  The partial index `ix_agent_runs_workspace_status` on
+  `(workspace_id, status) WHERE deleted = false`
+  (`agent_run.py:114-119`) serves the planned query.
 - **Schedules**: `GET /schedules` list items carry computed `health`
-  (`"healthy" | "retrying" | "needs_attention" | "cancelled"`) and
-  `latest_run` (with `conversation_id`, `last_error_message`)
-  (`features/schedules/types.ts`); frontend query module
-  `features/schedules/api/list-schedules.ts`.
-- **Agents**: `agentsQueryOptions({ includeInactive, limit })`
-  (`features/agents/api/list-agents.ts`); `Agent.is_active` and
-  `countActiveAgents` helper (`features/agents/agent-metrics.ts:5-7` —
-  after this plan its only remaining consumer is the agents feature;
-  knip flags it if orphaned).
+  (`"healthy" | "retrying" | "needs_attention" | "cancelled"`,
+  `features/schedules/types.ts:7`) and `latest_run` (with
+  `conversation_id`, `last_error_message`) (`types.ts:64-65`); frontend
+  query module `features/schedules/api/list-schedules.ts` — note
+  `schedulesQueryOptions` is module-private; only `useSchedulesQuery`
+  and `schedulesQueryKeys` are exported (export the options or use the
+  hook).
+- **Agents**: `agentsQueryOptions({ includeInactive, limit, offset })`
+  (`features/agents/api/list-agents.ts:31-37`). `countActiveAgents` was
+  already removed by `33427c8`; `agent-metrics.ts` now exports only
+  `countApprovalPolicyTools`.
 - **New-conversation route**: `/conversations/new` defined in
-  `src/app/router.tsx:116`; `new-conversation-route.tsx` renders the agent
-  picker from `useAgentsQuery({ includeInactive: false })` with no
-  preselection mechanism today.
-- **Navigation**: sidebar items for Home/Agents/Skills/Files/Schedules/
-  Workspaces/Settings (`src/config/navigation.ts`) — everything the removed
-  card row linked to.
+  `src/app/router.tsx:157-173` as a child of `conversationRuntimeRoute`,
+  with a loader prefetching agents + model catalog; no `validateSearch`.
+  `new-conversation-route.tsx` no longer contains an agent picker — it
+  renders stacked agent icons and delegates selection to
+  `<ConversationComposer mode="create" agents={...} />`; preselection
+  must go through the composer (decision 7).
+- **Conversation list component**:
+  `features/conversations/components/conversation-list.tsx` props are
+  `conversations`, `emptyState`, `selectedConversationId`,
+  `showRunStatus`; it already renders source badges for
+  scheduled/delegated/event rows (lines 78-90) — no new prop needed.
+- **Navigation**: sidebar currently holds Home/Agents/Skills/Memory/
+  Knowledge Base/Files/Artifacts/Schedules/Integrations
+  (`src/config/navigation.ts:32-87`). Plan frontend-ui/034 will
+  consolidate it to five items; the two plans touch disjoint files.
 - **Layering**: `.dependency-cruiser.cjs` bans cycles, feature→route-shell
   imports, and `components/ui` reaching upward; cross-feature imports are
-  legal. `pnpm check` = typecheck + eslint (0 warnings) + prettier + knip +
-  depcruise + build; there IS now a Vitest lane (C01) but it covers the
-  stream parser/reducer — no component test framework.
+  legal (newer rules constrain `src/integrations/**` and
+  `components/tool-ui`, not `features/`). `pnpm check` = typecheck +
+  eslint (0 warnings) + **vitest** + prettier + knip + depcruise + build.
+  The web test suite is now ~80 files under `apps/web/tests/`
+  (`vitest.config.ts` includes `tests/**/*.test.ts` only, node
+  environment) and includes component tests written as
+  `renderToStaticMarkup` SSR-string assertions (e.g.
+  `tests/features/conversations/components/message-row.test.ts`) — no
+  jsdom or testing-library.
 
 ## Commands you will need
 
@@ -237,8 +287,9 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
 - `apps/api/routes/agent_runs/list_pending_approvals.py` (create) +
   `routes/agent_runs/__init__.py` (compose)
 - `apps/api/tests/services/agent_runs/test_list_pending_approvals.py` +
-  `apps/api/tests/routes/agent_runs/` route test (create dir if absent,
-  following `tests/routes/README.md` conventions)
+  a route test in the existing `apps/api/tests/routes/agent_runs/`
+  directory (it already holds `test_cancel_run_route.py` — follow its
+  conventions)
 
 **In scope (Web):**
 
@@ -250,10 +301,12 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
   `DashboardPanel`)
 - `apps/web/src/features/conversations/api/list-pending-approvals.ts`
   (create) + `features/conversations/types.ts` (response types)
-- `apps/web/src/features/conversations/routes/new-conversation-route.tsx` +
-  `src/app/router.tsx` (`agent` search param, decision 7)
-- `apps/web/src/features/agents/agent-metrics.ts` (delete
-  `countActiveAgents` if knip reports it orphaned after the rewrite)
+- `apps/web/src/features/conversations/routes/new-conversation-route.tsx`,
+  `apps/web/src/features/conversations/components/conversation-composer.tsx`
+  (`initialAgentId` prop) + `src/app/router.tsx` (`agent` search param,
+  decision 7)
+- `apps/web/tests/features/home/` (create): SSR-string component tests
+  for the new sections, in the existing `renderToStaticMarkup` style
 
 **Out of scope (do NOT touch):**
 
@@ -284,10 +337,11 @@ PendingApprovalsListResponse`:
 1. Select top-level awaiting runs (decision 4 filters:
    `status == RUN_STATUS_AWAITING_APPROVAL`, workspace, actor,
    `deleted == False`, `parent_run_id IS NULL`) joined to `Conversation`
-   (title) and `Agent` (name), ordered by the run's awaiting-since
-   timestamp ascending (use `AgentRun.updated_at` — the moment the run
-   suspended; verify against the model and record if a better column
-   exists), limited, plus a `total` count.
+   (title) and `Agent` (name), ordered by `AgentRun.updated_at`
+   ascending (verified 2026-07-28: no dedicated awaiting-since column
+   exists, and `updated_at` is stamped at the awaiting transition —
+   see Current state), limited, plus a `total` count. The
+   `ix_agent_runs_workspace_status` partial index covers the filter.
 2. Per run, `load_suspended_run_state(run)` and project pending tool
    names: top-level (non-delegated) approvals contribute
    `approval.tool_name`; delegated approvals contribute the child agent
@@ -321,8 +375,9 @@ class PendingApprovalsListResponse(BaseModel):
 
 `routes/agent_runs/list_pending_approvals.py` — `GET /pending-approvals`
 under the existing `/agent-runs` router (register in
-`routes/agent_runs/__init__.py` **before** any `/{run_id}` pattern route so
-the literal path cannot be captured as a run id). Standard deps
+`routes/agent_runs/__init__.py` **before** the three existing `/{run_id}`
+pattern routers — cancel, approval-state, resume — so the literal path
+cannot be captured as a run id). Standard deps
 (`AsyncDbSessionDep`, `CurrentUserDep`, `CurrentWorkspaceDep`) — member
 read access, same as the per-run approval-state route; no new RBAC.
 
@@ -334,9 +389,9 @@ run returns the row with tool names; with none returns
 ### Step 3: API tests
 
 `tests/services/agent_runs/test_list_pending_approvals.py` (reuse the
-suspended-run fixtures/helpers from `test_approval_state.py`;
-`pytestmark = pytest.mark.asyncio`, DB tests skip without
-`TEST_DATABASE_URL`):
+`approval_context` fixture and suspended-run helpers from
+`test_approval_state.py`; `pytestmark = pytest.mark.asyncio`, DB tests
+skip without `TEST_DATABASE_URL`):
 
 - returns awaiting runs with correct `pending_tool_names` and
   `awaiting_since`, oldest first
@@ -372,14 +427,17 @@ suspended-run fixtures/helpers from `test_approval_state.py`;
   `/conversations/$conversationId`. Footer "and N more" when
   `total > items.length`. Empty: one-line "Nothing waiting on you"
   (decision 11).
-- `schedule-attention.tsx` — filters the existing schedules query for
+- `schedule-attention.tsx` — filters the existing schedules query
+  (`useSchedulesQuery`, or export the module-private
+  `schedulesQueryOptions`) for
   `health === "needs_attention" || health === "retrying"`; renders nothing
   when empty (decision 6). Rows: schedule agent/prompt summary, health
   badge, `latest_run.last_error_message` truncated, links to the schedule
   and (when present) the run conversation.
 - `unread-results.tsx` — `conversations.filter(c => c.unread &&
   !c.needs_approval)` (approval rows already live in the inbox), rendered
-  via the existing `ConversationList` with `sourceVisibility="always"`;
+  via the existing `ConversationList` (it already shows
+  scheduled/delegated/event source badges — no new prop needed);
   renders nothing when empty.
 - `recent-conversations.tsx` — remaining conversations (not unread, not
   needs-approval), `ConversationList`, cap 6, "View All" action.
@@ -389,9 +447,9 @@ suspended-run fixtures/helpers from `test_approval_state.py`;
   workspace has no history at all this section leads (decision 11).
 - `home-section.tsx` — the shared titled panel (port of `DashboardPanel`).
 
-Delete the `SummaryTile` component, the stats grid, and the bottom card
-row. Drop the now-unused imports; remove `countActiveAgents` only if knip
-flags it.
+Retire the local `DashboardPanel` (its replacement is
+`home-section.tsx`) and drop any now-unused imports. The stat tiles and
+bottom card row are already gone — nothing to delete there.
 
 **Verify**: `pnpm check` passes (knip will catch anything orphaned by the
 rewrite; depcruise validates the home feature's imports).
@@ -399,16 +457,36 @@ rewrite; depcruise validates the home feature's imports).
 ### Step 6: Agent preselect on the composer route
 
 Add `validateSearch` to the `/conversations/new` route
-(`src/app/router.tsx:116`) parsing an optional `agent: string` (discard
-non-UUID-ish values rather than erroring). In
-`new-conversation-route.tsx`, use it as the initial picker selection when
-it matches an active agent; ignore silently otherwise.
+(`src/app/router.tsx:157-173`) parsing an optional `agent: string`
+(discard non-UUID-ish values rather than erroring). In
+`new-conversation-route.tsx`, read the param and pass it to
+`ConversationComposer` as a new optional `initialAgentId` prop
+(create mode only); the composer seeds its `selectedAgentId` state with
+it when it matches an active agent, and ignores it silently otherwise
+(decision 7).
 
 **Verify**: `pnpm check`; manual — launcher tile lands on the composer
 with the agent preselected; a bogus `?agent=` value falls back to the
-unselected picker.
+composer's default (first active agent).
 
-### Step 7: Manual smoke
+### Step 7: Component tests
+
+`apps/web/tests/features/home/` — SSR-string tests in the existing
+style (`renderToStaticMarkup` + `QueryClientProvider` wrapper, `.ts`
+files only — the vitest include glob is `tests/**/*.test.ts`; see
+`tests/features/conversations/components/message-row.test.ts`):
+
+- approvals inbox: renders a row's agent name, tool-name badges,
+  "via {child agent}" for delegated entries, and the "and N more"
+  footer; renders "Nothing waiting on you" when empty
+- schedule attention: renders only `needs_attention`/`retrying`
+  schedules; renders nothing when all healthy
+- unread/recent partition: an unread non-approval conversation lands in
+  results, a read one in continue, an approval one in neither
+
+**Verify**: `pnpm test` passes.
+
+### Step 8: Manual smoke
 
 With `make dev` and seeded data: suspend a run on an approval-gated tool →
 it appears at the top of home within the 30s poll; deciding it in the
@@ -421,8 +499,10 @@ shows launcher-led layout.
 Backend: Step 3 (~8-10 tests) pins the new endpoint's scoping (actor,
 workspace, deleted, delegated-child exclusion), projection (tool names,
 delegated agent names, ordering, total), and route auth. Frontend: the
-static gate (`pnpm check`) plus the Step 7 manual script — there is no
-component test framework, and this plan does not introduce one.
+static gate (`pnpm check`, which now includes vitest) plus Step 7's
+SSR-string component tests (maintainer decision, 2026-07-28 — the repo
+now has an established component-test convention) and the Step 8 manual
+script.
 
 ## Done criteria
 
@@ -432,13 +512,15 @@ component test framework, and this plan does not introduce one.
       tests/routes/agent_runs -q` exits 0
 - [ ] `GET /api/v1/agent-runs/pending-approvals` returns tool names for a
       suspended run and exactly one row for a delegated parent+child pair
-- [ ] `cd apps/web && pnpm check` exits 0
-- [ ] `routes/home.tsx` contains no stat tiles, no hardcoded values, and no
-      workspace/account cards; every section on the page links to an action
+- [ ] `cd apps/web && pnpm check` exits 0 (includes the new home
+      component tests)
+- [ ] `routes/home.tsx` is a thin shell over `features/home/`; the page
+      title is "Home"; no stats, counts, or nav-duplicate cards return;
+      every section on the page links to an action
 - [ ] Approvals render with tool names and deep-link to the conversation;
       no approve/deny controls exist on home
-- [ ] `/conversations/new?agent=<id>` preselects the agent; invalid values
-      degrade silently
+- [ ] `/conversations/new?agent=<id>` preselects the agent in the
+      composer; invalid values degrade silently
 - [ ] No SSE protocol changes (`stream/protocol.ts` untouched); no new
       conversation list filters
 - [ ] `git status` clean outside the in-scope list;
@@ -449,7 +531,7 @@ component test framework, and this plan does not introduce one.
 Stop and report back (do not improvise) if:
 
 - `load_suspended_run_state` / `load_delegated_child_run_for_approval`
-  have changed shape since `c2f08cc` such that projecting tool names
+  have changed shape since `c65f946` such that projecting tool names
   requires new deserialization logic — do not fork the seam.
 - A pending-approvals (or notifications-backed) aggregate endpoint already
   exists.
@@ -459,7 +541,9 @@ Stop and report back (do not improvise) if:
 - `pnpm arch` rejects the home feature's cross-feature imports — restructure
   per the rules, and if that forces moving shared pieces into `lib/`,
   report before doing a layering refactor.
-- The new-conversation route has been redesigned (no picker to preselect).
+- The new-conversation surface has been redesigned again such that
+  `ConversationComposer` no longer owns agent selection in create mode
+  (the `initialAgentId` mechanism in decision 7 assumes it does).
 - You feel the need to add inline approve/deny, a home SSE stream, a
   notifications feed, or new conversation-list query parameters — scope
   creep; record a follow-up instead.

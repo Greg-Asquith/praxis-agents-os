@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationConnectionError, IntegrationValidationError
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.integrations.connections.schemas import DiscoveryTriggerResponse
@@ -35,6 +35,13 @@ async def trigger_discovery(
     )
     if connection.owner_user_id is not None:
         require_connection_mutation_allowed(connection, actor=actor, membership=membership)
+    if connection.status in {"auth_pending", "needs_reauth", "needs_credential", "revoked"}:
+        raise IntegrationConnectionError(
+            "Connection credentials must be ready before resource discovery",
+            provider_key=connection.provider_key,
+            connection_id=str(connection.id),
+            operation="trigger_discovery",
+        )
     manifest = PROVIDER_MANIFESTS.get(connection.provider_key)
     if manifest is None or not manifest.requires_discovery:
         raise IntegrationValidationError(

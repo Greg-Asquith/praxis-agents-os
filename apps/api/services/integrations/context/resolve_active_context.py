@@ -36,6 +36,7 @@ from services.integrations.domain import (
     CONNECTION_STATUS_ACTIVE,
     CONNECTION_STATUS_DEGRADED,
     CONNECTION_STATUS_ERROR,
+    CONNECTION_STATUS_NEEDS_CREDENTIAL,
     CONNECTION_STATUS_NEEDS_REAUTH,
     CONNECTION_STATUS_REVOKED,
 )
@@ -263,6 +264,8 @@ def _unavailable_reason(resource: IntegrationResource, connection: IntegrationCo
         return "connection_revoked"
     if connection.status == CONNECTION_STATUS_NEEDS_REAUTH:
         return "connection_needs_reauth"
+    if connection.status == CONNECTION_STATUS_NEEDS_CREDENTIAL:
+        return "connection_needs_credential"
     if connection.status == CONNECTION_STATUS_ERROR:
         return "connection_error"
     if connection.status not in {CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DEGRADED}:

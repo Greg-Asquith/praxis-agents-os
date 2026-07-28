@@ -10,6 +10,7 @@ SELECTION_TYPE_RESOURCE = "resource"
 SELECTION_TYPE_CONTEXT_GROUP = "context_group"
 
 UnavailableReason = Literal[
+    "connection_needs_credential",
     "connection_needs_reauth",
     "connection_revoked",
     "connection_error",

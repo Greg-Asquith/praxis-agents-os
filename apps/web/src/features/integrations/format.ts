@@ -15,7 +15,7 @@ export function integrationAuthModeLabel(authMode: string) {
     return "API key"
   }
   if (authMode === "service_account") {
-    return "Service Account Ley"
+    return "Service Account Key"
   }
   return titleCaseToken(authMode, "Sign In Method")
 }

@@ -95,6 +95,7 @@ async def test_single_resource_selection_resolves_and_fails_closed_for_write(
         ({"enabled": False}, "active", "resource_disabled"),
         ({"availability": "removed"}, "active", "resource_removed"),
         ({}, "needs_reauth", "connection_needs_reauth"),
+        ({}, "needs_credential", "connection_needs_credential"),
         ({}, "revoked", "connection_revoked"),
         ({}, "error", "connection_error"),
         ({}, "discovery_pending", "connection_inactive"),

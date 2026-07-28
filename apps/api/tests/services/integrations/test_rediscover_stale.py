@@ -91,7 +91,7 @@ async def test_rediscovery_skips_fresh_connection(
     assert persisted_run is not None
 
 
-@pytest.mark.parametrize("status", ["needs_reauth", "revoked"])
+@pytest.mark.parametrize("status", ["needs_reauth", "needs_credential", "revoked"])
 async def test_rediscovery_skips_auth_blocked_connections(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],

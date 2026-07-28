@@ -70,6 +70,29 @@ class ServiceAccountConnectRequest(BaseModel):
         return self
 
 
+class CredentialReplacementRequest(BaseModel):
+    api_key: SecretStr | None = None
+    service_account_json: SecretStr | None = None
+    secret_reference: SecretReferenceInput | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_secret_source(self) -> Self:
+        supplied = (
+            self.api_key is not None,
+            self.service_account_json is not None,
+            self.secret_reference is not None,
+        )
+        if sum(supplied) != 1:
+            raise ValueError(
+                "Exactly one of api_key, service_account_json, or secret_reference is required"
+            )
+        for field_name in ("api_key", "service_account_json"):
+            value = getattr(self, field_name)
+            if value is not None and not value.get_secret_value().strip():
+                raise ValueError(f"{field_name} cannot be blank")
+        return self
+
+
 class RenameConnectionRequest(BaseModel):
     label: str = Field(min_length=1, max_length=120)
 
@@ -141,6 +164,7 @@ class ConnectionTestResponse(BaseModel):
     connection_id: UUID
     status: str
     external_principal_label: str | None = None
+    verification_scope: Literal["provider_identity", "credential_resolution"]
 
 
 class ConnectionRefreshResponse(BaseModel):
