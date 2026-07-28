@@ -24,6 +24,7 @@ from tests.support.auth import bearer_headers
 @pytest.fixture(autouse=True)
 def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     from integrations.airtable import PROVIDER as AIRTABLE_PROVIDER
+    from integrations.bigquery import PROVIDER as BIGQUERY_PROVIDER
     from integrations.gmail import PROVIDER as GMAIL_PROVIDER
     from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
 
@@ -31,7 +32,7 @@ def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Ite
     original_plugins = dict(PROVIDER_PLUGINS)
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
-    for plugin in (GMAIL_PROVIDER, GOOGLE_ADS_PROVIDER, AIRTABLE_PROVIDER):
+    for plugin in (GMAIL_PROVIDER, GOOGLE_ADS_PROVIDER, AIRTABLE_PROVIDER, BIGQUERY_PROVIDER):
         register_provider_plugin(plugin)
         register_provider_manifest(plugin.manifest)
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_ID", "gmail-integration-client")

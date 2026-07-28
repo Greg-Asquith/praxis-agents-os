@@ -28,20 +28,24 @@ class GoogleServiceAccountCredentials:
     token_uri: str = GOOGLE_TOKEN_URL
 
 
-def parse_google_service_account_json(value: str) -> GoogleServiceAccountCredentials:
+def parse_google_service_account_json(
+    value: str,
+    *,
+    provider_key: str,
+) -> GoogleServiceAccountCredentials:
     """Validate the minimum server-to-server credential fields without leaking values."""
     try:
         payload = json.loads(value)
     except (TypeError, ValueError) as exc:
         raise IntegrationValidationError(
             "Service-account credential must be valid JSON",
-            provider_key="google_ads",
+            provider_key=provider_key,
             operation="validate_service_account",
         ) from exc
     if not isinstance(payload, dict):
         raise IntegrationValidationError(
             "Service-account credential must be a JSON object",
-            provider_key="google_ads",
+            provider_key=provider_key,
             operation="validate_service_account",
         )
     client_email = str(payload.get("client_email", "")).strip()
@@ -55,7 +59,7 @@ def parse_google_service_account_json(value: str) -> GoogleServiceAccountCredent
     ):
         raise IntegrationValidationError(
             "Service-account credential is missing required fields",
-            provider_key="google_ads",
+            provider_key=provider_key,
             operation="validate_service_account",
         )
     return GoogleServiceAccountCredentials(
@@ -72,10 +76,12 @@ class GoogleServiceAccountTokenProvider:
         self,
         credentials: GoogleServiceAccountCredentials,
         *,
+        provider_key: str,
         scope: str,
         client: httpx2.AsyncClient | None = None,
     ) -> None:
         self.credentials = credentials
+        self.provider_key = provider_key
         self.scope = scope
         self._client = client
         self._access_token: str | None = None
@@ -99,7 +105,7 @@ class GoogleServiceAccountTokenProvider:
         except Exception as exc:
             raise IntegrationValidationError(
                 "Service-account private key is invalid",
-                provider_key="google_ads",
+                provider_key=self.provider_key,
                 operation="mint_service_account_token",
             ) from exc
         try:
@@ -107,7 +113,7 @@ class GoogleServiceAccountTokenProvider:
                 "POST",
                 self.credentials.token_uri,
                 operation="mint_service_account_token",
-                provider_key="google_ads",
+                provider_key=self.provider_key,
                 client=self._client,
                 data={"grant_type": JWT_BEARER_GRANT, "assertion": assertion},
             )
@@ -121,14 +127,14 @@ class GoogleServiceAccountTokenProvider:
         except ValueError as exc:
             raise IntegrationAuthError(
                 "Google token exchange returned an invalid response",
-                provider_key="google_ads",
+                provider_key=self.provider_key,
                 operation="mint_service_account_token",
             ) from exc
         token = str(payload.get("access_token", "")).strip() if isinstance(payload, dict) else ""
         if not token:
             raise IntegrationAuthError(
                 "Google token exchange returned no access token",
-                provider_key="google_ads",
+                provider_key=self.provider_key,
                 operation="mint_service_account_token",
             )
         expires_in = payload.get("expires_in", 3600)

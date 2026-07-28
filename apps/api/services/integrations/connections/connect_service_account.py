@@ -51,7 +51,10 @@ async def connect_service_account(
     created_secret = payload.service_account_json is not None
     if created_secret:
         raw_value = payload.service_account_json.get_secret_value()
-        parsed = parse_google_service_account_json(raw_value)
+        parsed = parse_google_service_account_json(
+            raw_value,
+            provider_key=manifest.provider_key,
+        )
         reference = await write_secret(
             db,
             name=f"integrations-{payload.provider_key}-{uuid4().hex}",
@@ -72,7 +75,10 @@ async def connect_service_account(
         raw_value = await resolve_secret(
             db, reference, workspace_id=workspace.id, actor_id=actor.id
         )
-        parsed = parse_google_service_account_json(raw_value)
+        parsed = parse_google_service_account_json(
+            raw_value,
+            provider_key=manifest.provider_key,
+        )
 
     try:
         credential = await store_secret_reference_credential(

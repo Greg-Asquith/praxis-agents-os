@@ -24,13 +24,13 @@ from services.integrations.plugin import (
 @pytest.fixture(autouse=True)
 def clear_loaded_provider_state():
     for name in tuple(RUNTIME_TOOL_CATALOG):
-        if name.startswith(("airtable_", "gmail_", "google_ads_")):
+        if name.startswith(("airtable_", "bigquery_", "gmail_", "google_ads_")):
             RUNTIME_TOOL_CATALOG.pop(name)
     yield
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
     for name in tuple(RUNTIME_TOOL_CATALOG):
-        if name.startswith(("airtable_", "gmail_", "google_ads_")):
+        if name.startswith(("airtable_", "bigquery_", "gmail_", "google_ads_")):
             RUNTIME_TOOL_CATALOG.pop(name)
 
 
@@ -90,11 +90,11 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
     monkeypatch.setattr(
         settings,
         "INTEGRATIONS_ENABLED_PROVIDERS",
-        ["airtable", "gmail", "google_ads"],
+        ["airtable", "bigquery", "gmail", "google_ads"],
     )
     load_enabled_providers()
-    assert sorted(PROVIDER_MANIFESTS) == ["airtable", "gmail", "google_ads"]
-    assert sorted(PROVIDER_PLUGINS) == ["airtable", "gmail", "google_ads"]
+    assert sorted(PROVIDER_MANIFESTS) == ["airtable", "bigquery", "gmail", "google_ads"]
+    assert sorted(PROVIDER_PLUGINS) == ["airtable", "bigquery", "gmail", "google_ads"]
     assert not hasattr(settings, "INTEGRATIONS_AIRTABLE_ENABLED")
     assert not hasattr(settings, "GMAIL_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "GOOGLE_ADS_OAUTH_CLIENT_ID")

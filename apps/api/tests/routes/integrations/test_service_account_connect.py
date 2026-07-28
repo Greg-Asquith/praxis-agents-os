@@ -4,6 +4,7 @@
 
 import json
 
+import pytest
 from httpx2 import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +15,13 @@ from models.workspace import WorkspaceRole
 from tests.routes.integrations.conftest import create_identity
 
 
+@pytest.mark.parametrize("provider_key", ["google_ads", "bigquery"])
 async def test_service_account_is_persisted_by_reference_only(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     integration_identity: dict[str, object],
     caplog,
+    provider_key: str,
 ) -> None:
     private_key = "private-key-never-persist-this-value"
     raw = json.dumps(
@@ -33,8 +36,8 @@ async def test_service_account_is_persisted_by_reference_only(
         "/api/v1/integrations/connections/service-account",
         headers=integration_identity["headers"],
         json={
-            "provider_key": "google_ads",
-            "label": "Agency Ads",
+            "provider_key": provider_key,
+            "label": "Agency Data",
             "service_account_json": raw,
         },
     )

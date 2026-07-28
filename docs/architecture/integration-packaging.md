@@ -410,3 +410,20 @@ above (including §9), this section wins.
   credentials (Airtable's API key is the cheapest connect). The import
   laws (§4.6), loader invariants (§4.3), and enablement layers (§4.4,
   §6) are otherwise unchanged.
+
+## 11. Addendum (2026-07-28, decision D14): BigQuery extends the provider set
+
+Decision D14 supersedes only D11's statement that the shipped provider set is
+exactly the first three providers. The fake provider remains removed and all
+packaging, loader, and test laws remain binding.
+
+BigQuery is the first provider added through the N+1 checklist. Its first
+slice contributes a tool-free, discoverable package under
+`integrations/bigquery/`: a workspace-owned service-account manifest, bounded
+REST client, and dataset discovery. It needs no SDK extra, provider-specific
+engine branch, frontend module, or registration edit. The shared Google
+service-account helper now receives the provider key from each caller so
+validation and token errors remain correctly attributed without coupling the
+credential layer to either Google Ads or BigQuery. The schema-cache plugin
+seam, runtime tools, and frontend icon remain pending in later BigQuery
+slices.

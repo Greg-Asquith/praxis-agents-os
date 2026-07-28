@@ -41,7 +41,15 @@
   set, under decision D14 (roadmap §2) and the D10 packaging law.
 - **Planned at**: commit `c9a8cfd`, 2026-07-24. Anchors verified against
   that tree.
-- **Execution progress**: TODO.
+- **Execution progress**: **Slice A complete 2026-07-28**; Slices B–D
+  remain TODO. BigQuery now loads from the provider allowlist, reuses the
+  provider-attributed Google service-account helper, and discovers paginated
+  project datasets as read-only `bigquery_dataset` resources with location
+  metadata. Transport-mocked provider, loader, import-law, Google Ads
+  regression, and shared service-account route tests passed. Live sandbox QA
+  was unavailable because no BigQuery service-account credential is
+  configured in the local environment; the plan's tests remain credential-free
+  as required. The plan stays in `docs/plans/` until Slices B–D complete.
 
 ## Decisions taken
 
@@ -324,12 +332,15 @@ without explicit human approval per AGENTS.md.
 
 ## Execution slices
 
-- **Slice A — provider package + discovery**: package skeleton,
+- **Slice A — provider package + discovery — DONE 2026-07-28**: package skeleton,
   manifest, settings, bounded client, generalized service-account
   helper (decision 2), `discover_resources` (decision 4), enablement +
   loader/manifest tests, connect→discover→select QA against a real
   sandbox project. Gate: dataset resources appear and are selectable
   into context groups with zero engine changes beyond decision 2.
+  Deterministic transport and generic selection/context coverage passed;
+  live sandbox QA was unavailable because local BigQuery credentials were
+  not configured.
 - **Slice B — schema cache + sync job**: migration + model (decision
   5), `metadata_sync_job_kind` seam (decision 6), sync handler with
   idempotent reconcile + bounds, trigger wiring (post-discovery,

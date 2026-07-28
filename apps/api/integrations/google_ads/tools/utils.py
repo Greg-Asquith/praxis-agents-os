@@ -79,7 +79,12 @@ async def google_ads_client(
                 actor_id=ctx.deps.user.id,
             )
             provider = GoogleServiceAccountTokenProvider(
-                parse_google_service_account_json(raw), scope=GOOGLE_ADS_SCOPE
+                parse_google_service_account_json(
+                    raw,
+                    provider_key="google_ads",
+                ),
+                provider_key="google_ads",
+                scope=GOOGLE_ADS_SCOPE,
             )
             _SERVICE_ACCOUNT_PROVIDERS[cache_key] = provider
         return await provider.access_token(force)

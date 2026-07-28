@@ -38,8 +38,15 @@ async def discover_resources(
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     """Resolve either OAuth or service-account material into one client seam."""
     if credential_value.lstrip().startswith("{"):
-        credentials = parse_google_service_account_json(credential_value)
-        token_provider = GoogleServiceAccountTokenProvider(credentials, scope=GOOGLE_ADS_SCOPE)
+        credentials = parse_google_service_account_json(
+            credential_value,
+            provider_key="google_ads",
+        )
+        token_provider = GoogleServiceAccountTokenProvider(
+            credentials,
+            provider_key="google_ads",
+            scope=GOOGLE_ADS_SCOPE,
+        )
         access_token = token_provider.access_token
         principal_email = credentials.client_email
     else:

@@ -330,7 +330,8 @@ async def test_service_account_assertion_claims_and_token_cache() -> None:
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         provider = GoogleServiceAccountTokenProvider(
-            parse_google_service_account_json(raw),
+            parse_google_service_account_json(raw, provider_key="google_ads"),
+            provider_key="google_ads",
             scope="https://www.googleapis.com/auth/adwords",
             client=http_client,
         )
@@ -353,7 +354,10 @@ async def test_service_account_assertion_claims_and_token_cache() -> None:
 def test_service_account_validation_never_echoes_secret() -> None:
     secret = "private-key-must-not-leak"
     with pytest.raises(Exception) as exc_info:
-        parse_google_service_account_json(json.dumps({"private_key": secret}))
+        parse_google_service_account_json(
+            json.dumps({"private_key": secret}),
+            provider_key="google_ads",
+        )
     assert secret not in str(exc_info.value)
 
 
