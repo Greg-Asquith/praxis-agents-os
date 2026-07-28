@@ -27,6 +27,7 @@ async def test_refresh_webhooks_schedules_a_bounded_dedup_key(
         select(Job).where(
             Job.kind == REFRESH_WEBHOOKS_KIND,
             Job.id != current.id,
+            Job.payload["scheduled_by_job_id"].astext == str(current.id),
         )
     )
     assert scheduled is not None

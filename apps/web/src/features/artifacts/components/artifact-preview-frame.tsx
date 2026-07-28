@@ -29,7 +29,7 @@ export function ArtifactPreviewFrame({
       <div className="bg-muted/30 flex min-h-64 items-center justify-center rounded-lg border p-3">
         <img
           alt={title}
-          className="max-h-[32rem] max-w-full rounded-md object-contain"
+          className="max-h-128 max-w-full rounded-md object-contain"
           src={content.download_url}
         />
       </div>
@@ -37,7 +37,7 @@ export function ArtifactPreviewFrame({
   }
   if (artifactType === "markdown" && content.content !== null) {
     return (
-      <div className="max-h-[32rem] overflow-auto rounded-lg border p-4">
+      <div className="max-h-128 overflow-auto rounded-lg border p-4">
         <MarkdownContent content={content.content} />
       </div>
     )
@@ -46,7 +46,7 @@ export function ArtifactPreviewFrame({
     return <CsvPreview content={content.content} />
   }
   return (
-    <pre className="bg-muted/30 max-h-[32rem] overflow-auto rounded-lg border p-4 font-mono text-xs whitespace-pre-wrap">
+    <pre className="bg-muted/30 max-h-128 overflow-auto rounded-lg border p-4 font-mono text-xs whitespace-pre-wrap">
       {content.content ?? "Preview unavailable"}
     </pre>
   )
@@ -57,7 +57,7 @@ function CsvPreview({ content }: { content: string }) {
   const headings = rows[0]?.values ?? []
   const body = rows.slice(1)
   return (
-    <div className="max-h-[32rem] overflow-auto rounded-lg border">
+    <div className="max-h-128 overflow-auto rounded-lg border">
       <table className="w-full min-w-max text-sm">
         <thead className="bg-muted/70 sticky top-0">
           <tr>
