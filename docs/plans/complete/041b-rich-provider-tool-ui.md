@@ -93,9 +93,8 @@
   provider keys resolve from tool-name prefixes so presenter dispatch
   no longer waits on the presentations query.
 - **Planned at**: 2026-07-22, tree with 041 Slice A present.
-  **Rewritten 2026-07-22** after a donor-app parity review: per-provider
-  one-off presenters were replaced by engine-owned **presenter kits**
-  (the donor's "family renderer" architecture). **Rewritten again
+  **Rewritten 2026-07-22**: per-provider one-off presenters were replaced by
+  engine-owned **presenter kits**. **Rewritten again
   2026-07-22** after operator review, which took four decisions the
   first rewrite got wrong: (1) the untrusted-frame vocabulary stays
   **model-only** — instead of teaching the client to parse frames, the
@@ -103,15 +102,12 @@
   prompt-assembly time (decision 3, amending 041); (2) the preview
   seam is a **generic engine route with provider-contributed handlers**
   so provider code does not enter the central route tree (decision 4);
-  (3) Gmail search
-  results get **click-to-open drill-in** to the full message, the
-  donor's flagship inbox interaction (decision 6); (4) **charts move
+  (3) Gmail search results get **click-to-open drill-in** to the full message
+  (decision 6); (4) **charts move
   to a trailing slice** so the trust-critical report table is not
-  gated on a chart library review (decision 7). The donor sets the
-  _richness benchmark_; its _mechanisms_ are adopted only where they
-  fit our packaging and threat-model posture — rejections are recorded
-  in "Donor patterns deliberately rejected" so they are not
-  re-proposed. **Re-baselined 2026-07-23** against the landed Slice B–C
+  gated on a chart library review (decision 7). Rejections are recorded in
+  "Patterns deliberately rejected" so they are not re-proposed.
+  **Re-baselined 2026-07-23** against the landed Slice B–C
   code before starting Slice D: kit names/mechanics updated to what
   actually shipped (see "As landed" under decision 2 and the amended
   "Current state"), the approval opt-in flag (`handlesApprovals`) and
@@ -155,27 +151,21 @@ The declarative default row was never meant to carry this either.
 Principle 2 says the default row must render every tool _acceptably_,
 and custom presenter rows are "opt-in polish for the few tools that
 earn it (rich previews, domain widgets)". Email in a chat transcript
-and ad-spend report tables are the canonical cases that earn it. The
-donor app proves the ceiling: message lists that read like an inbox,
+and ad-spend report tables are the canonical cases that earn it. The target
+experience includes message lists that read like an inbox,
 click-through to full HTML email, reports as formatted tables with
 currency/percent cells, KPI strips, CSV export, row drill-downs,
 editable approval cards, and per-account partial-failure summaries.
-This plan builds that level of experience — through our seams, not the
-donor's.
+This plan builds that level of experience through the platform's existing
+seams.
 
-## Donor benchmark (what "rich" means here)
+## Interaction benchmark (what "rich" means here)
 
-The donor (`saas-template` — see `apps/web/src/components/ai/tools/`
-in that tree) renders ~10 providers richly from shared renderer kit
-families; providers contribute only thin `adapt(output) → KitResult`
-functions (e.g. the 46-line Ads report descriptor over the 554-line
-`data-tables` kit). The experiences this plan commits to reproducing,
-in our styles:
+The experiences this plan commits to providing in our styles are:
 
 - **Gmail search** → an inbox-like list per mailbox: sender, subject,
-  relative date, snippet, and **row
-  click → full-message view** (the donor's `useMailDetailDialog`
-  drill-in); fan-out entry headers when multiple mailboxes; inline
+  relative date, snippet, and **row click → full-message view**; fan-out
+  entry headers when multiple mailboxes; inline
   error entries.
 - **Gmail read** → an email header block (from/to/date/subject as
   address chips), the plain-text body in a provenance-marked external-
@@ -203,7 +193,7 @@ in our styles:
 - **Everywhere** → "N succeeded · M failed" fan-out summaries with a
   failed-entries block, **in-flight states** (running tool calls render
   skeleton rows / a labelled progress line, not a blank row — the
-  donor ships a `progress.tsx` per kit family), empty states, metadata
+  reference ships a `progress.tsx` per kit family), empty states, metadata
   strips (provider · resource · counts · truncation), and provenance
   chips instead of raw markers.
 
@@ -225,7 +215,7 @@ in our styles:
      responses are ephemeral: never persisted, never entered into
      model context.
 2. **Layer 1 is kit-based: engine-owned presenter kits, thin provider
-   adapters.** This is the donor's highest-leverage pattern. A new
+   adapters.** A new
    engine-owned directory `apps/web/src/components/tool-ui/` holds
    shared renderer kits; provider modules under
    `src/integrations/<key>/` contain only `matches` guards and
@@ -408,18 +398,17 @@ rel="noopener noreferrer nofollow"`). The sanitized output is the
    - _Client_: render in an opaque-origin `<iframe sandbox="" srcDoc>`
      (NO `allow-scripts`, NO `allow-same-origin` — stricter than both
      `FileContentView`'s `allow-scripts`
-     (`file-content-view.tsx:29-38`, workspace-authored content) and
-     the donor's `allow-same-origin` email frame, deliberately: email
-     HTML is attacker-authored) with an injected
+     (`file-content-view.tsx:29-38`, workspace-authored content): email HTML
+     is attacker-authored) with an injected
      `<meta http-equiv="Content-Security-Policy">` of
      restricting the frame to image loading only. **Amended by the
      2026-07-23 operator review**: remote images load by default
      (`img-src data: https:`) — fidelity over tracking-pixel posture,
      recorded in threat-model §6. Scripts remain never-runnable; the
      sandbox posture below is unchanged.
-   - _Consequence accepted_: with an opaque origin the parent cannot
-     measure the frame's content height (the donor's auto-height
-     script requires `allow-same-origin`). The preview renders in a
+   - _Consequence accepted_: with an opaque origin the parent cannot measure
+     the frame's content height without weakening the sandbox. The preview
+     renders in a
      fixed `max-height` container with internal scroll. Do not weaken
      the sandbox to get auto-height.
    - _Threat model_: browser rendering of provider content is a new
@@ -433,8 +422,8 @@ rel="noopener noreferrer nofollow"`). The sanitized output is the
    Search-result rows are clickable: row click
    opens a viewport-centred message popover that fetches the full message
    through the decision-4 preview route (the fan-out entry already carries
-   `connection_id` and the message id) — the donor's flagship inbox
-   interaction without row-dependent placement shifts. The read-message
+   `connection_id` and the message id), without row-dependent placement
+   shifts. The read-message
    presenter has no Reply action and does
    not turn provider-authored sender or subject metadata into a user
    instruction. An operator who wants to reply types that request into
@@ -508,25 +497,23 @@ rel="noopener noreferrer nofollow"`). The sanitized output is the
     which preview kinds, are part of the provider's package — adapters
     only, never new kit code").
 
-## Donor patterns deliberately rejected
+## Patterns deliberately rejected
 
-Recorded so they are not re-proposed as "the donor did it":
+Recorded so they are not re-proposed as "the reference did it":
 
 - **`allow-same-origin` on the email iframe + client-only DOMPurify
   sanitization** — rejected; our posture is server-side `nh3` AND an
-  opaque-origin script-less sandbox (decision 5). The donor trusts the
+  opaque-origin script-less sandbox (decision 5). The reference trusts the
   client sanitizer and pays for auto-height with a weaker sandbox.
 - **Full HTML email bodies inside tool results** — rejected; the
   model-visible payload stays plain-text and framed (Gate G6). HTML
   arrives only via the audited, ephemeral preview route (Layer 2).
-- **Direct tool invocation from the UI** (donor's tool-catalog
-  playground, direct-send forms, `inputSubmitsInternally`) — rejected
+- **Direct tool invocation from the UI** — rejected
   for this plan; every write flows through the agent + approval
   governance (decision 6). The read-only preview fetch is the one
   sanctioned user-direct call, and it is scoped, audited, and
   ephemeral. A tool playground is a separate roadmap conversation.
-- **Provider logic in shared modules** (the donor's descriptor cache,
-  per-provider branches in shared renderers) — rejected; kits are
+- **Provider logic in shared modules** — rejected; kits are
   generic, adapters live in provider packages, boundaries are
   machine-enforced (§5.5 as amended). Preview fetching follows the same
   rule through provider-contributed definitions.

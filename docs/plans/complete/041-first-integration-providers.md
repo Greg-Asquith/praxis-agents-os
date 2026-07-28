@@ -115,7 +115,7 @@
    lacks a behavior, extend it in place — do not wrap it. The LLM
    transport retrier (`services/agents/models/utils.py
    retrying_http_client`) is a *different* seam; do not reuse it.
-5. **Minimal OAuth scopes** (donor hard-won detail): Gmail requests
+5. **Minimal OAuth scopes** (reference hard-won detail): Gmail requests
    exactly `gmail.readonly` + `gmail.send` (NOT `gmail.modify` or full
    mail) — already declared in the shipped gmail manifest. Google Ads
    requests exactly `https://www.googleapis.com/auth/adwords` (shipped).
@@ -139,9 +139,7 @@
    `parent_external_id` (the immediate parent); for directly accessible
    accounts it is the account's own id. Discovery sets the
    `login-customer-id` header to the root while expanding each
-   hierarchy (donor precedent:
-   `ad_resource_discovery/providers/google_ads.py` in the saas-template
-   donor). Manager (MCC) accounts are stored but non-operable
+   hierarchy. Manager (MCC) accounts are stored but non-operable
    (`metadata.manager=true`; `enabled` defaults false for them —
    reports/mutations target client accounts). Airtable discovery lists
    bases via the meta API, one `airtable_base` resource per base.
@@ -269,9 +267,8 @@
       non-empty `client_email`, and the manifest allows
       `service_account` — then stores the credential via
       `store_secret_reference_credential` and records
-      `service_account_email` on the connection metadata (donor
-      precedent: `services/integrations/service_accounts.py` in the
-      saas-template donor). Connections are workspace-scoped like every
+      `service_account_email` on the connection metadata. Connections are
+      workspace-scoped like every
       google_ads connection (`owner_scope="workspace"`), so any
       workspace agent context can use them.
     - **Token minting, REST-only**: a helper in

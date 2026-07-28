@@ -36,14 +36,16 @@ Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations
 (SSE chat with tool calls and approvals), agent runs (approval resume), the
 LLM model catalog, files and storage (signed uploads, revisions, background
-markdown extraction), skills, schedules, integrations (OAuth and API-key
-connections), artifacts (dedicated immutable revisions, approval-gated agent
+markdown extraction), skills, knowledge base, agent memories, the context hub,
+schedules, integrations (OAuth, API-key, and service-account connections),
+artifacts (dedicated immutable revisions, approval-gated agent
 tools, workspace management UI, append-only edit/restore flows, and
 version-pinned anonymous share links with CSP-locked serving), the tool
 catalog, and the audit/security event viewers.
 
 Backend-only for now: notifications (service exists, no routes or UI).
-pgvector is provisioned by migrations but no vector columns exist yet. Keep
+Knowledge Base chunks and agent memories use `HALFVEC` embeddings with HNSW
+indexes provisioned by migrations. Keep
 public behavior explicit — if a capability is not wired end to end, document
 it as pending instead of implying it works.
 

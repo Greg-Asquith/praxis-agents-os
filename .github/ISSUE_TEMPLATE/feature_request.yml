@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a focused improvement to Praxis Agents OS.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should this solve?
+      description: Describe the operator need and who experiences it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you propose?
+      description: Explain the desired outcome rather than prescribing internals.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What alternatives have you considered?
+      description: Include current workarounds and why they are insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add examples, sketches, or links that clarify the request.
+    validations:
+      required: false

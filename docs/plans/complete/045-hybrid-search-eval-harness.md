@@ -64,14 +64,13 @@
   031, 043). No other Phase 4b plan is required — 046/047 consume this
   plan's outputs.
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 4b row 045 + Gate G4; donor `DONOR_PORT_ROADMAP.md` §4.4
-  "Retrieval" / §3 item 5 / §6 row D3)
+  §4 Phase 4b row 045 + Gate G4)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
 
 1. **RRF is computed in SQL, in one statement, never raw-score
-   blending** (donor design law, `DONOR_PORT_ROADMAP.md:302-306`). Two
+   blending** (architecture law). Two
    top-K CTEs — lexical (`tsv @@ websearch_to_tsquery`, ranked by
    `ts_rank_cd`) and semantic (`embedding <=> :qvec`, cosine) — merged by
    `score = Σ 1/(rrf_k + rank)` with `rrf_k = 60` (the literature
@@ -92,8 +91,7 @@
 3. **Pending-embedding lexical fallback is structural, plus one explicit
    degrade path.** Structural: the lexical CTE has no
    `embedding IS NOT NULL` predicate, so chunks 044 ingested but hasn't
-   embedded yet are always findable (the donor's "I just told you that"
-   fix). Explicit: if embedding the *query* fails (provider outage,
+   embedded yet are always findable. Explicitly, if embedding the *query* fails (provider outage,
    missing key), the search runs lexical-only, logs one WARNING, and
    marks the response `mode="lexical_fallback"` — retrieval degrades,
    never 502s, and the response is honest about it.
@@ -126,7 +124,7 @@
    workspace_id=...)` — one small call, counted against the same
    governance §4 workspace budget, deliberately: retrieval volume is
    embedding spend too.
-8. **Reranker: interface only, default none** (donor §7.5: "interface
+8. **Reranker: interface only, default none** (reference §7.5: "interface
    now, implementation never until relevance complaints are real").
    `Reranker` is a Protocol in `services/retrieval/reranker.py`;
    `get_reranker()` reads `KB_RERANKER` (Literal `"none"`, default) and
@@ -141,7 +139,7 @@
    `X-Workspace` via `get_current_workspace`
    (`core/dependencies.py:166-177`). Search is POST because the filter
    object belongs in a body, and the same endpoint serves the 047 UI and
-   (via the service op) 046's `search_knowledge` tool — donor law: the
+   (via the service op) 046's `search_knowledge` tool — reference law: the
    same endpoint serves UI search and agent tools. Document listing/
    management routes are 046/047's, not here.
 10. **The Gate G4 harness is ordinary pytest, seeded through the real
@@ -167,11 +165,9 @@
 ## Why this matters
 
 This is the plan where the knowledge base becomes *usable* — and the plan
-that decides whether retrieval quality is ever measurable. The donor's
-retrieval design (hybrid tsvector+cosine with RRF, lexical fallback,
-SQL-side filters) is the part of its KB that worked and is dictated by
-the subsystem design (`DONOR_PORT_ROADMAP.md:302-306`); its failure was
-having no typed vectors to search and no way to evaluate changes. Gate G4
+that decides whether retrieval quality is ever measurable. The retrieval
+design uses hybrid tsvector+cosine with RRF, lexical fallback, and SQL-side
+filters. Typed vectors and a way to evaluate changes are mandatory. Gate G4
 (`000_MASTER_ROADMAP.md:88-89`) exists because retrieval and
 memory-write tuning without an eval harness is superstition: every
 constant in this plan (rrf_k=60, K=40/40 *(superseded — the plan 074
@@ -746,7 +742,7 @@ Stop and report back (do not improvise) if:
   motivated the change. A tuning PR without harness deltas should be
   blocked in review.
 - **Reranker later**: when relevance complaints are real, implement
-  behind `get_reranker()` (bge-reranker-v2-m3 or an API per the donor
+  behind `get_reranker()` (bge-reranker-v2-m3 or an API per the reference
   note), add a `KB_RERANKER` literal value, and extend the harness with
   cases RRF-alone fails — the interface was built so this is additive.
 - **Result citations**: `char_start`/`char_end` + `document_id` in

@@ -84,6 +84,9 @@ Two audiences, two paths, both foolproof:
 
 - [ ] Add a `migrate` one-shot service to `docker-compose.yml` per D2; flip
       `postgres` dependencies to `condition: service_healthy`.
+- [ ] Set explicit Compose `stop_grace_period` values that cover graceful
+      shutdown: at least 120 seconds for the API and 30 seconds for the
+      worker, so Docker does not terminate either process mid-drain.
 - [ ] Add `/healthz` (liveness, returns 200 with app version, no DB) and
       `/readyz` (checks DB connection) to the API; wire the production
       Dockerfile HEALTHCHECK and a compose healthcheck on `api` to it.

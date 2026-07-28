@@ -39,8 +39,7 @@
   `docs/architecture/governance.md` §4 (embedding budget; Gate G3
   pre-flight above). Plan 044 depends hard on this plan.
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md` §4
-  Phase 4b row 043; donor `DONOR_PORT_ROADMAP.md` §4.4 "Embeddings" / §6
-  row D1)
+  Phase 4b row 043)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -55,7 +54,7 @@
    the base class asserts.
 2. **OpenAI is the default provider; Ollama is the implemented local
    option.** Resolves the roadmap open decision (`000_MASTER_ROADMAP.md`
-   §2 "embedding default"; donor §7.2 recommendation confirmed). Default
+   §2 "embedding default"; reference §7.2 recommendation confirmed). Default
    model `text-embedding-3-small` — the OpenAI chat catalog in
    `services/agents/models/registry.py` uses plain OpenAI model ids
    (`gpt-5.4-mini` style, registry.py:39), and the same plain-id style
@@ -65,7 +64,7 @@
    usable when `EMBEDDINGS_OLLAMA_BASE_URL` is explicitly set (no
    localhost default that could silently point production at nothing).
 3. **Dimensions: 1024 by default, via Matryoshka truncation on OpenAI.**
-   The donor design allows 512–1024 (`DONOR_PORT_ROADMAP.md:317`); we pin
+   The architecture allows 512–1024; we pin
    the default at 1024 (`text-embedding-3-small` native 1536, truncated
    server-side via the API `dimensions` parameter, which renormalizes).
    The settings field accepts 512–1024; models that do not support
@@ -149,9 +148,9 @@
 Every Phase 4b/5 retrieval feature is downstream of one question: "turn
 these texts into vectors, reliably, attributably, and without vendor
 lock-in." Plan 044 embeds KB chunks, 045 embeds search queries, 048 embeds
-memories and dedups by cosine — all through this one seam. The donor
+memories and dedups by cosine — all through this one seam. The reference
 proved the shape (a trimmed provider ABC is called out as the thing to
-port, `DONOR_PORT_ROADMAP.md:314-317`) and also proved the failure mode:
+port) and also proved the failure mode:
 its knowledge-graph vectors were untyped columns filled by ad-hoc calls,
 so no index was possible and no migration path existed. Recording
 provider+model+dims per collection from day one, resolving credentials

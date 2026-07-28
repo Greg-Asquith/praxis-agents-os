@@ -113,6 +113,7 @@ def _production_settings(**overrides: Any) -> Settings:
         "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@db.example.com/postgres?sslmode=require",
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "SECURE_COOKIES": True,
         "INTERNAL_SCHEDULE_TRIGGER_SECRET": "not-a-secret-test-schedule-secret",
         "OPENAI_API_KEY": "sk-test",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
@@ -122,4 +123,4 @@ def _production_settings(**overrides: Any) -> Settings:
         "INTEGRATIONS_OAUTH_REDIRECT_URI": "https://api.example.com/integrations/oauth/callback",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)

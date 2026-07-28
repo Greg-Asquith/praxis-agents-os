@@ -46,13 +46,13 @@
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: HIGH (first anonymous-access surface; unguessable-token
-  authorization; donor §4.6 rule: "treat as high-risk, small, and explicit")
+  authorization; reference §4.6 rule: "treat as high-risk, small, and explicit")
 - **Depends on**: hard — 050 (artifact revisions + CSP-locked serving), 030
   (jobs harness, DONE — sweep kind registration), Gate G3 (satisfied).
   Soft: 035 (files UI revision-diff
   component — reuse if landed, decision 10).
 - **Category**: Phase 6 artifacts (roadmap `000_MASTER_ROADMAP.md` §4
-  Phase 6 row 051; donor `DONOR_PORT_ROADMAP.md` §4.6 / §6 row F2)
+  Phase 6 row 051)
 - **Planned at**: commit `a0eea1c`, 2026-07-06
 
 ## Decisions taken
@@ -196,9 +196,9 @@ shareable. Cards in chat close the loop for the person driving the agent
 (see the report, flip versions, restore); the artifacts page closes it for
 the workspace (find, audit, manage). Share links are the deliberate
 high-stakes slice: the platform has never served anything to an
-unauthenticated caller except HMAC-signed storage capabilities, and the
-donor's history shows anonymous surfaces grown casually become incident
-surfaces. Hence the posture: one route, opaque high-entropy capability
+unauthenticated caller except HMAC-signed storage capabilities, and anonymous
+surfaces grown casually become incident surfaces. Hence the posture: one
+route, opaque high-entropy capability
 tokens stored hashed, version-pinned, expiring by default, revocable,
 audited, rate-limited, swept — and served only through the CSP-locked
 pipeline that already assumes its content is hostile.
@@ -337,7 +337,7 @@ Plan 050 is implemented; re-verify its live contracts at pre-flight.
 - Artifact deletion routes and retention sweep for artifacts themselves
   (only *shares* are swept here; artifact lifecycle follows the files
   policy in a later slice).
-- The interactive Apps system (donor §4.6 "Deferred").
+- The interactive Apps system (reference §4.6 "Deferred").
 - The CSRF enforcement exempt list, CORS config, cookie settings.
 - Rich text/code editors, mermaid client-side rendering libraries.
 
@@ -713,7 +713,7 @@ Stop and report back (do not improvise) if:
 - **"Follow latest" shares** (nullable `version_id`) are the only
   anticipated schema relaxation; they must NOT ship without an explicit
   UI affordance showing share consumers see future edits.
-- **Deferred interactive Apps** (donor §4.6) stay deferred; share links do
+- **Deferred interactive Apps** (reference §4.6) stay deferred; share links do
   not grow postMessage bridges, embed SDKs, or iframe APIs.
 - **Separate-origin enforcement** now lives in the settings validator
   (decision 9). If deployment later terminates the artifact origin at a

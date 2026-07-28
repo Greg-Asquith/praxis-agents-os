@@ -17,13 +17,13 @@
 - **Effort**: M
 - **Risk**: MEDIUM (touches how every agent's tools are built; behavior of
   the two live tools must not change)
-- **Depends on**: none (first plan of roadmap Phase 1; donor design A1)
+- **Depends on**: none (first plan of roadmap Phase 1; architecture A1)
 - **Category**: harness spine (roadmap `000_MASTER_ROADMAP.md` Phase 1)
 - **Planned at**: commit `f83d210`, 2026-07-02
 
 ## Decisions taken
 
-1. **`off` stays "absent from `tool_names`".** The donor's three-mode
+1. **`off` stays "absent from `tool_names`".** The three-mode
    `off/auto/approval` model maps onto the existing representation
    (`tool_names` allowlist + `tool_policies` values `auto|approval`); the
    frontend already models "off" as absence. No agent schema change.
@@ -34,10 +34,10 @@
    Honest incremental over a rename that churns every import.
 3. **Input schemas stay function-signature-derived.** pydantic-ai already
    builds validated input schemas from type hints; a mandatory parallel
-   input model would be schema duplication (the donor's own disease).
+   input model would be schema duplication.
    `output_model` is declared now, **enforced in plan 026** (output-contract
    validation belongs to the dispatch choke point).
-4. **`provider` and `name` are separate structured fields** (donor rule:
+4. **`provider` and `name` are separate structured fields** (design rule:
    never a parsed string). Core tools use `provider="core"`. `name` stays
    globally unique across providers — asserted at import time.
 5. **The catalog endpoint is readable by any authenticated workspace
@@ -61,7 +61,7 @@ that must be kept in sync by hand (the code comment in
 the actual contract: typed definitions, decorator registration with
 import-time invariants, policy-capability metadata that write-time
 validation enforces, and a catalog endpoint. Plans 026 (dispatch/audit) and
-027 (frontend catalog) complete donor Phase A on top of it.
+027 (frontend catalog) complete Phase A on top of it.
 
 ## Current state
 
@@ -231,7 +231,7 @@ tool and its permitted policies. (With both demo tools supporting both
 policies this is a no-op today — the test seam matters: 028's native tools
 and 041's spend tools rely on it.)
 
-Create `permissions.py` with the single permission seam the donor design
+Create `permissions.py` with the single permission seam the architecture
 calls for:
 
 ```python

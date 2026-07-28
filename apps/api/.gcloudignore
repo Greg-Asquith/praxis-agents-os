@@ -94,6 +94,8 @@ lcov.info
 
 # Local development environment overrides
 local-env/
+.local
+.local/
 
 ########################################
 # Terraform (keep lockfile)

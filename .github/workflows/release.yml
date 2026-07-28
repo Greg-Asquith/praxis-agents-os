@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  api-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Build API image
+        id: image
+        env:
+          REGISTRY_IMAGE: ghcr.io/greg-asquith/praxis-agents-os-api
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          image="${REGISTRY_IMAGE}:${version}"
+          docker build --target production --tag "${image}" apps/api
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "latest=${REGISTRY_IMAGE}:latest" >> "${GITHUB_OUTPUT}"
+      - name: Verify local data is excluded
+        run: docker run --rm --entrypoint sh "${{ steps.image.outputs.image }}" -c '! test -d /app/.local'
+      - name: Push API image
+        run: |
+          docker tag "${{ steps.image.outputs.image }}" "${{ steps.image.outputs.latest }}"
+          docker push "${{ steps.image.outputs.image }}"
+          docker push "${{ steps.image.outputs.latest }}"

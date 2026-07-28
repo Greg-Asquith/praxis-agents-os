@@ -25,7 +25,7 @@
 - **Depends on**: 025 (hard); 023 + 026 (soft — only for the audit-viewer
   additive step)
 - **Category**: harness spine, frontend slice (roadmap
-  `000_MASTER_ROADMAP.md` Phase 1; donor design A3)
+  `000_MASTER_ROADMAP.md` Phase 1; architecture A3)
 - **Planned at**: commit `f83d210`, 2026-07-02
 
 ## Decisions taken

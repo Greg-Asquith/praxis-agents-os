@@ -49,13 +49,12 @@ forbid loosening cookie/CSRF/CORS policy.
 
 ### High priority — before any customer deployment
 
-- [ ] **Reject known placeholder secrets outside local.**
-      `core/settings/security.py` validates `SECRET_KEY` only by
-      `min_length=32` and `ENCRYPTION_KEY` only as "valid Fernet" — the
-      `.env.example` placeholders pass both, so a copy-pasted env file boots
-      production with publicly-known signing and encryption keys. Add
-      known-placeholder rejection when `ENVIRONMENT != local` (same pattern
-      as the existing provider validation guard rail). Amend: 002 Stage 0.
+- [x] **Reject known placeholder secrets outside local.**
+      Previously, `core/settings/security.py` validated `SECRET_KEY` only by
+      length and `ENCRYPTION_KEY` only as valid Fernet, so the public examples
+      passed. Completed 2026-07-28 through Lane P launch hardening: the
+      combined settings guard now rejects both example secrets and
+      `SECURE_COOKIES=false` outside local.
 - [ ] **Add security headers to the web tier.** `apps/web/nginx.conf` serves
       the SPA with no HSTS, CSP, `X-Content-Type-Options`,
       `frame-ancestors`/`X-Frame-Options`, or `Referrer-Policy`. The API has
@@ -125,9 +124,9 @@ forbid loosening cookie/CSRF/CORS policy.
 - [ ] **Public assets bucket constraints.** Stage 1 constrains the private
       bucket; mirror for the public one: uniform access, no bucket listing,
       only intended object paths public. Amend: 002 Stage 1.
-- [ ] **CI/CD hardening.** Add GitHub environment protection rules on the
-      prod environment and pin third-party Actions by SHA. Amend: 002
-      Stage 3.
+- [ ] **CI/CD hardening.** GitHub environment protection rules on the prod
+      environment remain part of 002 Stage 3. Third-party Actions were pinned
+      by SHA in Lane P on 2026-07-28 and must not be duplicated there.
 
 ## Verification
 

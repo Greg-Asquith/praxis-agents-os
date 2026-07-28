@@ -21,7 +21,7 @@
 - **Depends on**: 025 (hard — consumes `provider`/`effect`/`output_model`
   from the contract)
 - **Category**: harness spine (roadmap `000_MASTER_ROADMAP.md` Phase 1;
-  donor design A2 extended to delegation)
+  architecture A2 extended to delegation)
 - **Planned at**: commit `f83d210`, 2026-07-02
 
 ## Decisions taken
@@ -266,7 +266,7 @@ is defense in depth).
   `model_validate` the result. On failure: for `effect="read"` raise
   `ModelRetry` naming the schema mismatch; for `effect="write"` raise
   `ModelRetry` whose message **leads with the mutation warning**: "the
-  external action may have completed — verify before retrying" (donor
+  external action may have completed — verify before retrying" (reference
   mutation-tracker rule), and the audit outcome becomes
   `"unverified_mutation"`.
 - `record_invocation(...)` — assembles and fires the Step 2 writer with

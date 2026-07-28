@@ -66,8 +66,7 @@
   Amendment (plan 080))*. Gate G3 satisfied (pre-flight above). Gate G4 note:
   no retrieval tuning happens in this plan; the eval harness lands in 045.
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 4b row 044; donor `DONOR_PORT_ROADMAP.md` §4.4 tables +
-  ingestion / §6 row D2)
+  §4 Phase 4b row 044)
 - **Execution progress**: DONE 2026-07-24. Slice A completed 2026-07-24:
   `core_0020` adds the KB document/chunk schema, generated lexical
   indexes, and cosine HNSW collection; settings, the offset-preserving
@@ -92,8 +91,8 @@ future integration/source/sink, not a dependency of the KB substrate.
 This amends the model shape below with `concept_id` and OKF metadata
 fields while keeping the two-table owned storage design.
 
-1. **Two tables, exactly as the donor design prescribes**
-   (`DONOR_PORT_ROADMAP.md:280-292`): `kb_documents` (workspace-scoped,
+1. **Two tables, exactly as the architecture prescribes**
+  : `kb_documents` (workspace-scoped,
    soft-delete `BaseModel`) and `kb_chunks` (`Base + UUIDMixin +
    TimestampMixin`, NO soft delete — chunks live and die with their
    document via `ondelete="CASCADE"`, mirroring plan 030's decision that
@@ -132,7 +131,7 @@ fields while keeping the two-table owned storage design.
 4. **Contextual annotation defaults: ON for `upload` and `url`, OFF for
    `manual`, `conversation`, and `integration`** — resolving the roadmap
    open decision (`000_MASTER_ROADMAP.md` §2 "contextual-annotation
-   default"; donor §7.3 recommendation confirmed and extended: `manual`
+   default"; reference §7.3 recommendation confirmed and extended: `manual`
    is user-curated text and `integration` rows are already structured, so
    neither benefits enough to pay one LLM pass per chunk). Stored as
    `annotation_enabled` resolved at creation time from source type, with
@@ -206,7 +205,7 @@ fields while keeping the two-table owned storage design.
     (031/033); the KB never stores blobs. The doc-level tsvector covers
     `title + summary` only (the chunk tsv is the retrieval surface;
     a full-document tsvector risks the 1 MB tsvector size ceiling and
-    buys nothing 045 needs) — recorded because the donor design says
+    buys nothing 045 needs) — recorded because the architecture says
     "tsvector column" on documents without specifying its source.
 11. **No content-hash uniqueness constraint; `content_hash` is for change
     detection.** Re-ingesting a doc whose fetched/extracted markdown
@@ -233,9 +232,8 @@ fields while keeping the two-table owned storage design.
 ## Why this matters
 
 This is the knowledge base's foundation slice: the two tables everything
-in Phase 4b/5 reads, and the pipeline that fills them. The donor's KB
-post-mortem is the cautionary tale this plan exists to answer
-(`DONOR_PORT_ROADMAP.md:273-279`): it never chunked (12k-char
+in Phase 4b/5 reads, and the pipeline that fills them. The design avoids a
+known failure mode where content is never chunked (12k-char
 truncation), never had a typed vector column (so HNSW was impossible and
 every semantic query was a seq scan), and bookkept sources three ways.
 Getting `halfvec(1024)` + HNSW + generated tsvectors into the *first*

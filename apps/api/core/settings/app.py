@@ -10,7 +10,7 @@ from pydantic import Field, model_validator
 class AppSettingsMixin:
     # App Configuration
     APP_NAME: str = Field(default="Praxis Agents OS", description="Application name")
-    APP_VERSION: str = Field(default="1.0.0", description="Application version")
+    APP_VERSION: str = Field(default="0.1.0", description="Application version")
 
     # Key Feature Gates
     ALLOW_SIGNUP: bool = Field(default=True, description="Allow new user registrations")

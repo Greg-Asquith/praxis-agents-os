@@ -22,9 +22,7 @@ import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callbac
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
-import { conversationsQueryOptions } from "@/features/conversations/api/list-conversations"
 import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
-import { pendingApprovalsQueryOptions } from "@/features/conversations/api/list-pending-approvals"
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
 import { validateIntegrationsSearch } from "@/features/integrations/search"
 import { contextGroupsQueryOptions } from "@/features/integrations/api/list-context-groups"
@@ -35,7 +33,6 @@ import { validateFilesSearch } from "@/features/files/search"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { memoriesQueryOptions } from "@/features/memories/api/list-memories"
 import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
-import { schedulesQueryOptions } from "@/features/schedules/api/list-schedules"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
 import { ErrorRoute } from "@/routes/error-route"
@@ -114,21 +111,6 @@ const appRoute = createRoute({
 const homeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/",
-  loader: async ({ context }) => {
-    await Promise.all([
-      context.queryClient.ensureQueryData(conversationsQueryOptions({ limit: 100 })),
-      context.queryClient.ensureQueryData(pendingApprovalsQueryOptions()),
-      context.queryClient.ensureQueryData(
-        schedulesQueryOptions({ includeInactive: true, limit: 100 })
-      ),
-      context.queryClient.ensureQueryData(
-        agentsQueryOptions({ includeInactive: false, limit: 100 })
-      ),
-      context.queryClient.ensureQueryData(
-        agentsQueryOptions({ includeInactive: true, limit: 100 })
-      ),
-    ])
-  },
   component: lazyRouteComponent(() => import("@/routes/home"), "HomeRoute"),
 })
 

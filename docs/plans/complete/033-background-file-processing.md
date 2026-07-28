@@ -35,7 +35,7 @@
   machinery (exists today at `0cbbb39`, verified below). Soft:
   `docs/architecture/governance.md` (Gate G3).
 - **Category**: Phase 3 files substrate (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 3 row 033; donor `DONOR_PORT_ROADMAP.md` §4.3 / §6 row B4)
+  §4 Phase 3 row 033)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -143,9 +143,9 @@ This plan closes the Phase 3 loop: 030 built the queue, 031 the schema,
 `read_file`), the KB pipeline (044 chunking/embedding via
 `file_revision_id` + `markdown_object_key`), and the UI (035) all
 consume. It is also deliberately the pattern-setter for every later
-pipeline: the donor ran extraction synchronously inside request handlers
+pipeline: the reference ran extraction synchronously inside request handlers
 and built a second parallel queue when that fell over
-(`DONOR_PORT_ROADMAP.md` §4.3 "never synchronous in the confirm
+(the roadmap §4.3 "never synchronous in the confirm
 request"); this plan demonstrates the sanctioned shape — enqueue at the
 write seam, idempotent handler, honest status lifecycle on the domain
 row, notify only on final failure — that 039 (discovery) and 044
@@ -261,7 +261,7 @@ time.
 - Migrations — 031 shipped every column (that was the point). Finding
   yourself in `alembic/versions/` is a STOP.
 - Any enrichment beyond extraction→markdown: chunking, embedding,
-  contextual annotation, summaries — all 044 (`DONOR_PORT_ROADMAP.md`
+  contextual annotation, summaries — all 044 (the roadmap
   §4.4 pipeline).
 - Multimodal model input (036), agent file tools (034), files UI (035 —
   it renders this plan's status fields, it is not this plan).
@@ -540,9 +540,8 @@ Stop and report back (do not improvise) if:
 
 - **Plan 030 is not implemented at execution time** (no
   `services/jobs/registry.py`, `enqueue_job`, or worker loop) — this
-  plan hard-depends on it; there is no synchronous fallback (the donor's
-  synchronous-confirm mistake is explicitly what this plan exists to
-  avoid).
+  plan hard-depends on it; there is no synchronous fallback because
+  synchronous confirmation processing is explicitly avoided.
 - **Plan 031 or 032 is not implemented** (no processing columns /
   markdown whitelist / confirm seam) — nothing here can start.
 - **The skills document pipeline has moved**: the conversion helpers

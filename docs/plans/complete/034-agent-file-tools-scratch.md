@@ -41,7 +41,7 @@
   system-prompt assembler, and that assembler exists), 025/026/028 (DONE —
   registry contract, dispatch choke point, registry-tool precedents)
 - **Category**: Phase 3 files & jobs (roadmap `000_MASTER_ROADMAP.md` §4
-  row 034; donor `DONOR_PORT_ROADMAP.md` §4.3 / §6 row B5)
+  row 034)
 - **Governance**: implements `docs/architecture/governance.md` §2 (approval
   defaults for `write_file`/`promote_scratch`) and §3 (scratch retention:
   7 d rolling TTL, purge on expiry, delete after promotion)
@@ -146,7 +146,7 @@
     envelope. Scratch being conversation-scoped (decision 5) keeps
     delegated sub-runs isolated for free. This plan adds tests proving the
     envelope denial and scheduled-suspend behavior for `write_file`.
-11. **`search_files` is explicitly deferred** (donor §4.3 names it "rides
+11. **`search_files` is explicitly deferred** (reference §4.3 names it "rides
     the hybrid search engine once KB chunking exists") — it belongs to
     Phase 4b, not here.
 
@@ -154,8 +154,7 @@
 
 Files (031–033) exist so agents can use them. Without this plan the file
 substrate is invisible to the model: uploads land, revisions accrue, and no
-agent can list, read, or produce a file. Scratch is the donor's
-cheapest-loved feature — a place for drafts and intermediate state that
+agent can list, read, or produce a file. Scratch provides a place for drafts and intermediate state that
 costs nothing to write and requires human sign-off only when it graduates
 to a durable File. The `<available_files>` block is the third consumer of
 the Gate G2 assembler (after identity/planning/delegation and skills),

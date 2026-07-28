@@ -28,7 +28,7 @@
 1. **The TODO tool is conversation-scoped and durable** — one row per
    conversation (`conversation_todos`, `core` branch), whole-list-replace
    semantics (`write_todos`) plus `read_todos`. This is our own build,
-   informed by the donor and by the pydantic-ai-todo pattern from NOTES:
+   informed by the reference and by the pydantic-ai-todo pattern from NOTES:
    whole-list replace is what models handle reliably; per-item CRUD invites
    drift. Items are `{content, status}` with status
    `pending|in_progress|completed`, capped (50 items, 500 chars each) — a

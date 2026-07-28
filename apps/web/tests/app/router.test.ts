@@ -14,6 +14,12 @@ describe("conversation route pending behavior", () => {
     expect(router.routesByPath["/context"]).toBeDefined()
   })
 
+  it("defers homepage data reads until the active workspace provider renders", () => {
+    const router = createAppRouter(new QueryClient())
+
+    expect(router.routesByPath["/"].options.loader).toBeUndefined()
+  })
+
   it("keeps only UUID agent preselection values", () => {
     const router = createAppRouter(new QueryClient())
     const validateSearch = router.routesByPath["/conversations/new"].options.validateSearch

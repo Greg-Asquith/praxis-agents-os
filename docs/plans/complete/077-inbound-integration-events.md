@@ -139,8 +139,7 @@
 
 ## Why this matters
 
-The integration slice was designed from the donor's strongest pull
-patterns — discovery jobs, credential refresh, fan-out reads — and it
+The integration slice was designed around pull patterns — discovery jobs, credential refresh, fan-out reads — and it
 shows: every data flow starts with Praxis asking. But the product's
 headline agentic story is reactive ("when a new email arrives, my agent
 triages it"), and reactive requires receipt, verification, dedup, and an

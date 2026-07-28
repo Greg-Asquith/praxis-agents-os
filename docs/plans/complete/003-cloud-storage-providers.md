@@ -3,7 +3,7 @@
 > **Executor instructions**: Follow this plan step by step. This plan implements
 > cloud adapters for the provider-neutral storage package created in Plan 002.
 > Keep the adapters behind `services.storage.provider.StorageProvider`; do not
-> resurrect the donor app's broader file-management service layer.
+> introduce a broader file-management service layer.
 >
 > **Drift check (run first)**:
 > `git diff --stat HEAD -- apps/api/services/storage apps/api/core/settings apps/api/pyproject.toml apps/api/uv.lock apps/api/tests/services/storage apps/api/.env.example`
@@ -43,40 +43,6 @@ The key goal is provider parity for the small storage contract:
 Do not add category uploads, DB file records, tags, revisions, enrichment,
 image-processing workflows, or agent-facing file tools here. Those belong on top
 of this package.
-
-## Donor App Reference
-
-Use the donor app for provider mechanics only:
-
-`/Users/gregasquith/Desktop/Coding/saas-template-828165aabff38ff2f1972433638f8ebf10c4716a/apps/api/services/storage`
-
-Relevant donor files:
-
-- `gcs/storage_service.py`: GCS client creation, ADC fallback, bucket setup, async
-  wrapping of blocking SDK calls.
-- `gcs/signed_urls.py`: V4 signed upload/download URLs, content-type binding, and
-  response content-disposition.
-- `s3/storage_service.py`: boto3 `put_object`, `get_object`, `head_object`,
-  `delete_object`, `generate_presigned_url`, not-found normalization, and public
-  URL construction through `PUBLIC_ASSETS_BASE_URL`.
-- `blob/client.py`: Azure `DefaultAzureCredential`, account URL resolution,
-  public/private container clients, managed identity client ID, and user
-  delegation key caching.
-- `blob/objects.py`: blob upload/download/delete/property lookup and SAS URL
-  generation using user delegation keys.
-- `blob/uploads.py`, `blob/private_io.py`, and `blob/buckets.py`: useful examples
-  of upload/download/delete composition and Azure's lack of dynamic bucket
-  semantics.
-
-Do not copy these donor patterns forward:
-
-- the large `StorageServiceProtocol` in `types.py`,
-- category-specific upload behavior,
-- `upload_base64_*`,
-- tenant/user dynamic bucket APIs,
-- file workflow, tags, revisions, search, enrichment, or image processing,
-- compatibility aliases that reference GCS bucket settings inside S3/Azure
-  bucket resolution.
 
 ## Target Shape
 
@@ -203,7 +169,7 @@ Settings already encode this and adapters must respect it:
 
 ### GCS
 
-Use donor references:
+Use reference references:
 
 - `gcs/storage_service.py`
 - `gcs/signed_urls.py`
@@ -212,7 +178,7 @@ Implementation notes:
 
 - Create a `google.cloud.storage.Client`.
 - Prefer Application Default Credentials.
-- Support the donor's inline/base64 service-account fallback only if the helper
+- Support an inline/base64 service-account fallback only if the helper
   already exists in this repo or can be added cleanly without coupling storage to
   model-provider code.
 - Validate `GCS_PUBLIC_ASSETS_BUCKET` and `GCS_PRIVATE_ASSETS_BUCKET`.
@@ -228,7 +194,7 @@ Implementation notes:
 
 ### S3
 
-Use donor reference:
+Use reference reference:
 
 - `s3/storage_service.py`
 
@@ -254,7 +220,7 @@ Implementation notes:
 
 ### Azure Blob
 
-Use donor references:
+Use reference references:
 
 - `blob/client.py`
 - `blob/objects.py`
@@ -279,8 +245,7 @@ Implementation notes:
 - `delete_object`: delete with snapshots included when present.
 - `create_signed_upload` / `create_signed_download`: generate SAS URLs with user
   delegation keys, not storage account keys.
-- Cache user delegation keys with an expiry buffer, following the donor app's
-  `blob/client.py` approach.
+- Cache user delegation keys with an expiry buffer.
 - Document required Azure roles for SAS generation:
   `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey`.
 - `public_url`: prefer `PUBLIC_ASSETS_BASE_URL`; otherwise build the container

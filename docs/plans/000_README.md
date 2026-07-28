@@ -15,9 +15,9 @@ the stale open-items section was replaced with verified 2.1.0 answers, flagged
 passages were resolved, and the spot-check imports passed.
 
 `000_MASTER_ROADMAP.md` (added 2026-07-02) is the authoritative ordering
-document — it unifies `DONOR_PORT_ROADMAP.md`,
-`docs/legacy/ROADMAP_QUESTIONS_GAPS.md`, and the raw `docs/legacy/NOTES.md`
-into one phased roadmap and reserves plan numbers 021–051. Plans 021–029
+document. It unifies `docs/legacy/ROADMAP_QUESTIONS_GAPS.md` and the raw
+`docs/legacy/NOTES.md` into one phased roadmap and reserves plan numbers
+021–051. Plans 021–029
 were written 2026-07-02 (Lane O, Phase 1, and the Gate G3 note). Plan 030
 was executed 2026-07-06 as the first Phase 3 substrate item; 031 was
 executed 2026-07-06 as the file schema/contract substrate; 032 was
@@ -221,7 +221,7 @@ row-lock revalidation, and paginated connection listing. A 2026-07-13
 correction moved the provider redirect to the frontend and replaced the
 browser-facing API GET with an authenticated, CSRF-protected JSON POST.
 
-`DONOR_PORT_ROADMAP.md` remains the subsystem design reference (tool registry,
+The master roadmap remains the subsystem design reference (tool registry,
 integrations, files, knowledge base, memory, artifacts).
 
 The auxiliary frontend visual-refinement track lives in
@@ -901,7 +901,7 @@ tests and 80 web test files / 383 tests passing, and has moved to
 | 075  | Prompt-injection threat model & adversarial fixture standard (design note, Gate G6)                                    | P1       | M      | 029; binds before 041/046/048 execute                                  | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 076  | Bounded tool results — dispatch truncation + calibrated token estimation                                               | P1       | M      | 026, 066 (hard); before 056 (hard) and 041                             | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 077  | Inbound integration events — webhooks, verification, event-triggered runs (design note)                                | P2       | M      | 029, 030, 061, 054; binds before 037/041 execute                       | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 078  | Public launch readiness — README, community health, supply chain, hardening, first release (Lane P)                    | P0       | XL     | C01, C05, 082 done; launch gate G1 = deployment/001                    | TODO — revised 2026-07-28 against `9d83f9d` for launch week; adds Step 0 pre-flight hardening and launch gates G0–G5 (tag push gated on them)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 078  | Public launch readiness — README, community health, supply chain, hardening, first release (Lane P)                    | P0       | XL     | C01, C05, 082 done; launch gate G1 = deployment/001                    | IN PROGRESS 2026-07-28 — implementation and full gate complete; awaiting maintainer release commit and local `v0.1.0` tag                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 079  | Inbound event receipt spine + Airtable webhooks                                                                        | P2       | L      | 030, 037–039, 041, 054, 077                                            | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 080  | Phase 4a/4b handoff readiness sweep (amendments to 037–042, 044–047; threat-model channels g/h)                        | P1       | S-M    | binds before Phase 4a/4b execute                                       | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 081  | Make agent file inspection content-first and truthful across images and documents                                      | P1       | M      | 034, 036 (before remaining Phase 4 work)                               | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1024,7 +1024,7 @@ Status values: TODO | IN PROGRESS | DONE | DEFERRED (with decision and revisit t
   exposed under `/api/v1/schedules`.
 - `022` marked DONE 2026-07-03: the web app now exposes schedule list,
   create/edit/detail routes, schedule actions, run history with conversation
-  links for approval, and a donor-informed timing selector with natural
+  links for approval, and a timing selector with natural
   language cron summaries. `cronstrue` is now a web dependency for schedule
   display text. `pnpm check` passed from `apps/web`.
 - **2026-07-03 re-verification pass (at `9208c47`)**: all pending plans
@@ -1294,7 +1294,7 @@ tests/services/conversations tests/routes/conversations -q`, and
   DB-backed multimodal/conversation/files tests, and the non-DB fallback
   focused backend suite passed.
 - `061` marked DONE 2026-07-07: a design-note plan (029 mold) motivated by
-  the donor system's everything-always interconnection failure and the
+  the
   product reality that customers want disjoint provider subsets. It
   produced `docs/architecture/integration-packaging.md` (decision D10:
   self-contained, individually-enableable provider packages —

@@ -130,7 +130,7 @@ minimum credible public storefront and makes the act of publishing safe.
     Fernet-parseable) — the moment the repo is public those strings are
     globally known; (c) `SECURE_COOKIES=false` from the example env is
     likewise accepted outside local; (d) a tracked doc leaks a local
-    `/Users/...` path. Larger product gaps (email transport, password
+    developer-home path. Larger product gaps (email transport, password
     reset, email verification, single-box production mode) are explicitly
     **not** pulled into this plan — they are gates or follow-ups.
 12. **README quickstart ownership.** Deployment plan 001 Stage 3 owns the
@@ -153,7 +153,7 @@ launch without code.
 | G2 | **Production self-hosting posture.** Outside `ENVIRONMENT=local`, settings validation (`core/settings/__init__.py:79-101`) rejects `local_fs` storage, `local` secrets, and `console` email — and no email transport is implemented at all (`ses`/`smtp`/`sendgrid` are accepted literals with zero implementation; `.env.example:195-202` documents dead SES config). So "self-hosted production" today requires cloud storage + a cloud secret manager and still has no working email. | Maintainer | Decide: (a) ship an SMTP transport and/or allow `EMAIL_PROVIDER=disabled` plus an S3-compatible endpoint override as a fast-follow plan, or (b) launch with README/deployment docs stating plainly that production deployment targets cloud providers (the GCP plan) and email delivery is pending. Either is honest; silence is not. Do NOT weaken `validate_runtime_provider_config` ad hoc. |
 | G3 | **No password reset exists.** Only `change_password` is implemented; `PASSWORD_RESET_TOKEN_TTL_MINUTES` and its rate limit are dead settings. A self-hoster who forgets their password is stuck at the SQL prompt. | Maintainer | Decide: fast-follow plan (needs G2's email decision), or document the limitation and a recovery runbook (super-admin `PUT /users/{id}/password` via `SUPER_ADMIN_EMAILS`) in the README/FAQ before launch. |
 | G4 | **Super-admin claim window.** Super-admin is granted by email-string match (`core/dependencies.py:155-157`) with open registration (`ALLOW_SIGNUP` default true) and no email verification anywhere (`user.email_verified` exists but nothing reads it). An attacker who registers the operator's intended admin email first owns the instance. | Maintainer (docs now; code later) | Before launch: document the safe ordering prominently (deploy with `ALLOW_SIGNUP=false` → register admin → set `SUPER_ADMIN_EMAILS`) in SECURITY.md's deployment-hardening note and the deployment docs. Real fix (email verification, or refusing super-admin elevation for unverified emails) is a recorded follow-up plan. |
-| G5 | Public-record decisions: the anonymized donor-codebase critique in tracked docs (partially de-anonymized by the path leak Step 0 fixes), `NOTICE`/third-party attribution, and the hardcoded `supportEmail: "support@praxis-agents.ai"` (`apps/web/src/config/app.ts:6`, currently unreferenced) baked into every self-hosted instance. | Maintainer | Record accept/change decisions. All are STOP conditions for the executor, not tasks. |
+| G5 | Public-record source notes, `NOTICE`/third-party attribution posture, and an unused branded support-address constant baked into self-hosted instances. | Maintainer | **Resolved 2026-07-28:** the retired source codebase was owned by the same maintainer, so remove its notes, remove the unused constant, and do not add a `NOTICE` file for that material. |
 
 ## Current state
 
@@ -217,10 +217,9 @@ the revision-pass reports; the anchors below are what the steps rely on.
 - `pnpm audit --prod`: 4 vulnerabilities (3 high), all reached via `shadcn`
   in `dependencies` (`apps/web/package.json:39`) — a scaffolding CLI that
   never enters the browser bundle.
-- `docs/plans/complete/003-cloud-storage-providers.md:51` leaks a local
-  `/Users/gregasquith/...` path naming a private donor repo (the only
-  tracked occurrence; `docs/plans/DONOR_PORT_ROADMAP.md:4` references the
-  same repo name without the path).
+- Tracked planning documents contained private-source references and one
+  absolute developer-home path. Step 0 removes the dedicated source roadmap
+  and source-specific notes while retaining durable technical decisions.
 - Doc drift to fix while touching docs: AGENTS.md still says "pgvector is
   provisioned by migrations but no vector columns exist yet" — false since
   the KB and agent-memory `HALFVEC` columns with HNSW indexes landed
@@ -319,13 +318,11 @@ the revision-pass reports; the anchors below are what the steps rely on.
    note that it landed via Lane P (Step 6).
 3. **`shadcn` → `devDependencies`** in `apps/web/package.json`; run
    `pnpm install` to refresh the lockfile.
-4. **Redact the path leak**: in
-   `docs/plans/complete/003-cloud-storage-providers.md:51` replace the
-   absolute `/Users/...` donor path with a neutral reference (e.g.
-   `<donor-repo>/apps/api/services/storage`). Grep the tracked tree for
-   `Users/gregasquith` and `saas-template-8281` to confirm the only
-   remaining references are the anonymized repo-name mentions the
-   maintainer accepts under G5.
+4. **Remove private-source notes**: delete the dedicated source roadmap and
+   remove source-specific attributions and critiques from tracked planning
+   and architecture documents while retaining durable technical decisions.
+   Grep the tracked tree for absolute developer-home paths and the retired
+   source identifiers to confirm there are no remaining references.
 5. **Declare `logfire`**: `core/observability.py:5` imports `logfire`,
    which resolves only transitively via `pydantic-ai-slim[logfire]`. Add it
    as a direct dependency in `apps/api/pyproject.toml` (`uv add logfire`)
@@ -341,7 +338,7 @@ the revision-pass reports; the anchors below are what the steps rely on.
 **Verify**: the image-contents check from the commands table → no `.local`;
 `cd apps/api && uv run pytest tests/contract tests/core -q` → pass (with the
 new validator tests); `cd apps/web && pnpm audit --prod` → 0
-vulnerabilities; `git grep -n "Users/gregasquith" -- ':!*.local*'` → no
+vulnerabilities; `git grep -n '/''Users/' -- ':!*.local*'` → no
 tracked hits; `make check` → exit 0.
 
 ### Step 1: README upgrade
@@ -539,25 +536,59 @@ must be called out in the report instead: badge URLs returning 200, CodeQL
 completing on the default branch, and the release workflow actually
 publishing (it runs only on a pushed tag). Do not push to test them.
 
+## Execution notes (2026-07-28)
+
+- The GitHub repository is public, so the CodeQL STOP condition does not
+  apply. GitHub private vulnerability reporting is available but currently
+  disabled; the maintainer must enable it in repository settings before
+  launch.
+- G2's honest-documentation fallback is recorded in the README: production
+  currently requires cloud-backed storage and secrets, and email delivery is
+  pending. G3 is also documented: there is no self-service password reset,
+  and operators need a tested super-admin recovery path. G4's safe
+  super-admin claim ordering is in `SECURITY.md`.
+- G5 was resolved by the maintainer on 2026-07-28: source-specific notes were
+  removed, the unused branded support-address constant was removed, and no
+  `NOTICE` file is needed for the retired codebase because it was owned by the
+  same maintainer. Static verification found no remaining retired source
+  identifiers, support-address references, or absolute developer-home paths.
+- The current `pip-audit` rejects the drafted `-r -` stdin form. CI exports a
+  fully hashed requirements file and audits it with `--disable-pip
+  --require-hashes`; the first run found three 2026 advisories in transitive
+  `pyasn1` and the lock was advanced from 0.6.3 to the fixed 0.6.4.
+- After `shadcn` moved to development dependencies, a new PostCSS advisory
+  still entered the production audit through the build-only
+  `@tailwindcss/vite` plugin. It was also reclassified as a development
+  dependency, taking `pnpm audit --prod` to zero without changing the browser
+  bundle.
+- Importing `main` emits an informational setup log on stdout, so the CI
+  OpenAPI export disables Python logging before the import. The resulting
+  artifact is valid JSON without changing application logging behavior.
+- The final repository gate passed twice on 2026-07-28, including after the G5
+  cleanup: `make check` completed with 1,302 backend tests and 410 frontend
+  tests passing. The concurrent home-route loader cleanup made three
+  query-option factories module-private; their stale `export` modifiers were
+  removed so the frontend dead-code gate reflects the new route boundary.
+
 ## Done criteria
 
 Machine-checkable. ALL must hold:
 
-- [ ] Step 0 verifications all pass: production image contains no
+- [x] Step 0 verifications all pass: production image contains no
       `/app/.local`; placeholder `SECRET_KEY`/`ENCRYPTION_KEY` and
       `SECURE_COOKIES=false` are rejected outside `ENVIRONMENT=local`
       (tests prove it); `pnpm audit --prod` → 0; no tracked
-      `Users/gregasquith` path; `logfire` is a declared dependency;
+      absolute developer-home path; `logfire` is a declared dependency;
       AGENTS.md and the user guide no longer contradict shipped features
-- [ ] README regression grep → no matches; local-link check prints `[]`;
+- [x] README regression grep → no matches; local-link check prints `[]`;
       README has badges, positioning, the corrected OpenAPI claim, the
       no-telemetry statement, the Operations section, and architecture +
       plans pointers
-- [ ] Community profile complete: `LICENSE`, `README.md`,
+- [x] Community profile complete: `LICENSE`, `README.md`,
       `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` (with the G4
       hardening note), both issue forms + `config.yml`, and
       `.github/PULL_REQUEST_TEMPLATE.md` all exist and are non-empty
-- [ ] `.github/dependabot.yml`, `codeql.yml`, `release.yml` exist; every
+- [x] `.github/dependabot.yml`, `codeql.yml`, `release.yml` exist; every
       workflow YAML-parses, has a `permissions:` block, and no third-party
       action is tag-pinned (Step 3 grep returns nothing); the `audit` job
       exists with `continue-on-error: true`; CI builds the API production
@@ -566,9 +597,9 @@ Machine-checkable. ALL must hold:
       `apps/api/pyproject.toml`, `apps/web/package.json`, the
       `APP_VERSION` settings default, and `apps/api/.env.example`;
       `git tag --list v0.1.0` → `v0.1.0`
-- [ ] `ci.yml` exports and uploads `openapi.json`; the local export
+- [x] `ci.yml` exports and uploads `openapi.json`; the local export
       command produces valid JSON
-- [ ] `make check` exits 0
+- [x] `make check` exits 0
 - [ ] Step 6 bookkeeping done in all four target docs; G2–G5 decisions
       recorded (or explicitly listed as outstanding in the report — they
       block the tag push, not this plan's completion)
@@ -588,8 +619,8 @@ Stop and report back (do not improvise) if:
   setting — that guard rail stays; G2 is a maintainer decision.
 - The Step 0 validator would reject a value the maintainer actually uses
   in a non-local environment — surface it; do not special-case silently.
-- The donor-codebase critique, the `supportEmail` constant, or anything
-  else under gate G5 needs a judgement call — record and ask.
+- Any future source-attribution or support-contact policy change needs a
+  maintainer judgement call.
 - Anything would enable a billed service — paid CI, external scanning
   SaaS, docs hosting, registries beyond GHCR's free tier. CodeQL and
   Dependabot are free for public repos; if the repo is private when you

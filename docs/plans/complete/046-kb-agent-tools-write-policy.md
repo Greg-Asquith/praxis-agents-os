@@ -78,7 +78,7 @@
   dispatch choke point), Gate G2 / 018 (DONE — prompt assembler). Soft —
   none.
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 4b row 046; donor `DONOR_PORT_ROADMAP.md` §4.4 row D4)
+  §4 Phase 4b row 046)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -112,7 +112,7 @@
 3. **One write-policy file**: `services/kb/write_policy.py`. Every KB
    document write — manual create, URL add, upload confirm, content
    update, privacy change, and any future agent tool — calls
-   `enforce_kb_write_policy(...)` from this single module (donor §4.4
+   `enforce_kb_write_policy(...)` from this single module (reference §4.4
    "one file, not eleven"). Rules in Step 3: provenance required,
    workspace scoping, private-never-shared (one-way `is_private`
    False→True only), pattern-based secret blocking, minimal noise gate.
@@ -162,11 +162,11 @@
 
 Phase 4b's contract (roadmap §1 "Context") is that agents reach knowledge
 through **search tools, not pre-injection** — agentic search over one-shot
-RAG (donor §4.4). That only works if two hard problems are solved at the
+RAG (reference §4.4). That only works if two hard problems are solved at the
 choke points rather than sprinkled around: (1) retrieved documents are the
 canonical prompt-injection vector, so every byte of KB content entering
 the model must arrive visibly framed as untrusted data, in one place; (2)
-the donor's KB decayed because writes had eleven entry points with
+multiple write entry points create
 inconsistent provenance and privacy handling — its one unambiguous law,
 "private-source material can never become workspace-shared", must be
 enforced in exactly one file that every writer (human routes today, agent
@@ -501,7 +501,7 @@ them individually):
    `NotFoundError`, not a validation error — do not leak existence).
    Callers must additionally verify referenced resources (file revision,
    document) belong to the same workspace before calling.
-3. **Private-never-shared** (the donor's hard rule): `is_private` may
+3. **Private-never-shared**: `is_private` may
    transition False→True, never True→False —
    `existing.is_private and not is_private` →
    `AppValidationError("Private knowledge documents cannot be made workspace-shared")`.

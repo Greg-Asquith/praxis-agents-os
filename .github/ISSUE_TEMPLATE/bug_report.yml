@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible problem in Praxis Agents OS.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Praxis Agents OS. Do not include secrets,
+        credentials, or private data. Report security issues privately through
+        the repository Security tab.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      description: Include the smallest reliable sequence of steps.
+      placeholder: |
+        1. Start Praxis with …
+        2. Open …
+        3. Select …
+        4. Observe …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What did you see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the Praxis version, deployment method, browser, and operating system.
+      placeholder: |
+        Praxis version:
+        Deployment:
+        Browser:
+        Operating system:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Remove secrets, tokens, personal data, and customer content first.
+    validations:
+      required: false

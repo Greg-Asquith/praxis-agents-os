@@ -448,7 +448,7 @@ Stop and report back if:
   `build_runtime_tools` must keep deterministic tool ordering. Reviewers should
   treat a violation of either as a caching regression even though nothing
   functionally breaks. If production cached-token ratios are unexpectedly low,
-  add a donor-app-style debug diagnostic that logs stable hashes of the system
+  add a reference-app-style debug diagnostic that logs stable hashes of the system
   prompt and provider-visible tool definitions; do not log raw prompts, tool
   schemas, credentials, or user content.
 - v2 of this feature is token-aware triggering (from the prior run's persisted

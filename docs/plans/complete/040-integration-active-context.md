@@ -50,7 +50,7 @@
    non-soft-delete composition). All on the **core** migration branch
    (roadmap D5).
 2. **One selection value shape everywhere.** The persisted selection is
-   exactly the shape the donor comment on `AgentSchedule.active_context`
+   exactly the shape the reference comment on `AgentSchedule.active_context`
    documents (`models/agent.py:138-140`):
    `{"type": "resource", "integration_resource_id": <uuid>}` or
    `{"type": "context_group", "context_group_id": <uuid>}`. One Pydantic
@@ -99,7 +99,7 @@
    manifest (unknown provider key or resource type fails the process).
    The manifest carries a singular `provider_key` plus `resource_types`;
    `provider_keys` (plural) exists only on this binding.
-7. **The donor law is enforced at import time**: context is
+7. **The reference law is enforced at import time**: context is
    server-resolved; integration tool schemas NEVER take
    account/connection parameters. `validate_definition` rejects any
    integration-bound function tool whose signature declares a parameter
@@ -169,7 +169,7 @@ Recorded so they are not re-proposed; full history in
 
 ## Why this matters
 
-Integrations without active context reproduce the donor's worst UX:
+Integrations without active context create a poor operator experience:
 every tool call asks "which account?", the model guesses, and
 multi-tenant agency work (D3's whole point) becomes prompt roulette.
 This plan is the seam that makes 041's providers safe and usable: the

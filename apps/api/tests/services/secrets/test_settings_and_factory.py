@@ -8,6 +8,9 @@ from cryptography.fernet import Fernet
 from core.settings import Settings, settings
 from services.secrets import factory
 
+LOCAL_EXAMPLE_SECRET_KEY = "not-a-secret-local-development-secret-key-change-me"
+LOCAL_EXAMPLE_ENCRYPTION_KEY = "bm90LWEtc2VjcmV0LWxvY2FsLWRldi1rZXktMDAwMDA="
+
 
 def _production_settings(**overrides: Any) -> Settings:
     values: dict[str, Any] = {
@@ -19,6 +22,7 @@ def _production_settings(**overrides: Any) -> Settings:
         ),
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "SECURE_COOKIES": True,
         "INTERNAL_SCHEDULE_TRIGGER_SECRET": "test-schedule-secret-value",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
         "S3_PRIVATE_ASSETS_BUCKET": "private-assets",
@@ -26,7 +30,7 @@ def _production_settings(**overrides: Any) -> Settings:
         "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 @pytest.mark.parametrize(
@@ -49,6 +53,33 @@ def test_local_master_keys_cannot_leave_local() -> None:
             SECRET_PROVIDER="aws_secrets_manager",  # noqa: S106 - provider selector
             CREDENTIAL_MASTER_KEYS=Fernet.generate_key().decode(),
         )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"SECRET_KEY": LOCAL_EXAMPLE_SECRET_KEY}, "SECRET_KEY"),
+        ({"ENCRYPTION_KEY": LOCAL_EXAMPLE_ENCRYPTION_KEY}, "ENCRYPTION_KEY"),
+        ({"SECURE_COOKIES": False}, "SECURE_COOKIES"),
+    ],
+)
+def test_public_local_security_defaults_cannot_leave_local(overrides, expected) -> None:
+    with pytest.raises(ValueError, match=expected):
+        _production_settings(**overrides)
+
+
+def test_public_local_security_defaults_are_allowed_in_local_environment() -> None:
+    resolved = Settings(
+        _env_file=None,
+        ENVIRONMENT="local",
+        SECRET_KEY=LOCAL_EXAMPLE_SECRET_KEY,
+        ENCRYPTION_KEY=LOCAL_EXAMPLE_ENCRYPTION_KEY,
+        SECURE_COOKIES=False,
+    )
+
+    assert resolved.SECRET_KEY.get_secret_value() == LOCAL_EXAMPLE_SECRET_KEY
+    assert resolved.ENCRYPTION_KEY.get_secret_value() == LOCAL_EXAMPLE_ENCRYPTION_KEY
+    assert resolved.SECURE_COOKIES is False
 
 
 def test_non_local_integration_oauth_redirect_requires_https() -> None:

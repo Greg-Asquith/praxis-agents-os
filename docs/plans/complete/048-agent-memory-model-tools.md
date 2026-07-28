@@ -88,13 +88,13 @@
   (brings the `pgvector` Python package and the halfvec/tsvector column
   precedent this model mirrors; see STOP conditions).
 - **Category**: Phase 5 memory (roadmap `000_MASTER_ROADMAP.md` §4 Phase 5
-  row 048; donor `DONOR_PORT_ROADMAP.md` §4.5 / §6 row E1)
+  row 048)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 - **Completed**: 2026-07-27
 
 ## Decisions taken
 
-1. **Thin layer on KB infrastructure, no memory framework** (donor §4.5,
+1. **Thin layer on KB infrastructure, no memory framework** (reference §4.5,
    binding): no Letta/Mem0/Zep dependency. `agent_memories` is one table
    riding the 043 embeddings ABC and the 045 hybrid engine. `search_memory`
    is NOT a second engine: per 045 decision 2, "the engine" is the shared
@@ -197,13 +197,13 @@
 14. **Roadmap open decision "memory approval defaults"**
     (`docs/legacy/ROADMAP_QUESTIONS_GAPS.md` §Open Product Decisions) —
     resolved here by decision 3. The background consolidation job stays
-    deferred until note sprawl is real (donor §4.5).
+    deferred until note sprawl is real (reference §4.5).
 
 ## Why this matters
 
 Memory is the difference between agents that restart from zero every
-conversation and agents that accumulate working context. The donor's verdict
-(donor roadmap §4.5) is that the winning shape is small and boring: a capped
+conversation and agents that accumulate working context. The chosen design
+(roadmap §4.5) is that the winning shape is small and boring: a capped
 always-injected core plus searchable notes, agent-initiated writes with
 backend-minted provenance, human-visible and human-editable. Everything
 expensive here is already built: 025/026 give memory writes audit and
@@ -791,7 +791,7 @@ Stop and report back (do not improvise) if:
   (plan 013) is unaffected. 049 must keep its rendered core-memory block
   deterministic so the system-prompt prefix only changes when memories
   actually change.
-- **Consolidation stays deferred** until note sprawl is real (donor §4.5);
+- **Consolidation stays deferred** until note sprawl is real (reference §4.5);
   if it arrives, it is a 030 job kind riding the same dedup/supersession
   primitives — not a new lifecycle.
 - Reviewers should scrutinize: the `scope_filter` predicate (the one place

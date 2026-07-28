@@ -14,7 +14,7 @@
 
 ## 1. The problem this solves
 
-The donor system died of interconnection: every integration's tools,
+A tightly coupled integration architecture creates broad failure domains: every integration's tools,
 credentials, and UI were woven through shared modules, so every deployment
 carried every provider, and touching one provider meant regression-testing
 all of them. Praxis will accumulate many providers (Google Ads, Meta,
@@ -41,7 +41,7 @@ Goals, in priority order:
    exactly one `RUNTIME_TOOL_CATALOG`, one dispatch choke point, one
    provider-manifest map, one credential service, one OAuth engine, one
    discovery harness. Provider packages *contribute entries* to these; they
-   never fork or wrap them. The donor's failure was interconnection, not
+   never fork or wrap them. Interconnection is the failure mode, not
    centralization — a single audited dispatch seam is a feature.
 2. **Default-first UI.** Every provider tool MUST ship a complete
    server-declared `ToolPresentation` (icon, status labels, arg/result
@@ -324,9 +324,9 @@ map. No other shared file changes per provider.
 | Boot (frontend) | server catalog is the source of truth | provider card absent; module chunk never requested |
 | Workspace (future) | per-workspace provider toggles on the same `is_tool_allowed` seam | provider hidden for that workspace |
 
-## 7. Old-system failure modes → countermeasures
+## 7. Failure modes → countermeasures
 
-| Donor failure | Countermeasure here |
+| Failure mode | Countermeasure here |
 |---|---|
 | Everything shipped always | boot-time enablement list; lazy web chunks; per-provider extras |
 | Provider logic woven through shared modules | package namespaces + machine-enforced import laws (§4.6, §5.5) |

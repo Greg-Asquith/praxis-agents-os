@@ -35,14 +35,14 @@
   contract categories the UI displays), 034 (soft — scratch/promote chat
   rows), 033 (soft — processing status progression)
 - **Category**: Phase 3 files & jobs (roadmap `000_MASTER_ROADMAP.md` §4
-  row 035; donor `DONOR_PORT_ROADMAP.md` §4.3 "UI" / §6 row B6)
+  row 035)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
 
 1. **One route, sheet for detail.** `/files` is a single table route; the
    detail (metadata, revision history, diff, restore) opens in a `Sheet`
-   keyed by a `fileId` search param, per the donor design ("table + detail
+   keyed by a `fileId` search param, per the architecture ("table + detail
    sheet") — unlike skills/schedules which use `$id` sub-routes, files are
    inspected far more often than edited, and a sheet keeps table context.
    Using a search param (not component state) keeps detail links shareable

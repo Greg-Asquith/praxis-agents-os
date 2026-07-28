@@ -58,7 +58,7 @@
   manual/from-url/from-file, update, delete, reprocess). Soft — 035
   (Files UI upload component; reuse it if it exists, decision 4).
 - **Category**: Phase 4b knowledge base (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 4b row 047; donor `DONOR_PORT_ROADMAP.md` §4.4 row D5)
+  §4 Phase 4b row 047)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -122,7 +122,7 @@ Roadmap pillar 3 ("Surfaces"): nothing an agent can do is invisible. 046
 gives agents `search_knowledge`/`read_document`; without this plan the
 knowledge those tools read is write-only for humans — documents can be
 created only via raw API calls, ingestion failures are silent, and
-private-vs-shared state is invisible. The donor shipped KB backend
+private-vs-shared state is invisible. The reference shipped KB backend
 capability without an operator surface and it rotted unaudited. This plan
 is the product surface: a dense operational table of documents with
 honest processing status (including retries and failures), the three add

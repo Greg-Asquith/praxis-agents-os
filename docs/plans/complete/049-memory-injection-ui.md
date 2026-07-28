@@ -78,7 +78,7 @@
   patterns (detail dialog), 019's skills feature layout (frontend
   precedent).
 - **Category**: Phase 5 memory (roadmap `000_MASTER_ROADMAP.md` §4 Phase 5
-  row 049; donor `DONOR_PORT_ROADMAP.md` §4.5 / §6 row E2)
+  row 049)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 - **Completed**: 2026-07-27
 - **Verification**: relevant backend suite 353 passed; final repository
@@ -106,7 +106,7 @@
    number as the `PromptBlock` budget so the backstop can only fire on a
    formatter bug (the warning log is then the alarm).
 3. **Ranking is global across scopes, deterministic, summary-plus-pointers**
-   (donor §4.5 context-formatter pattern). Candidates: `active` `core`
+   (reference §4.5 context-formatter pattern). Candidates: `active` `core`
    memories for the three visible scopes (agent-scope pinned to the run's
    agent, user-scope to the run's user, workspace-scope), fetched through
    048's `scope_filter` and the partial core-lookup index. Sort key:
@@ -179,7 +179,7 @@ one designed assembler (Gate G2's entire point), and a first-class Memory
 surface lets users read, correct, and delete anything an agent remembered
 — the direct mitigation for memory poisoning that approval flows alone
 can't provide, and a genuine differentiator over black-box extraction
-pipelines (donor §4.5).
+pipelines (reference §4.5).
 
 ## Current state
 
@@ -292,7 +292,7 @@ Anchors verified at `0cbbb39` unless marked as an 048 deliverable.
 - The memory model, write service internals, tools, dedup/decay math, job
   kinds — 048 owns them; this plan only calls them.
 - Note injection of any kind — notes reach the model exclusively through
-  `search_memory` (donor §4.5: "notes come only through search").
+  `search_memory` (reference §4.5: "notes come only through search").
 - Memory creation from the UI. Memories are written by agents (tools) or
   edited by humans; a "new memory" form is not in Phase 5 — document as
   pending if asked.
@@ -337,7 +337,7 @@ Rendering algorithm (pin in the docstring):
    `MEMORY_CORE_LINE_MAX_CHARS` (new 048-mixin setting, default 300) are
    clamped at a word boundary with the pointer suffix
    `… (full text: search_memory("{title}"))` — each line carries the call
-   that fetches its detail (donor summary-plus-pointers pattern).
+   that fetches its detail (reference summary-plus-pointers pattern).
 3. Greedily append ranked lines while the running total (header + lines +
    reserved footer) stays ≤ `budget`. Never truncate mid-line: a line that
    doesn't fit is skipped and counted as omitted (do not continue scanning

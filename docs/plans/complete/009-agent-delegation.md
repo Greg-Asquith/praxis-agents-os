@@ -43,7 +43,7 @@ remaining accountable for the final user-facing answer.
 
 This plan implements delegation as Pydantic AI tools on the primary agent. That
 keeps the main chat simple, preserves visibility and auditability, and avoids
-copying the old donor app's AI SDK runtime.
+copying the AI SDK runtime.
 
 ## Current State
 
@@ -120,11 +120,7 @@ turning the chat into a multi-speaker selector. The primary agent receives
 delegation tools for its allowed_agent_ids.
 ```
 
-## Donor App Lessons
-
-Use the donor app only as behavioral reference. Do not port its AI SDK runtime.
-
-Preserve these ideas:
+## Implementation constraints
 
 - Discovery first, then call: the old prompt used `internal-list_sub_agents`
   before `internal-call_sub_agent`, and told the model to use the exact returned
@@ -314,8 +310,8 @@ async def get_visible_delegate_agent(db, *, caller, workspace, target_agent_id) 
     ...
 ```
 
-It must re-check the allowlist at call time. This mirrors the donor app's
-defense-in-depth resume checks and makes revocation effective immediately.
+It must re-check the allowlist at call time. This defense-in-depth check makes
+revocation effective immediately.
 
 Tests:
 
@@ -371,7 +367,7 @@ Runtime wiring:
 - also add `delegation_depth` to `RuntimeDeps` so future code does not infer
   depth from metadata.
 
-This intentionally preserves the donor app rule: an agent chatted with directly
+The rule is: an agent chatted with directly
 can delegate if configured; an agent currently running as a delegate cannot
 delegate further.
 

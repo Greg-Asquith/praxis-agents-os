@@ -23,8 +23,8 @@
 
 1. **One registry, one dispatch choke point — modular population.** The
    roadmap's Target 1 (single typed registry, single audited choke point)
-   stands. Packaging distributes *contribution*, never *enforcement*. The
-   donor's failure was interconnection, not centralization.
+   stands. Packaging distributes *contribution*, never *enforcement*.
+   Interconnection is the failure mode, not centralization.
 2. **Backend: one package per provider under `apps/api/integrations/`**,
    each exporting a single `IntegrationProviderPlugin` (manifest +
    discovery function + tool definitions). A loader imports only the
@@ -66,8 +66,7 @@
 ## Why this matters
 
 The user-stated product reality: customers want disjoint provider subsets
-(Google Ads + Meta; Gmail + Drive; Microsoft variants; everything). The
-donor system forced everything on everyone and was retired partly for it.
+(Google Ads + Meta; Gmail + Drive; Microsoft variants; everything).
 Plans 037–042 as originally written put all provider code in shared
 service/feature trees — correct engine design, but on the monolith
 trajectory. Deciding packaging *now*, while zero provider code exists, is
@@ -125,7 +124,7 @@ Grounded by codebase exploration at `71ef591` (working tree):
 1. Write `docs/architecture/integration-packaging.md` (§1–§8: problem,
    principles, centralized concerns, backend layout/contract/loader/
    import laws/degradation, frontend modules/boundaries, enablement
-   matrix, donor-failure countermeasures, provider-N+1 checklist).
+   matrix, reference-failure countermeasures, provider-N+1 checklist).
 2. Add amendment blocks to 037, 039, 041, 042 naming the concrete deltas
    (fake provider location, plugin contract + loader in 037's engine,
    provider package paths in 041, web module seam + contract barrel in

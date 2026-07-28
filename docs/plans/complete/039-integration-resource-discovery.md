@@ -88,7 +88,7 @@
    `active`. Every writer (discovery handler, selection service) calls
    it; nothing else assigns those two statuses. All transitions still
    flow through 037's `transition_connection_status` guard.
-6. **Failed discovery keeps the credential** (donor rule: users retry
+6. **Failed discovery keeps the credential** (design rule: users retry
    without reconnecting). Failure path: mark the
    `integration_discovery_runs` row `failed`, transition the connection
    to `degraded` (had a prior succeeded run) or `error` (never

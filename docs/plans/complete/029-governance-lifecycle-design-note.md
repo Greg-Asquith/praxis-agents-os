@@ -73,9 +73,9 @@ resource type before its row exists in these tables.
   job quotas exist.
 - Secrets: OAuth login secrets via env settings; **no secret-manager
   abstraction exists**; `docs/legacy/ROADMAP_QUESTIONS_GAPS.md` §Secret
-  Manager Operations holds the open questions. Donor design:
+  Manager Operations holds the open questions. Architecture:
   references-only (`{provider, name, version}`), resolve at call time
-  (DONOR_PORT_ROADMAP.md §4.2).
+  (the roadmap §4.2).
 - Notifications: `services/notifications/service.py` exists (used for
   invites) — a real substrate the policy can target.
 - `docs/architecture/` exists (`agent-runtime.md`); the note joins it.
@@ -184,7 +184,7 @@ export path. Defaults to transcribe:
 | Security events | append-only | 400 d | n/a | n/a | super-admin only |
 | Conversation todos (028) | rides conversation | with conversation | n/a | digest rows | — |
 
-Plus the two laws: **deletion is symmetric** (rows AND blobs, donor rule) and
+Plus the two laws: **deletion is symmetric** (rows AND blobs, design rule) and
 **audit rows survive their subject's deletion** (FKs already SET NULL —
 cite `models/audit_event.py`).
 
@@ -195,7 +195,7 @@ Defaults: per-workspace storage 10 GB; upload size = existing
 tokens/month/workspace; job concurrency 4/workspace with global worker cap;
 per-run token/step caps = plan 011 + `max_steps`; artifact-share creation
 10/hour/workspace; integration API retries = `Retry-After`-aware with
-bounded attempts (donor rule). All soft limits v1: **counters + admin
+bounded attempts (design rule). All soft limits v1: **counters + admin
 visibility first, hard enforcement second** — the note must say which plan
 adds each counter (030 jobs, 032 storage, 043 embeddings, 051 shares).
 

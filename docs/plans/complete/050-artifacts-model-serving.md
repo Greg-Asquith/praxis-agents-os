@@ -112,7 +112,7 @@
   2026-07-03), Gate G3 (`docs/architecture/governance.md`, satisfied).
   Soft: none. Plan 051 depends on this plan.
 - **Category**: Phase 6 artifacts (roadmap `000_MASTER_ROADMAP.md` §4
-  Phase 6 row 050; donor `DONOR_PORT_ROADMAP.md` §4.6 / §6 row F1)
+  Phase 6 row 050)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -215,10 +215,10 @@
 ## Why this matters
 
 Artifacts are the roadmap's "Surfaces" pillar for agent output: versioned,
-diffable, visible documents instead of chat-scrollback HTML blobs. The donor
+diffable, visible documents instead of chat-scrollback HTML blobs. The reference
 had no lightweight artifact path — a simple HTML report required its full
 Apps machinery (59 route files); we build the missing middle tier and defer
-interactive apps entirely (donor §4.6). The security posture is the actual
+interactive apps entirely (reference §4.6). The security posture is the actual
 deliverable: agent-authored HTML is attacker-controlled input (prompt
 injection is an assumption, not an edge case), and the three-layer defense —
 opaque-origin sandbox, cookie-free dedicated origin, strict CSP with
@@ -338,7 +338,7 @@ All anchors verified at `0cbbb39`. Nothing artifact-shaped exists
 - User-edit / restore / delete routes for artifacts — 051 (delete rides the
   soft-delete column shipped here but gets no route yet).
 - `image-ref` producers (decision 10) and any multimodal work (034/036).
-- The interactive Apps system (donor §4.6 "Deferred") — stays deferred.
+- The interactive Apps system (reference §4.6 "Deferred") — stays deferred.
 - Files models and services — artifact persistence must not depend on them.
 - The CSRF enforcement exempt list (`csrf.py:45-55`) — decision 6 touches
   only the cookie-refresh block.
@@ -513,7 +513,7 @@ Referrer-Policy: no-referrer
 Cache-Control: no-store
 ```
 
-For `markdown`/`mermaid`/`csv` (served as plain text, decision — donor §4.6
+For `markdown`/`mermaid`/`csv` (served as plain text, decision — reference §4.6
 "non-HTML types served as attachment/plain"): `Content-Type: text/plain;
 charset=utf-8`, CSP `default-src 'none'; frame-ancestors {app_origins};
 base-uri 'none'; form-action 'none'; sandbox`, same
@@ -693,8 +693,8 @@ Stop and report back (do not improvise) if:
   the `CREATABLE_ARTIFACT_TYPES` restriction and route creation through the
   same revision chain; the CHECK constraint and serving path are already in
   place.
-- **Deferred interactive Apps** (donor §4.6 "Deferred") stay deferred; if
-  they return, the donor security kernel is the reference — but this plan's
+- **Deferred interactive Apps** (reference §4.6 "Deferred") stay deferred; if
+  they return, the reference security kernel is the reference — but this plan's
   serving discipline (server-served documents, real CSP, no cookies) is the
   baseline they must meet.
 - Reviewers should scrutinize: the uniform-404 discipline in

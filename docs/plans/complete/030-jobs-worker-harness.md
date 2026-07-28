@@ -29,7 +29,7 @@
 - **Depends on**: none hard — this is the Phase 3 substrate. Soft: plan 029
   (Gate G3 pre-flight above); does not depend on any other Phase 3 plan.
 - **Category**: shared substrate (roadmap `000_MASTER_ROADMAP.md` §4
-  Phase 3; donor `DONOR_PORT_ROADMAP.md` §3.4 / §6 row B1)
+  Phase 3)
 - **Planned at**: commit `9208c47`, 2026-07-03
 
 ## Decisions taken
@@ -111,9 +111,9 @@
 Every Phase 3+ pipeline is a background job: file extraction→markdown
 (033), integration resource discovery (039), KB ingestion/chunking/
 embedding (044) — plus the retention sweepers 029 assigns to this harness
-(032 files, 044 KB, 051 shares). The donor built exactly this table
+(032 files, 044 KB, 051 shares). The reference built exactly this table
 (`knowledge_model_jobs`) and then undermined it with a second parallel
-queue; the roadmap's contract (donor §3.4, roadmap D-spine) is that we
+queue; the roadmap's contract (reference §3.4, roadmap D-spine) is that we
 build it **once** and everything queue-shaped rides it. The codebase
 already proves the pattern at small scale — the schedule runner does
 SKIP-LOCKED claiming, TTL leases, bounded retries, and terminal states —

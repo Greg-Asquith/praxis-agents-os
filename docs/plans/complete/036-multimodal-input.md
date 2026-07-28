@@ -46,7 +46,7 @@
   ordered after 035's card work), 034 (soft — prompt disclosure of the
   references this plan creates)
 - **Category**: Phase 3 files & jobs (roadmap `000_MASTER_ROADMAP.md` §4
-  row 036 — "From NOTES; new — not in donor roadmap")
+  row 036 — "From NOTES; new — not in roadmap")
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken

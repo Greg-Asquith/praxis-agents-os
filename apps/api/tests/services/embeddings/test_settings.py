@@ -22,6 +22,7 @@ def _production_settings(**overrides: Any) -> Settings:
         ),
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "SECURE_COOKIES": True,
         "CREDENTIAL_MASTER_KEYS": None,
         "INTERNAL_SCHEDULE_TRIGGER_SECRET": "test-schedule-secret-value",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
@@ -31,7 +32,7 @@ def _production_settings(**overrides: Any) -> Settings:
         "OPENAI_API_KEY": "sk-openai-test",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 def test_embedding_settings_defaults() -> None:

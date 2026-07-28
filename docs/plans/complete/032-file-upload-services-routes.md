@@ -30,7 +30,7 @@
   `@job_handler`, the sweep-kind pattern; the rest of the plan does not
   touch jobs). Soft: `docs/architecture/governance.md` (Gate G3).
 - **Category**: Phase 3 files substrate (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 3 row 032; donor `DONOR_PORT_ROADMAP.md` §4.3 / §6 row B3)
+  §4 Phase 3 row 032)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -42,7 +42,7 @@
    (`services/assets/domain.py:15-20`). The token already binds actor,
    workspace, bucket, object key, content type, and max size with a
    10-minute TTL — exactly what file uploads need. A second token module
-   would be the donor's parallel-frameworks mistake.
+   would create an unnecessary parallel framework.
 2. **Confirm computes the real sha256.** The client-declared
    `content_hash` powers only the request-time dedup fast path; at
    confirm the service reads the stored bytes (`get_object`) and hashes

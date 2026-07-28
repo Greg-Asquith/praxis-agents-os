@@ -37,6 +37,9 @@ from core.settings.scratch import ScratchSettingsMixin
 from core.settings.security import SecuritySettingsMixin
 from core.settings.urls import UrlSettingsMixin
 
+_LOCAL_EXAMPLE_SECRET_KEY = "not-a-secret-local-development-secret-key-change-me"
+_LOCAL_EXAMPLE_ENCRYPTION_KEY = "bm90LWEtc2VjcmV0LWxvY2FsLWRldi1rZXktMDAwMDA="
+
 
 class Settings(
     SettingsBase,
@@ -76,6 +79,21 @@ class Settings(
         never be selected outside the local target, and cloud storage providers
         still require their provider-specific resource names.
         """
+        if self.ENVIRONMENT != "local":
+            if self.SECRET_KEY.get_secret_value() == _LOCAL_EXAMPLE_SECRET_KEY:
+                raise ValueError(
+                    "SECRET_KEY uses the public .env.example placeholder; "
+                    "set SECRET_KEY to a unique secret outside ENVIRONMENT=local"
+                )
+            if self.ENCRYPTION_KEY.get_secret_value() == _LOCAL_EXAMPLE_ENCRYPTION_KEY:
+                raise ValueError(
+                    "ENCRYPTION_KEY uses the public .env.example placeholder; "
+                    "set ENCRYPTION_KEY to a newly generated Fernet key outside "
+                    "ENVIRONMENT=local"
+                )
+            if not self.SECURE_COOKIES:
+                raise ValueError("SECURE_COOKIES must be true outside ENVIRONMENT=local")
+
         if self.STORAGE_PROVIDER == "local_fs" and self.ENVIRONMENT != "local":
             raise ValueError("STORAGE_PROVIDER=local_fs is only allowed when ENVIRONMENT=local")
 

@@ -31,7 +31,7 @@
   conditions). Soft: `docs/architecture/governance.md` (Gate G3, cited
   throughout).
 - **Category**: Phase 3 files substrate (roadmap `000_MASTER_ROADMAP.md`
-  §4 Phase 3 row 031; donor `DONOR_PORT_ROADMAP.md` §4.3 / §6 row B2)
+  §4 Phase 3 row 031)
 - **Planned at**: commit `0cbbb39`, 2026-07-06
 
 ## Decisions taken
@@ -66,8 +66,8 @@
    that constraint is recorded in Maintenance notes as a review rule
    rather than a DB trigger (no trigger precedent in this codebase, and
    the only writers are our own services).
-4. **Exactly-one-actor provenance is a CHECK constraint**, per the donor
-   design (`DONOR_PORT_ROADMAP.md` §4.3): `created_by_user_id` XOR
+4. **Exactly-one-actor provenance is a CHECK constraint**, per the reference
+   design (the roadmap §4.3): `created_by_user_id` XOR
    `created_by_agent_id` XOR `created_by_system`, enforced as a
    three-way-sum CHECK (Step 2). Style follows the existing constraint
    blocks in `models/agent.py:222-230`.
@@ -106,7 +106,7 @@
    (CHECK-enforced both ways) and may share the source revision's
    `object_key` — safe because revisions are never hard-deleted
    individually, only with their whole file (032 sweeps at file
-   granularity), so blob refcounting stays unnecessary (donor §4.3 "one
+   granularity), so blob refcounting stays unnecessary (reference §4.3 "one
    storage path scheme … makes blob refcounting unnecessary").
 9. **Storage key scheme** is the dictated
    `workspaces/{workspace_id}/files/{file_id}/{revision_id}{ext}` in the
@@ -129,11 +129,10 @@ Every remaining Phase 3–6 vertical stands on these three tables: 032's
 upload/edit/restore/delete services, 033's extraction pipeline, 034's
 agent file tools and scratch promotion, 035's files UI, 036's multimodal
 attachments, 044's KB ingestion (which references `file_revision_id` for
-provenance instead of the donor's `KnowledgeSource` triple-bookkeeping),
-and 050's artifacts (which ARE FileRevisions). The donor's
-logical-file/immutable-revision split is called out in
-`DONOR_PORT_ROADMAP.md` §4.3 as "its strongest single idea" — but the
-donor enforced immutability by convention and leaked provenance into
+provenance without duplicating source bookkeeping), and 050's artifacts (which
+ARE FileRevisions). The logical-file/immutable-revision split is foundational,
+but the
+reference enforced immutability by convention and leaked provenance into
 nullable columns nobody checked. This plan lands the invariants as
 schema: CHECK-enforced actor provenance, CHECK-enforced revision kinds,
 listener-enforced immutability, and a strict MIME↔extension contract as

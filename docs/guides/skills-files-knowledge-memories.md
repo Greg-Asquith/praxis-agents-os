@@ -9,7 +9,7 @@ answers a different question:
 | Follow a set of instructions or a process | **Skill** |
 | Work on a specific document right now | **File** |
 | Be able to look things up whenever they're relevant | **Knowledge Base** |
-| Remember things about you and your work over time | **Memories** *(coming soon)* |
+| Remember things about you and your work over time | **Memories** |
 
 ## Skills — teach an agent *how* to do something
 
@@ -79,12 +79,15 @@ turnaround is five business days" is a Knowledge Base entry. When in doubt:
 if it reads like instructions, it's a skill; if it reads like facts, it
 belongs in the Knowledge Base.
 
-## Memories — coming soon
+## Memories — what an agent remembers over time
 
-Memories will let agents remember useful things across conversations —
-your preferences, ongoing projects, decisions you've made — so you don't
-repeat yourself, with full visibility and control over what's remembered.
-This isn't available yet: today, agents start each conversation fresh, apart
-from their skills, files, and the Knowledge Base. Until Memories ships, put
-anything an agent should always know into a skill (if it's instructions) or
-the Knowledge Base (if it's information).
+Memories let agents retain useful context across conversations — your
+preferences, ongoing projects, and decisions — so you do not have to repeat
+yourself. Agents can keep durable core memories and searchable notes, while
+you retain full visibility and control.
+
+The Memory page lets you review what was saved, correct it without losing
+version history, archive it, or permanently remove it. Use a memory when the
+information is personal or evolves through work with an agent; use the
+Knowledge Base for shared reference material that should be available across
+the workspace.

@@ -35,8 +35,7 @@
   the `integration_discovery_runs` table is created now but only written by
   039. Does NOT depend on 031–036.
 - **Category**: Phase 4a integrations, Gate G3 satisfied (roadmap
-  `000_MASTER_ROADMAP.md` §4 Phase 4a row 037; donor `DONOR_PORT_ROADMAP.md`
-  §4.2 / §6 row C1; decisions D3, D4, D5, D11)
+  `000_MASTER_ROADMAP.md` §4 Phase 4a row 037; decisions D3, D4, D5, D11)
 - **Planned at**: commit `0cbbb39`, 2026-07-06. **Consolidated at**
   `63edba9`, 2026-07-10: the amendments from plans 061 (provider
   packaging), 068 (credential encryption posture), 077 (inbound event
@@ -77,7 +76,7 @@ Ruff-formatted.
 
 1. **Full multi-connection per provider (roadmap D3).** There is NO
    one-active-per-provider-per-owner unique index anywhere in this schema —
-   deliberately, against the donor design (`DONOR_PORT_ROADMAP.md` §4.2;
+   deliberately, against the architecture (the roadmap §4.2;
    D3 overrides it). Every connection carries a **required, non-empty,
    user-set `label`** (CHECK-enforced). Duplicate detection of the same
    external principal across connections is a **warning surface via the
@@ -185,7 +184,7 @@ Ruff-formatted.
    OAuth flow (038) is the only token path.
 9. **Locked proactive refresh.** `ensure_fresh_credential` refreshes when
    `token_expires_at - now < INTEGRATIONS_TOKEN_REFRESH_LEEWAY_SECONDS`
-   (default 120, inside the donor's 60–180 s band), serialized per
+   (default 120), serialized per
    credential row with `SELECT ... FOR UPDATE` and a re-read after acquiring
    the lock (rotating refresh tokens die if double-refreshed — the invariant
    is pinned by a two-session test). A refresh-token failure (4xx from the
@@ -213,7 +212,7 @@ Ruff-formatted.
     contains a secret value (governance §5).
 12. **All four tables land in one core migration now**, including
     `integration_discovery_runs`, which only 039 writes — one migration
-    beats three dribbles, and the table shape is fixed by the donor design.
+    beats three dribbles, and the table shape is fixed by the architecture.
     Discovery-run rows are **plain** (`Base + UUIDMixin + TimestampMixin`,
     the `models/rate_limiting.py:16` composition) — governance §3 lists them
     as "plain rows, 90 d"; soft-delete columns on an append-mostly log are
@@ -257,8 +256,8 @@ plan docs and the roadmap decision table.
 - **Token encryption under the app-wide `ENCRYPTION_KEY` and fingerprints
   keyed by `SECRET_KEY`** (the original posture, mirroring `UserAuth`) —
   replaced by the plan 068 posture in decision 4.
-- **Donor's one-active-connection-per-provider partial unique index**
-  (`DONOR_PORT_ROADMAP.md` §4.2) — rejected by D3 in favor of full
+- **One-active-connection-per-provider partial unique index**
+  (the roadmap §4.2) — rejected by D3 in favor of full
   multi-connection.
 - **Full envelope encryption now** — deferred; plan 068 records the
   end-state and revisit triggers.
@@ -266,7 +265,7 @@ plan docs and the roadmap decision table.
 ## Why this matters
 
 Integrations are the platform's first credential-bearing subsystem and the
-donor's strongest design (`DONOR_PORT_ROADMAP.md` §4.2). Everything after
+platform foundation. Everything after
 this in Phase 4a stacks on these tables: 038's OAuth flows write
 credentials and connections, 039's discovery writes resources and
 discovery runs, 040 resolves active context across N connections (D3), 041

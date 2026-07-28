@@ -49,6 +49,7 @@ def _production_settings(**overrides: Any) -> Settings:
         ),
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "SECURE_COOKIES": True,
         "INTERNAL_SCHEDULE_TRIGGER_SECRET": "test-schedule-secret-value",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
         "S3_PRIVATE_ASSETS_BUCKET": "private-assets",
