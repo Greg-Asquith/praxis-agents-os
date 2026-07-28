@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/components/tool-call-row.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -150,7 +152,6 @@ describe("ToolCallRow lifecycle", () => {
               updated_at: "2026-07-17T12:00:00Z",
             },
           ],
-          scratch: [],
           total: 1,
         },
       },
@@ -194,6 +195,33 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).toContain(">Content</p>")
     expect(html).not.toContain("Byte range")
     expect(html).not.toContain("Next read")
+  })
+
+  it("renders artifact results through the dedicated presenter", () => {
+    const html = renderRow(
+      {
+        id: "artifact-1",
+        kind: "result",
+        name: "update_artifact",
+        status: "completed",
+        result: {
+          artifact_id: "artifact-1",
+          version_id: "version-2",
+          title: "Launch map",
+          artifact_type: "mermaid",
+        },
+      },
+      false,
+      [presentation],
+      true
+    )
+
+    expect(html).toContain("Update Artifact")
+    expect(html).toContain("Launch map")
+    expect(html).toContain("Mermaid artifact")
+    expect(html).toContain('aria-label="Open artifact Launch map"')
+    expect(html).not.toContain("Ran update_artifact")
+    expect(html).not.toContain('data-slot="tool-field-well"')
   })
 
   it("renders the todo checklist as a dedicated plan card", () => {

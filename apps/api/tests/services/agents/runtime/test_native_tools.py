@@ -178,7 +178,6 @@ def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> Non
         "build_chart",
         "forget_memory",
         "list_files",
-        "promote_scratch",
         "read_document",
         "read_file",
         "read_todos",

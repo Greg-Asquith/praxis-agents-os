@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/components/internal-tool-rows.test.ts
+
 import { createElement, type ReactElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -8,6 +10,7 @@ import {
   DelegateAgentListRow,
   DelegationToolRow,
 } from "@/features/conversations/components/delegation-tool-row"
+import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
@@ -186,6 +189,72 @@ describe("delegation tool rows", () => {
   })
 })
 
+describe("artifact tool rows", () => {
+  it("renders completed artifacts as actionable entity cards", () => {
+    const html = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          name: "create_artifact",
+          result: {
+            artifact_id: "artifact-1",
+            version_id: "version-1",
+            title: "Quarterly report",
+            artifact_type: "html",
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain("Create Artifact")
+    expect(html).toContain("Quarterly report")
+    expect(html).toContain("HTML artifact")
+    expect(html).toContain('aria-label="Open artifact Quarterly report"')
+    expect(html).toContain(">Open<")
+    expect(html).not.toContain('data-slot="tool-field-well"')
+  })
+
+  it("renders honest running, denied, and malformed states", () => {
+    const running = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          args: { title: "Launch map" },
+          name: "update_artifact",
+          status: "running",
+          result: undefined,
+        }),
+        defaultOpen: false,
+      })
+    )
+    const denied = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          name: "create_artifact",
+          status: "denied",
+          result: undefined,
+        }),
+        defaultOpen: false,
+      })
+    )
+    const malformed = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          name: "create_artifact",
+          result: { artifact_id: "artifact-1" },
+        }),
+        defaultOpen: false,
+      })
+    )
+
+    expect(running).toContain("Updating artifact…")
+    expect(running).toContain("Launch map")
+    expect(running).toContain('aria-busy="true"')
+    expect(denied).toContain("This artifact change was declined. Nothing was saved.")
+    expect(denied).toContain(">Declined<")
+    expect(malformed).toBe("")
+  })
+})
+
 describe("skill tool rows", () => {
   it("renders activation as a non-expandable heading-only card", () => {
     const html = render(
@@ -274,14 +343,6 @@ describe("file tool rows", () => {
                 updated_at: "2026-07-24T10:00:00Z",
               },
             ],
-            scratch: [
-              {
-                name: "notes.md",
-                content_bytes: 64,
-                updated_at: "2026-07-24T09:00:00Z",
-                expires_at: "2026-07-25T09:00:00Z",
-              },
-            ],
             total: 1,
           },
         }),
@@ -292,10 +353,7 @@ describe("file tool rows", () => {
     expect(html).toContain("Workspace Files")
     expect(html).toContain("1 File")
     expect(html).toContain("brief.md")
-    expect(html).toContain("notes.md")
     expect(html).toContain(">Details<")
-    expect(html).toContain("Drafts: 1")
-    expect(html).not.toContain("Kept until")
     expect(html).not.toContain('data-slot="tool-field-well"')
   })
 

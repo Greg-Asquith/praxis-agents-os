@@ -37,7 +37,9 @@ sessions), users, workspaces (memberships, invitations), agents, conversations
 (SSE chat with tool calls and approvals), agent runs (approval resume), the
 LLM model catalog, files and storage (signed uploads, revisions, background
 markdown extraction), skills, schedules, integrations (OAuth and API-key
-connections), the tool catalog, and the audit/security event viewers.
+connections), artifacts (dedicated immutable revisions, approval-gated agent
+tools, and signed CSP-locked serving), the tool catalog, and the
+audit/security event viewers.
 
 Backend-only for now: notifications (service exists, no routes or UI).
 pgvector is provisioned by migrations but no vector columns exist yet. Keep
@@ -48,11 +50,10 @@ it as pending instead of implying it works.
 
 - `docs/plans/000_MASTER_ROADMAP.md` is the authoritative ordering document;
   the table in `docs/plans/000_README.md` tracks per-plan status.
-- The next major verticals are integration resource discovery/context and the
-  first providers (Gmail, Google Ads, Airtable), the knowledge base, agent
-  memory, artifacts, harness hardening with behavior evals, public launch
-  readiness, and — after those — internal applications (plans 082–088,
-  architecture in `docs/architecture/internal-applications.md`).
+- The next major verticals are richer artifact management and sharing,
+  harness hardening with behavior evals, public launch readiness, and — after
+  those — internal applications (plans 082–088, architecture in
+  `docs/architecture/internal-applications.md`).
 - Before executing a numbered plan, read it fully, honor its STOP conditions,
   and update its status row when done. Plans record decisions taken and
   findings rejected — check both before re-proposing something the roadmap

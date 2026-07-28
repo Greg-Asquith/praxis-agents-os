@@ -14,6 +14,7 @@ from core.database import get_async_db_session_factory
 from core.exceptions.auth import AuthorizationError
 from core.rate_limiting import get_client_ip
 from core.settings import settings
+from middleware.utils import _is_artifact_serving_path
 from services.security import SecurityEventType, safe_record_security_event
 from utils.security import generate_csrf_token, verify_csrf_token
 
@@ -198,7 +199,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Auto-refresh the CSRF cookie on every authenticated response so the
         # token never expires while the session is still active.
         session_token = request.cookies.get("session")
-        if session_token and response.status_code < 400:
+        if (
+            session_token
+            and response.status_code < 400
+            and not _is_artifact_serving_path(request.url.path)
+        ):
             fresh_token = generate_csrf_token(session_token)
             cookie_domain = settings.COOKIE_DOMAIN or None
             response.set_cookie(

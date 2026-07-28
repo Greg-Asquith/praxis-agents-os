@@ -1,6 +1,6 @@
 # apps/api/services/agents/runtime/tools/files/list_files.py
 
-"""Runtime tool for listing workspace files and scratch entries."""
+"""Runtime tool for listing workspace files."""
 
 from uuid import UUID
 
@@ -13,10 +13,8 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.files.utils import conversation_scope
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import list_files as list_workspace_files
-from services.scratch import list_scratch_entries
 
 
 class RuntimeFileSummary(BaseModel):
@@ -29,16 +27,8 @@ class RuntimeFileSummary(BaseModel):
     updated_at: str
 
 
-class RuntimeScratchSummary(BaseModel):
-    name: str
-    content_bytes: int
-    updated_at: str
-    expires_at: str
-
-
 class ListFilesOutput(BaseModel):
     files: list[RuntimeFileSummary]
-    scratch: list[RuntimeScratchSummary]
     total: int
 
 
@@ -46,7 +36,7 @@ class ListFilesOutput(BaseModel):
     name="list_files",
     provider="core",
     label="List Files",
-    description="List workspace files and scratch entries readable in the current conversation.",
+    description="List workspace files readable by the current agent.",
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     timeout=10.0,
@@ -72,7 +62,7 @@ async def list_files(
     name_contains: str | None = None,
     limit: int = 25,
 ) -> ListFilesOutput:
-    """List files and scratch entries available to the current agent run."""
+    """List files available to the current agent run."""
     if limit < 1 or limit > 100:
         raise ModelRetry("limit must be between 1 and 100.")
     response = await list_workspace_files(
@@ -80,11 +70,6 @@ async def list_files(
         workspace=ctx.deps.workspace,
         search=name_contains,
         limit=limit,
-    )
-    scratch = await list_scratch_entries(
-        ctx.deps.db,
-        workspace_id=ctx.deps.workspace.id,
-        scope=conversation_scope(ctx),
     )
     return ListFilesOutput(
         files=[
@@ -98,15 +83,6 @@ async def list_files(
                 updated_at=file.updated_at.isoformat(),
             )
             for file in response.files
-        ],
-        scratch=[
-            RuntimeScratchSummary(
-                name=entry.name,
-                content_bytes=entry.content_bytes,
-                updated_at=entry.updated_at.isoformat(),
-                expires_at=entry.expires_at.isoformat(),
-            )
-            for entry in scratch
         ],
         total=response.total,
     )

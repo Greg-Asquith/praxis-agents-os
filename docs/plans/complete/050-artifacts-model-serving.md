@@ -1,3 +1,5 @@
+<!-- docs/plans/complete/050-artifacts-model-serving.md -->
+
 # Plan 050: Artifacts model, registry tools, and CSP-locked serving
 
 > **Executor instructions**: Follow this plan step by step. Run every
@@ -13,14 +15,21 @@
 > artifact-creation approval default) to `[implemented: plan 050]` in the
 > same PR.
 >
-> **Cross-plan pre-flight (run before Step 1)**: this plan was written while
-> plans 030–032 were still TODO, against their dictated contracts. Verify at
-> execution time that 031 (`File`/`FileRevision`/`FileReference` in
-> `apps/api/models/files.py`, immutable revisions, exactly-one-actor
-> provenance, `FileReference.target_type` including `artifact`) and 032
-> (storage keys `workspaces/{workspace_id}/files/{file_id}/{revision_id}{ext}`,
-> signed download URLs, revision-append service) are implemented. If either
-> is missing or its contract diverges from those names, STOP.
+> **Post-review correction (2026-07-28, maintainer decision)**: artifacts
+> and Files are separate aggregates. `ArtifactRevision` owns artifact content
+> and provenance under
+> `workspaces/{workspace_id}/artifacts/{artifact_id}/{revision_id}{ext}`;
+> artifact services never create `File`, `FileRevision`, or `FileReference`
+> rows. Files continue to use `FileRevision`.
+>
+> **Post-review migration repair (2026-07-28)**: the earlier File-backed
+> `core_0023` had already been applied during development, so its migration
+> history remains immutable. `core_0024` removes the File foreign keys and
+> becomes the dedicated-revision schema head. The transitional implementation
+> never shipped and had no durable artifact data; `0024` therefore stops
+> explicitly if it encounters File-backed artifact rows rather than retaining
+> blobs owned by the Files lifecycle. Fresh installs traverse both revisions;
+> already-upgraded empty development databases advance through `0024`.
 >
 > **Drift check (run first)**:
 > `git diff --stat 0cbbb39..HEAD -- apps/api/main.py apps/api/middleware/ apps/api/core/settings/ apps/api/core/dependencies.py apps/api/models/ apps/api/routes/ apps/api/services/agents/runtime/tools/ apps/api/services/storage/ apps/api/utils/security.py`
@@ -70,6 +79,28 @@
 >    CORS header. Plans 084/085 claim them; treat them as reserved, not
 >    dead code.
 
+> **Execution amendment (2026-07-28, maintainer-authorized Files seam)**:
+> Files gained shared `create_file_with_revision` and
+> `append_file_revision` operations for their own direct durable workflow.
+> Artifact services do not consume those operations.
+
+> **Execution amendment (2026-07-28, maintainer-authorized artifact
+> workflow)**: artifacts supersede the agent-visible Files draft/promote
+> workflow. Remove `promote_scratch` from the runtime catalog and remove
+> scratch destinations/results from `write_file`, `read_file`, and
+> `list_files`; `write_file` now creates durable Praxis Files directly.
+> Keep the scratch model, services, and jobs as internal substrate. This
+> amendment permits only the corresponding rich-presenter and test cleanup
+> in `apps/web`; artifact cards, previews, versions, sharing, and editing
+> remain plan 051.
+>
+> **Post-completion amendment (2026-07-28, maintainer-authorized tool UI)**:
+> add first-party `create_artifact`/`update_artifact` transcript rows for
+> live, failure, and completed states. Completed rows show the artifact
+> title/type and mint a fresh signed view URL only when the operator clicks
+> Open. Plan 051 still owns inline sandbox previews, version selection,
+> diff/restore, editing, and sharing.
+
 ## Status
 
 - **Priority**: P2
@@ -77,8 +108,7 @@
 - **Risk**: HIGH (new content-serving surface rendering agent-authored HTML;
   prompt-injected artifacts are assumed hostile — the three-layer defense is
   the point of this plan, not an add-on)
-- **Depends on**: hard — 031 (FileRevisions), 032 (storage keys +
-  revision-append), 025/026 (tool registry + dispatch choke point, DONE
+- **Depends on**: hard — 025/026 (tool registry + dispatch choke point, DONE
   2026-07-03), Gate G3 (`docs/architecture/governance.md`, satisfied).
   Soft: none. Plan 051 depends on this plan.
 - **Category**: Phase 6 artifacts (roadmap `000_MASTER_ROADMAP.md` §4
@@ -87,17 +117,11 @@
 
 ## Decisions taken
 
-1. **Versions ARE FileRevisions — no parallel versioning.** Each artifact
-   owns exactly one `File` (unique FK); its version history is that file's
-   immutable revision chain (031), with agent-authored revisions carrying
-   agent provenance via 031's actor columns (`created_by_agent_id`,
-   exactly-one-actor CHECK; `revision_kind` `create`/`edit` — the donor's
-   `agent_artifact` source vocabulary maps onto 031's landed actor columns,
-   not a new revision kind) and a `FileReference(target_type="artifact")`
-   row linking the file to the artifact. `update_artifact` appends a revision and bumps
-   `current_version_id`; nothing ever mutates a stored revision. User edits
-   (051) append to the same chain with user actor provenance — diff/restore
-   falls out for free.
+1. **Artifacts own dedicated immutable revisions.** Each artifact has an
+   append-only `ArtifactRevision` chain with exactly-one-actor provenance,
+   `create`/`edit`/`restore` kinds, and a current-version pointer.
+   `update_artifact` appends a revision and bumps `current_version_id`;
+   nothing ever mutates stored content. Files remain a separate aggregate.
 2. **Artifact creation defaults to `approval`** per `governance.md` §2:
    artifact creation is an `effect="write"` with external-ish consequences
    (content that can be served and later shared). Both tools register with
@@ -183,9 +207,10 @@
     (`apps/web/src/features/conversations/stream/sse.ts:73-75`), so a new
     server event would break stale clients. Nothing in this plan touches
     the stream protocol.
-13. **This plan is backend-only.** Until 051, `create_artifact` results
-    render through the generic tool row — per AGENTS.md, the pending UI is
-    documented (051), not implied.
+13. **Rich artifact management remains deferred.** First-party transcript
+    rows show create/update lifecycle state and provide an on-demand signed
+    Open action. Plan 051 still owns inline previews, versions, diff/restore,
+    editing, and sharing.
 
 ## Why this matters
 
@@ -263,10 +288,8 @@ All anchors verified at `0cbbb39`. Nothing artifact-shaped exists
   (`TOOL_CALL_ROW_DEFINITIONS`); SSE parser throws on unknown event names
   (`features/conversations/stream/sse.ts:73-75`). Cited here for 051; this
   plan does not touch `apps/web`.
-- **Will exist after 031/032 (dictated, verify at pre-flight)**:
-  `models/files.py` with `File`/`FileRevision`/`FileReference`;
-  a `services/files/` revision-append operation; storage keys
-  `workspaces/{workspace_id}/files/{file_id}/{revision_id}{ext}`.
+- **Artifact persistence**: `models/artifacts.py` owns `Artifact` and
+  `ArtifactRevision`; storage keys use the dedicated `artifacts` namespace.
 
 ## Commands you will need
 
@@ -285,7 +308,7 @@ All anchors verified at `0cbbb39`. Nothing artifact-shaped exists
 
 - `apps/api/core/settings/artifacts.py` (create — `ArtifactSettingsMixin`) +
   `core/settings/__init__.py` (compose; shape-validate `ARTIFACT_ORIGIN`)
-- `apps/api/models/artifacts.py` (create — `Artifact`) +
+- `apps/api/models/artifacts.py` (create — `Artifact`, `ArtifactRevision`) +
   `models/__init__.py` (register import)
 - `apps/api/alembic/versions/core/<next>_add_artifacts.py` (core branch, D5)
 - `apps/api/services/artifacts/` (create): `__init__.py`, `domain.py`,
@@ -309,13 +332,14 @@ All anchors verified at `0cbbb39`. Nothing artifact-shaped exists
 **Out of scope (do NOT touch):**
 
 - Share links, share tokens, the `/artifacts/shared/{token}` route, sweep
-  kinds, and ALL of `apps/web` — plan 051.
+  kinds, inline previews, versions, diff/restore, and editing — plan 051.
+  The post-completion amendment permits only the base artifact tool rows
+  and their on-demand Open action.
 - User-edit / restore / delete routes for artifacts — 051 (delete rides the
   soft-delete column shipped here but gets no route yet).
 - `image-ref` producers (decision 10) and any multimodal work (034/036).
 - The interactive Apps system (donor §4.6 "Deferred") — stays deferred.
-- 031/032 internals — consume their services; never write `File`/
-  `FileRevision` rows directly if an append operation exists.
+- Files models and services — artifact persistence must not depend on them.
 - The CSRF enforcement exempt list (`csrf.py:45-55`) — decision 6 touches
   only the cookie-refresh block.
 
@@ -359,20 +383,22 @@ consistent with `governance.md` §3 files treatment), `__tablename__ =
 - `agent_id` UUID FK `agents.id` ondelete SET NULL, nullable
 - `conversation_id` UUID FK `conversations.id` ondelete SET NULL, nullable
 - `run_id` UUID FK `agent_runs.id` ondelete SET NULL, nullable
-- `file_id` UUID FK `files.id` ondelete RESTRICT, not null, **unique**
-  (decision 1: one File per artifact)
-- `current_version_id` UUID FK `file_revisions.id` ondelete RESTRICT,
-  not null
+- `current_version_id` UUID FK `artifact_revisions.id`, nullable only while
+  inserting the initial revision
 - `artifact_type` String(16) not null, CHECK in
   `('html','markdown','mermaid','csv','image-ref')`
 - `title` String(255) not null
 
-Indexes: `(workspace_id, created_at)`, `(conversation_id)`. Import in
+`ArtifactRevision` stores artifact/workspace ids, ordered revision number,
+kind, content metadata, private object key, exactly-one actor provenance,
+and optional restore source. It is ORM-enforced append-only with unique
+`(artifact_id, revision_number)`.
+
+Indexes: `(workspace_id, created_at)`, `(conversation_id)`. Import both in
 `models/__init__.py`. Generate on the core branch against the live head:
 `uv run alembic revision --autogenerate --head core@head --version-path
-alembic/versions/core -m "add artifacts table"`; hand-check FKs to
-`files`/`file_revisions` resolved (they must exist — 031 landed) and the
-CHECK constraint made it in.
+alembic/versions/core -m "add artifacts table"`; hand-check the circular
+current-version FK and revision CHECK constraints.
 
 **Verify**: `uv run alembic upgrade heads` applies; `uv run alembic check`
 clean; downgrade round-trips
@@ -394,19 +420,14 @@ artifacts, `AppValidationError` for bad types/oversize content):
 
 - `create_artifact.py` — `create_artifact(db, *, workspace, title,
   artifact_type, content, agent=None, conversation=None, run=None,
-  actor_user_id=None) -> tuple[Artifact, FileRevision]`. Validates type ∈
+  actor_user_id=None) -> tuple[Artifact, ArtifactRevision]`. Validates type ∈
   `CREATABLE_ARTIFACT_TYPES` and encoded size ≤
-  `ARTIFACT_MAX_CONTENT_BYTES`; creates the backing `File` + first
-  `FileRevision` **through the 032 revision service** (`revision_kind=
-  'create'` with `created_by_agent_id` provenance for agent actors;
-  031's exactly-one-actor rule decides the provenance columns), storing
-  bytes at the 032 key
-  `workspaces/{workspace_id}/files/{file_id}/{revision_id}{ext}`; creates
-  the `FileReference(target_type="artifact", target_id=artifact.id)`; then
-  the `Artifact` row with `current_version_id`.
+  `ARTIFACT_MAX_CONTENT_BYTES`; creates the `Artifact`, stores content at
+  `workspaces/{workspace_id}/artifacts/{artifact_id}/{revision_id}{ext}`,
+  appends revision 1 with actor provenance, and sets `current_version_id`.
 - `update_artifact.py` — `update_artifact(db, *, workspace, artifact_id,
-  content, title=None, ...actor args) -> tuple[Artifact, FileRevision]`.
-  Appends a revision to the existing chain (same seam), bumps
+  content, title=None, ...actor args) -> tuple[Artifact, ArtifactRevision]`.
+  Appends a revision to the existing artifact chain, bumps
   `current_version_id`, optionally retitles. Type is immutable.
 - `get_artifact.py` — artifact + its version list (id, created_at, actor
   summary, size) read off the revision chain, workspace-scoped,
@@ -569,8 +590,8 @@ blocked in tests):
   `effect == "write"`, `default_policy == "approval"`,
   `supports_approval` true (pinning governance §2); output model declared;
   `CREATABLE_ARTIFACT_TYPES` excludes `image-ref`.
-- `test_create_update_artifact.py`: create writes File + revision +
-  reference + artifact with matching `current_version_id`; update appends a
+- `test_create_update_artifact.py`: create writes an artifact + dedicated
+  revision with matching `current_version_id`; update appends a
   second revision (chain length 2, first revision bytes unchanged in
   storage — immutability observed end to end); oversize content →
   validation error; bad type → validation error; cross-workspace update →
@@ -593,9 +614,8 @@ blocked in tests):
 - `test_artifact_routes.py`: list/get/content shapes; workspace scoping;
   `view-url` returns a URL that the serving route then accepts (round-trip);
   content endpoint returns the exact stored string.
-- Factory helper in `tests/factories/` building an artifact over a real
-  File/FileRevision chain (reuse 031/032 factories — do not hand-roll
-  files rows).
+- Factory helpers in `tests/factories/` build Artifact and
+  ArtifactRevision rows.
 
 **Verify**: `TEST_DATABASE_URL=... uv run pytest tests/services/artifacts
 tests/routes/artifacts -q` all pass; without the env var, DB tests skip.
@@ -606,37 +626,35 @@ Covered by Step 7 (~20–24 tests). Pinned invariants: **the serving response
 headers are exact and cookie-free** (CSP byte-match, nosniff, no-referrer,
 no-store, no Set-Cookie even with a session cookie present), **capability
 URLs fail closed** (tamper/expiry/cross-chain/deleted → uniform 404),
-**versions ride the 031 chain immutably** (update appends, never mutates),
+**versions use a dedicated immutable chain** (update appends, never mutates),
 and **both tools are write-classified with approval default** (governance
 §2 pinned in a test so a policy regression is loud).
 
 ## Done criteria
 
-- [ ] `uv run ruff check .` exits 0
-- [ ] `uv run alembic check` clean; migration on the **core** branch (D5);
+- [x] `uv run ruff check .` exits 0
+- [x] `uv run alembic check` clean; migration on the **core** branch (D5);
       downgrade round-trips
-- [ ] Registry lists exactly `create_artifact` and `update_artifact` as the
+- [x] Registry lists exactly `create_artifact` and `update_artifact` as the
       artifact tools, `effect=write`, `default_policy=approval`
-- [ ] `TEST_DATABASE_URL=... uv run pytest tests/services/artifacts tests/routes/artifacts -q` exits 0
-- [ ] Serving route returns the exact Step 5 headers; no `Set-Cookie` under
+- [x] `TEST_DATABASE_URL=... uv run pytest tests/services/artifacts tests/routes/artifacts -q` exits 0
+- [x] Serving route returns the exact Step 5 headers; no `Set-Cookie` under
       any request shape; GET-only; no auth dependency; no CSRF exempt-list
       change (`git diff apps/api/middleware/csrf.py` touches only the
       refresh block)
-- [ ] `main.py` middleware ordering comment unchanged and still accurate
-- [ ] No `apps/web` changes; no share/token/sweep code (051)
-- [ ] `docs/architecture/governance.md` §1/§2 artifact cells flipped to
+- [x] `main.py` middleware ordering comment unchanged and still accurate
+- [x] Artifact `apps/web` work is limited to first-party tool rows and an
+      on-demand signed Open action; no preview/version/edit/share/sweep code
+      (051)
+- [x] `docs/architecture/governance.md` §1/§2 artifact cells flipped to
       `[implemented: plan 050]` in the same PR
-- [ ] `git status` clean outside the in-scope list
-- [ ] `docs/plans/000_README.md` status row updated (add the 050 row)
+- [x] `git status` clean outside the in-scope list
+- [x] `docs/plans/000_README.md` status row updated (add the 050 row)
 
 ## STOP conditions
 
 Stop and report back (do not improvise) if:
 
-- The cross-plan pre-flight fails: 031 or 032 is not implemented, or their
-  landed contract diverges from the dictated names
-  (`File`/`FileRevision`/`FileReference`, `target_type="artifact"`, the
-  storage key scheme, a revision-append service).
 - An `artifacts` table, `models/artifacts.py`, or `services/artifacts/`
   already exists.
 - The `main.py:75-89` middleware ordering comment no longer matches the
@@ -652,7 +670,8 @@ Stop and report back (do not improvise) if:
 - The governance note's §2 default for artifact creation has changed from
   `approval` — reconcile before registering the tools.
 - You feel the need to add share tokens, anonymous non-signed access, new
-  SSE event names, or frontend code — scope leaking into 051.
+  SSE event names, or artifact-specific frontend code — scope leaking into
+  051. Removing retired draft/promote presenter code is expressly allowed.
 
 ## Maintenance notes
 

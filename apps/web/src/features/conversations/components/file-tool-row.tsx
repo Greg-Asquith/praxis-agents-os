@@ -4,7 +4,6 @@ import {
   FileIcon,
   FilePlus2Icon,
   FilesIcon,
-  FileTextIcon,
   ImageIcon,
   SearchIcon,
   type LucideIcon,
@@ -23,7 +22,6 @@ import {
   type ReadFileImageToolResult,
   type ReadFileStatusToolResult,
   type ReadFileUrlToolResult,
-  fileEntityFromPromoteResult,
   fileEntityFromReadContentResult,
   fileEntityFromReadImageResult,
   fileEntityFromReadStatusResult,
@@ -32,14 +30,11 @@ import {
   fileEntityFromWriteResult,
   listFilesResult,
   LIST_FILES_TOOL_NAME,
-  promoteScratchResult,
-  PROMOTE_SCRATCH_TOOL_NAME,
   readFileContentResult,
   readFileImageResult,
   readFileStatusResult,
   READ_FILE_TOOL_NAME,
   readFileUrlResult,
-  writeFileContentArg,
   writeFileResult,
   WRITE_FILE_TOOL_NAME,
 } from "@/features/conversations/native-tools/file-tools"
@@ -74,9 +69,6 @@ export function FileToolRow({ activity, defaultOpen }: FileToolRowProps) {
   if (activity.name === WRITE_FILE_TOOL_NAME) {
     return <WriteFileRow activity={activity} defaultOpen={defaultOpen} />
   }
-  if (activity.name === PROMOTE_SCRATCH_TOOL_NAME) {
-    return <PromoteScratchRow activity={activity} defaultOpen={defaultOpen} />
-  }
   if (activity.name === READ_FILE_TOOL_NAME) {
     return <ReadFileRow activity={activity} defaultOpen={defaultOpen} />
   }
@@ -93,20 +85,11 @@ function ListFilesRow({
   }
 
   const countLabel = `${String(result.total)} ${pluralize(result.total, "File")}`
-  const draftDetails = result.scratch.map((entry) => ({
-    label: `Draft · ${entry.name}`,
-    summary: false,
-    value: `${formatBytes(entry.content_bytes)} · Updated ${formatDateTime(entry.updated_at)} · Kept until ${formatDateTime(entry.expires_at)}`,
-  }))
   return (
     <ToolResultCard
       ariaLabel="Workspace files"
       defaultOpen={defaultOpen}
-      details={[
-        { label: "Files", value: countLabel },
-        { label: "Drafts", value: String(result.scratch.length) },
-        ...draftDetails,
-      ]}
+      details={[{ label: "Files", value: countLabel }]}
       heading={<FileToolHeading icon={FilesIcon}>Workspace Files</FileToolHeading>}
       trailing={<Badge variant="success">{countLabel}</Badge>}
     >
@@ -124,23 +107,6 @@ function ListFilesRow({
             No workspace files found.
           </p>
         )}
-        {result.scratch.length > 0 ? (
-          <div className="border-border/70 overflow-hidden rounded-lg border">
-            <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">
-              Drafts · {String(result.scratch.length)}
-            </p>
-            <div className="divide-border divide-y">
-              {result.scratch.map((entry) => (
-                <div className="flex min-w-0 items-center gap-2.5 px-3 py-2" key={entry.name}>
-                  <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md border">
-                    <FileTextIcon className="size-4" />
-                  </span>
-                  <span className="min-w-0 truncate text-sm font-medium">{entry.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </ToolResultCard>
   )
@@ -156,58 +122,18 @@ function WriteFileRow({
   }
 
   const file = fileEntityFromWriteResult(result)
-  const isScratch = result.destination === "scratch"
-  const scratchContent = isScratch ? writeFileContentArg(activity.args) : null
-  const heading = isScratch ? "Save Draft" : "Save File"
   return (
     <ToolResultCard
-      ariaLabel={isScratch ? `Saved draft ${result.name}` : `Saved file ${result.name}`}
-      defaultOpen={defaultOpen}
-      details={[
-        { label: isScratch ? "Draft" : "File", value: result.name },
-        { label: "Size", value: formatBytes(result.bytes_written) },
-        ...(result.expires_at
-          ? [{ label: "Kept Until", value: formatDateTime(result.expires_at) }]
-          : []),
-      ]}
-      heading={<FileToolHeading icon={FilePlus2Icon}>{heading}</FileToolHeading>}
-      trailing={<ActivityStatusBadge status={activity.status} />}
-    >
-      <div className="grid min-w-0 gap-3">
-        {file ? <FileEntityRow file={file} /> : null}
-        {isScratch ? (
-          <p className="text-muted-foreground text-sm">
-            Saved {result.name} as a temporary draft
-            {result.expires_at ? ` until ${formatDateTime(result.expires_at)}` : ""}.
-          </p>
-        ) : null}
-        {scratchContent ? <FileContentBlock name={result.name} value={scratchContent} /> : null}
-      </div>
-    </ToolResultCard>
-  )
-}
-
-function PromoteScratchRow({
-  activity,
-  defaultOpen,
-}: Pick<FileToolRowProps, "activity" | "defaultOpen">) {
-  const result = promoteScratchResult(activity.result)
-  if (!result) {
-    return null
-  }
-
-  return (
-    <ToolResultCard
-      ariaLabel={`Saved ${result.name} to workspace files`}
+      ariaLabel={`Saved file ${result.name}`}
       defaultOpen={defaultOpen}
       details={[
         { label: "File", value: result.name },
-        { label: "Draft Removed", value: result.deleted_scratch ? "Yes" : "No" },
+        { label: "Size", value: formatBytes(result.bytes_written) },
       ]}
-      heading={<FileToolHeading icon={FilePlus2Icon}>Save Draft to Files</FileToolHeading>}
+      heading={<FileToolHeading icon={FilePlus2Icon}>Save File</FileToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
-      <FileEntityRow file={fileEntityFromPromoteResult(result)} />
+      <FileEntityRow file={file} />
     </ToolResultCard>
   )
 }
@@ -264,14 +190,13 @@ function ReadFileContentRow({
   result,
 }: Pick<FileToolRowProps, "activity" | "defaultOpen"> & { result: ReadFileContentToolResult }) {
   const file = fileEntityFromReadContentResult(result)
-  const isScratch = result.kind === "scratch" || (!result.file_id && Boolean(result.name))
   const bytesRead = result.end_offset - result.offset
   return (
     <ReadFileCard
       activity={activity}
       defaultOpen={defaultOpen}
       details={[
-        ...(result.name ? [{ label: isScratch ? "Draft" : "File", value: result.name }] : []),
+        ...(result.name ? [{ label: "File", value: result.name }] : []),
         {
           label: "Content Read",
           value: `${formatBytes(bytesRead)} of ${formatBytes(result.total_bytes)}`,
@@ -284,7 +209,7 @@ function ReadFileContentRow({
           ? [{ label: "Kept Until", value: formatDateTime(result.expires_at), summary: false }]
           : []),
       ]}
-      heading={isScratch ? "Read Draft" : "Read File"}
+      heading="Read File"
       icon={SearchIcon}
     >
       <div className="grid min-w-0 gap-3">
@@ -446,14 +371,6 @@ function filePendingState(name: string) {
       icon: FilePlus2Icon,
       runningLabel: "Saving file…",
       waitingLabel: "Waiting to save file…",
-    }
-  }
-  if (name === PROMOTE_SCRATCH_TOOL_NAME) {
-    return {
-      heading: "Save Draft to Files",
-      icon: FilePlus2Icon,
-      runningLabel: "Saving draft…",
-      waitingLabel: "Waiting to save draft…",
     }
   }
   if (name === READ_FILE_TOOL_NAME) {

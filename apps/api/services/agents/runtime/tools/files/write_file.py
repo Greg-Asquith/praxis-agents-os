@@ -1,9 +1,8 @@
 # apps/api/services/agents/runtime/tools/files/write_file.py
 
-"""Runtime tool for writing scratch entries and approved durable files."""
+"""Runtime tool for writing approved durable files."""
 
 import logging
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -23,28 +22,29 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.files.utils import conversation_scope
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import write_agent_file
-from services.scratch import upsert_scratch_entry
 
 logger = logging.getLogger(__name__)
 
 
 class WriteFileOutput(BaseModel):
-    destination: Literal["scratch", "file"]
     name: str
     bytes_written: int
-    file_id: UUID | None = None
-    revision_id: UUID | None = None
-    expires_at: str | None = None
+    file_id: UUID
+    revision_id: UUID
 
 
 @runtime_tool(
     name="write_file",
     provider="core",
     label="Save File",
-    description="Write UTF-8 text to scratch automatically, or create/edit a durable file after approval.",
+    description=(
+        "Create or edit a durable UTF-8 file in the workspace's document store. "
+        "Use for data, notes, and working documents the workspace keeps for "
+        "reference and later work; use create_artifact for reports and documents "
+        "the user will view, revise, or share."
+    ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
     default_policy=TOOL_POLICY_AUTO,
@@ -82,37 +82,11 @@ async def write_file(
     ctx: RunContext[RuntimeDeps],
     name: str,
     content: str | None = None,
-    destination: Literal["scratch", "file"] = "scratch",
     file_id: UUID | None = None,
     expected_current_revision_id: UUID | None = None,
     content_ref: str | None = None,
 ) -> WriteFileOutput:
-    """Write scratch or approved durable file content."""
-    if destination == "scratch":
-        if content_ref is not None:
-            raise ModelRetry("content_ref is only used for approved durable file writes.")
-        if content is None:
-            raise ModelRetry("content is required when writing scratch.")
-        try:
-            entry = await upsert_scratch_entry(
-                ctx.deps.db,
-                workspace_id=ctx.deps.workspace.id,
-                scope=conversation_scope(ctx),
-                name=name,
-                content=content,
-                created_by_run_id=ctx.deps.run.id,
-            )
-        except AppValidationError as exc:
-            raise ModelRetry(exc.message) from exc
-        return WriteFileOutput(
-            destination="scratch",
-            name=entry.name,
-            bytes_written=entry.content_bytes,
-            expires_at=entry.expires_at.isoformat(),
-        )
-
-    if destination != "file":
-        raise ModelRetry("destination must be either 'scratch' or 'file'.")
+    """Write approved durable file content."""
     if content is not None and content_ref is not None:
         raise ModelRetry("Provide content or content_ref, not both.")
     if not ctx.tool_call_approved:
@@ -127,7 +101,6 @@ async def write_file(
             )
         raise ApprovalRequired(
             metadata={
-                "destination": "file",
                 "name": name,
                 "bytes": content_bytes,
             }
@@ -169,7 +142,6 @@ async def write_file(
                 exc_info=True,
             )
     return WriteFileOutput(
-        destination="file",
         name=result.file.name,
         file_id=result.file.id,
         revision_id=result.revision.id,

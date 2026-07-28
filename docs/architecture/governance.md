@@ -45,7 +45,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Create/edit KB documents (044/046) *[implemented: plan 046]* | — | ✓ | ✓ | ✓ |
 | Delete workspace-scope memories (049) *[implemented: plan 049]* | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) *[implemented: plan 049]* | — | ✓ | ✓ | ✓ |
-| Create artifacts via agents (050) | follows tool policy | ✓ | ✓ | ✓ |
+| Create artifacts via agents (050) *[implemented: plan 050]* | follows tool policy | ✓ | ✓ | ✓ |
 | Create/revoke artifact share links (051) | — | — | ✓ | ✓ |
 | View audit log *(enforced today: 023 MANAGER)* | — | — | ✓ | ✓ |
 | View security events *(enforced today: 023 super-admin only — `security_events` has no workspace column)* | — | — | — | — |
@@ -74,8 +74,8 @@ point, per-agent `tool_policies`); this section is the policy law:
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
   scratch, Praxis Files, memory notes, KB documents — D9: Praxis owns the
   KB) are internal in the run envelope. Their tool-level approval policy
-  can still be stricter: durable Praxis file writes and scratch promotion
-  require approval even though they do not cross the Praxis boundary, and
+  can still be stricter: durable Praxis file writes require approval even
+  though they do not cross the Praxis boundary, and
   agent-initiated KB document writes default `approval` through plan 046's
   write-policy choke point. [implemented: plan 028 for todos; implemented:
   plans 034/054 for scratch and Praxis Files; implemented: plan 048 for
@@ -88,7 +88,7 @@ point, per-agent `tool_policies`); this section is the policy law:
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. [integrations implemented:
-  plan 041; artifacts and external KB targets pending]
+  plans 041 and 050; external KB targets pending]
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. [implemented: plan 041 Slice B]
@@ -116,7 +116,7 @@ registered by the owning plan). All values `[default — confirm at review]`.
 | Resource | Soft delete | Hard delete after | Storage cascade | Audit survives | Export |
 |---|---|---|---|---|---|
 | Files/FileRevisions (031/032) | ✓ [implemented: plan 031 schema + plan 032 lifecycle] | 30 d [implemented: plan 032] | tombstone blob; sweeper deletes both [implemented: plan 032] | ✓ [implemented: plan 032 mutation audit] | ✓ (single-file signed downloads shipped in 032; signed URL batch unplanned) [default — confirm at review] |
-| Scratch (034) | TTL expiry [implemented: plan 034] | 7 d rolling TTL; purge content on expiry; delete after promotion [implemented: plan 034] | n/a (DB text) [implemented: plan 034] | rows summarized [implemented: plan 034] | — |
+| Scratch (034) | TTL expiry [implemented: plan 034] | 7 d rolling TTL; purge content on expiry; agent-visible promotion retired by plan 050 [implemented: plans 034/050] | n/a (DB text) [implemented: plan 034] | rows summarized [implemented: plan 034] | — |
 | Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
 | KB documents/chunks/embeddings (044) | ✓ [implemented: plan 044] | 30 d after soft-delete; chunks/vectors cascade on hard-delete [implemented: plan 044] | n/a (canonical markdown in Postgres) [implemented: plan 044] | ✓ (audit rows have no subject FK; mutation audit lands with routes) [implemented: plan 044 retention posture] | ✓ (canonical markdown) [implemented: plan 044] |
 | Memories (048–049) *[implemented: plans 048–049]* | supersession and archive by default | archive at `expires_at`; hard-delete only by an explicit user purge [implemented: plan 049] | n/a | ✓ | ✓ |

@@ -12,6 +12,7 @@ from pydantic_settings import SettingsConfigDict
 
 from core.settings.agents import AgentRunSettingsMixin
 from core.settings.app import AppSettingsMixin
+from core.settings.artifacts import ArtifactSettingsMixin
 from core.settings.auth import AuthSettingsMixin
 from core.settings.aws import AwsSettingsMixin
 from core.settings.azure import AzureSettingsMixin
@@ -38,6 +39,7 @@ class Settings(
     SettingsBase,
     AgentRunSettingsMixin,
     AppSettingsMixin,
+    ArtifactSettingsMixin,
     AuthSettingsMixin,
     AwsSettingsMixin,
     AzureSettingsMixin,

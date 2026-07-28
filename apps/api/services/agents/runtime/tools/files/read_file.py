@@ -1,6 +1,6 @@
 # apps/api/services/agents/runtime/tools/files/read_file.py
 
-"""Runtime tool for reading workspace files and scratch entries."""
+"""Runtime tool for reading workspace files."""
 
 from datetime import timedelta
 from typing import Literal
@@ -9,7 +9,6 @@ from uuid import UUID
 from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.messages import BinaryContent
 
-from core.exceptions.general import AppValidationError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -19,7 +18,6 @@ from services.agents.runtime.tools.contract import (
 from services.agents.runtime.tools.files.utils import (
     agent_model_supports_vision,
     content_limit,
-    conversation_scope,
     current_file_revision,
     file_metadata,
     processing_guidance,
@@ -28,7 +26,6 @@ from services.agents.runtime.tools.files.utils import (
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
-from services.scratch import read_scratch_entry
 from services.storage.factory import get_storage_provider
 
 
@@ -37,7 +34,7 @@ from services.storage.factory import get_storage_provider
     provider="core",
     label="Read File",
     description=(
-        "Inspect a workspace file by id or a scratch entry by name. "
+        "Inspect a workspace file by id. "
         "Use content mode for inspection; use url mode only when the user needs a download."
     ),
     effect=TOOL_EFFECT_READ,
@@ -50,51 +47,20 @@ from services.storage.factory import get_storage_provider
         running_label="Reading a File",
         completed_label="Read a File",
         failed_label="Couldn't Read the File",
-        arg_fields=(
-            ToolFieldPresentation(key="scratch_name", label="Draft"),
-            ToolFieldPresentation(key="mode", label="Read As", secondary=True),
-        ),
+        arg_fields=(ToolFieldPresentation(key="mode", label="Read As", secondary=True),),
     ),
 )
 async def read_file(
     ctx: RunContext[RuntimeDeps],
-    file_id: UUID | None = None,
-    scratch_name: str | None = None,
+    file_id: UUID,
     mode: Literal["content", "url"] = "content",
     offset: int = 0,
     max_bytes: int | None = None,
 ):
-    """Read file content, file signed URLs, or scratch content."""
-    if (file_id is None) == (scratch_name is None):
-        raise ModelRetry("Provide exactly one of file_id or scratch_name.")
+    """Read file content or a signed download URL."""
     if offset < 0:
         raise ModelRetry("offset must be greater than or equal to 0.")
     normalized_limit = content_limit(max_bytes)
-
-    if scratch_name is not None:
-        if mode != "content":
-            raise ModelRetry("Scratch entries can only be read with mode='content'.")
-        try:
-            entry = await read_scratch_entry(
-                ctx.deps.db,
-                workspace_id=ctx.deps.workspace.id,
-                scope=conversation_scope(ctx),
-                name=scratch_name,
-            )
-        except AppValidationError as exc:
-            raise ModelRetry(exc.message) from exc
-        if entry is None:
-            raise ModelRetry(f"Scratch entry {scratch_name!r} was not found.")
-        return slice_text(
-            entry.content,
-            offset=offset,
-            max_bytes=normalized_limit,
-            metadata={
-                "kind": "scratch",
-                "name": entry.name,
-                "expires_at": entry.expires_at.isoformat(),
-            },
-        )
 
     file, revision = await current_file_revision(ctx, file_id)
     if mode == "url":

@@ -1,6 +1,7 @@
 # apps/api/tests/factories/__init__.py
 """Test data factories."""
 
+from tests.factories.artifacts import build_artifact, build_artifact_revision
 from tests.factories.conversations import build_conversation
 from tests.factories.files import (
     build_file,
@@ -27,6 +28,8 @@ from tests.factories.workspaces import build_workspace, build_workspace_membersh
 
 __all__ = [
     "build_active_context_selection",
+    "build_artifact",
+    "build_artifact_revision",
     "build_conversation",
     "build_external_credential",
     "build_file",

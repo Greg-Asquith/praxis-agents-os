@@ -1,6 +1,6 @@
 # apps/api/services/agents/runtime/tools/files/utils.py
 
-"""Shared helpers for runtime file and scratch tools."""
+"""Shared helpers for runtime file tools."""
 
 from uuid import UUID
 
@@ -14,12 +14,6 @@ from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
 from services.agents.runtime.context import RuntimeDeps
 from services.files.utils import get_file_for_workspace
-from services.scratch.domain import ScratchScope
-
-
-def conversation_scope(ctx: RunContext[RuntimeDeps]) -> ScratchScope:
-    """Return the scratch scope for the current conversation."""
-    return ScratchScope(conversation_id=ctx.deps.conversation.id)
 
 
 def content_limit(max_bytes: int | None) -> int:

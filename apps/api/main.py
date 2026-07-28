@@ -32,7 +32,7 @@ from middleware import (
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
 )
-from routes import api_router
+from routes import api_router, artifact_serving_router
 from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
 from services.agents.runtime.events import STREAM_VERSION_HEADER
 from services.notifications.registration import register_notification_action_handlers
@@ -119,6 +119,8 @@ register_exception_handlers(app)
 
 # Register API routes.
 app.include_router(api_router)
+# Cookie-free, signed artifact serving surface.
+app.include_router(artifact_serving_router)
 
 
 @app.get("/api/metrics", include_in_schema=False)

@@ -678,6 +678,17 @@ general-purpose CDN hosts from the CSP, documents self-navigation as an
 irreducible residual while scripts run, and requires exact plus structural
 no-external-host tests when Plan 050 implements the serving pipeline.
 
+Plan 050 completed 2026-07-28 and moved to `docs/plans/complete/`. Artifacts
+now version HTML, Markdown, Mermaid, and CSV over a dedicated immutable
+`ArtifactRevision` chain, expose approval-gated create/update tools, and serve signed,
+cookie-free versions behind an exact self-contained CSP. The same slice admits
+`.mmd` in the editable-text contract and retires the agent-visible scratch
+draft/promote workflow: Files tools now operate on durable Files directly,
+while the scratch persistence and job substrate remain internal. A
+maintainer-authorized follow-up added first-party create/update transcript
+rows with live/failure states and an on-demand signed Open action; Plan 051
+still owns inline previews, versions, editing, and sharing.
+
 Plan 081 was added 2026-07-17 after a conversation demonstrated that an
 agent could resolve an uploaded image only as a signed download link and
 then tell the user it could not inspect the image. The landed Files and
@@ -801,7 +812,7 @@ service-account generalization trigger and rides the D10 packaging law.
 | 047  | Knowledge base UI                                                                                                      | P1       | M      | 044, 045, 046                                                          | DONE 2026-07-24                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 048  | Agent memory model, write service, and registry memory tools                                                           | P1       | L      | 043, 045, 046                                                          | DONE 2026-07-27                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 049  | Core-memory prompt injection, memory routes, and memory UI                                                             | P1       | L      | 048; 069 amendment                                                     | DONE 2026-07-27                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| 050  | Artifacts model, registry tools, and CSP-locked serving                                                                | P2       | L      | 031, 032, 034; 070 amendment                                           | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 050  | Artifacts model, registry tools, and CSP-locked serving                                                                | P2       | L      | 031, 032, 034; 070 amendment                                           | DONE 2026-07-28                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 051  | Chat artifact cards, versions UI, and share links                                                                      | P2       | L      | 050, 030 (soft: 035)                                                   | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 052  | Action-driven homepage redesign                                                                                        | P2       | M      | -                                                                      | TODO                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 053  | Cooperative run cancellation (kill switch; amended by 073)                                                             | P1       | M      | - (before 041)                                                         | DONE                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -1197,15 +1208,14 @@ tests/services/conversations tests/routes/conversations -q`, and
   run each plan's drift check before executing.
 - `034` mounts its file tools as always-on hidden runtime tools through the
   `026` dispatch and the `018` assembler (`<available_files>` block);
-  scratch lifecycle (7 d rolling
-  TTL, purge on expiry, delete after promotion) implements
-  `governance.md` §3.
+  scratch lifecycle retains its 7 d rolling TTL and expiry purge as internal
+  substrate. Plan 050 retired the agent-visible draft/promote workflow.
 - `035` marked DONE 2026-07-06: the web app now exposes `/files` with a
   workspace file table, upload flow, URL-driven detail dialog, immutable
   revision list/content/diff/restore controls, signed open/download
-  actions fetched on click, and visible chat rows for `list_files`,
-  durable/scratch `write_file`, `promote_scratch`, and all landed
-  `read_file` result modes. `pnpm check`
+  actions fetched on click, and visible chat rows for the landed Files tools.
+  Plan 050 later removed the scratch/draft presenter branches when that
+  workflow was retired. `pnpm check`
   passed from `apps/web`; full API-backed manual upload/restore/chat
   exercise still depends on a running local API with seeded file activity.
 - `036` marked DONE 2026-07-07: chat create/turn payloads now accept
@@ -1301,10 +1311,12 @@ D11, 2026-07-10)` blocks in 037/038/039 before executing. No fake
   and workspace grants can administratively disable a tool. Gate G4 memory
   evals remain required before any write-policy tuning. 071's dedup
   resolution, calibration, and decay amendment landed with 048.
-- `050` versions artifacts as `031` `FileRevision`s (agent provenance via
-  `created_by_agent_id`; no new revision kind) and ships the CSP-locked
+- `050` is DONE and versions artifacts as dedicated immutable
+  `ArtifactRevision` rows with exactly-one-actor provenance, and ships the CSP-locked
   serving pipeline `051` reuses (`connect-src 'none'`, opaque-origin
-  sandbox, no cookies on the artifact origin).
+  sandbox, no cookies on the artifact origin). It also retired the
+  agent-visible scratch draft/promote workflow in favor of artifacts and
+  direct durable Files writes.
 - `051` is the platform's first anonymous-access surface: hashed 256-bit
   share tokens, version-pinned, 7 d default expiry, 10/hour/workspace
   creation limit, `artifacts.sweep_expired_shares` on the `030` harness —

@@ -131,7 +131,7 @@ def tool_args_for_display(
         return args
 
     mapped_args = _mapping_args(args)
-    if mapped_args is None or mapped_args.get("destination") != "file":
+    if mapped_args is None:
         return args
     return _safe_write_file_args(mapped_args)
 
@@ -171,7 +171,6 @@ def _needs_staging(approval: ToolCallPart, args: Mapping[str, Any] | None) -> bo
     return (
         approval.tool_name == WRITE_FILE_TOOL_NAME
         and args is not None
-        and args.get("destination") == "file"
         and isinstance(args.get("content"), str)
         and not args.get(WRITE_FILE_CONTENT_REF_ARG)
     )
@@ -199,7 +198,6 @@ def _safe_write_file_args(
     safe_args = {
         key: args[key]
         for key in (
-            "destination",
             "name",
             "file_id",
             "expected_current_revision_id",

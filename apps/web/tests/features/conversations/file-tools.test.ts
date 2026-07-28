@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/file-tools.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import {
@@ -23,7 +25,6 @@ describe("file tool entities", () => {
           updated_at: "2026-07-17T12:00:00Z",
         },
       ],
-      scratch: [],
       total: 1,
     })
 
@@ -57,26 +58,18 @@ describe("file tool entities", () => {
             updated_at: "2026-07-17T12:00:00Z",
           },
         ],
-        scratch: [],
         total: 1,
       })
     ).toBeNull()
   })
 
-  it("only creates file entities for durable write outcomes", () => {
+  it("creates file entities for durable write outcomes", () => {
     expect(
       fileEntityFromWriteResult({
-        destination: "scratch",
-        name: "working-notes.md",
-        bytes_written: 120,
-      })
-    ).toBeNull()
-    expect(
-      fileEntityFromWriteResult({
-        destination: "file",
         name: "working-notes.md",
         bytes_written: 120,
         file_id: "file-2",
+        revision_id: "revision-2",
       })
     ).toEqual({
       fileId: "file-2",

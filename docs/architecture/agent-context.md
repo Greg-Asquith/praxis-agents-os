@@ -1,3 +1,5 @@
+<!-- docs/architecture/agent-context.md -->
+
 # Agent Context Systems
 
 How the four operator-facing context mechanisms — Skills, Files, the Knowledge
@@ -24,7 +26,7 @@ For the non-technical version of this comparison, see
 | Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments | `knowledge` instruction prompt block + auto-mounted search tools | Planned: budgeted core-memory prompt block + tools |
 | Retrieval | None | None | Hybrid RRF: lexical + pgvector semantic + recency | Planned (shares `services/retrieval/`) |
 | Scope | Workspace rows, assigned per agent via `Agent.skill_ids` | Workspace; conversation visibility via `file_references` | Workspace-wide, with per-user private tier | Planned: per workspace/agent/user scope |
-| Agent-writable | No | Yes (`write_file`; durable writes approval-gated) | No (read tools only) | Planned |
+| Agent-writable | No | Yes (`write_file`; auto by default, approval configurable) | No (read tools only) | Planned |
 | Status | Shipped end to end | Shipped end to end | Shipped end to end | Planned — not built |
 
 ## Skills
@@ -65,8 +67,10 @@ handing an agent a specific document to work on.
   1. The `available_files` prompt block lists files referenced by the current
      conversation (capped and budgeted; see `core/settings/scratch.py`).
   2. Auto-mounted tools on every agent: `list_files`, `read_file` (returns
-     images as native multimodal parts), `write_file` (scratch freely;
-     durable files behind approval), `promote_scratch`.
+     images as native multimodal parts), and `write_file` (durable files;
+     auto by default, approval configurable). Artifact drafting and
+     versioning use `create_artifact`/`update_artifact`; the former
+     scratch/promote tool workflow was retired with artifacts.
   3. Turn attachments: attached file content is spliced directly into the
      user prompt (`services/files/resolve_chat_attachments.py`).
 - **Management.** `/files` routes, `services/files/`, web UI at `/files` with
@@ -74,6 +78,15 @@ handing an agent a specific document to work on.
 - **Scope note.** Attachment scopes what is *listed in the prompt*, but the
   file tools can reach any workspace file — attachment is salience, not a
   security boundary.
+- **Relationship to Artifacts.** Separate aggregates, deliberately. Files are
+  the workspace's document store — inputs and working material, inert bytes
+  behind signed downloads. Artifacts are agent-authored deliverables that get
+  *rendered*: the CSP-locked serving pipeline, sandboxed previews, and share
+  links exist only for artifacts, which is why artifact tools are
+  external-effect with an approval default while `write_file` is an internal
+  write. The razor: content the user will view, present, or share → artifact;
+  data or documents kept for reference and later work → file. An `.html` File
+  is never served as a page; an `html` artifact is.
 
 Use files when the unit of work is *a specific document* — read it, edit it,
 produce it — rather than something the agent should find by searching.
@@ -136,7 +149,9 @@ should never be described as memory.
 ## Choosing a home for new context
 
 - Instructions on *how to act*, selectively assigned → **Skill**.
-- A concrete artifact to read, edit, or produce → **File**.
+- A durable uploaded or generated document to read or edit → **File**.
+- A versioned agent-authored report, page, diagram, or table the user will
+  view, present, or share → **Artifact**.
 - Reference material found by search, shared workspace-wide → **KB document**.
 - Something learned that should persist across conversations → **Memory**
   (blocked until the memory vertical ships; do not bolt lookalikes onto the

@@ -1,6 +1,6 @@
 # apps/api/tests/services/agents/runtime/test_file_tools.py
 
-"""Tests for runtime file and scratch tools."""
+"""Tests for runtime file tools."""
 
 import importlib
 from collections.abc import Iterator
@@ -50,12 +50,10 @@ from services.agents.runtime.staged_tool_content import (
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
     TOOL_EFFECT_WRITE,
-    TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
 )
 from services.agents.runtime.tools.files import (
     list_files as runtime_list_files,
-    promote_scratch,
     read_file,
     write_file,
 )
@@ -64,8 +62,6 @@ from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files import write_agent_file
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key, sha256_hex
-from services.scratch import read_scratch_entry, upsert_scratch_entry
-from services.scratch.domain import ScratchScope
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision, build_user, build_workspace
 from tests.support.storage import reset_storage_provider_cache
@@ -100,9 +96,8 @@ async def test_file_tool_catalog_policies() -> None:
     assert RUNTIME_TOOL_CATALOG["write_file"].effect == TOOL_EFFECT_WRITE
     assert RUNTIME_TOOL_CATALOG["write_file"].effect_scope == "internal"
     assert RUNTIME_TOOL_CATALOG["write_file"].default_policy == TOOL_POLICY_AUTO
-    assert RUNTIME_TOOL_CATALOG["promote_scratch"].effect_scope == "internal"
-    assert RUNTIME_TOOL_CATALOG["promote_scratch"].default_policy == TOOL_POLICY_APPROVAL
-    for tool_name in ("list_files", "read_file", "write_file", "promote_scratch"):
+    assert "promote_scratch" not in RUNTIME_TOOL_CATALOG
+    for tool_name in ("list_files", "read_file", "write_file"):
         assert RUNTIME_TOOL_CATALOG[tool_name].configurable is False
         assert RUNTIME_TOOL_CATALOG[tool_name].auto_mount is True
 
@@ -117,7 +112,6 @@ async def test_stages_write_file_approval_content_without_persisting_body(
         tool_name="write_file",
         tool_call_id=call_id,
         args={
-            "destination": "file",
             "name": "secret.md",
             "content": "sensitive draft body",
         },
@@ -174,37 +168,11 @@ async def test_rejects_invalid_staged_write_content_ref() -> None:
             )
 
 
-async def test_write_file_scratch_and_read_slice(db_session: AsyncSession) -> None:
-    context = await _runtime_file_context(db_session)
-    run_context = _run_context(db_session, context)
-
-    output = await write_file(
-        run_context,
-        name=" draft ",
-        content="hello world",
-        destination="scratch",
-    )
-    read_output = await read_file(
-        run_context,
-        scratch_name="draft",
-        max_bytes=5,
-    )
-
-    assert output.destination == "scratch"
-    assert output.name == "draft"
-    assert output.bytes_written == len("hello world")
-    assert read_output["kind"] == "scratch"
-    assert read_output["content"] == "hello"
-    assert read_output["truncated"] is True
-    assert read_output["end_offset"] == 5
-
-
-async def test_list_files_returns_workspace_files_and_scratch(
+async def test_list_files_returns_workspace_files(
     db_session: AsyncSession,
     local_storage_settings: None,
 ) -> None:
     context = await _runtime_file_context(db_session)
-    run_context = _run_context(db_session, context)
     await write_agent_file(
         db_session,
         workspace=context.workspace,
@@ -212,17 +180,9 @@ async def test_list_files_returns_workspace_files_and_scratch(
         name="notes.md",
         content="durable notes",
     )
-    await write_file(
-        run_context,
-        name="scratch-note",
-        content="temporary notes",
-        destination="scratch",
-    )
-
-    output = await runtime_list_files(run_context)
+    output = await runtime_list_files(_run_context(db_session, context))
 
     assert [file.name for file in output.files] == ["notes.md"]
-    assert [entry.name for entry in output.scratch] == ["scratch-note"]
     assert output.total == 1
 
 
@@ -237,20 +197,17 @@ async def test_durable_write_requires_approval_and_records_agent_revision(
             _run_context(db_session, context),
             name="report",
             content="approved content",
-            destination="file",
         )
 
-    assert exc_info.value.metadata["destination"] == "file"
+    assert exc_info.value.metadata["name"] == "report"
 
     output = await write_file(
         _run_context(db_session, context, approved=True),
         name="report",
         content="approved content",
-        destination="file",
     )
 
     revision = await db_session.get(FileRevision, output.revision_id)
-    assert output.destination == "file"
     assert output.name == "report.md"
     assert revision is not None
     assert revision.created_by_agent_id == context.agent.id
@@ -510,96 +467,14 @@ async def test_explicit_url_mode_returns_download_only(
     )
 
 
-async def test_promote_scratch_creates_file_and_deletes_scratch(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    scope = ScratchScope(conversation_id=context.conversation.id)
-    await upsert_scratch_entry(
-        db_session,
-        workspace_id=context.workspace.id,
-        scope=scope,
-        name="draft",
-        content="promoted content",
-        created_by_run_id=context.run.id,
-    )
-
-    output = await promote_scratch(
-        _run_context(db_session, context, approved=True),
-        scratch_name="draft",
-        file_name="final.md",
-    )
-
-    revision = await db_session.get(FileRevision, output.revision_id)
-    scratch = await read_scratch_entry(
-        db_session,
-        workspace_id=context.workspace.id,
-        scope=scope,
-        name="draft",
-    )
-    assert output.name == "final.md"
-    assert output.deleted_scratch is True
-    assert scratch is None
-    assert revision is not None
-    assert revision.created_by_agent_id == context.agent.id
-    stored = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
-    assert stored == b"promoted content"
-
-
-async def test_promote_scratch_rejects_existing_file_name(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    scope = ScratchScope(conversation_id=context.conversation.id)
-    await write_agent_file(
-        db_session,
-        workspace=context.workspace,
-        agent=context.agent,
-        name="final.md",
-        content="existing content",
-    )
-    await upsert_scratch_entry(
-        db_session,
-        workspace_id=context.workspace.id,
-        scope=scope,
-        name="draft",
-        content="promoted content",
-        created_by_run_id=context.run.id,
-    )
-
-    with pytest.raises(ModelRetry, match="already exists"):
-        await promote_scratch(
-            _run_context(db_session, context, approved=True),
-            scratch_name="draft",
-            file_name="final.md",
-        )
-
-    scratch = await read_scratch_entry(
-        db_session,
-        workspace_id=context.workspace.id,
-        scope=scope,
-        name="draft",
-    )
-    assert scratch is not None
-
-
-async def test_read_file_validates_single_source(db_session: AsyncSession) -> None:
+async def test_read_file_hides_unknown_file(db_session: AsyncSession) -> None:
     context = await _runtime_file_context(db_session)
 
-    with pytest.raises(ModelRetry):
-        await read_file(_run_context(db_session, context))
-
-    with pytest.raises(ModelRetry):
+    with pytest.raises(ModelRetry, match="File not found"):
         await read_file(
             _run_context(db_session, context),
             file_id=uuid4(),
-            scratch_name="draft",
         )
-
-    with pytest.raises(ModelRetry):
-        await read_file(_run_context(db_session, context), scratch_name=" ")
 
 
 async def _runtime_file_context(db: AsyncSession) -> RuntimeFileTestContext:

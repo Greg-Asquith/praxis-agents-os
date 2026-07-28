@@ -4,6 +4,7 @@ import {
   DelegateAgentListRow,
   DelegationToolRow,
 } from "@/features/conversations/components/delegation-tool-row"
+import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
 import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
@@ -18,11 +19,9 @@ import {
 import { WebSearchToolRow } from "@/features/conversations/components/web-search-tool-row"
 import {
   LIST_FILES_TOOL_NAME,
-  PROMOTE_SCRATCH_TOOL_NAME,
   READ_FILE_TOOL_NAME,
   WRITE_FILE_TOOL_NAME,
   listFilesResult,
-  promoteScratchResult,
   readFileContentResult,
   readFileImageResult,
   readFileStatusResult,
@@ -61,6 +60,11 @@ import {
   WRITE_TODOS_TOOL_NAME,
   todoItemsFromActivity,
 } from "@/features/conversations/native-tools/todo-tools"
+import {
+  CREATE_ARTIFACT_TOOL_NAME,
+  UPDATE_ARTIFACT_TOOL_NAME,
+  artifactToolResult,
+} from "@/features/conversations/native-tools/artifact-tools"
 import { integrationToolRowPresenters } from "@/integrations/registry"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 
@@ -72,6 +76,13 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 // runtime_tool definition.
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  {
+    key: "artifact-tools",
+    matches: artifactToolRowMatches,
+    render: ({ activity, defaultOpen }) => (
+      <ArtifactToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
+  },
   {
     key: "build-chart",
     matches: (activity) =>
@@ -161,6 +172,19 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   },
 ]
 
+function artifactToolRowMatches(activity: ToolActivity) {
+  if (
+    (activity.name === CREATE_ARTIFACT_TOOL_NAME || activity.name === UPDATE_ARTIFACT_TOOL_NAME) &&
+    activity.status !== "completed"
+  ) {
+    return true
+  }
+  return (
+    (activity.name === CREATE_ARTIFACT_TOOL_NAME || activity.name === UPDATE_ARTIFACT_TOOL_NAME) &&
+    artifactToolResult(activity.result) !== null
+  )
+}
+
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
   for (const presenter of [
     ...TOOL_ROW_PRESENTERS,
@@ -228,7 +252,6 @@ function fileToolRowMatches(activity: ToolActivity) {
   if (
     (activity.name === LIST_FILES_TOOL_NAME ||
       activity.name === WRITE_FILE_TOOL_NAME ||
-      activity.name === PROMOTE_SCRATCH_TOOL_NAME ||
       activity.name === READ_FILE_TOOL_NAME) &&
     activity.status !== "completed"
   ) {
@@ -239,9 +262,6 @@ function fileToolRowMatches(activity: ToolActivity) {
   }
   if (activity.name === WRITE_FILE_TOOL_NAME) {
     return writeFileResult(activity.result) !== null
-  }
-  if (activity.name === PROMOTE_SCRATCH_TOOL_NAME) {
-    return promoteScratchResult(activity.result) !== null
   }
   if (activity.name === READ_FILE_TOOL_NAME) {
     return (

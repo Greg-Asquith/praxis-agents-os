@@ -1,27 +1,16 @@
 // apps/web/src/features/conversations/native-tools/file-tools.ts
 
-import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { FileContractCategory, FileProcessingStatus } from "@/features/files/types"
 import { isRecord } from "@/lib/guards"
 
 export const WRITE_FILE_TOOL_NAME = "write_file"
-export const PROMOTE_SCRATCH_TOOL_NAME = "promote_scratch"
 export const READ_FILE_TOOL_NAME = "read_file"
 export const LIST_FILES_TOOL_NAME = "list_files"
 
 export type WriteFileToolResult = {
-  destination: "scratch" | "file"
   name: string
   bytes_written: number
-  expires_at?: string | null
-  file_id?: string | null
-  revision_id?: string | null
-}
-
-export type PromoteScratchToolResult = {
-  deleted_scratch: boolean
   file_id: string
-  name: string
   revision_id: string
 }
 
@@ -90,16 +79,8 @@ export type RuntimeFileSummary = {
   updated_at: string
 }
 
-type RuntimeScratchSummary = {
-  content_bytes: number
-  expires_at: string
-  name: string
-  updated_at: string
-}
-
 export type ListFilesToolResult = {
   files: RuntimeFileSummary[]
-  scratch: RuntimeScratchSummary[]
   total: number
 }
 
@@ -117,48 +98,19 @@ export function writeFileResult(value: unknown): WriteFileToolResult | null {
   if (!isRecord(value)) {
     return null
   }
-  if (value["destination"] !== "scratch" && value["destination"] !== "file") {
-    return null
-  }
-  if (typeof value["name"] !== "string" || typeof value["bytes_written"] !== "number") {
-    return null
-  }
-
-  return {
-    destination: value["destination"],
-    name: value["name"],
-    bytes_written: value["bytes_written"],
-    expires_at: typeof value["expires_at"] === "string" ? value["expires_at"] : null,
-    file_id: typeof value["file_id"] === "string" ? value["file_id"] : null,
-    revision_id: typeof value["revision_id"] === "string" ? value["revision_id"] : null,
-  }
-}
-
-export function writeFileContentArg(args: unknown): string | null {
-  const record = normalizeToolArgs(args)
-  if (!isRecord(record) || typeof record["content"] !== "string") {
-    return null
-  }
-  return record["content"].trim() ? record["content"] : null
-}
-
-export function promoteScratchResult(value: unknown): PromoteScratchToolResult | null {
-  if (!isRecord(value)) {
-    return null
-  }
   if (
-    typeof value["file_id"] !== "string" ||
-    typeof value["revision_id"] !== "string" ||
     typeof value["name"] !== "string" ||
-    typeof value["deleted_scratch"] !== "boolean"
+    typeof value["bytes_written"] !== "number" ||
+    typeof value["file_id"] !== "string" ||
+    typeof value["revision_id"] !== "string"
   ) {
     return null
   }
 
   return {
-    deleted_scratch: value["deleted_scratch"],
-    file_id: value["file_id"],
     name: value["name"],
+    bytes_written: value["bytes_written"],
+    file_id: value["file_id"],
     revision_id: value["revision_id"],
   }
 }
@@ -167,7 +119,7 @@ export function listFilesResult(value: unknown): ListFilesToolResult | null {
   if (!isRecord(value)) {
     return null
   }
-  if (!Array.isArray(value["files"]) || !Array.isArray(value["scratch"])) {
+  if (!Array.isArray(value["files"])) {
     return null
   }
   if (typeof value["total"] !== "number") {
@@ -175,12 +127,11 @@ export function listFilesResult(value: unknown): ListFilesToolResult | null {
   }
 
   const files = value["files"].map(runtimeFileSummary).filter((file) => file !== null)
-  const scratch = value["scratch"].map(runtimeScratchSummary).filter((entry) => entry !== null)
-  if (files.length !== value["files"].length || scratch.length !== value["scratch"].length) {
+  if (files.length !== value["files"].length) {
     return null
   }
 
-  return { files, scratch, total: value["total"] }
+  return { files, total: value["total"] }
 }
 
 export function readFileUrlResult(value: unknown): ReadFileUrlToolResult | null {
@@ -308,21 +259,11 @@ export function readFileImageResult(value: unknown): ReadFileImageToolResult | n
   }
 }
 
-export function fileEntityFromWriteResult(result: WriteFileToolResult): FileEntitySnapshot | null {
-  if (result.destination !== "file" || !result.file_id) {
-    return null
-  }
+export function fileEntityFromWriteResult(result: WriteFileToolResult): FileEntitySnapshot {
   return {
     fileId: result.file_id,
     name: result.name,
     sizeBytes: result.bytes_written,
-  }
-}
-
-export function fileEntityFromPromoteResult(result: PromoteScratchToolResult): FileEntitySnapshot {
-  return {
-    fileId: result.file_id,
-    name: result.name,
   }
 }
 
@@ -420,26 +361,6 @@ function isFileContractCategory(value: unknown): value is FileContractCategory {
 
 function isFileProcessingStatus(value: unknown): value is FileProcessingStatus {
   return value === "pending" || value === "processing" || value === "ready" || value === "error"
-}
-
-function runtimeScratchSummary(value: unknown): RuntimeScratchSummary | null {
-  if (!isRecord(value)) {
-    return null
-  }
-  if (
-    typeof value["name"] !== "string" ||
-    typeof value["content_bytes"] !== "number" ||
-    typeof value["updated_at"] !== "string" ||
-    typeof value["expires_at"] !== "string"
-  ) {
-    return null
-  }
-  return {
-    name: value["name"],
-    content_bytes: value["content_bytes"],
-    updated_at: value["updated_at"],
-    expires_at: value["expires_at"],
-  }
 }
 
 function unwrapToolReturnValue(value: unknown): unknown {

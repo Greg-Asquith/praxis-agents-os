@@ -2,6 +2,7 @@
 
 """Local filesystem storage provider tests."""
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -15,6 +16,7 @@ from services.storage.factory import get_storage_provider
 from services.storage.paths import validate_object_key
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers.local import LocalStorageProvider
+from services.storage.utils import put_new_object_with_cleanup
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
@@ -54,6 +56,54 @@ async def test_local_provider_put_get_stat_and_delete_object(tmp_path) -> None:
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
+
+
+async def test_interrupted_storage_write_removes_partial_object(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _provider(tmp_path)
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, "workspaces/ws_1/files/partial.txt")
+    original_put = provider.put_object
+
+    async def fail_after_write(*args, **kwargs):
+        await original_put(*args, **kwargs)
+        raise RuntimeError("write interrupted")
+
+    monkeypatch.setattr(provider, "put_object", fail_after_write)
+
+    with pytest.raises(RuntimeError, match="write interrupted"):
+        await put_new_object_with_cleanup(provider, ref, b"partial", content_type="text/plain")
+
+    assert await provider.stat_object(ref) is None
+
+
+async def test_cancelled_storage_write_removes_partial_object(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _provider(tmp_path)
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, "workspaces/ws_1/files/cancelled.txt")
+    original_put = provider.put_object
+    object_written = asyncio.Event()
+
+    async def block_after_write(*args, **kwargs):
+        stored = await original_put(*args, **kwargs)
+        object_written.set()
+        await asyncio.Event().wait()
+        return stored
+
+    monkeypatch.setattr(provider, "put_object", block_after_write)
+    write = asyncio.create_task(
+        put_new_object_with_cleanup(provider, ref, b"partial", content_type="text/plain")
+    )
+    await object_written.wait()
+    write.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await write
+
+    assert await provider.stat_object(ref) is None
 
 
 async def test_local_provider_stream_object_chunks_and_maps_missing(tmp_path) -> None:

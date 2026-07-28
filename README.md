@@ -24,6 +24,9 @@ The core platform is wired end to end (API, worker, and UI):
   revisions, background markdown extraction, agent file tools, skill
   management with document pipelines, and pgvector-backed document retrieval
   with hybrid search, agent tools, and an operator UI.
+- Artifacts: dedicated immutable revisions, approval-gated agent creation and
+  updates, first-party conversation rows, and signed cookie-free serving
+  behind a self-contained CSP.
 - Operations: agent schedules with a leased background worker, a generic jobs
   worker, audit and security event viewers, an LLM model catalog, and
   integration connections (OAuth with PKCE, API keys, encrypted credentials).
@@ -287,7 +290,8 @@ and remember, and hardening how they behave:
   operator UI.
 - Agent memory: evaluation-led retrieval and consolidation on top of the
   shipped provenance, prompt-injection, and human-legible editing surfaces.
-- Artifacts: versioned, sandboxed agent-produced documents and pages.
+- Artifacts: richer previews, version management, editing, and share links on
+  top of the shipped revision and sandboxed-serving foundation.
 - Harness hardening: behavior scenario evals, context compaction, parallel
   delegation, and durable run event replay.
 - Public launch readiness: community health files, supply-chain automation,

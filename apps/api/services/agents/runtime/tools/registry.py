@@ -326,6 +326,7 @@ def _derive_label(name: str) -> str:
 
 # Import provider modules for registration side effects.
 from services.agents.runtime.tools import (
+    artifacts as _artifacts,  # noqa: F401
     charting as _charting,  # noqa: F401
     files as _files,  # noqa: F401
     kb as _kb,  # noqa: F401

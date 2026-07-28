@@ -2,12 +2,49 @@
 
 """Shared helpers for storage service operations."""
 
+import asyncio
+import logging
+
 from fastapi.responses import FileResponse, Response
 
 from services.storage.domain import StorageObjectRef, StoredObject
 from services.storage.errors import StorageNotFoundError
 from services.storage.provider import StorageProvider
 from services.storage.providers.local import LocalStorageProvider
+
+logger = logging.getLogger(__name__)
+
+
+async def put_new_object_with_cleanup(
+    provider: StorageProvider,
+    ref: StorageObjectRef,
+    content: bytes,
+    *,
+    content_type: str,
+) -> StoredObject:
+    """Write a new unique object and remove partial data when the write is interrupted."""
+    try:
+        return await provider.put_object(ref, content, content_type=content_type)
+    except BaseException:
+        cleanup = asyncio.create_task(provider.delete_object(ref))
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            try:
+                await cleanup
+            except BaseException:
+                logger.warning(
+                    "Failed to clean up a cancelled storage write",
+                    extra={"bucket": ref.bucket.value, "object_key": ref.key},
+                    exc_info=True,
+                )
+        except Exception:
+            logger.warning(
+                "Failed to clean up an interrupted storage write",
+                extra={"bucket": ref.bucket.value, "object_key": ref.key},
+                exc_info=True,
+            )
+        raise
 
 
 async def storage_object_response(

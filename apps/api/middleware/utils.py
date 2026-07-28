@@ -47,6 +47,11 @@ def _is_app_frame_path(path: str) -> bool:
     return path.startswith(prefix) and path.endswith("/frame")
 
 
+def _is_artifact_serving_path(path: str) -> bool:
+    """Return whether the request targets a cookie-free artifact surface."""
+    return path.startswith(("/artifacts/view/", "/artifacts/shared/"))
+
+
 def _base64_request_limit(raw_max_bytes: int) -> int:
     """Compute request body limit for base64 JSON payloads with small overhead buffer."""
     return int(raw_max_bytes * _BASE64_OVERHEAD_RATIO) + _BASE64_JSON_BUFFER_BYTES

@@ -7,6 +7,8 @@ from fastapi import APIRouter
 from core.settings import settings
 from routes.agent_runs import router as agent_runs_router
 from routes.agents import router as agents_router
+from routes.artifact_serving import router as artifact_serving_router
+from routes.artifacts import router as artifacts_router
 from routes.audit_events import router as audit_events_router
 from routes.auth import router as auth_router
 from routes.conversations import router as conversations_router
@@ -26,6 +28,7 @@ from routes.workspaces import router as workspaces_router
 
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
 api_router.include_router(agent_runs_router)
+api_router.include_router(artifacts_router)
 api_router.include_router(agents_router)
 api_router.include_router(audit_events_router)
 api_router.include_router(auth_router)
@@ -44,4 +47,4 @@ api_router.include_router(tools_router)
 api_router.include_router(users_router)
 api_router.include_router(workspaces_router)
 
-__all__ = ["api_router"]
+__all__ = ["api_router", "artifact_serving_router"]

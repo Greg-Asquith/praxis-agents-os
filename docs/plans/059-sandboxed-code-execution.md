@@ -1,3 +1,5 @@
+<!-- docs/plans/059-sandboxed-code-execution.md -->
+
 # Plan 059: Sandboxed code execution — provider-native `run_code`
 
 > **Executor instructions**: Follow this plan step by step. Run every
@@ -16,6 +18,13 @@
 > stays out of scope here — plan 072 owns network/egress posture for
 > sandboxed execution; this amendment must not duplicate it (decision 5's
 > police-the-boundary posture stands).
+>
+> **Amendment (2026-07-28, Plan 050 artifact workflow)**: the
+> agent-visible scratch draft/promote workflow is retired. Decision 4 must
+> return renderable output as an artifact and other generated files as
+> durable Praxis Files through the shared revision operations; it must not
+> restore `promote_scratch` or scratch modes on the Files tools. The
+> `run_code` tool's own approval boundary covers those outputs.
 >
 > **Drift check (run first)**:
 > `git diff --stat c2f08cc..HEAD -- apps/api/services/agents/runtime/tools/ apps/api/services/agents/runtime/dispatch.py apps/api/services/files/`
@@ -101,13 +110,13 @@ audited through the dispatch choke point.
    exposes no file-attachment parameters (probe: constructor takes only
    `kind`/`optional`), so v1 honesty is inlining, with the same size caps
    as 036.
-4. **Outputs come back as text + optional scratch files.** The helper
+4. **Outputs come back as text + optional durable outputs.** The helper
    returns stdout/result text (bounded, `RUN_CODE_OUTPUT_MAX_CHARS`
    default 8000). If the provider returns generated file content
-   (charts, transformed CSVs) in-band, write it to **scratch** (034) via
-   the existing scratch service and return scratch references — promotion
-   to durable Files stays behind the existing approval-gated
-   `promote_scratch`. No new storage surface.
+   (charts, transformed CSVs) in-band, create an artifact for supported
+   renderable types or a durable Praxis File through the shared actor-neutral
+   revision operation. The enclosing `run_code` approval is the consent
+   boundary; no draft/promote step or new storage surface is introduced.
 5. **Denylist nothing inside the sandbox; police the boundary.** The
    sandbox is the provider's isolation problem; Praxis's controls are:
    which files go in (gates above), what policy the tool carries, audit
@@ -169,9 +178,9 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
   `build_attachment_user_content.py` (036) — workspace/contract/size
   validation and `BinaryContent` assembly; `MAX_FILE_SIZE_*` keys in
   `core/settings/files.py`.
-- **Scratch**: `services/scratch/` + `write_file` scratch mode +
-  approval-gated `promote_scratch` (034); governance §3 scratch row
-  (7 d TTL) applies to decision 4's outputs unchanged.
+- **Durable outputs**: Plan 050's dedicated artifact revision services and
+  Files revision operations replace the retired agent-visible scratch
+  draft/promote path.
 - **Registry contract**: `runtime/tools/contract.py` fields incl.
   `supported_model_providers`, `presentation`, `kind` — 028 added the
   native/helper vocabulary this tool reuses; 054 adds `effect_scope`.

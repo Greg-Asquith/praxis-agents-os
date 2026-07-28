@@ -1,3 +1,5 @@
+<!-- docs/plans/051-artifact-cards-share-links.md -->
+
 # Plan 051: Chat artifact cards, versions UI, and share links
 
 > **Executor instructions**: Follow this plan step by step. Run every
@@ -15,10 +17,16 @@
 > implemented (the `artifacts` table, `services/artifacts/`
 > `serve_artifact_version.py`, the `/artifacts/view` serving route, and the
 > middleware carve-outs — including the reserved `/artifacts/shared` path
-> prefix in `_is_artifact_serving_path`). Plans 030 (jobs harness) and 031
-> (File/FileRevision) are implemented at `a0eea1c`; 032's upload/edit
-> services are in flight on disk — verify the file-service seams cited below
-> against the landed code. If 050 is not implemented, STOP.
+> prefix in `_is_artifact_serving_path`). Plan 050 owns the dedicated
+> `Artifact`/`ArtifactRevision` aggregate; do not route artifact edits or
+> restores through Files services. If 050 is not implemented, STOP.
+>
+> **Pre-execution amendment (2026-07-28, base artifact tool rows landed)**:
+> Plan 050's post-completion UI follow-up added
+> `artifact-tool-row.tsx`, strict create/update result parsing, and an
+> on-demand signed Open action. Step 6 extends that existing presenter with
+> inline sandbox preview, version selection, diff/restore, and editing;
+> do not recreate the base lifecycle rows or URL-minting client.
 >
 > **Security review (mandatory)**: the share slice is the platform's FIRST
 > anonymous-access surface. Before merge, request a dedicated
@@ -39,9 +47,9 @@
 - **Effort**: L
 - **Risk**: HIGH (first anonymous-access surface; unguessable-token
   authorization; donor §4.6 rule: "treat as high-risk, small, and explicit")
-- **Depends on**: hard — 050 (artifacts model + CSP-locked serving), 030
-  (jobs harness, DONE — sweep kind registration), 031 (FileRevisions, DONE —
-  version chain), Gate G3 (satisfied). Soft: 035 (files UI revision-diff
+- **Depends on**: hard — 050 (artifact revisions + CSP-locked serving), 030
+  (jobs harness, DONE — sweep kind registration), Gate G3 (satisfied).
+  Soft: 035 (files UI revision-diff
   component — reuse if landed, decision 10).
 - **Category**: Phase 6 artifacts (roadmap `000_MASTER_ROADMAP.md` §4
   Phase 6 row 051; donor `DONOR_PORT_ROADMAP.md` §4.6 / §6 row F2)
@@ -138,16 +146,16 @@
     is `MANAGER_ROLES` = owner+admin, `core/dependencies.py:267`) per
     governance §1 "Create/revoke artifact share links (051)". User artifact
     edits and restores are member+ (`require_editor`), matching the §1
-    files row ("Upload/edit/delete files: member+") — artifacts are files
-    underneath. Frontend gating mirrors
+    files row ("Upload/edit/delete files: member+"). Artifacts are a separate
+    aggregate but use the same member+ editing policy. Frontend gating mirrors
     `workspace-settings-route.tsx:14` (`current_user_role === "owner" ||
     "admin"`).
 11. **Diff/restore ride the landed revision chain.** Restore appends a NEW
     revision with `revision_kind="restore"` and
-    `restored_from_revision_id` set (the 031 CHECK at
-    `models/files.py:126-129` requires exactly that pairing), then bumps
+    `restored_from_revision_id` set (the `ArtifactRevision` CHECK in
+    `models/artifacts.py` requires exactly that pairing), then bumps
     `Artifact.current_version_id` — never mutates history (immutability
-    listener, `models/files.py:201-217`). Diff is client-side: if 035 has
+    listener in `models/artifacts.py`). Diff is client-side: if 035 has
     landed a revision-diff component in `features/files/`, reuse it;
     otherwise ship a minimal unified line-diff helper in
     `features/artifacts/lib-diff.ts` (no new dependency — hand-rolled LCS
@@ -155,8 +163,8 @@
 12. **User edits append revisions too** (dictated): `PATCH
     /api/v1/artifacts/{artifact_id}` takes `{content, title?}` and calls
     050's `update_artifact` service with user actor provenance
-    (`created_by_user_id`, exactly-one-actor check
-    `models/files.py:120-125`). v1 edit UI is a plain textarea dialog for
+    (`created_by_user_id`, exactly-one-actor check in
+    `models/artifacts.py`). v1 edit UI is a plain textarea dialog for
     the text types (html/markdown/mermaid/csv); no rich editor.
 13. **The share link serves the raw document — no viewer wrapper page.**
     The anonymous URL IS 050's CSP-locked serving pipeline with a
@@ -197,19 +205,12 @@ pipeline that already assumes its content is hostile.
 
 ## Current state
 
-All anchors verified at `a0eea1c` unless marked. 050 is not yet implemented
-— its deliverables are cited from `docs/plans/050-artifacts-model-serving.md`
-and re-verified at the pre-flight.
+Plan 050 is implemented; re-verify its live contracts at pre-flight.
 
-- **Revision chain (031, landed)**: `models/files.py:83-132` `FileRevision`
-  — `revision_kind` CHECK over `('create','edit','replace','restore',
-  'import')` (lines 27, 115-118), exactly-one-actor CHECK (120-125),
-  restore-source CHECK (126-129), append-only enforcement via the
-  `before_update` listener (201-217). `FileReference.target_type` CHECK
-  includes `'artifact'` (lines 28, 155-159).
-  `services/files/list_file_revisions.py:14` and
-  `services/files/restore_file_revision.py:19` exist (032 slice in flight
-  on disk — verify signatures at execution).
+- **Revision chain (050, landed)**: `models/artifacts.py`
+  `ArtifactRevision` has `create`/`edit`/`restore` kinds,
+  exactly-one-actor and restore-source checks, unique ordered revisions,
+  and an immutable `before_update` listener.
 - **Jobs harness (030, landed)**: `services/jobs/registry.py:32-61`
   `job_handler` (duplicate kind → error at import, line 41); handlers
   auto-register via `from services.jobs import handlers` at
@@ -262,7 +263,8 @@ and re-verified at the pre-flight.
   - shadcn primitives available: `dialog`, `select`, `table`, `badge`,
     `alert`, `tabs`, `empty-state` (`src/components/ui/`).
 - **Will exist after 050 (verify at pre-flight)**: `models/artifacts.py`
-  (`Artifact` with `file_id`/`current_version_id`), `services/artifacts/`
+  (`Artifact` with `current_version_id` plus immutable
+  `ArtifactRevision` rows), `services/artifacts/`
   (`serve_artifact_version.py`, `update_artifact.py`, schemas, CSP
   constants in `domain.py`), `routes/artifacts/` +
   `routes/artifact_serving/` (`/artifacts/view/...`),
@@ -415,11 +417,10 @@ One operation per file in `services/artifacts/` (typed exceptions only):
   or the artifact is soft-deleted — every rejection raises the SAME
   `NotFoundError("Share not found")` (decision 3). On success, perform the
   decision 6 atomic access-count UPDATE and (throttled) audit write.
-- `restore_artifact_version.py` — appends a `revision_kind="restore"`
-  revision with `restored_from_revision_id` (031 CHECK,
-  `models/files.py:126-129`), preferring the landed
-  `services/files/restore_file_revision.py` seam if its signature composes;
-  bumps `Artifact.current_version_id`. User actor provenance.
+- `restore_artifact_version.py` — appends an `ArtifactRevision` with
+  `revision_kind="restore"` and `restored_from_revision_id`, then bumps
+  `Artifact.current_version_id`. User actor provenance; do not call Files
+  services.
 
 Add `AuditResourceType.ARTIFACT_SHARE = "artifact_share"` to
 `services/audit_events/enums.py`.

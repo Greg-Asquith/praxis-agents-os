@@ -10,7 +10,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.settings import settings
-from middleware.utils import _is_app_frame_path
+from middleware.utils import _is_app_frame_path, _is_artifact_serving_path
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
         is_app_frame = _is_app_frame_path(request.url.path)
+        is_artifact_serving = _is_artifact_serving_path(request.url.path)
         is_pdf_preview = _is_private_pdf_preview(request, response)
-        is_frameable = is_app_frame or is_pdf_preview
+        is_frameable = is_app_frame or is_pdf_preview or is_artifact_serving
 
         # Basic hardening headers
         if not is_frameable:
@@ -63,7 +64,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault(
             "Permissions-Policy", "geolocation=(), camera=(), microphone=()"
         )
-        if is_frameable:
+        if is_frameable and not is_artifact_serving:
             response.headers.setdefault(
                 "Content-Security-Policy",
                 f"frame-ancestors {self._frame_ancestors}; base-uri 'none'; object-src 'none'",
