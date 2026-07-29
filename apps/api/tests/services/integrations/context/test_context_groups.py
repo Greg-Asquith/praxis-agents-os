@@ -113,10 +113,12 @@ async def test_context_group_crud_replaces_members_and_audits(
     assert persisted is not None and persisted.deleted is True
     events = (
         await db_session.scalars(
-            select(AuditEvent).where(
+            select(AuditEvent)
+            .where(
                 AuditEvent.resource_type == "integration_context_group",
                 AuditEvent.resource_id == str(group.id),
             )
+            .order_by(AuditEvent.occurred_at, AuditEvent.id)
         )
     ).all()
     assert [event.action for event in events] == ["create", "update", "delete"]
