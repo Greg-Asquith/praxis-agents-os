@@ -10,7 +10,7 @@ later:
 | Plan | Target | Status |
 | --- | --- | --- |
 | [deployment-000-security-review.md](../complete/deployment-000-security-review.md) | Cross-cutting — InfoSec-questionnaire hardening tasks that amend the plans below; records the per-customer-project tenancy decision | Complete 2026-07-28 |
-| [001-local-quickstart.md](001-local-quickstart.md) | Local — foolproof single-command spin-up for someone who just cloned the repo | Planned |
+| [deployment-001-local-quickstart.md](../complete/deployment-001-local-quickstart.md) | Local — foolproof single-command spin-up for someone who just cloned the repo | Complete 2026-07-28 |
 | [002-gcp-cloud-run.md](002-gcp-cloud-run.md) | GCP — Cloud Run services (API, web) + Cloud Run Jobs (worker, migrate), scale to zero | Planned |
 | 003 (future) | Azure — Container Apps + Container Apps Jobs | Not started |
 | 004 (future) | AWS — App Runner / ECS + EventBridge Scheduler | Not started |
@@ -53,7 +53,7 @@ keeps every cloud target honest.
 These items are provider-independent and appear as prerequisites in both
 plans; do each once:
 
-- **Health endpoints** — `/healthz` (liveness, no dependencies) and
+- **Health endpoints (complete in local quickstart)** — `/healthz` (liveness, no dependencies) and
   `/readyz` (checks DB) on the API. The Dockerfile healthcheck comment
   already anticipates this.
 - **Worker drain mode** — a run-to-completion entrypoint
@@ -61,10 +61,10 @@ plans; do each once:
   processes due scheduled runs and pending jobs until queues are empty or a
   time budget expires, then exits 0. This is what makes "worker as a
   scale-to-zero job" possible on every provider.
-- **Compose migrations** — the Docker Compose path must run
-  `alembic upgrade heads` before the API starts (today only `make dev`
-  migrates).
-- **Web API base URL strategy** — `VITE_API_BASE_URL` is baked at build time
+- **Compose migrations (complete in local quickstart)** — the Docker Compose
+  path runs `alembic upgrade heads` before the API starts.
+- **Web API base URL strategy (implemented for local Compose)** —
+  `VITE_API_BASE_URL` is baked at build time
   (`apps/web/src/config/env.ts`). Either build per environment in CI or add
   runtime injection; each target plan states which it uses.
 - **Audit/security retention** — add settings-owned 400-day production

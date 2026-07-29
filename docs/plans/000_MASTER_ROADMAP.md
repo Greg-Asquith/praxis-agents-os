@@ -918,6 +918,11 @@ baseline.
 Cross-provider deployment work is tracked separately under
 `docs/plans/deployment/`; its local-quickstart plan and security review own
 the launch dependencies summarized by 078's launch gates.
+The local quickstart completed 2026-07-28 and moved to
+`docs/plans/complete/deployment-001-local-quickstart.md`. Plain Compose now
+self-bootstraps and migrates the production-image stack, while the Make
+wrapper supplies a guided key prompt and preserves the contributor
+hot-reload path.
 The cross-cutting deployment security review completed 2026-07-28 and moved
 to `docs/plans/complete/deployment-000-security-review.md`. It binds
 per-customer production projects, web headers, verified proxy/IP handling,

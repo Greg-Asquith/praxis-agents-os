@@ -21,8 +21,16 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 # --- Build: compile the static SPA bundle ---
 FROM deps AS build
 
+ARG VITE_API_BASE_URL=http://localhost:8000/api/v1
+ARG WEB_PUBLIC_ASSET_ORIGINS=""
+ARG WEB_HTTPS_ONLY=false
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+    WEB_PUBLIC_ASSET_ORIGINS=${WEB_PUBLIC_ASSET_ORIGINS} \
+    WEB_HTTPS_ONLY=${WEB_HTTPS_ONLY}
+
 COPY . .
-RUN pnpm build
+RUN pnpm build \
+    && node docker/render-nginx-config.mjs
 
 # --- Local Development: Vite dev server with HMR ---
 FROM deps AS dev
@@ -38,9 +46,10 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine AS production
 ENV PORT=8080
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /tmp/praxis-security-headers.conf /etc/nginx/snippets/praxis-security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8080/ >/dev/null 2>&1 || exit 1
+  CMD wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1

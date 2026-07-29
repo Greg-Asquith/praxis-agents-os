@@ -14,7 +14,11 @@ from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 
 from core.settings import settings
 from services.agents.models import build_model, provider_api_key
-from services.agents.models.domain import ModelConfigurationError, ResolvedModel
+from services.agents.models.domain import (
+    MissingModelCredentialError,
+    ModelConfigurationError,
+    ResolvedModel,
+)
 from services.agents.models.utils import retrying_http_client
 
 
@@ -35,13 +39,15 @@ def test_provider_api_key_reads_settings(monkeypatch):
 
 def test_provider_api_key_missing_raises(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
-    with pytest.raises(ModelConfigurationError):
+    with pytest.raises(MissingModelCredentialError) as exc_info:
         provider_api_key("openai")
+    assert exc_info.value.error_code == "model_provider_not_configured"
+    assert exc_info.value.details == {"provider": "openai", "setting": "OPENAI_API_KEY"}
 
 
 def test_provider_api_key_blank_raises(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("   "))
-    with pytest.raises(ModelConfigurationError):
+    with pytest.raises(MissingModelCredentialError):
         provider_api_key("openai")
 
 

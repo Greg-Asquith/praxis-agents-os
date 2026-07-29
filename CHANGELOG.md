@@ -47,5 +47,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Reproducible local development, database-backed verification, CI,
   dependency auditing, CodeQL analysis, Dependabot updates, SHA-pinned GitHub
   Actions, OpenAPI artifact export, and API image publication to GHCR.
+- A Docker-only quickstart with self-provisioned local configuration,
+  migration-gated service startup, production-image smoke coverage, health
+  probes, and automatic support for both Compose command styles.
+
+### Changed
+
+- Compose resource names changed from `praxis-agents-template-*` to
+  `praxis-*`. Existing legacy-named local volumes are left intact and can be
+  inspected or migrated manually; the new stack starts with a fresh database.
 
 [0.1.0]: https://github.com/Greg-Asquith/praxis-agents-os/releases/tag/v0.1.0

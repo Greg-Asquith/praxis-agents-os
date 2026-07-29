@@ -1,34 +1,42 @@
 .PHONY: bootstrap
-bootstrap: local-env install ## Create local env files and install app dependencies
+bootstrap: doctor local-env install ## Check tools, create local env files, and install dependencies
 
 .PHONY: local-env
 local-env: ## Create local env files and storage folders if they are missing
-	@mkdir -p .local/generated .local/targets .local/storage "$(API_DIR)/.local"
-	@if [ ! -s "$(API_DIR)/.env" ]; then \
-		cp "$(API_DIR)/.env.example" "$(API_DIR)/.env"; \
-		echo "Created $(API_DIR)/.env"; \
-	fi
-	@if [ ! -s ".local/generated/local.api.env" ]; then \
-		cp "$(API_DIR)/.env.example" ".local/generated/local.api.env"; \
-		echo "Created .local/generated/local.api.env"; \
-	fi
-	@credential_key="$$(awk -F= '/^CREDENTIAL_MASTER_KEYS=.+/ { print substr($$0, index($$0, "=") + 1); exit }' "$(API_DIR)/.env" ".local/generated/local.api.env")"; \
-	: "Replace the historical public placeholder by fingerprint without retaining it."; \
-	if [ -n "$$credential_key" ] && python3 -c 'import hashlib, sys; raise SystemExit(hashlib.sha256(sys.argv[1].encode()).hexdigest() != "059a4896bded304276493f16cba0345208fa6bb7a72af14b1433d28e7830169b")' "$$credential_key"; then \
-		credential_key=""; \
+	@$(COMPOSE) run --rm init
+
+.PHONY: doctor
+doctor: ## Check local contributor tool versions and print actionable install hints
+	@failed=0; \
+	if ! docker --version >/dev/null 2>&1; then \
+		echo "Missing Docker. Install Docker Desktop: https://docs.docker.com/desktop/"; failed=1; \
+	elif ! $(COMPOSE) version >/dev/null 2>&1; then \
+		echo "Missing Docker Compose. Install the Compose plugin or docker-compose: https://docs.docker.com/compose/install/"; failed=1; \
+	else \
+		echo "Docker: $$(docker --version)"; \
+		echo "Compose: $$($(COMPOSE) version --short 2>/dev/null || $(COMPOSE) version)"; \
 	fi; \
-	if [ -z "$$credential_key" ]; then \
-		credential_key="$$(python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())')"; \
+	if ! command -v uv >/dev/null 2>&1; then \
+		echo "Missing uv. Install it from https://docs.astral.sh/uv/getting-started/installation/"; failed=1; \
+	else \
+		echo "uv: $$(uv --version)"; \
+		if [ -x "$(API_DIR)/.venv/bin/python" ] && "$(API_DIR)/.venv/bin/python" -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))'; then \
+			echo "Python: $$($(API_DIR)/.venv/bin/python --version) (project environment)"; \
+		elif uv python find 3.12 >/dev/null 2>&1; then \
+			echo "Python: $$(uv python find 3.12)"; \
+		else \
+			echo "Python 3.12 is required. Run: uv python install 3.12"; failed=1; \
+		fi; \
 	fi; \
-	for env_file in "$(API_DIR)/.env" ".local/generated/local.api.env"; do \
-		awk -v key="$$credential_key" 'BEGIN { written = 0 } /^CREDENTIAL_MASTER_KEYS=/ { if (!written) { print "CREDENTIAL_MASTER_KEYS=" key; written = 1 }; next } { print } END { if (!written) print "CREDENTIAL_MASTER_KEYS=" key }' "$$env_file" > "$$env_file.tmp"; \
-		mv "$$env_file.tmp" "$$env_file"; \
-	done
-	@if [ ! -f ".local/generated/local.web.env" ]; then \
-		printf '%s\n' 'VITE_API_BASE_URL=http://localhost:8000/api/v1' > ".local/generated/local.web.env"; \
-		echo "Created .local/generated/local.web.env"; \
-	fi
-	@touch .local/targets/local.secrets.env
+	if ! command -v node >/dev/null 2>&1; then \
+		echo "Missing Node.js 24. Install it from https://nodejs.org/"; failed=1; \
+	elif ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) === 24 ? 0 : 1)'; then \
+		echo "Node.js 24 is required; found $$(node --version)."; failed=1; \
+	else echo "Node: $$(node --version)"; fi; \
+	if ! command -v pnpm >/dev/null 2>&1; then \
+		echo "Missing pnpm. Run: corepack enable"; failed=1; \
+	else echo "pnpm: $$(pnpm --version)"; fi; \
+	exit $$failed
 
 .PHONY: install
 install: api-install web-install ## Install backend and frontend dependencies
@@ -42,7 +50,7 @@ web-install: ## Install frontend dependencies with pnpm
 	cd $(WEB_DIR) && pnpm install
 
 .PHONY: dev
-dev: local-env ## Start Postgres, migrate, then run API, worker, and web dev servers
+dev: doctor local-env ## Start Postgres, migrate, then run API, worker, and web dev servers
 	@$(MAKE) db-up
 	@$(MAKE) db-wait
 	@$(MAKE) migrate

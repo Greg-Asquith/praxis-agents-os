@@ -21,6 +21,36 @@ dispatch, and approval-gated side effects around the agents they run.
 <!-- Screenshot: seeded Home action surface -->
 <!-- Demo GIF: conversation with a tool approval and rich result -->
 
+## Quickstart (Docker only)
+
+You need Docker and an API key for OpenAI, Anthropic, or Google.
+Python, Node.js; `uv`, and `pnpm` are not required on the host machine when running via Docker.
+
+```bash
+git clone https://github.com/Greg-Asquith/praxis-agents-os.git
+cd praxis-agents-os
+make quickstart
+```
+
+`make quickstart` checks Docker, asks for an LLM API key without echoing it (any
+of the three providers — it recognizes the key by its prefix), creates the
+uncommitted local configuration, runs migrations, builds the production
+images, and starts Praxis at `http://localhost:3000`. Sign up, then create a
+workspace and your first agent.
+
+To run without Make (ie using Windows PowerShell or Command Prompt), put the key in
+the process environment and run Compose directly:
+
+```bash
+OPENAI_API_KEY=sk-your-key docker compose up --build
+```
+
+In PowerShell, set the variable first with
+`$env:OPENAI_API_KEY = "sk-your-key"` (`ANTHROPIC_API_KEY` and
+`GOOGLE_API_KEY` work the same way). Local values are written only beneath
+`.local/` and `apps/api/.env`, both ignored by Git. Stop the stack with
+`Ctrl+C`; the local database is preserved as a Docker Volume.
+
 ## Status
 
 The core platform is wired end to end (API, worker, and UI):
@@ -111,7 +141,7 @@ Local infrastructure:
 - Postgres 17 with pgvector available; pgvector is enabled by Alembic
 - Docker Compose for local service orchestration
 
-## Prerequisites
+## Contributor prerequisites
 
 Install these before running the apps locally:
 
@@ -132,6 +162,10 @@ Create missing local env files and install dependencies:
 make bootstrap
 ```
 
+`make bootstrap` runs `make doctor` first. The doctor accepts both the modern
+`docker compose` plugin and legacy `docker-compose`, and checks the contributor
+toolchain with install hints when a version is missing.
+
 Start the local database, apply migrations, and run the API, worker, and web
 app together:
 
@@ -149,17 +183,16 @@ make worker-dev
 make web-dev
 make api-test
 make check
-make compose-up
+make compose-dev
+make doctor
 make dev-kill
 ```
-
-<!-- Quickstart (Docker only) is owned by docs/plans/deployment/001-local-quickstart.md. -->
 
 `make dev` runs the API at `http://localhost:8000` and the web app at
 `http://localhost:3000`. It also runs `python -m workers.main` as a separate
 local process under `watchfiles`; only Postgres runs in Docker in this mode.
 The worker reloads when backend/provider code or `apps/api/.env` changes, and
-`make dev-kill` stops all three local processes. `make compose-up` is the
+`make dev-kill` stops all three local processes. `make compose-dev` is the
 alternative where API, worker, and web all run in Docker.
 
 `make check` runs the full quality gate for both apps: backend lint and format
@@ -290,22 +323,17 @@ architecture rules, and the production build.
 ## Docker Compose
 
 The root `docker-compose.yml` defines local Postgres, API, worker, and web
-services. Compose expects local env files under `.local/`; those files are not
-committed and `make bootstrap` creates them.
+services. Its one-shot `init` service creates missing local configuration, and
+its one-shot migration service must finish before the API or worker starts.
+Plain `docker compose up` uses the production images intended for deployment.
+`make compose-dev` adds `docker-compose.dev.yml` for bind mounts and hot
+reload.
 
-To create them manually instead:
-
-```bash
-mkdir -p .local/generated .local/targets .local/storage
-cp apps/api/.env.example .local/generated/local.api.env
-touch .local/targets/local.secrets.env
-```
-
-Create `.local/generated/local.web.env` with local frontend configuration:
-
-```env
-VITE_API_BASE_URL=http://localhost:8000/api/v1
-```
+Compose commands in Make automatically use `docker compose` when available
+and fall back to `docker-compose`. You can override the detected command, for
+example `make COMPOSE=podman-compose db-up`.
+For a parallel smoke stack, override `PRAXIS_API_PORT`, `PRAXIS_WEB_PORT`,
+and `PRAXIS_API_BASE_URL`; the default ports remain 8000 and 3000.
 
 Intended local service URLs:
 
@@ -323,9 +351,9 @@ Back up Postgres with `pg_dump`, including when using the Compose database:
 conversations, configuration, and the audit trail all live there. Keep file
 storage and secret-provider backups aligned with the same recovery point.
 
-For an upgrade, stop the worker first, apply `alembic upgrade heads`, then
-start the API and worker against the migrated schema. Migrations are never
-applied automatically.
+For a non-Compose production upgrade, stop the worker first, apply
+`alembic upgrade heads`, then start the API and worker against the migrated
+schema. The local Compose paths perform that sequence automatically.
 
 Production deployment currently targets cloud infrastructure: outside
 `ENVIRONMENT=local`, Praxis requires cloud-backed storage and a cloud secret

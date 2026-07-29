@@ -20,8 +20,9 @@
   workflow is executable but pushing the tag that triggers it is
   operator-gated)
 - **Depends on**: C05 (DONE), C01 (DONE — CI exists), 082 (DONE — see
-  decision 2). Coordinates with `docs/plans/deployment/001-local-quickstart.md`
-  via launch gate G1 — see "Launch gates".
+  decision 2), and deployment plan 001 (DONE — see
+  `docs/plans/complete/deployment-001-local-quickstart.md`). See launch
+  gate G1.
 - **Category**: Lane P — public launch & adoption
 - **Planned at**: working tree at commit `6be5491`, 2026-07-07.
   **Revised 2026-07-28 against working tree `9d83f9d`** after a four-track
@@ -149,7 +150,7 @@ launch without code.
 | Gate | What | Owner | Launch-blocking action |
 |------|------|-------|------------------------|
 | G0 | This plan's Steps 0–6 | this plan | Execute. |
-| G1 | Fresh-clone experience: compose `migrate` one-shot service, `service_healthy` dependencies, `/healthz` + `/readyz`, env-init in compose, `make quickstart` | `docs/plans/deployment/001-local-quickstart.md` Stages 1–2 (specified, unexecuted) | Execute at least Stage 1 before launch. While there: remove the dead `/api/health` entries in `middleware/csrf.py:54` and `middleware/rate_limit.py:33` when the real route lands, and add `stop_grace_period` to compose (API drain is 120s, worker 30s; Docker's 10s default SIGKILLs mid-drain — amend 001 Stage 1 with this line item). |
+| G1 | Fresh-clone experience: compose `migrate` one-shot service, `service_healthy` dependencies, `/healthz` + `/readyz`, env-init in compose, `make quickstart` | `docs/plans/complete/deployment-001-local-quickstart.md` | **Resolved 2026-07-28:** the complete plan includes the fresh-volume walkthrough, 120-second API and 30-second worker shutdown windows, health routes, ordered migrations, and Docker-only bootstrap. |
 | G2 | **Production self-hosting posture.** Outside `ENVIRONMENT=local`, settings validation (`core/settings/__init__.py:79-101`) rejects `local_fs` storage, `local` secrets, and `console` email — and no email transport is implemented at all (`ses`/`smtp`/`sendgrid` are accepted literals with zero implementation; `.env.example:195-202` documents dead SES config). So "self-hosted production" today requires cloud storage + a cloud secret manager and still has no working email. | Maintainer | Decide: (a) ship an SMTP transport and/or allow `EMAIL_PROVIDER=disabled` plus an S3-compatible endpoint override as a fast-follow plan, or (b) launch with README/deployment docs stating plainly that production deployment targets cloud providers (the GCP plan) and email delivery is pending. Either is honest; silence is not. Do NOT weaken `validate_runtime_provider_config` ad hoc. |
 | G3 | **No password reset exists.** Only `change_password` is implemented; `PASSWORD_RESET_TOKEN_TTL_MINUTES` and its rate limit are dead settings. A self-hoster who forgets their password is stuck at the SQL prompt. | Maintainer | Decide: fast-follow plan (needs G2's email decision), or document the limitation and a recovery runbook (super-admin `PUT /users/{id}/password` via `SUPER_ADMIN_EMAILS`) in the README/FAQ before launch. |
 | G4 | **Super-admin claim window.** Super-admin is granted by email-string match (`core/dependencies.py:155-157`) with open registration (`ALLOW_SIGNUP` default true) and no email verification anywhere (`user.email_verified` exists but nothing reads it). An attacker who registers the operator's intended admin email first owns the instance. | Maintainer (docs now; code later) | Before launch: document the safe ordering prominently (deploy with `ALLOW_SIGNUP=false` → register admin → set `SUPER_ADMIN_EMAILS`) in SECURITY.md's deployment-hardening note and the deployment docs. Real fix (email verification, or refusing super-admin elevation for unverified emails) is a recorded follow-up plan. |
@@ -510,16 +511,15 @@ Lane P already exists in both index docs, so this step is reconciliation:
    placeholder-secret task (landed via Step 0) and annotate the "pin
    third-party Actions by SHA" bullet as owned/done by Lane P (decision 5)
    so 002 Stage 3 does not redo it.
-4. `docs/plans/deployment/001-local-quickstart.md`: add the
-   `stop_grace_period` line item to Stage 1 per gate G1 (amendment, not
-   execution).
+4. `docs/plans/complete/deployment-001-local-quickstart.md`: completed
+   2026-07-28 with the `stop_grace_period` requirement implemented.
 5. Record the maintainer's G2–G5 decisions wherever they land (roadmap
    note, README wording, or new follow-up plan stubs) so the next plan
    does not re-litigate them.
 
 **Verify**: `grep -n "| 078 |" docs/plans/000_README.md` shows the updated
 status; `grep -n "deployment/" docs/plans/000_MASTER_ROADMAP.md` → match;
-`grep -n "stop_grace_period" docs/plans/deployment/001-local-quickstart.md`
+`grep -n "stop_grace_period" docs/plans/complete/deployment-001-local-quickstart.md`
 → match.
 
 ## Test plan

@@ -1,8 +1,8 @@
-<!-- docs/plans/deployment/001-local-quickstart.md -->
+<!-- docs/plans/complete/deployment-001-local-quickstart.md -->
 
 # 001 — Local Quickstart: foolproof spin-up for a fresh clone
 
-Status: Planned
+Status: Complete 2026-07-28
 Written: 2026-07-27
 Depends on: nothing (this is the first deployment plan to execute)
 
@@ -17,7 +17,7 @@ naming the fix, not a stack trace.
 
 Two audiences, two paths, both foolproof:
 
-- **Try-it path** (`docker compose up` / `make quickstart`): Docker only.
+- **Docker-only path** (`docker compose up` / `make quickstart`): Docker only.
   No uv, pnpm, Python, or Node on the host. This is what we hand to someone
   we're sharing the project with.
 - **Contributor path** (`make bootstrap` + `make dev`): the existing local
@@ -36,7 +36,7 @@ Two audiences, two paths, both foolproof:
   - `depends_on` uses `condition: service_started` even though Postgres has
     a healthcheck — the API can race the DB on first boot.
   - It uses the `dev` image targets with bind mounts and a node_modules
-    volume — fine for development, heavier than needed for try-it.
+    volume — fine for development, heavier than needed for the Docker-only path.
   - It still requires `make local-env` first (and therefore make + python3
     on the host) to produce `.local/generated/*` env files.
 - The API has no `/healthz` route; the production Dockerfile healthcheck is
@@ -50,7 +50,7 @@ Two audiences, two paths, both foolproof:
 
 ## Design decisions
 
-- **D1 — One-command entry is `docker compose up` semantics.** The try-it
+- **D1 — One-command entry is `docker compose up` semantics.** The Docker-only
   path must work with Docker alone. Env bootstrap moves into the compose
   stack itself (an `init` one-shot service that writes
   `.local/generated/*` if missing, generating `CREDENTIAL_MASTER_KEYS`
@@ -61,18 +61,18 @@ Two audiences, two paths, both foolproof:
   `depends_on: postgres: condition: service_healthy`; `api` and `worker`
   depend on `migrate: condition: service_completed_successfully`. This
   also becomes the pattern every cloud target copies (a migrate job).
-- **D3 — The LLM key is prompted, not discovered.** Try-it path: compose
+- **D3 — The LLM key is prompted, not discovered.** Docker-only path: compose
   reads `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` from `.local/targets/local.secrets.env`
   (already wired in compose) or the host environment; the quickstart doc
   and `make quickstart` say so up front. Additionally, the web UI should
   degrade clearly when no provider key is configured (a settings hint, not
   a failed stream) — small backend/frontend task, not a redesign.
-- **D4 — Try-it uses production image targets.** `docker compose` gets a
-  `try` profile (or a `docker-compose.quickstart.yml` overlay) using the
-  `production` targets: nginx-served web (with `VITE_API_BASE_URL` built
-  for `http://localhost:8000/api/v1`), non-reload API. Faster, smaller,
-  and it exercises the images we ship to clouds. The existing dev-target
-  services stay for contributors.
+- **D4 — Plain Compose uses production image targets.** The default
+  `docker-compose.yml` uses the `production` targets: nginx-served web
+  (with `VITE_API_BASE_URL` built for `http://localhost:8000/api/v1`) and
+  non-reload API. `docker-compose.dev.yml` is the explicit hot-reload
+  override used by `make compose-up`. This keeps the default command
+  unsurprising and exercises the images shipped to clouds.
 - **D5 — `ENVIRONMENT=local` stays the only mode either path runs in.**
   No loosening of the settings validation; local-only providers
   (`local_fs`, `console`, `local` secrets) are exactly what quickstart
@@ -82,31 +82,31 @@ Two audiences, two paths, both foolproof:
 
 ### Stage 1 — Make the compose path correct
 
-- [ ] Add a `migrate` one-shot service to `docker-compose.yml` per D2; flip
+- [x] Add a `migrate` one-shot service to `docker-compose.yml` per D2; flip
       `postgres` dependencies to `condition: service_healthy`.
-- [ ] Set explicit Compose `stop_grace_period` values that cover graceful
+- [x] Set explicit Compose `stop_grace_period` values that cover graceful
       shutdown: at least 120 seconds for the API and 30 seconds for the
       worker, so Docker does not terminate either process mid-drain.
-- [ ] Add `/healthz` (liveness, returns 200 with app version, no DB) and
+- [x] Add `/healthz` (liveness, returns 200 with app version, no DB) and
       `/readyz` (checks DB connection) to the API; wire the production
       Dockerfile HEALTHCHECK and a compose healthcheck on `api` to it.
-- [ ] Move env bootstrap into an `init` one-shot compose service per D1 so
+- [x] Move env bootstrap into an `init` one-shot compose service per D1 so
       the stack self-provisions `.local/generated/*` on first run; keep
       `make local-env` delegating to the same logic so the two paths cannot
       drift.
-- [ ] Rename `praxis-agents-template-*` volumes/networks to `praxis-*`
+- [x] Rename `praxis-agents-template-*` volumes/networks to `praxis-*`
       (note: existing local volumes are orphaned by a rename — call this
       out in the changelog/README so contributors know to re-migrate or
       keep the old names locally).
 
-### Stage 2 — The try-it profile
+### Stage 2 — The Docker-only path
 
-- [ ] Add production-target compose services (D4): `web` built with
+- [x] Add production-target compose services (D4): `web` built with
       `target: production` and `VITE_API_BASE_URL=http://localhost:8000/api/v1`
       as a build arg (Vite env must be present at build time — add the
       `ARG`/`ENV` plumbing to `apps/web/Dockerfile` build stage), `api`
       with `target: production`.
-- [ ] Harden the nginx-served document, including every cache-specific
+- [x] Harden the nginx-served document, including every cache-specific
       location: `Strict-Transport-Security` in HTTPS deployments,
       `Content-Security-Policy` with `default-src 'self'`,
       `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`,
@@ -126,24 +126,24 @@ Two audiences, two paths, both foolproof:
       script or connect source. Local HTTP may omit HSTS; production must
       emit `max-age=31536000; includeSubDomains` after both sibling
       subdomains are HTTPS-only.
-- [ ] `make quickstart`: one target that checks Docker is present, prompts
+- [x] `make quickstart`: one target that checks Docker is present, prompts
       for/validates an LLM key into `.local/targets/local.secrets.env` if
-      absent, then `docker compose --profile try up`. Print the URL and
+      absent, then `docker compose up --build`. Print the URL and
       first-run instructions (sign up, create workspace) on success.
-- [ ] `make doctor`: check Docker, and for the contributor path uv, pnpm,
+- [x] `make doctor`: check Docker, and for the contributor path uv, pnpm,
       Node 24, Python 3.12 — versioned, with install hints per platform.
       `bootstrap` and `dev` call it first.
 
 ### Stage 3 — First-run experience
 
-- [ ] Graceful no-LLM-key state (D3): API surfaces "no provider key
+- [x] Graceful no-LLM-key state (D3): API surfaces "no provider key
       configured for the default model provider" as a typed error; web
       shows an actionable message instead of a dead stream.
-- [ ] README: add a "Quickstart (Docker only)" section at the top — clone,
+- [x] README: add a "Quickstart (Docker only)" section at the top — clone,
       set key, `make quickstart` (or the raw compose command for
       make-less/Windows users), open http://localhost:3000. Keep the
       contributor section below it.
-- [ ] Walk through the flow on a machine (or pristine checkout + wiped
+- [x] Walk through the flow on a machine (or pristine checkout + wiped
       Docker volumes) exactly as written: fresh clone → quickstart → sign
       up → create workspace → create agent → send a message that calls a
       tool → upload a file. Every rough edge found becomes a task here
@@ -152,8 +152,9 @@ Two audiences, two paths, both foolproof:
 ## Verification
 
 - Fresh clone + wiped volumes: `make quickstart` reaches a usable app with
-  only Docker installed; `docker compose --profile try up` alone also
-  works after env init.
+  only Docker installed; `docker compose up` alone also works after env
+  init and a provider key is supplied through the documented secrets file
+  or host environment.
 - `make dev` contributor path unchanged and green.
 - `make check` passes; migration ordering verified by the compose `migrate`
   service logs on first boot.
@@ -163,9 +164,33 @@ Two audiences, two paths, both foolproof:
 - README quickstart followed verbatim by someone (or a clean-room agent
   session) who hasn't seen the repo.
 
+## Completion evidence (2026-07-28)
+
+- A production-target stack was built from a fresh named volume on isolated
+  host ports. The init and migration jobs completed before API and worker
+  startup; Postgres, API, and web healthchecks became healthy.
+- A clean-room HTTP walkthrough against that stack registered a user,
+  created a workspace and agent, uploaded and confirmed a signed local file,
+  and completed an OpenAI-backed SSE turn with both `tool.call` and
+  `tool.result` events.
+- `/healthz` and `/readyz` returned 200. The SPA shell, fallback route, and
+  fingerprinted asset all returned 200 with the required CSP and companion
+  security headers.
+- Fresh env generation was exercised separately and produced all expected
+  ignored artifacts with one shared generated credential key. A
+  non-interactive missing-key run failed early with the documented
+  actionable message.
+- `make check` passed: 1,305 API tests and 416 web tests, including migration
+  drift, nginx configuration, formatting, lint, architecture, and production
+  build gates.
+- Both Compose command forms are selected by the Make wrapper:
+  `docker compose` when available and legacy `docker-compose` as fallback.
+  The legacy executable was not installed on the verification host, so its
+  selection branch was verified statically rather than launched.
+
 ## STOP conditions
 
-- STOP if making the try-it path work requires weakening
+- STOP if making the Docker-only path work requires weakening
   `validate_runtime_provider_config` or any CORS/cookie/CSRF setting —
   find a local-config route instead.
 - STOP if the init-container approach requires committing generated env

@@ -1,0 +1,30 @@
+# Hot-reload image and bind-mount overrides for `make compose-dev`.
+
+services:
+  migrate:
+    build:
+      target: dev
+    volumes:
+      - ./apps/api:/app
+
+  api:
+    build:
+      target: dev
+    command: ["sh", "/app/bin/compose_entrypoint.sh", "api-reload"]
+    volumes:
+      - ./apps/api:/app
+
+  worker:
+    build:
+      target: dev
+    volumes:
+      - ./apps/api:/app
+
+  web:
+    build:
+      target: dev
+    volumes:
+      - ./apps/web:/app
+      - praxis-web-pnpm-node-modules:/app/node_modules
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1

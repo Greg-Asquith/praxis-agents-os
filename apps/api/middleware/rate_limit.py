@@ -30,7 +30,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, exclude_paths: list[str] | None = None):
         super().__init__(app)
         self.exclude_paths = exclude_paths or [
-            "/api/health",
+            "/healthz",
+            "/readyz",
             "/api/metrics",
         ]
         self.fail_closed_limit_types = {

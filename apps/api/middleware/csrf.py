@@ -51,7 +51,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # Direct-upload URLs are HMAC-signed storage capabilities. They mirror cloud signed uploads, which bypass app cookies and CSRF middleware entirely.
             "/api/v1/storage/upload",
             # Health/metrics are GET-only; keep list accurate for clarity
-            "/api/health",
+            "/healthz",
+            "/readyz",
             "/api/metrics",
         ]
 

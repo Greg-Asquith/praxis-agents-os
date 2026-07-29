@@ -56,10 +56,8 @@ CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --reload 
 # --- Production ---
 FROM runtime AS production
 
-# TCP-level liveness probe using only stdlib; upgrade to an HTTP /healthz
-# check once a health endpoint exists (curl is not present in slim images).
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD python -c "import socket, os; s=socket.create_connection(('localhost', int(os.getenv('PORT','8080'))), timeout=5); s.close()"
+  CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://localhost:{os.getenv('PORT', '8080')}/healthz\", timeout=5)"
 
 # Respect Cloud Run's PORT and bind to all interfaces.
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]

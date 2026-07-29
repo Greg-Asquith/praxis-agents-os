@@ -13,6 +13,7 @@ from routes.audit_events import router as audit_events_router
 from routes.auth import router as auth_router
 from routes.conversations import router as conversations_router
 from routes.files import router as files_router
+from routes.health import router as health_router
 from routes.integrations import router as integrations_router
 from routes.kb import router as kb_router
 from routes.memories import router as memories_router
@@ -47,4 +48,4 @@ api_router.include_router(tools_router)
 api_router.include_router(users_router)
 api_router.include_router(workspaces_router)
 
-__all__ = ["api_router", "artifact_serving_router"]
+__all__ = ["api_router", "artifact_serving_router", "health_router"]

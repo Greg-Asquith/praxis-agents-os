@@ -39,6 +39,18 @@ class ModelConfigurationError(ProblemDetailsError):
         )
 
 
+class MissingModelCredentialError(ModelConfigurationError):
+    """Raised when a selected provider has no configured API credential."""
+
+    error_code = "model_provider_not_configured"
+
+    def __init__(self, *, provider: str, setting: str):
+        super().__init__(
+            f"No API key is configured for model provider '{provider}'.",
+            details={"provider": provider, "setting": setting},
+        )
+
+
 @dataclass(frozen=True)
 class ModelInfo:
     """One known model in the Python-owned catalog."""

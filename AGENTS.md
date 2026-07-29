@@ -103,11 +103,16 @@ it as pending instead of implying it works.
 ## Local Development
 
 Docker Compose expects local env files under `.local/`; they are intentionally
-not committed. `make bootstrap` creates them and installs dependencies;
+not committed. The Compose `init` service creates them for Docker-only use;
+`make bootstrap` invokes the same initializer and installs dependencies;
 `make dev` starts Postgres, migrates, and runs the API, worker, and web dev
 servers. In that workflow only Postgres runs in Docker; the API, worker, and
 web processes run locally, and `make dev-kill` stops all three. `make
-compose-up` runs the complete stack in Docker instead. When changing Docker
+compose-dev` runs the complete development stack in Docker using
+`docker-compose.dev.yml`, while `make quickstart` runs the default
+production-image stack and prompts for an LLM provider key if none is
+configured.
+Make detects both `docker compose` and legacy `docker-compose`. When changing Docker
 behavior: keep local services bound to
 `127.0.0.1`, keep production images small and non-root, and do not bake
 runtime secrets into images.

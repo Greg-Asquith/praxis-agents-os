@@ -1,19 +1,42 @@
 # docker-compose.yml
 
+x-api-environment: &api-environment
+  OPENAI_API_KEY:
+  ANTHROPIC_API_KEY:
+  GOOGLE_API_KEY:
+  AZURE_OPENAI_API_KEY:
+
+x-api-volumes: &api-volumes
+  - ./.local/generated:/config/generated:ro
+  - ./.local/targets:/config/targets:ro
+  - ./.local/data:/data
+
 volumes:
-  praxis-agents-template-postgres-data:
+  praxis-postgres-data:
     driver: local
-  praxis-agents-template-web-app-pnpm-node-modules:
+  praxis-web-pnpm-node-modules:
     driver: local
 
 networks:
-  praxis-agents-template-network:
+  praxis-network:
     driver: bridge
 
 services:
+  init:
+    image: python:3.12.10-slim
+    command:
+      - python
+      - /workspace/apps/api/bin/bootstrap_local_env.py
+      - --workspace
+      - /workspace
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    restart: "no"
+
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: postgres
+    container_name: praxis-postgres
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
@@ -22,77 +45,98 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - praxis-agents-template-postgres-data:/var/lib/postgresql/data
+      - praxis-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     restart: unless-stopped
     networks:
-      - praxis-agents-template-network
+      - praxis-network
+
+  migrate:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: production
+    command: ["sh", "/app/bin/compose_entrypoint.sh", "migrate"]
+    volumes: *api-volumes
+    environment: *api-environment
+    networks:
+      - praxis-network
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   api:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
-      target: dev
-    container_name: api
+      target: production
+    container_name: praxis-api
+    command: ["sh", "/app/bin/compose_entrypoint.sh", "api"]
     ports:
-      - "127.0.0.1:8000:8080"
-    volumes:
-      - ./apps/api:/app
-      - ./.local/storage:/app/.local/storage
-    env_file:
-      - ./.local/generated/local.api.env
-      - ./.local/targets/local.secrets.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
-      LOCAL_SECRET_STORE_PATH: .local/secrets.enc.json
+      - "127.0.0.1:${PRAXIS_API_PORT:-8000}:8080"
+    volumes: *api-volumes
+    environment: *api-environment
+    stop_grace_period: 120s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
     networks:
-      - praxis-agents-template-network
+      - praxis-network
     depends_on:
-      postgres:
-        condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     build:
       context: ./apps/api
       dockerfile: Dockerfile
-      target: dev
-    container_name: worker
-    command: ["python", "-m", "workers.main"]
-    volumes:
-      - ./apps/api:/app
-      - ./.local/storage:/app/.local/storage
-    env_file:
-      - ./.local/generated/local.api.env
-      - ./.local/targets/local.secrets.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
-      LOCAL_SECRET_STORE_PATH: .local/secrets.enc.json
+      target: production
+    container_name: praxis-worker
+    command: ["sh", "/app/bin/compose_entrypoint.sh", "worker"]
+    volumes: *api-volumes
+    environment: *api-environment
+    healthcheck:
+      disable: true
+    stop_grace_period: 30s
+    restart: unless-stopped
     networks:
-      - praxis-agents-template-network
+      - praxis-network
     depends_on:
-      postgres:
-        condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   web:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
-      target: dev
-    container_name: web
+      target: production
+      args:
+        VITE_API_BASE_URL: ${PRAXIS_API_BASE_URL:-http://localhost:8000/api/v1}
+        WEB_HTTPS_ONLY: "false"
+    container_name: praxis-web
     ports:
-      - "127.0.0.1:3000:8080"
-    volumes:
-      - ./apps/web:/app
-      - praxis-agents-template-web-app-pnpm-node-modules:/app/node_modules
-    env_file: ./.local/generated/local.web.env
-    environment:
-      VITE_API_BASE_URL: http://localhost:8000/api/v1
+      - "127.0.0.1:${PRAXIS_WEB_PORT:-3000}:8080"
+    restart: unless-stopped
     networks:
-      - praxis-agents-template-network
+      - praxis-network
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy

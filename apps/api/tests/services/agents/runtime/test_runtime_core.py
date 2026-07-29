@@ -905,11 +905,12 @@ async def test_execute_run_commits_failed_status_before_reraising(
     assert stored_run.status == RUN_STATUS_FAILED
     assert stored_run.started_at is not None
     assert stored_run.failed_at is not None
-    assert stored_run.error_code == "ModelConfigurationError"
-    assert "Missing credential" in (stored_run.error_message or "")
+    assert stored_run.error_code == "model_provider_not_configured"
+    assert "No API key is configured" in (stored_run.error_message or "")
 
     event_names = [event.event for event in sink.events]
     assert event_names == [EVENT_RUN_STATUS, EVENT_RUN_STATUS, EVENT_ERROR, EVENT_DONE]
+    assert sink.events[-2].data["code"] == "model_provider_not_configured"
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 

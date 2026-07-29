@@ -195,12 +195,13 @@ async def emit_failure_events(
     exc: Exception,
 ) -> None:
     await db.rollback()
+    error_code = getattr(exc, "error_code", exc.__class__.__name__)
     terminal_status = RUN_STATUS_FAILED
     if started:
         failed_run = await persist_failed_run(
             db,
             run_id=run_id,
-            error_code=exc.__class__.__name__,
+            error_code=error_code,
             error_message=str(exc),
         )
         if failed_run is not None:
@@ -210,7 +211,7 @@ async def emit_failure_events(
                 await event_sink.emit(
                     EVENT_ERROR,
                     {
-                        "code": failed_run.error_code or exc.__class__.__name__,
+                        "code": failed_run.error_code or error_code,
                         "message": failed_run.error_message or str(exc),
                     },
                 )
@@ -218,7 +219,7 @@ async def emit_failure_events(
         await event_sink.emit(
             EVENT_ERROR,
             {
-                "code": exc.__class__.__name__,
+                "code": error_code,
                 "message": str(exc),
             },
         )

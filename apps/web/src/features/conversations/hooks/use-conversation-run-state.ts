@@ -9,6 +9,9 @@ import type {
   PendingDelegatedApproval,
   PendingToolApproval,
 } from "@/features/conversations/types"
+import type { StreamError } from "@/features/conversations/stream/protocol"
+
+const MODEL_PROVIDER_NOT_CONFIGURED = "model_provider_not_configured"
 
 type UseConversationRunStateParams = {
   activeRun: AgentRun | null
@@ -143,12 +146,22 @@ export function useConversationRunState({
     shouldRenderStream,
     streamError:
       shouldRenderStream && streamConversationId === conversationId
-        ? (streamErrorValue?.message ?? null)
+        ? formatStreamError(streamErrorValue)
         : null,
     streamMessages,
     streamToolCalls,
     visibleStreamApprovals,
   }
+}
+
+export function formatStreamError(error: StreamError | null): string | null {
+  if (error?.code === MODEL_PROVIDER_NOT_CONFIGURED) {
+    return (
+      `${error.message} Add the provider's API key to .local/targets/local.secrets.env ` +
+      "(Docker stack) or apps/api/.env (make dev), then restart Praxis."
+    )
+  }
+  return error?.message ?? null
 }
 
 function getPendingApprovals({

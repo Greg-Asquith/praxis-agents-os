@@ -22,6 +22,7 @@ from services.agents.models.domain import (
     PROVIDER_AZURE,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
+    MissingModelCredentialError,
     ModelConfigurationError,
 )
 
@@ -78,9 +79,9 @@ def provider_api_key(provider: str) -> str:
 
     secret = getattr(settings, setting_name, None)
     if secret is None or not secret.get_secret_value().strip():
-        raise ModelConfigurationError(
-            f"Missing credential for provider '{provider}': {setting_name} is not set.",
-            details={"provider": provider, "setting": setting_name},
+        raise MissingModelCredentialError(
+            provider=provider,
+            setting=setting_name,
         )
     return secret.get_secret_value()
 
