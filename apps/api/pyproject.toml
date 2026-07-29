@@ -7,37 +7,37 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.5",
     "asyncpg>=0.31.0",
-    "croniter>=6.2.2",
+    "croniter>=6.2.4",
     "cryptography>=49.0.0",
-    "fastapi>=0.138.1",
-    "greenlet>=3.3.0",
-    "httpx2>=2.5.0",
-    "logfire>=4.37.0",
+    "fastapi>=0.141.1",
+    "greenlet>=3.5.4",
+    "httpx2>=2.9.1",
+    "logfire>=4.39.0",
     "markitdown[docx,pdf,pptx,xlsx]>=0.1.6",
     "nh3>=0.2.20",
     "pgvector==0.5.0",
-    "prometheus-client>=0.25.0",
+    "prometheus-client>=0.26.0",
     "pwdlib[argon2]>=0.3.0",
-    "pydantic-ai>=2.1.0",
+    "pydantic-ai>=2.20.0",
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.13.0",
     "pyotp>=2.10.0",
     "sqlalchemy>=2.0.51",
-    "tzdata>=2026.2",
-    "uvicorn>=0.49.0",
+    "tzdata>=2026.3",
+    "uvicorn>=0.52.0",
 ]
 
 [project.optional-dependencies]
 azure = ["azure-identity>=1.17", "azure-keyvault-secrets>=4.8", "azure-storage-blob>=12.22"]
-gcp = ["google-cloud-secret-manager>=2.20", "google-cloud-storage>=2.18"]
-aws = ["boto3>=1.35"]
+gcp = ["google-cloud-secret-manager>=2.30.0", "google-cloud-storage>=3.13.0"]
+aws = ["boto3>=1.43.59"]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
-    "ruff>=0.15.19",
+    "ruff>=0.16.0",
     "watchfiles>=1.1.1",
 ]
 
