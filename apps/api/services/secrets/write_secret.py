@@ -12,7 +12,7 @@ from services.audit_events import (
     AuditResourceType,
     safe_record_operation_audit_event,
 )
-from services.secrets.domain import SecretReference
+from services.secrets.domain import SecretReference, workspace_secret_name
 from services.secrets.factory import get_secrets_provider
 
 
@@ -24,7 +24,8 @@ async def write_secret(
     workspace_id: UUID | None = None,
     actor_id: UUID | None = None,
 ) -> SecretReference:
-    ref = await get_secrets_provider().write_secret(name, value)
+    scoped_name = workspace_secret_name(workspace_id, name) if workspace_id else name
+    ref = await get_secrets_provider().write_secret(scoped_name, value)
     await safe_record_operation_audit_event(
         db,
         workspace_id=workspace_id,

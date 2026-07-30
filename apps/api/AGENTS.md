@@ -76,7 +76,10 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `PUT /integrations/connections/{connection_id}/credential`; discovery
   validates the new version asynchronously. The local-only encrypted secret
   store uses `LOCAL_SECRET_STORE_PATH`, anchored to the API root and separate
-  from `LOCAL_STORAGE_ROOT`.
+  from `LOCAL_STORAGE_ROOT`. Application-managed secrets and externally
+  provisioned references use the `workspaces/{workspace_id}/` namespace;
+  unnamespaced legacy references may only be reused by the workspace of an
+  existing connection.
 - The runtime HTTP dependency is `httpx2`; plain `httpx` is dev-only.
 
 ## Auth And Request Handling

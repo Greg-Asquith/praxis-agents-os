@@ -14,6 +14,7 @@ from services.audit_events import (
     AuditStatus,
     safe_record_independent_operation_audit_event,
 )
+from services.secrets.authorize_secret_reference import authorize_secret_reference
 from services.secrets.domain import SecretReference
 from services.secrets.factory import get_secrets_provider
 
@@ -26,6 +27,14 @@ async def resolve_secret(
     actor_id: UUID | None = None,
 ) -> str:
     try:
+        if actor_id is not None:
+            if workspace_id is None:
+                raise IntegrationValidationError(
+                    "Workspace context is required to resolve a user-supplied secret reference",
+                    provider_key=ref.provider,
+                    operation="resolve_secret",
+                )
+            await authorize_secret_reference(db, ref, workspace_id=workspace_id)
         provider = get_secrets_provider()
         if ref.provider != provider.provider_key:
             raise IntegrationValidationError(

@@ -77,7 +77,9 @@ async def test_raw_api_key_is_replaced_by_reference_everywhere(
     )
     assert response.status_code == 200, response.text
     assert raw_key not in response.text
-    assert response.json()["credential"]["secret_reference"].startswith("local:")
+    assert response.json()["credential"]["secret_reference"].startswith(
+        f"local:workspaces/{integration_identity['workspace'].id}/"
+    )
 
     connection = await db_session.get(IntegrationConnection, response.json()["id"])
     assert connection is not None and connection.status == "discovery_pending"
@@ -161,3 +163,39 @@ async def test_reference_only_connect_validates_and_accepts_existing_secret(
         },
     )
     assert malformed.status_code == 400
+
+
+async def test_reference_only_connect_rejects_another_workspaces_secret(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    initial = await db_async_client.post(
+        "/api/v1/integrations/connections/api-key",
+        headers=integration_identity["headers"],
+        json={"provider_key": "airtable", "label": "First workspace", "api_key": "foreign"},
+    )
+    assert initial.status_code == 200
+    connection = await db_session.get(IntegrationConnection, initial.json()["id"])
+    credential = await db_session.get(ExternalCredential, connection.credential_id)
+
+    _user, _workspace, _membership, other_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.OWNER,
+    )
+    response = await db_async_client.post(
+        "/api/v1/integrations/connections/api-key",
+        headers=other_headers,
+        json={
+            "provider_key": "airtable",
+            "label": "Cross-workspace reference",
+            "secret_reference": {
+                "provider": credential.secret_provider,
+                "name": credential.secret_name,
+                "version": credential.secret_version,
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not authorized for this workspace" in response.text
