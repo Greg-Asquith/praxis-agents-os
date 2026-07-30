@@ -16,10 +16,11 @@ from services.auth.utils import (
     record_auth_security_event,
     session_token_from_request,
     set_auth_cookies,
-    verify_totp_or_backup,
 )
 from services.security import SecurityEventType
 from services.workspaces.invitations import accept_pending_invitations_for_user
+
+from .utils import verify_and_consume_login_second_factor
 
 
 async def verify_totp(
@@ -53,7 +54,12 @@ async def verify_totp(
         )
         raise AuthenticationError("Invalid or expired partial session")
 
-    if not verify_totp_or_backup(user, token=payload.token, backup_code=payload.backup_code):
+    if not await verify_and_consume_login_second_factor(
+        db,
+        user=user,
+        token=payload.token,
+        backup_code=payload.backup_code,
+    ):
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_TOTP_FAILED,
             request=request,

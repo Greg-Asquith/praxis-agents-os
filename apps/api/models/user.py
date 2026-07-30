@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 
 import pyotp
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -73,6 +74,7 @@ class User(BaseModel):
     totp_secret_encrypted = Column(Text, nullable=True)  # Encrypted TOTP secret
     totp_enabled = Column(Boolean, default=False, nullable=False, server_default=text("false"))
     totp_enabled_at = Column(DateTime(timezone=True), nullable=True)
+    last_totp_counter = Column(BigInteger, nullable=True)
     backup_codes_encrypted = Column(
         Text, nullable=True
     )  # Encrypted JSON array of hashed backup codes
@@ -170,6 +172,7 @@ class User(BaseModel):
         secret = pyotp.random_base32()
         # Encrypt and store the secret
         self.totp_secret_encrypted = encrypt_data(secret)
+        self.last_totp_counter = None
         return secret
 
     def get_totp_secret(self) -> str | None:
@@ -192,24 +195,39 @@ class User(BaseModel):
         self.totp_enabled = False
         self.totp_enabled_at = None
         self.totp_secret_encrypted = None
+        self.last_totp_counter = None
         self.backup_codes_encrypted = None
         self.backup_codes_generated_at = None
 
-    def verify_totp(self, token: str) -> bool:
-        """Verify TOTP token using the stored secret.
-        This should work during setup (before enabling) and after enablement.
-        """
+    def matching_totp_counter(
+        self,
+        token: str,
+        *,
+        for_time: datetime | None = None,
+        valid_window: int = 1,
+    ) -> int | None:
+        """Return the matching TOTP counter, including the allowed clock-skew window."""
         if not self.totp_secret_encrypted:
-            return False
+            return None
         try:
             secret = self.get_totp_secret()
             if secret is None:
-                return False
+                return None
             totp = pyotp.TOTP(secret)
-            # Verify token with 1-window tolerance (30 seconds before/after)
-            return totp.verify(token, valid_window=1)
+            current_counter = totp.timecode(for_time or datetime.now(UTC))
+            for offset in range(-valid_window, valid_window + 1):
+                counter = current_counter + offset
+                if counter >= 0 and pyotp.utils.strings_equal(
+                    str(token), totp.generate_otp(counter)
+                ):
+                    return counter
+            return None
         except Exception:
-            return False
+            return None
+
+    def verify_totp(self, token: str) -> bool:
+        """Verify TOTP during setup or an authenticated account operation."""
+        return self.matching_totp_counter(token) is not None
 
     def get_totp_qr_uri(self, issuer_name: str | None = None) -> str:
         """Get TOTP QR code URI for authenticator apps."""
