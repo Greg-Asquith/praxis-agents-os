@@ -21,10 +21,21 @@ export function setApiRequestHeadersProvider(provider: ApiRequestHeadersProvider
   apiRequestHeadersProvider = provider
 }
 
-function buildUrl(path: string, query?: Record<string, QueryValue>) {
+export function buildUrl(path: string, query?: Record<string, QueryValue>) {
+  const apiBaseUrl = new URL(env.apiBaseUrl)
   const url = new URL(
     path.startsWith("/") ? `${env.apiBaseUrl}${path}` : `${env.apiBaseUrl}/${path}`
   )
+  const apiBasePathPrefix = apiBaseUrl.pathname.endsWith("/")
+    ? apiBaseUrl.pathname
+    : `${apiBaseUrl.pathname}/`
+  const isWithinApiBase =
+    url.origin === apiBaseUrl.origin &&
+    (url.pathname === apiBaseUrl.pathname || url.pathname.startsWith(apiBasePathPrefix))
+
+  if (!isWithinApiBase) {
+    throw new Error("API request path escaped the configured API base URL.")
+  }
 
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined && value !== null) {

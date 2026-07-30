@@ -31,10 +31,10 @@ local plan numbers to `docs/plans/000_MASTER_ROADMAP.md`.
 | Plan | Change | Risk | Status |
 | --- | --- | --- | --- |
 | [001](001-actions-setup-node-v7.md) | `actions/setup-node` 6.4.0 → 7.0.0 | Low | TODO |
-| [002](002-actions-setup-uv-v9.md) | `astral-sh/setup-uv` 8.2.0 → 9.0.0 | Low–medium | TODO |
-| [003](003-markitdown-0.1.7.md) | MarkItDown floor 0.1.6 → 0.1.7 | Low | TODO |
-| [004](004-web-minor-patch-refresh.md) | Web minor/patch refresh | Medium | TODO |
-| [005](005-api-minor-patch-refresh.md) | API minor/patch refresh | High | TODO |
+| [002](002-actions-setup-uv-v9.md) | `astral-sh/setup-uv` 8.2.0 → 9.0.0 | Low–medium | READY FOR REVIEW — local gate passed; remote verification awaits an approved push |
+| [003](003-markitdown-0.1.7.md) | MarkItDown floor 0.1.6 → 0.1.7 | Low | READY FOR REVIEW — local gate passed; remote verification awaits an approved push |
+| [004](004-web-minor-patch-refresh.md) | Web minor/patch refresh | Medium | READY FOR REVIEW — local gates and route smoke passed; visual smoke and remote CI await human review |
+| [005](005-api-minor-patch-refresh.md) | API minor/patch refresh | High | READY FOR REVIEW — local gates, audit, and production Docker smoke passed; live evals and remote checks await human review |
 | [006](006-node-26-alignment-deferred.md) | Node 26 runtime and type alignment | Medium | DEFERRED |
 
 ## Closed Dependabot pull requests

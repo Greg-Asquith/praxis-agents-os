@@ -11,7 +11,7 @@ export const OAUTH_LINK_PROVIDER_STORAGE_KEY = "praxis.oauthLinkProvider"
 
 async function startOauthLink(provider: string) {
   return apiRequest<OAuthAuthorizationUrlResponse>(
-    `/auth/oauth/${provider}/link/authorization-url`,
+    `/auth/oauth/${encodeURIComponent(provider)}/link/authorization-url`,
     { body: {}, method: "POST" }
   )
 }
@@ -23,10 +23,13 @@ type CompleteOauthLinkInput = {
 }
 
 export async function completeOauthLink({ provider, code, state }: CompleteOauthLinkInput) {
-  return apiRequest<IdentitiesResponse>(`/auth/oauth/${provider}/link/callback`, {
-    body: { code, state },
-    method: "POST",
-  })
+  return apiRequest<IdentitiesResponse>(
+    `/auth/oauth/${encodeURIComponent(provider)}/link/callback`,
+    {
+      body: { code, state },
+      method: "POST",
+    }
+  )
 }
 
 export function useStartOauthLinkMutation() {

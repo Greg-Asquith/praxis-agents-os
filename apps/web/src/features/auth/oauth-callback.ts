@@ -1,11 +1,12 @@
 // apps/web/src/features/auth/oauth-callback.ts
 
-import { normalize } from "@/lib/format"
 import { decodeBase64Url } from "@/lib/utils"
 
 type OAuthStatePayload = {
   provider?: unknown
 }
+
+const OAUTH_PROVIDER_PATTERN = /^[a-z0-9_-]{1,64}$/
 
 export type OAuthCallbackSnapshot = {
   code: string | null
@@ -39,7 +40,7 @@ export function readOauthCallback(
   search: OAuthCallbackSearch
 ): OAuthCallbackSnapshot {
   const state = search.state ?? null
-  const storedProvider = normalize(window.sessionStorage.getItem(storageKey))
+  const storedProvider = validProvider(window.sessionStorage.getItem(storageKey))
 
   return {
     code: search.code ?? null,
@@ -65,8 +66,12 @@ function providerFromState(state: string | null) {
 
   try {
     const payload = JSON.parse(decodeBase64Url(payloadSegment)) as OAuthStatePayload
-    return normalize(typeof payload.provider === "string" ? payload.provider : null)
+    return validProvider(typeof payload.provider === "string" ? payload.provider : null)
   } catch {
     return null
   }
+}
+
+function validProvider(provider: string | null) {
+  return provider && OAUTH_PROVIDER_PATTERN.test(provider) ? provider : null
 }

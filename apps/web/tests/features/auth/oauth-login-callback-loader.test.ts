@@ -43,6 +43,36 @@ describe("OAuth login callback loader", () => {
     expect(completeOauthLogin).not.toHaveBeenCalled()
   })
 
+  it("rejects a traversal provider from state without exchanging the login callback", async () => {
+    const traversalPayload = "eyJwcm92aWRlciI6Ii4uLy4uL2ZpbGVzL2ZpbGUtaWQvcHVyZ2U_eD0ifQ"
+
+    const result = await loadOAuthLoginCallback({
+      queryClient: new QueryClient(),
+      search: { code: "one-time-code", state: `header.${traversalPayload}.signature` },
+    })
+
+    expect(result).toEqual({
+      error: "This sign-in link is missing required information. Please try signing in again.",
+      twoFactorPending: false,
+    })
+    expect(completeOauthLogin).not.toHaveBeenCalled()
+  })
+
+  it("rejects a traversal provider from session storage", async () => {
+    storage.set("praxis.oauthLoginProvider", "../../files/file-id/purge?x=")
+
+    const result = await loadOAuthLoginCallback({
+      queryClient: new QueryClient(),
+      search: { code: "one-time-code", state: "one-time-state" },
+    })
+
+    expect(result).toEqual({
+      error: "This sign-in link is missing required information. Please try signing in again.",
+      twoFactorPending: false,
+    })
+    expect(completeOauthLogin).not.toHaveBeenCalled()
+  })
+
   it("deduplicates a single-use code across loader reruns", async () => {
     const response: AuthResponse = {
       requires_twofa: true,

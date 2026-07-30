@@ -27,14 +27,17 @@ function oauthRedirectPayload(): OAuthRedirectPayload {
 }
 
 async function startOauthLogin(provider: string) {
-  return apiRequest<OAuthAuthorizationUrlResponse>(`/auth/oauth/${provider}/authorization-url`, {
-    body: oauthRedirectPayload(),
-    method: "POST",
-  })
+  return apiRequest<OAuthAuthorizationUrlResponse>(
+    `/auth/oauth/${encodeURIComponent(provider)}/authorization-url`,
+    {
+      body: oauthRedirectPayload(),
+      method: "POST",
+    }
+  )
 }
 
 export async function completeOauthLogin({ provider, code, state }: CompleteOauthLoginInput) {
-  return apiRequest<AuthResponse>(`/auth/oauth/${provider}/callback`, {
+  return apiRequest<AuthResponse>(`/auth/oauth/${encodeURIComponent(provider)}/callback`, {
     body: { ...oauthRedirectPayload(), code, state },
     method: "POST",
   })

@@ -64,6 +64,34 @@ describe("secondary OAuth callback loaders", () => {
     })
   })
 
+  it("rejects a traversal provider from state without exchanging the link callback", async () => {
+    const traversalPayload = "eyJwcm92aWRlciI6Ii4uLy4uL2ZpbGVzL2ZpbGUtaWQvcHVyZ2U_eD0ifQ"
+
+    await expect(
+      loadOAuthLinkCallback({
+        queryClient: new QueryClient(),
+        search: { code: "link-code", state: `header.${traversalPayload}.signature` },
+      })
+    ).resolves.toEqual({
+      error: "This sign-in link is missing required information. Please try connecting again.",
+    })
+    expect(completeOauthLink).not.toHaveBeenCalled()
+  })
+
+  it("rejects a traversal provider from session storage", async () => {
+    storage.set("praxis.oauthLinkProvider", "../../files/file-id/purge?x=")
+
+    await expect(
+      loadOAuthLinkCallback({
+        queryClient: new QueryClient(),
+        search: { code: "link-code", state: "link-state" },
+      })
+    ).resolves.toEqual({
+      error: "This sign-in link is missing required information. Please try connecting again.",
+    })
+    expect(completeOauthLink).not.toHaveBeenCalled()
+  })
+
   it("returns an integration error without exchanging a callback missing state", async () => {
     await expect(loadIntegrationOAuthCallback({ code: "code" })).resolves.toEqual({
       error: "This connection link is missing its OAuth state.",
