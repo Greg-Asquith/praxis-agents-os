@@ -36,6 +36,7 @@ async def revoke_connection(
         connection_id=connection_id,
         actor=actor,
         workspace=workspace,
+        for_update=True,
     )
     require_connection_mutation_allowed(connection, actor=actor, membership=membership)
     credential = await db.get(ExternalCredential, connection.credential_id)

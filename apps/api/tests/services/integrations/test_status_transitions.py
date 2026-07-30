@@ -1,18 +1,25 @@
 """Connection transition guard tests."""
 
+import asyncio
+from importlib import import_module
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from core.exceptions.integration import IntegrationConnectionError
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
 from models.user import User
-from models.workspace import Workspace
-from services.integrations.connections import transition_connection_status
-from services.integrations.credentials import revoke_credential
+from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
+from services.integrations.connections import (
+    complete_oauth_callback,
+    revoke_connection,
+    transition_connection_status,
+)
+from services.integrations.credentials import revoke_credential, store_oauth_credential
 from services.integrations.domain import CONNECTION_STATUS_TRANSITIONS
+from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -138,6 +145,192 @@ async def test_stale_transition_cannot_resurrect_concurrently_revoked_connection
             )
             await cleanup.execute(
                 delete(ExternalCredential).where(ExternalCredential.id == credential_id)
+            )
+            await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await cleanup.execute(delete(User).where(User.id == user_id))
+            await cleanup.commit()
+
+
+async def test_callback_cannot_replace_credential_during_connection_revocation(
+    committed_db_session_factory,
+    monkeypatch,
+) -> None:
+    from integrations.gmail import PROVIDER as GMAIL_PROVIDER
+
+    unique_id = uuid4().hex
+    user = build_user(email=f"revoke-callback-race-{unique_id}@example.com")
+    workspace = build_workspace(slug=f"revoke-callback-race-{unique_id}")
+    membership = WorkspaceMembership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+        role=WorkspaceRole.ADMIN.value,
+    )
+    async with committed_db_session_factory() as setup:
+        setup.add_all([user, workspace, membership])
+        await setup.flush()
+        credential = await store_oauth_credential(
+            setup,
+            provider_key="gmail",
+            token_payload={
+                "access_token": "old-access",
+                "refresh_token": "old-refresh",
+                "expires_in": 3600,
+            },
+            external_principal_id="old-principal",
+            external_principal_label="old@example.com",
+            granted_scopes=[],
+        )
+        connection = build_integration_connection(
+            credential=credential,
+            user=user,
+            workspace=workspace,
+            status="auth_pending",
+        )
+        setup.add(connection)
+        await setup.commit()
+        connection_id = connection.id
+        old_credential_id = credential.id
+        workspace_id = workspace.id
+        user_id = user.id
+        membership_id = membership.id
+
+    revoke_module = import_module("services.integrations.connections.revoke_connection")
+    callback_module = import_module("services.integrations.connections.complete_oauth_callback")
+    monkeypatch.setitem(
+        callback_module.PROVIDER_MANIFESTS,
+        "gmail",
+        GMAIL_PROVIDER.manifest,
+    )
+    remote_revocation_started = asyncio.Event()
+    finish_remote_revocation = asyncio.Event()
+    callback_reached_swap = asyncio.Event()
+
+    async def paused_remote_revocation(**_kwargs) -> None:
+        remote_revocation_started.set()
+        await finish_remote_revocation.wait()
+
+    async def consume_state(_jti: str) -> str:
+        return "encrypted-verifier"
+
+    async def decrypt_verifier(_db, _encrypted_verifier: str) -> str:
+        return "verifier"
+
+    async def exchange(**_kwargs) -> dict[str, object]:
+        return {
+            "access_token": "new-access",
+            "refresh_token": "new-refresh",
+            "expires_in": 3600,
+        }
+
+    async def principal(**_kwargs) -> ExternalPrincipal:
+        callback_reached_swap.set()
+        return ExternalPrincipal(
+            f"new-principal-{unique_id}",
+            f"new-{unique_id}@example.com",
+        )
+
+    monkeypatch.setattr(revoke_module, "revoke_authorization_token", paused_remote_revocation)
+    monkeypatch.setattr(
+        callback_module,
+        "verify_integration_oauth_state",
+        lambda _state: {
+            "jti": "test-jti",
+            "connection_id": str(connection_id),
+            "provider_key": "gmail",
+            "owner_scope": "workspace",
+            "user_id": str(user_id),
+            "workspace_id": str(workspace_id),
+        },
+    )
+    monkeypatch.setattr(callback_module, "_consume_pending_state", consume_state)
+    monkeypatch.setattr(callback_module, "decrypt_code_verifier", decrypt_verifier)
+    monkeypatch.setattr(callback_module, "exchange_authorization_code", exchange)
+    monkeypatch.setattr(callback_module, "fetch_external_principal", principal)
+
+    async def revoke() -> None:
+        async with committed_db_session_factory() as db:
+            await revoke_connection(
+                db,
+                connection_id=connection_id,
+                actor=user,
+                workspace=workspace,
+                membership=membership,
+            )
+            await db.commit()
+
+    async def callback() -> None:
+        async with committed_db_session_factory() as db:
+            try:
+                await complete_oauth_callback(
+                    db,
+                    actor=user,
+                    workspace=workspace,
+                    code="authorization-code",
+                    state="signed-state",
+                    provider_error=None,
+                    ip_address="127.0.0.1",
+                    endpoint="/api/v1/integrations/oauth/callback",
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+    revoke_task = asyncio.create_task(revoke())
+    callback_task = None
+    try:
+        await asyncio.wait_for(remote_revocation_started.wait(), timeout=5)
+        callback_task = asyncio.create_task(callback())
+        await asyncio.wait_for(callback_reached_swap.wait(), timeout=5)
+        await asyncio.sleep(0.05)
+        assert not callback_task.done()
+
+        finish_remote_revocation.set()
+        await asyncio.wait_for(revoke_task, timeout=5)
+        with pytest.raises(
+            IntegrationConnectionError,
+            match="changed while authorization was completing",
+        ):
+            await asyncio.wait_for(callback_task, timeout=5)
+
+        async with committed_db_session_factory() as verify:
+            persisted = await verify.get(IntegrationConnection, connection_id)
+            assert persisted is not None
+            assert persisted.status == "revoked"
+            assert persisted.credential_id == old_credential_id
+            old_credential = await verify.get(ExternalCredential, old_credential_id)
+            assert old_credential is not None
+            assert old_credential.revoked_at is not None
+            replacement_id = await verify.scalar(
+                select(ExternalCredential.id).where(
+                    ExternalCredential.external_principal_label == f"new-{unique_id}@example.com"
+                )
+            )
+            assert replacement_id is None
+    finally:
+        finish_remote_revocation.set()
+        if not revoke_task.done():
+            revoke_task.cancel()
+        if callback_task is not None and not callback_task.done():
+            callback_task.cancel()
+        tasks = [revoke_task]
+        if callback_task is not None:
+            tasks.append(callback_task)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(
+                delete(AuditEvent).where(
+                    AuditEvent.resource_id.in_([str(connection_id), str(old_credential_id)])
+                )
+            )
+            await cleanup.execute(
+                delete(IntegrationConnection).where(IntegrationConnection.id == connection_id)
+            )
+            await cleanup.execute(
+                delete(ExternalCredential).where(ExternalCredential.id == old_credential_id)
+            )
+            await cleanup.execute(
+                delete(WorkspaceMembership).where(WorkspaceMembership.id == membership_id)
             )
             await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
             await cleanup.execute(delete(User).where(User.id == user_id))

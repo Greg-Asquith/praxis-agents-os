@@ -31,17 +31,19 @@ async def get_visible_connection(
     connection_id: UUID,
     actor: User,
     workspace: Workspace,
+    for_update: bool = False,
 ) -> IntegrationConnection:
     visibility = (IntegrationConnection.owner_workspace_id == workspace.id) | (
         IntegrationConnection.owner_user_id == actor.id
     )
-    connection = await db.scalar(
-        select(IntegrationConnection).where(
-            IntegrationConnection.id == connection_id,
-            IntegrationConnection.deleted.is_(False),
-            visibility,
-        )
+    statement = select(IntegrationConnection).where(
+        IntegrationConnection.id == connection_id,
+        IntegrationConnection.deleted.is_(False),
+        visibility,
     )
+    if for_update:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    connection = await db.scalar(statement)
     if connection is None:
         raise IntegrationNotFoundError(
             "Integration connection not found",
