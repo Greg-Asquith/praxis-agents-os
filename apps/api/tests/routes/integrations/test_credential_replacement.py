@@ -164,6 +164,69 @@ async def test_service_account_and_reference_replacements_update_metadata(
     ) == (reference.provider, reference.name, reference.version)
 
 
+async def test_replacement_rejects_another_workspaces_secret_reference(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    foreign = await db_async_client.post(
+        "/api/v1/integrations/connections/api-key",
+        headers=integration_identity["headers"],
+        json={"provider_key": "airtable", "label": "Foreign", "api_key": "foreign-key"},
+    )
+    assert foreign.status_code == 200, foreign.text
+    foreign_connection = await db_session.get(IntegrationConnection, foreign.json()["id"])
+    foreign_credential = await db_session.get(
+        ExternalCredential,
+        foreign_connection.credential_id,
+    )
+
+    _user, _workspace, _membership, other_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.ADMIN,
+    )
+    owned = await db_async_client.post(
+        "/api/v1/integrations/connections/api-key",
+        headers=other_headers,
+        json={"provider_key": "airtable", "label": "Owned", "api_key": "owned-key"},
+    )
+    assert owned.status_code == 200, owned.text
+    owned_connection = await db_session.get(IntegrationConnection, owned.json()["id"])
+    owned_credential = await db_session.get(
+        ExternalCredential,
+        owned_connection.credential_id,
+    )
+    original_reference = (
+        owned_credential.secret_provider,
+        owned_credential.secret_name,
+        owned_credential.secret_version,
+    )
+    owned_credential_id = owned_credential.id
+
+    response = await db_async_client.put(
+        f"/api/v1/integrations/connections/{owned_connection.id}/credential",
+        headers=other_headers,
+        json={
+            "secret_reference": {
+                "provider": foreign_credential.secret_provider,
+                "name": foreign_credential.secret_name,
+                "version": foreign_credential.secret_version,
+            }
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not authorized for this workspace" in response.text
+    assert "foreign-key" not in response.text
+    db_session.expire_all()
+    persisted = await db_session.get(ExternalCredential, owned_credential_id)
+    assert (
+        persisted.secret_provider,
+        persisted.secret_name,
+        persisted.secret_version,
+    ) == original_reference
+
+
 async def test_replacement_rejects_wrong_mode_oauth_revoked_and_member(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
