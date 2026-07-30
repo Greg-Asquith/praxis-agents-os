@@ -122,10 +122,19 @@ async def test_create_delegated_run_records_parent_and_depth(
     db_session: AsyncSession, run_context: RunContext
 ) -> None:
     parent_run = await _create(db_session, run_context)
+    child_conversation = Conversation(
+        user_id=run_context.user_id,
+        workspace_id=run_context.workspace_id,
+        created_by=run_context.user_id,
+        active_agent_id=run_context.agent_id,
+        source="delegated",
+    )
+    db_session.add(child_conversation)
+    await db_session.flush()
 
     child_run = await create_agent_run(
         db_session,
-        conversation_id=run_context.conversation_id,
+        conversation_id=child_conversation.id,
         agent_id=run_context.agent_id,
         workspace_id=run_context.workspace_id,
         user_id=run_context.user_id,

@@ -40,10 +40,11 @@ async def test_list_pending_approvals_returns_tool_names_oldest_first(
     assert first_run is not None
     assert conversation is not None
     conversation.title = "Quarterly review"
+    newer_conversation = await _create_conversation(db_session, approval_context)
 
     newer_run = await create_agent_run(
         db_session,
-        conversation_id=conversation.id,
+        conversation_id=newer_conversation.id,
         agent_id=approval_context.agent_id,
         workspace_id=approval_context.workspace.id,
         user_id=approval_context.user.id,
@@ -61,7 +62,7 @@ async def test_list_pending_approvals_returns_tool_names_oldest_first(
     await _suspend_run(
         db_session,
         run=newer_run,
-        conversation=conversation,
+        conversation=newer_conversation,
         tool_name="update_record",
         awaiting_since=newer,
     )
@@ -205,9 +206,10 @@ async def test_list_pending_approvals_enforces_scope_and_projects_delegation(
         tool_name="other_workspace_tool",
     )
 
+    deleted_conversation = await _create_conversation(db_session, approval_context)
     deleted_run = await create_agent_run(
         db_session,
-        conversation_id=parent_conversation.id,
+        conversation_id=deleted_conversation.id,
         agent_id=approval_context.agent_id,
         workspace_id=approval_context.workspace.id,
         user_id=approval_context.user.id,
@@ -216,14 +218,15 @@ async def test_list_pending_approvals_enforces_scope_and_projects_delegation(
     await _suspend_run(
         db_session,
         run=deleted_run,
-        conversation=parent_conversation,
+        conversation=deleted_conversation,
         tool_name="deleted_tool",
     )
     deleted_run.deleted = True
 
+    pending_conversation = await _create_conversation(db_session, approval_context)
     await create_agent_run(
         db_session,
-        conversation_id=parent_conversation.id,
+        conversation_id=pending_conversation.id,
         agent_id=approval_context.agent_id,
         workspace_id=approval_context.workspace.id,
         user_id=approval_context.user.id,
@@ -257,9 +260,10 @@ async def test_list_pending_approvals_total_exceeds_limit(
         conversation=conversation,
         tool_name="first_tool",
     )
+    second_conversation = await _create_conversation(db_session, approval_context)
     second_run = await create_agent_run(
         db_session,
-        conversation_id=conversation.id,
+        conversation_id=second_conversation.id,
         agent_id=approval_context.agent_id,
         workspace_id=approval_context.workspace.id,
         user_id=approval_context.user.id,
@@ -268,7 +272,7 @@ async def test_list_pending_approvals_total_exceeds_limit(
     await _suspend_run(
         db_session,
         run=second_run,
-        conversation=conversation,
+        conversation=second_conversation,
         tool_name="second_tool",
     )
 
@@ -307,6 +311,21 @@ async def test_list_pending_approvals_skips_corrupt_state(
     assert response.total == 1
     assert response.items == []
     assert warnings == ["Skipping pending approval run with invalid suspended state"]
+
+
+async def _create_conversation(
+    db: AsyncSession,
+    context: ApprovalStateContext,
+) -> Conversation:
+    conversation = Conversation(
+        user_id=context.user.id,
+        workspace_id=context.workspace.id,
+        created_by=context.user.id,
+        active_agent_id=context.agent_id,
+    )
+    db.add(conversation)
+    await db.flush()
+    return conversation
 
 
 async def _suspend_run(

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError, NotFoundError
 from models.agent import Agent
+from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
@@ -129,17 +130,8 @@ async def test_get_approval_state_rejects_completed_run(
     db_session: AsyncSession,
     approval_context: ApprovalStateContext,
 ) -> None:
-    run = await db_session.get(Agent, approval_context.agent_id)
-    assert run is not None
-
-    agent_run = await create_agent_run(
-        db_session,
-        conversation_id=approval_context.conversation_id,
-        agent_id=approval_context.agent_id,
-        workspace_id=approval_context.workspace.id,
-        user_id=approval_context.user.id,
-        trigger="interactive",
-    )
+    agent_run = await db_session.get(AgentRun, approval_context.run_id)
+    assert agent_run is not None
     await start_agent_run(db_session, agent_run)
     await complete_agent_run(db_session, agent_run)
 
@@ -182,14 +174,8 @@ async def test_get_approval_state_rejects_missing_suspended_state(
     db_session: AsyncSession,
     approval_context: ApprovalStateContext,
 ) -> None:
-    agent_run = await create_agent_run(
-        db_session,
-        conversation_id=approval_context.conversation_id,
-        agent_id=approval_context.agent_id,
-        workspace_id=approval_context.workspace.id,
-        user_id=approval_context.user.id,
-        trigger="interactive",
-    )
+    agent_run = await db_session.get(AgentRun, approval_context.run_id)
+    assert agent_run is not None
     await start_agent_run(db_session, agent_run)
     await mark_run_awaiting_approval(db_session, agent_run)
 

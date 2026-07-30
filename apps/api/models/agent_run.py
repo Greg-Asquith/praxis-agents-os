@@ -110,6 +110,14 @@ class AgentRun(BaseModel):
             name="agent_runs_status_check",
         ),
         Index("ix_agent_runs_conversation_created", "conversation_id", "created_at"),
+        Index(
+            "uq_agent_runs_active_conversation",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text(
+                "deleted = false AND status IN ('pending', 'running', 'awaiting_approval')"
+            ),
+        ),
         Index("ix_agent_runs_workspace_created", "workspace_id", "created_at"),
         Index(
             "ix_agent_runs_workspace_status",

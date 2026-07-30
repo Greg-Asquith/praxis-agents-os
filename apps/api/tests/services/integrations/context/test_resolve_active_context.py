@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
+from models.conversation import Conversation
 from services.agent_runs.domain import (
     RUN_TRIGGER_DELEGATED,
     RUN_TRIGGER_INTERACTIVE,
@@ -46,9 +47,10 @@ async def _run(
     *,
     trigger: str = RUN_TRIGGER_INTERACTIVE,
     parent: AgentRun | None = None,
+    conversation: Conversation | None = None,
 ) -> AgentRun:
     run = AgentRun(
-        conversation_id=data["conversation"].id,
+        conversation_id=(conversation or data["conversation"]).id,
         agent_id=agent.id,
         workspace_id=data["workspace"].id,
         user_id=data["user"].id,
@@ -289,12 +291,22 @@ async def test_scheduled_and_delegated_runs_use_schedule_context(
         )
     )
     await db_session.flush()
+    child_conversation = Conversation(
+        user_id=context_data["user"].id,
+        workspace_id=context_data["workspace"].id,
+        created_by=context_data["user"].id,
+        active_agent_id=agent.id,
+        source="delegated",
+    )
+    db_session.add(child_conversation)
+    await db_session.flush()
     child = await _run(
         db_session,
         context_data,
         agent,
         trigger=RUN_TRIGGER_DELEGATED,
         parent=root,
+        conversation=child_conversation,
     )
 
     root_context = await resolve_active_context(

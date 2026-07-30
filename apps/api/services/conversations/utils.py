@@ -3,11 +3,12 @@
 """Helpers specific to the conversations service."""
 
 from collections.abc import Sequence
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError, NotFoundError
@@ -35,6 +36,17 @@ def build_interactive_run_metadata(
     if request is not None:
         metadata["audit_context"] = request_audit_context(request)
     return metadata or None
+
+
+async def lock_conversation_turn(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+) -> None:
+    """Serialize active-run checks and inserts for one conversation."""
+    lock_material = f"conversation-turn:{conversation_id}".encode()
+    lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
+    await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
 
 async def get_conversation_for_actor(

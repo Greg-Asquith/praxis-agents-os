@@ -30,6 +30,7 @@ from services.conversations.utils import (
     get_assignable_agent_for_workspace,
     get_conversation_for_actor,
     get_message_by_client_message_id,
+    lock_conversation_turn,
 )
 from services.files import create_conversation_file_references, resolve_chat_attachments
 
@@ -67,6 +68,7 @@ async def create_conversation_turn_stream(
             details={"conversation_id": str(conversation.id)},
         )
 
+    await lock_conversation_turn(db, conversation_id=conversation.id)
     await reap_abandoned_runs(db, conversation_id=conversation.id)
     active_run = await get_active_run_for_conversation(db, conversation_id=conversation.id)
     if active_run is not None:

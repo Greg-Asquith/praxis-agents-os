@@ -4,8 +4,9 @@
 
 import asyncio
 import importlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Coroutine, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,10 +15,11 @@ from httpx2 import ASGITransport, AsyncClient
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth.sessions import session_manager
+from core.exceptions.general import ConflictError
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
@@ -44,6 +46,7 @@ from services.agents.runtime.events import (
     STREAM_VERSION_HEADER,
 )
 from services.agents.runtime.execute_run import execute_run
+from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import CollectingSink, EventSink
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationTurnCreateRequest
@@ -778,6 +781,67 @@ async def test_create_turn_rejects_existing_active_run(
     assert response.status_code == 409
     body: Mapping[str, object] = response.json()
     assert body["active_run_id"] == str(active_run.id)
+
+
+async def test_concurrent_turn_creations_allow_exactly_one_active_run(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with committed_db_session_factory() as db:
+        user, workspace, agent, conversation, _headers = await _authenticated_context(db)
+
+    def discard_worker(
+        _run_id: UUID,
+        worker: Coroutine[Any, Any, Any],
+    ) -> None:
+        worker.close()
+
+    monkeypatch.setattr(run_task_registry, "spawn", discard_worker)
+    start_barrier = asyncio.Barrier(2)
+
+    async def create_turn(client_message_id: str) -> str:
+        await start_barrier.wait()
+        async with committed_db_session_factory() as db:
+            try:
+                await create_conversation_turn_stream(
+                    db,
+                    actor=user,
+                    workspace=workspace,
+                    conversation_id=conversation.id,
+                    payload=ConversationTurnCreateRequest(
+                        user_prompt="Hello",
+                        client_message_id=client_message_id,
+                    ),
+                )
+            except ConflictError:
+                await db.rollback()
+                return "conflict"
+        return "created"
+
+    try:
+        results = await asyncio.gather(
+            create_turn("concurrent-turn-1"),
+            create_turn("concurrent-turn-2"),
+        )
+        assert sorted(results) == ["conflict", "created"]
+
+        async with committed_db_session_factory() as db:
+            active_run_count = await db.scalar(
+                select(func.count(AgentRun.id)).where(
+                    AgentRun.conversation_id == conversation.id,
+                    AgentRun.deleted == False,  # noqa: E712
+                    AgentRun.status.in_({"pending", "running", "awaiting_approval"}),
+                )
+            )
+            assert active_run_count == 1
+    finally:
+        await _delete_committed_context(
+            committed_db_session_factory,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            agent_id=agent.id,
+            conversation_id=conversation.id,
+        )
 
 
 async def test_create_turn_rejects_duplicate_completed_client_message_id(
