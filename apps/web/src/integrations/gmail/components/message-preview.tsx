@@ -9,6 +9,7 @@ import {
   gmailMessagePreviewQueryOptions,
   type GmailMessagePreview,
 } from "@/integrations/gmail/api/message-preview"
+import { buildHtmlFrameDocument } from "@/lib/html-frame-document"
 
 // Server-side sanitization (nh3) is the first layer; this opaque-origin,
 // script-less sandbox plus its CSP is the second. Do not add sandbox
@@ -16,6 +17,13 @@ import {
 // scroll container is the accepted trade.
 const EMAIL_FRAME_CSP =
   "default-src 'none'; img-src data: https: http: cid:; style-src 'unsafe-inline'"
+const EMAIL_FRAME_STYLES = [
+  "<style>",
+  "body{margin:12px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;",
+  "font-size:14px;line-height:1.5;color:#111827;background:#fff;word-break:break-word}",
+  "img{max-width:100%;height:auto}",
+  "</style>",
+].join("")
 
 export function GmailMessageView({
   connectionId,
@@ -46,7 +54,11 @@ export function GmailMessageView({
         <iframe
           className="h-120 w-full bg-white"
           sandbox=""
-          srcDoc={emailDocument(preview.data.content)}
+          srcDoc={buildHtmlFrameDocument({
+            content: preview.data.content,
+            contentSecurityPolicy: EMAIL_FRAME_CSP,
+            head: EMAIL_FRAME_STYLES,
+          })}
           title={preview.data.meta.subject?.trim() ? preview.data.meta.subject : "Email message"}
         />
       ) : (
@@ -81,19 +93,4 @@ function MessageMetaChips({ meta }: { meta: GmailMessagePreview["meta"] }) {
       ) : null}
     </div>
   )
-}
-
-function emailDocument(html: string) {
-  return [
-    "<!doctype html><html><head>",
-    '<meta charset="utf-8">',
-    `<meta http-equiv="Content-Security-Policy" content="${EMAIL_FRAME_CSP}">`,
-    "<style>",
-    "body{margin:12px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;",
-    "font-size:14px;line-height:1.5;color:#111827;background:#fff;word-break:break-word}",
-    "img{max-width:100%;height:auto}",
-    "</style></head><body>",
-    html,
-    "</body></html>",
-  ].join("")
 }

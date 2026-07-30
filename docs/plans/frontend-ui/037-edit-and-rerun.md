@@ -8,11 +8,11 @@
 
 ## Status
 
-- **Status**: TODO — **needs a maintainer product decision before
-  execution** (see "Open decision" below).
+- **Status**: TODO — ready for execution; the maintainer decision is
+  recorded below (2026-07-30).
 - **Written**: 2026-07-30 against HEAD `c4777c1` (clean working tree).
-- **Priority**: P2 (P1 if the maintainer confirms this is the intended
-  Google Ads report editing experience).
+- **Priority**: P1 (maintainer confirmed this is the intended Google Ads
+  report editing experience).
 - **Effort**: L — new dispatch entry point, run-lifecycle wiring, and the
   row affordance.
 - **Risk**: HIGH-ADJACENT — a new way to make an agent execute a tool.
@@ -33,31 +33,38 @@ message and hope the model reproduces the query faithfully.
 After this plan, a completed (or failed) tool row whose presentation
 declares editable fields grows an **"Edit & Run Again"** action: the user
 edits the arguments in the same field editors the approval card uses, and
-the system runs *exactly that call* as a new governed turn in the same
-conversation — the agent then narrates the fresh result. This follows the
-established rule that tool-UI actions dispatch governed turns rather than
-prefill the composer (the Gmail reply action set this precedent).
+the system executes *exactly that call* — verbatim args, through the
+normal dispatch choke point — with the result landing in the transcript
+as a normal tool row. This follows the established rule that tool-UI
+actions are real governed actions rather than composer prefill.
 
-## Open decision (maintainer)
+## Decision taken (maintainer, 2026-07-30)
 
-How faithful must the re-run be?
+**Option A, without model continuation.** The re-run executes the tool
+directly with the user's args exactly as submitted — no model call before
+the tool (nothing rewords the query) and no model call after it (no
+narration turn). The transcript gains one tool row with the fresh result,
+nothing else. Option B (instructed turn) is rejected: the user's edit
+must be executed, not paraphrased.
 
-- **Option A — seeded tool call (recommended)**: a new run in the same
-  conversation whose first step is the requested tool executed verbatim
-  with the edited args through the normal dispatch layer (policy check,
-  envelope check, in-body `ApprovalRequired` all apply — an
-  approval-policy tool re-run suspends into the normal approval card).
-  The tool result then enters model history and the model continues the
-  turn, narrating the result. Deterministic execution, normal governance,
-  normal transcript.
-- **Option B — instructed turn**: dispatch a structured user-role turn
-  ("Run {tool} again with these arguments: …"). Zero new dispatch
-  machinery, but the model may reword or "improve" the query — the user's
-  edit is advisory, which defeats the point of field-level editing.
+Two consequences the design below absorbs:
 
-This plan is written for Option A. If the maintainer chooses B, steps 1–3
-collapse into a message-template and most of the risk disappears (along
-with the determinism).
+- **The user's submission is the approval.** Since the user authored the
+  exact arguments and clicked run, showing a second approval card would
+  be asking them to approve their own input. The re-run executes with
+  approved semantics (`ctx.tool_call_approved=True`, so in-body
+  `ApprovalRequired` gates like core-memory writes are satisfied), and
+  the audit record carries the acting user, `source_tool_call_id`, and
+  original vs edited args — the same accountability an approval decision
+  produces. Server-side permission checks are what make this safe: the
+  acting user must hold the same access an approver would need.
+- **The result must still reach the agent's history.** Future turns must
+  see the re-run call and result exactly as they see approval-resumed
+  calls, or the agent will contradict what the user is looking at.
+  Persistence must reuse the existing tool-call/result part shapes — see
+  step 1; if provider history cannot represent a tool call outside a
+  model response, follow whatever representation the existing persisted
+  history replay already uses for tool parts, and STOP if none fits.
 
 ## Current state (verified 2026-07-30 at `c4777c1`)
 
@@ -83,32 +90,39 @@ with the determinism).
 
 ## Steps
 
-1. **Backend — seeded-tool-call turn**: a new request shape on the
-   existing conversation-turn entry point (not a new bypass route), e.g.
+1. **Backend — direct governed tool execution**: a new request shape on
+   the existing conversation entry points (not a bypass route), e.g.
    `{"rerun": {"source_tool_call_id": ..., "tool_name": ...,
-   "args": {...}}}`.
+   "args": {...}}}`, producing a run that contains exactly one tool call
+   and its result — **no model invocation before or after**.
    - Server re-derives everything it can: the tool must exist, be mounted
      for this agent (`build_runtime_tools` outcome), be available
      (workspace settings + `availability_check`), and the source tool call
      must belong to this conversation. Client args are validated against
-     the tool's input schema before the run starts.
-   - The run executes the call through the normal dispatch path: policy
-     `approval` ⇒ suspend into the standard approval card (with args
-     pre-filled from the edit); envelope rules unchanged (interactive runs
-     are `allow`; this feature is interactive-only).
-   - Audit: record the run as user-initiated re-run with
-     `source_tool_call_id`, original args, and edited args — mirror the
-     `original_args`/`effective_args` shape from
+     the tool's input schema before execution.
+   - Execution goes through the normal dispatch choke point
+     (`dispatch.py`) with approved semantics
+     (`ctx.tool_call_approved=True` — the user's submission is the
+     approval, per the decision above). Envelope rules unchanged
+     (interactive runs are `allow`; this feature is interactive-only).
+     Result bounding, integration fan-out, and per-resource audit all
+     apply exactly as in a model-initiated call.
+   - Audit: record the run as a user-initiated re-run with the acting
+     user, `source_tool_call_id`, original args, and edited args —
+     mirror the `original_args`/`effective_args` shape from
      `approval_events.py:265-313`.
-   - After the tool result is in history, the model continues the turn
-     normally (summarize/answer). No special-cased transcript shape: it's
-     a normal run with a first tool call the user authored.
+   - Persistence: the tool call + result persist as the same message
+     parts an approval-resumed call produces, so the transcript renders
+     the standard tool row and subsequent model turns see the call and
+     result in history. Verify the persisted-history replay path accepts
+     a tool part authored this way before building the route.
 2. **Eligibility contract**: a tool row offers re-run iff (a) the tool's
-   presentation declares ≥1 editable arg field, (b) `effect=read` **or**
-   the tool's resolved policy is `approval` (external writes re-run only
-   through their approval card), (c) the conversation is not read-only for
-   this user, and (d) the activity is settled (completed or failed — never
-   running). Server enforces (a)–(c) again; the client check is cosmetic.
+   presentation declares ≥1 editable arg field, (b) the conversation is
+   interactive and not read-only for this user, (c) the acting user holds
+   the access an approver of this tool would need (write tools included —
+   the submission is the approval), and (d) the activity is settled
+   (completed or failed — never running). Server enforces (a)–(c) again;
+   the client check is cosmetic.
 3. **Frontend affordance**:
    - Add "Edit & Run Again" to settled tool rows meeting step 2, in both
      the generic row (`tool-call-row.tsx`) and via the shared result-card
@@ -118,8 +132,8 @@ with the determinism).
      (reuse `ApprovalRequestFields` with a `Run Again` primary action;
      non-editable fields shown locked). Pre-filled from
      `replay_args ?? args`.
-   - Submit dispatches the seeded turn through the existing stream hook;
-     the new run streams into the transcript as any turn does. Disable
+   - Submit dispatches the re-run request through the existing stream
+     hook; the run streams into the transcript as any run does. Disable
      the affordance while the conversation has an active run.
 4. **Google Ads proof case**: `google_ads_run_report` — edit the GAQL
    query on a completed report row, run again, get a fresh report card.
@@ -132,10 +146,13 @@ with the determinism).
 
 ## STOP conditions
 
-- Maintainer has not chosen Option A vs B — stop before writing code.
-- If the seeded call cannot be routed through `dispatch.py`'s existing
+- If the direct call cannot be routed through `dispatch.py`'s existing
   choke point without duplicating policy/envelope logic, stop and report;
   a second enforcement path is worse than no feature.
+- If persisted history cannot represent a tool call + result without a
+  surrounding model response (breaking provider replay on the next
+  turn), stop and report the representation options — do not fabricate
+  synthetic assistant messages without a maintainer decision.
 - If scheduled/event/delegated conversations would gain the affordance,
   stop — this plan is interactive-runs-only by design.
 
@@ -144,6 +161,8 @@ with the determinism).
 - `make check` at repo root.
 - Manual (`make dev`): run a Google Ads report (or any read tool with
   editable fields under a test provider), edit the query from the settled
-  row, confirm a new governed turn runs the exact edited query and the
-  agent narrates the result; confirm an approval-policy tool re-run lands
-  on the standard approval card instead of executing directly.
+  row, confirm the exact edited query executes with no model call and the
+  fresh result renders as a normal tool row; then send a follow-up chat
+  message and confirm the agent's answer reflects the re-run result (it
+  is in history); confirm the audit trail records the acting user with
+  original and edited args.

@@ -16,5 +16,7 @@ describe("FileContentView", () => {
 
     expect(markup).toContain('sandbox="allow-scripts"')
     expect(markup).not.toContain("allow-same-origin")
+    expect(markup).toContain("Content-Security-Policy")
+    expect(markup).toContain("connect-src &#x27;none&#x27;")
   })
 })

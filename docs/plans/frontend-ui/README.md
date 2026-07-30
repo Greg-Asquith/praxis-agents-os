@@ -116,7 +116,7 @@ Functional, but visibly unstyled.
 | 034 | Sidebar consolidation: the Context hub | P1 | M | — | IN PROGRESS — implementation and static gate complete; visual QA pending (no browser instance available 2026-07-28) |
 | 035 | Typed argument editing: contract beyond strings | P1 | M | — | TODO |
 | 036 | Editability sweep: every approvable argument editable | P1 | L | 035 | TODO |
-| 037 | Edit & run again: steering tools after they ran | P2 | L | 035, 036 | TODO — blocked on maintainer decision (Option A vs B in the plan) |
+| 037 | Edit & run again: steering tools after they ran | P1 | L | 035, 036 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -205,9 +205,9 @@ Dependency notes:
   declarative sweep across every tool's `ToolPresentation` plus the
   presenter-drift fix (custom presenters stop hand-copying
   `ApprovalField[]`) and needs 035 landed; 037 adds the settled-row
-  "Edit & Run Again" governed re-run and must not start before its
-  maintainer decision (Option A seeded call vs Option B instructed turn)
-  is recorded in the plan. 035/036 touch `approval-card.tsx`,
+  "Edit & Run Again" direct governed re-run (maintainer decision recorded
+  2026-07-30 — see the plan and the decisions list below) and runs after
+  036. 035/036 touch `approval-card.tsx`,
   `approval-decisions.ts`, and the integration presenters — do not run
   them concurrently with any plan editing conversation tool UI.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
@@ -246,6 +246,16 @@ Dependency notes:
   text on the new tinted surfaces.
 
 ## Decisions taken (recorded so nobody re-litigates)
+
+- **Edit & Run Again executes the tool directly — no model in the loop**
+  (maintainer, 2026-07-30; plan 037). The re-run calls the tool with the
+  user's arguments exactly as submitted, through the normal dispatch
+  choke point: no model call before it (nothing may reword the args) and
+  no narration turn after it. The user's explicit submission counts as
+  the approval — no second approval card — with the acting user, source
+  tool call, and original vs edited args audited. The rejected
+  alternative (dispatching an instructed agent turn) made the user's
+  edit advisory rather than executed.
 
 - **`--primary` becomes Praxis amber** (was near-black). Buttons keep shadcn
   semantics — the `default` variant is now amber — and amber stays rare by

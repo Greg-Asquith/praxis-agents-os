@@ -3,6 +3,7 @@
 import { MarkdownContent } from "@/components/markdown/markdown-content"
 import type { ArtifactContent, ArtifactType } from "@/features/artifacts/types"
 import { parseCsv } from "@/lib/csv"
+import { buildHtmlFrameDocument, INTERACTIVE_HTML_FRAME_CSP } from "@/lib/html-frame-document"
 
 export function ArtifactPreviewFrame({
   artifactType,
@@ -19,7 +20,10 @@ export function ArtifactPreviewFrame({
       <iframe
         className="bg-background h-80 w-full rounded-lg border"
         sandbox="allow-scripts"
-        srcDoc={content.content}
+        srcDoc={buildHtmlFrameDocument({
+          content: content.content,
+          contentSecurityPolicy: INTERACTIVE_HTML_FRAME_CSP,
+        })}
         title={title}
       />
     )

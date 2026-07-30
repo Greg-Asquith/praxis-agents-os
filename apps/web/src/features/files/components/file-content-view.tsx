@@ -1,6 +1,7 @@
 // apps/web/src/features/files/components/file-content-view.tsx
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
+import { buildHtmlFrameDocument, INTERACTIVE_HTML_FRAME_CSP } from "@/lib/html-frame-document"
 import { cn } from "@/lib/utils"
 
 type FileContentViewProps = {
@@ -32,7 +33,10 @@ export function FileContentView({ content, name, mediaType, className }: FileCon
       <iframe
         className={cn("h-80 w-full rounded-md border bg-white", className)}
         sandbox="allow-scripts"
-        srcDoc={content}
+        srcDoc={buildHtmlFrameDocument({
+          content,
+          contentSecurityPolicy: INTERACTIVE_HTML_FRAME_CSP,
+        })}
         title={name ?? "HTML preview"}
       />
     )

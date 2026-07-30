@@ -434,6 +434,8 @@ persisted.
 
 **Severity: Medium. Effort: S.**
 
+**Status: READY FOR REVIEW — implementation complete and the full frontend gate passes.**
+
 ### What is wrong
 
 Two components inject untrusted HTML into an iframe `srcDoc` with
