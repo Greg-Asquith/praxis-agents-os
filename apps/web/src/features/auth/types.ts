@@ -66,6 +66,7 @@ export type ChangePasswordRequest = {
 export type TotpSetupResponse = {
   provisioning_uri: string
   secret: string
+  enrollment_token: string
 }
 
 export type TotpEnableResponse = {

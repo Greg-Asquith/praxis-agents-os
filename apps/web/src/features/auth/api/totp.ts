@@ -6,13 +6,13 @@ import { apiRequest } from "@/lib/api/client"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import type { TotpEnableResponse, TotpSetupResponse } from "@/features/auth/types"
 
-async function setupTotp() {
-  return apiRequest<TotpSetupResponse>("/auth/totp/setup", { method: "POST" })
+async function setupTotp(payload: { current_password?: string }) {
+  return apiRequest<TotpSetupResponse>("/auth/totp/setup", { body: payload, method: "POST" })
 }
 
-async function enableTotp(token: string) {
+async function enableTotp(payload: { enrollment_token: string; token: string }) {
   return apiRequest<TotpEnableResponse>("/auth/totp/enable", {
-    body: { token },
+    body: payload,
     method: "POST",
   })
 }

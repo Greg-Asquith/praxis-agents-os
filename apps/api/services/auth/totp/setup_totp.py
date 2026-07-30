@@ -5,11 +5,14 @@
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.auth import AuthenticationError
 from core.exceptions.general import ConflictError
 from models.user import User
-from services.auth.schemas import TotpSetupResponse
+from services.auth.schemas import TotpSetupRequest, TotpSetupResponse
 from services.auth.utils import record_auth_security_event
 from services.security import SecurityEventType
+
+from .utils import create_totp_enrollment_token, require_totp_enrollment_step_up
 
 
 async def setup_totp(
@@ -17,11 +20,30 @@ async def setup_totp(
     *,
     request: Request,
     user: User,
+    payload: TotpSetupRequest,
 ) -> TotpSetupResponse:
     if user.totp_enabled:
         raise ConflictError("TOTP is already enabled", conflicting_resource="totp")
 
-    secret = user.get_totp_secret() if user.totp_secret_encrypted else user.generate_totp_secret()
+    try:
+        await require_totp_enrollment_step_up(
+            db,
+            request=request,
+            user=user,
+            current_password=payload.current_password,
+        )
+    except AuthenticationError:
+        await record_auth_security_event(
+            event_type=SecurityEventType.AUTH_TOTP_FAILED,
+            request=request,
+            user_email=user.email,
+            details={"reason": "setup_step_up_failed"},
+            committed=True,
+        )
+        raise
+
+    secret = user.generate_totp_secret()
+    enrollment_token = create_totp_enrollment_token(user=user, secret=secret)
     await db.flush()
     await record_auth_security_event(
         db=db,
@@ -30,4 +52,8 @@ async def setup_totp(
         user_email=user.email,
         details={"purpose": "setup"},
     )
-    return TotpSetupResponse(provisioning_uri=user.get_totp_qr_uri(), secret=secret)
+    return TotpSetupResponse(
+        provisioning_uri=user.get_totp_qr_uri(),
+        secret=secret,
+        enrollment_token=enrollment_token,
+    )

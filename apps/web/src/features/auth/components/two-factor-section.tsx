@@ -19,6 +19,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
+import { identitiesQueryOptions } from "@/features/auth/api/get-identities"
 import {
   useDisableTotpMutation,
   useEnableTotpMutation,
@@ -30,6 +31,7 @@ import { formString } from "@/lib/forms"
 
 export function TwoFactorSection() {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const { data: identities } = useSuspenseQuery(identitiesQueryOptions())
   const setupMutation = useSetupTotpMutation()
   const enableMutation = useEnableTotpMutation()
   const disableMutation = useDisableTotpMutation()
@@ -39,10 +41,12 @@ export function TwoFactorSection() {
   const [error, setError] = useState<string | null>(null)
   const [disabling, setDisabling] = useState(false)
 
-  function startSetup() {
+  function startSetup(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault()
     setError(null)
     setBackupCodes(null)
-    setupMutation.mutate(undefined, {
+    const currentPassword = formString(new FormData(event.currentTarget), "current_password")
+    setupMutation.mutate(currentPassword ? { current_password: currentPassword } : {}, {
       onSuccess: (response) => {
         setSetup(response)
       },
@@ -62,15 +66,21 @@ export function TwoFactorSection() {
     setError(null)
 
     const token = formString(new FormData(event.currentTarget), "token").trim()
-    enableMutation.mutate(token, {
-      onSuccess: (response) => {
-        setSetup(null)
-        setBackupCodes(response.backup_codes)
-      },
-      onError: (mutationError) => {
-        setError(getErrorMessage(mutationError))
-      },
-    })
+    if (!setup) {
+      return
+    }
+    enableMutation.mutate(
+      { enrollment_token: setup.enrollment_token, token },
+      {
+        onSuccess: (response) => {
+          setSetup(null)
+          setBackupCodes(response.backup_codes)
+        },
+        onError: (mutationError) => {
+          setError(getErrorMessage(mutationError))
+        },
+      }
+    )
   }
 
   function handleDisable(event: SyntheticEvent<HTMLFormElement>) {
@@ -184,12 +194,36 @@ export function TwoFactorSection() {
               </form>
             </div>
           )}
+
+          {!user.totp_enabled && !setup && (
+            <form id="totp-setup-form" onSubmit={startSetup}>
+              {identities.has_password ? (
+                <Field>
+                  <FieldLabel htmlFor="totp-current-password">Current password</FieldLabel>
+                  <Input
+                    autoComplete="current-password"
+                    id="totp-current-password"
+                    name="current_password"
+                    required
+                    type="password"
+                  />
+                  <FieldDescription>
+                    Confirm your password before adding an authenticator.
+                  </FieldDescription>
+                </Field>
+              ) : (
+                <FieldDescription>
+                  For security, start setup within 10 minutes of signing in.
+                </FieldDescription>
+              )}
+            </form>
+          )}
         </FieldGroup>
       </CardContent>
 
       <CardFooter className="gap-3">
         {!user.totp_enabled && !setup && (
-          <Button disabled={setupMutation.isPending} onClick={startSetup} type="button">
+          <Button disabled={setupMutation.isPending} form="totp-setup-form" type="submit">
             {setupMutation.isPending ? "Preparing" : "Set Up Two-Factor"}
           </Button>
         )}

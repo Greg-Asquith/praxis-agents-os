@@ -13,6 +13,8 @@ from services.auth.schemas import TotpEnableRequest, TotpEnableResponse
 from services.auth.utils import record_auth_security_event
 from services.security import SecurityEventType
 
+from .utils import verify_totp_enrollment_token
+
 
 async def enable_totp(
     db: AsyncSession,
@@ -23,8 +25,26 @@ async def enable_totp(
 ) -> TotpEnableResponse:
     if user.totp_enabled:
         raise ConflictError("TOTP is already enabled", conflicting_resource="totp")
-    if not user.totp_secret_encrypted:
-        user.generate_totp_secret()
+
+    secret = user.get_totp_secret()
+    if secret is None:
+        raise AuthenticationError("TOTP setup must be started before it can be enabled")
+
+    try:
+        verify_totp_enrollment_token(
+            payload.enrollment_token,
+            user=user,
+            secret=secret,
+        )
+    except AuthenticationError:
+        await record_auth_security_event(
+            event_type=SecurityEventType.AUTH_TOTP_FAILED,
+            request=request,
+            user_email=user.email,
+            details={"reason": "enable_invalid_enrollment_authorization"},
+            committed=True,
+        )
+        raise
 
     if not user.verify_totp(payload.token):
         await record_auth_security_event(

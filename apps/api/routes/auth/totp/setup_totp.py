@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep
 from services.auth import setup_totp as setup_totp_service
-from services.auth.schemas import TotpSetupResponse
+from services.auth.schemas import TotpSetupRequest, TotpSetupResponse
 
 router = APIRouter()
 
@@ -16,5 +16,6 @@ async def setup_totp(
     request: Request,
     db: AsyncDbSessionDep,
     user: CurrentUserDep,
+    payload: TotpSetupRequest,
 ) -> TotpSetupResponse:
-    return await setup_totp_service(db, request=request, user=user)
+    return await setup_totp_service(db, request=request, user=user, payload=payload)

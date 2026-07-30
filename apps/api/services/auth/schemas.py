@@ -145,13 +145,19 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=1024)
 
 
+class TotpSetupRequest(BaseModel):
+    current_password: str | None = Field(default=None, min_length=1, max_length=1024)
+
+
 class TotpSetupResponse(BaseModel):
     provisioning_uri: str
     secret: str
+    enrollment_token: str
 
 
 class TotpEnableRequest(BaseModel):
     token: str = Field(min_length=6, max_length=16)
+    enrollment_token: str = Field(min_length=1, max_length=4096)
 
 
 class TotpVerifyRequest(BaseModel):
