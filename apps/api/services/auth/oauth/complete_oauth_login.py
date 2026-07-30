@@ -10,8 +10,10 @@ from core.exceptions.auth import AuthenticationError
 from core.exceptions.general import NotFoundError
 from core.exceptions.oauth import OAuthAuthenticationError
 from services.auth.oauth.utils import (
+    clear_oauth_login_binding_cookie,
     resolve_provider_redirect_uri,
     upsert_oauth_user,
+    verify_oauth_login_browser_binding,
     verify_oauth_state,
 )
 from services.auth.schemas import AuthResponse, OAuthCallbackRequest
@@ -40,6 +42,11 @@ async def complete_oauth_login(
 
     try:
         state_payload = verify_oauth_state(payload.state)
+        verify_oauth_login_browser_binding(
+            state_payload,
+            request=request,
+            provider_name=provider_name,
+        )
         if state_payload["provider"] != provider_name:
             raise OAuthAuthenticationError(
                 "OAuth state provider mismatch", provider=provider_name, endpoint="state"
@@ -86,6 +93,7 @@ async def complete_oauth_login(
         )
         raise AuthenticationError("Account is temporarily locked")
 
+    clear_oauth_login_binding_cookie(response)
     event_type = (
         SecurityEventType.AUTH_TOTP_CHALLENGE_CREATED
         if user.totp_enabled

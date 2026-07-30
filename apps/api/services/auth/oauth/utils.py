@@ -2,6 +2,7 @@
 
 """Service-specific helpers for auth operations."""
 
+import hashlib
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -9,7 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import jwt
-from fastapi import Request
+from fastapi import Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +31,8 @@ from utils.validation import normalize_email
 logger = logging.getLogger(__name__)
 
 _OAUTH_STATE_TTL = timedelta(minutes=10)
+_OAUTH_LOGIN_BINDING_COOKIE = "oauth_login_binding"
+_OAUTH_LOGIN_COOKIE_PATH = "/api/v1/auth/oauth"
 
 
 async def upsert_oauth_user(
@@ -141,19 +144,74 @@ def create_oauth_state(
     provider_name: str,
     redirect_uri: str,
     next_path: str | None,
-) -> tuple[str, datetime]:
+) -> tuple[str, datetime, str]:
     expires_at = datetime.now(UTC) + _OAUTH_STATE_TTL
+    browser_binding = secrets.token_urlsafe(32)
     payload = {
         "type": "oauth_state",
         "provider": provider_name,
         "redirect_uri": redirect_uri,
         "next_path": safe_next_path(next_path),
+        "browser_binding_hash": _oauth_login_binding_hash(browser_binding),
         "jti": secrets.token_urlsafe(24),
         "exp": int(expires_at.timestamp()),
         "iat": int(datetime.now(UTC).timestamp()),
     }
     token = jwt.encode(payload, settings.SECRET_KEY.get_secret_value(), algorithm="HS256")
-    return token, expires_at
+    return token, expires_at, browser_binding
+
+
+def set_oauth_login_binding_cookie(
+    response: Response,
+    *,
+    browser_binding: str,
+    expires_at: datetime,
+) -> None:
+    """Bind an OAuth login transaction to the browser that initiated it."""
+    response.set_cookie(
+        key=_OAUTH_LOGIN_BINDING_COOKIE,
+        value=browser_binding,
+        expires=expires_at,
+        httponly=True,
+        secure=settings.SECURE_COOKIES,
+        samesite="lax",
+        path=_OAUTH_LOGIN_COOKIE_PATH,
+    )
+
+
+def clear_oauth_login_binding_cookie(response: Response) -> None:
+    """Remove a successfully consumed OAuth login binding."""
+    response.delete_cookie(
+        _OAUTH_LOGIN_BINDING_COOKIE,
+        httponly=True,
+        secure=settings.SECURE_COOKIES,
+        samesite="lax",
+        path=_OAUTH_LOGIN_COOKIE_PATH,
+    )
+
+
+def verify_oauth_login_browser_binding(
+    state_payload: dict[str, Any],
+    *,
+    request: Request,
+    provider_name: str,
+) -> None:
+    expected_hash = state_payload.get("browser_binding_hash")
+    browser_binding = request.cookies.get(_OAUTH_LOGIN_BINDING_COOKIE)
+    if (
+        not isinstance(expected_hash, str)
+        or not browser_binding
+        or not secrets.compare_digest(expected_hash, _oauth_login_binding_hash(browser_binding))
+    ):
+        raise OAuthAuthenticationError(
+            "OAuth login was not initiated by this browser",
+            provider=provider_name,
+            endpoint="state",
+        )
+
+
+def _oauth_login_binding_hash(browser_binding: str) -> str:
+    return hashlib.sha256(browser_binding.encode()).hexdigest()
 
 
 def create_oauth_link_state(
@@ -231,7 +289,11 @@ def verify_oauth_state(state: str) -> dict[str, Any]:
             provider=str(payload.get("provider") or "unknown"),
             endpoint="state",
         )
-    if not payload.get("provider") or not payload.get("redirect_uri"):
+    if (
+        not payload.get("provider")
+        or not payload.get("redirect_uri")
+        or not payload.get("browser_binding_hash")
+    ):
         raise OAuthAuthenticationError(
             "OAuth state is incomplete",
             provider=str(payload.get("provider") or "unknown"),

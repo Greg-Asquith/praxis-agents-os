@@ -93,6 +93,8 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - CSRF is enforced when a session cookie is present (Origin check plus
   HMAC-signed `X-CSRF-Token`); rate limiting is Postgres-backed and
   fail-closed for auth flows. Do not widen exempt lists casually.
+- OAuth login state is bound to the initiating browser with a short-lived,
+  HttpOnly, host-only cookie. Keep that check at the API callback boundary.
 - Preserve auditability for sensitive operations. Workspace, security,
   approval, credential, notification, and schedule flows should leave enough
   context to debug later.
