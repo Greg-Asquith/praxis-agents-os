@@ -12,6 +12,7 @@ from models.integration_context import ActiveContextSelection
 from models.user import User
 from models.workspace import Workspace
 from services.audit_events import AuditAction, AuditResourceType, record_workspace_audit_event
+from services.workspaces.utils import READ_ROLES, require_workspace_role
 
 
 async def clear_active_context_selection(
@@ -22,6 +23,13 @@ async def clear_active_context_selection(
     workspace: Workspace,
     conversation_id: UUID,
 ) -> None:
+    await require_workspace_role(
+        db,
+        actor=actor,
+        workspace_id=workspace.id,
+        allowed_roles=READ_ROLES,
+    )
+
     # Import lazily so loading the agent runtime does not pull its streaming worker
     # back in through the conversations package while execute_run is initializing.
     from services.conversations.utils import get_conversation_for_actor

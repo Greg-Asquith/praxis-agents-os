@@ -7,10 +7,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Request, Response, status
 
-from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep, require_editor
+from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep, require_read
 from services.integrations.context import clear_active_context_selection
 
-router = APIRouter(dependencies=[Depends(require_editor)])
+router = APIRouter(dependencies=[Depends(require_read)])
 
 
 @router.delete(

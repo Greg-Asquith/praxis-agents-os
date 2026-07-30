@@ -35,6 +35,9 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Direct conversation creation may include an `active_context` selection. It
   must be validated and persisted after the conversation is flushed but before
   its first run is created, so the initial turn resolves the selected context.
+  Every active workspace member, including `read_only`, may select context;
+  tool dispatch separately enforces whether that member may perform read or
+  write effects.
 - Context Group membership derives from `Workspace.is_personal`: shared
   workspace groups accept only connections owned by that workspace; personal
   workspace groups also accept the current actor's user-owned connections.

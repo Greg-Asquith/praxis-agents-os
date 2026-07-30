@@ -26,7 +26,6 @@ export function ConversationContextPicker({ conversationId }: { conversationId: 
     activeContextQuery.isError || contextGroupsQuery.isError || resourcesQuery.isError
   const disabled =
     workspace.current_user_role === null ||
-    workspace.current_user_role === "read_only" ||
     pending ||
     queryUnavailable ||
     activeContextQuery.isPending ||
@@ -93,7 +92,6 @@ export function NewConversationContextPicker({
   const pickerDisabled =
     disabled ||
     workspace.current_user_role === null ||
-    workspace.current_user_role === "read_only" ||
     queryUnavailable ||
     contextGroupsQuery.isPending ||
     resourcesQuery.isPending

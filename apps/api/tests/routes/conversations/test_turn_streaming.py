@@ -65,13 +65,15 @@ pytestmark = pytest.mark.asyncio
 
 async def _authenticated_context(
     db: AsyncSession,
+    *,
+    role: WorkspaceRole = WorkspaceRole.OWNER,
 ) -> tuple[User, Workspace, Agent, Conversation, dict[str, str]]:
     user = build_user(email=f"turn-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"turn-{uuid4().hex[:8]}")
     membership = build_workspace_membership(
         workspace_id=workspace.id,
         user_id=user.id,
-        role=WorkspaceRole.OWNER,
+        role=role,
     )
     db.add_all([user, workspace, membership])
     await db.flush()
@@ -302,6 +304,83 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert created_run.metadata_json["audit_context"]["ip_address"] == "127.0.0.1"
     assert created_run.metadata_json["audit_context"]["user_agent"].startswith("python-httpx2/")
     assert created_run.metadata_json["audit_context"]["request_id"]
+
+
+async def test_read_only_member_can_create_conversation_with_active_context(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, workspace, agent, _existing_conversation, headers = await _authenticated_context(
+        db_session,
+        role=WorkspaceRole.READ_ONLY,
+    )
+    credential = build_external_credential()
+    connection = build_integration_connection(
+        credential=credential,
+        user=user,
+        workspace=workspace,
+    )
+    resource = build_integration_resource(connection=connection)
+    db_session.add_all([credential, connection, resource])
+    await db_session.commit()
+
+    async def fake_title_worker(**_kwargs: object) -> None:
+        return None
+
+    async def fake_worker(
+        *,
+        run_id: UUID,
+        conversation_id: UUID,
+        user_prompt: str,
+        sink: EventSink,
+        **_kwargs: object,
+    ) -> None:
+        await sink.emit(EVENT_DONE, {"status": "completed"})
+        await sink.close()
+
+    create_conversation_stream_module = importlib.import_module(
+        "services.conversations.create_conversation_stream"
+    )
+    monkeypatch.setattr(
+        create_conversation_stream_module,
+        "run_conversation_title_worker",
+        fake_title_worker,
+    )
+    monkeypatch.setattr(
+        create_conversation_stream_module,
+        "run_turn_worker",
+        fake_worker,
+    )
+
+    async with db_async_client.stream(
+        "POST",
+        "/api/v1/conversations/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "user_prompt": "Summarize this account",
+            "active_context": {
+                "type": "resource",
+                "integration_resource_id": str(resource.id),
+            },
+        },
+    ) as response:
+        await response.aread()
+
+    await _drain_initial_conversation_background_work()
+
+    assert response.status_code == 200
+    selection = await db_session.scalar(
+        select(ActiveContextSelection)
+        .join(Conversation)
+        .where(
+            Conversation.user_id == user.id,
+            Conversation.title == "Summarize this account",
+        )
+    )
+    assert selection is not None
+    assert selection.integration_resource_id == resource.id
 
 
 async def test_create_conversation_rejects_inactive_agent_without_creating_run(

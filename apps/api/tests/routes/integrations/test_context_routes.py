@@ -95,7 +95,7 @@ async def test_context_routes_round_trip_selection_and_group(
     assert cleared.status_code == 204
 
 
-async def test_context_route_rbac_allows_reads_but_denies_writes(
+async def test_context_route_allows_read_only_member_to_manage_own_selection(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     integration_identity: dict[str, object],
@@ -119,12 +119,17 @@ async def test_context_route_rbac_allows_reads_but_denies_writes(
         headers=headers,
     )
     assert read.status_code == 200
-    denied = await db_async_client.put(
+    selected = await db_async_client.put(
         f"/api/v1/integrations/conversations/{reader_conversation.id}/context",
         headers=headers,
         json={"type": "resource", "integration_resource_id": str(resource.id)},
     )
-    assert denied.status_code == 403
+    assert selected.status_code == 200
+    cleared = await db_async_client.delete(
+        f"/api/v1/integrations/conversations/{reader_conversation.id}/context",
+        headers=headers,
+    )
+    assert cleared.status_code == 204
 
 
 async def test_context_route_hides_cross_workspace_resource(

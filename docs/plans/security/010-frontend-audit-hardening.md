@@ -11,9 +11,9 @@ This is a defect-remediation list, separate from the dependency-maintenance
 runbook in this directory's `README.md`. It is not a roadmap lane; do not add
 these numbers to `docs/plans/000_MASTER_ROADMAP.md`.
 
-The 28 candidates collapse to **9 distinct defects plus 1 already-fixed**.
-Twelve of the raw rows were the same root cause reported once per reachable
-sink; they are S1 below.
+The 28 candidates collapse to **8 distinct defects, 1 rejected finding, and 1
+already-fixed finding**. Twelve of the raw rows were the same root cause
+reported once per reachable sink; they are S1 below.
 
 | # | Task | Severity | Effort | Area | Raw rows |
 | --- | --- | --- | --- | --- | --- |
@@ -22,14 +22,14 @@ sink; they are S1 below.
 | [S3](#s3--concurrent-turns-can-start-two-runs-on-one-conversation) | Concurrent turns can start two runs on one conversation | **High** | M | api | 16 |
 | [S4](#s4--logout-leaves-user-private-data-in-the-query-cache) | Logout leaves user-private data in the query cache | **High** | S | web | 1, 20, 21, 22 |
 | [S5](#s5--approval-cards-hide-arguments-that-approval-executes) | Approval cards hide arguments that approval executes | **High** | M | cross | 17, 18, 19 |
-| [S6](#s6--read-only-members-bypass-the-context-role-gate) | Read-only members bypass the context role gate | **Medium** | S | api | 26 |
+| [S6](#s6--read-only-context-selection-is-intended) | Read-only context selection is intended — **rejected** | — | S | cross | 26 |
 | [S7](#s7--inline-html-previews-ship-without-their-own-csp) | Inline HTML previews ship without their own CSP | **Medium** | S | web | 24, 25 |
 | [S8](#s8--approval-controls-bind-to-tool-calls-by-id-alone) | Approval controls bind to tool calls by id alone | **Medium** | S | web | 3 |
 | [S9](#s9--totp-cannot-be-completed-at-sign-in) | TOTP cannot be completed at sign-in | **Medium** | M | web | 27 |
 | [—](#closed--pending-invitation-survives-membership-revocation) | Pending invitation survives revocation — **already fixed** | — | — | — | 2 |
 
 Suggested order: S1 and S2 first (both are small and both are externally
-reachable), then S4, then S3 and S5. S6–S9 are follow-up work.
+reachable), then S4, then S3 and S5. S7–S9 are follow-up work.
 
 ---
 
@@ -389,52 +389,44 @@ the staged bytes are what land on disk.
 
 ---
 
-## S6 — Read-only members bypass the context role gate
+## S6 — Read-only context selection is intended
 
-**Severity: Medium. Effort: S.**
+**Severity: Rejected. Effort: S.**
 
-### What is wrong
+**Status: READY FOR REVIEW — the finding was rejected and inconsistent gates
+were corrected.**
 
-The dedicated context routes gate correctly — both
-`apps/api/routes/integrations/set_context.py:14` and `clear_context.py:13`
-declare `APIRouter(dependencies=[Depends(require_editor)])`. The
-create-conversation route does not:
-`apps/api/routes/conversations/create_conversation.py:15-22` takes only
-`CurrentUserDep` and `CurrentWorkspaceDep`, and the mounting router adds
-nothing (`routes/conversations/__init__.py:16-18`).
+### Decision
 
-That route accepts `active_context` in its body and passes it straight to
-`set_active_context_selection`
-(`apps/api/services/conversations/create_conversation_stream.py:96-103`), and
-the service performs no role check — only conversation ownership and
-resource/group-to-workspace relationship validation
-(`services/integrations/context/set_active_context_selection.py:33-79`).
+The reported behavior is the intended policy, not a role-gate bypass. Every
+active workspace member, including `read_only`, may select the integration
+context available to their own conversation. Context selection narrows which
+provider resources read-effect tools may use; it does not grant permission to
+perform write effects. Tool dispatch continues to enforce the member's role
+for each invocation.
 
-The UI disables the picker for `read_only`
-(`conversation-context-picker.tsx:89-99`) but still queries the group and
-resource lists while disabled, so the ids are readily available client-side.
+The implementation was inconsistent with that policy: direct conversation
+creation already allowed the selection, while the dedicated set/clear routes
+required `EDITOR_ROLES` and the frontend disabled both pickers for
+`read_only`. Those restrictions prevented read-only members from selecting
+context after conversation creation even though they may use read-effect
+integration tools.
 
-### Why it matters
+### What changed
 
-`read_only` is in `READ_ROLES` but not `EDITOR_ROLES`
-(`apps/api/models/workspace.py:32`, `services/workspaces/utils.py:24-33`). A
-read-only member can set integration context on a conversation they create,
-and read-effect integration tools are permitted to read-only roles — so
-provider data flows across a boundary the governance model puts at member and
-above. Scope is limited to their own conversation and their own workspace's
-resources, so this is a role-gate bypass rather than cross-workspace access.
-
-### What to do
-
-Authorize inside `set_active_context_selection` rather than only on the routes,
-so every caller is covered. Per `REVIEW.md`, "every new route carries the right
-RBAC dependency" is the highest-risk defect class in this codebase — a service
-reachable from two routes with different gates is exactly that shape.
+- The set and clear context services now require an active membership in
+  `READ_ROLES`, covering every caller without excluding `read_only`.
+- The dedicated set and clear routes use `require_read`.
+- The existing- and new-conversation context pickers no longer disable
+  themselves solely because the member is `read_only`.
+- Conversation ownership and workspace resource/group validation remain
+  unchanged.
 
 ### Verify
 
-Add a test asserting a `read_only` member gets 403 when POSTing a conversation
-with `active_context` set.
+Tests assert that a `read_only` member can set and clear context on their own
+existing conversation and can create a conversation with `active_context`
+persisted.
 
 ---
 

@@ -68,8 +68,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
 - The conversation composer exposes active integration context for both new
-  and existing conversations. New-conversation selection stays local until it
-  is submitted atomically with the first message.
+  and existing conversations, including for read-only members.
+  New-conversation selection stays local until it is submitted atomically with
+  the first message.
 - In shared workspaces, the Context Group picker hides resources from personal
   connections. Standalone context selection may still show those resources in
   conversations and schedules; do not reuse the group filter for that picker.

@@ -7,11 +7,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Request
 
-from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep, require_editor
+from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep, require_read
 from services.integrations.context import set_active_context_selection
 from services.integrations.context.schemas import ActiveContextRead, ActiveContextSelectionValue
 
-router = APIRouter(dependencies=[Depends(require_editor)])
+router = APIRouter(dependencies=[Depends(require_read)])
 
 
 @router.put("/conversations/{conversation_id}/context")
