@@ -47,16 +47,23 @@ async def create_invitation(
     ensure_team_workspace(workspace)
     validate_email(payload.email)
 
-    existing_member_id = await db.scalar(
-        select(WorkspaceMembership.id)
-        .join(User, User.id == WorkspaceMembership.user_id)
+    target_user_id = await db.scalar(
+        select(User.id)
         .where(
-            WorkspaceMembership.workspace_id == workspace_id,
-            WorkspaceMembership.deleted.is_(False),
             User.email == payload.email,
             User.deleted.is_(False),
         )
+        .with_for_update()
     )
+    existing_member_id = None
+    if target_user_id is not None:
+        existing_member_id = await db.scalar(
+            select(WorkspaceMembership.id).where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == target_user_id,
+                WorkspaceMembership.deleted.is_(False),
+            )
+        )
     if existing_member_id is not None:
         raise ConflictError(
             "User is already a member of this workspace",

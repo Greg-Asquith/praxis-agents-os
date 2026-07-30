@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from core.exceptions.general import ConflictError
 from models.user import User
-from models.workspace import WorkspaceMembership
+from models.workspace import WorkspaceInvitation, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.security import SecurityEventType
@@ -44,8 +44,20 @@ async def create_membership(
         allowed_roles=MANAGER_ROLES,
     )
     ensure_team_workspace(workspace)
-    user = await get_user_or_raise(db, user_id=payload.user_id)
+    user = await get_user_or_raise(db, user_id=payload.user_id, lock=True)
 
+    pending_invitations = (
+        await db.scalars(
+            select(WorkspaceInvitation)
+            .where(
+                WorkspaceInvitation.workspace_id == workspace_id,
+                WorkspaceInvitation.email == user.email,
+                WorkspaceInvitation.accepted_at.is_(None),
+                WorkspaceInvitation.deleted.is_(False),
+            )
+            .with_for_update()
+        )
+    ).all()
     existing = await db.execute(
         select(WorkspaceMembership)
         .options(selectinload(WorkspaceMembership.user))
@@ -61,6 +73,10 @@ async def create_membership(
             "User is already a member of this workspace",
             conflicting_resource="workspace_membership",
         )
+
+    revoked_invitation_ids = [str(invitation.id) for invitation in pending_invitations]
+    for invitation in pending_invitations:
+        invitation.soft_delete(deleted_by=actor.id, cascade=False)
 
     role = payload.role.value
     if membership and membership.deleted:
@@ -91,7 +107,11 @@ async def create_membership(
         resource_type=AuditResourceType.WORKSPACE_MEMBERSHIP,
         resource_id=membership.id,
         actor=actor,
-        details={"user_id": str(user.id), "role": role},
+        details={
+            "user_id": str(user.id),
+            "role": role,
+            "revoked_invitation_ids": revoked_invitation_ids,
+        },
     )
     await record_workspace_security_event(
         db=db,
@@ -103,6 +123,7 @@ async def create_membership(
             "membership_id": str(membership.id),
             "user_id": str(user.id),
             "role": role,
+            "revoked_invitation_ids": revoked_invitation_ids,
         },
     )
     await db.refresh(membership)

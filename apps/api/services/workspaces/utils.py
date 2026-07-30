@@ -106,14 +106,20 @@ async def require_workspace_role(
     return membership.workspace, membership
 
 
-async def get_user_or_raise(db: AsyncSession, *, user_id: UUID) -> User:
-    result = await db.execute(
-        select(User).where(
-            User.id == user_id,
-            User.deleted.is_(False),
-            User.is_active.is_(True),
-        )
+async def get_user_or_raise(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    lock: bool = False,
+) -> User:
+    stmt = select(User).where(
+        User.id == user_id,
+        User.deleted.is_(False),
+        User.is_active.is_(True),
     )
+    if lock:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if user is None:
         raise NotFoundError("User not found", resource_type="user", resource_id=str(user_id))

@@ -2,28 +2,34 @@
 
 """Focused tests for workspace-management service invariants."""
 
+import asyncio
 import importlib
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
-from core.exceptions.general import AppValidationError
+from core.exceptions.general import AppValidationError, ConflictError
 from models.audit_event import AuditEvent
 from models.security import SecurityEvent
-from models.workspace import WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
+from models.user import User
+from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
 from services.workspaces import create_workspace, delete_workspace
 from services.workspaces.invitations import (
     accept_invitation_by_token,
     accept_pending_invitations_for_user,
+    create_invitation,
 )
-from services.workspaces.memberships import delete_membership, update_membership
+from services.workspaces.memberships import create_membership, delete_membership, update_membership
 from services.workspaces.schemas import (
     WorkspaceCreateRequest,
+    WorkspaceInvitationCreateRequest,
+    WorkspaceMembershipCreateRequest,
     WorkspaceMembershipUpdateRequest,
 )
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -221,6 +227,234 @@ async def test_delete_membership_rejects_non_manager_removing_another_member(
         )
 
     assert target_membership.deleted is False
+
+
+async def test_direct_membership_revokes_matching_pending_invitation(
+    db_session: AsyncSession,
+) -> None:
+    owner = build_user(email="owner@example.com")
+    invited = build_user(email="invited@example.com")
+    workspace = build_workspace(slug="team-workspace", is_personal=False)
+    owner_membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        role=WorkspaceRole.OWNER,
+    )
+    raw_token = "dormant-invite-token"
+    invitation = WorkspaceInvitation(
+        workspace_id=workspace.id,
+        email=invited.email,
+        role=WorkspaceRole.ADMIN.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token(raw_token),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    unrelated_invitation = WorkspaceInvitation(
+        workspace_id=workspace.id,
+        email="other@example.com",
+        role=WorkspaceRole.MEMBER.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("unrelated-invite-token"),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    db_session.add_all(
+        [
+            owner,
+            invited,
+            workspace,
+            owner_membership,
+            invitation,
+            unrelated_invitation,
+        ]
+    )
+    await db_session.flush()
+
+    created = await create_membership(
+        db_session,
+        request=build_test_request(
+            path=f"/api/v1/workspaces/{workspace.id}/memberships",
+            method="POST",
+        ),
+        actor=owner,
+        workspace_id=workspace.id,
+        payload=WorkspaceMembershipCreateRequest(
+            user_id=invited.id,
+            role=WorkspaceRole.MEMBER,
+        ),
+    )
+
+    assert invitation.deleted is True
+    assert invitation.deleted_by == owner.id
+    assert unrelated_invitation.deleted is False
+
+    audit_event = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.resource_type == AuditResourceType.WORKSPACE_MEMBERSHIP.value,
+            AuditEvent.resource_id == str(created.id),
+        )
+    )
+    assert audit_event is not None
+    assert audit_event.details["revoked_invitation_ids"] == [str(invitation.id)]
+
+    await delete_membership(
+        db_session,
+        request=build_test_request(
+            path=f"/api/v1/workspaces/{workspace.id}/memberships/{created.id}",
+            method="DELETE",
+        ),
+        actor=owner,
+        workspace_id=workspace.id,
+        membership_id=created.id,
+    )
+
+    with pytest.raises(AppValidationError, match="Invalid or expired invitation link"):
+        await accept_invitation_by_token(
+            db_session,
+            request=None,
+            actor=invited,
+            token=raw_token,
+        )
+
+    membership = await db_session.get(WorkspaceMembership, created.id)
+    assert membership is not None
+    assert membership.deleted is True
+
+
+async def test_invitation_creation_cannot_race_direct_membership(
+    committed_db_session_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unique_id = uuid4().hex
+    owner = build_user(email=f"owner-{unique_id}@example.com")
+    invited = build_user(email=f"invited-{unique_id}@example.com")
+    workspace = build_workspace(slug=f"invite-race-{unique_id}", is_personal=False)
+    owner_membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        role=WorkspaceRole.OWNER,
+    )
+    async with committed_db_session_factory() as setup:
+        setup.add_all([owner, invited, workspace, owner_membership])
+        await setup.commit()
+        owner_id = owner.id
+        invited_id = invited.id
+        workspace_id = workspace.id
+
+    membership_module = importlib.import_module("services.workspaces.memberships.create_membership")
+    original_get_user = membership_module.get_user_or_raise
+    target_user_locked = asyncio.Event()
+    allow_membership_creation = asyncio.Event()
+
+    async def pause_after_target_user_lock(*args, **kwargs):
+        user = await original_get_user(*args, **kwargs)
+        target_user_locked.set()
+        await allow_membership_creation.wait()
+        return user
+
+    monkeypatch.setattr(
+        membership_module,
+        "get_user_or_raise",
+        pause_after_target_user_lock,
+    )
+
+    async def add_member() -> None:
+        async with committed_db_session_factory() as db:
+            actor = await db.get(User, owner_id)
+            assert actor is not None
+            await create_membership(
+                db,
+                request=build_test_request(
+                    path=f"/api/v1/workspaces/{workspace_id}/memberships",
+                    method="POST",
+                ),
+                actor=actor,
+                workspace_id=workspace_id,
+                payload=WorkspaceMembershipCreateRequest(
+                    user_id=invited_id,
+                    role=WorkspaceRole.MEMBER,
+                ),
+            )
+            await db.commit()
+
+    async def invite_member() -> None:
+        async with committed_db_session_factory() as db:
+            actor = await db.get(User, owner_id)
+            assert actor is not None
+            try:
+                await create_invitation(
+                    db,
+                    request=build_test_request(
+                        path=f"/api/v1/workspaces/{workspace_id}/invitations",
+                        method="POST",
+                    ),
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    payload=WorkspaceInvitationCreateRequest(
+                        email=invited.email,
+                        role=WorkspaceRole.ADMIN,
+                    ),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+    membership_task = asyncio.create_task(add_member())
+    invitation_task = None
+    try:
+        await asyncio.wait_for(target_user_locked.wait(), timeout=5)
+        invitation_task = asyncio.create_task(invite_member())
+        await asyncio.sleep(0.05)
+        assert not invitation_task.done()
+
+        allow_membership_creation.set()
+        await asyncio.wait_for(membership_task, timeout=5)
+        with pytest.raises(ConflictError, match="already a member"):
+            await asyncio.wait_for(invitation_task, timeout=5)
+
+        async with committed_db_session_factory() as verify:
+            membership = await verify.scalar(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == workspace_id,
+                    WorkspaceMembership.user_id == invited_id,
+                    WorkspaceMembership.deleted.is_(False),
+                )
+            )
+            invitation = await verify.scalar(
+                select(WorkspaceInvitation).where(
+                    WorkspaceInvitation.workspace_id == workspace_id,
+                    WorkspaceInvitation.email == invited.email,
+                    WorkspaceInvitation.deleted.is_(False),
+                )
+            )
+            assert membership is not None
+            assert invitation is None
+    finally:
+        allow_membership_creation.set()
+        if not membership_task.done():
+            membership_task.cancel()
+        if invitation_task is not None and not invitation_task.done():
+            invitation_task.cancel()
+        tasks = [membership_task]
+        if invitation_task is not None:
+            tasks.append(invitation_task)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(delete(AuditEvent).where(AuditEvent.workspace_id == workspace_id))
+            await cleanup.execute(
+                delete(SecurityEvent).where(
+                    SecurityEvent.details["workspace_id"].astext == str(workspace_id)
+                )
+            )
+            await cleanup.execute(
+                delete(WorkspaceInvitation).where(WorkspaceInvitation.workspace_id == workspace_id)
+            )
+            await cleanup.execute(
+                delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
+            )
+            await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await cleanup.execute(delete(User).where(User.id.in_([owner_id, invited_id])))
+            await cleanup.commit()
 
 
 async def test_accept_invitation_by_token_creates_membership_and_records_security_event(
