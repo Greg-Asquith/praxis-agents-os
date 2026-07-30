@@ -26,6 +26,7 @@ async def enqueue_job(
     *,
     kind: str,
     workspace_id: UUID | None = None,
+    concurrency_user_id: UUID | None = None,
     subject_type: str | None = None,
     subject_id: UUID | None = None,
     payload: dict[str, object] | None = None,
@@ -45,6 +46,11 @@ async def enqueue_job(
         )
 
     normalized_payload = payload or {}
+    if workspace_id is not None and concurrency_user_id is not None:
+        raise AppValidationError(
+            "Jobs cannot have both workspace and user concurrency owners",
+            field="concurrency_user_id",
+        )
     normalized_hash = normalize_content_hash(
         content_hash or compute_content_hash(normalized_payload)
     )
@@ -64,6 +70,7 @@ async def enqueue_job(
     job = Job(
         kind=kind,
         workspace_id=workspace_id,
+        concurrency_user_id=concurrency_user_id,
         subject_type=subject_type,
         subject_id=subject_id,
         content_hash=normalized_hash,
@@ -85,6 +92,7 @@ async def enqueue_job(
             db,
             kind=kind,
             workspace_id=workspace_id,
+            concurrency_user_id=concurrency_user_id,
             subject_type=subject_type,
             subject_id=subject_id,
             content_hash=normalized_hash,
@@ -101,6 +109,7 @@ async def _get_existing_in_flight_job(
     *,
     kind: str,
     workspace_id: UUID | None,
+    concurrency_user_id: UUID | None,
     subject_type: str | None,
     subject_id: UUID | None,
     content_hash: str,
@@ -114,6 +123,10 @@ async def _get_existing_in_flight_job(
         stmt = stmt.where(Job.workspace_id.is_(None))
     else:
         stmt = stmt.where(Job.workspace_id == workspace_id)
+    if concurrency_user_id is None:
+        stmt = stmt.where(Job.concurrency_user_id.is_(None))
+    else:
+        stmt = stmt.where(Job.concurrency_user_id == concurrency_user_id)
     if subject_type is None:
         stmt = stmt.where(Job.subject_type.is_(None))
     else:

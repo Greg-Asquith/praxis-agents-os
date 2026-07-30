@@ -54,5 +54,5 @@ class JobsSettingsMixin:
     JOBS_WORKSPACE_CONCURRENCY_LIMIT: int = Field(
         default=4,
         gt=0,
-        description="Observed in-flight job concurrency warning threshold per workspace.",
+        description="Maximum running jobs per workspace or user-owned concurrency bucket.",
     )

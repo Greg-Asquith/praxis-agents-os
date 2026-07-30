@@ -26,6 +26,12 @@ class Job(Base, UUIDMixin, TimestampMixin):
     workspace_id = Column(
         UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True
     )
+    concurrency_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
     kind = Column(String(64), nullable=False)
     subject_type = Column(String(64), nullable=True)
     subject_id = Column(UUID(as_uuid=True), nullable=True)
@@ -56,6 +62,10 @@ class Job(Base, UUIDMixin, TimestampMixin):
         ),
         CheckConstraint("attempts >= 0", name="jobs_attempts_check"),
         CheckConstraint("max_attempts > 0", name="jobs_max_attempts_check"),
+        CheckConstraint(
+            "num_nonnulls(workspace_id, concurrency_user_id) <= 1",
+            name="jobs_concurrency_owner_check",
+        ),
         Index(
             "ix_jobs_claim",
             "status",
@@ -70,9 +80,11 @@ class Job(Base, UUIDMixin, TimestampMixin):
             postgresql_where=text("status = 'running'"),
         ),
         Index("ix_jobs_workspace_status", "workspace_id", "status"),
+        Index("ix_jobs_concurrency_user_status", "concurrency_user_id", "status"),
         Index(
             "uq_jobs_in_flight",
             text("coalesce(workspace_id::text, '')"),
+            text("coalesce(concurrency_user_id::text, '')"),
             text("kind"),
             text("coalesce(subject_type, '')"),
             text("coalesce(subject_id::text, '')"),

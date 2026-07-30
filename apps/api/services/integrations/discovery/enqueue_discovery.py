@@ -34,6 +34,7 @@ async def enqueue_discovery(
         db,
         kind=DISCOVER_RESOURCES_KIND,
         workspace_id=connection.owner_workspace_id,
+        concurrency_user_id=connection.owner_user_id,
         subject_type="integration_connection",
         subject_id=connection.id,
         payload={},

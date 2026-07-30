@@ -44,6 +44,29 @@ async def test_enqueue_discovery_deduplicates_in_flight_work(
     assert first.initiated_by_user_id is None
 
 
+async def test_user_owned_discovery_uses_user_concurrency_bucket(
+    db_session: AsyncSession,
+) -> None:
+    user = build_user()
+    credential = build_external_credential()
+    db_session.add_all([user, credential])
+    await db_session.flush()
+    connection = build_integration_connection(
+        credential=credential,
+        user=user,
+        owner_user_id=user.id,
+        status="discovery_pending",
+    )
+    db_session.add(connection)
+    await db_session.flush()
+
+    job = await enqueue_discovery(db_session, connection=connection)
+
+    assert job.workspace_id is None
+    assert job.concurrency_user_id == user.id
+    assert job.initiated_by_user_id is None
+
+
 async def test_recover_orphaned_discovery_recreates_missing_work(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],

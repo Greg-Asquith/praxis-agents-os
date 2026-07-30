@@ -5,7 +5,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -27,36 +27,67 @@ async def claim_jobs(
 ) -> list[Job]:
     """Claim due jobs with row locks so overlapping workers split work."""
     now_utc = now or datetime.now(UTC)
-    running_job = aliased(Job)
-    running_counts = (
-        select(running_job.workspace_id, func.count(running_job.id).label("running_count"))
-        .where(
-            running_job.status == JOB_STATUS_RUNNING,
-            running_job.workspace_id.is_not(None),
+    workspace_running_job = aliased(Job)
+    workspace_running_counts = (
+        select(
+            workspace_running_job.workspace_id,
+            func.count(workspace_running_job.id).label("running_count"),
         )
-        .group_by(running_job.workspace_id)
+        .where(
+            workspace_running_job.status == JOB_STATUS_RUNNING,
+            workspace_running_job.workspace_id.is_not(None),
+        )
+        .group_by(workspace_running_job.workspace_id)
         .subquery()
     )
-    workspace_limit = settings.JOBS_WORKSPACE_CONCURRENCY_LIMIT
+    user_running_job = aliased(Job)
+    user_running_counts = (
+        select(
+            user_running_job.concurrency_user_id,
+            func.count(user_running_job.id).label("running_count"),
+        )
+        .where(
+            user_running_job.status == JOB_STATUS_RUNNING,
+            user_running_job.concurrency_user_id.is_not(None),
+        )
+        .group_by(user_running_job.concurrency_user_id)
+        .subquery()
+    )
+    concurrency_limit = settings.JOBS_WORKSPACE_CONCURRENCY_LIMIT
+    running_count = func.coalesce(
+        workspace_running_counts.c.running_count,
+        user_running_counts.c.running_count,
+        0,
+    )
+    has_no_concurrency_owner = and_(
+        Job.workspace_id.is_(None),
+        Job.concurrency_user_id.is_(None),
+    )
     ranked_pending_jobs = (
         select(
             Job.id.label("job_id"),
-            func.coalesce(running_counts.c.running_count, 0).label("running_count"),
+            running_count.label("running_count"),
             func.row_number()
             .over(
-                partition_by=Job.workspace_id,
+                partition_by=(Job.workspace_id, Job.concurrency_user_id),
                 order_by=(Job.priority, Job.run_after, Job.created_at, Job.id),
             )
-            .label("workspace_pending_rank"),
+            .label("owner_pending_rank"),
         )
-        .outerjoin(running_counts, Job.workspace_id == running_counts.c.workspace_id)
+        .outerjoin(
+            workspace_running_counts,
+            Job.workspace_id == workspace_running_counts.c.workspace_id,
+        )
+        .outerjoin(
+            user_running_counts,
+            Job.concurrency_user_id == user_running_counts.c.concurrency_user_id,
+        )
         .where(
             Job.status == JOB_STATUS_PENDING,
             Job.run_after <= now_utc,
             or_(
-                Job.workspace_id.is_(None),
-                running_counts.c.running_count.is_(None),
-                running_counts.c.running_count < workspace_limit,
+                has_no_concurrency_owner,
+                running_count < concurrency_limit,
             ),
         )
         .subquery()
@@ -66,9 +97,12 @@ async def claim_jobs(
         .join(ranked_pending_jobs, Job.id == ranked_pending_jobs.c.job_id)
         .where(
             or_(
-                Job.workspace_id.is_(None),
-                ranked_pending_jobs.c.workspace_pending_rank
-                <= workspace_limit - ranked_pending_jobs.c.running_count,
+                and_(
+                    Job.workspace_id.is_(None),
+                    Job.concurrency_user_id.is_(None),
+                ),
+                ranked_pending_jobs.c.owner_pending_rank
+                <= concurrency_limit - ranked_pending_jobs.c.running_count,
             ),
         )
         .order_by(Job.priority, Job.run_after, Job.created_at)

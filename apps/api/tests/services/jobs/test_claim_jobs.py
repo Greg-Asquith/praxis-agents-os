@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from models.jobs import Job
 from services.jobs.claim_jobs import claim_jobs
 from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_RUNNING, JOB_STATUS_SUCCEEDED
-from tests.factories import build_job, build_workspace
+from tests.factories import build_job, build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
 
@@ -203,3 +203,37 @@ async def test_claim_jobs_only_uses_remaining_workspace_slots(
     claimed_ids = {job.id for job in claimed}
     assert sum(job.id in claimed_ids for job in pending_jobs) == 1
     assert sum(job.status == JOB_STATUS_PENDING for job in pending_jobs) == 3
+
+
+async def test_claim_jobs_limits_user_owned_pending_jobs(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    claim_jobs_module = importlib.import_module("services.jobs.claim_jobs")
+
+    await db_session.execute(delete(Job))
+    await db_session.flush()
+    monkeypatch.setattr(claim_jobs_module.settings, "JOBS_WORKSPACE_CONCURRENCY_LIMIT", 2)
+    busy_user = build_user(email=f"job-user-busy-{uuid4().hex}@example.com")
+    other_user = build_user(email=f"job-user-other-{uuid4().hex}@example.com")
+    db_session.add_all([busy_user, other_user])
+    await db_session.flush()
+    busy_pending = [
+        build_job(concurrency_user_id=busy_user.id, payload={"busy_user": index})
+        for index in range(5)
+    ]
+    other_pending = build_job(
+        concurrency_user_id=other_user.id,
+        payload={"other_user": True},
+    )
+    db_session.add_all([*busy_pending, other_pending])
+    await db_session.flush()
+
+    claimed = await claim_jobs(db_session, owner_instance_id="worker", batch_size=10)
+
+    claimed_ids = {job.id for job in claimed}
+    assert sum(job.id in claimed_ids for job in busy_pending) == 2
+    assert other_pending.id in claimed_ids
+    assert sum(job.status == JOB_STATUS_PENDING for job in busy_pending) == 3

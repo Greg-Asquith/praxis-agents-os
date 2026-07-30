@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING
 from services.jobs.enqueue_job import enqueue_job
-from tests.factories import build_job, build_workspace
+from tests.factories import build_job, build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
 
@@ -78,6 +78,49 @@ async def test_enqueue_job_dedup_is_scoped_to_workspace(
 
     assert second.id != first.id
     assert second.workspace_id == second_workspace.id
+
+
+async def test_enqueue_job_dedup_is_scoped_to_concurrency_user(
+    db_session: AsyncSession,
+) -> None:
+    first_user = build_user(email=f"job-dedup-a-{uuid4().hex}@example.com")
+    second_user = build_user(email=f"job-dedup-b-{uuid4().hex}@example.com")
+    db_session.add_all([first_user, second_user])
+    await db_session.flush()
+    subject_id = uuid4()
+    payload = {"same": True}
+
+    first = await enqueue_job(
+        db_session,
+        kind="jobs.sweep_terminal",
+        concurrency_user_id=first_user.id,
+        subject_type="integration_connection",
+        subject_id=subject_id,
+        payload=payload,
+    )
+    second = await enqueue_job(
+        db_session,
+        kind="jobs.sweep_terminal",
+        concurrency_user_id=second_user.id,
+        subject_type="integration_connection",
+        subject_id=subject_id,
+        payload=payload,
+    )
+
+    assert second.id != first.id
+    assert second.concurrency_user_id == second_user.id
+
+
+async def test_enqueue_job_rejects_multiple_concurrency_owners(
+    db_session: AsyncSession,
+) -> None:
+    with pytest.raises(AppValidationError, match="both workspace and user"):
+        await enqueue_job(
+            db_session,
+            kind="jobs.sweep_terminal",
+            workspace_id=uuid4(),
+            concurrency_user_id=uuid4(),
+        )
 
 
 async def test_terminal_job_does_not_block_reenqueue(db_session: AsyncSession) -> None:
