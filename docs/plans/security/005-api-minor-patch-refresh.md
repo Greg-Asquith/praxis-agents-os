@@ -4,7 +4,7 @@
 
 - **Priority:** P2
 - **Risk:** HIGH
-- **Status:** TODO
+- **Status:** READY FOR REVIEW — local gates, audit, and production Docker smoke passed; live evals and remote checks await human review
 - **Depends on:** Plan 004
 - **Source:** Closed Dependabot PR #3
 
@@ -117,3 +117,39 @@ EVALS_MODEL=<approved-model> make evals
 - Agent behavior evals are run and pass, or their omission is explicitly
   recorded.
 - Remote API, Docker, audit, and CodeQL checks pass.
+
+## Execution notes
+
+Executed locally on 2026-07-30.
+
+- Every declared floor and lockfile resolution is at the reviewed target
+  version. The starting declarations matched the plan. Before the refresh, the
+  lockfile had already resolved `greenlet` 3.5.2,
+  `google-cloud-secret-manager` 2.29.0, `google-cloud-storage` 3.12.0, and
+  `boto3` 1.43.38 beyond their declared floors.
+- The two expected Ruff 0.16.0 `RUF036` findings were fixed by placing `None`
+  last in their unions; no lint rule was suppressed.
+- Every package was updated as an isolated unit in the prescribed order.
+  Provider extras were enabled for their focused tests. The boto3 unit also
+  moved its coupled `botocore` package to 1.43.59, and the Pydantic AI unit
+  moved its internal packages plus compatible `genai-prices` and `openai`
+  transitive dependencies. No other direct dependency moved during an active
+  unit.
+- Pydantic AI briefly resolved to newly available 2.21.0 under the declared
+  floor. The lock operation was constrained back to the plan-reviewed 2.20.0
+  target. The complete deterministic runtime and scenario gate passed without
+  compatibility changes.
+- The exact focused verification commands passed. The final database-backed
+  API suite passed all 1,348 tests, and `make check` passed the complete API
+  and web gates.
+- The CI-equivalent Python dependency audit reported no known
+  vulnerabilities.
+- The production API image built successfully and ran through the normal
+  Compose migration and API entrypoints. Its container became healthy and
+  `/healthz` returned the expected response on an alternate host port because
+  port 8000 was already occupied. Uvicorn 0.52.0 selected `h11` for HTTP and
+  `websockets-sansio` for WebSockets; neither `zttp` nor `httptools` entered
+  the lockfile.
+- Live model evals were not run because credentials and an approved eval model
+  were not intentionally supplied for this execution. Remote API and CodeQL
+  checks await an explicitly approved commit and push.

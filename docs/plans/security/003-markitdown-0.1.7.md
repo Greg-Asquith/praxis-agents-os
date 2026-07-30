@@ -4,7 +4,7 @@
 
 - **Priority:** P2
 - **Risk:** LOW
-- **Status:** TODO
+- **Status:** READY FOR REVIEW — local gate passed; remote verification awaits an approved push
 - **Depends on:** Plan 002
 - **Source:** Closed Dependabot PR #4
 

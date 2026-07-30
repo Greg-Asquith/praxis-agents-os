@@ -4,7 +4,7 @@
 
 - **Priority:** P2
 - **Risk:** MEDIUM
-- **Status:** TODO
+- **Status:** READY FOR REVIEW — local gates and route smoke passed; visual smoke and remote CI await human review
 - **Depends on:** Plan 003
 - **Source:** Closed Dependabot PR #5
 
@@ -103,3 +103,33 @@ Manual smoke:
 - Every target is updated or explicitly recorded as rejected.
 - Each update unit has an attributable passing check.
 - Full web checks, production audit, smoke test, and remote CI pass.
+
+## Execution notes
+
+Executed locally on 2026-07-30.
+
+- All listed dependency declarations and lockfile resolutions are at the exact
+  target versions. No application or configuration compatibility changes were
+  required.
+- The declared starting floors matched the plan. The pre-update lockfile had
+  already resolved four caret ranges beyond those floors:
+  `@vitejs/plugin-react` 6.0.3, `eslint` 10.6.0, `globals` 17.7.0, and
+  `typescript-eslint` 8.62.1. Each was moved to the plan's target version.
+- Every ordered update unit passed `pnpm typecheck`, `pnpm lint`, and the full
+  Vitest suite (86 files, 416 tests). The full `pnpm check` gate passed after
+  the Tailwind, remaining runtime, lint-tooling, and remaining development-tool
+  milestones.
+- `pnpm install --frozen-lockfile` passed and `pnpm audit --prod` reported no
+  known vulnerabilities.
+- The production build was served through Vite's normal preview path. `/`,
+  `/login`, `/conversations`, `/agents`, `/files`, `/integrations`, and
+  `/artifacts` each returned HTTP 200 on the local server.
+- An authenticated visual smoke of typography, conversation markdown and tool
+  rows, navigation state, icons, and charts remains pending because no
+  controllable browser was available to this execution session. Remote CI also
+  awaits an explicitly approved commit and push.
+- `knip` 6.29.0 emits a non-failing hint that the configured `.css` compiled
+  extension is excluded by the project; dead-code detection still exits
+  successfully. pnpm also continues to report the pre-existing
+  `eslint-plugin-jsx-a11y` peer-range warning for ESLint 10; lint passes with
+  zero warnings.

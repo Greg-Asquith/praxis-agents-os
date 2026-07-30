@@ -4,7 +4,7 @@
 
 - **Priority:** P1
 - **Risk:** LOW–MEDIUM
-- **Status:** TODO
+- **Status:** READY FOR REVIEW — local gate passed; remote verification awaits an approved push
 - **Depends on:** Plan 001
 - **Source:** Closed Dependabot PR #1
 
@@ -21,7 +21,7 @@ silently changing cache-retention behaviour.
   changed its default to `false`; relying on the new default would increase
   retained cache size.
 - Retain `python-version: "3.12"` and `enable-cache: true`.
-- Change both the API and Docker-build jobs together.
+- Change both the API and audit jobs together.
 
 ## Scope
 
@@ -45,7 +45,7 @@ Stop and report if:
 3. Confirm that workflow permissions and all other inputs are unchanged.
 4. Run YAML/static checks available in the repository and the full local gate.
 5. After an approved push, inspect both setup-uv post-job cleanup logs and
-   confirm the API and Docker jobs pass.
+   confirm the API and audit jobs pass.
 
 ## Verification
 

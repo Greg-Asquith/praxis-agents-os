@@ -53,10 +53,10 @@ type UntrustedJsonValue = (
     | int
     | float
     | bool
-    | None
     | UntrustedNode
     | list["UntrustedJsonValue"]
     | dict[str, "UntrustedJsonValue"]
+    | None
 )
 type NodeReplacement = Callable[[UntrustedNode], Any]
 

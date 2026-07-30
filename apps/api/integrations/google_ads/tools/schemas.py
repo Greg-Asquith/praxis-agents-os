@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 type GoogleAdsJsonValue = (
-    str | int | float | bool | None | list["GoogleAdsJsonValue"] | dict[str, "GoogleAdsJsonValue"]
+    str | int | float | bool | list["GoogleAdsJsonValue"] | dict[str, "GoogleAdsJsonValue"] | None
 )
 
 
