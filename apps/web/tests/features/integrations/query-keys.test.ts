@@ -2,20 +2,32 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
 import { integrationResourcesForConnectionQueryOptions } from "@/features/integrations/api/list-resources"
-import { setActiveWorkspaceSlug } from "@/lib/workspace"
+import { clearActiveWorkspace, setActiveUserId, setActiveWorkspaceSlug } from "@/lib/workspace"
 
 afterEach(() => {
-  setActiveWorkspaceSlug(null)
+  clearActiveWorkspace()
 })
 
 describe("integrationsQueryKeys", () => {
-  it("keeps every integration cache scoped to the active workspace", () => {
+  it("keeps every integration cache scoped to the active user and workspace", () => {
+    setActiveUserId("user-1")
     setActiveWorkspaceSlug("acme")
 
-    expect(integrationsQueryKeys.providers()).toEqual(["integrations", "acme", "providers"])
-    expect(integrationsQueryKeys.connections()).toEqual(["integrations", "acme", "connections"])
+    expect(integrationsQueryKeys.providers()).toEqual([
+      "integrations",
+      "user-1",
+      "acme",
+      "providers",
+    ])
+    expect(integrationsQueryKeys.connections()).toEqual([
+      "integrations",
+      "user-1",
+      "acme",
+      "connections",
+    ])
     expect(integrationsQueryKeys.resources("connection-1")).toEqual([
       "integrations",
+      "user-1",
       "acme",
       "detail",
       "connection-1",
@@ -23,21 +35,25 @@ describe("integrationsQueryKeys", () => {
     ])
     expect(integrationsQueryKeys.enabledResources()).toEqual([
       "integrations",
+      "user-1",
       "acme",
       "enabled-resources",
     ])
     expect(integrationsQueryKeys.contextGroups()).toEqual([
       "integrations",
+      "user-1",
       "acme",
       "context-groups",
     ])
     expect(integrationsQueryKeys.activeContexts()).toEqual([
       "integrations",
+      "user-1",
       "acme",
       "active-context",
     ])
     expect(integrationsQueryKeys.activeContext("conversation-1")).toEqual([
       "integrations",
+      "user-1",
       "acme",
       "active-context",
       "conversation-1",

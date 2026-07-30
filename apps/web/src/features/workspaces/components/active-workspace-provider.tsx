@@ -8,9 +8,11 @@ import { useUpdateCurrentUserMutation } from "@/features/auth/api/update-current
 import { useWorkspacesQuery } from "@/features/workspaces/api/list-workspaces"
 import type { Workspace } from "@/features/workspaces/types"
 import { ActiveWorkspaceContext } from "@/features/workspaces/components/active-workspace-context"
-import { setActiveWorkspaceSlug } from "@/lib/workspace"
-
-const STORAGE_KEY = "praxis.activeWorkspaceSlug"
+import {
+  ACTIVE_WORKSPACE_STORAGE_KEY,
+  setActiveUserId,
+  setActiveWorkspaceSlug,
+} from "@/lib/workspace"
 
 function readStoredSlug() {
   if (typeof window === "undefined") {
@@ -18,7 +20,7 @@ function readStoredSlug() {
   }
 
   try {
-    return window.localStorage.getItem(STORAGE_KEY)
+    return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)
   } catch {
     return null
   }
@@ -27,7 +29,7 @@ function readStoredSlug() {
 function storeSlug(slug: string) {
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(STORAGE_KEY, slug)
+      window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, slug)
     } catch {
       return
     }
@@ -60,6 +62,7 @@ export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
   )
 
   // Sync the request-layer slug during render, not in an effect, so requests fired by children (including suspense reads) always carry the resolved workspace before the first one goes out.
+  setActiveUserId(user.id)
   setActiveWorkspaceSlug(activeWorkspace?.slug ?? null)
 
   const setWorkspaceBySlug = useCallback(

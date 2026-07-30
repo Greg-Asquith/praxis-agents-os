@@ -1,10 +1,14 @@
 // apps/web/src/features/auth/api/logout.ts
 
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import {
+  mutationOptions,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
-import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
-import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
+import { clearActiveWorkspace } from "@/lib/workspace"
 
 async function logout() {
   return apiRequest<{ message: string }>("/auth/logout", {
@@ -12,14 +16,17 @@ async function logout() {
   })
 }
 
-export function useLogoutMutation() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
+export function logoutMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: currentUserQueryOptions().queryKey })
-      queryClient.removeQueries({ queryKey: workspacesQueryOptions().queryKey })
+      queryClient.clear()
+      clearActiveWorkspace()
     },
   })
+}
+
+export function useLogoutMutation() {
+  const queryClient = useQueryClient()
+  return useMutation(logoutMutationOptions(queryClient))
 }

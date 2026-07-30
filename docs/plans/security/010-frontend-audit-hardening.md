@@ -231,6 +231,8 @@ and the other raises `ConflictError`.
 
 **Severity: High. Effort: S.**
 
+**Status: READY FOR REVIEW — implementation complete and the full frontend gate passes.**
+
 ### What is wrong
 
 The `QueryClient` is created at module scope (`apps/web/src/app/App.tsx:9`) and

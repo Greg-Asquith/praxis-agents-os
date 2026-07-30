@@ -1,7 +1,7 @@
 // apps/web/src/components/shell/app-shell.tsx
 
 import { useCallback, type ReactNode } from "react"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { useRouterState } from "@tanstack/react-router"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { AppBreadcrumbs } from "@/components/shell/app-breadcrumbs"
@@ -19,7 +19,6 @@ import { useActiveWorkspace } from "@/features/workspaces/components/use-active-
 import { cn } from "@/lib/utils"
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const navigate = useNavigate()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -32,10 +31,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
-        void navigate({ to: "/login" })
+        window.location.replace("/login")
       },
     })
-  }, [logoutMutation, navigate])
+  }, [logoutMutation])
 
   return (
     <div className="bg-sidebar text-foreground h-dvh overflow-hidden md:grid md:grid-cols-[280px_minmax(0,1fr)]">

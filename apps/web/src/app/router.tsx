@@ -39,6 +39,7 @@ import { ErrorRoute } from "@/routes/error-route"
 import { NotFoundRoute } from "@/routes/not-found"
 import { PendingRoute } from "@/routes/pending"
 import { RoutePendingFallback } from "@/routes/route-pending"
+import { setActiveUserId } from "@/lib/workspace"
 
 type RouterContext = {
   queryClient: QueryClient
@@ -103,6 +104,7 @@ const appRoute = createRoute({
       throw redirect({ to: "/login" })
     }
 
+    setActiveUserId(user.id)
     await context.queryClient.ensureQueryData(workspacesQueryOptions())
   },
   component: lazyRouteComponent(() => import("@/routes/app-layout"), "AppLayoutRoute"),
