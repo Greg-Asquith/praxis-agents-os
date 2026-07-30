@@ -27,6 +27,7 @@ export type DelegationToolActivity = {
 
 export type ToolActivity = {
   id: string
+  agentRunId?: string | null
   kind: ToolActivityKind
   status: ToolActivityStatus
   name: string

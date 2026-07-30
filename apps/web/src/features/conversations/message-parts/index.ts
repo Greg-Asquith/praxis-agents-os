@@ -12,6 +12,7 @@ export {
   isRunStatusPolling,
   normalizeToolArgs,
   safeJsonPreview,
+  toolActivityIdentity,
 } from "@/features/conversations/message-parts/utils"
 export type { ConversationRenderItem } from "@/features/conversations/message-parts/group-render-items"
 export type {

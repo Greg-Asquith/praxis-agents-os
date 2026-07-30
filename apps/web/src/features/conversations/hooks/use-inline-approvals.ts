@@ -14,6 +14,7 @@ import {
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 
 type UseInlineApprovalsParams = {
+  activeRunId: string | null
   approvals: PendingToolApproval[]
   enabled: boolean
   isSubmitting: boolean
@@ -21,6 +22,7 @@ type UseInlineApprovalsParams = {
 }
 
 export function useInlineApprovals({
+  activeRunId,
   approvals,
   enabled,
   isSubmitting,
@@ -81,7 +83,7 @@ export function useInlineApprovals({
     if (!enabled || activity.status !== "awaiting_approval") {
       return null
     }
-    if (!approvalsById.has(activity.id)) {
+    if (activity.agentRunId !== activeRunId || !approvalsById.has(activity.id)) {
       return null
     }
 

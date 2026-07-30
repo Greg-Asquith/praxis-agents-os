@@ -36,6 +36,7 @@ import {
   delegationDetailsForPendingApproval,
   mergeDelegationDetails,
   normalizeToolArgs,
+  toolActivityIdentity,
   type ConversationRenderItem,
   type PendingUserMessage,
   type ToolActivity,
@@ -57,6 +58,7 @@ type MessageListProps = {
   streamApprovals: ApprovalState[]
   streamError?: string | null
   streamConversationId: string | null
+  streamRunId: string | null
   isStreaming: boolean
   onApprovalSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
   pendingDelegations: PendingDelegatedApproval[]
@@ -79,44 +81,46 @@ export function MessageList({
   streamApprovals,
   streamError,
   streamConversationId,
+  streamRunId,
   isStreaming,
   onApprovalSubmit,
 }: MessageListProps) {
   const shouldShowStream = streamConversationId === conversationId
-  const liveResultsByCallId = useMemo(() => {
+  const liveResultsByCallIdentity = useMemo(() => {
     const results = new Map<string, { result: unknown }>()
     if (!shouldShowStream) {
       return results
     }
     for (const toolCall of streamToolCalls) {
       if (toolCall.status === "completed") {
-        results.set(toolCall.tool_call_id, { result: toolCall.result })
+        results.set(toolActivityIdentity(streamRunId, toolCall.tool_call_id), {
+          result: toolCall.result,
+        })
       }
     }
     return results
-  }, [shouldShowStream, streamToolCalls])
+  }, [shouldShowStream, streamRunId, streamToolCalls])
   const parsedMessages = useMemo(
     () =>
-      parseConversationMessages(
-        messages,
-        activeRun?.status,
-        pendingDelegations,
-        liveResultsByCallId
-      ),
-    [messages, activeRun?.status, pendingDelegations, liveResultsByCallId]
+      parseConversationMessages(messages, activeRun, pendingDelegations, liveResultsByCallIdentity),
+    [messages, activeRun, pendingDelegations, liveResultsByCallIdentity]
   )
   const renderItems = useMemo(() => groupConversationRenderItems(parsedMessages), [parsedMessages])
   const visiblePendingUserMessages = pendingUserMessages
   const transcriptToolIds = useMemo(
     () =>
       new Set(
-        parsedMessages.flatMap((message) => message.toolActivities.map((activity) => activity.id))
+        parsedMessages.flatMap((message) =>
+          message.toolActivities.map((activity) =>
+            toolActivityIdentity(activity.agentRunId, activity.id)
+          )
+        )
       ),
     [parsedMessages]
   )
   const liveToolActivities = useMemo(
-    () => buildLiveToolActivities(streamToolCalls, streamApprovals),
-    [streamToolCalls, streamApprovals]
+    () => buildLiveToolActivities(streamToolCalls, streamApprovals, streamRunId),
+    [streamToolCalls, streamApprovals, streamRunId]
   )
   const liveTimeline = useMemo(() => {
     const activitiesById = new Map(
@@ -129,14 +133,14 @@ export function MessageList({
         }
         // A tool already rendered in the transcript (a resumed approval, or a
         // mid-run refetch) must not render twice in the live area.
-        if (transcriptToolIds.has(item.toolCall.tool_call_id)) {
+        if (transcriptToolIds.has(toolActivityIdentity(streamRunId, item.toolCall.tool_call_id))) {
           return []
         }
         const activity = activitiesById.get(item.toolCall.tool_call_id)
         return activity ? [{ kind: "tool", activity }] : []
       }
     )
-  }, [liveToolActivities, streamMessages, streamToolCalls, transcriptToolIds])
+  }, [liveToolActivities, streamMessages, streamRunId, streamToolCalls, transcriptToolIds])
   const hasRunningTranscriptTool = parsedMessages.some((message) =>
     message.toolActivities.some((activity) => activity.status === "running")
   )
@@ -150,6 +154,7 @@ export function MessageList({
     })
   const isAwaitingApproval = activeRun?.status === "awaiting_approval"
   const inlineApprovals = useInlineApprovals({
+    activeRunId: activeRun?.id ?? null,
     approvals,
     enabled: isAwaitingApproval,
     isSubmitting: isApprovalSubmitting,
@@ -163,12 +168,15 @@ export function MessageList({
     const renderedAwaitingIds = new Set(
       [...parsedMessages.flatMap((message) => message.toolActivities), ...liveToolActivities]
         .filter((activity) => activity.status === "awaiting_approval")
-        .map((activity) => activity.id)
+        .map((activity) => toolActivityIdentity(activity.agentRunId, activity.id))
     )
     return approvals
-      .filter((approval) => !renderedAwaitingIds.has(approval.tool_call_id))
-      .map(orphanApprovalActivity)
-  }, [approvals, isAwaitingApproval, liveToolActivities, parsedMessages])
+      .filter(
+        (approval) =>
+          !renderedAwaitingIds.has(toolActivityIdentity(activeRun.id, approval.tool_call_id))
+      )
+      .map((approval) => orphanApprovalActivity(approval, activeRun.id))
+  }, [activeRun, approvals, isAwaitingApproval, liveToolActivities, parsedMessages])
   const hasInlineApprovals =
     isAwaitingApproval && (approvals.length > 0 || isApprovalLoading || Boolean(approvalError))
   const hasMessages =
@@ -284,10 +292,14 @@ function TranscriptRenderItem({
   )
 }
 
-function orphanApprovalActivity(approval: PendingToolApproval): ToolActivity {
+function orphanApprovalActivity(
+  approval: PendingToolApproval,
+  agentRunId: string | null
+): ToolActivity {
   const args = normalizeToolArgs(approval.args)
   const activity: ToolActivity = {
     id: approval.tool_call_id,
+    agentRunId,
     kind: "approval",
     status: "awaiting_approval",
     name: approval.name,
@@ -304,12 +316,14 @@ function orphanApprovalActivity(approval: PendingToolApproval): ToolActivity {
 
 function buildLiveToolActivities(
   toolCalls: ToolCallState[],
-  approvals: ApprovalState[]
+  approvals: ApprovalState[],
+  agentRunId: string | null
 ): ToolActivity[] {
   const activities = toolCalls.map((toolCall): ToolActivity => {
     const args = normalizeToolArgs(toolCall.args)
     const activity: ToolActivity = {
       id: toolCall.tool_call_id,
+      agentRunId,
       kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
       status: toolCall.status,
       name: toolCall.name,
@@ -332,6 +346,7 @@ function buildLiveToolActivities(
     if (existingIndex === undefined) {
       activities.push({
         id: delegation.parent_tool_call_id,
+        agentRunId,
         kind: "approval",
         status: "awaiting_approval",
         name: "delegate_to_agent",
@@ -363,6 +378,7 @@ function buildLiveToolActivities(
     const args = normalizeToolArgs(approval.args)
     const activity: ToolActivity = {
       id: approval.tool_call_id,
+      agentRunId,
       kind: "approval",
       status: "awaiting_approval",
       name: approval.name,

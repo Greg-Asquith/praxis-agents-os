@@ -241,6 +241,7 @@ function ConversationDetail({
               pendingUserMessages={visiblePendingUserMessages}
               streamApprovals={visibleStreamApprovals}
               streamConversationId={shouldRenderStream ? stream.conversationId : null}
+              streamRunId={shouldRenderStream ? stream.runId : null}
               streamError={streamError}
               streamMessages={streamMessages}
               streamToolCalls={streamToolCalls}

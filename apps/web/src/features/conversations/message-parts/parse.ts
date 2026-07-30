@@ -27,9 +27,10 @@ import {
   isRunStatusPolling,
   normalizeToolArgs,
   safeJsonPreview,
+  toolActivityIdentity,
 } from "@/features/conversations/message-parts/utils"
 import type {
-  AgentRunStatus,
+  AgentRun,
   ConversationMessage,
   PendingDelegatedApproval,
 } from "@/features/conversations/types"
@@ -45,9 +46,9 @@ type LiveToolResult = {
 
 export function parseConversationMessages(
   messages: ConversationMessage[],
-  activeRunStatus?: AgentRunStatus | null,
+  activeRun?: Pick<AgentRun, "id" | "status"> | null,
   pendingDelegations: PendingDelegatedApproval[] = [],
-  liveResultsByCallId?: ReadonlyMap<string, LiveToolResult>
+  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey } = pairToolResults(parsed)
@@ -55,9 +56,10 @@ export function parseConversationMessages(
     pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
   )
 
-  const runAwaitsApproval = activeRunStatus === "awaiting_approval"
-  const runIsExecuting = isRunStatusPolling(activeRunStatus)
-  const runStoppedBeforeToolResult = activeRunStatus === "failed" || activeRunStatus === "cancelled"
+  const runAwaitsApproval = activeRun?.status === "awaiting_approval"
+  const runIsExecuting = isRunStatusPolling(activeRun?.status)
+  const runStoppedBeforeToolResult =
+    activeRun?.status === "failed" || activeRun?.status === "cancelled"
 
   return parsed
     .map((message, messageIndex) => {
@@ -66,7 +68,11 @@ export function parseConversationMessages(
           return activity
         }
 
-        const pendingDelegate = pendingDelegationsByParentCallId.get(activity.id)
+        const belongsToActiveRun =
+          activeRun !== null && activeRun !== undefined && activity.agentRunId === activeRun.id
+        const pendingDelegate = belongsToActiveRun
+          ? pendingDelegationsByParentCallId.get(activity.id)
+          : undefined
         const activityDelegate = pendingDelegate
           ? mergeDelegationDetails(
               activity.delegate,
@@ -99,7 +105,9 @@ export function parseConversationMessages(
         }
         // A result that streamed live but is not persisted yet still completes
         // the transcript row, so resumed tools never linger as skeletons.
-        const liveResult = liveResultsByCallId?.get(activity.id)
+        const liveResult = belongsToActiveRun
+          ? liveResultsByCallIdentity?.get(toolActivityIdentity(activity.agentRunId, activity.id))
+          : undefined
         if (liveResult) {
           return {
             ...activityWithDelegate,
@@ -107,17 +115,17 @@ export function parseConversationMessages(
             status: "completed" as const,
           }
         }
-        if (runAwaitsApproval) {
+        if (belongsToActiveRun && runAwaitsApproval) {
           return {
             ...activityWithDelegate,
             kind: "approval" as const,
             status: "awaiting_approval" as const,
           }
         }
-        if (runStoppedBeforeToolResult) {
+        if (belongsToActiveRun && runStoppedBeforeToolResult) {
           return { ...activityWithDelegate, status: "failed" as const }
         }
-        if (!runIsExecuting) {
+        if (!belongsToActiveRun || !runIsExecuting) {
           return { ...activityWithDelegate, status: "unknown" as const }
         }
         return activityWithDelegate
@@ -151,11 +159,14 @@ export function parseConversationMessages(
 
 function parseConversationMessage(message: ConversationMessage): ParsedConversationMessage {
   const rawParts = getMessageParts(message.parts)
+  const agentRunId = message.metadata
+    ? (stringValue(message.metadata["agent_run_id"]) ?? null)
+    : null
   const parsed: ParsedConversationMessage = {
     id: message.id,
     role: normalizeRole(message.role),
     sequence: message.sequence,
-    agentRunId: message.metadata ? (stringValue(message.metadata["agent_run_id"]) ?? null) : null,
+    agentRunId,
     clientMessageId: message.client_message_id,
     createdAt: message.created_at,
     parts: rawParts.length > 0 ? [] : null,
@@ -233,6 +244,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const toolKind = stringValue(part["tool_kind"])
       const activity: ToolActivity = {
         id: stringValue(part["tool_call_id"]) ?? partId,
+        agentRunId,
         kind: "call",
         status: "running",
         name,
@@ -256,6 +268,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const toolKind = stringValue(part["tool_kind"])
       const activity: ToolActivity = {
         id: toolCallId,
+        agentRunId,
         kind: "result",
         status: approvalMetadata?.decision === "denied" ? "denied" : statusFromOutcome(outcome),
         name,
@@ -281,6 +294,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
     if (partKind === "retry-prompt") {
       const activity: ToolActivity = {
         id: stringValue(part["tool_call_id"]) ?? partId,
+        agentRunId,
         kind: "retry",
         status: "failed",
         name: stringValue(part["tool_name"]) ?? "tool",

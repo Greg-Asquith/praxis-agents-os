@@ -498,6 +498,8 @@ assertion that the injected document carries the CSP meta tag.
 
 **Severity: Medium. Effort: S.**
 
+**Status: READY FOR REVIEW — implementation complete and the full frontend gate passes.**
+
 ### What is wrong
 
 Parsed messages carry `agentRunId` (`message-parts/parse.ts:158`,

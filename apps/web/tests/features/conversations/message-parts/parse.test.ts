@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest"
 
-import { parseConversationMessages } from "@/features/conversations/message-parts/parse"
+import {
+  parseConversationMessages,
+  toolActivityIdentity,
+} from "@/features/conversations/message-parts"
 import type {
+  AgentRun,
   AgentRunStatus,
   ConversationMessage,
   PendingDelegatedApproval,
 } from "@/features/conversations/types"
 
 const createdAt = "2026-07-07T10:00:00.000Z"
+const run = (id: string, status: AgentRunStatus): Pick<AgentRun, "id" | "status"> => ({
+  id,
+  status,
+})
 
 function message(
   id: string,
@@ -35,16 +43,22 @@ describe("parseConversationMessages", () => {
   it("marks an unresolved tool call as failed when its run failed", () => {
     const parsed = parseConversationMessages(
       [
-        message("message-1", "assistant", 1, [
-          {
-            part_kind: "tool-call",
-            tool_call_id: "send-1",
-            tool_name: "gmail_send_message",
-            args: { to: ["client@example.com"], subject: "Update", body_text: "Hello" },
-          },
-        ]),
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "send-1",
+              tool_name: "gmail_send_message",
+              args: { to: ["client@example.com"], subject: "Update", body_text: "Hello" },
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
       ],
-      "failed"
+      run("run-1", "failed")
     )
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
@@ -142,6 +156,7 @@ describe("parseConversationMessages", () => {
     expect(parsed[0]?.toolActivities).toEqual([
       {
         id: "tool-call-1",
+        agentRunId: null,
         kind: "call",
         status: "completed",
         name: "read_file",
@@ -177,6 +192,7 @@ describe("parseConversationMessages", () => {
     expect(parsed[0]?.toolActivities).toEqual([
       {
         id: "tool-call-1",
+        agentRunId: null,
         kind: "call",
         status: "completed",
         name: "load_capability",
@@ -254,16 +270,22 @@ describe("parseConversationMessages", () => {
 
     const parsed = parseConversationMessages(
       [
-        message("message-1", "assistant", 1, [
-          {
-            part_kind: "tool-call",
-            tool_call_id: "delegate-1",
-            tool_name: "delegate_to_agent",
-            args: { agent_id: "agent-2", task: "Check approvals" },
-          },
-        ]),
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "delegate-1",
+              tool_name: "delegate_to_agent",
+              args: { agent_id: "agent-2", task: "Check approvals" },
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
       ],
-      "awaiting_approval",
+      run("run-1", "awaiting_approval"),
       delegations
     )
 
@@ -280,6 +302,57 @@ describe("parseConversationMessages", () => {
         taskPreview: "Check approvals",
       },
     })
+  })
+
+  it("only marks an unresolved call from the active run as awaiting approval", () => {
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "message-old",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "reused-call",
+              tool_name: "write_file",
+              args: { name: "old.txt" },
+            },
+          ],
+          { agent_run_id: "run-old" }
+        ),
+        message(
+          "message-active",
+          "assistant",
+          2,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "reused-call",
+              tool_name: "write_file",
+              args: { name: "active.txt" },
+            },
+          ],
+          { agent_run_id: "run-active" }
+        ),
+      ],
+      run("run-active", "awaiting_approval")
+    )
+
+    expect(parsed.map((item) => item.toolActivities[0])).toMatchObject([
+      {
+        agentRunId: "run-old",
+        args: { name: "old.txt" },
+        kind: "call",
+        status: "unknown",
+      },
+      {
+        agentRunId: "run-active",
+        args: { name: "active.txt" },
+        kind: "approval",
+        status: "awaiting_approval",
+      },
+    ])
   })
 
   it("keeps unknown parts as unsupported renderable content", () => {
@@ -306,7 +379,7 @@ describe("parseConversationMessages", () => {
       message("message-1", "assistant", 1, [{ part_kind: "text", content: "First" }]),
     ]
 
-    const parsed = parseConversationMessages(messages, "completed" satisfies AgentRunStatus)
+    const parsed = parseConversationMessages(messages, run("run-1", "completed"))
 
     expect(parsed.map((item) => item.id)).toEqual(["message-2", "message-1"])
     expect(parsed.map((item) => item.sequence)).toEqual([2, 1])
@@ -315,18 +388,24 @@ describe("parseConversationMessages", () => {
   it("completes a persisted call from a live stream result before persistence catches up", () => {
     const parsed = parseConversationMessages(
       [
-        message("message-1", "assistant", 1, [
-          {
-            part_kind: "tool-call",
-            tool_call_id: "tool-call-1",
-            tool_name: "gmail_send_message",
-            args: { to: ["a@example.com"] },
-          },
-        ]),
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "tool-call-1",
+              tool_name: "gmail_send_message",
+              args: { to: ["a@example.com"] },
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
       ],
-      "running" satisfies AgentRunStatus,
+      run("run-1", "running"),
       [],
-      new Map([["tool-call-1", { result: { results: [] } }]])
+      new Map([[toolActivityIdentity("run-1", "tool-call-1"), { result: { results: [] } }]])
     )
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
@@ -339,23 +418,86 @@ describe("parseConversationMessages", () => {
   it("keeps a call running when no live result exists for it", () => {
     const parsed = parseConversationMessages(
       [
-        message("message-1", "assistant", 1, [
-          {
-            part_kind: "tool-call",
-            tool_call_id: "tool-call-1",
-            tool_name: "gmail_send_message",
-            args: {},
-          },
-        ]),
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "tool-call-1",
+              tool_name: "gmail_send_message",
+              args: {},
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
       ],
-      "running" satisfies AgentRunStatus,
+      run("run-1", "running"),
       [],
-      new Map([["other-call", { result: "done" }]])
+      new Map([[toolActivityIdentity("run-1", "other-call"), { result: "done" }]])
     )
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
       id: "tool-call-1",
       status: "running",
     })
+  })
+
+  it("only merges a live result into the matching run when a call id is reused", () => {
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "message-old",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "reused-call",
+              tool_name: "web_search",
+              args: { query: "old" },
+            },
+          ],
+          { agent_run_id: "run-old" }
+        ),
+        message(
+          "message-active",
+          "assistant",
+          2,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "reused-call",
+              tool_name: "web_search",
+              args: { query: "active" },
+            },
+          ],
+          { agent_run_id: "run-active" }
+        ),
+      ],
+      run("run-active", "running"),
+      [],
+      new Map([
+        [
+          toolActivityIdentity("run-active", "reused-call"),
+          { result: { answer: "active result" } },
+        ],
+      ])
+    )
+
+    expect(parsed.map((item) => item.toolActivities[0])).toMatchObject([
+      {
+        agentRunId: "run-old",
+        args: { query: "old" },
+        status: "unknown",
+      },
+      {
+        agentRunId: "run-active",
+        args: { query: "active" },
+        result: { answer: "active result" },
+        status: "completed",
+      },
+    ])
   })
 })

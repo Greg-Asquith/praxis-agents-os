@@ -8,6 +8,10 @@ export function isRunStatusPolling(status: AgentRunStatus | null | undefined) {
   return status === "pending" || status === "running"
 }
 
+export function toolActivityIdentity(agentRunId: string | null | undefined, toolCallId: string) {
+  return JSON.stringify([agentRunId ?? null, toolCallId])
+}
+
 export function normalizeToolArgs(value: unknown) {
   if (typeof value !== "string") {
     return value
