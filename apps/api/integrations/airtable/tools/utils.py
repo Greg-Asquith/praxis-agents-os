@@ -7,12 +7,11 @@ from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
-from models.integrations import ExternalCredential
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import IntegrationToolBinding, ToolFieldPresentation
 from services.audit_events import AuditStatus, record_integration_operation_audit_event
-from services.integrations.connections.utils import get_visible_connection
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.credentials import get_usable_connection_credential
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
 
@@ -34,25 +33,22 @@ async def airtable_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
 ) -> AirtableClient:
-    connection = await get_visible_connection(
-        ctx.deps.db,
-        connection_id=entry.connection_id,
-        actor=ctx.deps.user,
-        workspace=ctx.deps.workspace,
-    )
-    credential = await ctx.deps.db.get(ExternalCredential, connection.credential_id)
-    if credential is None or credential.deleted or credential.auth_mode != "api_key":
-        raise ModelRetry("The Airtable connection needs to be reconnected.")
-    reference = SecretReference(
-        provider=credential.secret_provider or "",
-        name=credential.secret_name or "",
-        version=credential.secret_version or "",
-    )
-
     async def access_token() -> str:
+        credential = await get_usable_connection_credential(
+            ctx.deps.db,
+            connection_id=entry.connection_id,
+            actor=ctx.deps.user,
+            workspace=ctx.deps.workspace,
+        )
+        if credential.auth_mode != "api_key":
+            raise ModelRetry("The Airtable connection needs to be reconnected.")
         token = await resolve_secret(
             ctx.deps.db,
-            reference,
+            SecretReference(
+                provider=credential.secret_provider or "",
+                name=credential.secret_name or "",
+                version=credential.secret_version or "",
+            ),
             workspace_id=ctx.deps.workspace.id,
             actor_id=ctx.deps.user.id,
         )

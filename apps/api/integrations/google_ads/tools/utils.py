@@ -12,14 +12,12 @@ from models.integrations import ExternalCredential
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import IntegrationToolBinding, ToolFieldPresentation
 from services.audit_events import AuditStatus, record_integration_operation_audit_event
-from services.integrations.connections.utils import (
-    get_visible_connection,
-    refresh_oauth_credential,
-)
+from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     ensure_fresh_credential,
+    get_usable_connection_credential,
     parse_google_service_account_json,
 )
 from services.secrets import resolve_secret
@@ -46,17 +44,13 @@ async def google_ads_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
 ) -> GoogleAdsClient:
-    connection = await get_visible_connection(
-        ctx.deps.db,
-        connection_id=entry.connection_id,
-        actor=ctx.deps.user,
-        workspace=ctx.deps.workspace,
-    )
-    credential = await ctx.deps.db.get(ExternalCredential, connection.credential_id)
-    if credential is None or credential.deleted:
-        raise ModelRetry("The Google Ads connection needs to be reconnected.")
-
     async def access_token(force: bool) -> str:
+        credential = await get_usable_connection_credential(
+            ctx.deps.db,
+            connection_id=entry.connection_id,
+            actor=ctx.deps.user,
+            workspace=ctx.deps.workspace,
+        )
         if credential.auth_mode == "oauth":
             fresh = await ensure_fresh_credential(
                 ctx.deps.db,

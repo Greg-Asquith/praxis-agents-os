@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from core.exceptions.integration import (
     IntegrationAuthError,
@@ -12,11 +12,14 @@ from core.exceptions.integration import (
     IntegrationValidationError,
 )
 from models.audit_event import AuditEvent
-from models.integrations import IntegrationConnection
+from models.integrations import ExternalCredential, IntegrationConnection
 from models.notification import Notification
+from models.user import User
+from models.workspace import Workspace
 from services.integrations.credentials import (
     ensure_fresh_credential,
     find_duplicate_principals,
+    get_usable_connection_credential,
     revoke_credential,
     store_oauth_credential,
     store_secret_reference_credential,
@@ -212,6 +215,51 @@ async def test_revoked_credential_is_rejected_by_freshness_seam(db_session) -> N
 
     with pytest.raises(IntegrationAuthError, match="revoked"):
         await ensure_fresh_credential(db_session, credential_id=credential.id)
+
+
+@pytest.mark.parametrize("revoked_state", ["connection", "credential"])
+async def test_provider_credential_use_refreshes_and_rejects_in_flight_revocation(
+    db_session,
+    revoked_state: str,
+) -> None:
+    credential = await _stored(db_session)
+    connection = await _connection(db_session, credential)
+    actor = await db_session.get(User, connection.connected_by_user_id)
+    workspace = await db_session.get(Workspace, connection.owner_workspace_id)
+    assert actor is not None and workspace is not None
+    assert (
+        await get_usable_connection_credential(
+            db_session,
+            connection_id=connection.id,
+            actor=actor,
+            workspace=workspace,
+        )
+    ).id == credential.id
+
+    if revoked_state == "connection":
+        statement = (
+            update(IntegrationConnection)
+            .where(IntegrationConnection.id == connection.id)
+            .values(status="revoked")
+        )
+    else:
+        statement = (
+            update(ExternalCredential)
+            .where(ExternalCredential.id == credential.id)
+            .values(revoked_at=datetime.now(UTC))
+        )
+    await db_session.execute(statement.execution_options(synchronize_session=False))
+
+    # Simulate the prepared runtime retaining pre-revocation ORM objects.
+    assert connection.status == "active"
+    assert credential.revoked_at is None
+    with pytest.raises(IntegrationAuthError, match="not available"):
+        await get_usable_connection_credential(
+            db_session,
+            connection_id=connection.id,
+            actor=actor,
+            workspace=workspace,
+        )
 
 
 async def test_revoke_crypto_shreds_and_audit_contains_no_tokens(db_session) -> None:

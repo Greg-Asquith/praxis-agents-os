@@ -8,14 +8,13 @@ from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
-from models.integrations import ExternalCredential
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.audit_events import AuditStatus, record_integration_operation_audit_event
-from services.integrations.connections.utils import get_visible_connection
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
+    get_usable_connection_credential,
     parse_google_service_account_json,
 )
 from services.secrets import resolve_secret
@@ -73,14 +72,13 @@ async def bigquery_query_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
 ) -> tuple[BigQueryClient, str]:
-    connection = await get_visible_connection(
+    credential = await get_usable_connection_credential(
         ctx.deps.db,
         connection_id=entry.connection_id,
         actor=ctx.deps.user,
         workspace=ctx.deps.workspace,
     )
-    credential = await ctx.deps.db.get(ExternalCredential, connection.credential_id)
-    if credential is None or credential.deleted or credential.auth_mode != "service_account":
+    if credential.auth_mode != "service_account":
         raise ModelRetry("The BigQuery connection needs to be reconnected.")
     cache_key = (str(credential.id), credential.secret_version or "")
     provider = _SERVICE_ACCOUNT_PROVIDERS.get(cache_key)
@@ -101,7 +99,17 @@ async def bigquery_query_client(
             scope=BIGQUERY_SCOPE,
         )
         _SERVICE_ACCOUNT_PROVIDERS[cache_key] = provider
-    return BigQueryClient(provider.access_token), provider.credentials.project_id
+
+    async def access_token(force: bool) -> str:
+        await get_usable_connection_credential(
+            ctx.deps.db,
+            connection_id=entry.connection_id,
+            actor=ctx.deps.user,
+            workspace=ctx.deps.workspace,
+        )
+        return await provider.access_token(force)
+
+    return BigQueryClient(access_token), provider.credentials.project_id
 
 
 async def run_audited_operation(

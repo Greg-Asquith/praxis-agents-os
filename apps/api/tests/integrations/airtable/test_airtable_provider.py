@@ -211,8 +211,8 @@ async def test_each_context_entry_resolves_its_own_connection_secret(monkeypatch
         )
     )
 
-    async def visible_connection(_db, *, connection_id, **_kwargs):
-        return SimpleNamespace(credential_id=credential_ids[connection_id])
+    async def usable_credential(_db, *, connection_id, **_kwargs):
+        return credentials[credential_ids[connection_id]]
 
     async def secret(_db, reference, **_kwargs):
         return f"token-for-{reference.name}"
@@ -224,8 +224,8 @@ async def test_each_context_entry_resolves_its_own_connection_secret(monkeypatch
         return httpx2.Response(200, json={"url": url}, request=httpx2.Request("GET", url))
 
     monkeypatch.setattr(
-        "integrations.airtable.tools.utils.get_visible_connection",
-        visible_connection,
+        "integrations.airtable.tools.utils.get_usable_connection_credential",
+        usable_credential,
     )
     monkeypatch.setattr("integrations.airtable.tools.utils.resolve_secret", secret)
     monkeypatch.setattr("integrations.airtable.client.request_with_retries", request)
