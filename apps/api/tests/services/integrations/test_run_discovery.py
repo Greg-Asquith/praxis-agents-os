@@ -15,6 +15,7 @@ from core.exceptions.integration import (
 from models.integrations import IntegrationDiscoveryRun, IntegrationResource
 from models.jobs import Job
 from services.integrations.discovery import run_discovery
+from services.integrations.enqueue_metadata_sync import enqueue_metadata_sync
 from services.integrations.plugin import PROVIDER_PLUGINS, DiscoveredIntegrationResource
 from services.jobs.registry import JOB_HANDLERS, job_handler
 
@@ -82,6 +83,41 @@ async def test_successful_discovery_enqueues_one_provider_metadata_sync(
         )
         assert count == 1
     finally:
+        JOB_HANDLERS.pop(kind, None)
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["auth_pending", "needs_reauth", "needs_credential", "revoked"],
+)
+async def test_metadata_sync_does_not_enqueue_without_usable_credentials(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+    status: str,
+) -> None:
+    connection = discovery_connection["connection"]
+    connection.status = status
+    kind = "tests.sync_provider_metadata"
+
+    async def handler(_db, _job) -> None:
+        return None
+
+    job_handler(kind=kind)(handler)
+    original = PROVIDER_PLUGINS[connection.provider_key]
+    PROVIDER_PLUGINS[connection.provider_key] = replace(
+        original,
+        metadata_sync_job_kind=kind,
+    )
+    try:
+        job = await enqueue_metadata_sync(db_session, connection=connection)
+
+        assert job is None
+        count = await db_session.scalar(
+            select(func.count()).select_from(Job).where(Job.kind == kind)
+        )
+        assert count == 0
+    finally:
+        PROVIDER_PLUGINS[connection.provider_key] = original
         JOB_HANDLERS.pop(kind, None)
 
 

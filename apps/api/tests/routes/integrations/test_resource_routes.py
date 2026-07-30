@@ -226,6 +226,46 @@ async def test_selection_rejects_unknown_foreign_and_removed_resource_ids(
         assert response.status_code == 400, response.text
 
 
+@pytest.mark.parametrize(
+    "status",
+    ["auth_pending", "needs_reauth", "needs_credential", "revoked"],
+)
+async def test_selection_rejects_connections_without_usable_credentials(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    status: str,
+) -> None:
+    connection, available, removed = await _connection_with_resources(
+        db_session, integration_identity
+    )
+    connection_id = connection.id
+    available_id = available.id
+    removed_id = removed.id
+    connection.status = status
+    await db_session.commit()
+
+    response = await db_async_client.put(
+        f"/api/v1/integrations/connections/{connection_id}/resources/selection",
+        headers=integration_identity["headers"],
+        json={"enabled_resource_ids": [str(available_id)]},
+    )
+
+    assert response.status_code == 400, response.text
+    db_session.expire_all()
+    persisted_available = await db_session.get(IntegrationResource, available_id)
+    persisted_removed = await db_session.get(IntegrationResource, removed_id)
+    assert persisted_available is not None and persisted_available.enabled is False
+    assert persisted_removed is not None and persisted_removed.enabled is True
+    metadata_job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == "tests.sync_selected_metadata",
+            Job.subject_id == connection_id,
+        )
+    )
+    assert metadata_job is None
+
+
 async def test_resource_route_rbac_and_user_connection_owner_rule(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

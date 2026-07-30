@@ -14,6 +14,7 @@ from integrations.bigquery.sync_table_schemas import (
     sync_table_schemas_handler,
 )
 from models.integration_table_schema import IntegrationTableSchema
+from models.integrations import ExternalCredential
 from models.jobs import Job
 from tests.factories import (
     build_external_credential,
@@ -319,6 +320,42 @@ async def test_connection_sync_job_fans_out_one_deduplicated_job_per_enabled_dat
     assert jobs[0].subject_id == enabled.id
     assert jobs[0].workspace_id == connection.owner_workspace_id
     assert jobs[0].initiated_by_user_id == connection.connected_by_user_id
+
+
+@pytest.mark.parametrize(
+    ("status", "credential_revoked"),
+    [
+        ("auth_pending", False),
+        ("needs_reauth", False),
+        ("needs_credential", False),
+        ("revoked", True),
+        ("active", True),
+    ],
+)
+async def test_sync_skips_connections_without_usable_credentials(
+    db_session: AsyncSession,
+    status: str,
+    credential_revoked: bool,
+) -> None:
+    connection = await _bigquery_connection(db_session)
+    connection.status = status
+    resource = _dataset(connection, external_id="analytics.enabled")
+    db_session.add(resource)
+    await db_session.flush()
+    if credential_revoked:
+        credential = await db_session.get(ExternalCredential, connection.credential_id)
+        assert credential is not None
+        credential.revoked_at = datetime.now(UTC)
+        await db_session.flush()
+    client = _SchemaClient(list_responses=[], table_responses={})
+
+    await sync_bigquery_table_schemas(
+        db_session,
+        connection_id=connection.id,
+        client=client,
+    )
+
+    assert client.calls == []
 
 
 class _SchemaClient:

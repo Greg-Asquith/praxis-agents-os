@@ -15,6 +15,7 @@ from services.integrations.connections.utils import (
     require_connection_mutation_allowed,
 )
 from services.integrations.discovery import enqueue_discovery
+from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
 from services.integrations.manifest import PROVIDER_MANIFESTS
 
 
@@ -35,7 +36,7 @@ async def trigger_discovery(
     )
     if connection.owner_user_id is not None:
         require_connection_mutation_allowed(connection, actor=actor, membership=membership)
-    if connection.status in {"auth_pending", "needs_reauth", "needs_credential", "revoked"}:
+    if connection.status in CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS:
         raise IntegrationConnectionError(
             "Connection credentials must be ready before resource discovery",
             provider_key=connection.provider_key,

@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationConnectionError, IntegrationValidationError
 from models.integrations import IntegrationResource
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
@@ -23,6 +23,7 @@ from services.integrations.connections.utils import (
     get_visible_connection,
     require_connection_mutation_allowed,
 )
+from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
 from services.integrations.enqueue_metadata_sync import enqueue_metadata_sync
 from services.integrations.utils import record_integration_audit
 
@@ -45,6 +46,13 @@ async def update_resource_selection(
     )
     if connection.owner_user_id is not None:
         require_connection_mutation_allowed(connection, actor=actor, membership=membership)
+    if connection.status in CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS:
+        raise IntegrationConnectionError(
+            "Connection credentials must be ready before resource selection",
+            provider_key=connection.provider_key,
+            connection_id=str(connection.id),
+            operation="update_resource_selection",
+        )
 
     resources = (
         await db.scalars(

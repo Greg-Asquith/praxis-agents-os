@@ -20,6 +20,7 @@ from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     parse_google_service_account_json,
 )
+from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
 from services.integrations.enqueue_resource_metadata_sync import enqueue_resource_metadata_sync
 from services.jobs.registry import job_handler
 from services.secrets import resolve_secret
@@ -187,9 +188,17 @@ async def _get_bigquery_connection(
     connection_id: UUID,
 ) -> IntegrationConnection | None:
     connection = await db.scalar(
-        select(IntegrationConnection).where(
+        select(IntegrationConnection)
+        .join(
+            ExternalCredential,
+            ExternalCredential.id == IntegrationConnection.credential_id,
+        )
+        .where(
             IntegrationConnection.id == connection_id,
+            IntegrationConnection.status.not_in(CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS),
             IntegrationConnection.deleted.is_(False),
+            ExternalCredential.revoked_at.is_(None),
+            ExternalCredential.deleted.is_(False),
         )
     )
     if connection is None:
@@ -287,10 +296,35 @@ async def _build_client(
     db: AsyncSession,
     connection: IntegrationConnection,
 ) -> BigQueryClient:
-    credential = await db.get(ExternalCredential, connection.credential_id)
-    if credential is None or credential.deleted:
+    row = (
+        await db.execute(
+            select(IntegrationConnection.status, ExternalCredential)
+            .join(
+                ExternalCredential,
+                ExternalCredential.id == IntegrationConnection.credential_id,
+            )
+            .where(
+                IntegrationConnection.id == connection.id,
+                IntegrationConnection.deleted.is_(False),
+            )
+            .execution_options(populate_existing=True)
+        )
+    ).one_or_none()
+    if row is None:
         raise IntegrationNotFoundError(
             "Integration credential not found",
+            provider_key="bigquery",
+            connection_id=str(connection.id),
+            operation="sync_table_schemas",
+        )
+    status, credential = row
+    if (
+        status in CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
+        or credential.deleted
+        or credential.revoked_at is not None
+    ):
+        raise IntegrationValidationError(
+            "BigQuery connection credentials are not available",
             provider_key="bigquery",
             connection_id=str(connection.id),
             operation="sync_table_schemas",

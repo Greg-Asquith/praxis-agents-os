@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.integrations import IntegrationConnection
 from models.jobs import Job
+from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
 from services.integrations.plugin import PROVIDER_PLUGINS
 
 
@@ -20,6 +21,8 @@ async def enqueue_metadata_sync(
     """Enqueue one deduplicated metadata sync when the provider contributes one."""
     from services.jobs.enqueue_job import enqueue_job
 
+    if connection.status in CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS:
+        return None
     plugin = PROVIDER_PLUGINS.get(connection.provider_key)
     kind = plugin.metadata_sync_job_kind if plugin is not None else None
     if kind is None:
