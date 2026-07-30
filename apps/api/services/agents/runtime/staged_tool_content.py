@@ -136,6 +136,16 @@ def tool_args_for_display(
     return _safe_write_file_args(mapped_args)
 
 
+def tool_replay_args_for_editing(*, tool_name: str, args: Any) -> dict[str, Any] | None:
+    """Return replay-safe args only when a staged write may be edited."""
+    if tool_name != WRITE_FILE_TOOL_NAME:
+        return None
+    mapped_args = _mapping_args(args)
+    if mapped_args is None or not isinstance(mapped_args.get(WRITE_FILE_CONTENT_REF_ARG), str):
+        return None
+    return mapped_args
+
+
 async def resolve_staged_write_content(
     *,
     workspace_id: UUID,

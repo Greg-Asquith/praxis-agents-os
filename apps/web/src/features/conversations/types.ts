@@ -116,6 +116,7 @@ export type PendingToolApproval = {
   tool_call_id: string
   name: string
   args: unknown
+  replay_args?: unknown
   delegation?: PendingDelegatedApproval | null
 }
 

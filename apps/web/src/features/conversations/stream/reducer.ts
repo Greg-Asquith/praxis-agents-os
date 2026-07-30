@@ -35,6 +35,7 @@ export type ApprovalState = {
   tool_call_id: string
   name: string
   args: unknown
+  replay_args?: unknown
   delegation?: PendingDelegatedApproval | null
   status: "pending"
 }
@@ -225,6 +226,9 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
         args: streamEvent.data.args,
         delegation: streamEvent.data.delegation ?? null,
         name: streamEvent.data.name,
+        ...(streamEvent.data.replay_args !== undefined
+          ? { replay_args: streamEvent.data.replay_args }
+          : {}),
         status: "pending" as const,
         tool_call_id: streamEvent.data.tool_call_id,
       }

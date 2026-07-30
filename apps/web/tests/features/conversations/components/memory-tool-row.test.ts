@@ -4,6 +4,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { MemoryToolRow } from "@/features/conversations/components/memory-tool-row"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 
@@ -22,6 +23,32 @@ describe("MemoryToolRow", () => {
     expect(html).toContain('aria-busy="true"')
     expect(html).toContain("Save Memory")
     expect(html).toContain("Saving memory Prefers concise replies…")
+  })
+
+  it("keeps the core-memory warning visible while approval is pending", () => {
+    const html = renderToStaticMarkup(
+      createElement(MemoryToolRow, {
+        activity: activity({
+          args: {
+            title: "Release guardrail",
+            content: "Require launch evidence.",
+            kind: "core",
+            scope: "workspace",
+          },
+          kind: "approval",
+          name: "save_memory",
+          result: undefined,
+          status: "awaiting_approval",
+        }),
+        approvalDecision: approvalControls(),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain("Requires Approval")
+    expect(html).toContain(">Core<")
+    expect(html).toContain("Workspace scope")
+    expect(html).toContain("trusted memory")
   })
 
   it("renders a saved memory with scope and kind badges", () => {
@@ -188,6 +215,17 @@ function activity(overrides: Partial<ToolActivity>): ToolActivity {
     name: "save_memory",
     status: "completed",
     ...overrides,
+  }
+}
+
+function approvalControls(): ToolApprovalDecisionControls {
+  return {
+    decision: { decision: "pending", edits: {}, message: "" },
+    error: null,
+    onDecisionChange: () => undefined,
+    onRetry: () => undefined,
+    pendingCount: 1,
+    submitting: false,
   }
 }
 

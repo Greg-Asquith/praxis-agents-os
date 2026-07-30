@@ -134,6 +134,38 @@ describe("approval decision helpers", () => {
     ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "search-1" }])
   })
 
+  it("merges edited staged writes over replay args instead of the display projection", () => {
+    const writeApproval: PendingToolApproval = {
+      tool_call_id: "write-1",
+      name: "write_file",
+      args: {
+        name: "draft.md",
+        content: "[staged for approval; content omitted]",
+        content_bytes: 21,
+        content_sha256: "display-hash",
+      },
+      replay_args: {
+        name: "draft.md",
+        content_ref: "workspaces/ws/agent-runs/run/staged-tool-inputs/content.txt",
+      },
+    }
+
+    expect(
+      buildResumeDecisions([writeApproval], {
+        "write-1": { decision: "approved", message: "", edits: { name: "final.md" } },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: {
+          name: "final.md",
+          content_ref: "workspaces/ws/agent-runs/run/staged-tool-inputs/content.txt",
+        },
+        tool_call_id: "write-1",
+      },
+    ])
+  })
+
   it("builds approved and denied decisions together", () => {
     expect(
       buildResumeDecisions(approvals.slice(0, 2), {

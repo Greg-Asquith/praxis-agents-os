@@ -222,7 +222,12 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     assert write_file_entry["ui"]["running_label"] == "Saving {name}"
     assert write_file_entry["ui"]["approval_prompt"]
     assert write_file_entry["ui"]["approve_label"] == "Approve & Save"
-    assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {"name", "content"}
+    assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {
+        "name",
+        "file_id",
+        "expected_current_revision_id",
+        "content",
+    }
     write_file_fields = {field["key"]: field for field in write_file_entry["ui"]["arg_fields"]}
     assert write_file_fields["name"]["editable"] is True
     assert write_file_fields["content"]["editable"] is False

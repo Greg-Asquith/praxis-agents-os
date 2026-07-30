@@ -150,10 +150,17 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     render: ({ activity }) => <TodoListRow activity={activity} />,
   },
   {
+    handlesApprovals: true,
     key: "file-tools",
     matches: fileToolRowMatches,
-    render: ({ activity, defaultOpen }) => (
-      <FileToolRow activity={activity} defaultOpen={defaultOpen} />
+    render: ({ activity, approvalDecision, defaultOpen, label, ui }) => (
+      <FileToolRow
+        activity={activity}
+        {...(approvalDecision ? { approvalDecision } : {})}
+        defaultOpen={defaultOpen}
+        label={label ?? activity.name}
+        ui={ui ?? null}
+      />
     ),
   },
   {
@@ -164,10 +171,17 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     ),
   },
   {
+    handlesApprovals: true,
     key: "memory-tools",
     matches: memoryToolRowMatches,
-    render: ({ activity, defaultOpen }) => (
-      <MemoryToolRow activity={activity} defaultOpen={defaultOpen} />
+    render: ({ activity, approvalDecision, defaultOpen, label, ui }) => (
+      <MemoryToolRow
+        activity={activity}
+        {...(approvalDecision ? { approvalDecision } : {})}
+        defaultOpen={defaultOpen}
+        label={label ?? activity.name}
+        ui={ui ?? null}
+      />
     ),
   },
 ]

@@ -180,6 +180,7 @@ describe("agentStreamReducer", () => {
           tool_call_id: "tool-1",
           name: "send_email",
           args: { to: "user@example.com" },
+          replay_args: { to: "user@example.com", content_ref: "staged/content.txt" },
           delegation,
         },
       },
@@ -190,6 +191,7 @@ describe("agentStreamReducer", () => {
       tool_call_id: "tool-1",
       name: "send_email",
       args: { to: "user@example.com" },
+      replay_args: { to: "user@example.com", content_ref: "staged/content.txt" },
       delegation,
       status: "pending",
     })

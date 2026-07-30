@@ -296,6 +296,8 @@ renders.
 
 **Severity: High. Effort: M.**
 
+**Status: READY FOR REVIEW — implementation complete and the full frontend gate passes.**
+
 ### What is wrong
 
 When a tool declares `arg_fields`, the approval card renders **only** those

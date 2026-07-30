@@ -94,6 +94,33 @@ export function autoUiFields(source: unknown): ResolvedToolField[] {
   return resolved
 }
 
+export function approvalFallbackFields(
+  source: unknown,
+  declaredFields: ToolUiField[]
+): ResolvedToolField[] {
+  const normalized = normalizeToolArgs(source)
+  if (!isRecord(normalized)) {
+    return []
+  }
+
+  const declaredKeys = new Set(declaredFields.map((field) => field.key))
+  return Object.entries(normalized).flatMap(([key, raw]): ResolvedToolField[] => {
+    if (declaredKeys.has(key)) {
+      return []
+    }
+    const scalarValue = scalarToolFieldDisplayValue(raw)
+    if (scalarValue !== null) {
+      return [{ key, label: humanizeKey(key), value: scalarValue, format: "text" }]
+    }
+    try {
+      const value = JSON.stringify(raw, null, 2)
+      return [{ key, label: humanizeKey(key), value, format: "multiline" }]
+    } catch {
+      return [{ key, label: humanizeKey(key), value: String(raw), format: "text" }]
+    }
+  })
+}
+
 export function friendlyResultText(result: unknown): string | null {
   const text = nodeText(result)
   if (text === null) {

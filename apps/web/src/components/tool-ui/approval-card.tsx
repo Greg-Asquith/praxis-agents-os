@@ -1,7 +1,7 @@
 // apps/web/src/components/tool-ui/approval-card.tsx
 
 import { useCallback, useRef, useState, type ChangeEvent, type ReactNode } from "react"
-import { CheckIcon, WrenchIcon } from "lucide-react"
+import { CheckIcon, ChevronDownIcon, WrenchIcon } from "lucide-react"
 
 import {
   resolveToolField,
@@ -373,6 +373,27 @@ export function ApprovalRequestFields({
           </Field>
         )
       })}
+      {fallbackFields.length > 0 ? (
+        <details className="group min-w-0 rounded-md border">
+          <summary className="focus-visible:ring-ring flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+            <span>
+              Other Options
+              <span className="text-muted-foreground ml-1.5 font-normal">
+                ({String(fallbackFields.length)})
+              </span>
+            </span>
+            <ChevronDownIcon
+              aria-hidden="true"
+              className="text-muted-foreground size-3.5 transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="grid min-w-0 gap-3 border-t p-3">
+            {fallbackFields.map((field) => (
+              <ApprovalStaticField field={field} key={field.key} />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   )
 }

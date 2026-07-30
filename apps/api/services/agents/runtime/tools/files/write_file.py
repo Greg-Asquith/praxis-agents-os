@@ -61,7 +61,10 @@ class WriteFileOutput(BaseModel):
         completed_label="Saved {name}",
         failed_label="Couldn't Save {name}",
         approval_title="Save a File",
-        approval_prompt="The agent wants to save {name} to your workspace files.",
+        approval_prompt=(
+            "The agent wants to create or update {name} in your workspace files. "
+            "Review the target and content details before approving."
+        ),
         approve_label="Approve & Save",
         arg_fields=(
             ToolFieldPresentation(
@@ -69,6 +72,11 @@ class WriteFileOutput(BaseModel):
                 label="File Name",
                 editable=True,
                 placeholder="Name this file",
+            ),
+            ToolFieldPresentation(key="file_id", label="Existing File ID"),
+            ToolFieldPresentation(
+                key="expected_current_revision_id",
+                label="Expected Revision ID",
             ),
             ToolFieldPresentation(key="content", label="Content", format="multiline"),
         ),

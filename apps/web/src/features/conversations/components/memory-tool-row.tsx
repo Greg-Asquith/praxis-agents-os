@@ -5,9 +5,11 @@ import { BrainIcon } from "lucide-react"
 
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
@@ -25,14 +27,57 @@ import {
   updateMemoryResult,
 } from "@/features/conversations/native-tools/memory-tools"
 import { formatMemoryConfidence } from "@/features/memories/components/memory-display"
+import type { ToolUi } from "@/features/tools/types"
+import { approvalFallbackFields } from "@/features/conversations/tool-ui"
 import { plainTextPreview, pluralize, titleCaseToken } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 
 type MemoryToolRowProps = {
   activity: ToolActivity
+  approvalDecision?: ToolApprovalDecisionControls
   defaultOpen: boolean
+  label?: string
+  ui?: ToolUi | null
 }
 
-export function MemoryToolRow({ activity, defaultOpen }: MemoryToolRowProps) {
+export function MemoryToolRow({
+  activity,
+  approvalDecision,
+  defaultOpen,
+  label = "Save Memory",
+  ui = null,
+}: MemoryToolRowProps) {
+  if (
+    activity.status === "awaiting_approval" &&
+    activity.name === SAVE_MEMORY_TOOL_NAME &&
+    approvalDecision
+  ) {
+    const fields = ui?.arg_fields ?? []
+    const args = isRecord(activity.args) ? activity.args : {}
+    const kind = typeof args["kind"] === "string" ? args["kind"] : null
+    const scope = typeof args["scope"] === "string" ? args["scope"] : null
+    return (
+      <ApprovalDecisionBlock
+        activity={activity}
+        controls={approvalDecision}
+        fallbackFields={approvalFallbackFields(activity.args, fields)}
+        fields={fields}
+        iconToken={ui?.icon ?? "book"}
+        label={label}
+        prompt="The agent wants to save trusted memory that can shape future responses."
+        title={ui?.approval_title ?? "Save Memory"}
+      >
+        <div className="flex flex-wrap gap-2">
+          {kind ? (
+            <Badge variant={kind === "core" ? "warning" : "secondary"}>
+              {titleCaseToken(kind, "Memory")}
+            </Badge>
+          ) : null}
+          {scope ? <Badge variant="outline">{titleCaseToken(scope, "Scope")} scope</Badge> : null}
+        </div>
+      </ApprovalDecisionBlock>
+    )
+  }
   if (activity.status === "running" || activity.status === "awaiting_approval") {
     const state = memoryPendingState(activity)
     return state ? (

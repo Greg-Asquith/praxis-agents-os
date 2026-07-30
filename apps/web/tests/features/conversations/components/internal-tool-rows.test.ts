@@ -382,6 +382,33 @@ describe("file tool rows", () => {
     expect(failed).not.toContain(">Done<")
   })
 
+  it("keeps the existing file target visible while an edit awaits approval", () => {
+    const html = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          args: {
+            name: "ignored-name.md",
+            file_id: "file-existing-1",
+            expected_current_revision_id: "revision-4",
+            content: "[staged for approval; content omitted]",
+          },
+          kind: "approval",
+          name: "write_file",
+          status: "awaiting_approval",
+          result: undefined,
+        }),
+        approvalDecision: approvalControls(),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain("Updates Existing File")
+    expect(html).toContain("file-existing-1")
+    expect(html).toContain("revision-4")
+    expect(html).toContain("update an existing workspace file")
+    expect(html).toContain("Approve &amp; Save")
+  })
+
   it("renders content metadata in Details and falls through for malformed results", () => {
     const completed = render(
       createElement(FileToolRow, {

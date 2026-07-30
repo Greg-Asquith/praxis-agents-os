@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { ApprovalRequestFields, type ApprovalField } from "@/components/tool-ui/approval-card"
+import { approvalFallbackFields } from "@/features/conversations/tool-ui"
 
 describe("ApprovalRequestFields", () => {
   it("title-cases option labels while preserving their submitted values", () => {
@@ -107,6 +108,38 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain(">3<")
     expect(html).toContain('href="https://praxis-agents.ai/approved"')
     expect(html).not.toContain("example.com/original")
+  })
+
+  it("shows undeclared executable arguments in a collapsed disclosure", () => {
+    const args = {
+      title: "Launch guidance",
+      content: "Prefer concise release notes.",
+      kind: "core",
+      scope: "workspace",
+      importance: 5,
+      metadata: { source: "agent" },
+    }
+    const fields = [approvalField("title", "Memory", "text")]
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "memory-1",
+        args,
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: approvalFallbackFields(args, fields),
+        fields,
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("Other Options")
+    expect(html).toContain("Kind")
+    expect(html).toContain(">core<")
+    expect(html).toContain("Scope")
+    expect(html).toContain(">workspace<")
+    expect(html).toContain("Importance")
+    expect(html).toContain(">5<")
+    expect(html).toContain("&quot;source&quot;: &quot;agent&quot;")
   })
 })
 

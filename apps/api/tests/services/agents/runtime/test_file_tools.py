@@ -46,6 +46,7 @@ from services.agents.runtime.staged_tool_content import (
     resolve_staged_write_content,
     stage_write_file_approval_content,
     tool_args_for_display,
+    tool_replay_args_for_editing,
 )
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -141,6 +142,13 @@ async def test_stages_write_file_approval_content_without_persisting_body(
     assert display_args["content"] == "[staged for approval; content omitted]"
     assert display_args["content_bytes"] == len("sensitive draft body")
     assert (
+        tool_replay_args_for_editing(
+            tool_name="write_file",
+            args=approval.args,
+        )
+        == approval.args
+    )
+    assert (
         await resolve_staged_write_content(
             workspace_id=workspace_id,
             run_id=run_id,
@@ -215,6 +223,44 @@ async def test_durable_write_requires_approval_and_records_agent_revision(
     assert revision.created_by_system is False
     stored = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
     assert stored == b"approved content"
+
+
+async def test_edited_write_file_approval_uses_staged_content(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    call = ToolCallPart(
+        tool_name="write_file",
+        tool_call_id="edited-write-approval",
+        args={
+            "name": "draft.md",
+            "content": "approved staged bytes",
+        },
+    )
+    staged = await stage_write_file_approval_content(
+        workspace_id=context.workspace.id,
+        run_id=context.run.id,
+        new_messages=[ModelResponse(parts=[call])],
+        all_messages=[ModelResponse(parts=[call])],
+        deferred_tool_requests=DeferredToolRequests(approvals=[call]),
+    )
+    approval_args = staged.deferred_tool_requests.approvals[0].args
+    assert isinstance(approval_args, dict)
+    content_ref = approval_args[WRITE_FILE_CONTENT_REF_ARG]
+    assert isinstance(content_ref, str)
+
+    output = await write_file(
+        _run_context(db_session, context, approved=True),
+        name="final.md",
+        content_ref=content_ref,
+    )
+
+    revision = await db_session.get(FileRevision, output.revision_id)
+    assert revision is not None
+    stored = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
+    assert output.name == "final.md"
+    assert stored == b"approved staged bytes"
 
 
 async def test_read_file_returns_editable_text_content(

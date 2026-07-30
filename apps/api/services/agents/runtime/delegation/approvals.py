@@ -18,7 +18,10 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND_KEY,
     DELEGATED_APPROVAL_PENDING_APPROVALS_KEY,
 )
-from services.agents.runtime.staged_tool_content import tool_args_for_display
+from services.agents.runtime.staged_tool_content import (
+    tool_args_for_display,
+    tool_replay_args_for_editing,
+)
 
 
 def raise_delegate_approval_required(
@@ -53,6 +56,17 @@ def pending_approval_descriptors(requests: DeferredToolRequests) -> list[dict[st
                     args=approval.args,
                     metadata=requests.metadata.get(approval.tool_call_id),
                 )
+            ),
+            **(
+                {"replay_args": to_jsonable_python(replay_args)}
+                if (
+                    replay_args := tool_replay_args_for_editing(
+                        tool_name=approval.tool_name,
+                        args=approval.args,
+                    )
+                )
+                is not None
+                else {}
             ),
         }
         for approval in requests.approvals

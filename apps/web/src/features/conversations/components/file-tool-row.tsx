@@ -12,8 +12,10 @@ import type { ReactNode } from "react"
 
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -39,14 +41,57 @@ import {
   WRITE_FILE_TOOL_NAME,
 } from "@/features/conversations/native-tools/file-tools"
 import { FileContentView } from "@/features/files/components/file-content-view"
+import type { ToolUi } from "@/features/tools/types"
+import { approvalFallbackFields } from "@/features/conversations/tool-ui"
 import { formatBytes, formatDateTime, pluralize } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 
 type FileToolRowProps = {
   activity: ToolActivity
+  approvalDecision?: ToolApprovalDecisionControls
   defaultOpen: boolean
+  label?: string
+  ui?: ToolUi | null
 }
 
-export function FileToolRow({ activity, defaultOpen }: FileToolRowProps) {
+export function FileToolRow({
+  activity,
+  approvalDecision,
+  defaultOpen,
+  label = "Save File",
+  ui = null,
+}: FileToolRowProps) {
+  if (
+    activity.status === "awaiting_approval" &&
+    activity.name === WRITE_FILE_TOOL_NAME &&
+    approvalDecision
+  ) {
+    const fields = ui?.arg_fields ?? []
+    const args = isRecord(activity.args) ? activity.args : {}
+    const fileId = typeof args["file_id"] === "string" ? args["file_id"] : null
+    const name = typeof args["name"] === "string" ? args["name"] : "this file"
+    return (
+      <ApprovalDecisionBlock
+        activity={activity}
+        approveLabel={ui?.approve_label ?? "Approve & Save"}
+        controls={approvalDecision}
+        fallbackFields={approvalFallbackFields(activity.args, fields)}
+        fields={fields}
+        iconToken={ui?.icon ?? "file-plus"}
+        label={label}
+        prompt={
+          fileId
+            ? "The agent wants to update an existing workspace file. Review the target and content details before approving."
+            : `The agent wants to create ${name} in your workspace files.`
+        }
+        title={ui?.approval_title ?? "Save a File"}
+      >
+        <Badge className="w-fit" variant={fileId ? "warning" : "secondary"}>
+          {fileId ? "Updates Existing File" : "Creates New File"}
+        </Badge>
+      </ApprovalDecisionBlock>
+    )
+  }
   if (activity.status === "running" || activity.status === "awaiting_approval") {
     const state = filePendingState(activity.name)
     return state ? (

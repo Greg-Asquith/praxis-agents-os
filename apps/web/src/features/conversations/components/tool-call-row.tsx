@@ -24,6 +24,7 @@ import {
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
+  approvalFallbackFields,
   autoUiFields,
   friendlyResultText,
   resolveUiFields,
@@ -54,6 +55,8 @@ export function ToolCallRow({
   const entry = presentationFor(activity.name)
   const providerKey = entry?.provider ?? providerKeyForToolName(activity.name)
   useIntegrationUiModule(providerKey)
+  const ui = entry?.ui ?? null
+  const title = entry?.label ?? activity.name
   const shouldOpen =
     defaultOpen || approvalDecision !== undefined || (live && activity.status === "failed")
   const customRow = renderCustomToolCallRow({
@@ -62,10 +65,10 @@ export function ToolCallRow({
     compact,
     defaultOpen: shouldOpen,
     live,
+    label: title,
     providerKey,
+    ui,
   })
-  const ui = entry?.ui ?? null
-  const title = entry?.label ?? activity.name
   const supportLabel = entry ? null : supportIdentifier(activity.name)
 
   const hasArgs = activity.args !== undefined && activity.args !== null
@@ -76,6 +79,7 @@ export function ToolCallRow({
   const argFields = ui?.arg_fields.length
     ? resolveUiFields(ui.arg_fields, activity.args)
     : autoUiFields(activity.args)
+  const approvalOtherFields = approvalFallbackFields(activity.args, ui?.arg_fields ?? [])
   const resultFields = ui?.result_fields.length
     ? resolveUiFields(ui.result_fields, activity.result)
     : []
@@ -95,7 +99,7 @@ export function ToolCallRow({
         activity={activity}
         approveLabel={normalizeOptionalText(ui?.approve_label) ?? "Approve"}
         controls={approvalDecision}
-        fallbackFields={argFields}
+        fallbackFields={ui?.arg_fields.length ? approvalOtherFields : argFields}
         fields={ui?.arg_fields ?? []}
         iconToken={ui?.icon ?? null}
         label={title}

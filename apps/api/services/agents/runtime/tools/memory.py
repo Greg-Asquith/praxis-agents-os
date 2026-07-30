@@ -93,6 +93,8 @@ def _service_retry(exc: Exception) -> ModelRetry:
         completed_label="Saved Memory",
         failed_label="Couldn't Save Memory",
         arg_fields=(
+            ToolFieldPresentation(key="kind", label="Kind"),
+            ToolFieldPresentation(key="scope", label="Scope"),
             ToolFieldPresentation(key="title", label="Memory"),
             ToolFieldPresentation(key="content", label="Details", format="markdown"),
         ),

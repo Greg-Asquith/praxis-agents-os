@@ -111,8 +111,10 @@ function props(): ToolRowPresenterProps {
     },
     compact: false,
     defaultOpen: false,
+    label: "Example Tool",
     live: false,
     providerKey: "example",
+    ui: null,
   }
 }
 

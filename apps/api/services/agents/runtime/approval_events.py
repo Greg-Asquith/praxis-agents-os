@@ -34,7 +34,10 @@ from services.agents.runtime.events import (
     public_function_tool_result,
 )
 from services.agents.runtime.sinks import EventSink
-from services.agents.runtime.staged_tool_content import tool_args_for_display
+from services.agents.runtime.staged_tool_content import (
+    tool_args_for_display,
+    tool_replay_args_for_editing,
+)
 
 
 def is_deferred_tool_resume_event(
@@ -109,6 +112,10 @@ async def emit_approval_required_events(
                 await sink.emit(EVENT_TOOL_APPROVAL_REQUIRED, delegated_approval)
             continue
 
+        replay_args = tool_replay_args_for_editing(
+            tool_name=approval.tool_name,
+            args=approval.args,
+        )
         await sink.emit(
             EVENT_TOOL_APPROVAL_REQUIRED,
             {
@@ -120,6 +127,11 @@ async def emit_approval_required_events(
                         args=approval.args,
                         metadata=metadata,
                     )
+                ),
+                **(
+                    {"replay_args": to_jsonable_python(replay_args)}
+                    if replay_args is not None
+                    else {}
                 ),
             },
         )
@@ -151,6 +163,7 @@ def _delegated_pending_approvals(
         name = pending_approval.get("name")
         if not isinstance(tool_call_id, str) or not isinstance(name, str):
             return None
+        replay_args = pending_approval.get("replay_args")
         approvals.append(
             {
                 "tool_call_id": tool_call_id,
@@ -164,6 +177,7 @@ def _delegated_pending_approvals(
                         else None
                     ),
                 ),
+                **({"replay_args": replay_args} if replay_args is not None else {}),
                 "delegation": delegation,
             }
         )

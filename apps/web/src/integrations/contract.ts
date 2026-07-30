@@ -5,6 +5,7 @@ import type { ComponentType, ReactNode, SVGProps } from "react"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { IntegrationProvider } from "@/features/integrations/types"
+import type { ToolUi } from "@/features/tools/types"
 
 export type { ToolActivity } from "@/features/conversations/message-parts"
 export type { ToolUi } from "@/features/tools/types"
@@ -14,8 +15,10 @@ export type ToolRowPresenterProps = {
   approvalDecision?: ToolApprovalDecisionControls
   compact: boolean
   defaultOpen: boolean
+  label?: string
   live: boolean
   providerKey: string | null
+  ui?: ToolUi | null
 }
 
 export type ToolRowPresenter = {

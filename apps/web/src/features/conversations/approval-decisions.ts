@@ -53,7 +53,11 @@ export function buildResumeDecisions(
       continue
     }
 
-    const mergedArgs = buildMergedArgs(approval.args, effectiveDecision.edits)
+    const mergedArgs = buildMergedArgs(
+      approval.args,
+      approval.replay_args ?? approval.args,
+      effectiveDecision.edits
+    )
     if (typeof mergedArgs === "string") {
       return mergedArgs
     }
@@ -96,7 +100,8 @@ export function summarizeApprovalDecisions(
 }
 
 function buildMergedArgs(
-  original: unknown,
+  display: unknown,
+  replay: unknown,
   edits: Record<string, string>
 ): Record<string, unknown> | null | string {
   const editEntries = Object.entries(edits)
@@ -104,14 +109,15 @@ function buildMergedArgs(
     return null
   }
 
-  const originalArgs = normalizeToolArgs(original)
-  if (!isRecord(originalArgs)) {
+  const displayArgs = normalizeToolArgs(display)
+  const replayArgs = normalizeToolArgs(replay)
+  if (!isRecord(displayArgs) || !isRecord(replayArgs)) {
     return "This request can no longer be edited. Refresh and try again."
   }
 
   const changedEntries: [string, string][] = []
   for (const [key, edit] of editEntries) {
-    const originalValue = originalArgs[key]
+    const originalValue = displayArgs[key]
     if (typeof originalValue !== "string") {
       return "This request can no longer be edited. Refresh and try again."
     }
@@ -124,7 +130,5 @@ function buildMergedArgs(
     changedEntries.push([key, trimmedEdit])
   }
 
-  return changedEntries.length > 0
-    ? { ...originalArgs, ...Object.fromEntries(changedEntries) }
-    : null
+  return changedEntries.length > 0 ? { ...replayArgs, ...Object.fromEntries(changedEntries) } : null
 }

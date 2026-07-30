@@ -57,6 +57,7 @@ class PendingToolApprovalRead(BaseModel):
     tool_call_id: str
     name: str
     args: Any
+    replay_args: Any | None = None
     delegation: PendingDelegatedApprovalRead | None = None
 
 
