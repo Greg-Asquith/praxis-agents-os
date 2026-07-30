@@ -5,6 +5,7 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { AuthCard } from "@/features/auth/components/auth-card"
+import { TwoFactorVerificationForm } from "@/features/auth/components/two-factor-verification-form"
 
 const routeApi = getRouteApi("/auth/oauth/callback")
 
@@ -14,8 +15,12 @@ export function OAuthLoginCallbackRoute() {
 
   return (
     <AuthCard
-      title="Completing Sign In"
-      description="Finishing the provider sign-in flow."
+      title={twoFactorPending ? "Two-Step Verification" : "Completing Sign In"}
+      description={
+        twoFactorPending
+          ? "Confirm this sign-in with your authenticator."
+          : "Finishing the provider sign-in flow."
+      }
       footer={
         <Button
           onClick={() => {
@@ -33,13 +38,11 @@ export function OAuthLoginCallbackRoute() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : twoFactorPending ? (
-        <Alert>
-          <AlertTitle>Two-Step Verification Required</AlertTitle>
-          <AlertDescription>
-            Your sign-in was accepted. Entering a verification code will be available with account
-            security settings.
-          </AlertDescription>
-        </Alert>
+        <TwoFactorVerificationForm
+          onVerified={() => {
+            window.location.replace("/")
+          }}
+        />
       ) : null}
     </AuthCard>
   )

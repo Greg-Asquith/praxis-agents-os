@@ -549,6 +549,8 @@ to compare at all.
 
 **Severity: Medium (availability, not attacker-facing). Effort: M.**
 
+**Status: READY FOR REVIEW — implementation complete and the full frontend gate passes.**
+
 ### What is wrong
 
 The backend endpoint exists and works: `POST /auth/totp/verify`
@@ -576,11 +578,24 @@ regression — but TOTP is currently a lockout switch, and three commits
 (`e136304`, `11f9b34`, `5d23e69`) have hardened a flow that cannot be
 completed.
 
-### What to do
+### What changed
 
-Either build the verification form and wire it to `/auth/totp/verify`, or hide
-enrollment behind a flag until it exists. Shipping an enable button whose
-success condition is "you can no longer sign in" is the worse of the two.
+- Added the missing `/auth/totp/verify` frontend operation. A successful
+  upgrade seeds and invalidates the current-user query before entering the
+  authenticated app.
+- Added a shared sign-in verification form for password and OAuth partial
+  sessions, with six-digit authenticator and eight-digit backup-code modes.
+- Added the shadcn Input OTP primitive and reused its accessible, paste-friendly
+  slot composition for sign-in and enrollment confirmation.
+- Both completed verification paths now use a full-document transition so the
+  upgraded session and authenticated application state start cleanly.
+
+### Verify
+
+Frontend tests cover the authenticator/backup-code request mapping, partial
+session upgrade request, and authenticated-user cache seeding. `pnpm check`
+passes, including all 437 tests, dead-code analysis, dependency-cruiser, and
+the production build.
 
 ---
 

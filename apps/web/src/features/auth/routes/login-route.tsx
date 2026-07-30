@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { useLoginMutation } from "@/features/auth/api/login"
 import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
 import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-providers"
+import { TwoFactorVerificationForm } from "@/features/auth/components/two-factor-verification-form"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
 
@@ -48,69 +49,82 @@ export function LoginRoute() {
 
   return (
     <AuthCard
-      title="Sign In"
-      description="Use your Praxis account to continue."
+      title={twoFactorPending ? "Two-Step Verification" : "Sign In"}
+      description={
+        twoFactorPending
+          ? "Confirm this sign-in with your authenticator."
+          : "Use your Praxis account to continue."
+      }
       footer={
-        <span>
-          <AuthLink to="/register">Create a New Account</AuthLink>
-        </span>
+        twoFactorPending ? (
+          <Button
+            onClick={() => {
+              setTwoFactorPending(false)
+            }}
+            variant="link"
+          >
+            Back to Sign In
+          </Button>
+        ) : (
+          <span>
+            <AuthLink to="/register">Create a New Account</AuthLink>
+          </span>
+        )
       }
     >
-      <div className="flex flex-col gap-6">
-        <OAuthLoginProviders />
+      {twoFactorPending ? (
+        <TwoFactorVerificationForm
+          onVerified={() => {
+            window.location.replace("/")
+          }}
+        />
+      ) : (
+        <div className="flex flex-col gap-6">
+          <OAuthLoginProviders />
 
-        <form onSubmit={handleSubmit}>
-          <FieldGroup>
-            {formError && (
-              <Alert variant="destructive">
-                <AlertTitle>Sign In Failed</AlertTitle>
-                <AlertDescription>{formError}</AlertDescription>
-              </Alert>
-            )}
+          <form onSubmit={handleSubmit}>
+            <FieldGroup>
+              {formError && (
+                <Alert variant="destructive">
+                  <AlertTitle>Sign In Failed</AlertTitle>
+                  <AlertDescription>{formError}</AlertDescription>
+                </Alert>
+              )}
 
-            {twoFactorPending && (
-              <Alert>
-                <AlertTitle>Two-Step Verification Required</AlertTitle>
-                <AlertDescription>
-                  Your password was accepted. Entering a verification code will be available with
-                  account security settings.
-                </AlertDescription>
-              </Alert>
-            )}
+              <Field>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input
+                  autoComplete="email"
+                  id="email"
+                  name="email"
+                  placeholder="you@example.com"
+                  required
+                  type="email"
+                />
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input
-                autoComplete="email"
-                id="email"
-                name="email"
-                placeholder="you@example.com"
-                required
-                type="email"
-              />
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  autoComplete="current-password"
+                  id="password"
+                  name="password"
+                  required
+                  type="password"
+                />
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Input
-                autoComplete="current-password"
-                id="password"
-                name="password"
-                required
-                type="password"
-              />
-            </Field>
-
-            <Field>
-              <Button className="h-10 w-full" disabled={loginMutation.isPending} type="submit">
-                <LogInIcon data-icon="inline-start" />
-                {loginMutation.isPending ? "Signing In" : "Sign In"}
-              </Button>
-              <FieldError />
-            </Field>
-          </FieldGroup>
-        </form>
-      </div>
+              <Field>
+                <Button className="h-10 w-full" disabled={loginMutation.isPending} type="submit">
+                  <LogInIcon data-icon="inline-start" />
+                  {loginMutation.isPending ? "Signing In" : "Sign In"}
+                </Button>
+                <FieldError />
+              </Field>
+            </FieldGroup>
+          </form>
+        </div>
+      )}
     </AuthCard>
   )
 }

@@ -1,10 +1,20 @@
 // apps/web/src/features/auth/api/totp.ts
 
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import {
+  mutationOptions,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
-import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
-import type { TotpEnableResponse, TotpSetupResponse } from "@/features/auth/types"
+import { currentUserQueryKey, currentUserQueryOptions } from "@/features/auth/api/get-current-user"
+import type {
+  AuthResponse,
+  TotpEnableResponse,
+  TotpSetupResponse,
+  TotpVerifyRequest,
+} from "@/features/auth/types"
 
 async function setupTotp(payload: { current_password?: string }) {
   return apiRequest<TotpSetupResponse>("/auth/totp/setup", { body: payload, method: "POST" })
@@ -21,6 +31,29 @@ async function disableTotp(code: { token?: string; backup_code?: string }) {
   return apiRequest<{ message: string }>("/auth/totp", {
     body: code,
     method: "DELETE",
+  })
+}
+
+async function verifyTotp(payload: TotpVerifyRequest) {
+  return apiRequest<AuthResponse>("/auth/totp/verify", {
+    body: payload,
+    method: "POST",
+  })
+}
+
+export function totpVerificationRequest(code: string): TotpVerifyRequest {
+  return code.length === 8 ? { backup_code: code } : { token: code }
+}
+
+export function verifyTotpMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: verifyTotp,
+    onSuccess: async (response) => {
+      if (response.user) {
+        queryClient.setQueryData(currentUserQueryKey, response.user)
+      }
+      await queryClient.invalidateQueries({ queryKey: currentUserQueryOptions().queryKey })
+    },
   })
 }
 
@@ -48,4 +81,9 @@ export function useDisableTotpMutation() {
       await queryClient.invalidateQueries({ queryKey: currentUserQueryOptions().queryKey })
     },
   })
+}
+
+export function useVerifyTotpMutation() {
+  const queryClient = useQueryClient()
+  return useMutation(verifyTotpMutationOptions(queryClient))
 }

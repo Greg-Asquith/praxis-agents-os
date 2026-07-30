@@ -74,6 +74,11 @@ export type TotpEnableResponse = {
   backup_codes: string[]
 }
 
+export type TotpVerifyRequest = {
+  token?: string
+  backup_code?: string
+}
+
 export type LoginRequest = {
   email: string
   password: string

@@ -25,6 +25,7 @@ import {
   useEnableTotpMutation,
   useSetupTotpMutation,
 } from "@/features/auth/api/totp"
+import { TotpCodeInput } from "@/features/auth/components/totp-code-input"
 import type { TotpSetupResponse } from "@/features/auth/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
@@ -180,14 +181,13 @@ export function TwoFactorSection() {
                 </div>
               </div>
               <form id="totp-enable-form" onSubmit={handleEnable}>
-                <Field>
+                <Field data-invalid={error ? true : undefined}>
                   <FieldLabel htmlFor="totp-enable-token">Verification code</FieldLabel>
-                  <Input
-                    autoComplete="one-time-code"
+                  <TotpCodeInput
                     id="totp-enable-token"
-                    inputMode="numeric"
+                    invalid={Boolean(error)}
+                    length={6}
                     name="token"
-                    placeholder="123456"
                     required
                   />
                 </Field>
