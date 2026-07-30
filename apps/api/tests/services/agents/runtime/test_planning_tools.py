@@ -18,7 +18,7 @@ from models.audit_event import AuditEvent
 from models.conversation import Conversation, ConversationMessage
 from models.conversation_todos import ConversationTodoList
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_COMPLETED
 from services.agents.runtime.dispatch import digest_args
@@ -26,7 +26,7 @@ from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import ExecuteRunResult, execute_run
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.planning import TodoItemInput
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -239,7 +239,11 @@ async def _create_committed_planning_context(
     async with session_factory() as db:
         user = build_user(email=f"planning-runtime-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"planning-runtime-{uuid4().hex[:8]}")
-        db.add_all([user, workspace])
+        membership = build_workspace_membership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
+        db.add_all([user, workspace, membership])
         await db.flush()
 
         agent = Agent(
@@ -429,6 +433,11 @@ async def _delete_committed_planning_context(
         await db.execute(delete(Conversation).where(Conversation.id == context.conversation_id))
         if delete_shared:
             await db.execute(delete(Agent).where(Agent.id == context.agent_id))
+            await db.execute(
+                delete(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == context.workspace_id
+                )
+            )
             await db.execute(delete(User).where(User.id == context.user_id))
             await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))
         await db.commit()

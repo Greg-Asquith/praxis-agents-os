@@ -13,7 +13,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.sinks import EventSink
 
@@ -28,6 +28,7 @@ class RuntimeDeps:
     db: AsyncSession
     user: User
     workspace: Workspace
+    membership: WorkspaceMembership
     conversation: Conversation
     agent: Agent
     run: AgentRun

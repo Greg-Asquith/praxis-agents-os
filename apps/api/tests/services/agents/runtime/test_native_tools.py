@@ -24,7 +24,7 @@ from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import Conversation, ConversationMessage
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
@@ -613,6 +613,11 @@ async def _runtime_deps_for_context(
         db=db,
         user=user,
         workspace=workspace,
+        membership=WorkspaceMembership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role=WorkspaceRole.MEMBER.value,
+        ),
         conversation=conversation,
         agent=agent,
         run=run,

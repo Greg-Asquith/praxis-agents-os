@@ -35,7 +35,12 @@ from services.agents.runtime.skills import (
 )
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
-from tests.factories import build_skill, build_user, build_workspace
+from tests.factories import (
+    build_skill,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
@@ -295,7 +300,11 @@ async def test_load_agent_skills_skips_malformed_and_unavailable_ids(
 async def _create_runtime_skill_context(db: AsyncSession) -> RuntimeSkillContext:
     user = build_user(email=f"runtime-skill-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"runtime-skill-{uuid4().hex[:8]}")
-    db.add_all([user, workspace])
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db.add_all([user, workspace, membership])
     await db.flush()
 
     skill = build_skill(

@@ -80,7 +80,7 @@ from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.worker import run_turn_worker
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -451,7 +451,11 @@ async def test_deferred_resume_replay_skips_already_emitted_results() -> None:
 async def runtime_context(db_session: AsyncSession) -> RuntimeContext:
     user = build_user(email=f"runtime-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"runtime-{uuid4().hex[:8]}")
-    db_session.add_all([user, workspace])
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db_session.add_all([user, workspace, membership])
     await db_session.flush()
 
     agent = Agent(
@@ -1042,7 +1046,11 @@ async def _create_committed_runtime_context(
     async with session_factory() as db:
         user = build_user(email=f"runtime-committed-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"runtime-committed-{uuid4().hex[:8]}")
-        db.add_all([user, workspace])
+        membership = build_workspace_membership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
+        db.add_all([user, workspace, membership])
         await db.flush()
 
         agent = Agent(

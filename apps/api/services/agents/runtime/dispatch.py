@@ -41,8 +41,10 @@ from pydantic_ai import (
     ToolDenied,
 )
 from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
+from sqlalchemy import select
 
 from core.settings import settings
+from models.workspace import WorkspaceMembership
 from services.agents.runtime.cancellation import is_agent_run_cancel_request
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
@@ -58,13 +60,17 @@ from services.agents.runtime.tools.contract import (
     RuntimeToolDefinition,
     ToolEffectScope,
 )
-from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.agents.runtime.tools.registry import (
+    RUNTIME_TOOL_CATALOG,
+    get_runtime_tool_definition,
+)
 from services.agents.runtime.untrusted import serialize_untrusted_content
 from services.audit_events.enums import AuditStatus
 from services.audit_events.tool_events import (
     ToolAuditOutcome,
     record_tool_invocation_audit_event,
 )
+from services.workspaces.utils import EDITOR_ROLES
 from utils.tokens import estimate_tokens
 
 Handler = Callable[[Mapping[str, Any]], Awaitable[Any]]
@@ -75,6 +81,7 @@ MUTATION_OUTPUT_WARNING = (
 )
 READ_OUTPUT_WARNING = "Tool output did not match the declared schema."
 ENVELOPE_DENIAL_MESSAGE = "Tool execution denied by this run's side-effect policy."
+ROLE_DENIAL_MESSAGE = "Tool execution denied because your workspace role is read-only."
 logger = logging.getLogger(__name__)
 
 
@@ -259,12 +266,33 @@ async def dispatch_tool_execution(
 ) -> Any:
     """Execute one Pydantic AI tool through the Praxis dispatch policy."""
     tool_name = call.tool_name
-    definition = RUNTIME_TOOL_CATALOG.get(tool_name)
+    definition = get_runtime_tool_definition(tool_name)
     tool_provider = _tool_provider(tool_name, definition)
     args_sha256, args_bytes = digest_args(args)
     started = monotonic()
     tool_call_id = call.tool_call_id
     approval_ref = call.tool_call_id if getattr(ctx, "tool_call_approved", False) else None
+
+    if (
+        definition is not None
+        and definition.effect == TOOL_EFFECT_WRITE
+        and not await _has_active_write_role(ctx.deps)
+    ):
+        await record_invocation(
+            deps=ctx.deps,
+            tool_name=tool_name,
+            tool_provider=tool_provider,
+            status=AuditStatus.DENIED,
+            args=args,
+            args_sha256=args_sha256,
+            args_bytes=args_bytes,
+            started=started,
+            tool_call_id=tool_call_id,
+            outcome="denied_authorization",
+            approval_ref=approval_ref,
+            error_code="WorkspaceRoleDenied",
+        )
+        raise ModelRetry(ROLE_DENIAL_MESSAGE)
 
     envelope_verdict = check_envelope(definition, ctx.deps, args=args)
     if envelope_verdict.denied_message is not None:
@@ -417,6 +445,18 @@ async def dispatch_tool_execution(
         result_original_chars=result_size.original_chars,
     )
     return result
+
+
+async def _has_active_write_role(deps: RuntimeDeps) -> bool:
+    role = await deps.db.scalar(
+        select(WorkspaceMembership.role).where(
+            WorkspaceMembership.id == deps.membership.id,
+            WorkspaceMembership.workspace_id == deps.workspace.id,
+            WorkspaceMembership.user_id == deps.user.id,
+            WorkspaceMembership.deleted.is_(False),
+        )
+    )
+    return role in EDITOR_ROLES
 
 
 async def record_denied_approval_audit_events(

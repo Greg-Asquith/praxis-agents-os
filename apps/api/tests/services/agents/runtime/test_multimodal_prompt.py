@@ -26,7 +26,13 @@ from services.agents.runtime.sinks import CollectingSink
 from services.files.contract import contract_for_content_type
 from services.files.utils import private_ref_from_key, revision_object_key, sha256_hex
 from services.storage.factory import get_storage_provider
-from tests.factories import build_file, build_file_revision, build_user, build_workspace
+from tests.factories import (
+    build_file,
+    build_file_revision,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
@@ -168,6 +174,10 @@ def _stored_model_request(message: ConversationMessage) -> ModelRequest:
 async def _persist_runtime_context(db: AsyncSession) -> RuntimeContext:
     user = build_user(email=f"multimodal-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"multimodal-{uuid4().hex[:8]}")
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
     agent = Agent(
         name="Multimodal Agent",
         slug=f"multimodal-agent-{uuid4().hex[:8]}",
@@ -177,7 +187,7 @@ async def _persist_runtime_context(db: AsyncSession) -> RuntimeContext:
         model_provider="openai",
         model="gpt-5.4-mini",
     )
-    db.add_all([user, workspace, agent])
+    db.add_all([user, workspace, membership, agent])
     await db.flush()
     conversation = Conversation(
         user_id=user.id,

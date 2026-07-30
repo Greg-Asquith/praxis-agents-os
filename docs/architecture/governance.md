@@ -46,7 +46,7 @@ All non-*(enforced)* cells are `[default — confirm at review]`.
 | Create/edit KB documents (044/046) *[implemented: plan 046]* | — | ✓ | ✓ | ✓ |
 | Delete workspace-scope memories (049) *[implemented: plan 049]* | — | — | ✓ | ✓ |
 | Edit/delete own-scope (user/agent) memories (049) *[implemented: plan 049]* | — | ✓ | ✓ | ✓ |
-| Create artifacts via agents (050) *[implemented: plan 050]* | follows tool policy | ✓ | ✓ | ✓ |
+| Create artifacts via agents (050) *[implemented: plan 050]* | — | ✓ | ✓ | ✓ |
 | Create/revoke artifact share links (051) *[implemented: plan 051]* | — | — | ✓ | ✓ |
 | View audit log *(enforced today: 023 MANAGER)* | — | — | ✓ | ✓ |
 | View security events *(enforced today: 023 super-admin only — `security_events` has no workspace column)* | — | — | — | — |
@@ -90,6 +90,10 @@ point, per-agent `tool_policies`); this section is the policy law:
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. [integrations implemented:
   plans 041 and 050; external KB targets pending]
+- Tool policy and human approval never grant a workspace role. Runtime
+  dispatch reloads the initiating user's active membership and requires
+  `EDITOR_ROLES` before every `effect="write"` invocation; read-only members
+  may continue conversations and use `effect="read"` tools.
 - Anything that **spends money** (e.g. Google Ads mutations, 041) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. [implemented: plan 041 Slice B]

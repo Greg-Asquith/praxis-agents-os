@@ -25,7 +25,7 @@ from services.agent_runs import (
 )
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -43,7 +43,11 @@ class ApprovalStateContext:
 async def approval_context(db_session: AsyncSession) -> ApprovalStateContext:
     user = build_user(email=f"approval-state-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"approval-state-{uuid4().hex[:8]}")
-    db_session.add_all([user, workspace])
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db_session.add_all([user, workspace, membership])
     await db_session.flush()
 
     agent = Agent(

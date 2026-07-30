@@ -48,6 +48,7 @@ async def _runtime_context(
         db=db,
         user=context.user,
         workspace=context.workspace,
+        membership=context.membership,
         conversation=conversation,
         agent=context.agent,
         run=run,

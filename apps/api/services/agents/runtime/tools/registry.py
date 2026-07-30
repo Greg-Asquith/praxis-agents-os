@@ -45,6 +45,22 @@ def register_tool_definition(definition: RuntimeToolDefinition) -> None:
     RUNTIME_TOOL_CATALOG[definition.name] = definition
 
 
+def get_runtime_tool_definition(name: str) -> RuntimeToolDefinition | None:
+    """Return a registered or runtime-owned tool definition."""
+    definition = RUNTIME_TOOL_CATALOG.get(name)
+    if definition is not None:
+        return definition
+
+    from services.agents.runtime.delegation.build_delegation_tools import (
+        DELEGATION_TOOL_DEFINITIONS,
+    )
+
+    return next(
+        (definition for definition in DELEGATION_TOOL_DEFINITIONS if definition.name == name),
+        None,
+    )
+
+
 def runtime_tool(
     *,
     name: str,

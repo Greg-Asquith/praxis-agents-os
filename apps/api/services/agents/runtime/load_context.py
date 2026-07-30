@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import ConflictError, NotFoundError
 from core.settings import settings
 from models.agent import Agent
@@ -17,7 +18,7 @@ from models.conversation import Conversation
 from models.files import File, FileReference
 from models.skills import Skill
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +184,8 @@ async def load_available_files(
 async def load_actor_context(
     db: AsyncSession,
     run: AgentRun,
-) -> tuple[User, Workspace]:
-    """Load the user and workspace exposed to runtime dependencies."""
+) -> tuple[User, Workspace, WorkspaceMembership]:
+    """Load the active workspace membership exposed to runtime dependencies."""
     user = await db.get(User, run.user_id)
     if user is None:
         raise NotFoundError(
@@ -201,4 +202,14 @@ async def load_actor_context(
             resource_id=str(run.workspace_id),
         )
 
-    return user, workspace
+    membership = await db.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == run.workspace_id,
+            WorkspaceMembership.user_id == run.user_id,
+            WorkspaceMembership.deleted.is_(False),
+        )
+    )
+    if membership is None:
+        raise AuthorizationError("Agent run user no longer has access to this workspace")
+
+    return user, workspace, membership

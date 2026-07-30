@@ -26,6 +26,7 @@ ToolAuditOutcome = Literal[
     "approval_requested",
     "failed",
     "cancelled",
+    "denied_authorization",
     "denied_envelope",
     "denied_approval",
     "unverified_mutation",

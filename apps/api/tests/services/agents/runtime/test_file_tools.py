@@ -36,7 +36,7 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.files import FileRevision
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.envelope import RunEnvelope
@@ -533,6 +533,11 @@ def _run_context(
             db=db,
             user=context.user,
             workspace=context.workspace,
+            membership=WorkspaceMembership(
+                workspace_id=context.workspace.id,
+                user_id=context.user.id,
+                role=WorkspaceRole.MEMBER.value,
+            ),
             conversation=context.conversation,
             agent=context.agent,
             run=context.run,

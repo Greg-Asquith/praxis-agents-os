@@ -120,7 +120,7 @@ async def execute_run_with_builders(
                     conversation_id=conversation.id,
                 )
             if attachment_file_ids:
-                _user, workspace = await load_actor_context(db, run)
+                _user, workspace, _membership = await load_actor_context(db, run)
                 prepared_user_prompt = await assemble_user_prompt(
                     db,
                     workspace=workspace,

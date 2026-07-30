@@ -31,7 +31,7 @@ from models.audit_event import AuditEvent
 from models.conversation import Conversation, ConversationMessage
 from models.session import Session
 from models.user import User
-from models.workspace import Workspace, WorkspaceMembership
+from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
@@ -58,7 +58,7 @@ from services.agents.runtime.untrusted import (
     UntrustedContent,
     UntrustedNode,
 )
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -630,6 +630,131 @@ async def test_envelope_denies_write_tool_before_execution(
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
+async def test_read_only_role_allows_reads_but_denies_automatic_writes(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    read_context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_secret"],
+        role=WorkspaceRole.READ_ONLY,
+    )
+    write_context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_internal_write_ok"],
+        role=WorkspaceRole.READ_ONLY,
+    )
+
+    try:
+        read_result = await _execute_single_tool(
+            committed_db_session_factory,
+            read_context,
+            tool_name="dispatch_secret",
+            args={"value": "visible"},
+        )
+        write_result = await _execute_single_tool(
+            committed_db_session_factory,
+            write_context,
+            tool_name="dispatch_internal_write_ok",
+            args={"value": "blocked"},
+            final_text="write denied",
+        )
+
+        assert read_result.output == "done"
+        assert write_result.output == "write denied"
+        assert dispatch_test_tools["internal_write_ok"] == 0
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            write_context,
+            tool_name="dispatch_internal_write_ok",
+        )
+        assert event.status == "denied"
+        assert event.details["outcome"] == "denied_authorization"
+        assert event.details["error_code"] == "WorkspaceRoleDenied"
+    finally:
+        await _delete_committed_runtime_context(
+            committed_db_session_factory,
+            read_context,
+        )
+        await _delete_committed_runtime_context(
+            committed_db_session_factory,
+            write_context,
+        )
+
+
+async def test_read_only_role_cannot_execute_an_approved_write_replay(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_internal_write_ok"],
+        tool_policies={"dispatch_internal_write_ok": "approval"},
+        role=WorkspaceRole.READ_ONLY,
+    )
+    stream_function, _seen_messages = _single_tool_stream(
+        tool_name="dispatch_internal_write_ok",
+        args={"value": "blocked"},
+        final_text="approval denied by role",
+    )
+
+    try:
+        async with committed_db_session_factory() as db:
+            suspended = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Use the tool.",
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream_function,
+                    model_name="dispatch-role-approval",
+                ),
+            )
+
+        assert isinstance(suspended.output, DeferredToolRequests)
+        suspended_state = load_suspended_run_state(suspended.run)
+        deferred_tool_results = DeferredToolResults(
+            approvals={suspended_state.pending_tool_call_ids[0]: ToolApproved()}
+        )
+
+        async with committed_db_session_factory() as db:
+            resumed = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt=None,
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream_function,
+                    model_name="dispatch-role-approval",
+                ),
+                expected_status=RUN_STATUS_AWAITING_APPROVAL,
+                message_history=suspended_state.message_history,
+                deferred_tool_results=deferred_tool_results,
+            )
+
+        assert resumed.output == "approval denied by role"
+        assert dispatch_test_tools["internal_write_ok"] == 0
+        events = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_internal_write_ok",
+        )
+        assert [(event.status, event.details["outcome"]) for event in events] == [
+            ("pending", "approval_requested"),
+            ("denied", "denied_authorization"),
+        ]
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
 async def test_envelope_requires_approval_for_external_write_tool_and_resumes(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     dispatch_test_tools,
@@ -1012,11 +1137,17 @@ async def _create_committed_runtime_context(
     tool_policies: dict[str, str] | None = None,
     trigger: str = "interactive",
     metadata: dict[str, object] | None = None,
+    role: WorkspaceRole = WorkspaceRole.MEMBER,
 ) -> DispatchRuntimeContext:
     async with session_factory() as db:
         user = build_user(email=f"runtime-dispatch-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"runtime-dispatch-{uuid4().hex[:8]}")
-        db.add_all([user, workspace])
+        membership = build_workspace_membership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role=role,
+        )
+        db.add_all([user, workspace, membership])
         await db.flush()
 
         agent = Agent(

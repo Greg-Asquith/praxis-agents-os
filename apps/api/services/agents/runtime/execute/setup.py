@@ -148,7 +148,7 @@ async def prepare_runtime(
     runtime_agent_builder: RuntimeAgentBuilder,
     run_envelope_builder: RunEnvelopeBuilder,
 ) -> PreparedRuntime:
-    user, workspace = await load_actor_context(db, run)
+    user, workspace, membership = await load_actor_context(db, run)
     conversation_context_block = render_conversation_context_block(
         user=user,
         workspace=workspace,
@@ -205,6 +205,7 @@ async def prepare_runtime(
         db=db,
         user=user,
         workspace=workspace,
+        membership=membership,
         conversation=conversation,
         agent=agent,
         run=run,

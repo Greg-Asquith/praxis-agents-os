@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from models.agent import Agent
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 from services.embeddings.domain import EmbeddingBatch
 from services.memories.domain import MemoryProvenance
 from tests.factories.users import build_user
-from tests.factories.workspaces import build_workspace
+from tests.factories.workspaces import build_workspace, build_workspace_membership
 from tests.support.embeddings import FakeEmbeddingProvider
 
 
@@ -21,6 +21,7 @@ from tests.support.embeddings import FakeEmbeddingProvider
 class MemoryContext:
     user: User
     workspace: Workspace
+    membership: WorkspaceMembership
     agent: Agent
     provenance: MemoryProvenance
 
@@ -31,7 +32,11 @@ async def memory_context(db_session: AsyncSession) -> MemoryContext:
     suffix = uuid4().hex
     user = build_user(email=f"memory-{suffix}@example.com")
     workspace = build_workspace(slug=f"memory-{suffix[:12]}")
-    db_session.add_all([user, workspace])
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db_session.add_all([user, workspace, membership])
     await db_session.flush()
     agent = Agent(
         name="Memory Agent",
@@ -46,6 +51,7 @@ async def memory_context(db_session: AsyncSession) -> MemoryContext:
     return MemoryContext(
         user=user,
         workspace=workspace,
+        membership=membership,
         agent=agent,
         provenance=MemoryProvenance(
             source="interactive",

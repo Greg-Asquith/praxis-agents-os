@@ -9,6 +9,7 @@ import pytest
 from core.exceptions.general import AppValidationError
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -24,6 +25,7 @@ from services.agents.runtime.tools.contract import (
 from services.agents.runtime.tools.registry import (
     RUNTIME_TOOL_CATALOG,
     build_runtime_tools,
+    get_runtime_tool_definition,
     list_allowed_tool_definitions,
     runtime_tool,
 )
@@ -101,6 +103,13 @@ def test_registered_function_schemas_are_cached() -> None:
         assert schema is not None
         assert schema is definition.serialized_input_schema()
         assert schema["type"] == "object"
+
+
+def test_runtime_owned_delegation_tool_resolves_as_a_write() -> None:
+    definition = get_runtime_tool_definition(DELEGATE_TO_AGENT_TOOL_NAME)
+
+    assert definition is not None
+    assert definition.effect == TOOL_EFFECT_WRITE
 
 
 def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> None:

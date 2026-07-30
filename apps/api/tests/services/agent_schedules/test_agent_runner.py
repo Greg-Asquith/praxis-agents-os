@@ -37,7 +37,7 @@ from services.agents.runtime.sinks import NullSink
 from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.agents.runtime.worker import run_resume_worker
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 from workers.agent_runner import run_once
 
 pytestmark = pytest.mark.asyncio
@@ -54,7 +54,11 @@ async def _create_due_schedule(
         now = datetime.now(UTC)
         user = build_user(email=f"worker-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"worker-{uuid4().hex[:8]}")
-        db.add_all([user, workspace])
+        membership = build_workspace_membership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
+        db.add_all([user, workspace, membership])
         await db.flush()
 
         agent = Agent(

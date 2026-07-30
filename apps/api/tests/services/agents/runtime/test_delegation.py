@@ -51,7 +51,7 @@ from services.agents.runtime.tools import build_runtime_tools
 from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.conversations import get_conversation, list_conversations
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -908,7 +908,11 @@ async def _create_committed_delegation_context(
     async with session_factory() as db:
         user = build_user(email=f"runtime-delegation-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"runtime-delegation-{uuid4().hex[:8]}")
-        db.add_all([user, workspace])
+        membership = build_workspace_membership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
+        db.add_all([user, workspace, membership])
         await db.flush()
 
         child_agent = _agent("Child Delegate", workspace_id=workspace.id, user_id=user.id)

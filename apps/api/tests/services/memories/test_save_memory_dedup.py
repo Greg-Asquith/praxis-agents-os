@@ -13,11 +13,11 @@ from models.agent import Agent
 from models.agent_memories import AgentMemory
 from models.jobs import Job
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 from services.memories.domain import MemoryProvenance
 from services.memories.save_memory import save_memory
 from tests.factories.users import build_user
-from tests.factories.workspaces import build_workspace
+from tests.factories.workspaces import build_workspace, build_workspace_membership
 from tests.services.memories.conftest import (
     MemoryContext,
     install_fake_embeddings,
@@ -244,8 +244,12 @@ async def test_concurrent_duplicate_writes_are_serialized(
     suffix = uuid4().hex
     user = build_user(email=f"memory-concurrent-{suffix}@example.com")
     workspace = build_workspace(slug=f"memory-concurrent-{suffix[:10]}")
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
     async with committed_db_session_factory() as db:
-        db.add_all([user, workspace])
+        db.add_all([user, workspace, membership])
         await db.flush()
         agent = Agent(
             name="Concurrent Memory Agent",
@@ -261,6 +265,7 @@ async def test_concurrent_duplicate_writes_are_serialized(
     context = MemoryContext(
         user=user,
         workspace=workspace,
+        membership=membership,
         agent=agent,
         provenance=MemoryProvenance(
             source="interactive",
@@ -293,6 +298,9 @@ async def test_concurrent_duplicate_writes_are_serialized(
         async with committed_db_session_factory() as db:
             await db.execute(delete(AgentMemory).where(AgentMemory.workspace_id == workspace.id))
             await db.execute(delete(Agent).where(Agent.workspace_id == workspace.id))
+            await db.execute(
+                delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace.id)
+            )
             await db.execute(delete(Workspace).where(Workspace.id == workspace.id))
             await db.execute(delete(User).where(User.id == user.id))
             await db.commit()
