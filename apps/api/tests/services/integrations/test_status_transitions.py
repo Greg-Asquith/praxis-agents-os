@@ -3,12 +3,22 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import delete
 
 from core.exceptions.integration import IntegrationConnectionError
+from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
+from models.user import User
+from models.workspace import Workspace
 from services.integrations.connections import transition_connection_status
+from services.integrations.credentials import revoke_credential
 from services.integrations.domain import CONNECTION_STATUS_TRANSITIONS
-from tests.factories import build_user, build_workspace
+from tests.factories import (
+    build_external_credential,
+    build_integration_connection,
+    build_user,
+    build_workspace,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -64,6 +74,74 @@ async def test_illegal_and_terminal_transitions_are_rejected(db_session) -> None
     connection = await _connection(db_session, status="revoked")
     with pytest.raises(IntegrationConnectionError):
         await transition_connection_status(db_session, connection, "active")
+
+
+async def test_stale_transition_cannot_resurrect_concurrently_revoked_connection(
+    committed_db_session_factory,
+) -> None:
+    unique_id = uuid4().hex
+    user = build_user(email=f"status-race-{unique_id}@example.com")
+    workspace = build_workspace(slug=f"status-race-{unique_id}")
+    credential = build_external_credential(
+        auth_mode="api_key",
+        access_token_encrypted=None,
+        secret_provider="local_env",  # noqa: S106 - inert test reference metadata
+        secret_name="test-secret",  # noqa: S106 - inert test reference metadata
+        secret_version="latest",  # noqa: S106 - inert test reference metadata
+    )
+    async with committed_db_session_factory() as setup:
+        setup.add_all([user, workspace, credential])
+        await setup.flush()
+        connection = build_integration_connection(
+            credential=credential,
+            user=user,
+            workspace=workspace,
+            status="discovery_pending",
+        )
+        setup.add(connection)
+        await setup.commit()
+        connection_id = connection.id
+        credential_id = credential.id
+        workspace_id = workspace.id
+        user_id = user.id
+
+    try:
+        async with committed_db_session_factory() as discovery_db:
+            stale_connection = await discovery_db.get(IntegrationConnection, connection_id)
+            assert stale_connection is not None
+
+            async with committed_db_session_factory() as revoke_db:
+                await revoke_credential(revoke_db, credential_id=credential_id)
+                await revoke_db.commit()
+
+            result = await transition_connection_status(
+                discovery_db,
+                stale_connection,
+                "active",
+            )
+            await discovery_db.commit()
+
+        assert result.status == "revoked"
+        async with committed_db_session_factory() as verify:
+            persisted = await verify.get(IntegrationConnection, connection_id)
+            assert persisted is not None
+            assert persisted.status == "revoked"
+    finally:
+        async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(
+                delete(AuditEvent).where(
+                    AuditEvent.resource_id.in_([str(connection_id), str(credential_id)])
+                )
+            )
+            await cleanup.execute(
+                delete(IntegrationConnection).where(IntegrationConnection.id == connection_id)
+            )
+            await cleanup.execute(
+                delete(ExternalCredential).where(ExternalCredential.id == credential_id)
+            )
+            await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await cleanup.execute(delete(User).where(User.id == user_id))
+            await cleanup.commit()
 
 
 async def test_same_status_is_noop(db_session) -> None:

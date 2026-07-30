@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.integration import IntegrationConnectionError
 from models.integrations import ExternalCredential, IntegrationConnection
 from services.audit_events import AuditAction, AuditResourceType, AuditStatus
-from services.integrations.domain import CONNECTION_STATUS_TRANSITIONS, CONNECTION_STATUSES
+from services.integrations.domain import (
+    CONNECTION_STATUS_TRANSITIONS,
+    CONNECTION_STATUSES,
+    TERMINAL_CONNECTION_STATUSES,
+)
 from services.integrations.utils import record_integration_audit
 
 
@@ -27,8 +31,27 @@ async def transition_connection_status(
     audit_details: dict[str, Any] | None = None,
     audit_workspace_id: UUID | None = None,
 ) -> IntegrationConnection:
+    observed_status = connection.status
+    locked_connection = await db.scalar(
+        select(IntegrationConnection)
+        .where(IntegrationConnection.id == connection.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_connection is None:
+        raise IntegrationConnectionError(
+            "Integration connection no longer exists",
+            provider_key=connection.provider_key,
+            connection_id=str(connection.id),
+            operation="transition_status",
+        )
+    connection = locked_connection
     previous = connection.status
     if status == previous:
+        return connection
+    # A terminal state committed after the caller loaded this object supersedes
+    # its stale transition request.
+    if previous in TERMINAL_CONNECTION_STATUSES and previous != observed_status:
         return connection
     if status not in CONNECTION_STATUSES or status not in CONNECTION_STATUS_TRANSITIONS[previous]:
         raise IntegrationConnectionError(
