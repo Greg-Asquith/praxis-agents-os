@@ -9,10 +9,12 @@ from uuid import UUID
 
 from core.database import configure_async_db_session, get_async_db_session_factory
 from core.settings import settings
-from models.agent_run import AgentRun
 from services.agent_runs import renew_agent_run_lease
 from services.agent_runs.domain import RUN_STATUS_CANCELLED
-from services.agents.runtime.cancellation import request_agent_run_task_cancel
+from services.agents.runtime.cancellation import (
+    read_agent_run_status_once,
+    request_agent_run_task_cancel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,15 +101,3 @@ async def cancel_target_if_run_cancelled(
     )
     request_agent_run_task_cancel(cancel_target, run_id=run_id)
     return True
-
-
-async def read_agent_run_status_once(*, run_id: UUID) -> str | None:
-    """Read one run status in an isolated short-lived transaction."""
-    session_factory = get_async_db_session_factory()
-    async with session_factory() as db:
-        await configure_async_db_session(db)
-        run = await db.get(AgentRun, run_id)
-        await db.commit()
-        if run is None or run.deleted:
-            return None
-        return str(run.status)

@@ -45,7 +45,10 @@ from sqlalchemy import select
 
 from core.settings import settings
 from models.workspace import WorkspaceMembership
-from services.agents.runtime.cancellation import is_agent_run_cancel_request
+from services.agents.runtime.cancellation import (
+    is_agent_run_cancel_request,
+    raise_if_agent_run_cancelled,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
 from services.agents.runtime.staged_tool_content import (
@@ -351,6 +354,7 @@ async def dispatch_tool_execution(
         )
 
     try:
+        await raise_if_agent_run_cancelled(run_id=ctx.deps.run.id)
         result = await handler(args)
     except ApprovalRequired:
         await record_invocation(
