@@ -16,6 +16,7 @@ from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import Conversation
+from models.workspace import WorkspaceMembership
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import prepare_schedule_run_execution
 from services.agent_schedules.runs import (
@@ -24,7 +25,7 @@ from services.agent_schedules.runs import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
 )
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -39,7 +40,11 @@ async def _schedule_context(
     now = datetime.now(UTC)
     user = build_user(email=f"prepare-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"prepare-{uuid4().hex[:8]}")
-    db.add_all([user, workspace])
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db.add_all([user, workspace, membership])
     await db.flush()
 
     agent = Agent(
@@ -196,6 +201,34 @@ async def test_prepare_missing_default_prompt_terminally_fails_schedule(
         select(AuditEvent).where(AuditEvent.resource_id == str(schedule.id))
     )
     assert audit_event is not None
+
+
+async def test_prepare_revoked_owner_terminally_fails_schedule(
+    db_session: AsyncSession,
+) -> None:
+    user, workspace, _agent, schedule, schedule_run = await _schedule_context(db_session)
+    membership = await db_session.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace.id,
+            WorkspaceMembership.user_id == user.id,
+        )
+    )
+    assert membership is not None
+    membership.soft_delete()
+    await db_session.flush()
+
+    prepared = await prepare_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+    )
+
+    assert prepared.should_execute is False
+    assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+    assert schedule_run.last_error_code == "workspace_membership_revoked"
+    assert schedule.is_active is False
+    assert schedule.next_run_at is None
+    assert schedule_run.conversation_id is None
+    assert schedule_run.agent_run_id is None
 
 
 async def test_prepare_rejects_non_claimed_schedule_run(db_session: AsyncSession) -> None:

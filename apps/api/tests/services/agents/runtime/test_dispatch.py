@@ -100,7 +100,7 @@ def dispatch_test_tools():
     for name in names:
         RUNTIME_TOOL_CATALOG.pop(name, None)
 
-    counters = {"internal_write_ok": 0, "write_ok": 0, "scope_resolutions": 0}
+    counters = {"internal_write_ok": 0, "read_ok": 0, "write_ok": 0, "scope_resolutions": 0}
 
     def resolve_dispatch_write_scope(_args: dict[str, object]) -> Literal["external"]:
         counters["scope_resolutions"] += 1
@@ -113,6 +113,7 @@ def dispatch_test_tools():
         description="Return a fixed value for dispatch tests.",
     )
     async def dispatch_secret(value: str) -> dict[str, bool]:
+        counters["read_ok"] += 1
         return {"ok": bool(value)}
 
     @runtime_tool(
@@ -680,6 +681,89 @@ async def test_read_only_role_allows_reads_but_denies_automatic_writes(
             committed_db_session_factory,
             write_context,
         )
+
+
+async def test_membership_revocation_denies_read_after_runtime_setup(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_secret"],
+    )
+    model_started = asyncio.Event()
+    continue_model = asyncio.Event()
+    state = {"called": False}
+
+    async def stream(
+        _messages: list[ModelMessage],
+        _info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        if not state["called"]:
+            state["called"] = True
+            model_started.set()
+            await continue_model.wait()
+            yield {
+                0: DeltaToolCall(
+                    name="dispatch_secret",
+                    json_args='{"value":"blocked"}',
+                    tool_call_id="dispatch_secret-call",
+                )
+            }
+            return
+        yield "read denied"
+
+    async def execute_paused_run():
+        async with committed_db_session_factory() as db:
+            return await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Use the tool.",
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=stream,
+                    model_name="dispatch-revoked-membership",
+                ),
+            )
+
+    task = asyncio.create_task(execute_paused_run())
+    try:
+        await asyncio.wait_for(model_started.wait(), timeout=2)
+
+        async with committed_db_session_factory() as db:
+            membership = await db.scalar(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == context.workspace_id,
+                    WorkspaceMembership.user_id == context.user_id,
+                )
+            )
+            assert membership is not None
+            membership.soft_delete()
+            await db.commit()
+
+        continue_model.set()
+        result = await task
+
+        assert result.output == "read denied"
+        assert dispatch_test_tools["read_ok"] == 0
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_secret",
+        )
+        assert event.status == "denied"
+        assert event.details["outcome"] == "denied_authorization"
+        assert event.details["error_code"] == "WorkspaceMembershipRevoked"
+    finally:
+        continue_model.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
 async def test_read_only_role_cannot_execute_an_approved_write_replay(

@@ -23,6 +23,7 @@ from services.agent_schedules.runs import (
 )
 from services.agent_schedules.schemas import schedule_side_effect_policy
 from services.conversations.naming import fallback_conversation_title
+from services.workspaces.utils import get_active_membership
 from utils.dates import normalize_utc_datetime
 
 
@@ -65,6 +66,29 @@ async def prepare_schedule_run_execution(
                 "schedule_run_id": str(schedule_run.id),
                 "status": schedule_run.status,
             },
+        )
+
+    membership = await get_active_membership(
+        db,
+        workspace_id=schedule.workspace_id,
+        user_id=schedule.user_id,
+    )
+    if membership is None:
+        await mark_run_terminal_failure_and_disable_schedule(
+            db,
+            schedule,
+            schedule_run,
+            now=now_utc,
+            code="workspace_membership_revoked",
+            message="Schedule owner no longer has access to this workspace.",
+        )
+        await db.flush()
+        return PreparedScheduleRunExecution(
+            schedule_id=schedule.id,
+            schedule_run_id=schedule_run.id,
+            conversation_id=None,
+            agent_run_id=None,
+            user_prompt=None,
         )
 
     prompt = " ".join((schedule.default_prompt or "").split())

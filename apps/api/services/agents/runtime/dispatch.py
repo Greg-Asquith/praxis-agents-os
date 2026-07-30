@@ -82,6 +82,7 @@ MUTATION_OUTPUT_WARNING = (
 READ_OUTPUT_WARNING = "Tool output did not match the declared schema."
 ENVELOPE_DENIAL_MESSAGE = "Tool execution denied by this run's side-effect policy."
 ROLE_DENIAL_MESSAGE = "Tool execution denied because your workspace role is read-only."
+MEMBERSHIP_DENIAL_MESSAGE = "Tool execution denied because workspace access was revoked."
 logger = logging.getLogger(__name__)
 
 
@@ -273,10 +274,28 @@ async def dispatch_tool_execution(
     tool_call_id = call.tool_call_id
     approval_ref = call.tool_call_id if getattr(ctx, "tool_call_approved", False) else None
 
+    active_role = await _active_workspace_role(ctx.deps)
+    if active_role is None:
+        await record_invocation(
+            deps=ctx.deps,
+            tool_name=tool_name,
+            tool_provider=tool_provider,
+            status=AuditStatus.DENIED,
+            args=args,
+            args_sha256=args_sha256,
+            args_bytes=args_bytes,
+            started=started,
+            tool_call_id=tool_call_id,
+            outcome="denied_authorization",
+            approval_ref=approval_ref,
+            error_code="WorkspaceMembershipRevoked",
+        )
+        raise ModelRetry(MEMBERSHIP_DENIAL_MESSAGE)
+
     if (
         definition is not None
         and definition.effect == TOOL_EFFECT_WRITE
-        and not await _has_active_write_role(ctx.deps)
+        and active_role not in EDITOR_ROLES
     ):
         await record_invocation(
             deps=ctx.deps,
@@ -447,8 +466,8 @@ async def dispatch_tool_execution(
     return result
 
 
-async def _has_active_write_role(deps: RuntimeDeps) -> bool:
-    role = await deps.db.scalar(
+async def _active_workspace_role(deps: RuntimeDeps) -> str | None:
+    return await deps.db.scalar(
         select(WorkspaceMembership.role).where(
             WorkspaceMembership.id == deps.membership.id,
             WorkspaceMembership.workspace_id == deps.workspace.id,
@@ -456,7 +475,6 @@ async def _has_active_write_role(deps: RuntimeDeps) -> bool:
             WorkspaceMembership.deleted.is_(False),
         )
     )
-    return role in EDITOR_ROLES
 
 
 async def record_denied_approval_audit_events(
