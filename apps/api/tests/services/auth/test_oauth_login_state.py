@@ -1,5 +1,6 @@
 """Security invariants for OAuth login state."""
 
+from http.cookies import SimpleCookie
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -26,24 +27,6 @@ def test_oauth_login_state_is_bound_to_the_initiating_browser() -> None:
     )
     state_payload = verify_oauth_state(state)
 
-    verify_oauth_login_browser_binding(
-        state_payload,
-        request=SimpleNamespace(cookies={"oauth_login_binding": browser_binding}),
-        provider_name="google",
-    )
-
-    with pytest.raises(
-        OAuthAuthenticationError,
-        match="OAuth login was not initiated by this browser",
-    ):
-        verify_oauth_login_browser_binding(
-            state_payload,
-            request=SimpleNamespace(
-                cookies={"oauth_login_binding": "binding-from-another-browser"}
-            ),
-            provider_name="google",
-        )
-
     response = Response()
     set_oauth_login_binding_cookie(
         response,
@@ -55,6 +38,47 @@ def test_oauth_login_state_is_bound_to_the_initiating_browser() -> None:
     assert "HttpOnly" in cookie_header
     assert "Path=/api/v1/auth/oauth" in cookie_header
     assert "Domain=" not in cookie_header
+    assert browser_binding not in cookie_header
+
+    cookie = SimpleCookie()
+    cookie.load(cookie_header)
+    encrypted_browser_binding = cookie["oauth_login_binding"].value
+    verify_oauth_login_browser_binding(
+        state_payload,
+        request=SimpleNamespace(cookies={"oauth_login_binding": encrypted_browser_binding}),
+        provider_name="google",
+    )
+
+    other_response = Response()
+    set_oauth_login_binding_cookie(
+        other_response,
+        browser_binding="binding-from-another-browser",
+        expires_at=expires_at,
+    )
+    other_cookie = SimpleCookie()
+    other_cookie.load(other_response.headers["set-cookie"])
+    other_encrypted_browser_binding = other_cookie["oauth_login_binding"].value
+    with pytest.raises(
+        OAuthAuthenticationError,
+        match="OAuth login was not initiated by this browser",
+    ):
+        verify_oauth_login_browser_binding(
+            state_payload,
+            request=SimpleNamespace(
+                cookies={"oauth_login_binding": other_encrypted_browser_binding}
+            ),
+            provider_name="google",
+        )
+
+    with pytest.raises(
+        OAuthAuthenticationError,
+        match="OAuth login was not initiated by this browser",
+    ):
+        verify_oauth_login_browser_binding(
+            state_payload,
+            request=SimpleNamespace(cookies={"oauth_login_binding": "malformed"}),
+            provider_name="google",
+        )
 
     clear_oauth_login_binding_cookie(response)
     assert response.headers.getlist("set-cookie")[-1].startswith('oauth_login_binding="";')

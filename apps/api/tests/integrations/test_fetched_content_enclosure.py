@@ -34,6 +34,16 @@ class FramedFixtureOutput(BaseModel):
 async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> None:
     hostile = FIXTURE.read_text(encoding="utf-8")
     monkeypatch.setattr(dispatch, "record_invocation", AsyncMock())
+    monkeypatch.setattr(
+        dispatch,
+        "_active_workspace_role",
+        AsyncMock(return_value="owner"),
+    )
+    monkeypatch.setattr(
+        dispatch,
+        "raise_if_agent_run_cancelled",
+        AsyncMock(),
+    )
     deps = SimpleNamespace(
         envelope=SimpleNamespace(side_effect_policy="allow"),
         run=SimpleNamespace(id="run-1"),

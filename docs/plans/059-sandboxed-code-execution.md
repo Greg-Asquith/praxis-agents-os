@@ -193,7 +193,7 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
 | Lint | `cd apps/api && uv run ruff check . && uv run ruff format --check .` | exit 0 |
-| Focused tests | `cd apps/api && TEST_DATABASE_URL=... uv run pytest tests/services/agents/runtime tests/services/scratch tests/scenarios -q` | all pass |
+| Focused tests | `cd apps/api && TEST_DATABASE_URL=... uv run pytest tests/services/agents/runtime tests/scenarios -q` | all pass |
 | Full suite | `cd apps/api && TEST_DATABASE_URL=... uv run pytest -q` | all pass |
 | Live smoke (manual, keys required) | `make dev`; agent with `run_code`; "sum column B of the attached CSV" | computed answer; audit rows present |
 
@@ -202,7 +202,8 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
 **In scope:**
 
 - `services/agents/runtime/tools/native/run_code.py` (create — the tool,
-  helper construction, file inlining, output bounding, scratch capture)
+  helper construction, file inlining, output bounding, durable-output
+  capture)
 - `core/settings/agents.py` (or the tools settings home):
   `RUN_CODE_OUTPUT_MAX_CHARS`, per-provider default helper models
   (mirror the web-search settings naming)
@@ -217,7 +218,8 @@ All anchors verified on the working tree at `c2f08cc` (2026-07-07).
   patterns; keep it minimal)
 - `docs/architecture/governance.md` §2 row; scenario additions (055)
 - Tests: argument/provider validation, file-gate reuse, output bounding,
-  scratch capture, audit rows (scripted helper — no live calls in tests)
+  durable-output capture, audit rows (scripted helper — no live calls in
+  tests)
 
 **Out of scope (do NOT touch):**
 
@@ -253,13 +255,15 @@ locally; tests stay scripted.
 
 `run_code` per decisions 1-5,7: signature, provider/model validation,
 file resolution + inlining, helper turn with bounded `UsageLimits`,
-output truncation with an explicit `[truncated]` marker, scratch capture
-for in-band file outputs, registry definition (`provider="native"`,
-`effect="write"`, `effect_scope="internal"`, default `approval`,
+output truncation with an explicit `[truncated]` marker, durable-output
+capture for in-band file outputs (decision 4 as amended), registry
+definition (`provider="native"`, `effect="write"`, per-call scope via
+`effect_scope_resolver` per the 072 amendment, default `approval`,
 `supports_auto=True`, presentation metadata).
 
 **Verify**: registry import-time checks pass; catalog shows the entry;
-scripted-helper unit tests cover validation, bounding, scratch capture.
+scripted-helper unit tests cover validation, bounding, durable-output
+capture.
 
 ### Step 3: audit wiring
 
@@ -277,10 +281,11 @@ record per-provider quirks in the module docstring.
 
 ## Test plan
 
-~10-12 scripted tests (no live LLM): provider/model validation matrix,
+~14-18 scripted tests (no live LLM): provider/model validation matrix,
 file-gate reuse (wrong workspace / oversize / contract-blocked), output
-bounding, scratch capture, audit row shape, approval suspend/resume
-scenario. Live behavior is pinned by the manual smoke script, mirroring
+bounding, durable-output capture, audit row shape, approval
+suspend/resume scenario, plus the 075 poisoned-file and 072
+scope-resolution/scheduled-approval deltas. Live behavior is pinned by the manual smoke script, mirroring
 how 028 verified `web_search`.
 
 ## Done criteria
@@ -288,7 +293,8 @@ how 028 verified `web_search`.
 - [ ] `run_code` in the catalog, selectable in the agent form with no
       frontend changes (or with one minimal presentation row)
 - [ ] Files enter via the 036 gates only; outputs bounded; sandbox file
-      outputs land in scratch behind the existing promote flow
+      outputs land as artifacts or durable Praxis Files through the
+      shared revision operations (no scratch, no promote flow)
 - [ ] Every invocation audited (outer dispatch row + inner native rows)
 - [ ] Default policy `approval`, relaxable per agent; governance §2 row
       updated
@@ -377,3 +383,128 @@ externally mutable fact — probe it, gate on it, and re-check it.
 Additional STOP condition: the effective provider cannot be resolved
 before the envelope check, including when `model_provider` is omitted —
 do not default such a call to `internal`; fail closed and report.
+
+## Amendment: execution-readiness review (2026-07-30)
+
+Binding on execution. The drift check was run at HEAD `b11cc61`
+(34 files, +2689/−561 in the checked paths since `c2f08cc`). No STOP
+condition fires — the helper-model pattern, the registry contract, and
+the installed `CodeExecutionTool` API (re-probed 2026-07-30: pinned
+pydantic-ai 2.1.0; constructor still `kind`/`optional` only; docstring
+still lists Anthropic / OpenAI Responses / Google) all survive — but
+the corrections below supersede the matching "Current state" text, and
+the chunk structure below supersedes the flat Steps 1-4 ordering. The
+scratch references in Steps/Scope/Test plan/Done criteria were removed
+in this same change, completing the 2026-07-28 Plan 050 integration
+(`promote_scratch` is deleted from the tree; a test asserts it stays
+out of the catalog). `services/scratch` still exists for TTL-swept
+scratch entries used elsewhere — it is out of scope; do not touch it.
+
+### Corrected anchors
+
+1. **Audit seam moved.** `record_native_tool_invocation_audit_event`
+   is now `dispatch.py:575-601`. The main-run native part capture
+   moved from `execute_run.py:239-249` to `execute/stream.py:60-71`
+   (`execute_run.py` is now a compatibility shim over the `execute/`
+   package; capture state is `runtime/events.py:51`). Decision 1's
+   point stands and is now confirmed: the helper `agent.run(...)`
+   inside the tool body is invisible to that stream path, so Step 3
+   must read `NativeToolCallPart`/`NativeToolReturnPart` from the
+   helper result messages and call the dispatch audit function
+   explicitly (see `tests/.../test_native_tools.py` for the existing
+   test pattern around that function).
+2. **Helper default models are not settings-pinned.** `web_search`'s
+   per-provider defaults are the module constant
+   `DEFAULT_NATIVE_SEARCH_MODELS` (`web_search.py:54-58`); its only
+   settings key is `NATIVE_WEB_SEARCH_MAX_STEPS`
+   (`core/settings/models.py:43-48`). Follow the landed pattern:
+   `DEFAULT_NATIVE_RUN_CODE_MODELS` as a module constant, plus
+   `NATIVE_RUN_CODE_MAX_STEPS` and `RUN_CODE_OUTPUT_MAX_CHARS` in
+   `core/settings/models.py` — not `core/settings/agents.py`, which
+   holds only schedule/run durability settings.
+3. **Probe-note convention.** `web_search.py` carries no probe-notes
+   docstring; the in-tree example of the convention Step 1 asks for is
+   `tools/files/__init__.py:5-14` ("Pydantic AI 2.1.0 probe
+   findings"). Also note `web_search` validates providers against
+   `configured_native_search_providers()` (key-filtered snapshot at
+   process start), not the raw supported set — mirror that.
+4. **Declare effect explicitly.** `web_search` declares no
+   `effect`/`effect_scope` and inherits the contract defaults
+   (`read`/`internal`, `contract.py:134-136`). `run_code` must declare
+   `effect="write"` explicitly; contract validation forbids a resolver
+   on read-effect tools (`contract.py:253-254`), so an inherited
+   `read` would reject the registration at import time.
+5. **Resolver constraint (design decision needed in Chunk B).**
+   `effect_scope_resolver` is landed (`contract.py:145`, consumed by
+   `resolve_effect_scope` at `dispatch.py:168-182` inside
+   `check_envelope`) but has no production consumer — `run_code` is
+   the first. The resolver receives ONLY the call-args dict.
+   `web_search`'s omitted-provider fallback (agent's active model,
+   else first configured provider) is not derivable from args, so
+   `run_code`'s omitted-`model_provider` default must be deterministic
+   from args plus process-start configuration alone (e.g. a fixed
+   configured-provider precedence captured in the resolver closure),
+   and the tool body must resolve the provider identically. If the
+   two can diverge, the 072 fail-closed STOP condition applies.
+6. **Governance §2 is prose, not a table.** `governance.md` §2
+   ("Approval Defaults Per Tool Effect") is a bulleted policy section
+   with no per-tool table. "Governance §2 row" means: add a `run_code`
+   entry in that section's form — internal-effect write, default
+   `approval`, `supports_auto=True`, per-provider egress posture with
+   probe dates. Do not invent a table.
+7. **Hostile-CSV fixture is unshipped.** `threat-model.md` §4 promises
+   it, but `tests/fixtures/prompt_injection/` holds only
+   `hostile_conversation_span.txt` and `hostile_email_body.txt`.
+   Creating the hostile CSV there is part of this plan (Chunk E).
+8. **Durable-output seams (decision 4 as amended), concretely:**
+   artifacts via `services/artifacts/create_artifact.py` (the
+   `create_artifact`/`update_artifact` runtime tools in
+   `tools/artifacts.py` show the calling pattern); Praxis Files via
+   `create_file_with_revision`/`append_file_revision` with an agent
+   `FileRevisionActor` (`services/files/revision_actor.py`). Note
+   `write_agent_file` is text-only (`content: str`), so binary sandbox
+   outputs use the revision operations directly.
+
+### Execution chunks
+
+Execute as five gated chunks, one commit each on the plan branch
+(`API - run_code Probes`, `API - run_code Tool`, `API - run_code
+Audit`, `API - run_code Outputs`, `API - run_code Scenarios &
+Governance`). Do not start a chunk before the previous chunk's gate
+passes; the single-commit line in "Git workflow" is superseded.
+
+- **Chunk A — probes.** Step 1 (a)-(c) plus 072 probe (d), with live
+  keys, bench script local-only (not committed). Deliverable: dated
+  probe notes in the new module's docstring (files-tools convention)
+  and the provider→scope map derived from probe (d). **Gate**: the
+  operator reviews the probe record and scope map; STOP conditions
+  1-2 and the 072 egress gate are evaluated here, before any tool
+  logic is written.
+- **Chunk B — core tool.** Step 2 as amended: signature,
+  provider/model validation, 036 file gates + inlining with the §3
+  untrusted-content framing (075 amendment), helper turn with
+  `UsageLimits`, output bounding, settings keys, registry definition
+  with `effect="write"` + `effect_scope_resolver` built from the
+  Chunk A map (correction 5's default rule decided and recorded
+  here). Unit tests: validation matrix, file-gate reuse, bounding,
+  scope resolution (isolated → `internal`, egress-capable →
+  `external`, omitted arg → configured default, unprobed provider
+  rejected). **Gate**: lint + focused tests green; catalog shows the
+  entry.
+- **Chunk C — audit wiring.** Step 3 per probe (b): explicit capture
+  of helper-run native parts through
+  `record_native_tool_invocation_audit_event`; tests assert one outer
+  dispatch row plus inner native rows per invocation. **Gate**: audit
+  tests green; STOP if any execution path is unauditable.
+- **Chunk D — durable outputs.** Decision 4 as amended, via the
+  correction-8 seams; tests cover both the artifact and the Praxis
+  File paths with a scripted helper emitting in-band file content.
+  **Gate**: focused tests green.
+- **Chunk E — scenarios, fixture, governance, smoke.** Hostile-CSV
+  fixture; 055 scenarios including the 072 test-plan delta (poisoned
+  input, scope resolution, scheduled `require_approval`); governance
+  §2 entry; `docs/plans/000_README.md` row; full suite; manual live
+  smoke on all three providers with a small CSV and the poisoned CSV
+  (egress-isolated providers only for the poisoned smoke), quirks
+  recorded in the module docstring. **Gate**: `make check` green and
+  the smoke record present.

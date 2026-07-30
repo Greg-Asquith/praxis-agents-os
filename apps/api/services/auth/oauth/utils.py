@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.exceptions.auth import AuthenticationError, AuthorizationError
+from core.exceptions.general import CustomValueError
 from core.exceptions.oauth import OAuthAuthenticationError, OAuthConfigurationError
 from core.settings import settings
 from models.user import User, UserAuth
@@ -26,6 +27,7 @@ from services.audit_events import (
 )
 from services.auth.utils import get_user_by_email
 from services.workspaces.provisioning import provision_personal_workspace
+from utils.security import decrypt_data, encrypt_data
 from utils.validation import normalize_email
 
 logger = logging.getLogger(__name__)
@@ -170,7 +172,7 @@ def set_oauth_login_binding_cookie(
     """Bind an OAuth login transaction to the browser that initiated it."""
     response.set_cookie(
         key=_OAUTH_LOGIN_BINDING_COOKIE,
-        value=browser_binding,
+        value=encrypt_data(browser_binding),
         expires=expires_at,
         httponly=True,
         secure=settings.SECURE_COOKIES,
@@ -197,7 +199,13 @@ def verify_oauth_login_browser_binding(
     provider_name: str,
 ) -> None:
     expected_hash = state_payload.get("browser_binding_hash")
-    browser_binding = request.cookies.get(_OAUTH_LOGIN_BINDING_COOKIE)
+    encrypted_browser_binding = request.cookies.get(_OAUTH_LOGIN_BINDING_COOKIE)
+    try:
+        browser_binding = (
+            decrypt_data(encrypted_browser_binding) if encrypted_browser_binding else None
+        )
+    except CustomValueError:
+        browser_binding = None
     if (
         not isinstance(expected_hash, str)
         or not browser_binding
