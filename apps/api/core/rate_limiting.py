@@ -295,7 +295,7 @@ def _parse_trusted_proxy_networks(cidr_config: str) -> tuple:
         try:
             networks.append(ip_network(cidr, strict=False))
         except ValueError:
-            logger.warning("Ignoring invalid TRUSTED_PROXY_CIDRS entry: %s", cidr)
+            logger.warning("Ignoring invalid TRUSTED_PROXY_CIDRS entry")
     return tuple(networks)
 
 

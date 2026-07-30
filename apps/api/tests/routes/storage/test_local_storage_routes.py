@@ -35,7 +35,7 @@ def _relative_url(absolute_url: str) -> str:
 
 
 async def test_local_signed_upload_and_download_routes(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
@@ -46,7 +46,7 @@ async def test_local_signed_upload_and_download_routes(
         content_type="text/plain",
         expires_in=timedelta(minutes=5),
     )
-    upload_response = await async_client.put(
+    upload_response = await db_async_client.put(
         _relative_url(upload.url),
         content=b"stored by signed upload",
         headers=upload.headers,
@@ -59,7 +59,7 @@ async def test_local_signed_upload_and_download_routes(
         force_download=True,
         filename="output.txt",
     )
-    download_response = await async_client.get(_relative_url(download.url))
+    download_response = await db_async_client.get(_relative_url(download.url))
 
     assert download_response.status_code == 200
     assert download_response.content == b"stored by signed upload"
@@ -70,7 +70,7 @@ async def test_local_signed_upload_and_download_routes(
 
 
 async def test_local_inline_pdf_is_frameable_only_by_configured_app_origins(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
@@ -83,7 +83,7 @@ async def test_local_inline_pdf_is_frameable_only_by_configured_app_origins(
         force_download=False,
         filename="report.pdf",
     )
-    response = await async_client.get(_relative_url(preview.url))
+    response = await db_async_client.get(_relative_url(preview.url))
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
@@ -94,13 +94,13 @@ async def test_local_inline_pdf_is_frameable_only_by_configured_app_origins(
 
 
 async def test_signed_upload_route_uses_active_provider_selection(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "STORAGE_PROVIDER", "s3")
     reset_storage_provider_cache()
     try:
-        response = await async_client.put(
+        response = await db_async_client.put(
             "/api/v1/storage/upload/private/runs/run_1/results/output.txt",
             params={
                 "expires": "9999999999",
@@ -119,7 +119,7 @@ async def test_signed_upload_route_uses_active_provider_selection(
 
 
 async def test_local_signed_upload_rejects_tampered_content_type(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
@@ -130,7 +130,7 @@ async def test_local_signed_upload_rejects_tampered_content_type(
         content_type="application/json",
         expires_in=timedelta(minutes=5),
     )
-    response = await async_client.put(
+    response = await db_async_client.put(
         _relative_url(upload.url),
         content=b"{}",
         headers={"content-type": "text/plain"},
@@ -141,7 +141,7 @@ async def test_local_signed_upload_rejects_tampered_content_type(
 
 
 async def test_local_signed_upload_rejects_content_type_parameters(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
@@ -152,7 +152,7 @@ async def test_local_signed_upload_rejects_content_type_parameters(
         content_type="text/plain",
         expires_in=timedelta(minutes=5),
     )
-    response = await async_client.put(
+    response = await db_async_client.put(
         _relative_url(upload.url),
         content=b"text",
         headers={"content-type": "text/plain; charset=utf-8"},
@@ -163,7 +163,7 @@ async def test_local_signed_upload_rejects_content_type_parameters(
 
 
 async def test_local_private_download_rejects_tampered_signature_inputs(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
@@ -176,7 +176,7 @@ async def test_local_private_download_rejects_tampered_signature_inputs(
         force_download=True,
         filename="output.txt",
     )
-    response = await async_client.get(
+    response = await db_async_client.get(
         _relative_url(download.url).replace("filename=output.txt", "filename=other.txt")
     )
 
@@ -185,14 +185,14 @@ async def test_local_private_download_rejects_tampered_signature_inputs(
 
 
 async def test_local_public_object_route_serves_public_object(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
     ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.txt")
     stored = await provider.put_object(ref, b"public asset", content_type="text/plain")
 
-    response = await async_client.get(_relative_url(stored.public_url or ""))
+    response = await db_async_client.get(_relative_url(stored.public_url or ""))
 
     assert response.status_code == 200
     assert response.content == b"public asset"
@@ -200,7 +200,7 @@ async def test_local_public_object_route_serves_public_object(
 
 
 async def test_local_public_route_does_not_serve_sidecar_metadata(
-    async_client: AsyncClient,
+    db_async_client: AsyncClient,
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
@@ -212,7 +212,7 @@ async def test_local_public_route_does_not_serve_sidecar_metadata(
         metadata={"internal": "metadata"},
     )
 
-    response = await async_client.get(f"{_relative_url(stored.public_url or '')}.metadata.json")
+    response = await db_async_client.get(f"{_relative_url(stored.public_url or '')}.metadata.json")
 
     assert response.status_code == 404
     assert response.json()["title"] == "Storage Object Not Found"

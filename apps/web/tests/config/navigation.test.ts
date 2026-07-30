@@ -84,7 +84,8 @@ function renderNavigation(pathname: string) {
 function activeLinkLabel(html: string) {
   for (const match of html.matchAll(/<a class="([^"]*)" href="[^"]*">(.*?)<\/a>/g)) {
     if (match[1]?.split(" ").includes("bg-sidebar-accent")) {
-      return match[2]?.replaceAll(/<[^>]+>/g, "") ?? null
+      const linkContent = match[2]
+      return linkContent?.slice(linkContent.lastIndexOf(">") + 1) ?? null
     }
   }
 

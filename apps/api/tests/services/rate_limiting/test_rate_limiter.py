@@ -1,7 +1,7 @@
 """Tests for the PostgreSQL-backed rate limiter."""
 
 from datetime import UTC, datetime, timedelta
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 
 import pytest
 from sqlalchemy import func, select
@@ -28,6 +28,24 @@ async def test_normalize_endpoint_collapses_uuid_and_numeric_segments() -> None:
         "/api/v1/files/{id}/revisions/{id}"
     )
     assert normalize_endpoint("/api/v1/auth/login") == "/api/v1/auth/login"
+
+
+async def test_invalid_trusted_proxy_cidr_is_not_logged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sensitive_value = "secret-token-value"
+    warnings: list[str] = []
+
+    def record_warning(message: str, *args: object) -> None:
+        warnings.append(message % args if args else message)
+
+    monkeypatch.setattr(rate_limiting_module.logger, "warning", record_warning)
+    rate_limiting_module._parse_trusted_proxy_networks.cache_clear()
+    networks = rate_limiting_module._parse_trusted_proxy_networks(f"192.0.2.0/24,{sensitive_value}")
+
+    assert networks == (ip_network("192.0.2.0/24"),)
+    assert warnings == ["Ignoring invalid TRUSTED_PROXY_CIDRS entry"]
+    assert sensitive_value not in "".join(warnings)
 
 
 async def test_check_rate_limit_increments_existing_bucket(db_session: AsyncSession) -> None:
