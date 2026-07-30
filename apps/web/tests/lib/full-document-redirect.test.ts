@@ -26,4 +26,23 @@ describe("full document redirect", () => {
       Reflect.deleteProperty(globalThis, "window")
     }
   })
+
+  it.each([
+    "https://attacker.example/path",
+    "//attacker.example/path",
+    String.raw`/\attacker.example/path`,
+    String.raw`/\\attacker.example/path`,
+  ])("refuses a cross-origin target derived from %s", (path) => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { origin: "https://praxis.example" } },
+    })
+
+    try {
+      const redirect = fullDocumentRedirect as (path: string) => unknown
+      expect(() => redirect(path)).toThrow("Refusing to redirect to a different origin.")
+    } finally {
+      Reflect.deleteProperty(globalThis, "window")
+    }
+  })
 })

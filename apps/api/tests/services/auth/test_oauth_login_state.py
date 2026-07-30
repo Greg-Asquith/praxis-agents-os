@@ -12,11 +12,30 @@ from services.auth.oauth.complete_oauth_login import complete_oauth_login
 from services.auth.oauth.utils import (
     clear_oauth_login_binding_cookie,
     create_oauth_state,
+    safe_next_path,
     set_oauth_login_binding_cookie,
     verify_oauth_login_browser_binding,
     verify_oauth_state,
 )
 from services.auth.schemas import OAuthCallbackRequest
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("/profile", "/profile"),
+        ("https://attacker.example/path", None),
+        ("//attacker.example/path", None),
+        (r"/\attacker.example/path", None),
+        (r"/\\attacker.example/path", None),
+        ("/profile\t/attacker.example", None),
+        ("/profile path", None),
+        ("profile", None),
+        (None, None),
+    ],
+)
+def test_safe_next_path(value: str | None, expected: str | None) -> None:
+    assert safe_next_path(value) == expected
 
 
 def test_oauth_login_state_is_bound_to_the_initiating_browser() -> None:

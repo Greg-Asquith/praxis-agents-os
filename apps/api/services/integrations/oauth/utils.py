@@ -7,7 +7,6 @@ import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
-from urllib.parse import urlparse
 from uuid import UUID
 
 import jwt
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.integration import IntegrationAuthError, IntegrationConnectionError
 from core.settings import settings
 from services.integrations.utils import ensure_credential_keys_loaded
+from utils.redirects import safe_next_path
 from utils.security import derive_purpose_key
 
 OAUTH_STATE_TYPE: Final = "integration_oauth_state"
@@ -83,15 +83,6 @@ def verify_integration_oauth_state(state: str) -> dict[str, Any]:
         raise _invalid_state(exc) from exc
     payload["next_path"] = safe_next_path(payload.get("next_path"))
     return payload
-
-
-def safe_next_path(next_path: str | None) -> str | None:
-    if not next_path:
-        return None
-    parsed = urlparse(next_path)
-    if parsed.scheme or parsed.netloc or not next_path.startswith("/"):
-        return None
-    return next_path
 
 
 def generate_code_verifier() -> str:

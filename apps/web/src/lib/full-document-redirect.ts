@@ -3,8 +3,13 @@
 import { redirect } from "@tanstack/react-router"
 
 export function fullDocumentRedirect(path: string): never {
+  const target = new URL(path, window.location.origin)
+  if (target.origin !== window.location.origin) {
+    throw new Error("Refusing to redirect to a different origin.")
+  }
+
   redirect({
-    href: new URL(path, window.location.origin).href,
+    href: target.href,
     reloadDocument: true,
     replace: true,
     throw: true,

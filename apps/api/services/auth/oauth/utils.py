@@ -7,7 +7,6 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlparse
 
 import jwt
 from fastapi import Request, Response
@@ -27,6 +26,7 @@ from services.audit_events import (
 )
 from services.auth.utils import get_user_by_email
 from services.workspaces.provisioning import provision_personal_workspace
+from utils.redirects import safe_next_path
 from utils.security import decrypt_data, encrypt_data
 from utils.validation import normalize_email
 
@@ -327,15 +327,6 @@ def resolve_provider_redirect_uri(provider_name: str, supplied_redirect_uri: str
             "OAuth redirect URI is not allowed", provider=provider_name, endpoint="state"
         )
     return configured
-
-
-def safe_next_path(next_path: str | None) -> str | None:
-    if not next_path:
-        return None
-    parsed = urlparse(next_path)
-    if parsed.scheme or parsed.netloc or not next_path.startswith("/"):
-        return None
-    return next_path
 
 
 def provider_user_id_from_profile(provider_name: str, profile: dict[str, Any]) -> str | None:
