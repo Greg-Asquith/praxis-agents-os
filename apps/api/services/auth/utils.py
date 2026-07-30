@@ -137,6 +137,7 @@ async def record_failed_login_attempt(
     reason: str,
     request: Request,
     user_email: str | None = None,
+    revoke_partial_sessions_on_lock: bool = False,
 ) -> None:
     """Persist failed-attempt counters outside the 401 request transaction."""
     locked = False
@@ -155,6 +156,8 @@ async def record_failed_login_attempt(
                 )
                 user.lockout_reason = reason
                 locked = True
+                if revoke_partial_sessions_on_lock:
+                    await session_manager.revoke_user_partial_sessions(db, str(user.id))
             await db.commit()
     except Exception:
         logger.error("Failed to persist failed login attempt", exc_info=True)

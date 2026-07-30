@@ -117,9 +117,19 @@ async def verify_and_consume_login_second_factor(
                         User.last_totp_counter < counter,
                     ),
                 )
-                .values(last_totp_counter=counter)
+                .values(
+                    last_totp_counter=counter,
+                    failed_login_attempts=0,
+                    locked_until=None,
+                    lockout_reason=None,
+                )
                 .returning(User.id)
             )
             return result.scalar_one_or_none() is not None
 
-    return bool(backup_code and user.verify_backup_code(backup_code))
+    if backup_code and user.verify_backup_code(backup_code):
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        user.lockout_reason = None
+        return True
+    return False

@@ -14,6 +14,7 @@ from services.auth.schemas import AuthResponse, AuthSession, TotpVerifyRequest
 from services.auth.utils import (
     build_auth_user,
     record_auth_security_event,
+    record_failed_login_attempt,
     session_token_from_request,
     set_auth_cookies,
 )
@@ -60,6 +61,13 @@ async def verify_totp(
         token=payload.token,
         backup_code=payload.backup_code,
     ):
+        await record_failed_login_attempt(
+            user_id=user.id,
+            reason="invalid_totp",
+            request=request,
+            user_email=user.email,
+            revoke_partial_sessions_on_lock=True,
+        )
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_TOTP_FAILED,
             request=request,

@@ -174,6 +174,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Treat OAuth providers list as general traffic, not login attempts
         if ep.startswith("/api/v1/auth/oauth/providers"):
             return "requests_per_minute"
+        if ep.rstrip("/").endswith("/auth/totp/verify"):
+            return "login_attempts"
         # All other OAuth flows and callbacks are considered login attempts
         if (
             ("/auth/" in ep and "login" in ep)

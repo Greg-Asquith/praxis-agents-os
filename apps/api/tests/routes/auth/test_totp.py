@@ -3,14 +3,17 @@
 # ruff: noqa: S106 - inert test passwords exercise password verification
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pyotp
 import pytest
-from httpx2 import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import FastAPI
+from httpx2 import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth.sessions import session_manager
+from core.rate_limiting import rate_limiter
+from core.settings import settings
 from models.session import Session
 from models.user import User
 from tests.factories import build_user
@@ -41,8 +44,9 @@ async def _totp_user_with_partial_sessions(
     db: AsyncSession,
     *,
     count: int,
+    email: str = "totp-replay@example.com",
 ) -> tuple[User, pyotp.TOTP, list[str]]:
-    user = build_user(email="totp-replay@example.com")
+    user = build_user(email=email)
     secret = user.generate_totp_secret()
     user.enable_totp()
     db.add(user)
@@ -103,6 +107,86 @@ async def test_newer_totp_time_step_remains_usable(
 
     assert response.status_code == 200
     assert response.json()["session"]["twofa_verified"] is True
+
+
+async def test_password_login_preserves_failure_budget_until_totp_succeeds(
+    db_async_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    password = "correct horse battery staple"
+    user = build_user(email="totp-budget-reset@example.com", password=password)
+    secret = user.generate_totp_secret()
+    user.enable_totp()
+    user.failed_login_attempts = 2
+    db_session.add(user)
+    await db_session.commit()
+    user_id = user.id
+
+    login = await db_async_client.post(
+        "/api/v1/auth/login",
+        json={"email": user.email, "password": password},
+    )
+
+    assert login.status_code == 200
+    assert login.json()["requires_twofa"] is True
+    partial_token = login.cookies["session"]
+    db_async_client.cookies.clear()
+    db_session.expire_all()
+    password_verified_user = await db_session.get(User, user_id)
+    assert password_verified_user is not None
+    assert password_verified_user.failed_login_attempts == 2
+
+    verified = await db_async_client.post(
+        "/api/v1/auth/totp/verify",
+        headers=bearer_headers(partial_token),
+        json={"token": pyotp.TOTP(secret).now()},
+    )
+
+    assert verified.status_code == 200
+    db_session.expire_all()
+    fully_authenticated_user = await db_session.get(User, user_id)
+    assert fully_authenticated_user is not None
+    assert fully_authenticated_user.failed_login_attempts == 0
+
+
+async def test_totp_failure_budget_revokes_all_partial_sessions(
+    app: FastAPI,
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SECURITY_SUSPICIOUS_ACTIVITY_THRESHOLD", 3)
+    monkeypatch.setattr(rate_limiter, "enabled", False)
+    async with committed_db_session_factory() as setup_db:
+        user, totp, partial_tokens = await _totp_user_with_partial_sessions(
+            setup_db,
+            count=3,
+            email=f"totp-budget-{uuid4()}@example.com",
+        )
+        user_id = user.id
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        for partial_token in partial_tokens:
+            response = await client.post(
+                "/api/v1/auth/totp/verify",
+                headers=bearer_headers(partial_token),
+                json={"token": "000000"},
+            )
+            assert response.status_code == 401
+
+        blocked = await client.post(
+            "/api/v1/auth/totp/verify",
+            headers=bearer_headers(partial_tokens[-1]),
+            json={"token": totp.now()},
+        )
+
+        assert blocked.status_code == 401
+
+    async with committed_db_session_factory() as verify_db:
+        refreshed_user = await verify_db.get(User, user_id)
+        assert refreshed_user is not None
+        assert refreshed_user.failed_login_attempts == 3
+        assert refreshed_user.is_locked
 
 
 async def test_stale_session_cannot_start_or_complete_totp_enrollment(

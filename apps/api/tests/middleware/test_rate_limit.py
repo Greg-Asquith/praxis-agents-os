@@ -11,6 +11,12 @@ from core.rate_limiting import RateLimitResult
 from middleware.rate_limit import RateLimitMiddleware
 
 
+def test_totp_verification_uses_auth_critical_rate_limit() -> None:
+    middleware = RateLimitMiddleware(FastAPI())
+
+    assert middleware._get_limit_type("/api/v1/auth/totp/verify", "POST") == "login_attempts"
+
+
 @pytest.mark.asyncio
 async def test_auth_path_fails_closed_when_limiter_errors(
     monkeypatch: pytest.MonkeyPatch,

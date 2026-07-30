@@ -17,6 +17,21 @@ from utils.security import hash_token
 class PartialSessionMixin:
     """Create, inspect, and upgrade partial sessions."""
 
+    async def revoke_user_partial_sessions(self, db: AsyncSession, user_id: str) -> int:
+        """Revoke every live partial session for a user."""
+        result = await db.execute(
+            select(Session).where(
+                Session.user_id == user_id,
+                Session.twofa_verified.is_(False),
+                Session.deleted.is_(False),
+            )
+        )
+        sessions = list(result.scalars().all())
+        for session in sessions:
+            session.soft_delete(cascade=False)
+        await db.flush()
+        return len(sessions)
+
     async def create_partial_session(
         self,
         db: AsyncSession,

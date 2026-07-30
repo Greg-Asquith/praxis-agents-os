@@ -79,9 +79,12 @@ async def login_with_password(
         )
         raise AuthenticationError("Invalid email or password")
 
-    user.failed_login_attempts = 0
-    user.locked_until = None
-    user.lockout_reason = None
+    # A password is only the first factor for TOTP-enabled accounts. Preserve
+    # the account-bound failure budget until the second factor succeeds.
+    if not user.totp_enabled:
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        user.lockout_reason = None
     if user.default_workspace_id is None:
         await provision_personal_workspace(db, user)
 
