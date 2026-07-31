@@ -50,6 +50,7 @@ export function ApprovalDecisionBlock({
       icon={iconToken && iconToken !== "tool" ? <ToolUiIcon token={iconToken} /> : undefined}
       label={label}
       title={title}
+      toolName={activity.name}
       {...(prompt ? { prompt } : {})}
     >
       {children}

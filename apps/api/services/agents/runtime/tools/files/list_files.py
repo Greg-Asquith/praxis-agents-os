@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
     ToolFieldPresentation,
@@ -25,6 +26,7 @@ class RuntimeFileSummary(BaseModel):
     size_bytes: int
     processing_status: str
     updated_at: str
+    reference: FileReference
 
 
 class ListFilesOutput(BaseModel):
@@ -81,6 +83,11 @@ async def list_files(
                 size_bytes=file.size_bytes,
                 processing_status=file.processing_status,
                 updated_at=file.updated_at.isoformat(),
+                reference=FileReference(
+                    entity_id=file.id,
+                    label=file.name,
+                    description=f"{file.category.title()} · {file.size_bytes:,} bytes",
+                ),
             )
             for file in response.files
         ],

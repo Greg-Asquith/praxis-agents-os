@@ -22,11 +22,18 @@ from pydantic_ai import ModelRetry
 
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.discover_resources import discover_google_ads_resources
+from integrations.google_ads.entity_resolvers.campaign import (
+    _choice as campaign_choice,
+    resolve_google_ads_campaigns,
+    search_google_ads_campaigns,
+)
 from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
+from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.run_report import google_ads_run_report
+from integrations.google_ads.tools.update_campaign_status import google_ads_update_campaign_status
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.credentials.google_service_account import (
     GOOGLE_TOKEN_URL,
@@ -236,6 +243,7 @@ async def test_list_accounts_tool_scopes_each_result_to_its_context_entry(monkey
             connection_label="Agency",
             connection_status="active",
             write_allowed=True,
+            permissions_metadata={"login_customer_id": customer_id},
         )
         for customer_id in ("222", "333")
     )
@@ -302,6 +310,269 @@ async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None
     assert client.last_login_customer_id == "111"
     assert result["resource_names"] == ["customers/333/campaigns/10"]
     assert result["campaign_errors"][0]["campaign_id"] == "20"
+
+
+def test_campaign_reference_truncates_long_name() -> None:
+    choice = campaign_choice(
+        SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
+        {"id": "10", "name": "x" * 800, "status": "ENABLED"},
+    )
+
+    assert choice is not None
+    assert choice.label == "x" * 500
+    assert choice.value["label"] == "x" * 500
+
+
+async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkeypatch) -> None:
+    active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    second_active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="222",
+        display_name="Second ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    incompatible = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+        external_id="owner@example.com",
+        display_name="Mailbox",
+        connection_id=uuid4(),
+        connection_label="Gmail",
+        connection_status="active",
+        write_allowed=True,
+    )
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(active, second_active, incompatible)),
+    )
+    query = AsyncMock(
+        return_value=[
+            {"id": str(index), "name": f"Campaign {index}", "status": "ENABLED"}
+            for index in range(101)
+        ]
+    )
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.campaign._query", query)
+
+    page = await search_google_ads_campaigns(ctx, "Campaign", {}, 25, "100")
+
+    assert [choice.value["external_id"] for choice in page.choices] == ["100"]
+    assert page.next_cursor is None
+    assert [call.args[1] for call in query.await_args_list] == [active, second_active]
+    assert all("LIKE '%Campaign%'" in call.args[2] for call in query.await_args_list)
+    assert all("LIMIT 101" in call.args[2] for call in query.await_args_list)
+
+
+async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) -> None:
+    active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(active,)),
+    )
+    query = AsyncMock(return_value=[{"id": "10", "name": "Current campaign", "status": "ENABLED"}])
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.campaign._query", query)
+
+    choices = await resolve_google_ads_campaigns(
+        ctx,
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=active.integration_resource_id,
+                external_id="10",
+                label="Current campaign",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=active.integration_resource_id,
+                external_id="20",
+                label="Deleted campaign",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=uuid4(),
+                external_id="30",
+                label="Inactive account",
+            ),
+        ],
+        {},
+    )
+
+    assert [choice.value["external_id"] for choice in choices] == ["10"]
+    query.assert_awaited_once()
+    assert "campaign.id IN (10, 20)" in query.await_args.args[2]
+
+
+async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) -> None:
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=uuid4(),
+            provider_key="google_ads",
+            resource_type="google_ads_account",
+            external_id=customer_id,
+            display_name=f"Account {customer_id}",
+            connection_id=uuid4(),
+            connection_label="Agency",
+            connection_status="active",
+            write_allowed=True,
+            permissions_metadata={"login_customer_id": customer_id},
+        )
+        for customer_id in ("111", "222")
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    )
+    client = AsyncMock()
+
+    async def lookup(_path, **kwargs):
+        query = kwargs["json"]["query"]
+        campaign_id = "10" if "10" in query else "20"
+        return {"results": [{"campaign": {"id": campaign_id}}]}
+
+    client.post.side_effect = lookup
+    provider_update = AsyncMock(
+        side_effect=lambda _client, **kwargs: {
+            "resource_names": [
+                f"customers/{kwargs['customer_id']}/campaigns/{campaign_id}"
+                for campaign_id in kwargs["campaign_ids"]
+            ]
+        }
+    )
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.update_campaign_status",
+        provider_update,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_update_campaign_status(
+        ctx,
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=entries[0].integration_resource_id,
+                external_id="10",
+                label="First campaign",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=entries[1].integration_resource_id,
+                external_id="20",
+                label="Second campaign",
+            ),
+        ],
+        "PAUSED",
+    )
+
+    assert len(result["results"]) == 2
+    assert [item["status"] for item in result["results"]] == ["success", "success"], [
+        item["error_message"] for item in result["results"]
+    ]
+    assert [call.kwargs["customer_id"] for call in provider_update.await_args_list] == [
+        "111",
+        "222",
+    ]
+    assert [call.kwargs["campaign_ids"] for call in provider_update.await_args_list] == [
+        ["10"],
+        ["20"],
+    ]
+
+
+async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"campaign": {"id": "10", "name": "Still available"}}]}
+    provider_update = AsyncMock()
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.update_campaign_status",
+        provider_update,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_update_campaign_status(
+        ctx,
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="10",
+                label="Still available",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="20",
+                label="Deleted before approval",
+            ),
+        ],
+        "PAUSED",
+    )
+
+    assert result["results"][0]["status"] == "error"
+    assert result["results"][0]["error_code"] == "ModelRetry"
+    assert "campaign is unavailable" in result["results"][0]["error_message"]
+    provider_update.assert_not_awaited()
 
 
 async def test_service_account_assertion_claims_and_token_cache() -> None:

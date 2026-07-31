@@ -11,6 +11,10 @@ from pydantic_ai import ModelRetry, RunContext
 from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import (
+    KnowledgeDocumentReference,
+    internal_entity_id,
+)
 from services.agents.runtime.tools import (
     TOOL_EFFECT_READ,
     TOOL_POLICY_AUTO,
@@ -43,6 +47,7 @@ class KnowledgeChunkResult(BaseModel):
     """One model-visible knowledge search hit."""
 
     document_id: str
+    reference: KnowledgeDocumentReference
     document_title: str
     source_type: str
     is_private: bool
@@ -149,6 +154,13 @@ async def search_knowledge(
     hits = [
         {
             "document_id": str(hit.document_id),
+            "reference": KnowledgeDocumentReference(
+                entity_id=hit.document_id,
+                label=hit.title,
+                description=(
+                    f"{'Private' if hit.is_private else 'Workspace'} · {hit.source_type.title()}"
+                ),
+            ),
             "document_title": hit.title,
             "source_type": hit.source_type,
             "is_private": hit.is_private,
@@ -190,7 +202,13 @@ async def search_knowledge(
         completed_label="Read a Knowledge Document",
         failed_label="Couldn't Read the Knowledge Document",
         arg_fields=(
-            ToolFieldPresentation(key="document_id", label="Document"),
+            ToolFieldPresentation(
+                key="document_id",
+                label="Document",
+                format="entity",
+                editable=True,
+                entity_kind="knowledge_document",
+            ),
             ToolFieldPresentation(key="range", label="Character Range", secondary=True),
         ),
         result_fields=(ToolFieldPresentation(key="content", label="Content", format="markdown"),),
@@ -198,7 +216,10 @@ async def search_knowledge(
 )
 async def read_document(
     ctx: RunContext[RuntimeDeps],
-    document_id: Annotated[UUID, Field(description="Knowledge document id to read.")],
+    document_id: Annotated[
+        KnowledgeDocumentReference,
+        Field(description="Knowledge document reference to read."),
+    ],
     range: ReadRange | None = None,
 ) -> dict[str, Any]:
     """Read a bounded window from one visible workspace knowledge document."""
@@ -207,7 +228,7 @@ async def read_document(
             ctx.deps.db,
             workspace_id=ctx.deps.workspace.id,
             user_id=ctx.deps.user.id,
-            document_id=document_id,
+            document_id=internal_entity_id(document_id),
         )
     except NotFoundError as exc:
         raise ModelRetry(exc.message) from exc

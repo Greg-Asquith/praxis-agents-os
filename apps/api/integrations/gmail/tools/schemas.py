@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from integrations.gmail.references import GmailMessageReference
 from services.agents.runtime.untrusted import UntrustedNode
 
 type UntrustedText = str | UntrustedNode
@@ -14,6 +15,7 @@ type UntrustedText = str | UntrustedNode
 
 class GmailMessageSummary(BaseModel):
     message_id: str
+    reference: GmailMessageReference
     sender: UntrustedText
     to: UntrustedText
     subject: UntrustedText

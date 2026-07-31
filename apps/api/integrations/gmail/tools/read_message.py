@@ -5,8 +5,9 @@
 from typing import Annotated, Any
 
 from pydantic import Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 
+from integrations.gmail.references import GmailMessageReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -15,7 +16,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.targeted import run_context_targets
 
 from ..operations.read_message import read_message
 from .schemas import GmailReadOutput
@@ -31,16 +32,17 @@ from .utils import (
 
 async def gmail_read_message(
     ctx: RunContext[RuntimeDeps],
-    message_id: Annotated[str, Field(description="Gmail message id returned by search.")],
+    message_id: Annotated[
+        GmailMessageReference,
+        Field(description="Scoped Gmail message reference returned by search."),
+    ],
 ) -> dict[str, Any]:
-    normalized_id = message_id.strip()
-    if not normalized_id:
-        raise ModelRetry("gmail_read_message requires a non-empty message_id.")
+    async def operation(entry: ResolvedContextEntry, references) -> Any:
+        reference = references[0]
 
-    async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await gmail_client(ctx, entry)
-            return await read_message(client, message_id=normalized_id)
+            return await read_message(client, message_id=reference.external_id)
 
         return await run_audited_operation(
             ctx,
@@ -48,12 +50,13 @@ async def gmail_read_message(
             tool_name="gmail_read_message",
             operation="read_message",
             execute=execute,
-            external_ref=normalized_id,
+            external_ref=reference.external_id,
         )
 
-    results = await run_context_fan_out(
+    results = await run_context_targets(
         ctx.deps,
         binding=GMAIL_BINDING,
+        references=[message_id],
         operation=operation,
     )
     return {"results": [fan_out_dict(item) for item in results]}
@@ -76,7 +79,15 @@ DEFINITION = RuntimeToolDefinition(
         running_label="Reading Gmail Message",
         completed_label="Read Gmail Message",
         failed_label="Couldn't Read Gmail Message",
-        arg_fields=(ToolFieldPresentation(key="message_id", label="Message"),),
+        arg_fields=(
+            ToolFieldPresentation(
+                key="message_id",
+                label="Message",
+                format="entity",
+                editable=True,
+                entity_kind="gmail_message",
+            ),
+        ),
         result_fields=RESULTS_FIELD,
     ),
 )

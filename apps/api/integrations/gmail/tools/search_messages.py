@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from integrations.gmail.references import GmailMessageReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -14,6 +15,7 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.agents.runtime.untrusted import untrusted_content_text
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
 
@@ -41,7 +43,21 @@ async def gmail_search_messages(
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await gmail_client(ctx, entry)
-            return await search_messages(client, query=normalized_query, limit=limit)
+            result = await search_messages(client, query=normalized_query, limit=limit)
+            for message in result["messages"]:
+                subject = untrusted_content_text(message.get("subject")) or "(no subject)"
+                sender = untrusted_content_text(message.get("sender"))
+                date = untrusted_content_text(message.get("date"))
+                message["reference"] = GmailMessageReference(
+                    integration_resource_id=entry.integration_resource_id,
+                    external_id=message["message_id"],
+                    label=subject,
+                    description=" · ".join(value for value in (sender, date) if value),
+                    scope_label=entry.display_name,
+                    sender=sender or None,
+                    date=date or None,
+                )
+            return result
 
         return await run_audited_operation(
             ctx,

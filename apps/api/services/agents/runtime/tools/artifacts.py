@@ -3,12 +3,12 @@
 """Versioned artifact runtime tools."""
 
 from typing import Literal
-from uuid import UUID
 
 from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.general import AppValidationError, NotFoundError
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import ArtifactReference
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
@@ -85,6 +85,11 @@ async def create_artifact(
         version_id=str(revision.id),
         title=artifact.title,
         artifact_type=artifact.artifact_type,
+        reference=ArtifactReference(
+            entity_id=artifact.id,
+            label=artifact.title,
+            description=f"{artifact.artifact_type.title()} artifact",
+        ),
     ).model_dump()
 
 
@@ -109,7 +114,13 @@ async def create_artifact(
         approval_prompt="Review this new artifact version before it is saved.",
         approve_label="Update Artifact",
         arg_fields=(
-            ToolFieldPresentation(key="artifact_id", label="Artifact"),
+            ToolFieldPresentation(
+                key="artifact_id",
+                label="Artifact",
+                format="entity",
+                editable=True,
+                entity_kind="artifact",
+            ),
             ToolFieldPresentation(key="title", label="Title", editable=True),
             ToolFieldPresentation(
                 key="content",
@@ -122,7 +133,7 @@ async def create_artifact(
 )
 async def update_artifact(
     ctx: RunContext[RuntimeDeps],
-    artifact_id: UUID,
+    artifact_id: ArtifactReference,
     content: str,
     title: str | None = None,
 ) -> dict[str, str]:
@@ -130,7 +141,7 @@ async def update_artifact(
         artifact, revision = await update_artifact_service(
             ctx.deps.db,
             workspace=ctx.deps.workspace,
-            artifact_id=artifact_id,
+            artifact_id=artifact_id.entity_id,
             content=content,
             title=title,
             agent=ctx.deps.agent,
@@ -146,4 +157,9 @@ async def update_artifact(
         version_id=str(revision.id),
         title=artifact.title,
         artifact_type=artifact.artifact_type,
+        reference=ArtifactReference(
+            entity_id=artifact.id,
+            label=artifact.title,
+            description=f"{artifact.artifact_type.title()} artifact",
+        ),
     ).model_dump()

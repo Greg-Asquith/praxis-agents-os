@@ -39,6 +39,7 @@ export const googleAdsCampaignStatusPresenter: ToolRowPresenter = {
           label="Update Google Ads Campaign Status"
           prompt="This changes live campaign delivery."
           title="Review campaign status change"
+          toolName={activity.name}
         />
       )
     }
@@ -145,7 +146,10 @@ function campaignArgs(value: unknown): boolean {
     isRecord(value) &&
     Array.isArray(value["campaign_ids"]) &&
     value["campaign_ids"].length > 0 &&
-    value["campaign_ids"].every((item) => typeof item === "string") &&
+    value["campaign_ids"].every(
+      (item) =>
+        isRecord(item) && typeof item["external_id"] === "string" && item["external_id"].length > 0
+    ) &&
     (value["status"] === "ENABLED" || value["status"] === "PAUSED")
   )
 }

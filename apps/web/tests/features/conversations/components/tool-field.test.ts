@@ -3,8 +3,65 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
+import { resolveToolField } from "@/components/tool-ui/field-resolution"
 
 describe("ToolField", () => {
+  it("renders entity labels without exposing their stable identifiers", () => {
+    const reference = {
+      version: 1 as const,
+      entity_kind: "gmail_message",
+      integration_resource_id: "mailbox-1",
+      external_id: "opaque-message-id",
+      label: "Invoice from Acme",
+      description: "billing@acme.test",
+      scope_label: "Finance mailbox",
+    }
+    const field = resolveToolField(
+      { key: "message_id", label: "Message", format: "entity" },
+      reference
+    )
+    expect(field?.value).toBe("Invoice from Acme")
+    if (!field) {
+      throw new Error("Expected the entity reference to resolve")
+    }
+
+    const html = renderToStaticMarkup(createElement(ToolField, { field }))
+    expect(html).toContain("Invoice from Acme")
+    expect(html).not.toContain("opaque-message-id")
+    expect(html).not.toContain("mailbox-1")
+  })
+
+  it("renders entity lists as human-readable chips only", () => {
+    const field = resolveToolField(
+      { key: "campaign_ids", label: "Campaigns", format: "entity_list" },
+      [
+        {
+          version: 1,
+          entity_kind: "google_ads_campaign",
+          integration_resource_id: "account-1",
+          external_id: "111",
+          label: "Spring campaign",
+        },
+        {
+          version: 1,
+          entity_kind: "google_ads_campaign",
+          integration_resource_id: "account-2",
+          external_id: "222",
+          label: "Summer campaign",
+        },
+      ]
+    )
+    if (!field) {
+      throw new Error("Expected the entity list to resolve")
+    }
+    const html = renderToStaticMarkup(createElement(ToolField, { field }))
+
+    expect(html).toContain("Spring campaign")
+    expect(html).toContain("Summer campaign")
+    expect(html).not.toContain("account-1")
+    expect(html).not.toContain(">111<")
+  })
+
   it("renders safe URL fields as external links with compact labels", () => {
     const html = renderToStaticMarkup(
       createElement(ToolField, {

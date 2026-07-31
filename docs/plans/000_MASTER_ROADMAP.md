@@ -687,11 +687,12 @@ their JSON types through approval overrides.
 UI-036 completed the editability declaration sweep on 2026-07-31. Core and
 provider tools now declare safe steering fields and deliberate locks, custom
 approval presenters consume the server-owned field contract, and typed edits
-are covered through the effective-argument boundary. Opaque campaign IDs stay
-locked rather than becoming free-form input. UI-038 is the queued follow-up for
-human-readable, server-resolved, context-scoped entity selectors across
-campaigns, messages, records, and internal entities; UI-037 remains queued for
-governed edit-and-run-again behavior.
+are covered through the effective-argument boundary. UI-038 completed on
+2026-07-31: opaque internal and provider targets now use human-readable,
+server-resolved entity selectors; provider references carry active-context
+scope and execute only against their selected mailbox, customer, or base;
+approval overrides are enforced and reauthorized server-side. UI-037 remains
+queued for governed edit-and-run-again behavior.
 Completed visual-refinement plans live under `docs/plans/complete/` with the
 `frontend-ui-` filename prefix.
 

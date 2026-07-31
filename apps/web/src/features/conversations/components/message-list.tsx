@@ -5,6 +5,7 @@ import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
+import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { AssistantMessageShell } from "@/features/conversations/components/message-shell"
 import {
   AssistantLiveActivityRow,
@@ -200,66 +201,72 @@ export function MessageList({
   }
 
   return (
-    <ApprovalDecisionContext value={inlineApprovals.resolveApprovalControls}>
-      <div className="flex min-w-0 flex-col gap-7">
-        {renderItems.map((item) => (
-          <TranscriptRenderItem
-            key={item.id}
-            assistantAgentId={assistantAgentId}
-            assistantLabel={assistantLabel}
-            item={item}
-          />
-        ))}
+    <ToolConversationContext value={conversationId}>
+      <ApprovalDecisionContext value={inlineApprovals.resolveApprovalControls}>
+        <div className="flex min-w-0 flex-col gap-7">
+          {renderItems.map((item) => (
+            <TranscriptRenderItem
+              key={item.id}
+              assistantAgentId={assistantAgentId}
+              assistantLabel={assistantLabel}
+              item={item}
+            />
+          ))}
 
-        {visiblePendingUserMessages.map((message) => (
-          <MessageRow
-            key={message.clientMessageId}
-            assistantAgentId={assistantAgentId}
-            pendingMessage={message}
-          />
-        ))}
+          {visiblePendingUserMessages.map((message) => (
+            <MessageRow
+              key={message.clientMessageId}
+              assistantAgentId={assistantAgentId}
+              pendingMessage={message}
+            />
+          ))}
 
-        {showLiveActivity && (
-          <AssistantLiveActivityRow
-            assistantAgentId={assistantAgentId}
-            assistantLabel={assistantLabel}
-            isStreaming={isStreaming}
-            messages={streamMessages}
-            timeline={liveTimeline}
-          />
-        )}
+          {showLiveActivity && (
+            <AssistantLiveActivityRow
+              assistantAgentId={assistantAgentId}
+              assistantLabel={assistantLabel}
+              isStreaming={isStreaming}
+              messages={streamMessages}
+              timeline={liveTimeline}
+            />
+          )}
 
-        {orphanApprovalActivities.length > 0 && (
-          <AssistantMessageShell agentId={assistantAgentId} createdAt={null} label={assistantLabel}>
-            {orphanApprovalActivities.map((activity) => (
-              <ToolCallRow activity={activity} key={activity.id} />
-            ))}
-          </AssistantMessageShell>
-        )}
+          {orphanApprovalActivities.length > 0 && (
+            <AssistantMessageShell
+              agentId={assistantAgentId}
+              createdAt={null}
+              label={assistantLabel}
+            >
+              {orphanApprovalActivities.map((activity) => (
+                <ToolCallRow activity={activity} key={activity.id} />
+              ))}
+            </AssistantMessageShell>
+          )}
 
-        {isAwaitingApproval && approvalError && (
-          <div className="pl-10">
-            <Alert variant="destructive">
-              <AlertTitle>Approval state unavailable</AlertTitle>
-              <AlertDescription>{approvalError}</AlertDescription>
-            </Alert>
-          </div>
-        )}
+          {isAwaitingApproval && approvalError && (
+            <div className="pl-10">
+              <Alert variant="destructive">
+                <AlertTitle>Approval state unavailable</AlertTitle>
+                <AlertDescription>{approvalError}</AlertDescription>
+              </Alert>
+            </div>
+          )}
 
-        {isAwaitingApproval && isApprovalLoading && approvals.length === 0 && (
-          <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
-        )}
+          {isAwaitingApproval && isApprovalLoading && approvals.length === 0 && (
+            <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
+          )}
 
-        {streamError && (
-          <div className="w-full px-1 py-2">
-            <Alert variant="destructive">
-              <AlertTitle>Stream failed</AlertTitle>
-              <AlertDescription>{streamError}</AlertDescription>
-            </Alert>
-          </div>
-        )}
-      </div>
-    </ApprovalDecisionContext>
+          {streamError && (
+            <div className="w-full px-1 py-2">
+              <Alert variant="destructive">
+                <AlertTitle>Stream failed</AlertTitle>
+                <AlertDescription>{streamError}</AlertDescription>
+              </Alert>
+            </div>
+          )}
+        </div>
+      </ApprovalDecisionContext>
+    </ToolConversationContext>
   )
 }
 

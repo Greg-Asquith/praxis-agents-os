@@ -16,6 +16,7 @@ from core.exceptions.general import AppValidationError, ConflictError, NotFoundE
 from core.settings import settings
 from models.agent_memories import AgentMemory
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import MemoryReference, internal_entity_id
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
     TOOL_EFFECT_WRITE,
@@ -234,6 +235,11 @@ async def search_memory(
     hits = [
         {
             "id": str(hit.memory.id),
+            "reference": MemoryReference(
+                entity_id=hit.memory.id,
+                label=hit.memory.title,
+                description=f"{hit.memory.memory_type.title()} · {hit.memory.scope.title()} memory",
+            ).model_dump(mode="json"),
             "scope": hit.memory.scope,
             "kind": hit.memory.kind,
             "memory_type": hit.memory.memory_type,
@@ -276,7 +282,13 @@ async def search_memory(
         completed_label="Updated Memory",
         failed_label="Couldn't Update Memory",
         arg_fields=(
-            ToolFieldPresentation(key="memory_id", label="Memory"),
+            ToolFieldPresentation(
+                key="memory_id",
+                label="Memory",
+                format="entity",
+                editable=True,
+                entity_kind="memory",
+            ),
             ToolFieldPresentation(key="title", label="Title", editable=True),
             ToolFieldPresentation(
                 key="content",
@@ -302,7 +314,7 @@ async def search_memory(
 )
 async def update_memory(
     ctx: RunContext[RuntimeDeps],
-    memory_id: str,
+    memory_id: MemoryReference,
     title: str | None = None,
     content: str | None = None,
     importance: Annotated[int | None, Field(ge=1, le=5)] = None,
@@ -310,7 +322,7 @@ async def update_memory(
 ) -> dict[str, object]:
     """Update a memory; core targets conditionally require approval."""
     try:
-        parsed_id = UUID(memory_id)
+        parsed_id = internal_entity_id(memory_id)
         target = await get_memory(
             ctx.deps.db,
             workspace=ctx.deps.workspace,
@@ -332,8 +344,6 @@ async def update_memory(
             expires_in_days=expires_in_days,
             provenance=_provenance(ctx),
         )
-    except ValueError as exc:
-        raise ModelRetry("memory_id must be a valid memory id.") from exc
     except (AppValidationError, ConflictError, NotFoundError) as exc:
         raise _service_retry(exc) from exc
     return {
@@ -362,7 +372,12 @@ async def update_memory(
         completed_label="Forgot Memory",
         failed_label="Couldn't Forget Memory",
         arg_fields=(
-            ToolFieldPresentation(key="memory_id", label="Memory"),
+            ToolFieldPresentation(
+                key="memory_id",
+                label="Memory",
+                format="entity",
+                entity_kind="memory",
+            ),
             ToolFieldPresentation(
                 key="reason",
                 label="Reason",
@@ -373,7 +388,7 @@ async def update_memory(
 )
 async def forget_memory(
     ctx: RunContext[RuntimeDeps],
-    memory_id: str,
+    memory_id: MemoryReference,
     reason: str | None = None,
 ) -> dict[str, object]:
     """Archive one visible memory."""
@@ -383,11 +398,9 @@ async def forget_memory(
             workspace=ctx.deps.workspace,
             agent=ctx.deps.agent,
             user=ctx.deps.user,
-            memory_id=UUID(memory_id),
+            memory_id=internal_entity_id(memory_id),
             reason=reason,
         )
-    except ValueError as exc:
-        raise ModelRetry("memory_id must be a valid memory id.") from exc
     except (AppValidationError, ConflictError, NotFoundError) as exc:
         raise _service_retry(exc) from exc
     return {

@@ -6,6 +6,7 @@ from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin
 
 from .discover_resources import discover_resources
+from .entity_resolvers import AIRTABLE_RECORD_RESOLVER
 from .events import EVENT_DEFINITION
 from .tools import TOOL_DEFINITIONS
 
@@ -27,5 +28,6 @@ PROVIDER = IntegrationProviderPlugin(
     ),
     discover_resources=discover_resources,
     tool_definitions=TOOL_DEFINITIONS,
+    entity_resolvers=(AIRTABLE_RECORD_RESOLVER,),
     event_definition=EVENT_DEFINITION,
 )

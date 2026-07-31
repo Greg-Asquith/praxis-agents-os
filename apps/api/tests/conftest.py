@@ -22,7 +22,11 @@ from tests.support.settings import configure_test_environment
 configure_test_environment()
 
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_POLICY_APPROVAL
+from services.agents.runtime.tools.contract import (
+    TOOL_POLICY_APPROVAL,
+    ToolFieldPresentation,
+    ToolPresentation,
+)
 from services.agents.runtime.tools.registry import runtime_tool
 
 pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
@@ -35,6 +39,12 @@ pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
     timeout=5,
     max_retries=1,
     configurable=False,
+    presentation=ToolPresentation(
+        arg_fields=(
+            ToolFieldPresentation(key="a", label="A", format="number", editable=True),
+            ToolFieldPresentation(key="b", label="B", format="number", editable=True),
+        )
+    ),
 )
 def test_add_numbers(a: int, b: int) -> int:
     """Test-only approval-capable arithmetic fixture."""
@@ -48,6 +58,11 @@ def test_add_numbers(a: int, b: int) -> int:
     takes_ctx=True,
     timeout=5,
     configurable=False,
+    presentation=ToolPresentation(
+        arg_fields=(
+            ToolFieldPresentation(key="value", label="Value", format="number", editable=True),
+        )
+    ),
 )
 def test_conditional_integer(ctx: RunContext[RuntimeDeps], value: int) -> int:
     """Test-only conditional approval fixture."""

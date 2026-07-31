@@ -32,6 +32,24 @@ export type ToolUiField = {
   placeholder: string
   options: string[]
   secondary: boolean
+  entity_kind?: string | null
+  depends_on?: string[]
+}
+
+export type EntityReferenceValue = Record<string, unknown>
+
+export type EntityChoice = {
+  value: EntityReferenceValue
+  label: string
+  description?: string | null
+  scope_label?: string | null
+  icon?: string | null
+}
+
+export type EntityReferenceLookupResponse = {
+  entity_kind: string
+  choices: EntityChoice[]
+  next_cursor?: string | null
 }
 
 export type ToolUi = {

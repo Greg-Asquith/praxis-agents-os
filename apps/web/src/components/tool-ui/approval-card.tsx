@@ -42,6 +42,7 @@ export function ToolApprovalDecisionCard({
   label,
   prompt,
   title = label,
+  toolName,
 }: {
   activityId: string
   approveLabel?: string
@@ -54,11 +55,24 @@ export function ToolApprovalDecisionCard({
   label: string
   prompt?: string
   title?: string
+  toolName: string
 }) {
   const [isDeclining, setIsDeclining] = useState(false)
   const [denialMessage, setDenialMessage] = useState("")
+  const [invalidEntityFields, setInvalidEntityFields] = useState<Set<string>>(() => new Set())
   const disabled = controls.disabled ?? false
   const isDecided = controls.decision.decision !== "pending"
+  const handleEntityValidityChange = useCallback((key: string, valid: boolean) => {
+    setInvalidEntityFields((current) => {
+      const next = new Set(current)
+      if (valid) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
 
   return (
     <ToolApprovalCard
@@ -67,7 +81,7 @@ export function ToolApprovalDecisionCard({
         <ApprovalFooter
           approveLabel={approveLabel}
           controls={controls}
-          disabled={disabled}
+          disabled={disabled || invalidEntityFields.size > 0}
           isDeclining={isDeclining}
           label={label}
           onApprove={() => {
@@ -114,6 +128,8 @@ export function ToolApprovalDecisionCard({
           onEditsChange={(edits) => {
             controls.onDecisionChange({ decision: "pending", edits, message: "" })
           }}
+          onEntityValidityChange={handleEntityValidityChange}
+          toolName={toolName}
         />
       )}
       {controls.decision.decision === "denied" && controls.decision.message ? (

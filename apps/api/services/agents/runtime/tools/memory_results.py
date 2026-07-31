@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from services.agents.runtime.entity_references.domain import MemoryReference
+
 _TRUNCATION_MARKER = "\n\n[Memory content truncated; search again with narrower terms.]"
 _NEXT_STEP = "Search again with narrower terms when you need omitted or shortened matches."
 
@@ -15,6 +17,7 @@ class MemorySearchItem(BaseModel):
     """One bounded memory-search hit."""
 
     id: str
+    reference: MemoryReference
     scope: str
     kind: str
     memory_type: str

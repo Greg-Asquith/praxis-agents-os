@@ -33,24 +33,39 @@ async def airtable_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
 ) -> AirtableClient:
+    return await airtable_client_for_principal(
+        ctx.deps.db,
+        actor=ctx.deps.user,
+        workspace=ctx.deps.workspace,
+        entry=entry,
+    )
+
+
+async def airtable_client_for_principal(
+    db,
+    *,
+    actor,
+    workspace,
+    entry: ResolvedContextEntry,
+) -> AirtableClient:
     async def access_token() -> str:
         credential = await get_usable_connection_credential(
-            ctx.deps.db,
+            db,
             connection_id=entry.connection_id,
-            actor=ctx.deps.user,
-            workspace=ctx.deps.workspace,
+            actor=actor,
+            workspace=workspace,
         )
         if credential.auth_mode != "api_key":
             raise ModelRetry("The Airtable connection needs to be reconnected.")
         token = await resolve_secret(
-            ctx.deps.db,
+            db,
             SecretReference(
                 provider=credential.secret_provider or "",
                 name=credential.secret_name or "",
                 version=credential.secret_version or "",
             ),
-            workspace_id=ctx.deps.workspace.id,
-            actor_id=ctx.deps.user.id,
+            workspace_id=workspace.id,
+            actor_id=actor.id,
         )
         if not token.strip():
             raise ModelRetry("The Airtable connection needs to be reconnected.")

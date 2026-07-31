@@ -64,6 +64,7 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
             label={config.completedHeading}
             prompt={`The agent wants to ${config.action} this record in the selected Airtable bases.`}
             title={`Review Airtable record ${config.action}`}
+            toolName={activity.name}
           >
             <div className="border-border/70 overflow-hidden rounded-lg border">
               <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Fields to write</p>

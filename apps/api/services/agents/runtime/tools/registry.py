@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {}
 
+from services.agents.runtime.entity_references.internal import register_internal_entity_resolvers
+
+register_internal_entity_resolvers()
+
 
 def register_tool_definition(definition: RuntimeToolDefinition) -> None:
     """Register a provider-contributed definition in the singular catalog."""

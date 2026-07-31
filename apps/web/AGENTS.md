@@ -67,6 +67,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- Opaque tool targets render through the shared entity field system in
+  `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
+  use the shared Base UI combobox for editable targets, preserve structured
+  reference values, and fail closed as “Target unavailable” rather than
+  exposing a raw ID.
 - The conversation composer exposes active integration context for both new
   and existing conversations, including for read-only members.
   New-conversation selection stays local until it is submitted atomically with

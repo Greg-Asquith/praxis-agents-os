@@ -5,16 +5,27 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx2
+import pytest
+from pydantic_ai import ModelRetry
 
+from core.exceptions.integration import IntegrationNotFoundError
 from integrations.airtable.client import AirtableClient
 from integrations.airtable.discover_resources import discover_resources
+from integrations.airtable.entity_resolvers.record import (
+    resolve_airtable_records,
+    search_airtable_records,
+)
 from integrations.airtable.operations.create_record import create_record
 from integrations.airtable.operations.get_record import get_record
 from integrations.airtable.operations.list_records import list_records
 from integrations.airtable.operations.update_record import update_record
+from integrations.airtable.references import AirtableRecordReference
+from integrations.airtable.tools.get_record import airtable_get_record
+from integrations.airtable.tools.list_records import airtable_list_records
+from integrations.airtable.tools.update_record import airtable_update_record
 from integrations.airtable.tools.utils import airtable_client
 from services.integrations import http as integration_http
-from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.providers_view import list_providers
 
@@ -31,6 +42,21 @@ def test_manifest_declares_and_exposes_discovery_and_pat_scope_help(monkeypatch)
     monkeypatch.setitem(PROVIDER_MANIFESTS, "airtable", manifest)
     provider = next(item for item in list_providers() if item.provider_key == "airtable")
     assert provider.connect_help == manifest.connect_help
+
+
+def test_record_reference_identity_is_provider_owned_and_ignores_display_hints() -> None:
+    resource_id = uuid4()
+    original = AirtableRecordReference(
+        integration_resource_id=resource_id,
+        external_id="rec-one",
+        table="Contacts",
+        label="Original label",
+    )
+    renamed = original.model_copy(update={"label": "Renamed contact"})
+    other_table = original.model_copy(update={"table": "Orders"})
+
+    assert original.identity() == renamed.identity()
+    assert original.identity() != other_table.identity()
 
 
 async def test_discovery_paginates_and_maps_write_permissions(monkeypatch) -> None:
@@ -162,6 +188,329 @@ async def test_create_and_update_return_record_ids() -> None:
     assert methods == ["POST", "PATCH"]
     assert created == {"record_id": "rec-created"}
     assert updated == {"record_id": "rec-updated"}
+
+
+async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypatch) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="airtable",
+        resource_type="airtable_base",
+        external_id="app-one",
+        display_name="Base",
+        connection_id=uuid4(),
+        connection_label="Airtable",
+        connection_status="active",
+        write_allowed=True,
+    )
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(entry,)),
+    )
+    foreign_resource_id = uuid4()
+
+    async def record(_client, *, record_id, **_kwargs):
+        if record_id == "rec-deleted":
+            raise IntegrationNotFoundError("Record not found", provider_key="airtable")
+        return {"record_id": record_id, "fields": {"Name": record_id}}
+
+    monkeypatch.setattr(
+        "integrations.airtable.entity_resolvers.record.airtable_client_for_principal",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr("integrations.airtable.entity_resolvers.record.get_record", record)
+
+    choices = await resolve_airtable_records(
+        ctx,
+        [
+            AirtableRecordReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id=record_id,
+                table="Contacts",
+                label=record_id,
+                scope_label=entry.display_name,
+            )
+            for record_id in ("rec-first", "rec-deleted", "rec-last")
+        ]
+        + [
+            AirtableRecordReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="rec-wrong-table",
+                table="Orders",
+                label="Wrong table",
+            ),
+            AirtableRecordReference(
+                integration_resource_id=foreign_resource_id,
+                external_id="rec-foreign-base",
+                table="Contacts",
+                label="Foreign base",
+            ),
+        ],
+        {"table": "Contacts"},
+    )
+
+    assert [choice.value["external_id"] for choice in choices] == [
+        "rec-first",
+        "rec-last",
+    ]
+
+
+async def test_record_search_bounds_pagination_and_filters_active_scope(monkeypatch) -> None:
+    active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="airtable",
+        resource_type="airtable_base",
+        external_id="app-active",
+        display_name="Active base",
+        connection_id=uuid4(),
+        connection_label="Airtable",
+        connection_status="active",
+        write_allowed=True,
+    )
+    second_active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="airtable",
+        resource_type="airtable_base",
+        external_id="app-second",
+        display_name="Second base",
+        connection_id=uuid4(),
+        connection_label="Airtable",
+        connection_status="active",
+        write_allowed=True,
+    )
+    incompatible = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+        external_id="owner@example.com",
+        display_name="Mailbox",
+        connection_id=uuid4(),
+        connection_label="Gmail",
+        connection_status="active",
+        write_allowed=True,
+    )
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(active, second_active, incompatible)),
+    )
+    client_factory = AsyncMock(return_value=object())
+    provider_list = AsyncMock(
+        return_value={
+            "records": [
+                {"record_id": f"rec-{index}", "fields": {"Name": f"Match {index}"}}
+                for index in range(100)
+            ]
+        }
+    )
+    monkeypatch.setattr(
+        "integrations.airtable.entity_resolvers.record.airtable_client_for_principal",
+        client_factory,
+    )
+    monkeypatch.setattr(
+        "integrations.airtable.entity_resolvers.record.list_records",
+        provider_list,
+    )
+
+    page = await search_airtable_records(ctx, "match", {"table": "Contacts"}, 20, "95")
+
+    assert len(page.choices) == 5
+    assert page.next_cursor is None
+    assert [call.kwargs["entry"] for call in client_factory.await_args_list] == [
+        active,
+        second_active,
+    ]
+    assert [call.kwargs["base_id"] for call in provider_list.await_args_list] == [
+        "app-active",
+        "app-second",
+    ]
+    assert all(call.kwargs["table"] == "Contacts" for call in provider_list.await_args_list)
+    assert all(call.kwargs["max_records"] == 100 for call in provider_list.await_args_list)
+
+
+async def test_list_records_attaches_each_base_scope_to_returned_references(monkeypatch) -> None:
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=uuid4(),
+            provider_key="airtable",
+            resource_type="airtable_base",
+            external_id=base_id,
+            display_name=f"Base {base_id}",
+            connection_id=uuid4(),
+            connection_label="Airtable",
+            connection_status="active",
+            write_allowed=True,
+        )
+        for base_id in ("app-one", "app-two")
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    )
+
+    async def provider_list(_client, *, base_id, **_kwargs):
+        return {"records": [{"record_id": f"rec-{base_id}", "fields": {"Name": base_id}}]}
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.airtable.tools.list_records.airtable_client",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr("integrations.airtable.tools.list_records.list_records", provider_list)
+    monkeypatch.setattr(
+        "integrations.airtable.tools.list_records.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await airtable_list_records(ctx, "Contacts")
+
+    references = [item["data"]["records"][0]["reference"] for item in result["results"]]
+    assert [reference.integration_resource_id for reference in references] == [
+        entry.integration_resource_id for entry in entries
+    ]
+    assert [reference.external_id for reference in references] == [
+        "rec-app-one",
+        "rec-app-two",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tool", "module", "operation_name"),
+    [
+        (airtable_get_record, "get_record", "get_record"),
+        (airtable_update_record, "update_record", "update_record"),
+    ],
+)
+async def test_record_tools_target_only_the_referenced_base(
+    monkeypatch,
+    tool,
+    module,
+    operation_name,
+) -> None:
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=uuid4(),
+            provider_key="airtable",
+            resource_type="airtable_base",
+            external_id=base_id,
+            display_name=f"Base {base_id}",
+            connection_id=uuid4(),
+            connection_label="Airtable",
+            connection_status="active",
+            write_allowed=True,
+        )
+        for base_id in ("app-one", "app-two")
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    )
+    provider_operation = AsyncMock(return_value={"record_id": "rec-selected"})
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    module_path = f"integrations.airtable.tools.{module}"
+    monkeypatch.setattr(f"{module_path}.airtable_client", AsyncMock(return_value=object()))
+    monkeypatch.setattr(f"{module_path}.{operation_name}", provider_operation)
+    monkeypatch.setattr(f"{module_path}.run_audited_operation", passthrough_audit)
+    reference = AirtableRecordReference(
+        integration_resource_id=entries[1].integration_resource_id,
+        external_id="rec-selected",
+        table="Contacts",
+        label="Selected",
+    )
+
+    if tool is airtable_update_record:
+        result = await tool(ctx, "Contacts", reference, {"Status": "Done"})
+    else:
+        result = await tool(ctx, "Contacts", reference)
+
+    assert len(result["results"]) == 1
+    assert result["results"][0]["integration_resource_id"] == entries[1].integration_resource_id
+    assert provider_operation.await_args.kwargs["base_id"] == "app-two"
+    assert provider_operation.await_args.kwargs["record_id"] == "rec-selected"
+
+
+async def test_update_record_rejects_table_reference_mismatch_before_dispatch(monkeypatch) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="airtable",
+        resource_type="airtable_base",
+        external_id="app-one",
+        display_name="Base",
+        connection_id=uuid4(),
+        connection_label="Airtable",
+        connection_status="active",
+        write_allowed=True,
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_update = AsyncMock()
+    monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
+
+    with pytest.raises(ModelRetry, match="table changed"):
+        await airtable_update_record(
+            ctx,
+            "Contacts",
+            AirtableRecordReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="rec-one",
+                table="Orders",
+                label="Order",
+            ),
+            {"Status": "Done"},
+        )
+
+    provider_update.assert_not_awaited()
+
+
+async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="airtable",
+        resource_type="airtable_base",
+        external_id="app-one",
+        display_name="Base",
+        connection_id=uuid4(),
+        connection_label="Airtable",
+        connection_status="active",
+        write_allowed=True,
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_update = AsyncMock(return_value={"record_id": "rec-one"})
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.airtable.tools.update_record.airtable_client",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
+    monkeypatch.setattr(
+        "integrations.airtable.tools.update_record.run_audited_operation",
+        passthrough_audit,
+    )
+
+    await airtable_update_record(
+        ctx,
+        "  contacts  ",
+        AirtableRecordReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="rec-one",
+            table="Contacts",
+            label="Contact",
+        ),
+        {"Status": "Done"},
+    )
+
+    assert provider_update.await_args.kwargs["table"] == "Contacts"
 
 
 async def test_airtable_rate_limit_honors_retry_after(monkeypatch) -> None:

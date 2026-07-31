@@ -439,9 +439,11 @@ with visual QA still pending. UI-035 completed typed approval editing on
 approval overrides. UI-036 completed the catalog declaration sweep on
 2026-07-31: safe steering fields are declared, deliberate locks are recorded,
 and Gmail, Google Ads, Airtable, and delegation approval presenters consume the
-server-owned contract. Opaque campaign IDs remain locked. UI-038 now records
-the required human-readable, scoped entity-reference and selector capability;
-UI-037 remains queued for governed edit-and-run-again behavior.
+server-owned contract. UI-038 completed on 2026-07-31 with authorized internal
+and provider entity resolvers, human-readable single and multi-select fields,
+scoped Gmail, Google Ads, and Airtable references, targeted provider execution,
+and server-enforced approval overrides. UI-037 remains queued for governed
+edit-and-run-again behavior.
 
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding

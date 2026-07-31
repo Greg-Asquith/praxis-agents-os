@@ -14,6 +14,8 @@ export type ToolFieldFormat =
   | "list"
   | "number"
   | "keyvalue"
+  | "entity"
+  | "entity_list"
 
 export type ToolFieldDefinition = {
   format: ToolFieldFormat
@@ -45,7 +47,12 @@ export function resolveToolField(
   }
 
   const baseField = { key: field.key, label: field.label, value: resolved, format: field.format }
-  const items = field.format === "list" ? toolFieldListItems(value) : null
+  const items =
+    field.format === "list"
+      ? toolFieldListItems(value)
+      : field.format === "entity_list"
+        ? entityLabels(value)
+        : null
   if (items !== null) {
     return { ...baseField, items }
   }
@@ -106,7 +113,29 @@ function toolFieldDisplayValue(value: unknown, format: ToolFieldFormat): string 
     const entries = toolFieldKeyValueEntries(value)
     return entries && entries.length > 0 ? `${String(entries.length)} fields` : null
   }
+  if (format === "entity") {
+    return entityLabel(value)
+  }
+  if (format === "entity_list") {
+    const items = entityLabels(value)
+    return items && items.length > 0 ? items.join(", ") : null
+  }
   return scalarToolFieldDisplayValue(value)
+}
+
+function entityLabel(value: unknown): string | null {
+  if (!isPlainRecord(value) || typeof value["label"] !== "string") {
+    return null
+  }
+  return value["label"].trim() || null
+}
+
+function entityLabels(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const labels = value.map(entityLabel)
+  return labels.every((label): label is string => label !== null) ? labels : null
 }
 
 export function safeHttpUrl(value: unknown): string | null {

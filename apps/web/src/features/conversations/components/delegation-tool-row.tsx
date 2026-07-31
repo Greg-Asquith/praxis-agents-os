@@ -124,6 +124,7 @@ export function DelegationToolRow({
         title={
           isDelegatedToolApproval ? `${targetLabel}: ${toolLabel}` : `Delegate to ${targetLabel}`
         }
+        toolName={activity.name}
       />
     )
   }

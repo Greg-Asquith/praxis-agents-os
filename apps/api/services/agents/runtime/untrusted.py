@@ -10,6 +10,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 
+from services.agents.runtime.entity_references.domain import EntityReference
+
 UNTRUSTED_CONTENT_START = "<<<PRAXIS_UNTRUSTED_CONTENT>>>"
 UNTRUSTED_CONTENT_END = "<<<END_PRAXIS_UNTRUSTED_CONTENT>>>"
 _NEUTRALIZED_START = "<<<PRAXIS_UNTRUSTED-CONTENT>>>"
@@ -54,11 +56,28 @@ type UntrustedJsonValue = (
     | float
     | bool
     | UntrustedNode
+    | EntityReference
     | list["UntrustedJsonValue"]
     | dict[str, "UntrustedJsonValue"]
     | None
 )
 type NodeReplacement = Callable[[UntrustedNode], Any]
+
+
+def is_untrusted_content(value: Any) -> bool:
+    """Return whether a value is a runtime or serialized untrusted-content value."""
+    return isinstance(value, (UntrustedContent, UntrustedNode)) or (
+        isinstance(value, Mapping) and value.get("node") == "praxis_untrusted"
+    )
+
+
+def untrusted_content_text(value: Any) -> str:
+    """Return stripped text, unwrapping runtime or serialized untrusted content."""
+    if isinstance(value, (UntrustedContent, UntrustedNode)):
+        return value.content.strip()
+    if isinstance(value, Mapping) and value.get("node") == "praxis_untrusted":
+        return str(value.get("content", "")).strip()
+    return str(value or "").strip()
 
 
 def serialize_untrusted_content(value: Any) -> Any:

@@ -6,6 +6,7 @@ from models.agent import Agent
 from services.agents.models import resolve_agent_model
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.delegation.schemas import DelegateAgentSummary
+from services.agents.runtime.entity_references.domain import AgentReference
 
 
 def summarize_delegate_agent(agent: Agent) -> DelegateAgentSummary:
@@ -21,4 +22,9 @@ def summarize_delegate_agent(agent: Agent) -> DelegateAgentSummary:
         model=model,
         tool_count=len(agent.tool_names or []),
         skill_count=len(agent.skill_ids or []),
+        reference=AgentReference(
+            entity_id=agent.id,
+            label=agent.name,
+            description=(agent.description or "Delegate agent")[:1000],
+        ),
     )

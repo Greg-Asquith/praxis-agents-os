@@ -10,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
 from core.settings import settings
+from models.agent import Agent
+from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
 from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.factories.files import build_file
 from tests.support.auth import bearer_headers
 
 pytestmark = pytest.mark.asyncio
@@ -225,11 +228,12 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {
         "name",
         "file_id",
-        "expected_current_revision_id",
         "content",
     }
     write_file_fields = {field["key"]: field for field in write_file_entry["ui"]["arg_fields"]}
     assert write_file_fields["name"]["editable"] is True
+    assert write_file_fields["file_id"]["format"] == "entity"
+    assert write_file_fields["file_id"]["secondary"] is True
     assert write_file_fields["content"]["editable"] is False
     assert [field["key"] for field in write_file_entry["ui"]["result_fields"]] == [
         "name",
@@ -246,6 +250,8 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
             "placeholder": "What should the agent search for?",
             "options": [],
             "secondary": False,
+            "entity_kind": None,
+            "depends_on": [],
         },
         {
             "key": "model_provider",
@@ -255,6 +261,8 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
             "placeholder": "",
             "options": ["anthropic", "google", "openai"],
             "secondary": False,
+            "entity_kind": None,
+            "depends_on": [],
         },
     ]
     assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])
@@ -263,7 +271,8 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
     assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
     delegate_fields = {field["key"]: field for field in delegate_entry["ui"]["arg_fields"]}
-    assert delegate_fields["agent_id"]["editable"] is False
+    assert delegate_fields["agent_id"]["editable"] is True
+    assert delegate_fields["agent_id"]["format"] == "entity"
     assert delegate_fields["task"]["editable"] is True
     assert delegate_fields["task"]["format"] == "multiline"
     save_memory_entry = next(tool for tool in body["tools"] if tool["name"] == "save_memory")
@@ -281,6 +290,108 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
         "outcome",
     ]
     assert save_memory_fields["expires_in_days"]["secondary"] is True
+
+
+async def test_entity_reference_route_searches_and_hydrates_only_workspace_files(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    headers = {**headers, "X-Workspace": workspace.slug}
+    agent = Agent(
+        name="File agent",
+        slug=f"file-agent-{uuid4().hex[:8]}",
+        instructions="Work with files.",
+        workspace_id=workspace.id,
+        created_by=user.id,
+    )
+    other_workspace = build_workspace(slug=f"other-files-{uuid4().hex[:8]}")
+    db_session.add_all([agent, other_workspace])
+    await db_session.flush()
+    conversation = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        active_agent_id=agent.id,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    current_file = build_file(workspace=workspace, name="Quarterly plan.pdf")
+    other_file = build_file(workspace=other_workspace, name="Private roadmap.pdf")
+    db_session.add_all([current_file, other_file])
+    await db_session.commit()
+
+    endpoint = f"/api/v1/tools/conversations/{conversation.id}/entity-references"
+    search = await db_async_client.post(
+        endpoint,
+        headers=headers,
+        json={"tool_name": "read_file", "field_key": "file_id", "search": "Quarterly"},
+    )
+
+    assert search.status_code == 200, search.text
+    assert [choice["label"] for choice in search.json()["choices"]] == ["Quarterly plan.pdf"]
+    reference = search.json()["choices"][0]["value"]
+    assert reference["entity_id"] == str(current_file.id)
+
+    hydration = await db_async_client.post(
+        endpoint,
+        headers=headers,
+        json={
+            "tool_name": "read_file",
+            "field_key": "file_id",
+            "exact_values": [
+                reference,
+                {
+                    **reference,
+                    "entity_id": str(other_file.id),
+                    "label": "Untrusted browser label",
+                },
+            ],
+        },
+    )
+
+    assert hydration.status_code == 200
+    assert [choice["value"]["entity_id"] for choice in hydration.json()["choices"]] == [
+        str(current_file.id)
+    ]
+    assert hydration.json()["choices"][0]["label"] == "Quarterly plan.pdf"
+
+
+async def test_entity_reference_route_requires_conversation_access(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    headers = {**headers, "X-Workspace": workspace.slug}
+    other = build_user(email=f"other-tools-{uuid4().hex}@example.com")
+    db_session.add(other)
+    await db_session.flush()
+    agent = Agent(
+        name="Private agent",
+        slug=f"private-agent-{uuid4().hex[:8]}",
+        instructions="Private.",
+        workspace_id=workspace.id,
+        created_by=other.id,
+    )
+    db_session.add(agent)
+    await db_session.flush()
+    conversation = Conversation(
+        user_id=other.id,
+        workspace_id=workspace.id,
+        created_by=other.id,
+        active_agent_id=agent.id,
+    )
+    db_session.add(conversation)
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        f"/api/v1/tools/conversations/{conversation.id}/entity-references",
+        headers=headers,
+        json={"tool_name": "read_file", "field_key": "file_id", "search": ""},
+    )
+
+    assert response.status_code == 404
+    assert user.id != other.id
 
 
 async def test_tool_presentations_route_requires_authentication(

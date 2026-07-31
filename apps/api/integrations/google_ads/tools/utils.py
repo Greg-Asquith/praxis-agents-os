@@ -44,16 +44,31 @@ async def google_ads_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
 ) -> GoogleAdsClient:
+    return await google_ads_client_for_principal(
+        ctx.deps.db,
+        actor=ctx.deps.user,
+        workspace=ctx.deps.workspace,
+        entry=entry,
+    )
+
+
+async def google_ads_client_for_principal(
+    db,
+    *,
+    actor,
+    workspace,
+    entry: ResolvedContextEntry,
+) -> GoogleAdsClient:
     async def access_token(force: bool) -> str:
         credential = await get_usable_connection_credential(
-            ctx.deps.db,
+            db,
             connection_id=entry.connection_id,
-            actor=ctx.deps.user,
-            workspace=ctx.deps.workspace,
+            actor=actor,
+            workspace=workspace,
         )
         if credential.auth_mode == "oauth":
             fresh = await ensure_fresh_credential(
-                ctx.deps.db,
+                db,
                 credential_id=credential.id,
                 refresh_token=refresh_oauth_credential,
                 force=force,
@@ -67,10 +82,10 @@ async def google_ads_client(
         provider = _SERVICE_ACCOUNT_PROVIDERS.get(cache_key)
         if provider is None:
             raw = await resolve_secret(
-                ctx.deps.db,
+                db,
                 _credential_reference(credential),
-                workspace_id=ctx.deps.workspace.id,
-                actor_id=ctx.deps.user.id,
+                workspace_id=workspace.id,
+                actor_id=actor.id,
             )
             provider = GoogleServiceAccountTokenProvider(
                 parse_google_service_account_json(

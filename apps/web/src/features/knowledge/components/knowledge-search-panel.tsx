@@ -1,6 +1,6 @@
 // apps/web/src/features/knowledge/components/knowledge-search-panel.tsx
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { LoaderCircleIcon, LockIcon, SearchIcon } from "lucide-react"
 
@@ -11,24 +11,10 @@ import { useKnowledgeSearchQuery } from "@/features/knowledge/api/search-knowled
 import { SourceTypeBadge } from "@/features/knowledge/components/source-type-badge"
 import { knowledgeContentText } from "@/features/knowledge/content"
 import { getErrorMessage } from "@/lib/api/errors"
+import { useDebouncedValue } from "@/components/tool-ui/use-debounced-value"
 import { cn } from "@/lib/utils"
 
 const SEARCH_DEBOUNCE_MS = 300
-
-function useDebouncedValue(value: string, delayMs: number) {
-  const [debounced, setDebounced] = useState(value)
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setDebounced(value)
-    }, delayMs)
-    return () => {
-      window.clearTimeout(timeout)
-    }
-  }, [value, delayMs])
-
-  return debounced
-}
 
 export function KnowledgeSearchPanel() {
   const [input, setInput] = useState("")

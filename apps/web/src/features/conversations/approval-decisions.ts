@@ -136,6 +136,17 @@ const NO_CHANGE = Symbol("no-change")
 const INVALID_EDIT = Symbol("invalid-edit")
 
 function mergeEditedValue(original: unknown, edit: EditedValue): unknown {
+  if (isEntityReference(edit)) {
+    return structurallyEqual(edit, original) ? NO_CHANGE : edit
+  }
+
+  if (Array.isArray(edit) && edit.every(isEntityReference)) {
+    if (!Array.isArray(original)) {
+      return INVALID_EDIT
+    }
+    return structurallyEqual(edit, original) ? NO_CHANGE : edit
+  }
+
   if (typeof edit === "string") {
     if (typeof original !== "string") {
       return INVALID_EDIT
@@ -204,6 +215,15 @@ function isEditedScalar(value: unknown): value is string | number | boolean {
     typeof value === "string" ||
     typeof value === "boolean" ||
     (typeof value === "number" && Number.isFinite(value))
+  )
+}
+
+function isEntityReference(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    value["version"] === 1 &&
+    typeof value["entity_kind"] === "string" &&
+    typeof value["label"] === "string"
   )
 }
 

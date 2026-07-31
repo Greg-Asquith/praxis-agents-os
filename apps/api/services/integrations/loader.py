@@ -41,6 +41,12 @@ def load_enabled_providers() -> None:
         register_provider_plugin(plugin)
         register_provider_manifest(plugin.manifest)
 
+        if plugin.entity_resolvers:
+            from services.agents.runtime.entity_references.registry import register_entity_resolver
+
+            for resolver in plugin.entity_resolvers:
+                register_entity_resolver(resolver)
+
         if plugin.tool_definitions:
             from services.agents.runtime.tools.registry import register_tool_definition
 
@@ -81,6 +87,40 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
             raise RuntimeError("Integration tool provider must match its package")
         if not definition.name.startswith(f"{expected_key}_"):
             raise RuntimeError("Integration tool name must be prefixed by its provider key")
+    resolver_kinds: set[str] = set()
+    for resolver in plugin.entity_resolvers:
+        from services.agents.runtime.entity_references.domain import ScopedEntityReference
+
+        if resolver.provider_key != expected_key:
+            raise RuntimeError("Integration entity resolver provider must match its package")
+        if not issubclass(resolver.reference_type, ScopedEntityReference):
+            raise TypeError(
+                "Integration entity resolvers require scoped structured reference types"
+            )
+        if resolver.entity_kind in resolver_kinds:
+            raise RuntimeError(
+                f"Duplicate integration entity resolver kind for provider '{expected_key}': "
+                f"{resolver.entity_kind}"
+            )
+        resolver_kinds.add(resolver.entity_kind)
+    declared_entity_kinds = {
+        field.entity_kind
+        for definition in plugin.tool_definitions
+        for field in definition.presentation.arg_fields
+        if field.entity_kind is not None
+    }
+    undeclared_resolvers = resolver_kinds.difference(declared_entity_kinds)
+    if undeclared_resolvers:
+        raise RuntimeError(
+            "Integration provider contributes entity resolvers not declared by its tools: "
+            f"{', '.join(sorted(undeclared_resolvers))}"
+        )
+    missing_resolvers = declared_entity_kinds.difference(resolver_kinds)
+    if missing_resolvers:
+        raise RuntimeError(
+            "Integration provider tool entity fields require provider-owned resolvers: "
+            f"{', '.join(sorted(missing_resolvers))}"
+        )
     preview_kinds: set[str] = set()
     for definition in plugin.preview_definitions:
         if not PREVIEW_KIND_PATTERN.fullmatch(definition.kind):

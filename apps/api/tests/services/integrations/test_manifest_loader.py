@@ -6,6 +6,7 @@ from pydantic import SecretStr
 from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
+from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.loader import _validate_plugin, load_enabled_providers
 from services.integrations.manifest import (
@@ -23,12 +24,18 @@ from services.integrations.plugin import (
 
 @pytest.fixture(autouse=True)
 def clear_loaded_provider_state():
+    for kind, resolver in tuple(ENTITY_RESOLVERS.items()):
+        if resolver.provider_key is not None:
+            ENTITY_RESOLVERS.pop(kind)
     for name in tuple(RUNTIME_TOOL_CATALOG):
         if name.startswith(("airtable_", "bigquery_", "gmail_", "google_ads_")):
             RUNTIME_TOOL_CATALOG.pop(name)
     yield
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
+    for kind, resolver in tuple(ENTITY_RESOLVERS.items()):
+        if resolver.provider_key is not None:
+            ENTITY_RESOLVERS.pop(kind)
     for name in tuple(RUNTIME_TOOL_CATALOG):
         if name.startswith(("airtable_", "bigquery_", "gmail_", "google_ads_")):
             RUNTIME_TOOL_CATALOG.pop(name)

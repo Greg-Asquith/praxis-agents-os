@@ -39,6 +39,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.staged_tool_content import (
@@ -368,7 +369,12 @@ async def test_image_content_reaches_the_post_tool_model_request(
                 parts=[
                     ToolCallPart(
                         tool_name="read_file",
-                        args={"file_id": str(image_file.id)},
+                        args={
+                            "file_id": FileReference(
+                                entity_id=image_file.id,
+                                label=image_file.name,
+                            ).model_dump(mode="json")
+                        },
                         tool_call_id="read-image",
                     )
                 ]
@@ -417,7 +423,12 @@ async def test_ready_document_content_reaches_the_post_tool_model_request(
                 parts=[
                     ToolCallPart(
                         tool_name="read_file",
-                        args={"file_id": str(document.id)},
+                        args={
+                            "file_id": FileReference(
+                                entity_id=document.id,
+                                label=document.name,
+                            ).model_dump(mode="json")
+                        },
                         tool_call_id="read-document",
                     )
                 ]

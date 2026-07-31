@@ -15,6 +15,7 @@ from models.agent_memories import AgentMemory
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
+from services.agents.runtime.entity_references.domain import AgentReference
 from tests.support.scenario import (
     add_scenario_delegate,
     build_scenario_agent,
@@ -133,7 +134,15 @@ def _delegation_model(
             yield {
                 0: DeltaToolCall(
                     name="delegate_to_agent",
-                    json_args=json.dumps({"agent_id": child_id, "task": "Run the task."}),
+                    json_args=json.dumps(
+                        {
+                            "agent_id": AgentReference(
+                                entity_id=child_id,
+                                label="Child Delegate",
+                            ).model_dump(mode="json"),
+                            "task": "Run the task.",
+                        }
+                    ),
                     tool_call_id="delegate-child",
                 )
             }

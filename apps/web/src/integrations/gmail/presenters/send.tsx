@@ -33,6 +33,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
           label="Send Gmail Message"
           prompt="The agent wants to send this email from the selected mailbox."
           title="Review email before sending"
+          toolName={activity.name}
         />
       )
     }

@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from integrations.google_ads.references import GoogleAdsCampaignReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -18,7 +19,7 @@ from services.agents.runtime.tools.contract import (
 )
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.targeted import run_context_targets
 
 from ..operations.update_campaign_status import update_campaign_status
 from .schemas import GoogleAdsOutput
@@ -36,19 +37,49 @@ from .utils import (
 
 async def google_ads_update_campaign_status(
     ctx: RunContext[RuntimeDeps],
-    campaign_ids: Annotated[list[str], Field(min_length=1, description="Campaign ids to update.")],
+    campaign_ids: Annotated[
+        list[GoogleAdsCampaignReference],
+        Field(min_length=1, max_length=50, description="Scoped campaigns to update."),
+    ],
     status: Annotated[
         Literal["ENABLED", "PAUSED"],
         Field(description="New campaign serving status."),
     ],
 ) -> dict[str, Any]:
-    normalized_ids = [value.strip() for value in campaign_ids if value.strip()]
-    if not normalized_ids:
-        raise ModelRetry("google_ads_update_campaign_status requires campaign ids.")
+    if not campaign_ids:
+        raise ModelRetry("google_ads_update_campaign_status requires campaigns.")
 
-    async def operation(entry: ResolvedContextEntry) -> Any:
+    async def operation(
+        entry: ResolvedContextEntry,
+        references: list[GoogleAdsCampaignReference],
+    ) -> Any:
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
+            normalized_ids = sorted({reference.external_id for reference in references})
+            if any(not campaign_id.isdigit() for campaign_id in normalized_ids):
+                raise ModelRetry("A selected Google Ads campaign reference is invalid.")
+            lookup_query = (
+                "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
+                f"WHERE campaign.id IN ({', '.join(normalized_ids)}) "
+                f"LIMIT {len(normalized_ids)}"
+            )
+            lookup = await client.post(
+                f"customers/{entry.external_id}/googleAds:searchStream",
+                operation="resolve_campaign_references",
+                login_customer_id=login_customer_id(entry),
+                json={"query": lookup_query},
+            )
+            from integrations.google_ads.operations.utils import stream_rows
+
+            resolved_ids = {
+                str(campaign.get("id", ""))
+                for row in stream_rows(lookup)
+                if isinstance((campaign := row.get("campaign")), dict)
+            }
+            if resolved_ids != set(normalized_ids):
+                raise ModelRetry(
+                    "A selected Google Ads campaign is unavailable. Ask the user to choose it again."
+                )
             return await update_campaign_status(
                 client,
                 customer_id=entry.external_id,
@@ -76,9 +107,10 @@ async def google_ads_update_campaign_status(
             error_code="write_not_permitted",
         )
 
-    results = await run_context_fan_out(
+    results = await run_context_targets(
         ctx.deps,
         binding=GOOGLE_ADS_WRITE_BINDING,
+        references=campaign_ids,
         operation=operation,
         write=True,
         on_write_denied=audit_write_denied,
@@ -113,7 +145,9 @@ DEFINITION = RuntimeToolDefinition(
             ToolFieldPresentation(
                 key="campaign_ids",
                 label="Campaigns",
-                format="list",
+                format="entity_list",
+                editable=True,
+                entity_kind="google_ads_campaign",
             ),
             ToolFieldPresentation(
                 key="status",

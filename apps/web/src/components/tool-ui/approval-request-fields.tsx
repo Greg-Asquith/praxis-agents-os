@@ -1,9 +1,10 @@
 // apps/web/src/components/tool-ui/approval-request-fields.tsx
 
-import { useRef, useState, type ChangeEvent } from "react"
+import { use, useEffect, useRef, useState, type ChangeEvent } from "react"
 import { ChevronDownIcon } from "lucide-react"
 
 import { ApprovalStaticField } from "@/components/tool-ui/approval-static-field"
+import { EntityFieldInput } from "@/components/tool-ui/entity-field-input"
 import type {
   ApprovalDecision,
   ApprovalFallbackField,
@@ -29,6 +30,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
+import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
+
+const NOOP_ENTITY_VALIDITY = () => undefined
 
 export function ApprovalRequestFields({
   activityId,
@@ -38,6 +42,8 @@ export function ApprovalRequestFields({
   fallbackFields,
   fields,
   onEditsChange,
+  onEntityValidityChange = NOOP_ENTITY_VALIDITY,
+  toolName = "",
 }: {
   activityId: string
   args: unknown
@@ -46,9 +52,13 @@ export function ApprovalRequestFields({
   fallbackFields: ApprovalFallbackField[]
   fields: ApprovalField[]
   onEditsChange: (edits: EditedValues) => void
+  onEntityValidityChange?: (key: string, valid: boolean) => void
+  toolName?: string
 }) {
   const [revealedFields, setRevealedFields] = useState<Set<string>>(() => new Set())
+  const [clearedEntityFields, setClearedEntityFields] = useState<Set<string>>(() => new Set())
   const focusFieldKey = useRef<string | null>(null)
+  const conversationId = use(ToolConversationContext)
 
   if (fields.length === 0 || !isRecord(args)) {
     return fallbackFields.length > 0 ? (
@@ -63,13 +73,41 @@ export function ApprovalRequestFields({
   }
 
   const lockedRecord = resolveLockedRecord(args, decision.edits)
+  const applyFieldEdit = (key: string, nextValue: EditedValue) => {
+    const dependentKeys = new Set(
+      fields
+        .filter((candidate) => candidate.depends_on?.includes(key))
+        .map((candidate) => candidate.key)
+    )
+    setClearedEntityFields((current) => {
+      const next = new Set(current)
+      next.delete(key)
+      for (const dependentKey of dependentKeys) {
+        next.add(dependentKey)
+      }
+      return next
+    })
+    onEditsChange(
+      Object.fromEntries(
+        Object.entries({ ...decision.edits, [key]: nextValue }).filter(
+          ([candidateKey]) => !dependentKeys.has(candidateKey)
+        )
+      )
+    )
+  }
   return (
     <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-2">
       {fields.map((field) => {
         const rawValue = args[field.key]
         const originalValue = editableValue(field.format, rawValue)
         const editable = field.editable && originalValue !== null
-        const value = originalValue === null ? "" : (decision.edits[field.key] ?? originalValue)
+        const value = clearedEntityFields.has(field.key)
+          ? field.format === "entity_list"
+            ? []
+            : null
+          : originalValue === null
+            ? ""
+            : (decision.edits[field.key] ?? originalValue)
         const isEmptySecondary = field.secondary && isEmptyEditedValue(value)
         const isRevealed = revealedFields.has(field.key)
 
@@ -110,6 +148,15 @@ export function ApprovalRequestFields({
             </div>
           ) : null
         }
+        if ((field.format === "entity" || field.format === "entity_list") && !conversationId) {
+          return (
+            <UnavailableEntityField
+              field={field}
+              key={field.key}
+              onValidityChange={onEntityValidityChange}
+            />
+          )
+        }
 
         const id = `${activityId}-${field.key}-edit`
         const focusRef = (node: HTMLElement | null) => {
@@ -148,12 +195,26 @@ export function ApprovalRequestFields({
                 </Button>
               ) : null}
             </div>
-            {field.options.length > 0 && typeof value === "string" ? (
+            {(field.format === "entity" || field.format === "entity_list") && conversationId ? (
+              <EntityFieldInput
+                conversationId={conversationId}
+                dependentArgs={lockedRecord}
+                disabled={disabled}
+                field={field}
+                id={id}
+                onChange={(nextValue) => {
+                  applyFieldEdit(field.key, nextValue)
+                }}
+                onValidityChange={onEntityValidityChange}
+                toolName={toolName}
+                value={value}
+              />
+            ) : field.options.length > 0 && typeof value === "string" ? (
               <Select<string>
                 disabled={disabled}
                 onValueChange={(nextValue) => {
                   if (nextValue !== null) {
-                    onEditsChange({ ...decision.edits, [field.key]: nextValue })
+                    applyFieldEdit(field.key, nextValue)
                   }
                 }}
                 value={value}
@@ -175,12 +236,14 @@ export function ApprovalRequestFields({
                   </SelectGroup>
                 </SelectContent>
               </Select>
-            ) : field.format === "list" && Array.isArray(value) ? (
+            ) : field.format === "list" &&
+              Array.isArray(value) &&
+              value.every((item): item is string => typeof item === "string") ? (
               <ListFieldInput
                 disabled={disabled}
                 id={id}
                 onChange={(nextValue) => {
-                  onEditsChange({ ...decision.edits, [field.key]: nextValue })
+                  applyFieldEdit(field.key, nextValue)
                 }}
                 {...(field.placeholder ? { placeholder: field.placeholder } : {})}
                 value={value}
@@ -191,7 +254,7 @@ export function ApprovalRequestFields({
                 id={id}
                 lockedEntries={lockedKeyValueEntries(rawValue)}
                 onChange={(nextValue) => {
-                  onEditsChange({ ...decision.edits, [field.key]: nextValue })
+                  applyFieldEdit(field.key, nextValue)
                 }}
                 value={value}
               />
@@ -211,7 +274,7 @@ export function ApprovalRequestFields({
                     Number.isFinite(nextValue) &&
                     (!Number.isInteger(rawValue) || Number.isInteger(nextValue))
                   ) {
-                    onEditsChange({ ...decision.edits, [field.key]: nextValue })
+                    applyFieldEdit(field.key, nextValue)
                   } else {
                     event.currentTarget.value = String(value)
                   }
@@ -226,7 +289,7 @@ export function ApprovalRequestFields({
                 className={cn(fieldWellClass, "min-h-16")}
                 disabled={disabled}
                 id={id}
-                onChange={changeHandler(field.key, decision.edits, onEditsChange)}
+                onChange={changeHandler(field.key, applyFieldEdit)}
                 placeholder={field.placeholder || undefined}
                 ref={focusRef}
                 value={value}
@@ -236,7 +299,7 @@ export function ApprovalRequestFields({
                 className={fieldWellClass}
                 disabled={disabled}
                 id={id}
-                onChange={changeHandler(field.key, decision.edits, onEditsChange)}
+                onChange={changeHandler(field.key, applyFieldEdit)}
                 placeholder={field.placeholder || undefined}
                 ref={focusRef}
                 value={value}
@@ -270,8 +333,35 @@ export function ApprovalRequestFields({
   )
 }
 
+function UnavailableEntityField({
+  field,
+  onValidityChange,
+}: {
+  field: ApprovalField
+  onValidityChange: (key: string, valid: boolean) => void
+}) {
+  useEffect(() => {
+    onValidityChange(field.key, false)
+    return () => {
+      onValidityChange(field.key, true)
+    }
+  }, [field.key, onValidityChange])
+
+  return (
+    <Field className={cn("gap-1", fieldSpanClass(field.format))} data-disabled>
+      <FieldLabel className={fieldLabelClass}>{field.label}</FieldLabel>
+      <div className={cn(fieldWellClass, "text-muted-foreground flex items-center")}>
+        Target unavailable
+      </div>
+      <p className="text-destructive text-xs">
+        This target cannot be verified outside its conversation.
+      </p>
+    </Field>
+  )
+}
+
 function fieldSpanClass(format: ToolFieldFormat): string | undefined {
-  return ["multiline", "markdown", "list", "keyvalue"].includes(format)
+  return ["multiline", "markdown", "list", "keyvalue", "entity", "entity_list"].includes(format)
     ? "sm:col-span-2"
     : undefined
 }
@@ -295,6 +385,12 @@ function editableValue(format: ToolFieldFormat, value: unknown): EditedValue | n
       )
     )
   }
+  if (format === "entity" && isRecord(value)) {
+    return value
+  }
+  if (format === "entity_list" && Array.isArray(value) && value.every(isRecord)) {
+    return value
+  }
   return null
 }
 
@@ -306,24 +402,20 @@ function resolveApprovalField(field: ApprovalField, value: unknown): ApprovalFal
   return resolved
 }
 
-function changeHandler(
-  key: string,
-  edits: EditedValues,
-  onEditsChange: (edits: EditedValues) => void
-) {
+function changeHandler(key: string, applyFieldEdit: (key: string, value: EditedValue) => void) {
   return (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    onEditsChange({ ...edits, [key]: event.currentTarget.value })
+    applyFieldEdit(key, event.currentTarget.value)
   }
 }
 
-function isEmptyEditedValue(value: EditedValue): boolean {
+function isEmptyEditedValue(value: unknown): boolean {
   if (typeof value === "string") {
     return !value.trim()
   }
   if (Array.isArray(value)) {
     return value.length === 0
   }
-  return typeof value === "object" && Object.keys(value).length === 0
+  return value !== null && typeof value === "object" && Object.keys(value).length === 0
 }
 
 function isEditedScalar(value: unknown): value is string | number | boolean {
@@ -334,8 +426,8 @@ function isEditedScalar(value: unknown): value is string | number | boolean {
   )
 }
 
-function isEditedKeyValue(value: EditedValue): value is EditedKeyValue {
-  return typeof value === "object" && !Array.isArray(value)
+function isEditedKeyValue(value: unknown): value is EditedKeyValue {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
 function lockedKeyValueEntries(value: unknown): string[] {

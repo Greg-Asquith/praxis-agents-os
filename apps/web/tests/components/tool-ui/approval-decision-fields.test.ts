@@ -241,6 +241,33 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain("**Keep this Markdown**")
   })
 
+  it("fails closed when an entity field has no conversation context", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "file-1",
+        args: {
+          file_id: {
+            version: 1,
+            entity_kind: "file",
+            entity_id: "opaque-file-id",
+            label: "Model supplied label",
+          },
+        },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [{ ...approvalField("file_id", "File", "entity"), editable: true }],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("Target unavailable")
+    expect(html).toContain("cannot be verified outside its conversation")
+    expect(html).not.toContain("opaque-file-id")
+    expect(html).not.toContain("Model supplied label")
+    expect(html).not.toContain("<input")
+  })
+
   it("shows undeclared executable arguments in a collapsed disclosure", () => {
     const args = {
       title: "Launch guidance",

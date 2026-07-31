@@ -12,6 +12,7 @@ from pydantic_ai import ModelRetry
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from services.agents.runtime.entity_references.domain import KnowledgeDocumentReference
 from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, TOOL_POLICY_AUTO
 from services.agents.runtime.tools.kb import (
     KB_AGENT_SEARCH_DEFAULT_LIMIT,
@@ -114,6 +115,11 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
         "source_type": KB_SOURCE_MANUAL,
         "is_private": False,
         "content": "Quarterly reviews are required.",
+        "reference": KnowledgeDocumentReference(
+            entity_id=document_id,
+            label="Access policy",
+            description="Workspace · Manual",
+        ),
     }
     assert "read_document" in output["next_step"]
     SearchKnowledgeOutput.model_validate(output)

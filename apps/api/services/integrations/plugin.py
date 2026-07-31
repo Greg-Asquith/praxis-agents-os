@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         IntegrationResource,
         IntegrationWebhook,
     )
+    from services.agents.runtime.entity_references.registry import EntityResolverDefinition
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
 
 
@@ -154,6 +155,7 @@ class IntegrationProviderPlugin:
     oauth_config: OAuthConfigFn | None = None
     tool_definitions: tuple["RuntimeToolDefinition", ...] = ()
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
+    entity_resolvers: tuple["EntityResolverDefinition", ...] = ()
     event_definition: IntegrationEventDefinition | None = None
 
 

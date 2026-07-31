@@ -7,12 +7,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.agents.runtime.entity_references.domain import ArtifactReference
+
 
 class ArtifactToolResult(BaseModel):
     artifact_id: str
     version_id: str
     title: str
     artifact_type: str
+    reference: ArtifactReference
 
 
 class ArtifactVersionRead(BaseModel):

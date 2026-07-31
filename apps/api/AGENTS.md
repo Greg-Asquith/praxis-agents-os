@@ -47,10 +47,23 @@ Repo-wide expectations are in the root `AGENTS.md`.
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
   not execute tool logic around it.
+- Opaque tool targets use the runtime entity-reference contract. Internal
+  resolvers stay under `services/agents/runtime/entity_references`; concrete
+  provider reference models and resolvers stay in their provider package and
+  publish only through the generic integrations seam. Scoped provider tools
+  must revalidate the referenced active-context resource and target only that
+  resource, never fan an entity ID out across compatible accounts.
+- Approval overrides are governed by the server-owned field declarations:
+  locked values cannot change, and entity values must be structured references
+  that are reauthorized immediately before resume.
 - Provider packages keep each agent tool in its own module under a `tools/`
   tree. The tree may share schemas and provider-local helpers, while its
   `__init__.py` only composes exported definitions; do not accumulate a
   provider's catalog in one `tools.py` module.
+- Provider packages keep each entity resolver in its own module under an
+  `entity_resolvers/` tree, with one module per entity kind. The package
+  `__init__.py` only composes exported resolver definitions so provider
+  manifests stay concise as their catalogs grow.
 - Packaged integrations are Gmail, Google Ads, Airtable, and BigQuery.
   BigQuery contributes service-account dataset discovery, a job-synchronized
   table-schema cache for enabled datasets (connection jobs fan out into

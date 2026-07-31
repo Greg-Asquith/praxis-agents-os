@@ -21,9 +21,34 @@ from services.agents.runtime.untrusted import (
     UntrustedContent,
     UntrustedNode,
     frame_untrusted_content,
+    is_untrusted_content,
     render_untrusted_frames,
     serialize_untrusted_content,
+    untrusted_content_text,
 )
+
+
+def test_untrusted_content_text_unwraps_all_supported_representations() -> None:
+    carrier = UntrustedContent(
+        source_kind="gmail_message",
+        source_ref="message-1",
+        content="  External subject  ",
+    )
+    node = UntrustedNode(
+        source_kind=carrier.source_kind,
+        source_ref=carrier.source_ref,
+        content=carrier.content,
+    )
+
+    assert untrusted_content_text(carrier) == "External subject"
+    assert untrusted_content_text(node) == "External subject"
+    assert untrusted_content_text(node.model_dump(mode="json")) == "External subject"
+    assert untrusted_content_text("  Plain subject  ") == "Plain subject"
+    assert untrusted_content_text(None) == ""
+    assert is_untrusted_content(carrier)
+    assert is_untrusted_content(node)
+    assert is_untrusted_content(node.model_dump(mode="json"))
+    assert not is_untrusted_content("Plain subject")
 
 
 def test_node_rendering_is_byte_identical_to_prechange_frame() -> None:

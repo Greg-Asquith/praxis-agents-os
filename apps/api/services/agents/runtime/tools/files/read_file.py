@@ -4,12 +4,12 @@
 
 from datetime import timedelta
 from typing import Literal
-from uuid import UUID
 
 from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.messages import BinaryContent
 
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
     ToolFieldPresentation,
@@ -48,14 +48,20 @@ from services.storage.factory import get_storage_provider
         completed_label="Read a File",
         failed_label="Couldn't Read the File",
         arg_fields=(
-            ToolFieldPresentation(key="file_id", label="File"),
+            ToolFieldPresentation(
+                key="file_id",
+                label="File",
+                format="entity",
+                editable=True,
+                entity_kind="file",
+            ),
             ToolFieldPresentation(key="mode", label="Read As", secondary=True),
         ),
     ),
 )
 async def read_file(
     ctx: RunContext[RuntimeDeps],
-    file_id: UUID,
+    file_id: FileReference,
     mode: Literal["content", "url"] = "content",
     offset: int = 0,
     max_bytes: int | None = None,
@@ -65,7 +71,7 @@ async def read_file(
         raise ModelRetry("offset must be greater than or equal to 0.")
     normalized_limit = content_limit(max_bytes)
 
-    file, revision = await current_file_revision(ctx, file_id)
+    file, revision = await current_file_revision(ctx, internal_entity_id(file_id))
     if mode == "url":
         provider = get_storage_provider()
         download = await provider.create_signed_download(

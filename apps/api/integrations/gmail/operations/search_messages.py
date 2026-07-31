@@ -28,12 +28,12 @@ async def search_messages(client: GmailClient, *, query: str, limit: int) -> dic
         if isinstance(item, dict) and item.get("id")
     ]
     messages = await asyncio.gather(
-        *(_message_metadata(client, message_id) for message_id in message_ids)
+        *(get_message_metadata(client, message_id) for message_id in message_ids)
     )
     return {"messages": list(messages), "total": len(messages)}
 
 
-async def _message_metadata(client: GmailClient, message_id: str) -> dict[str, Any]:
+async def get_message_metadata(client: GmailClient, message_id: str) -> dict[str, Any]:
     payload = await client.get(
         f"users/me/messages/{message_id}",
         operation="search_message_metadata",

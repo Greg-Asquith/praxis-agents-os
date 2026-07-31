@@ -15,6 +15,7 @@ from tests.factories import (
     build_integration_resource,
     build_user,
     build_workspace,
+    build_workspace_membership,
 )
 
 
@@ -25,6 +26,8 @@ async def context_data(db_session: AsyncSession) -> AsyncIterator[dict[str, obje
     workspace = build_workspace(slug=f"context-{suffix[:8]}")
     credential = build_external_credential(principal_fingerprint=suffix.ljust(64, "0"))
     db_session.add_all([user, workspace, credential])
+    await db_session.flush()
+    db_session.add(build_workspace_membership(workspace_id=workspace.id, user_id=user.id))
     await db_session.flush()
     conversation = build_conversation(user=user, workspace=workspace)
     db_session.add(conversation)

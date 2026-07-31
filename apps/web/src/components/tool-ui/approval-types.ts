@@ -26,6 +26,8 @@ export type ApprovalField = {
   options: string[]
   placeholder: string
   secondary: boolean
+  entity_kind?: string | null
+  depends_on?: string[]
 }
 
 export type ApprovalFallbackField = ResolvedToolField

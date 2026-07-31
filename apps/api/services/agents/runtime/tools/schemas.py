@@ -17,6 +17,8 @@ class ToolFieldPresentationRead(BaseModel):
     placeholder: str
     options: list[str]
     secondary: bool
+    entity_kind: str | None
+    depends_on: list[str]
 
 
 class ToolPresentationRead(BaseModel):
@@ -49,6 +51,8 @@ class ToolPresentationRead(BaseModel):
                     placeholder=field.placeholder,
                     options=list(field.options),
                     secondary=field.secondary,
+                    entity_kind=field.entity_kind,
+                    depends_on=list(field.depends_on),
                 )
                 for field in presentation.arg_fields
             ],
@@ -61,6 +65,8 @@ class ToolPresentationRead(BaseModel):
                     placeholder=field.placeholder,
                     options=list(field.options),
                     secondary=field.secondary,
+                    entity_kind=field.entity_kind,
+                    depends_on=list(field.depends_on),
                 )
                 for field in presentation.result_fields
             ],

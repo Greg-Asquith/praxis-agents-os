@@ -32,6 +32,7 @@ from tests.factories import (
     build_integration_resource,
     build_user,
     build_workspace,
+    build_workspace_membership,
 )
 
 
@@ -210,6 +211,8 @@ async def test_concurrent_selection_upserts_never_create_duplicate_rows(
     )
     async with committed_db_session_factory() as setup_db:
         setup_db.add_all([user, workspace, credential])
+        await setup_db.flush()
+        setup_db.add(build_workspace_membership(workspace_id=workspace.id, user_id=user.id))
         await setup_db.flush()
         conversation = build_conversation(user=user, workspace=workspace)
         setup_db.add(conversation)

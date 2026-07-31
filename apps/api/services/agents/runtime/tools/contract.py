@@ -6,7 +6,7 @@ import inspect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field as dataclass_field
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 from pydantic_ai import Tool
@@ -29,6 +29,8 @@ ToolFieldFormat = Literal[
     "list",
     "number",
     "keyvalue",
+    "entity",
+    "entity_list",
 ]
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
@@ -70,10 +72,12 @@ VALID_TOOL_FIELD_FORMATS = frozenset(
         "list",
         "number",
         "keyvalue",
+        "entity",
+        "entity_list",
     }
 )
 EDITABLE_TOOL_FIELD_FORMATS = frozenset(
-    {"text", "multiline", "markdown", "number", "list", "keyvalue"}
+    {"text", "multiline", "markdown", "number", "list", "keyvalue", "entity", "entity_list"}
 )
 STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
 # Semantic icon tokens the web client maps to concrete icons.
@@ -112,6 +116,8 @@ class ToolFieldPresentation:
     placeholder: str = ""
     options: tuple[str, ...] = ()
     secondary: bool = False
+    entity_kind: str | None = None
+    depends_on: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -276,7 +282,7 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
                     "Runtime tool supported model providers must be lowercase tokens"
                 )
     _validate_integration_binding(definition)
-    _validate_presentation(definition.presentation)
+    _validate_presentation(definition)
 
     if definition.kind == TOOL_KIND_FUNCTION:
         if definition.function is None:
@@ -360,9 +366,47 @@ def _validate_integration_binding(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError(
             "Integration tools must not take connection/account parameters; context is server-resolved"
         )
+    type_hints = get_type_hints(definition.function, include_extras=True)
+    for parameter in inspect.signature(definition.function).parameters.values():
+        _validate_nested_integration_parameter(type_hints.get(parameter.name, parameter.annotation))
 
 
-def _validate_presentation(presentation: ToolPresentation) -> None:
+def _validate_nested_integration_parameter(
+    annotation: Any,
+    seen_models: set[type[BaseModel]] | None = None,
+) -> None:
+    """Permit scope keys only inside the registered scoped-reference base type."""
+    from services.agents.runtime.entity_references.domain import ScopedEntityReference
+
+    if seen_models is None:
+        seen_models = set()
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        args = get_args(annotation)
+        if args:
+            _validate_nested_integration_parameter(args[0], seen_models)
+        return
+    if origin is not None:
+        for argument in get_args(annotation):
+            _validate_nested_integration_parameter(argument, seen_models)
+        return
+    if not inspect.isclass(annotation) or not issubclass(annotation, BaseModel):
+        return
+    if annotation in seen_models:
+        return
+    seen_models.add(annotation)
+    nested_names = set(annotation.model_fields)
+    forbidden = nested_names.intersection(_INTEGRATION_PARAMETER_DENYLIST)
+    if forbidden and not issubclass(annotation, ScopedEntityReference):
+        raise RuntimeError(
+            "Integration scope fields are allowed only inside registered scoped references"
+        )
+    for field in annotation.model_fields.values():
+        _validate_nested_integration_parameter(field.annotation, seen_models)
+
+
+def _validate_presentation(definition: RuntimeToolDefinition) -> None:
+    presentation = definition.presentation
     if presentation.icon not in VALID_TOOL_ICONS:
         raise RuntimeError(
             f"Runtime tool presentation icon must be one of the known tokens, got {presentation.icon!r}"
@@ -395,8 +439,32 @@ def _validate_presentation(presentation: ToolPresentation) -> None:
             raise RuntimeError("Runtime tool presentation field options must not be blank")
         if len(normalized_options) != len(set(normalized_options)):
             raise RuntimeError("Runtime tool presentation field options must be unique")
+        is_entity = field.format in {"entity", "entity_list"}
+        if is_entity and field.entity_kind is None:
+            raise RuntimeError("Entity runtime tool presentation fields require an entity kind")
+        if not is_entity and field.entity_kind is not None:
+            raise RuntimeError("Non-entity runtime tool presentation fields cannot set entity kind")
+        if field.entity_kind is not None and not _TOOL_NAME_PATTERN.fullmatch(field.entity_kind):
+            raise RuntimeError("Runtime tool presentation entity kind must be lowercase snake_case")
+        if field.depends_on and not is_entity:
+            raise RuntimeError(
+                "Only entity runtime tool presentation fields can declare dependencies"
+            )
+        if len(field.depends_on) != len(set(field.depends_on)):
+            raise RuntimeError("Runtime tool presentation field dependencies must be unique")
+        if field.key in field.depends_on:
+            raise RuntimeError("Runtime tool presentation fields cannot depend on themselves")
     for field in presentation.result_fields:
         if field.editable:
             raise RuntimeError("Runtime tool result presentation fields cannot be editable")
         if field.secondary:
             raise RuntimeError("Runtime tool result presentation fields cannot be secondary")
+    schema = definition.serialized_input_schema()
+    properties = set(schema.get("properties", {})) if isinstance(schema, dict) else set()
+    for field in presentation.arg_fields:
+        unknown_dependencies = set(field.depends_on).difference(properties)
+        if unknown_dependencies:
+            raise RuntimeError(
+                "Runtime tool presentation field dependencies must name input arguments: "
+                f"{', '.join(sorted(unknown_dependencies))}"
+            )

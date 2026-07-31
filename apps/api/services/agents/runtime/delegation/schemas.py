@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from services.agents.runtime.entity_references.domain import AgentReference
+
 
 class DelegateAgentSummary(BaseModel):
     """A model-facing summary of one visible delegate agent."""
@@ -18,6 +20,7 @@ class DelegateAgentSummary(BaseModel):
     model: str | None = None
     tool_count: int
     skill_count: int
+    reference: AgentReference
 
 
 class DelegateRunResult(BaseModel):

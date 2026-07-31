@@ -208,7 +208,7 @@ describe("Google Ads tool presenters", () => {
   it("uses the existing approval controls with an editable status and strong warning", () => {
     const controls = approvalControls()
     const declaredFields = [
-      field("campaign_ids", "Declared Campaigns", "list", false),
+      field("campaign_ids", "Declared Campaigns", "entity_list", false),
       {
         ...field("status", "Declared Status", "text", true),
         options: ["ENABLED", "PAUSED"],
@@ -221,7 +221,13 @@ describe("Google Ads tool presenters", () => {
           kind: "approval",
           name: "google_ads_update_campaign_status",
           status: "awaiting_approval",
-          args: { campaign_ids: ["10", "20"], status: "PAUSED" },
+          args: {
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+            ],
+            status: "PAUSED",
+          },
         },
         controls,
         toolUi(declaredFields)
@@ -248,9 +254,27 @@ describe("Google Ads tool presenters", () => {
     }
     const html = render(rendered)
     expect(html).toContain("This changes live campaign delivery.")
-    expect(html).toContain("10")
-    expect(html).toContain("20")
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Brand Awareness")
     expect(html).toContain("Approve &amp; Update")
+  })
+
+  it("declines to render the approval card for legacy raw campaign ids", () => {
+    expect(
+      googleAdsCampaignStatusPresenter.render(
+        props(
+          {
+            id: "campaign-legacy",
+            kind: "approval",
+            name: "google_ads_update_campaign_status",
+            status: "awaiting_approval",
+            args: { campaign_ids: ["10", "20"], status: "PAUSED" },
+          },
+          approvalControls(),
+          toolUi([])
+        )
+      )
+    ).toBeNull()
   })
 
   it("renders mixed campaign outcomes with per-campaign status and inline errors", () => {
@@ -261,7 +285,13 @@ describe("Google Ads tool presenters", () => {
           kind: "result",
           name: "google_ads_update_campaign_status",
           status: "completed",
-          args: { campaign_ids: ["10", "20"], status: "PAUSED" },
+          args: {
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+            ],
+            status: "PAUSED",
+          },
           result: {
             results: [
               entry({
@@ -302,7 +332,7 @@ describe("Google Ads tool presenters", () => {
           kind: "call",
           name: "google_ads_update_campaign_status",
           status,
-          args: { campaign_ids: ["10"], status: "PAUSED" },
+          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
         })
       )
     )
@@ -399,6 +429,16 @@ function toolUi(argFields: ToolUiField[]): ToolUi {
     icon: "google_ads",
     result_fields: [],
     running_label: "",
+  }
+}
+
+function campaignReference(externalId: string, label: string) {
+  return {
+    version: 1,
+    entity_kind: "google_ads_campaign",
+    integration_resource_id: "resource-1",
+    external_id: externalId,
+    label,
   }
 }
 

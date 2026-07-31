@@ -39,15 +39,26 @@ async def gmail_client(
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
 ) -> GmailClient:
+    return await gmail_client_for_principal(
+        ctx.deps.db,
+        actor=ctx.deps.user,
+        workspace=ctx.deps.workspace,
+        entry=entry,
+    )
+
+
+async def gmail_client_for_principal(
+    db, *, actor, workspace, entry: ResolvedContextEntry
+) -> GmailClient:
     async def access_token(force: bool) -> str:
         usable = await get_usable_connection_credential(
-            ctx.deps.db,
+            db,
             connection_id=entry.connection_id,
-            actor=ctx.deps.user,
-            workspace=ctx.deps.workspace,
+            actor=actor,
+            workspace=workspace,
         )
         credential = await ensure_fresh_credential(
-            ctx.deps.db,
+            db,
             credential_id=usable.id,
             refresh_token=refresh_oauth_credential,
             force=force,

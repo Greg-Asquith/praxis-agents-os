@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from integrations.airtable.references import airtable_record_reference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -45,7 +46,7 @@ async def airtable_list_records(
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await airtable_client(ctx, entry)
-            return await list_records(
+            result = await list_records(
                 client,
                 base_id=entry.external_id,
                 table=normalized_table,
@@ -57,6 +58,11 @@ async def airtable_list_records(
                 ),
                 max_records=max_records,
             )
+            for record in result["records"]:
+                reference = airtable_record_reference(entry, normalized_table, record)
+                if reference is not None:
+                    record["reference"] = reference
+            return result
 
         return await run_audited_operation(
             ctx,

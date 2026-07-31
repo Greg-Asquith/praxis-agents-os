@@ -117,7 +117,7 @@ Functional, but visibly unstyled.
 | 035 | Typed argument editing: contract beyond strings | P1 | M | — | DONE |
 | 036 | Editability sweep: every approvable argument editable | P1 | L | 035 | DONE |
 | 037 | Edit & run again: steering tools after they ran | P1 | L | 035, 036 | TODO |
-| 038 | Human-readable tool entity references and selectors | P1 | XL | 035, 036 | TODO |
+| 038 | Human-readable tool entity references and selectors | P1 | XL | 035, 036 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -211,7 +211,7 @@ Dependency notes:
   036. 035/036 touch `approval-card.tsx`,
   `approval-decisions.ts`, and the integration presenters — do not run
   them concurrently with any plan editing conversation tool UI.
-- 038 (written 2026-07-31 against the in-flight 036 tree) is the entity
+- 038 (completed 2026-07-31 against the in-flight 036 tree) is the entity
   reference layer missing from the typed field contract: people select named,
   scoped campaigns, messages, records, and internal entities while stable IDs
   remain server-validated execution details. It runs after 036. Do not run it

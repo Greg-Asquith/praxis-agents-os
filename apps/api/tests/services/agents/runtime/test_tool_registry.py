@@ -6,6 +6,7 @@ from typing import get_args, get_type_hints
 from uuid import uuid4
 
 import pytest
+from pydantic import BaseModel
 
 from core.exceptions.general import AppValidationError
 from integrations.airtable.tools.create_record import (
@@ -22,6 +23,7 @@ from integrations.gmail.tools.search_messages import (
     DEFINITION as GMAIL_SEARCH_MESSAGES_DEFINITION,
 )
 from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSAGE_DEFINITION
+from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools.run_report import (
     DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
 )
@@ -29,6 +31,7 @@ from integrations.google_ads.tools.update_campaign_status import (
     DEFINITION as GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
     google_ads_update_campaign_status,
 )
+from integrations.google_ads.tools.utils import GOOGLE_ADS_BINDING
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.delegation.build_delegation_tools import (
@@ -69,6 +72,34 @@ def cleanup_test_tools():
 
 def _noop() -> str:
     return "ok"
+
+
+def _scoped_campaign(campaign: GoogleAdsCampaignReference) -> str:
+    return campaign.external_id
+
+
+def _bare_customer(customer_id: str) -> str:
+    return customer_id
+
+
+class _UnsafeNestedScope(BaseModel):
+    customer_id: str
+
+
+class _UnsafeScopeWrapper(BaseModel):
+    target: _UnsafeNestedScope
+
+
+def _unsafe_nested_scope(target: _UnsafeNestedScope) -> str:
+    return target.customer_id
+
+
+def _unsafe_wrapped_scope(payload: _UnsafeScopeWrapper) -> str:
+    return payload.target.customer_id
+
+
+def _entity_value(value: str, scope: str = "default") -> str:
+    return f"{scope}:{value}"
 
 
 def _agent(
@@ -235,6 +266,45 @@ def test_validate_definition_rejects_editable_result_fields() -> None:
         validate_definition(definition)
 
 
+def test_integration_binding_accepts_scope_only_in_typed_reference() -> None:
+    definition = RuntimeToolDefinition(
+        name="google_ads_scoped_campaign",
+        function=_scoped_campaign,
+        description="Read one selected campaign.",
+        provider="google_ads",
+        integration_binding=GOOGLE_ADS_BINDING,
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(
+                    key="campaign",
+                    label="Campaign",
+                    format="entity",
+                    entity_kind="google_ads_campaign",
+                ),
+            )
+        ),
+    )
+
+    validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    "function",
+    [_bare_customer, _unsafe_nested_scope, _unsafe_wrapped_scope],
+)
+def test_integration_binding_rejects_untyped_scope_parameters(function) -> None:
+    definition = RuntimeToolDefinition(
+        name="google_ads_unsafe_scope",
+        function=function,
+        description="Unsafe caller-owned scope.",
+        provider="google_ads",
+        integration_binding=GOOGLE_ADS_BINDING,
+    )
+
+    with pytest.raises(RuntimeError, match=r"scope|connection/account"):
+        validate_definition(definition)
+
+
 @pytest.mark.parametrize(
     ("field", "error"),
     [
@@ -288,6 +358,44 @@ def test_validate_definition_rejects_invalid_field_presentation(
         name="bad_field_presentation",
         function=_noop,
         description="Invalid field presentation.",
+        presentation=ToolPresentation(arg_fields=(field,)),
+    )
+
+    with pytest.raises(RuntimeError, match=error):
+        validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    ("field", "error"),
+    [
+        (
+            ToolFieldPresentation(key="value", label="Value", format="entity"),
+            "require an entity kind",
+        ),
+        (
+            ToolFieldPresentation(key="value", label="Value", entity_kind="file"),
+            "cannot set entity kind",
+        ),
+        (
+            ToolFieldPresentation(
+                key="value",
+                label="Value",
+                format="entity",
+                entity_kind="file",
+                depends_on=("missing",),
+            ),
+            "dependencies must name input arguments",
+        ),
+    ],
+)
+def test_validate_definition_rejects_invalid_entity_metadata(
+    field: ToolFieldPresentation,
+    error: str,
+) -> None:
+    definition = RuntimeToolDefinition(
+        name="bad_entity_field",
+        function=_entity_value,
+        description="Invalid entity presentation.",
         presentation=ToolPresentation(arg_fields=(field,)),
     )
 
@@ -384,6 +492,27 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
     assert [field.format for field in serialized.arg_fields] == ["number", "keyvalue"]
 
 
+def test_presentation_wire_schema_preserves_entity_metadata() -> None:
+    presentation = ToolPresentation(
+        arg_fields=(
+            ToolFieldPresentation(
+                key="value",
+                label="Record",
+                format="entity",
+                editable=True,
+                entity_kind="airtable_record",
+                depends_on=("scope",),
+            ),
+        )
+    )
+
+    serialized = ToolPresentationRead.from_presentation(presentation)
+
+    assert serialized.arg_fields[0].format == "entity"
+    assert serialized.arg_fields[0].entity_kind == "airtable_record"
+    assert serialized.arg_fields[0].depends_on == ["scope"]
+
+
 def test_save_memory_editable_options_match_domain_literals() -> None:
     definition = get_runtime_tool_definition("save_memory")
     assert definition.presentation is not None
@@ -440,21 +569,22 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
     definitions[DELEGATE_TO_AGENT_DEFINITION.name] = DELEGATE_TO_AGENT_DEFINITION
     expected_editable_fields = {
         "airtable_create_record": {"fields", "table"},
-        "airtable_get_record": {"table"},
+        "airtable_get_record": {"record_id", "table"},
         "airtable_list_records": {
             "filter_by_formula",
             "max_records",
             "table",
             "view",
         },
-        "airtable_update_record": {"fields", "table"},
+        "airtable_update_record": {"fields", "record_id", "table"},
         "bigquery_run_query": {"query"},
         "create_artifact": {"content", "title"},
-        "delegate_to_agent": {"task"},
+        "delegate_to_agent": {"agent_id", "task"},
+        "gmail_read_message": {"message_id"},
         "gmail_search_messages": {"limit", "query"},
         "gmail_send_message": {"bcc", "body_text", "cc", "subject", "to"},
         "google_ads_run_report": {"query"},
-        "google_ads_update_campaign_status": {"status"},
+        "google_ads_update_campaign_status": {"campaign_ids", "status"},
         "save_memory": {
             "content",
             "expires_in_days",
@@ -464,9 +594,17 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
             "scope",
             "title",
         },
+        "read_document": {"document_id"},
+        "read_file": {"file_id"},
         "search_knowledge": {"limit", "query"},
-        "update_artifact": {"content", "title"},
-        "update_memory": {"content", "expires_in_days", "importance", "title"},
+        "update_artifact": {"artifact_id", "content", "title"},
+        "update_memory": {
+            "content",
+            "expires_in_days",
+            "importance",
+            "memory_id",
+            "title",
+        },
     }
 
     for tool_name, expected_keys in expected_editable_fields.items():
@@ -475,17 +613,10 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         assert actual_keys == expected_keys, tool_name
 
     expected_locked_fields = {
-        "airtable_get_record": {"record_id"},
-        "airtable_update_record": {"record_id"},
         "create_artifact": {"artifact_type"},
-        "delegate_to_agent": {"agent_id"},
         "forget_memory": {"memory_id", "reason"},
-        "gmail_read_message": {"message_id"},
-        "google_ads_update_campaign_status": {"campaign_ids"},
-        "read_document": {"document_id", "range"},
-        "read_file": {"file_id", "mode"},
-        "update_artifact": {"artifact_id"},
-        "update_memory": {"memory_id"},
+        "read_document": {"range"},
+        "read_file": {"mode"},
     }
     for tool_name, expected_keys in expected_locked_fields.items():
         definition = definitions[tool_name]
@@ -501,10 +632,17 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         ("create_artifact", "content"): "multiline",
         ("gmail_search_messages", "limit"): "number",
         ("gmail_send_message", "to"): "list",
-        ("google_ads_update_campaign_status", "campaign_ids"): "list",
+        ("airtable_get_record", "record_id"): "entity",
+        ("airtable_update_record", "record_id"): "entity",
+        ("delegate_to_agent", "agent_id"): "entity",
+        ("gmail_read_message", "message_id"): "entity",
+        ("google_ads_update_campaign_status", "campaign_ids"): "entity_list",
+        ("read_document", "document_id"): "entity",
+        ("read_file", "file_id"): "entity",
         ("save_memory", "content"): "markdown",
         ("search_knowledge", "limit"): "number",
         ("update_memory", "content"): "markdown",
+        ("update_memory", "memory_id"): "entity",
     }
     for (tool_name, field_key), expected_format in format_expectations.items():
         definition = definitions[tool_name]

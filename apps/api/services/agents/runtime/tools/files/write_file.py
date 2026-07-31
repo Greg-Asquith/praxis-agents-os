@@ -11,6 +11,7 @@ from pydantic_ai import ApprovalRequired, ModelRetry, RunContext
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.staged_tool_content import (
     delete_staged_write_content,
     resolve_staged_write_content,
@@ -33,6 +34,7 @@ class WriteFileOutput(BaseModel):
     bytes_written: int
     file_id: UUID
     revision_id: UUID
+    reference: FileReference
 
 
 @runtime_tool(
@@ -73,10 +75,13 @@ class WriteFileOutput(BaseModel):
                 editable=True,
                 placeholder="Name this file",
             ),
-            ToolFieldPresentation(key="file_id", label="Existing File ID"),
             ToolFieldPresentation(
-                key="expected_current_revision_id",
-                label="Expected Revision ID",
+                key="file_id",
+                label="Existing File",
+                format="entity",
+                editable=True,
+                secondary=True,
+                entity_kind="file",
             ),
             ToolFieldPresentation(key="content", label="Content", format="multiline"),
         ),
@@ -90,7 +95,7 @@ async def write_file(
     ctx: RunContext[RuntimeDeps],
     name: str,
     content: str | None = None,
-    file_id: UUID | None = None,
+    file_id: FileReference | None = None,
     expected_current_revision_id: UUID | None = None,
     content_ref: str | None = None,
 ) -> WriteFileOutput:
@@ -131,7 +136,7 @@ async def write_file(
             agent=ctx.deps.agent,
             name=name,
             content=content,
-            file_id=file_id,
+            file_id=internal_entity_id(file_id) if file_id is not None else None,
             expected_current_revision_id=expected_current_revision_id,
         )
     except (AppValidationError, ConflictError, NotFoundError) as exc:
@@ -153,5 +158,10 @@ async def write_file(
         name=result.file.name,
         file_id=result.file.id,
         revision_id=result.revision.id,
+        reference=FileReference(
+            entity_id=result.file.id,
+            label=result.file.name,
+            description=f"{result.file.category.title()} · {result.file.size_bytes:,} bytes",
+        ),
         bytes_written=result.bytes_written,
     )

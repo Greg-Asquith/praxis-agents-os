@@ -1091,7 +1091,7 @@ async def test_resume_run_streams_approved_tool_to_completion(
         ):
             body = (await response.aread()).decode()
 
-        assert response.status_code == 200
+        assert response.status_code == 200, body
         assert response.headers["content-type"].startswith("text/event-stream")
         assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
         assert f"event: {EVENT_RUN_STATUS}" in body
@@ -1212,7 +1212,7 @@ async def test_resume_run_replays_edited_integer_through_conditional_approval(
         ):
             body = (await response.aread()).decode()
 
-        assert response.status_code == 200
+        assert response.status_code == 200, body
         assert f"event: {EVENT_TOOL_CALL}" in body
         assert '"args":{"value":5}' in body
         assert f"event: {EVENT_TOOL_RESULT}" in body

@@ -8,7 +8,13 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
+- **Completed**: 2026-07-31
+- **Verification**: `make check` passed, including 1,393 backend tests and 93
+  frontend test files with 453 tests. The provider-specific multi-context behavior,
+  stale-reference rejection, permission boundaries, and selector states are
+  covered by automated tests. Live credential and browser QA was unavailable
+  in the execution environment.
 - **Written**: 2026-07-31 against the in-flight Plan 036 working tree.
 - **Corrected**: 2026-07-31 after a full code-verification pass. The step 1
   baseline inventory, the server-side editability enforcement step, and the

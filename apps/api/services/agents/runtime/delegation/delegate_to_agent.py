@@ -36,6 +36,7 @@ from services.agents.runtime.delegation.utils import (
     safe_error,
     truncate,
 )
+from services.agents.runtime.entity_references.domain import AgentReference, internal_entity_id
 from services.agents.runtime.sinks import NullSink
 
 logger = logging.getLogger(__name__)
@@ -43,15 +44,16 @@ logger = logging.getLogger(__name__)
 
 async def delegate_to_agent(
     ctx: RunContext[RuntimeDeps],
-    agent_id: UUID,
+    agent_id: AgentReference,
     task: Annotated[str, Field(min_length=1, max_length=DELEGATE_TASK_MAX_LENGTH)],
 ) -> DelegateRunResult:
     """Run a delegated child agent call and return a bounded structured result."""
     normalized_task = task.strip()
+    resolved_agent_id = internal_entity_id(agent_id)
     if not normalized_task:
         return DelegateRunResult(
             status="failed",
-            agent_id=agent_id,
+            agent_id=resolved_agent_id,
             agent_name="Unknown agent",
             error="Delegate task must not be blank.",
         )
@@ -59,7 +61,7 @@ async def delegate_to_agent(
     if ctx.deps.envelope.max_delegation_depth <= ctx.deps.delegation_depth:
         return DelegateRunResult(
             status="failed",
-            agent_id=agent_id,
+            agent_id=resolved_agent_id,
             agent_name="Unknown agent",
             error="Delegation depth limit reached.",
         )
@@ -67,7 +69,7 @@ async def delegate_to_agent(
     if ctx.tool_call_approved:
         resumed_result = await resume_approved_delegate_run(
             ctx,
-            agent_id=agent_id,
+            agent_id=resolved_agent_id,
         )
         if resumed_result is not None:
             return resumed_result
@@ -87,7 +89,7 @@ async def delegate_to_agent(
             session,
             caller=ctx.deps.agent,
             workspace=ctx.deps.workspace,
-            target_agent_id=agent_id,
+            target_agent_id=resolved_agent_id,
         )
         target_name = target.name
         child_conversation = Conversation(
@@ -181,14 +183,14 @@ async def delegate_to_agent(
             "Delegated agent run failed",
             exc_info=True,
             extra={
-                "agent_id": str(agent_id),
+                "agent_id": str(resolved_agent_id),
                 "child_run_id": str(child_run_id) if child_run_id else None,
                 "parent_run_id": str(ctx.deps.run.id),
             },
         )
         return DelegateRunResult(
             status="failed",
-            agent_id=agent_id,
+            agent_id=resolved_agent_id,
             agent_name=target_name,
             run_id=child_run_id,
             conversation_id=child_conversation_id,

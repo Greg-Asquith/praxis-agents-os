@@ -10,6 +10,7 @@ from services.integrations.plugin import (
 )
 
 from .discover_resources import discover_resources
+from .entity_resolvers import GMAIL_MESSAGE_RESOLVER
 from .preview import PREVIEW_OPERATION, fetch_message_preview
 from .settings import gmail_settings
 from .tools import TOOL_DEFINITIONS
@@ -50,6 +51,7 @@ PROVIDER = IntegrationProviderPlugin(
     discover_resources=discover_resources,
     oauth_config=oauth_config,
     tool_definitions=TOOL_DEFINITIONS,
+    entity_resolvers=(GMAIL_MESSAGE_RESOLVER,),
     preview_definitions=(
         IntegrationPreviewDefinition(
             kind="gmail_message",

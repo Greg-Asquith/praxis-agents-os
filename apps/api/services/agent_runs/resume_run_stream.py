@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from models.agent_run import AgentRun
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agent_runs.utils import load_delegated_child_run_for_approval
+from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY,
 )
@@ -68,8 +69,19 @@ async def resume_agent_run_stream(
         )
 
     suspended_state = load_suspended_run_state(run)
+    membership = await db.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace.id,
+            WorkspaceMembership.user_id == actor.id,
+        )
+    )
+    if membership is None:
+        raise NotFoundError("Workspace membership not found", resource_type="workspace_membership")
     deferred_tool_results = await _build_deferred_tool_results(
         db,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
         run=run,
         suspended_state=suspended_state,
         decisions=payload.decisions,
@@ -111,6 +123,9 @@ async def resume_agent_run_stream(
 async def _build_deferred_tool_results(
     db: AsyncSession,
     *,
+    actor: User,
+    workspace: Workspace,
+    membership: WorkspaceMembership,
     run: AgentRun,
     suspended_state: SuspendedRunState,
     decisions: list[AgentRunResumeDecision],
@@ -130,7 +145,14 @@ async def _build_deferred_tool_results(
         )
 
     direct_pending_tool_call_ids: list[str] = []
-    delegated_child_states: dict[str, tuple[dict[str, object], SuspendedRunState]] = {}
+    delegated_child_states: dict[
+        str,
+        tuple[dict[str, object], AgentRun, SuspendedRunState],
+    ] = {}
+    direct_calls = {
+        approval.tool_call_id: approval
+        for approval in suspended_state.deferred_tool_requests.approvals
+    }
 
     for approval in suspended_state.deferred_tool_requests.approvals:
         metadata = suspended_state.deferred_tool_requests.metadata.get(approval.tool_call_id)
@@ -148,11 +170,12 @@ async def _build_deferred_tool_results(
             continue
         delegated_child_states[approval.tool_call_id] = (
             metadata,
+            child_run,
             load_suspended_run_state(child_run),
         )
 
     expected = set(direct_pending_tool_call_ids)
-    for _metadata, child_state in delegated_child_states.values():
+    for _metadata, _child_run, child_state in delegated_child_states.values():
         expected.update(child_state.pending_tool_call_ids)
 
     received = set(by_id)
@@ -169,18 +192,37 @@ async def _build_deferred_tool_results(
     approvals = {}
     metadata_by_parent_tool_call_id: dict[str, dict[str, object]] = {}
     for tool_call_id in direct_pending_tool_call_ids:
-        approvals[tool_call_id] = _approval_result_for_decision(by_id[tool_call_id])
+        approvals[tool_call_id] = await _approval_result_for_decision(
+            db,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            run=run,
+            tool_call=direct_calls[tool_call_id],
+            decision=by_id[tool_call_id],
+        )
 
     for parent_tool_call_id, (
         parent_metadata,
+        child_run,
         child_state,
     ) in delegated_child_states.items():
-        child_results = DeferredToolResults(
-            approvals={
-                child_tool_call_id: _approval_result_for_decision(by_id[child_tool_call_id])
-                for child_tool_call_id in child_state.pending_tool_call_ids
-            }
-        )
+        child_calls = {
+            approval.tool_call_id: approval
+            for approval in child_state.deferred_tool_requests.approvals
+        }
+        child_approvals = {}
+        for child_tool_call_id in child_state.pending_tool_call_ids:
+            child_approvals[child_tool_call_id] = await _approval_result_for_decision(
+                db,
+                actor=actor,
+                workspace=workspace,
+                membership=membership,
+                run=child_run,
+                tool_call=child_calls[child_tool_call_id],
+                decision=by_id[child_tool_call_id],
+            )
+        child_results = DeferredToolResults(approvals=child_approvals)
         approvals[parent_tool_call_id] = ToolApproved()
         metadata_by_parent_tool_call_id[parent_tool_call_id] = {
             **parent_metadata,
@@ -193,9 +235,25 @@ async def _build_deferred_tool_results(
     )
 
 
-def _approval_result_for_decision(
+async def _approval_result_for_decision(
+    db: AsyncSession,
+    *,
+    actor: User,
+    workspace: Workspace,
+    membership: WorkspaceMembership,
+    run: AgentRun,
+    tool_call: object,
     decision: AgentRunResumeDecision,
 ) -> ToolApproved | ToolDenied:
     if decision.decision == "approved":
-        return ToolApproved(override_args=decision.override_args)
+        override_args = await validate_and_canonicalize_override_args(
+            db,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            run=run,
+            tool_call=tool_call,
+            override_args=decision.override_args,
+        )
+        return ToolApproved(override_args=override_args)
     return ToolDenied(decision.message or "Denied by user")

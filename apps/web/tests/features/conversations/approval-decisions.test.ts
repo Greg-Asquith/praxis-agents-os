@@ -270,6 +270,74 @@ describe("approval decision helpers", () => {
     ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "typed-1" }])
   })
 
+  it("submits exact structured entity references selected by the operator", () => {
+    const original = {
+      version: 1 as const,
+      entity_kind: "file",
+      entity_id: "file-1",
+      label: "Draft plan.md",
+    }
+    const selected = { ...original, entity_id: "file-2", label: "Final plan.md" }
+    const approval: PendingToolApproval = {
+      tool_call_id: "file-1",
+      name: "read_file",
+      args: { file_id: original, mode: "content" },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "file-1": {
+          decision: "approved",
+          message: "",
+          edits: { file_id: selected },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: { file_id: selected, mode: "content" },
+        tool_call_id: "file-1",
+      },
+    ])
+  })
+
+  it("submits scoped multi-entity references without flattening their account scope", () => {
+    const first = {
+      version: 1 as const,
+      entity_kind: "google_ads_campaign",
+      integration_resource_id: "account-1",
+      external_id: "111",
+      label: "Spring campaign",
+    }
+    const second = {
+      ...first,
+      integration_resource_id: "account-2",
+      external_id: "222",
+      label: "Summer campaign",
+    }
+    const approval: PendingToolApproval = {
+      tool_call_id: "campaigns-1",
+      name: "google_ads_update_campaign_status",
+      args: { campaign_ids: [first], status: "PAUSED" },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "campaigns-1": {
+          decision: "approved",
+          message: "",
+          edits: { campaign_ids: [first, second] },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: { campaign_ids: [first, second], status: "PAUSED" },
+        tool_call_id: "campaigns-1",
+      },
+    ])
+  })
+
   it("preserves integer shape and rejects unsupported edited value shapes", () => {
     const integerApproval: PendingToolApproval = {
       tool_call_id: "integer-1",

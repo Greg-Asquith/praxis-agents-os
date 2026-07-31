@@ -4,8 +4,8 @@ import { AlertCircleIcon, CircleCheckIcon } from "lucide-react"
 
 import { KpiStrip } from "@/components/tool-ui/kpi"
 import { Badge } from "@/components/ui/badge"
+import { campaignReferenceLabels } from "@/integrations/google_ads/lib/tool-details"
 import { titleCaseToken } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
 
 export type CampaignError = {
   campaignId: string
@@ -77,17 +77,12 @@ export function CampaignFailure({ args, description }: { args: unknown; descript
 }
 
 function CampaignIds({ args }: { args: unknown }) {
-  if (!isRecord(args) || !Array.isArray(args["campaign_ids"])) {
-    return null
-  }
-  const campaignIds = args["campaign_ids"].filter(
-    (value): value is string => typeof value === "string"
-  )
-  return campaignIds.length > 0 ? (
+  const campaigns = campaignReferenceLabels(args)
+  return campaigns.length > 0 ? (
     <div className="flex flex-wrap gap-1">
-      {campaignIds.map((campaignId) => (
-        <code className="bg-muted rounded px-1.5 py-1 text-xs" key={campaignId}>
-          {campaignId}
+      {campaigns.map((campaign) => (
+        <code className="bg-muted rounded px-1.5 py-1 text-xs" key={campaign}>
+          {campaign}
         </code>
       ))}
     </div>

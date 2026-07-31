@@ -43,6 +43,7 @@ from services.agents.runtime.delegation import (
     get_visible_delegate_agent,
     list_visible_delegate_agents,
 )
+from services.agents.runtime.entity_references.domain import AgentReference
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.events import EVENT_TOOL_APPROVAL_REQUIRED
 from services.agents.runtime.execute_run import execute_run
@@ -54,6 +55,10 @@ from services.conversations import get_conversation, list_conversations
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
+
+
+def _agent_reference(agent_id: UUID) -> dict[str, object]:
+    return AgentReference(entity_id=agent_id, label="Child Delegate").model_dump(mode="json")
 
 
 @dataclass(frozen=True)
@@ -250,7 +255,7 @@ async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
                     name="delegate_to_agent",
                     json_args=json.dumps(
                         {
-                            "agent_id": str(runtime_context.child_agent_id),
+                            "agent_id": _agent_reference(runtime_context.child_agent_id),
                             "task": "Run the child task.",
                         }
                     ),
@@ -382,7 +387,7 @@ async def test_delegated_child_inherits_scheduled_parent_envelope(
                     name="delegate_to_agent",
                     json_args=json.dumps(
                         {
-                            "agent_id": str(runtime_context.child_agent_id),
+                            "agent_id": _agent_reference(runtime_context.child_agent_id),
                             "task": "Run the child task.",
                         }
                     ),
@@ -481,7 +486,7 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                     name="delegate_to_agent",
                     json_args=json.dumps(
                         {
-                            "agent_id": str(runtime_context.child_agent_id),
+                            "agent_id": _agent_reference(runtime_context.child_agent_id),
                             "task": "Perform the external write.",
                         }
                     ),
@@ -669,7 +674,7 @@ async def test_cancelling_suspended_delegated_parent_cancels_child_approval_run(
                     name="delegate_to_agent",
                     json_args=json.dumps(
                         {
-                            "agent_id": str(runtime_context.child_agent_id),
+                            "agent_id": _agent_reference(runtime_context.child_agent_id),
                             "task": "Add two numbers.",
                         }
                     ),
@@ -789,7 +794,7 @@ async def test_delegated_child_approval_resume_rechecks_allowlist(
                     name="delegate_to_agent",
                     json_args=json.dumps(
                         {
-                            "agent_id": str(runtime_context.child_agent_id),
+                            "agent_id": _agent_reference(runtime_context.child_agent_id),
                             "task": "Add two numbers.",
                         }
                     ),
