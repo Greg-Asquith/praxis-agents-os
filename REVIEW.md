@@ -9,9 +9,9 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 - The change does what the task or plan asked, and no more. Flag drive-by
   refactors, new abstractions, speculative generality, and unrelated
   formatting churn.
-- If a numbered plan drove the work: STOP conditions were honored, the status
-  row was updated, and no plan numbers leaked into code, comments, or
-  docstrings.
+- If an issue or design note drove the work, its scope and explicit stop
+  conditions were honored, and private planning references did not leak into
+  code, comments, or docstrings.
 - Docs (README, AGENTS.md files) were updated in the same change when
   commands, routes, env vars, or architecture moved.
 

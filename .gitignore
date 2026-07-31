@@ -124,6 +124,5 @@ log/
 # Documentation
 ########################################
 docs/*
-!docs/plans/
 !docs/architecture/
 !docs/guides/

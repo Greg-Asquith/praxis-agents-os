@@ -2,9 +2,9 @@
 
 Describe the outcome and why the change is needed.
 
-## Related issue or plan
+## Related issue
 
-Link the issue or plan that defines the scope.
+Link the issue that defines the scope.
 
 ## Checks run
 

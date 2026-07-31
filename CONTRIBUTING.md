@@ -24,17 +24,13 @@ Focused commands and architecture expectations are documented in
 [apps/web/AGENTS.md](apps/web/AGENTS.md). The
 [review checklist](REVIEW.md) describes what maintainers scrutinize.
 
-## Plan-driven workflow
+## Issue-driven workflow
 
-The [implementation-plan index](docs/plans/000_README.md) tracks planned and
-completed work, while the
-[master roadmap](docs/plans/000_MASTER_ROADMAP.md) is authoritative for
-ordering. Before implementing a numbered plan, read it fully and honor its
-STOP conditions. Update its status and roadmap bookkeeping in the same
-change when the plan is complete.
-
-For work that is not already planned, open an issue describing the problem
-and intended outcome before investing in a large implementation.
+Use GitHub issues for public work tracking. Before investing in a large
+implementation, open an issue describing the operator problem, intended
+outcome, scope, risks, and relevant architecture decisions. Durable design
+decisions belong under `docs/architecture/`; private implementation notes do
+not need to be committed.
 
 ## Pull requests
 
@@ -50,7 +46,7 @@ and intended outcome before investing in a large implementation.
 - Use a concise imperative commit subject with an area prefix when useful,
   such as `API - Reject placeholder production secrets`.
 
-Link the relevant issue or plan and call out migration, security, tenancy,
+Link the relevant issue and call out migration, security, tenancy,
 approval, provider, or user-facing risks explicitly.
 
 ## Versioning

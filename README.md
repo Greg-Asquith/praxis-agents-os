@@ -79,10 +79,7 @@ The core platform is wired end to end (API, worker, and UI):
 - Operations: agent schedules with a leased background worker, a generic jobs
   worker, audit and security event viewers, and an LLM model catalog.
 
-Notifications exist as a backend service without routes or UI yet. See
-[the implementation-plan index](docs/plans/000_README.md) for current status
-and the [master roadmap](docs/plans/000_MASTER_ROADMAP.md) for authoritative
-ordering.
+Notifications exist as a backend service without routes or UI yet.
 
 ### No telemetry
 
@@ -98,7 +95,6 @@ in infrastructure you configure.
 |   +-- web/      # Vite + React frontend
 +-- docs/
 |   +-- architecture/ # Stable runtime, governance, context, and threat-model notes
-|   +-- plans/        # Numbered implementation plans and the master roadmap
 +-- makefiles/    # Focused local-development and verification targets
 +-- docker-compose.yml
 +-- AGENTS.md     # Contributor and coding-agent guidance (per-app files in apps/)
@@ -357,9 +353,9 @@ schema. The local Compose paths perform that sequence automatically.
 
 Production deployment currently targets cloud infrastructure: outside
 `ENVIRONMENT=local`, Praxis requires cloud-backed storage and a cloud secret
-manager. A production email transport is not implemented yet. The
-[deployment plans](docs/plans/deployment/) document the current target
-contract, local quickstart work, security review, and GCP path.
+manager. A production email transport is not implemented yet. Public cloud
+deployment guides are still pending; the Docker quickstart is the supported
+documented installation path for this release.
 
 Self-service password reset is not implemented. An instance operator can
 recover an account through the super-admin password-management route after
@@ -377,9 +373,6 @@ and remember, and hardening how they behave:
   deployment guidance.
 - Product follow-ups: notification delivery and evaluation-led refinements to
   retrieval and memory behavior.
-
-`docs/plans/000_MASTER_ROADMAP.md` is the authoritative ordering document for
-this work.
 
 ## Contributing
 

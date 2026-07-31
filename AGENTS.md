@@ -30,7 +30,6 @@ behind good defaults and progressive disclosure, not in their face.
 - `docker-compose.yml` defines local Postgres (pgvector image), the API, the
   worker, and the web app. The root `Makefile` wraps the local dev flow
   (`make bootstrap`, `make dev`, `make check`).
-- `docs/plans/` holds the numbered implementation plans and the master roadmap.
 
 Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations
@@ -49,20 +48,15 @@ indexes provisioned by migrations. Keep
 public behavior explicit — if a capability is not wired end to end, document
 it as pending instead of implying it works.
 
-## Plans And Roadmap
+## Planning And Scope
 
-- `docs/plans/000_MASTER_ROADMAP.md` is the authoritative ordering document;
-  the table in `docs/plans/000_README.md` tracks per-plan status.
-- The next major verticals are harness hardening with behavior evals, public
-  launch readiness, and internal applications (plans 082–088, architecture in
-  `docs/architecture/internal-applications.md`).
-- Before executing a numbered plan, read it fully, honor its STOP conditions,
-  and update its status row when done. Plans record decisions taken and
-  findings rejected — check both before re-proposing something the roadmap
-  already ruled out.
-- Do not reference numbered plan docs from implementation code, comments, or
-  docstrings. Plans guide the work; code should describe runtime behavior and
-  durable design decisions without citing plan numbers or roadmap files.
+- Use GitHub issues for public work tracking and the stable documents under
+  `docs/architecture/` for durable design decisions.
+- Keep implementation notes and scratch plans local. Code, comments, and
+  docstrings should describe runtime behavior and durable design decisions,
+  not private planning artifacts.
+- Before proposing a broad capability, check the architecture notes and recent
+  history for prior decisions or rejected approaches.
 
 ## Working Principles
 
