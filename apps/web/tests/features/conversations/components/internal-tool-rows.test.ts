@@ -215,6 +215,17 @@ describe("artifact tool rows", () => {
   })
 
   it("renders honest running, denied, and malformed states", () => {
+    const preparing = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          args: null,
+          name: "create_artifact",
+          status: "running",
+          result: undefined,
+        }),
+        defaultOpen: false,
+      })
+    )
     const running = render(
       createElement(ArtifactToolRow, {
         activity: activity({
@@ -246,6 +257,8 @@ describe("artifact tool rows", () => {
       })
     )
 
+    expect(preparing).toContain("Creating artifact…")
+    expect(preparing).toContain('aria-busy="true"')
     expect(running).toContain("Updating artifact…")
     expect(running).toContain("Launch map")
     expect(running).toContain('aria-busy="true"')

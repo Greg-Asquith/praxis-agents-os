@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
+    ToolCallPart,
     ToolReturnPart,
 )
 from pydantic_core import to_jsonable_python
@@ -99,6 +100,21 @@ async def emit_agent_stream_event(
                 "tool_call_id": part.tool_call_id,
                 "name": part.tool_name,
                 "args": to_jsonable_python(part.args),
+            },
+        )
+        return
+
+    if isinstance(event, PartStartEvent) and isinstance(event.part, ToolCallPart):
+        part = event.part
+        await sink.emit(
+            EVENT_TOOL_CALL,
+            {
+                "tool_call_id": part.tool_call_id,
+                "name": part.tool_name,
+                # Function-tool arguments may be very large and are incomplete at
+                # part start. Emit the identity now so clients can show progress;
+                # FunctionToolCallEvent replaces this with validated arguments.
+                "args": None,
             },
         )
         return

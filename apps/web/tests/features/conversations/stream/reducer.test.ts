@@ -163,6 +163,37 @@ describe("agentStreamReducer", () => {
     })
   })
 
+  it("keeps an early tool row while replacing incomplete arguments", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "artifact-1",
+          name: "create_artifact",
+          args: null,
+        },
+      },
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "artifact-1",
+          name: "create_artifact",
+          args: { title: "Launch map", content: "<html>…</html>" },
+        },
+      },
+    ])
+
+    expect(Object.keys(state.toolCalls)).toEqual(["artifact-1"])
+    expect(state.toolCalls["artifact-1"]).toMatchObject({
+      args: { title: "Launch map", content: "<html>…</html>" },
+      status: "running",
+      timelineSequence: 0,
+    })
+    expect(state.nextTimelineSequence).toBe(1)
+  })
+
   it("records approval-required tool state and run status", () => {
     const delegation = {
       parent_tool_call_id: "parent-tool-1",

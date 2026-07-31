@@ -105,6 +105,8 @@ it as pending instead of implying it works.
 Docker Compose expects local env files under `.local/`; they are intentionally
 not committed. The Compose `init` service creates them for Docker-only use;
 `make bootstrap` invokes the same initializer and installs dependencies;
+the initializer enables anonymous artifact sharing for local development while
+the application default remains disabled for other environments;
 `make dev` starts Postgres, migrates, and runs the API, worker, and web dev
 servers. In that workflow only Postgres runs in Docker; the API, worker, and
 web processes run locally, and `make dev-kill` stops all three. `make

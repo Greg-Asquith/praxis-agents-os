@@ -90,6 +90,7 @@ def bootstrap(workspace: Path) -> list[str]:
     key = _credential_key([api_env, api_generated_env])
     for path in (api_env, api_generated_env):
         _write_value(path, "CREDENTIAL_MASTER_KEYS", key)
+        _write_value(path, "ARTIFACT_SHARING_ENABLED", "true")
 
     if not web_generated_env.exists():
         web_generated_env.write_text("VITE_API_BASE_URL=http://localhost:8000/api/v1\n")

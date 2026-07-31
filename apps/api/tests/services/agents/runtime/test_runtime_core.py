@@ -140,6 +140,32 @@ async def test_event_translation_emits_text_from_part_start() -> None:
     assert sink.events[1].data["text"] == "hello"
 
 
+async def test_event_translation_emits_tool_identity_before_arguments_complete() -> None:
+    """Large function-tool arguments expose a live row as soon as the tool starts."""
+    run_id = uuid4()
+    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
+    state = EventTranslationState()
+
+    await emit_agent_stream_event(
+        sink,
+        PartStartEvent(
+            index=0,
+            part=ToolCallPart(
+                tool_name="create_artifact",
+                args='{"content":"<html>',
+                tool_call_id="artifact-call",
+            ),
+        ),
+        run_id=str(run_id),
+        state=state,
+    )
+
+    assert [event.event for event in sink.events] == [EVENT_TOOL_CALL]
+    assert sink.events[0].data["tool_call_id"] == "artifact-call"
+    assert sink.events[0].data["name"] == "create_artifact"
+    assert sink.events[0].data["args"] is None
+
+
 async def test_event_translation_emits_thinking_from_part_start_and_delta() -> None:
     """Thinking parts stream over the message channel without leaking signatures."""
     run_id = uuid4()
