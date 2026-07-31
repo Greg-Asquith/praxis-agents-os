@@ -2,6 +2,7 @@
 
 """Persist terminal execute_run outcomes and emit terminal events."""
 
+import logging
 from collections.abc import Sequence
 from contextlib import suppress
 from typing import Any
@@ -35,9 +36,11 @@ from services.agents.runtime.run_persistence import (
 )
 from services.agents.runtime.sinks import EventSink
 
+from .errors import public_run_error
 from .types import ExecuteRunResult
 
 CANCEL_FINALIZE_TIMEOUT = 3.0
+logger = logging.getLogger(__name__)
 
 
 async def finalize_terminal_run(
@@ -194,15 +197,24 @@ async def emit_failure_events(
     run_id: UUID,
     exc: Exception,
 ) -> None:
+    public_error = public_run_error(exc)
+    logger.error(
+        "Agent run execution failed",
+        exc_info=(type(exc), exc, exc.__traceback__),
+        extra={
+            "agent_run_id": str(run_id),
+            "run_started": started,
+            "public_error_code": public_error.code,
+        },
+    )
     await db.rollback()
-    error_code = getattr(exc, "error_code", exc.__class__.__name__)
     terminal_status = RUN_STATUS_FAILED
     if started:
         failed_run = await persist_failed_run(
             db,
             run_id=run_id,
-            error_code=error_code,
-            error_message=str(exc),
+            error_code=public_error.code,
+            error_message=public_error.message,
         )
         if failed_run is not None:
             terminal_status = failed_run.status
@@ -211,16 +223,16 @@ async def emit_failure_events(
                 await event_sink.emit(
                     EVENT_ERROR,
                     {
-                        "code": failed_run.error_code or error_code,
-                        "message": failed_run.error_message or str(exc),
+                        "code": public_error.code,
+                        "message": public_error.message,
                     },
                 )
     else:
         await event_sink.emit(
             EVENT_ERROR,
             {
-                "code": error_code,
-                "message": str(exc),
+                "code": public_error.code,
+                "message": public_error.message,
             },
         )
     await event_sink.emit(EVENT_DONE, {"status": terminal_status})

@@ -4,6 +4,7 @@
 
 import asyncio
 import importlib
+import logging
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from uuid import UUID, uuid4
@@ -51,6 +52,9 @@ from tests.factories import (
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
+
+execute_run_impl = importlib.import_module("services.agents.runtime.execute.execute_run")
+finalize_module = importlib.import_module("services.agents.runtime.execute.finalize")
 
 
 @dataclass(frozen=True)
@@ -105,7 +109,7 @@ async def test_pre_start_status_conflict_emits_error_and_done_without_run_status
     event_names = [event.event for event in sink.events]
     assert event_names == [EVENT_ERROR, EVENT_DONE]
     assert EVENT_RUN_STATUS not in event_names
-    assert sink.events[0].data["code"] == "ConflictError"
+    assert sink.events[0].data["code"] == "agent_run_conflict"
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
     assert sink.closed
 
@@ -147,15 +151,25 @@ async def test_pre_start_precondition_conflicts_emit_error_and_done(
 
 async def test_post_start_stream_failure_persists_failed_run_and_event_order(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     context = await _persist_runtime_context(db_session)
     sink = ClosingCollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+    sensitive_text = "sensitive-provider-token-post-start"
+    monkeypatch.setattr(finalize_module.logger, "disabled", False)
 
     async def failing_stream(_messages: list[ModelMessage], _info: AgentInfo):
-        raise RuntimeError("stream failed")
+        raise RuntimeError(sensitive_text)
         yield "unreachable"
 
-    with pytest.raises(RuntimeError, match="stream failed"):
+    with (
+        caplog.at_level(
+            logging.ERROR,
+            logger=finalize_module.logger.name,
+        ),
+        pytest.raises(RuntimeError, match=sensitive_text),
+    ):
         await execute_run(
             db_session,
             conversation_id=context.conversation_id,
@@ -172,8 +186,9 @@ async def test_post_start_stream_failure_persists_failed_run_and_event_order(
     stored_run = await db_session.get(AgentRun, context.run_id)
     assert stored_run is not None
     assert stored_run.status == RUN_STATUS_FAILED
-    assert stored_run.error_code == "RuntimeError"
-    assert stored_run.error_message == "stream failed"
+    assert stored_run.error_code == "agent_run_failed"
+    assert stored_run.error_message == "The agent run failed unexpectedly."
+    assert sensitive_text not in (stored_run.error_message or "")
 
     assert [event.event for event in sink.events] == [
         EVENT_RUN_STATUS,
@@ -183,8 +198,70 @@ async def test_post_start_stream_failure_persists_failed_run_and_event_order(
     ]
     assert sink.events[0].data["status"] == RUN_STATUS_RUNNING
     assert sink.events[1].data["status"] == RUN_STATUS_FAILED
-    assert sink.events[2].data["code"] == "RuntimeError"
+    assert sink.events[2].data["code"] == "agent_run_failed"
+    assert sink.events[2].data["message"] == "The agent run failed unexpectedly."
+    assert sensitive_text not in str([event.data for event in sink.events])
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
+    assert sink.closed
+    assert sensitive_text in caplog.text
+    failure_record = next(
+        record for record in caplog.records if record.getMessage() == "Agent run execution failed"
+    )
+    assert failure_record.agent_run_id == str(context.run_id)
+    assert failure_record.run_started is True
+
+
+async def test_pre_start_unknown_failure_uses_public_error_contract(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    context = await _persist_runtime_context(db_session)
+    await db_session.commit()
+    sink = ClosingCollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+    sensitive_text = "sensitive-database-dsn-pre-start"
+    monkeypatch.setattr(finalize_module.logger, "disabled", False)
+
+    def fail_validation(*_args, **_kwargs) -> None:
+        raise RuntimeError(sensitive_text)
+
+    monkeypatch.setattr(
+        execute_run_impl,
+        "validate_execution_preconditions",
+        fail_validation,
+    )
+
+    with (
+        caplog.at_level(
+            logging.ERROR,
+            logger=finalize_module.logger.name,
+        ),
+        pytest.raises(RuntimeError, match=sensitive_text),
+    ):
+        await execute_run(
+            db_session,
+            conversation_id=context.conversation_id,
+            run_id=context.run_id,
+            user_prompt="Hello",
+            sink=sink,
+            model=TestModel(call_tools=[]),
+        )
+
+    await db_session.rollback()
+    stored_run = await db_session.get(AgentRun, context.run_id)
+    assert stored_run is not None
+    assert stored_run.error_code is None
+    assert stored_run.error_message is None
+    assert [event.event for event in sink.events] == [EVENT_ERROR, EVENT_DONE]
+    assert sink.events[0].data["code"] == "agent_run_failed"
+    assert sink.events[0].data["message"] == "The agent run failed unexpectedly."
+    assert sensitive_text not in str([event.data for event in sink.events])
+    assert sensitive_text in caplog.text
+    failure_record = next(
+        record for record in caplog.records if record.getMessage() == "Agent run execution failed"
+    )
+    assert failure_record.agent_run_id == str(context.run_id)
+    assert failure_record.run_started is False
     assert sink.closed
 
 

@@ -969,11 +969,13 @@ async def test_execute_run_total_token_limit_fails_cleanly(
     stored_run = await db_session.get(AgentRun, runtime_context.run_id)
     assert stored_run is not None
     assert stored_run.status == RUN_STATUS_FAILED
-    assert stored_run.error_code == "UsageLimitExceeded"
+    assert stored_run.error_code == "usage_limit_exceeded"
+    assert stored_run.error_message == "The agent run exceeded its configured usage limit."
 
     event_names = [event.event for event in sink.events]
     assert event_names[-2:] == [EVENT_ERROR, EVENT_DONE]
-    assert sink.events[-2].data["code"] == "UsageLimitExceeded"
+    assert sink.events[-2].data["code"] == "usage_limit_exceeded"
+    assert sink.events[-2].data["message"] == "The agent run exceeded its configured usage limit."
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 
