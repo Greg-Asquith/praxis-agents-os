@@ -9,15 +9,18 @@ export function ArtifactPreviewFrame({
   artifactType,
   content,
   title,
+  versionId,
 }: {
   artifactType: ArtifactType
   content: ArtifactContent
   title: string
+  versionId: string
 }) {
   // Artifact content is rendered through typed, sandboxed paths. Never add raw HTML injection here.
   if (artifactType === "html" && content.content !== null) {
     return (
       <iframe
+        key={versionId}
         className="bg-background h-80 w-full rounded-lg border"
         sandbox="allow-scripts"
         srcDoc={buildHtmlFrameDocument({

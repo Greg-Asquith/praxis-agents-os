@@ -23,6 +23,7 @@ from core.logging import setup_logging
 from core.observability import get_metrics, setup_agent_tracing
 from core.settings import settings
 from middleware import (
+    ArtifactHostMiddleware,
     AuditContextMiddleware,
     BodySizeLimitMiddleware,
     CSRFMiddleware,
@@ -81,16 +82,19 @@ app = FastAPI(
 # Register middleware. Starlette uses LIFO order: the LAST call to
 # add_middleware produces the OUTERMOST layer (first to run on the request
 # path). The intended request-entry order is:
-#   CORS → RequestID → SecurityHeaders → CSRF → BodySizeLimit
+#   CORS → RequestID → SecurityHeaders → ArtifactHost → CSRF → BodySizeLimit
 #   → RequestLogging → DBSession → RateLimit → AuditContext → route
 # RequestID is outermost (below CORS) so error responses short-circuited by
 # CSRF (403) or BodySizeLimit (413) still carry X-Request-ID for correlation.
+# ArtifactHost sits above CSRF so host-mismatched requests are refused before
+# any cookie/CSRF handling while still passing back through SecurityHeaders.
 app.add_middleware(AuditContextMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(DBSessionMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(CSRFMiddleware)
+app.add_middleware(ArtifactHostMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
 

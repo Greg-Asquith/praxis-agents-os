@@ -2,13 +2,14 @@
 
 import { Suspense, useState } from "react"
 import { useSuspenseQueries } from "@tanstack/react-query"
-import { ArrowLeftIcon, RotateCcwIcon } from "lucide-react"
+import { ArrowLeftIcon, ExternalLinkIcon, RotateCcwIcon } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RevisionDiff } from "@/components/ui/revision-diff"
 import { PageHeader } from "@/components/shell/page-header"
+import { createArtifactViewUrl } from "@/features/artifacts/api/create-view-url"
 import { artifactVersionContentQueryOptions } from "@/features/artifacts/api/get-artifact-version-content"
 import { useArtifactQuery } from "@/features/artifacts/api/get-artifact"
 import { useRestoreArtifactVersionMutation } from "@/features/artifacts/api/restore-artifact-version"
@@ -27,6 +28,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
   const { data: artifact } = useArtifactQuery(artifactId)
   const [selectedVersionId, setSelectedVersionId] = useState(artifact.current_version_id)
   const [error, setError] = useState<string | null>(null)
+  const [opening, setOpening] = useState(false)
   const restoreMutation = useRestoreArtifactVersionMutation()
   const contentQueries = useSuspenseQueries({
     queries: [
@@ -55,6 +57,19 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
       setSelectedVersionId(restored.current_version_id)
     } catch (restoreError) {
       setError(getErrorMessage(restoreError))
+    }
+  }
+
+  async function handleOpen() {
+    setError(null)
+    setOpening(true)
+    try {
+      const grant = await createArtifactViewUrl(artifact.id, selectedVersionId)
+      window.open(grant.url, "_blank", "noopener,noreferrer")
+    } catch (openError) {
+      setError(getErrorMessage(openError))
+    } finally {
+      setOpening(false)
     }
   }
 
@@ -101,6 +116,19 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
               value={selectedVersionId}
               versions={artifact.versions}
             />
+            <Button
+              aria-label={`Open artifact ${artifact.title}`}
+              disabled={opening}
+              onClick={() => {
+                void handleOpen()
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <ExternalLinkIcon data-icon="inline-start" />
+              {opening ? "Opening…" : "Open"}
+            </Button>
             {canWrite && selectedVersionId !== artifact.current_version_id ? (
               <Button
                 disabled={restoreMutation.isPending}
@@ -119,6 +147,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
           artifactType={artifact.artifact_type}
           content={selectedContent}
           title={`${artifact.title} preview`}
+          versionId={selectedVersionId}
         />
       </section>
       {selectedVersionId !== artifact.current_version_id &&

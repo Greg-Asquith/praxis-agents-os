@@ -199,6 +199,7 @@ function InlineArtifactPreview({
         artifactType={artifactQuery.data.artifact_type}
         content={contentQuery.data}
         title={`${title} preview`}
+        versionId={versionId}
       />
     </div>
   )

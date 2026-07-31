@@ -28,6 +28,7 @@ def _production_settings(**overrides: Any) -> Settings:
         "S3_PRIVATE_ASSETS_BUCKET": "private-assets",
         "AWS_REGION": "eu-west-2",
         "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
+        "ARTIFACT_SHARING_ENABLED": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

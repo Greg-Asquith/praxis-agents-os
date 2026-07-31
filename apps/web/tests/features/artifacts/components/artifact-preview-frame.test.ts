@@ -16,6 +16,7 @@ describe("ArtifactPreviewFrame", () => {
           size_bytes: 55,
         },
         title: "HTML artifact",
+        versionId: "version-1",
       })
     )
 
@@ -36,6 +37,7 @@ describe("ArtifactPreviewFrame", () => {
           size_bytes: 200_001,
         },
         title: "Large artifact",
+        versionId: "version-1",
       })
     )
 
@@ -53,9 +55,35 @@ describe("ArtifactPreviewFrame", () => {
           size_bytes: 57,
         },
         title: "CSV artifact",
+        versionId: "version-1",
       })
     )
 
     expect(markup).toContain("first line\nsecond &quot;quoted&quot; line")
+  })
+
+  it("gives each HTML artifact version a distinct iframe identity", () => {
+    const content = {
+      content: "<p>Preview</p>",
+      content_type: "text/html",
+      download_url: null,
+      size_bytes: 14,
+    }
+
+    const firstFrame = ArtifactPreviewFrame({
+      artifactType: "html",
+      content,
+      title: "HTML artifact",
+      versionId: "version-1",
+    })
+    const secondFrame = ArtifactPreviewFrame({
+      artifactType: "html",
+      content,
+      title: "HTML artifact",
+      versionId: "version-2",
+    })
+
+    expect(firstFrame.key).toBe("version-1")
+    expect(secondFrame.key).toBe("version-2")
   })
 })
