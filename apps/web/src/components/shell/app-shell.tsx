@@ -1,7 +1,7 @@
 // apps/web/src/components/shell/app-shell.tsx
 
 import { useCallback, type ReactNode } from "react"
-import { useRouterState } from "@tanstack/react-router"
+import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { useSuspenseQuery } from "@tanstack/react-query"
 
 import { AppBreadcrumbs } from "@/components/shell/app-breadcrumbs"
@@ -11,6 +11,7 @@ import { SidebarConversations } from "@/components/shell/sidebar-conversations"
 import { SidebarFooter } from "@/components/shell/sidebar-footer"
 import { SidebarHeader } from "@/components/shell/sidebar-header"
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher"
+import { shouldRedirectHomeForWorkspaceSwitch } from "@/components/shell/workspace-switch-navigation"
 import { Separator } from "@/components/ui/separator"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useLogoutMutation } from "@/features/auth/api/logout"
@@ -19,10 +20,15 @@ import { useActiveWorkspace } from "@/features/workspaces/components/use-active-
 import { cn } from "@/lib/utils"
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
+  const navigate = useNavigate()
+  const location = useRouterState({
+    select: (state) => state.location,
   })
-  const isConversationWorkspaceRoute = isConversationWorkspacePath(pathname)
+  const pathname = location.pathname
+  const shouldRedirectForWorkspaceSwitch = shouldRedirectHomeForWorkspaceSwitch(
+    pathname,
+    location.search
+  )
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const { data: conversationsData } = useConversationsQuery({ limit: 50 })
   const logoutMutation = useLogoutMutation()
@@ -35,6 +41,24 @@ export function AppShell({ children }: { children: ReactNode }) {
       },
     })
   }, [logoutMutation])
+
+  const switchWorkspace = useCallback(
+    (slug: string) => {
+      if (slug === workspace.slug) {
+        return
+      }
+
+      if (shouldRedirectForWorkspaceSwitch) {
+        void navigate({ to: "/", replace: true }).then(() => {
+          setWorkspaceBySlug(slug)
+        })
+        return
+      }
+
+      setWorkspaceBySlug(slug)
+    },
+    [navigate, setWorkspaceBySlug, shouldRedirectForWorkspaceSwitch, workspace.slug]
+  )
 
   return (
     <div className="bg-sidebar text-foreground h-dvh overflow-hidden md:grid md:grid-cols-[280px_minmax(0,1fr)]">
@@ -61,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 conversations={conversationsData.conversations}
                 onSignOut={signOut}
                 pathname={pathname}
-                setWorkspaceBySlug={setWorkspaceBySlug}
+                setWorkspaceBySlug={switchWorkspace}
                 user={user}
                 workspace={workspace}
                 workspaces={workspaces}
@@ -70,16 +94,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="hidden shrink-0 md:block">
               <WorkspaceSwitcher
-                setWorkspaceBySlug={setWorkspaceBySlug}
+                setWorkspaceBySlug={switchWorkspace}
                 workspace={workspace}
                 workspaces={workspaces}
               />
             </div>
           </header>
           <main
+            key={workspace.slug}
             className={cn(
               "min-h-0 min-w-0 flex-1",
-              isConversationWorkspaceRoute ? "overflow-hidden" : "overflow-y-auto px-6 py-5"
+              pathname !== "/conversations" && pathname.startsWith("/conversations/")
+                ? "overflow-hidden"
+                : "overflow-y-auto px-6 py-5"
             )}
           >
             {children}
@@ -88,12 +115,4 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
     </div>
   )
-}
-
-function isConversationWorkspacePath(pathname: string) {
-  if (pathname === "/conversations" || !pathname.startsWith("/conversations/")) {
-    return false
-  }
-
-  return true
 }
