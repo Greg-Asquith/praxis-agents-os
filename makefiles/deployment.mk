@@ -26,13 +26,8 @@ quickstart: ## Start the production-image local stack with Docker only
 			AIza*) key_var=GOOGLE_API_KEY ;; \
 			*) echo "That does not look like an OpenAI (sk-...), Anthropic (sk-ant-...), or Google (AIza...) API key."; exit 1 ;; \
 		esac; \
-		if ! grep -q "^$$key_var=" .local/targets/local.secrets.env; then \
-			printf '%s\n' "$$key_var=$$key" >> .local/targets/local.secrets.env; \
-		else \
-			awk -v name="$$key_var" -v key="$$key" 'BEGIN { FS=OFS="=" } $$1 == name { print name, key; next } { print }' .local/targets/local.secrets.env > .local/targets/local.secrets.env.tmp; \
-			mv .local/targets/local.secrets.env.tmp .local/targets/local.secrets.env; \
-		fi; \
-		chmod 600 .local/targets/local.secrets.env; \
+		printf '%s\n' "$$key" | sh apps/api/bin/replace_env_value.sh \
+			.local/targets/local.secrets.env "$$key_var"; \
 	fi
 	$(COMPOSE) build
 	@echo "Starting Praxis. Open http://localhost:$${PRAXIS_WEB_PORT:-3000}, sign up, then create your first workspace."

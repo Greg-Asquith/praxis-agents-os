@@ -1,25 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Sourced as shell, so CRLF endings or unquoted whitespace would break cryptically mid-file.
-require_sourceable() {
-  invalid="$(grep -n "$(printf '\r')" "$1" || true)"
-  if [ -n "$invalid" ]; then
-    echo "Cannot load $1: save the file with Unix (LF) line endings." >&2
-    exit 65
-  fi
-  invalid="$(grep -nE "^[A-Za-z_][A-Za-z0-9_]*=[^\"'#[:space:]]*[[:space:]]+[^#[:space:]]" "$1" || true)"
-  if [ -n "$invalid" ]; then
-    {
-      echo "Cannot load $1: quote values that contain spaces, e.g. NAME=\"a b\"."
-      echo "$invalid"
-    } >&2
-    exit 65
-  fi
-}
-
-require_sourceable /config/generated/local.api.env
-require_sourceable /config/targets/local.secrets.env
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+sh "$script_dir/validate_sourceable_env.sh" /config/generated/local.api.env
+sh "$script_dir/validate_sourceable_env.sh" /config/targets/local.secrets.env
 
 host_openai_api_key="${OPENAI_API_KEY:-}"
 host_anthropic_api_key="${ANTHROPIC_API_KEY:-}"
