@@ -19,7 +19,9 @@ from services.storage.domain import (
 from services.storage.errors import (
     StorageError,
     StorageNotFoundError,
+    StoragePreconditionError,
     StorageProviderUnavailableError,
+    StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
 from services.storage.providers._common import (
@@ -38,8 +40,10 @@ except ImportError:  # pragma: no cover - base install intentionally omits SDKs
     DefaultAzureCredential = None
 
 try:  # pragma: no cover - exercised through provider-specific extras
+    from azure.core import MatchConditions
     from azure.core.exceptions import ResourceNotFoundError
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
+    MatchConditions = None
     ResourceNotFoundError = None
 
 try:  # pragma: no cover - exercised through provider-specific extras
@@ -78,6 +82,7 @@ class AzureBlobStorageProvider:
         credential: Any | None = None,
         service_client: Any | None = None,
         content_settings_cls: Any | None = None,
+        match_conditions_cls: Any | None = None,
         sas_permissions_cls: Any | None = None,
         generate_sas_func: Any | None = None,
     ) -> None:
@@ -113,6 +118,7 @@ class AzureBlobStorageProvider:
             self.private_container_name
         )
         self.content_settings_cls = content_settings_cls or self._require_content_settings_cls()
+        self.match_conditions_cls = match_conditions_cls or self._require_match_conditions_cls()
         self.sas_permissions_cls = sas_permissions_cls or self._require_sas_permissions_cls()
         self.generate_sas_func = generate_sas_func or self._require_generate_sas_func()
         self._delegation_key_lock = threading.Lock()
@@ -139,6 +145,7 @@ class AzureBlobStorageProvider:
         content_type: str | None = None,
         cache_control: str | None = None,
         metadata: dict[str, str] | None = None,
+        overwrite: bool = True,
     ) -> StoredObject:
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
@@ -152,11 +159,20 @@ class AzureBlobStorageProvider:
             await asyncio.to_thread(
                 blob.upload_blob,
                 data,
-                overwrite=True,
+                overwrite=overwrite,
                 content_settings=content_settings,
                 metadata=_string_metadata(metadata) or None,
             )
         except Exception as exc:
+            if _is_azure_precondition_failed(exc):
+                raise StoragePreconditionError(
+                    "Storage object already exists",
+                    provider_key=self.provider_key,
+                    operation="put_object",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                    original_error=exc,
+                ) from exc
             raise StorageError(
                 "Failed to upload Azure Blob object",
                 provider_key=self.provider_key,
@@ -285,6 +301,89 @@ class AzureBlobStorageProvider:
                 original_error=exc,
             ) from exc
 
+    async def promote_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        if source.bucket != destination.bucket or source == destination:
+            raise StorageValidationError(
+                "Storage promotion requires distinct objects in the same bucket",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+
+        container = self._container(source.bucket)
+        source_blob = container.get_blob_client(source.key)
+        destination_blob = container.get_blob_client(destination.key)
+        try:
+            properties = await asyncio.to_thread(source_blob.get_blob_properties)
+            if str(_get_property(properties, "etag") or "") != expected_source_etag:
+                raise StoragePreconditionError(
+                    "Storage promotion source changed after validation",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=source.bucket.value,
+                    object_key=source.key,
+                )
+            download = await asyncio.to_thread(
+                source_blob.download_blob,
+                etag=expected_source_etag,
+                match_condition=self.match_conditions_cls.IfNotModified,
+            )
+            data = await asyncio.to_thread(download.readall)
+            await asyncio.to_thread(
+                destination_blob.upload_blob,
+                data,
+                overwrite=False,
+                content_settings=_get_property(properties, "content_settings"),
+                metadata=_string_metadata(_get_property(properties, "metadata")) or None,
+            )
+        except StoragePreconditionError:
+            raise
+        except Exception as exc:
+            if _is_azure_precondition_failed(exc):
+                raise StoragePreconditionError(
+                    "Storage promotion precondition failed",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=destination.bucket.value,
+                    object_key=destination.key,
+                    original_error=exc,
+                ) from exc
+            if _is_azure_not_found(exc):
+                raise StorageNotFoundError(
+                    "Storage promotion source was not found",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=source.bucket.value,
+                    object_key=source.key,
+                    original_error=exc,
+                ) from exc
+            raise StorageError(
+                "Failed to promote Azure Blob object",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+                original_error=exc,
+            ) from exc
+
+        stored = await self.stat_object(destination)
+        if stored is None:
+            raise StorageNotFoundError(
+                "Promoted object could not be read after copy",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+        return stored
+
     async def create_signed_upload(
         self,
         ref: StorageObjectRef,
@@ -299,7 +398,7 @@ class AzureBlobStorageProvider:
         url = await self._create_signed_blob_url(
             ref=ref,
             expires_at=expires_at,
-            permission_kwargs={"create": True, "write": True},
+            permission_kwargs={"create": True},
             content_type=normalized_content_type,
         )
         return SignedUpload(
@@ -491,6 +590,15 @@ class AzureBlobStorageProvider:
             )
         return ContentSettings
 
+    def _require_match_conditions_cls(self):
+        if MatchConditions is None:
+            raise StorageProviderUnavailableError(
+                "Azure Blob storage requires azure-core",
+                provider_key=self.provider_key,
+                operation="match_conditions",
+            )
+        return MatchConditions
+
     def _require_sas_permissions_cls(self):
         if BlobSasPermissions is None:
             raise StorageProviderUnavailableError(
@@ -523,6 +631,14 @@ def _is_azure_not_found(exc: Exception) -> bool:
     if getattr(exc, "status_code", None) == 404:
         return True
     return getattr(exc, "error_code", None) in {"BlobNotFound", "ResourceNotFound"}
+
+
+def _is_azure_precondition_failed(exc: Exception) -> bool:
+    return getattr(exc, "status_code", None) in {409, 412} or getattr(exc, "error_code", None) in {
+        "BlobAlreadyExists",
+        "ConditionNotMet",
+        "ResourceAlreadyExists",
+    }
 
 
 def _get_property(value: Any, *names: str) -> Any:

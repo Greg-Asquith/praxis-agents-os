@@ -9,7 +9,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from services.storage.domain import StorageBucket, make_storage_object_ref
-from services.storage.errors import StorageNotFoundError, StorageProviderUnavailableError
+from services.storage.errors import (
+    StorageNotFoundError,
+    StoragePreconditionError,
+    StorageProviderUnavailableError,
+)
 from services.storage.providers.gcs import GcsStorageProvider
 
 pytestmark = pytest.mark.asyncio
@@ -17,6 +21,10 @@ pytestmark = pytest.mark.asyncio
 
 class _GcsNotFoundError(Exception):
     code = 404
+
+
+class _GcsPreconditionError(Exception):
+    code = 412
 
 
 class _FakeGcsBlob:
@@ -32,15 +40,25 @@ class _FakeGcsBlob:
         self.content_type = None
         self.updated = None
 
-    def upload_from_string(self, data: bytes, *, content_type: str | None = None) -> None:
+    def upload_from_string(
+        self,
+        data: bytes,
+        *,
+        content_type: str | None = None,
+        if_generation_match: int | None = None,
+    ) -> None:
+        if if_generation_match == 0 and self.key in self.bucket.objects:
+            raise _GcsPreconditionError()
         self.bucket.objects[self.key] = {
             "data": data,
             "content_type": content_type,
             "cache_control": self.cache_control,
             "metadata": dict(self.metadata),
             "etag": "gcs-etag",
+            "generation": self.bucket.next_generation,
             "updated": datetime(2026, 7, 1, tzinfo=UTC),
         }
+        self.bucket.next_generation += 1
 
     def exists(self) -> bool:
         return self.key in self.bucket.objects
@@ -57,6 +75,7 @@ class _FakeGcsBlob:
         self.cache_control = obj["cache_control"]
         self.metadata = obj["metadata"]
         self.etag = obj["etag"]
+        self.generation = obj["generation"]
         self.updated = obj["updated"]
 
     def delete(self) -> None:
@@ -72,9 +91,28 @@ class _FakeGcsBucket:
         self.name = name
         self.objects: dict[str, dict] = {}
         self.signed_calls: list[dict] = []
+        self.copy_calls: list[dict] = []
+        self.next_generation = 1
 
     def blob(self, key: str) -> _FakeGcsBlob:
         return _FakeGcsBlob(self, key)
+
+    def copy_blob(self, source, destination_bucket, **kwargs):
+        self.copy_calls.append({"source": source.key, **kwargs})
+        destination_key = kwargs["new_name"]
+        source_obj = self.objects.get(source.key)
+        if source_obj is None:
+            raise _GcsNotFoundError()
+        if kwargs["if_generation_match"] == 0 and destination_key in destination_bucket.objects:
+            raise _GcsPreconditionError()
+        if source_obj["generation"] != kwargs["if_source_generation_match"]:
+            raise _GcsPreconditionError()
+        destination_bucket.objects[destination_key] = {
+            **source_obj,
+            "generation": destination_bucket.next_generation,
+        }
+        destination_bucket.next_generation += 1
+        return destination_bucket.blob(destination_key)
 
 
 class _FakeGcsClient:
@@ -152,6 +190,7 @@ async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> N
     assert upload.headers == {"content-type": "text/plain"}
     assert signed_calls[0]["method"] == "PUT"
     assert signed_calls[0]["content_type"] == "text/plain"
+    assert signed_calls[0]["query_parameters"] == {"ifGenerationMatch": "0"}
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert signed_calls[1]["method"] == "GET"
     assert signed_calls[1]["response_disposition"] == 'attachment; filename="output.txt"'
@@ -169,6 +208,32 @@ async def test_gcs_native_public_url_is_used_without_cdn_base() -> None:
         provider.public_url(ref)
         == "https://storage.googleapis.com/public-bucket/users/u%201/avatar/me.png"
     )
+
+
+async def test_gcs_promotion_is_create_only_and_source_conditional() -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+    source = make_storage_object_ref(StorageBucket.PRIVATE, "uploads/source.txt")
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, "files/final.txt")
+    source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
+
+    promoted = await provider.promote_object(
+        source,
+        destination,
+        expected_source_etag=source_stored.etag,
+    )
+
+    assert await provider.get_object(destination) == b"validated"
+    assert promoted.content_type == "text/plain"
+    copy_call = client.bucket("private-bucket").copy_calls[0]
+    assert copy_call["if_generation_match"] == 0
+    assert copy_call["if_source_generation_match"] == copy_call["source_generation"]
+    with pytest.raises(StoragePreconditionError):
+        await provider.promote_object(
+            source,
+            destination,
+            expected_source_etag=source_stored.etag,
+        )
 
 
 async def test_gcs_provider_missing_required_settings_fail_clearly() -> None:

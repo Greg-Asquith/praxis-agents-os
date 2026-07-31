@@ -27,6 +27,7 @@ class StorageProvider(Protocol):
         content_type: str | None = None,
         cache_control: str | None = None,
         metadata: dict[str, str] | None = None,
+        overwrite: bool = True,
     ) -> StoredObject:
         """Persist an object and return its metadata."""
         ...
@@ -45,6 +46,16 @@ class StorageProvider(Protocol):
 
     async def delete_object(self, ref: StorageObjectRef) -> bool:
         """Delete an object, returning whether anything was removed."""
+        ...
+
+    async def promote_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        """Copy a validated object to a new destination using conditional creation."""
         ...
 
     async def create_signed_upload(

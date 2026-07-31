@@ -11,7 +11,11 @@ import pytest
 
 from core.settings import settings
 from services.storage.domain import StorageBucket, make_storage_object_ref
-from services.storage.errors import StorageNotFoundError, StorageValidationError
+from services.storage.errors import (
+    StorageNotFoundError,
+    StoragePreconditionError,
+    StorageValidationError,
+)
 from services.storage.factory import get_storage_provider
 from services.storage.paths import validate_object_key
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
@@ -56,6 +60,30 @@ async def test_local_provider_put_get_stat_and_delete_object(tmp_path) -> None:
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
+
+
+async def test_local_promotion_is_create_only_and_preserves_validated_bytes(tmp_path) -> None:
+    provider = _provider(tmp_path)
+    source = make_storage_object_ref(StorageBucket.PRIVATE, "uploads/source.txt")
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, "files/final.txt")
+    source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
+
+    promoted = await provider.promote_object(
+        source,
+        destination,
+        expected_source_etag=source_stored.etag,
+    )
+
+    assert promoted.content_type == "text/plain"
+    assert await provider.get_object(destination) == b"validated"
+    await provider.put_object(source, b"changed", content_type="text/plain")
+    with pytest.raises(StoragePreconditionError):
+        await provider.promote_object(
+            source,
+            destination,
+            expected_source_etag=(await provider.stat_object(source)).etag,  # type: ignore[union-attr]
+        )
+    assert await provider.get_object(destination) == b"validated"
 
 
 async def test_interrupted_storage_write_removes_partial_object(

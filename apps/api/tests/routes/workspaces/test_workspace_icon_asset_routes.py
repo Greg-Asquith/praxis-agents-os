@@ -88,7 +88,8 @@ async def test_workspace_icon_upload_and_confirm_routes(
         json={"upload_token": upload_grant["upload_token"]},
     )
     assert confirm_response.status_code == 200
-    assert confirm_response.json()["icon_url"].endswith(upload_grant["upload"]["ref"]["key"])
+    final_key = upload_grant["upload"]["ref"]["key"].replace("/uploads/", "/")
+    assert confirm_response.json()["icon_url"].endswith(final_key)
 
 
 async def test_workspace_icon_upload_route_requires_manager_role(

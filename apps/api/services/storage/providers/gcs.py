@@ -18,7 +18,9 @@ from services.storage.domain import (
 from services.storage.errors import (
     StorageError,
     StorageNotFoundError,
+    StoragePreconditionError,
     StorageProviderUnavailableError,
+    StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
@@ -94,6 +96,7 @@ class GcsStorageProvider:
         content_type: str | None = None,
         cache_control: str | None = None,
         metadata: dict[str, str] | None = None,
+        overwrite: bool = True,
     ) -> StoredObject:
         bucket = self._bucket(ref.bucket)
         blob = bucket.blob(ref.key)
@@ -104,8 +107,20 @@ class GcsStorageProvider:
         blob.metadata = _string_metadata(metadata)
 
         try:
-            await asyncio.to_thread(blob.upload_from_string, data, content_type=content_type)
+            upload_kwargs: dict[str, Any] = {"content_type": content_type}
+            if not overwrite:
+                upload_kwargs["if_generation_match"] = 0
+            await asyncio.to_thread(blob.upload_from_string, data, **upload_kwargs)
         except Exception as exc:
+            if _is_gcs_precondition_failed(exc):
+                raise StoragePreconditionError(
+                    "Storage object already exists",
+                    provider_key=self.provider_key,
+                    operation="put_object",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                    original_error=exc,
+                ) from exc
             raise StorageError(
                 "Failed to upload GCS object",
                 provider_key=self.provider_key,
@@ -234,6 +249,85 @@ class GcsStorageProvider:
                 original_error=exc,
             ) from exc
 
+    async def promote_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        if source.bucket != destination.bucket or source == destination:
+            raise StorageValidationError(
+                "Storage promotion requires distinct objects in the same bucket",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+
+        bucket = self._bucket(source.bucket)
+        source_blob = bucket.blob(source.key)
+        try:
+            await asyncio.to_thread(source_blob.reload)
+            if str(source_blob.etag or "") != expected_source_etag:
+                raise StoragePreconditionError(
+                    "Storage promotion source changed after validation",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=source.bucket.value,
+                    object_key=source.key,
+                )
+            source_generation = int(source_blob.generation)
+            await asyncio.to_thread(
+                bucket.copy_blob,
+                source_blob,
+                bucket,
+                new_name=destination.key,
+                source_generation=source_generation,
+                if_source_generation_match=source_generation,
+                if_generation_match=0,
+            )
+        except StoragePreconditionError:
+            raise
+        except Exception as exc:
+            if _is_gcs_precondition_failed(exc):
+                raise StoragePreconditionError(
+                    "Storage promotion precondition failed",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=destination.bucket.value,
+                    object_key=destination.key,
+                    original_error=exc,
+                ) from exc
+            if _is_gcs_not_found(exc):
+                raise StorageNotFoundError(
+                    "Storage promotion source was not found",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=source.bucket.value,
+                    object_key=source.key,
+                    original_error=exc,
+                ) from exc
+            raise StorageError(
+                "Failed to promote GCS object",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+                original_error=exc,
+            ) from exc
+
+        stored = await self.stat_object(destination)
+        if stored is None:
+            raise StorageNotFoundError(
+                "Promoted object could not be read after copy",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+        return stored
+
     async def create_signed_upload(
         self,
         ref: StorageObjectRef,
@@ -253,6 +347,7 @@ class GcsStorageProvider:
                 method="PUT",
                 content_type=normalized_content_type,
                 version="v4",
+                query_parameters={"ifGenerationMatch": "0"},
             )
         except Exception as exc:
             raise StorageError(
@@ -372,3 +467,7 @@ def _is_gcs_not_found(exc: Exception) -> bool:
     if gcs_exceptions is not None and isinstance(exc, gcs_exceptions.NotFound):
         return True
     return getattr(exc, "code", None) == 404
+
+
+def _is_gcs_precondition_failed(exc: Exception) -> bool:
+    return getattr(exc, "code", None) in {409, 412}

@@ -22,9 +22,9 @@ from services.files.domain import FileUploadGrant, FileUploadRequest, FileUpload
 from services.files.get_files_usage import get_files_usage
 from services.files.utils import (
     file_to_read,
+    file_upload_object_key,
     get_file_for_workspace,
     require_file_write_access,
-    revision_object_key,
 )
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
@@ -92,7 +92,7 @@ async def create_file_upload(
 
     file_id = replace_file.id if replace_file is not None else uuid4()
     revision_id = uuid4()
-    object_key = revision_object_key(workspace.id, file_id, revision_id, extension)
+    object_key = file_upload_object_key(workspace.id, extension)
     expires_at = datetime.now(UTC) + timedelta(hours=settings.FILES_UPLOAD_EXPIRY_HOURS)
     db.add(
         FileUpload(

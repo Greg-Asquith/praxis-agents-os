@@ -171,6 +171,20 @@ async def test_skill_document_upload_confirm_read_download_and_delete(
     assert confirmed["original"].endswith("/original/Guide.md")
     assert confirmed["filename"] == "Guide.md"
 
+    reused_upload = await db_async_client.put(
+        _relative_url(upload_grant["upload"]["url"]),
+        content=b"# Replayed bytes",
+        headers=upload_grant["upload"]["headers"],
+    )
+    assert reused_upload.status_code == 204
+    downloaded_after_replay, _download = await _download_document_original(
+        db_async_client,
+        headers=headers,
+        skill_id=skill.id,
+        document_name="quick_start",
+    )
+    assert downloaded_after_replay == content
+
     list_response = await db_async_client.get(
         f"/api/v1/skills/{skill.id}/documents",
         headers=headers,

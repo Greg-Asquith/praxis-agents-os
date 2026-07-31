@@ -61,6 +61,13 @@ class StorageNotFoundError(StorageError):
     _title_override = "Storage Object Not Found"
 
 
+class StoragePreconditionError(StorageError):
+    """Raised when a conditional storage mutation cannot be applied safely."""
+
+    _status_override = 409
+    _title_override = "Storage Precondition Failed"
+
+
 class StorageProviderUnavailableError(StorageError):
     """Raised when the configured provider has no usable adapter yet."""
 

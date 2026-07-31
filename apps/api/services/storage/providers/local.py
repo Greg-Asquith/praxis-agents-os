@@ -23,6 +23,7 @@ from services.storage.domain import (
 )
 from services.storage.errors import (
     StorageNotFoundError,
+    StoragePreconditionError,
     StorageSignatureError,
     StorageValidationError,
 )
@@ -82,6 +83,7 @@ class LocalStorageProvider:
         content_type: str | None = None,
         cache_control: str | None = None,
         metadata: dict[str, str] | None = None,
+        overwrite: bool = True,
     ) -> StoredObject:
         path = self.filesystem_path(ref)
         resolved_cache_control = cache_control
@@ -98,14 +100,26 @@ class LocalStorageProvider:
         }
 
         await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(path.write_bytes, data)
         metadata_path = self._metadata_path(ref)
         await asyncio.to_thread(metadata_path.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(
-            metadata_path.write_text,
-            json.dumps(stored_metadata, sort_keys=True),
-            "utf-8",
-        )
+        try:
+            await asyncio.to_thread(
+                _write_local_object,
+                path,
+                metadata_path,
+                data,
+                stored_metadata,
+                overwrite=overwrite,
+            )
+        except FileExistsError as exc:
+            raise StoragePreconditionError(
+                "Storage object already exists",
+                provider_key=self.provider_key,
+                operation="put_object",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
         stat = await self.stat_object(ref)
         if stat is None:
             raise StorageNotFoundError(
@@ -187,6 +201,53 @@ class LocalStorageProvider:
         if await asyncio.to_thread(metadata_path.exists):
             await asyncio.to_thread(metadata_path.unlink)
         return True
+
+    async def promote_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        if source.bucket != destination.bucket or source == destination:
+            raise StorageValidationError(
+                "Storage promotion requires distinct objects in the same bucket",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+
+        try:
+            data = await self.get_object(source)
+            if not hmac.compare_digest(_content_hash(data), expected_source_etag):
+                raise StoragePreconditionError(
+                    "Storage promotion source changed after validation",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=source.bucket.value,
+                    object_key=source.key,
+                )
+            metadata = await self._read_metadata(source)
+            return await self.put_object(
+                destination,
+                data,
+                content_type=_optional_str(metadata.get("content_type")),
+                cache_control=_optional_str(metadata.get("cache_control")),
+                metadata={
+                    str(key): str(value)
+                    for key, value in (
+                        metadata.get("metadata")
+                        if isinstance(metadata.get("metadata"), dict)
+                        else {}
+                    ).items()
+                },
+                overwrite=False,
+            )
+        except StoragePreconditionError:
+            raise
+        except StorageNotFoundError:
+            raise
 
     async def create_signed_upload(
         self,
@@ -434,6 +495,32 @@ class LocalStorageProvider:
 
 def _content_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _write_local_object(
+    path: Path,
+    metadata_path: Path,
+    data: bytes,
+    metadata: dict[str, object],
+    *,
+    overwrite: bool,
+) -> None:
+    mode = "wb" if overwrite else "xb"
+    created_object = False
+    created_metadata = False
+    try:
+        with path.open(mode) as object_file:
+            object_file.write(data)
+        created_object = not overwrite
+        with metadata_path.open("w" if overwrite else "x", encoding="utf-8") as metadata_file:
+            metadata_file.write(json.dumps(metadata, sort_keys=True))
+        created_metadata = not overwrite
+    except BaseException:
+        if created_metadata:
+            metadata_path.unlink(missing_ok=True)
+        if created_object:
+            path.unlink(missing_ok=True)
+        raise
 
 
 def _stat_fingerprint(stat_result) -> str:

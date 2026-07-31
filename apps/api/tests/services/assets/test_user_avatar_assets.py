@@ -16,6 +16,7 @@ from services.assets import (
     delete_user_avatar,
 )
 from services.assets.domain import AssetConfirmRequest, AssetUploadRequest
+from services.assets.utils import public_asset_ref_for_upload
 from services.audit_events import AuditAction, AuditResourceType
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
@@ -55,6 +56,7 @@ async def test_confirm_user_avatar_upload_sets_url_key_audits_and_deletes_previo
     await db_session.flush()
 
     grant = await create_user_avatar_upload(
+        db_session,
         actor=actor,
         payload=AssetUploadRequest(
             filename="avatar.png",
@@ -71,10 +73,22 @@ async def test_confirm_user_avatar_upload_sets_url_key_audits_and_deletes_previo
         payload=AssetConfirmRequest(upload_token=grant.upload_token),
     )
 
-    assert actor.avatar_object_key == grant.upload.ref.key
+    final_ref = public_asset_ref_for_upload(grant.upload.ref)
+    assert actor.avatar_object_key == final_ref.key
     assert result.avatar_url is not None
-    assert result.avatar_url.endswith(grant.upload.ref.key)
+    assert result.avatar_url.endswith(final_ref.key)
     assert await provider.stat_object(previous_ref) is None
+
+    await provider.put_object(grant.upload.ref, b"replayed", content_type="image/png")
+    replayed = await confirm_user_avatar_upload(
+        db_session,
+        request=build_test_request(path="/api/v1/auth/me/avatar/confirm"),
+        actor=actor,
+        payload=AssetConfirmRequest(upload_token=grant.upload_token),
+    )
+    assert replayed.avatar_url == result.avatar_url
+    assert await provider.get_object(final_ref) == b"new-png"
+    assert await provider.stat_object(grant.upload.ref) is None
 
     audit_event = await db_session.scalar(
         select(AuditEvent).where(

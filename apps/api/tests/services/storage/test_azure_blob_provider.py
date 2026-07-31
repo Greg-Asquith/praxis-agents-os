@@ -9,7 +9,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from services.storage.domain import StorageBucket, make_storage_object_ref
-from services.storage.errors import StorageNotFoundError, StorageProviderUnavailableError
+from services.storage.errors import (
+    StorageNotFoundError,
+    StoragePreconditionError,
+    StorageProviderUnavailableError,
+)
 from services.storage.providers.azure_blob import AzureBlobStorageProvider
 
 pytestmark = pytest.mark.asyncio
@@ -17,6 +21,15 @@ pytestmark = pytest.mark.asyncio
 
 class _AzureNotFoundError(Exception):
     error_code = "BlobNotFound"
+
+
+class _AzurePreconditionError(Exception):
+    error_code = "BlobAlreadyExists"
+    status_code = 409
+
+
+class _FakeMatchConditions:
+    IfNotModified = "if_not_modified"
 
 
 class _FakeContentSettings:
@@ -65,6 +78,8 @@ class _FakeBlobClient:
         content_settings,
         metadata: dict[str, str] | None = None,
     ) -> None:
+        if not overwrite and self.key in self.container.objects:
+            raise _AzurePreconditionError()
         self.container.objects[self.key] = {
             "data": data,
             "content_settings": content_settings,
@@ -75,7 +90,9 @@ class _FakeBlobClient:
     def exists(self) -> bool:
         return self.key in self.container.objects
 
-    def download_blob(self) -> _FakeDownload:
+    def download_blob(self, **kwargs) -> _FakeDownload:
+        if kwargs and kwargs.get("etag") != "azure-etag":
+            raise _AzurePreconditionError()
         return _FakeDownload(self.container.objects[self.key]["data"])
 
     def get_blob_properties(self) -> _FakeProperties:
@@ -132,6 +149,7 @@ def _provider(service_client: _FakeBlobServiceClient) -> AzureBlobStorageProvide
         credential=object(),
         service_client=service_client,
         content_settings_cls=_FakeContentSettings,
+        match_conditions_cls=_FakeMatchConditions,
         sas_permissions_cls=_FakePermissions,
         generate_sas_func=_fake_generate_blob_sas,
     )
@@ -196,7 +214,7 @@ async def test_azure_blob_signed_urls_bind_upload_headers_and_disposition() -> N
     }
     assert _fake_generate_blob_sas.calls[0]["container_name"] == "private"
     assert _fake_generate_blob_sas.calls[0]["content_type"] == "text/plain"
-    assert _fake_generate_blob_sas.calls[0]["permission"].kwargs == {"create": True, "write": True}
+    assert _fake_generate_blob_sas.calls[0]["permission"].kwargs == {"create": True}
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert (
         _fake_generate_blob_sas.calls[1]["content_disposition"]
@@ -214,6 +232,7 @@ async def test_azure_blob_native_public_url_is_used_without_cdn_base() -> None:
         credential=object(),
         service_client=_FakeBlobServiceClient(),
         content_settings_cls=_FakeContentSettings,
+        match_conditions_cls=_FakeMatchConditions,
         sas_permissions_cls=_FakePermissions,
         generate_sas_func=_fake_generate_blob_sas,
     )
@@ -225,6 +244,29 @@ async def test_azure_blob_native_public_url_is_used_without_cdn_base() -> None:
     )
 
 
+async def test_azure_blob_promotion_is_create_only_and_source_conditional() -> None:
+    service_client = _FakeBlobServiceClient()
+    provider = _provider(service_client)
+    source = make_storage_object_ref(StorageBucket.PRIVATE, "uploads/source.txt")
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, "files/final.txt")
+    source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
+
+    promoted = await provider.promote_object(
+        source,
+        destination,
+        expected_source_etag=source_stored.etag,
+    )
+
+    assert await provider.get_object(destination) == b"validated"
+    assert promoted.content_type == "text/plain"
+    with pytest.raises(StoragePreconditionError):
+        await provider.promote_object(
+            source,
+            destination,
+            expected_source_etag=source_stored.etag,
+        )
+
+
 async def test_azure_blob_provider_missing_required_settings_fail_clearly() -> None:
     with pytest.raises(StorageProviderUnavailableError):
         AzureBlobStorageProvider(
@@ -234,6 +276,7 @@ async def test_azure_blob_provider_missing_required_settings_fail_clearly() -> N
             credential=object(),
             service_client=_FakeBlobServiceClient(),
             content_settings_cls=_FakeContentSettings,
+            match_conditions_cls=_FakeMatchConditions,
             sas_permissions_cls=_FakePermissions,
             generate_sas_func=_fake_generate_blob_sas,
         )

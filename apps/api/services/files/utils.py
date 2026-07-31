@@ -15,7 +15,7 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
-from services.storage.paths import validate_object_key
+from services.storage.paths import unique_object_key, validate_object_key
 from services.storage.provider import StorageProvider
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
 from utils.digests import sha256_hex as sha256_hex, sha256_hex_stream as sha256_hex_stream
@@ -40,6 +40,12 @@ def revision_object_key(
     key = f"workspaces/{workspace_id}/files/{file_id}/{revision_id}{normalize_extension(extension)}"
     make_storage_object_ref(StorageBucket.PRIVATE, key)
     return key
+
+
+def file_upload_object_key(workspace_id: UUID, extension: str) -> str:
+    """Build a unique temporary key for a direct file upload."""
+    normalized = normalize_extension(extension)
+    return unique_object_key(f"workspaces/{workspace_id}/uploads/files", f"upload{normalized}")
 
 
 def revision_markdown_key(workspace_id: UUID, file_id: UUID, revision_id: UUID) -> str:

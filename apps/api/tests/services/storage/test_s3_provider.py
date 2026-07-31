@@ -10,7 +10,11 @@ from io import BytesIO
 import pytest
 
 from services.storage.domain import StorageBucket, make_storage_object_ref
-from services.storage.errors import StorageNotFoundError, StorageProviderUnavailableError
+from services.storage.errors import (
+    StorageNotFoundError,
+    StoragePreconditionError,
+    StorageProviderUnavailableError,
+)
 from services.storage.providers.s3 import S3StorageProvider
 
 pytestmark = pytest.mark.asyncio
@@ -20,6 +24,15 @@ class _S3NotFoundError(Exception):
     def __init__(self) -> None:
         super().__init__("S3 object not found")
         self.response = {"Error": {"Code": "NoSuchKey"}}
+
+
+class _S3PreconditionError(Exception):
+    def __init__(self) -> None:
+        super().__init__("S3 precondition failed")
+        self.response = {
+            "Error": {"Code": "PreconditionFailed"},
+            "ResponseMetadata": {"HTTPStatusCode": 412},
+        }
 
 
 class _FakeBody(BytesIO):
@@ -38,6 +51,8 @@ class _FakeS3Client:
 
     def put_object(self, **params):
         key = (params["Bucket"], params["Key"])
+        if params.get("IfNoneMatch") == "*" and key in self.objects:
+            raise _S3PreconditionError()
         self.objects[key] = {
             "body": params["Body"],
             "content_type": params.get("ContentType"),
@@ -75,6 +90,18 @@ class _FakeS3Client:
         key = kwargs["Key"]
         self.objects.pop((bucket, key), None)
         self.deleted.append((bucket, key))
+
+    def copy_object(self, **params):
+        source = (params["CopySource"]["Bucket"], params["CopySource"]["Key"])
+        destination = (params["Bucket"], params["Key"])
+        source_obj = self.objects.get(source)
+        if source_obj is None:
+            raise _S3NotFoundError()
+        if params.get("IfNoneMatch") == "*" and destination in self.objects:
+            raise _S3PreconditionError()
+        if source_obj["etag"].strip('"') != params.get("CopySourceIfMatch", "").strip('"'):
+            raise _S3PreconditionError()
+        self.objects[destination] = dict(source_obj)
 
     def generate_presigned_url(self, operation: str, **kwargs):
         self.presigned_calls.append({"operation": operation, **kwargs})
@@ -144,9 +171,10 @@ async def test_s3_provider_signed_urls_bind_content_type_and_disposition() -> No
         filename="output.txt",
     )
 
-    assert upload.headers == {"content-type": "text/plain"}
+    assert upload.headers == {"content-type": "text/plain", "if-none-match": "*"}
     assert client.presigned_calls[0]["operation"] == "put_object"
     assert client.presigned_calls[0]["Params"]["ContentType"] == "text/plain"
+    assert client.presigned_calls[0]["Params"]["IfNoneMatch"] == "*"
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert client.presigned_calls[1]["operation"] == "get_object"
     assert (
@@ -162,6 +190,29 @@ async def test_s3_public_signed_download_returns_public_url() -> None:
     download = await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
 
     assert download.url == "https://cdn.example/users/u_1/avatar/me.png"
+
+
+async def test_s3_promotion_is_create_only_and_source_conditional() -> None:
+    client = _FakeS3Client()
+    provider = _provider(client)
+    source = make_storage_object_ref(StorageBucket.PRIVATE, "uploads/source.txt")
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, "files/final.txt")
+    source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
+
+    promoted = await provider.promote_object(
+        source,
+        destination,
+        expected_source_etag=source_stored.etag,
+    )
+
+    assert await provider.get_object(destination) == b"validated"
+    assert promoted.content_type == "text/plain"
+    with pytest.raises(StoragePreconditionError):
+        await provider.promote_object(
+            source,
+            destination,
+            expected_source_etag=source_stored.etag,
+        )
 
 
 async def test_s3_provider_missing_required_settings_fail_clearly() -> None:

@@ -3,16 +3,19 @@
 """Shared helpers for asset upload validation and cleanup."""
 
 import logging
+import secrets
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
+from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
+from models.asset_upload import AssetUpload
 from models.user import User
 from services.assets.domain import (
     AssetConfirmRequest,
@@ -30,7 +33,9 @@ from services.storage.domain import StorageBucket, StorageObjectRef, StoredObjec
 from services.storage.factory import get_storage_provider
 from services.storage.paths import unique_object_key
 from services.storage.provider import StorageProvider
+from services.storage.utils import promote_object_or_get_existing
 from services.workspaces.schemas import WorkspaceRead
+from utils.digests import sha256_hex_stream
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,7 @@ def asset_audit_details(spec: AssetSpec, mutation: AssetMutation) -> dict[str, A
 
 
 async def create_asset_upload(
+    db: AsyncSession,
     spec: AssetSpec,
     *,
     actor: User,
@@ -124,7 +130,10 @@ async def create_asset_upload(
         max_size_bytes=max_size_bytes,
         asset_label=spec.asset_label,
     )
-    ref = public_asset_ref(spec.ref_template.format(owner_id=owner_id), content_type=content_type)
+    ref = public_asset_upload_ref(
+        spec.ref_template.format(owner_id=owner_id),
+        content_type=content_type,
+    )
     provider = get_storage_provider()
     upload = await provider.create_signed_upload(
         ref,
@@ -139,7 +148,20 @@ async def create_asset_upload(
         ref=ref,
         content_type=content_type,
         max_size_bytes=max_size_bytes,
+        token_id=(token_id := secrets.token_urlsafe(24)),
     )
+    db.add(
+        AssetUpload(
+            token_id=token_id,
+            kind=spec.kind.value,
+            object_key=ref.key,
+            created_by_user_id=actor.id,
+            target_user_id=target_user_id,
+            workspace_id=workspace_id,
+            expires_at=expires_at,
+        )
+    )
+    await db.flush()
     return AssetUploadGrant(
         upload=upload,
         upload_token=upload_token,
@@ -167,27 +189,115 @@ async def confirm_asset_upload(
         workspace_id=workspace_id,
     )
     ref = token_ref(token_payload)
+    if ref.bucket != StorageBucket.PUBLIC:
+        raise AppValidationError(
+            f"Upload token is not valid for this {spec.asset_label}",
+            field="upload_token",
+        )
+    upload_record = await db.scalar(
+        select(AssetUpload)
+        .where(
+            AssetUpload.token_id == token_payload.jti,
+            AssetUpload.kind == spec.kind.value,
+            AssetUpload.object_key == ref.key,
+            AssetUpload.created_by_user_id == actor.id,
+            (
+                AssetUpload.target_user_id == target_user_id
+                if target_user_id is not None
+                else AssetUpload.target_user_id.is_(None)
+            ),
+            (
+                AssetUpload.workspace_id == workspace_id
+                if workspace_id is not None
+                else AssetUpload.workspace_id.is_(None)
+            ),
+        )
+        .with_for_update()
+    )
+    if upload_record is None:
+        raise AppValidationError(
+            f"Upload token is not valid for this {spec.asset_label}",
+            field="upload_token",
+        )
+    final_ref = public_asset_ref_for_upload(ref)
     provider = get_storage_provider()
-    try:
+    previous_object_key = getattr(target, spec.object_key_attr)
+    if upload_record.consumed_at is not None:
+        if previous_object_key != final_ref.key:
+            raise ConflictError(
+                f"This {spec.asset_label} upload has already been replaced",
+                conflicting_resource=spec.kind.value,
+            )
         stored = validate_stored_object(
-            await provider.stat_object(ref),
+            await provider.stat_object(final_ref),
             expected_content_type=token_payload.content_type,
             allowed_content_types=spec.allowed_content_types(),
             max_size_bytes=token_payload.max_size_bytes,
             asset_label=spec.asset_label,
         )
-        public_url = resolve_public_url(stored, provider=provider, asset_label=spec.asset_label)
-    except Exception:
+        resolve_public_url(stored, provider=provider, asset_label=spec.asset_label)
         await best_effort_delete_public_object(ref.key, provider=provider)
-        raise
+        return AssetMutation(
+            provider=provider,
+            object_key=final_ref.key,
+            previous_object_key=previous_object_key,
+            changed=False,
+        )
+    if upload_record.expires_at < datetime.now(UTC):
+        raise AppValidationError(
+            f"{spec.asset_label.capitalize()} upload has expired",
+            field="upload_token",
+        )
 
-    previous_object_key = getattr(target, spec.object_key_attr)
-    setattr(target, spec.object_key_attr, ref.key)
+    source_stored = await provider.stat_object(ref)
+    if source_stored is None:
+        stored = validate_stored_object(
+            await provider.stat_object(final_ref),
+            expected_content_type=token_payload.content_type,
+            allowed_content_types=spec.allowed_content_types(),
+            max_size_bytes=token_payload.max_size_bytes,
+            asset_label=spec.asset_label,
+        )
+    else:
+        source_stored = validate_stored_object(
+            source_stored,
+            expected_content_type=token_payload.content_type,
+            allowed_content_types=spec.allowed_content_types(),
+            max_size_bytes=token_payload.max_size_bytes,
+            asset_label=spec.asset_label,
+        )
+        source_hash = await sha256_hex_stream(provider.stream_object(ref))
+        stored, promoted = await promote_object_or_get_existing(
+            provider,
+            ref,
+            final_ref,
+            source_object=source_stored,
+        )
+        stored = validate_stored_object(
+            stored,
+            expected_content_type=token_payload.content_type,
+            allowed_content_types=spec.allowed_content_types(),
+            max_size_bytes=token_payload.max_size_bytes,
+            asset_label=spec.asset_label,
+        )
+        if not promoted:
+            final_hash = await sha256_hex_stream(provider.stream_object(final_ref))
+            if final_hash != source_hash:
+                raise ConflictError(
+                    f"Confirmed {spec.asset_label} bytes do not match the pending upload",
+                    conflicting_resource=spec.kind.value,
+                )
+
+    public_url = resolve_public_url(stored, provider=provider, asset_label=spec.asset_label)
+
+    setattr(target, spec.object_key_attr, final_ref.key)
     setattr(target, spec.url_attr, public_url)
+    upload_record.consumed_at = datetime.now(UTC)
     await db.flush()
+    await best_effort_delete_public_object(ref.key, provider=provider)
     return AssetMutation(
         provider=provider,
-        object_key=ref.key,
+        object_key=final_ref.key,
         previous_object_key=previous_object_key,
     )
 
@@ -235,14 +345,15 @@ async def confirm_user_asset(
         payload=payload,
         target_user_id=actor.id,
     )
-    await record_user_audit_event(
-        db,
-        action=AuditAction.UPDATE,
-        user=actor,
-        actor=actor,
-        details=asset_audit_details(spec, mutation),
-        request=request,
-    )
+    if mutation.changed:
+        await record_user_audit_event(
+            db,
+            action=AuditAction.UPDATE,
+            user=actor,
+            actor=actor,
+            details=asset_audit_details(spec, mutation),
+            request=request,
+        )
     await delete_previous_asset_object(mutation)
     return await build_auth_user(db, actor)
 
@@ -288,14 +399,15 @@ async def confirm_workspace_asset(
         payload=payload,
         workspace_id=workspace.id,
     )
-    await record_workspace_asset_audit(
-        db,
-        request=request,
-        actor=actor,
-        workspace=workspace,
-        spec=spec,
-        mutation=mutation,
-    )
+    if mutation.changed:
+        await record_workspace_asset_audit(
+            db,
+            request=request,
+            actor=actor,
+            workspace=workspace,
+            spec=spec,
+            mutation=mutation,
+        )
     await db.refresh(workspace)
     await delete_previous_asset_object(mutation)
     return WorkspaceRead.from_workspace(workspace, current_user_role=current_user_role)
@@ -377,15 +489,23 @@ def extension_for_content_type(content_type: str) -> str | None:
     return _IMAGE_EXTENSIONS.get(content_type)
 
 
-def public_asset_ref(prefix: str, *, content_type: str) -> StorageObjectRef:
-    """Create a unique public storage ref under a validated asset prefix."""
+def public_asset_upload_ref(prefix: str, *, content_type: str) -> StorageObjectRef:
+    """Create a unique temporary public storage ref for a managed asset upload."""
     extension = extension_for_content_type(content_type)
     if extension is None:
         raise AppValidationError("Unsupported file type", field="content_type")
     return StorageObjectRef(
         bucket=StorageBucket.PUBLIC,
-        key=unique_object_key(prefix, f"asset{extension}"),
+        key=unique_object_key(f"{prefix}/uploads", f"asset{extension}"),
     )
+
+
+def public_asset_ref_for_upload(upload_ref: StorageObjectRef) -> StorageObjectRef:
+    """Derive the immutable managed-asset key for one temporary upload ref."""
+    prefix, marker, filename = upload_ref.key.rpartition("/uploads/")
+    if not prefix or marker != "/uploads/" or not filename:
+        raise AppValidationError("Upload token is not valid for this asset", field="upload_token")
+    return StorageObjectRef(bucket=StorageBucket.PUBLIC, key=f"{prefix}/{filename}")
 
 
 def public_ref_from_key(object_key: str) -> StorageObjectRef:

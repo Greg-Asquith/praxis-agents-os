@@ -25,11 +25,13 @@ from services.files.utils import (
     file_to_read,
     get_file_for_workspace,
     require_file_write_access,
+    revision_object_key,
     set_processing_state_for_revision,
     sha256_hex_stream,
 )
-from services.storage.domain import StorageBucket
+from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
+from services.storage.utils import promote_object_or_get_existing
 
 
 async def confirm_file_upload(
@@ -70,26 +72,22 @@ async def confirm_file_upload(
             workspace=workspace,
             file_id=file_upload.file_id,
         )
+        await best_effort_delete_file_object(ref.key)
         return file_to_read(file)
     if file_upload.expires_at < datetime.now(UTC):
         raise AppValidationError("File upload has expired", field="upload_token")
 
-    provider = get_storage_provider()
-    allowed_types = {entry.content_type for entry in FILE_CONTRACT}
-    stored = validate_stored_object(
-        await provider.stat_object(ref),
-        expected_content_type=token_payload.content_type,
-        allowed_content_types=allowed_types,
-        max_size_bytes=token_payload.max_size_bytes,
-        asset_label="workspace file",
-    )
-    content_hash = await sha256_hex_stream(provider.stream_object(ref))
     uploaded_extension = PurePosixPath(file_upload.filename).suffix.lower()
     if not uploaded_extension:
         raise AppValidationError("Uploaded file has no extension", field="upload_token")
-    entry = require_matching_pair(
-        stored.content_type or token_payload.content_type,
-        uploaded_extension,
+    final_ref = make_storage_object_ref(
+        StorageBucket.PRIVATE,
+        revision_object_key(
+            workspace.id,
+            file_upload.file_id,
+            file_upload.revision_id,
+            uploaded_extension,
+        ),
     )
 
     existing_file = await db.scalar(
@@ -107,6 +105,61 @@ async def confirm_file_upload(
             conflicting_resource="file",
             details={"file_id": str(existing_file.id)},
         )
+
+    provider = get_storage_provider()
+    allowed_types = {entry.content_type for entry in FILE_CONTRACT}
+    source_stored = await provider.stat_object(ref)
+    if source_stored is None:
+        stored = validate_stored_object(
+            await provider.stat_object(final_ref),
+            expected_content_type=token_payload.content_type,
+            allowed_content_types=allowed_types,
+            max_size_bytes=token_payload.max_size_bytes,
+            asset_label="workspace file",
+        )
+        content_hash = await sha256_hex_stream(provider.stream_object(final_ref))
+    else:
+        source_stored = validate_stored_object(
+            source_stored,
+            expected_content_type=token_payload.content_type,
+            allowed_content_types=allowed_types,
+            max_size_bytes=token_payload.max_size_bytes,
+            asset_label="workspace file",
+        )
+        content_hash = await sha256_hex_stream(provider.stream_object(ref))
+        if existing_file is not None and existing_file.content_hash == content_hash:
+            file_upload.consumed_at = datetime.now(UTC)
+            await best_effort_delete_file_object(ref.key, provider=provider)
+            await db.flush()
+            return file_to_read(existing_file)
+
+        stored, promoted = await promote_object_or_get_existing(
+            provider,
+            ref,
+            final_ref,
+            source_object=source_stored,
+        )
+        stored = validate_stored_object(
+            stored,
+            expected_content_type=token_payload.content_type,
+            allowed_content_types=allowed_types,
+            max_size_bytes=token_payload.max_size_bytes,
+            asset_label="workspace file",
+        )
+        if not promoted:
+            final_hash = await sha256_hex_stream(provider.stream_object(final_ref))
+            if final_hash != content_hash:
+                raise ConflictError(
+                    "Confirmed file bytes do not match the pending upload",
+                    conflicting_resource="file_revision",
+                    details={"revision_id": str(file_upload.revision_id)},
+                )
+
+    entry = require_matching_pair(
+        stored.content_type or token_payload.content_type,
+        uploaded_extension,
+    )
+
     if is_new_file:
         file = File(
             id=file_upload.file_id,
@@ -130,11 +183,6 @@ async def confirm_file_upload(
                 "Replacement file must stay in the same category",
                 field="content_type",
             )
-        if file.content_hash == content_hash:
-            file_upload.consumed_at = datetime.now(UTC)
-            await best_effort_delete_file_object(ref.key, provider=provider)
-            await db.flush()
-            return file_to_read(file)
 
     revision_kind = "create" if is_new_file else "replace"
     revision = FileRevision(
@@ -147,7 +195,7 @@ async def confirm_file_upload(
         extension=uploaded_extension,
         size_bytes=stored.size_bytes,
         content_hash=content_hash,
-        object_key=ref.key,
+        object_key=final_ref.key,
         created_by_user_id=actor.id,
     )
     db.add(revision)
@@ -168,6 +216,7 @@ async def confirm_file_upload(
     )
     file_upload.consumed_at = datetime.now(UTC)
     await db.flush()
+    await best_effort_delete_file_object(ref.key, provider=provider)
 
     await record_workspace_audit_event(
         db,

@@ -2,9 +2,11 @@
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
+from httpx2 import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +52,11 @@ from tests.support.requests import build_test_request
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
+
+
+def _relative_url(absolute_url: str) -> str:
+    parsed = urlsplit(absolute_url)
+    return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
 
 
 @pytest.fixture
@@ -356,6 +363,60 @@ async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
     )
     assert audit_event is not None
     assert audit_event.details["content_hash"] == confirmed.content_hash
+
+
+async def test_reusing_confirmed_upload_grant_cannot_change_revision_bytes(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, membership = await _workspace_context(db_session)
+    provider = get_storage_provider()
+    original = b"immutable revision"
+    replacement = b"changed after confirm"
+    grant_result = await create_file_upload(
+        db_session,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        payload=FileUploadRequest(
+            filename="immutable.txt",
+            content_type="text/plain",
+            size_bytes=len(original),
+        ),
+    )
+    assert grant_result.grant is not None
+    grant = grant_result.grant
+    upload_url = _relative_url(grant.upload.url)
+    uploaded = await db_async_client.put(
+        upload_url,
+        content=original,
+        headers=grant.upload.headers,
+    )
+    assert uploaded.status_code == 204
+
+    confirmed = await confirm_file_upload(
+        db_session,
+        request=build_test_request(path="/api/v1/files/uploads/confirm"),
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        payload=FileConfirmRequest(upload_token=grant.upload_token),
+    )
+    revision = await db_session.scalar(
+        select(FileRevision).where(FileRevision.id == confirmed.current_revision_id)
+    )
+    assert revision is not None
+    assert revision.object_key != grant.upload.ref.key
+
+    reused = await db_async_client.put(
+        upload_url,
+        content=replacement,
+        headers=grant.upload.headers,
+    )
+    assert reused.status_code == 204
+    assert await provider.get_object(private_ref_from_key(revision.object_key)) == original
+    assert revision.content_hash == sha256_hex(original)
 
 
 async def test_confirm_preserves_extension_alias_and_rejects_deleted_replace(

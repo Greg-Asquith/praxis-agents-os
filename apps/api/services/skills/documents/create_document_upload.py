@@ -2,18 +2,20 @@
 
 """Create a direct-upload grant for a skill document."""
 
+import secrets
 from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from models.asset_upload import AssetUpload
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.assets.domain import AssetKind, AssetUploadGrant
 from services.assets.tokens import create_asset_upload_token
 from services.skills.documents.domain import SkillDocumentUploadRequest
-from services.skills.documents.utils import original_ref, validate_document_upload
+from services.skills.documents.utils import upload_ref, validate_document_upload
 from services.skills.utils import get_skill_for_workspace, require_skill_write_access
 from services.storage.factory import get_storage_provider
 
@@ -34,7 +36,7 @@ async def create_skill_document_upload(
         payload,
         existing_manifest=skill.documentation_refs,
     )
-    ref = original_ref(
+    ref = upload_ref(
         workspace.id,
         skill.id,
         payload.document_name,
@@ -53,7 +55,19 @@ async def create_skill_document_upload(
         ref=ref,
         content_type=content_type,
         max_size_bytes=settings.MAX_FILE_SIZE_DOCUMENT,
+        token_id=(token_id := secrets.token_urlsafe(24)),
     )
+    db.add(
+        AssetUpload(
+            token_id=token_id,
+            kind=AssetKind.SKILL_DOCUMENT.value,
+            object_key=ref.key,
+            created_by_user_id=actor.id,
+            workspace_id=workspace.id,
+            expires_at=expires_at,
+        )
+    )
+    await db.flush()
     return AssetUploadGrant(
         upload=upload,
         upload_token=upload_token,

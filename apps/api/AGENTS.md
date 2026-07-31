@@ -88,7 +88,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Storage goes through the `services/storage` provider abstraction.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as
-  optional extras (`gcp`, `aws`, `azure`).
+  optional extras (`gcp`, `aws`, `azure`). Direct-upload grants target unique
+  temporary keys only; confirmation validates and conditionally promotes bytes
+  to a distinct create-only durable key. Managed asset and skill-document
+  grants persist consumption state so confirmation is replay-safe and
+  crash-idempotent.
 - Non-OAuth integration credentials remain secret references. Admins replace
   API keys and service-account keys in place through
   `PUT /integrations/connections/{connection_id}/credential`; discovery

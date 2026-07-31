@@ -36,4 +36,4 @@ async def accept_signed_upload(
             object_key=ref.key,
         )
 
-    await provider.put_object(ref, data, content_type=content_type)
+    await provider.put_object(ref, data, content_type=content_type, overwrite=False)

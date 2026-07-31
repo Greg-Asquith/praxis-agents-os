@@ -17,6 +17,7 @@ from services.assets import (
     create_workspace_icon_upload,
 )
 from services.assets.domain import AssetConfirmRequest, AssetUploadRequest
+from services.assets.utils import public_asset_ref_for_upload
 from services.audit_events import AuditAction, AuditResourceType
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
@@ -81,9 +82,10 @@ async def test_confirm_workspace_icon_upload_sets_url_key_audits_and_deletes_pre
         payload=AssetConfirmRequest(upload_token=grant.upload_token),
     )
 
-    assert workspace.icon_object_key == grant.upload.ref.key
+    final_ref = public_asset_ref_for_upload(grant.upload.ref)
+    assert workspace.icon_object_key == final_ref.key
     assert result.icon_url is not None
-    assert result.icon_url.endswith(grant.upload.ref.key)
+    assert result.icon_url.endswith(final_ref.key)
     assert await provider.stat_object(previous_ref) is None
 
     audit_event = await db_session.scalar(

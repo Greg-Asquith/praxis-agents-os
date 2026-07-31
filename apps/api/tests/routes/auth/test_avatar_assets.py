@@ -76,7 +76,8 @@ async def test_avatar_upload_confirm_and_delete_routes(
         json={"upload_token": upload_grant["upload_token"]},
     )
     assert confirm_response.status_code == 200
-    assert confirm_response.json()["avatar_url"].endswith(upload_grant["upload"]["ref"]["key"])
+    final_key = upload_grant["upload"]["ref"]["key"].replace("/uploads/", "/")
+    assert confirm_response.json()["avatar_url"].endswith(final_key)
 
     delete_response = await db_async_client.delete("/api/v1/auth/me/avatar", headers=headers)
     assert delete_response.status_code == 200

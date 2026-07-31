@@ -18,7 +18,9 @@ from services.storage.domain import (
 from services.storage.errors import (
     StorageError,
     StorageNotFoundError,
+    StoragePreconditionError,
     StorageProviderUnavailableError,
+    StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
@@ -108,6 +110,7 @@ class S3StorageProvider:
         content_type: str | None = None,
         cache_control: str | None = None,
         metadata: dict[str, str] | None = None,
+        overwrite: bool = True,
     ) -> StoredObject:
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
@@ -124,10 +127,21 @@ class S3StorageProvider:
             params["CacheControl"] = resolved_cache_control
         if metadata:
             params["Metadata"] = _string_metadata(metadata)
+        if not overwrite:
+            params["IfNoneMatch"] = "*"
 
         try:
             await asyncio.to_thread(self.client.put_object, **params)
         except Exception as exc:
+            if _is_precondition_error(exc):
+                raise StoragePreconditionError(
+                    "Storage object already exists",
+                    provider_key=self.provider_key,
+                    operation="put_object",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                    original_error=exc,
+                ) from exc
             raise StorageError(
                 "Failed to upload S3 object",
                 provider_key=self.provider_key,
@@ -288,6 +302,72 @@ class S3StorageProvider:
                 original_error=exc,
             ) from exc
 
+    async def promote_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        if source.bucket != destination.bucket or source == destination:
+            raise StorageValidationError(
+                "Storage promotion requires distinct objects in the same bucket",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+
+        bucket_name = self._bucket_name(source.bucket)
+        try:
+            await asyncio.to_thread(
+                self.client.copy_object,
+                Bucket=bucket_name,
+                Key=destination.key,
+                CopySource={"Bucket": bucket_name, "Key": source.key},
+                CopySourceIfMatch=f'"{expected_source_etag}"',
+                IfNoneMatch="*",
+                MetadataDirective="COPY",
+            )
+        except Exception as exc:
+            if _is_precondition_error(exc):
+                raise StoragePreconditionError(
+                    "Storage promotion precondition failed",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=destination.bucket.value,
+                    object_key=destination.key,
+                    original_error=exc,
+                ) from exc
+            if _is_not_found_error(exc):
+                raise StorageNotFoundError(
+                    "Storage promotion source was not found",
+                    provider_key=self.provider_key,
+                    operation="promote_object",
+                    bucket=source.bucket.value,
+                    object_key=source.key,
+                    original_error=exc,
+                ) from exc
+            raise StorageError(
+                "Failed to promote S3 object",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+                original_error=exc,
+            ) from exc
+
+        stored = await self.stat_object(destination)
+        if stored is None:
+            raise StorageNotFoundError(
+                "Promoted object could not be read after copy",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+        return stored
+
     async def create_signed_upload(
         self,
         ref: StorageObjectRef,
@@ -307,6 +387,7 @@ class S3StorageProvider:
                     "Bucket": self._bucket_name(ref.bucket),
                     "Key": ref.key,
                     "ContentType": normalized_content_type,
+                    "IfNoneMatch": "*",
                 },
                 ExpiresIn=max(1, int(expires_in.total_seconds())),
                 HttpMethod="PUT",
@@ -323,7 +404,7 @@ class S3StorageProvider:
         return SignedUpload(
             ref=ref,
             url=str(url),
-            headers={"content-type": normalized_content_type},
+            headers={"content-type": normalized_content_type, "if-none-match": "*"},
             expires_at=expires_at,
         )
 
@@ -448,6 +529,20 @@ def _is_not_found_error(exc: Exception) -> bool:
         code = response.get("Error", {}).get("Code")
         return str(code) in {"404", "NoSuchKey", "NoSuchBucket", "NotFound"}
     return getattr(exc, "status_code", None) == 404
+
+
+def _is_precondition_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return getattr(exc, "status_code", None) in {409, 412}
+    code = str(response.get("Error", {}).get("Code", ""))
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return code in {
+        "409",
+        "412",
+        "ConditionalRequestConflict",
+        "PreconditionFailed",
+    } or status in {409, 412}
 
 
 def _next_or_none(iterator):

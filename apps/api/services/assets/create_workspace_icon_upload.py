@@ -21,6 +21,7 @@ async def create_workspace_icon_upload(
 ) -> AssetUploadGrant:
     await require_role(db, actor=actor, workspace_id=workspace_id, allowed_roles=ROLES)
     return await create_asset_upload(
+        db,
         SPEC,
         actor=actor,
         owner_id=workspace_id,

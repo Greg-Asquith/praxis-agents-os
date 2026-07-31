@@ -41,11 +41,13 @@ __all__ = [
     "manifest_now",
     "markdown_ref_for_original",
     "original_ref",
+    "original_ref_for_upload",
     "parse_manifest_entry",
     "parse_skill_doc_key",
     "private_ref_from_key",
     "skill_doc_prefix",
     "truncate_markdown",
+    "upload_ref",
     "validate_document_upload",
 ]
 
@@ -57,6 +59,7 @@ class ParsedSkillDocumentKey:
     workspace_id: UUID
     skill_id: UUID
     document_name: str
+    area: str
     upload_id: str
     filename: str
 
@@ -88,6 +91,35 @@ def original_ref(
     )
 
 
+def upload_ref(
+    workspace_id: UUID,
+    skill_id: UUID,
+    document_name: str,
+    *,
+    filename: str,
+) -> StorageObjectRef:
+    """Build a unique temporary ref for a skill document direct upload."""
+    prefix = skill_doc_prefix(workspace_id, skill_id, document_name)
+    upload_id = uuid4().hex
+    filename_segment = safe_filename(filename)
+    return make_storage_object_ref(
+        StorageBucket.PRIVATE,
+        f"{prefix}/pending/{upload_id}/original/{filename_segment}",
+    )
+
+
+def original_ref_for_upload(upload: StorageObjectRef) -> StorageObjectRef:
+    """Derive the immutable original ref for one temporary skill document upload."""
+    parsed = parse_skill_doc_key(upload.key)
+    if parsed.area != "pending":
+        raise AppValidationError("Upload token is not valid for this skill", field="upload_token")
+    prefix = skill_doc_prefix(parsed.workspace_id, parsed.skill_id, parsed.document_name)
+    return make_storage_object_ref(
+        StorageBucket.PRIVATE,
+        f"{prefix}/uploads/{parsed.upload_id}/original/{parsed.filename}",
+    )
+
+
 def markdown_ref_for_original(original: StorageObjectRef) -> StorageObjectRef:
     """Build the private storage ref for converted markdown beside an upload original."""
     parsed = parse_skill_doc_key(original.key)
@@ -111,7 +143,7 @@ def parse_skill_doc_key(object_key: str) -> ParsedSkillDocumentKey:
         or parts[0] != "workspaces"
         or parts[2] != "skills"
         or parts[4] != "docs"
-        or parts[6] != "uploads"
+        or parts[6] not in {"pending", "uploads"}
         or not parts[7]
         or parts[8] != "original"
         or not parts[9]
@@ -129,6 +161,7 @@ def parse_skill_doc_key(object_key: str) -> ParsedSkillDocumentKey:
         workspace_id=workspace_id,
         skill_id=skill_id,
         document_name=parts[5],
+        area=parts[6],
         upload_id=parts[7],
         filename=parts[9],
     )

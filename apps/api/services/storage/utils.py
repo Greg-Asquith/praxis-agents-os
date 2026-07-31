@@ -8,11 +8,33 @@ import logging
 from fastapi.responses import FileResponse, Response
 
 from services.storage.domain import StorageObjectRef, StoredObject
-from services.storage.errors import StorageNotFoundError
+from services.storage.errors import StorageNotFoundError, StoragePreconditionError
 from services.storage.provider import StorageProvider
 from services.storage.providers.local import LocalStorageProvider
 
 logger = logging.getLogger(__name__)
+
+
+async def promote_object_or_get_existing(
+    provider: StorageProvider,
+    source: StorageObjectRef,
+    destination: StorageObjectRef,
+    *,
+    source_object: StoredObject,
+) -> tuple[StoredObject, bool]:
+    """Promote a validated source, returning a prior destination for crash recovery."""
+    try:
+        promoted = await provider.promote_object(
+            source,
+            destination,
+            expected_source_etag=source_object.etag,
+        )
+    except StoragePreconditionError:
+        existing = await provider.stat_object(destination)
+        if existing is None:
+            raise
+        return existing, False
+    return promoted, True
 
 
 async def put_new_object_with_cleanup(

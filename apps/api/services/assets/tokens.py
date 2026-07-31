@@ -27,6 +27,7 @@ def create_asset_upload_token(
     max_size_bytes: int,
     target_user_id: UUID | None = None,
     workspace_id: UUID | None = None,
+    token_id: str | None = None,
 ) -> tuple[str, datetime]:
     """Create a short-lived API token that binds a signed upload to one asset."""
     now = datetime.now(UTC)
@@ -41,7 +42,7 @@ def create_asset_upload_token(
         "object_key": ref.key,
         "content_type": content_type,
         "max_size_bytes": max_size_bytes,
-        "jti": secrets.token_urlsafe(24),
+        "jti": token_id or secrets.token_urlsafe(24),
         "iat": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
     }

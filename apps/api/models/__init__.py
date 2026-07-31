@@ -14,6 +14,7 @@ from models.agent import Agent, AgentSchedule, AgentScheduleRun  # noqa: F401
 from models.agent_memories import AgentMemory  # noqa: F401
 from models.agent_run import AgentRun  # noqa: F401
 from models.artifacts import Artifact, ArtifactRevision, ArtifactShare  # noqa: F401
+from models.asset_upload import AssetUpload  # noqa: F401
 from models.audit_event import AuditEvent  # noqa: F401
 from models.base import BaseModel  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
