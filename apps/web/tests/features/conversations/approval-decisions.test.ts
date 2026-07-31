@@ -212,6 +212,38 @@ describe("approval decision helpers", () => {
     ])
   })
 
+  it("sends Airtable field edits as an object in override args", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "airtable-create-1",
+      name: "airtable_create_record",
+      args: {
+        table: "Projects",
+        fields: { Status: "Draft", Owner: "Ada" },
+      },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "airtable-create-1": {
+          decision: "approved",
+          message: "",
+          edits: {
+            fields: { Status: "Complete", Owner: "Ada" },
+          },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: {
+          table: "Projects",
+          fields: { Status: "Complete", Owner: "Ada" },
+        },
+        tool_call_id: "airtable-create-1",
+      },
+    ])
+  })
+
   it("drops structurally unchanged typed edits", () => {
     const approval: PendingToolApproval = {
       tool_call_id: "typed-1",

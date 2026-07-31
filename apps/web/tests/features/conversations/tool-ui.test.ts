@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import {
   autoUiFields,
   friendlyResultText,
-  humanizeKey,
   resolveToolTemplate,
   resolveUiFields,
   shortOutcomeMetric,
@@ -165,12 +164,5 @@ describe("friendlyResultText", () => {
   it("rejects JSON-looking or non-string results", () => {
     expect(friendlyResultText('{"a":1}')).toBeNull()
     expect(friendlyResultText({ a: 1 })).toBeNull()
-  })
-})
-
-describe("humanizeKey", () => {
-  it("converts snake case and camel case to sentence case", () => {
-    expect(humanizeKey("file_name")).toBe("File name")
-    expect(humanizeKey("maxBytes")).toBe("Max bytes")
   })
 })

@@ -110,7 +110,11 @@ DEFINITION = RuntimeToolDefinition(
         approval_prompt="The agent wants to change campaign serving status.",
         approve_label="Approve & Update",
         arg_fields=(
-            ToolFieldPresentation(key="campaign_ids", label="Campaigns", format="list"),
+            ToolFieldPresentation(
+                key="campaign_ids",
+                label="Campaigns",
+                format="list",
+            ),
             ToolFieldPresentation(
                 key="status",
                 label="Status",

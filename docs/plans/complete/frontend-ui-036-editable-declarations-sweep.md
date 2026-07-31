@@ -8,7 +8,8 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
+- **Completed**: 2026-07-31
 - **Written**: 2026-07-30 against HEAD `c4777c1` (clean working tree).
 - **Priority**: P1
 - **Effort**: L
@@ -58,7 +59,7 @@ scheduled/event/delegated runs (`dispatch.py:335-354`). Auto-mounted tools
 | `update_artifact` (`artifacts.py:80`) | a, d | none | `title`, `content` editable; `artifact_id` locked. |
 | `delegate_to_agent` (`delegation/build_delegation_tools.py:44`) | d, child approvals | none — presenter passes `fields={[]}` (`delegation-tool-row.tsx`) | `task` editable (multiline); `agent_id` locked. Requires the delegation presenter to consume declared fields (step 2). |
 | `gmail_send_message` (`gmail/tools/send_message.py:89`) | a, d | `subject`, `body_text` | Add `to`, `cc`, `bcc` as editable `list` (035); `cc`/`bcc` secondary. |
-| `google_ads_update_campaign_status` (`google_ads/tools/update_campaign_status.py:89`) | a (mandatory, `supports_auto=False`), d | `status` | Add `campaign_ids` as editable `list` (035). |
+| `google_ads_update_campaign_status` (`google_ads/tools/update_campaign_status.py:89`) | a (mandatory, `supports_auto=False`), d | `status` | Keep `campaign_ids` locked. An opaque, customer-scoped identifier is not a human-editable list; Plan 038 adds named, scoped campaign selectors and fixes multi-customer targeting. |
 | `airtable_create_record` (`airtable/tools/create_record.py:83`) | a, d | declared but dropped by presenter | `table` editable (text), `fields` editable `keyvalue` (035). Presenter consumes server declaration (step 2). |
 | `airtable_update_record` (`airtable/tools/update_record.py:89`) | a, d | same drift | Same; `record_id` locked. |
 
@@ -128,7 +129,27 @@ auto. (This is also the prerequisite state for Plan 037's edit-and-re-run.)
 - `create_artifact.artifact_type` — type/content coherence.
 - Identifier args (`memory_id`, `artifact_id`, `record_id`, `message_id`,
   `document_id`, `agent_id`, `file_id`) — editing an opaque id invites
-  approving an action against an unseen target.
+  approving an action against an unseen target. Plan 038 replaces raw-ID
+  surfaces with human-readable, server-resolved entity selectors.
+- `google_ads_update_campaign_status.campaign_ids` — campaign IDs are opaque
+  and customer-scoped, so a free-form list is neither usable nor safe. Plan 038
+  introduces scoped campaign references and a name-based selector.
+- `write_file.file_id` and `write_file.expected_current_revision_id` — target
+  identity and optimistic-concurrency guard. `content_ref` is replay-only
+  staged-storage plumbing and is intentionally omitted from the card.
+- `web_search.model` — the optional model must remain compatible with the
+  selected provider; the provider is the supported user-facing steering
+  choice and omission selects its safe default.
+- `save_memory.duplicate_of` and `save_memory.save_as_new` — near-duplicate
+  resolution controls used only after the service returns an explicit
+  duplicate result; they are not ordinary approval-time fields.
+- `search_knowledge.filters` and `read_document.range` — structured filter and
+  range objects do not fit the flat typed editors. They remain locked until a
+  dedicated structured control exists.
+- `read_file.mode`, `forget_memory.reason`, and
+  `bigquery_get_table_schema.table` — transcript context only on tools that do
+  not normally request approval; this sweep does not turn them into steering
+  controls.
 
 ## STOP conditions
 
@@ -151,3 +172,30 @@ auto. (This is also the prerequisite state for Plan 037's edit-and-re-run.)
   agent's `google_ads_run_report` policy to approval, confirm the GAQL
   query is editable on the card; (3) Airtable create — edit a `fields`
   value in the keyvalue grid, approve, confirm the record payload.
+
+## Completion notes
+
+- Runtime declarations now expose all safe steering fields with their real
+  types, enum options, and secondary placement. Opaque identifiers remain
+  locked; campaign IDs were deliberately not made editable after maintainer
+  review and are now covered by Plan 038's named, scoped selector design.
+- Gmail, Google Ads, Airtable, and delegation presenters consume the
+  server-owned declaration passed through the presenter contract. The shared
+  undeclared-argument fallback moved into the generic tool-UI seam so provider
+  packages do not depend on conversation-feature internals.
+- API declaration tests pin editable and locked field sets, formats, secondary
+  fields, the GAQL placeholder, and enum options against their Python Literal
+  domains. Presenter tests pin declaration object identity, and Airtable tests
+  prove key/value edits produce object-shaped `override_args`.
+- Verification completed: API focused gate `44 passed, 10 skipped`; full API
+  suite excluding the independently broken active-context selection test file
+  `1369 passed`; full web `pnpm check` `445 passed` plus lint, Prettier, knip,
+  dependency-cruiser, and production build.
+- Repo-root `make check` was run. Ruff, formatting, migrations, and the Plan 036
+  tests passed, but the API suite exposed six pre-existing failures in
+  `tests/services/integrations/context/test_selection_ops.py`: commit
+  `7093493d` added a membership check while that fixture still creates no
+  membership. The file fails identically in isolation and is outside this
+  plan's scope. Manual provider QA was unavailable because no safe configured
+  Gmail/Google Ads/Airtable test accounts or browser session were present;
+  mocked provider and approval-flow coverage passed instead.

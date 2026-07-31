@@ -9,8 +9,8 @@ import { nodeText } from "@/components/tool-ui/untrusted-node"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
-import { truncateText } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { humanizeKey, truncateText } from "@/lib/format"
+import { isRecord, normalizeRecord } from "@/lib/guards"
 
 const TEMPLATE_VALUE_LIMIT = 64
 const APPROVAL_PROMPT_VALUE_LIMIT = 240
@@ -56,16 +56,16 @@ export function resolveToolTemplate(
 }
 
 export function resolveUiFields(fields: ToolUiField[], source: unknown): ResolvedToolField[] {
-  const record = normalizeToolArgs(source)
-  if (!isRecord(record)) {
+  const record = normalizeRecord(source)
+  if (!record) {
     return []
   }
   return resolveToolFields(fields, record)
 }
 
 export function autoUiFields(source: unknown): ResolvedToolField[] {
-  const normalized = normalizeToolArgs(source)
-  if (!isRecord(normalized)) {
+  const normalized = normalizeRecord(source)
+  if (!normalized) {
     return []
   }
   const resolved: ResolvedToolField[] = []
@@ -86,33 +86,6 @@ export function autoUiFields(source: unknown): ResolvedToolField[] {
   return resolved
 }
 
-export function approvalFallbackFields(
-  source: unknown,
-  declaredFields: ToolUiField[]
-): ResolvedToolField[] {
-  const normalized = normalizeToolArgs(source)
-  if (!isRecord(normalized)) {
-    return []
-  }
-
-  const declaredKeys = new Set(declaredFields.map((field) => field.key))
-  return Object.entries(normalized).flatMap(([key, raw]): ResolvedToolField[] => {
-    if (declaredKeys.has(key)) {
-      return []
-    }
-    const scalarValue = scalarToolFieldDisplayValue(raw)
-    if (scalarValue !== null) {
-      return [{ key, label: humanizeKey(key), value: scalarValue, format: "text" }]
-    }
-    try {
-      const value = JSON.stringify(raw, null, 2)
-      return [{ key, label: humanizeKey(key), value, format: "multiline" }]
-    } catch {
-      return [{ key, label: humanizeKey(key), value: String(raw), format: "text" }]
-    }
-  })
-}
-
 export function friendlyResultText(result: unknown): string | null {
   const text = nodeText(result)
   if (text === null) {
@@ -128,17 +101,6 @@ export function friendlyResultText(result: unknown): string | null {
 export function shortOutcomeMetric(fields: ResolvedToolField[], maxLength = 40): string | null {
   const value = fields[0]?.value.replace(/\s+/g, " ").trim()
   return value && value.length <= maxLength ? value : null
-}
-
-export function humanizeKey(key: string): string {
-  const spaced = key
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .trim()
-  if (!spaced) {
-    return key
-  }
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase()
 }
 
 function statusTemplate(ui: ToolUi, status: ToolActivity["status"]): string {

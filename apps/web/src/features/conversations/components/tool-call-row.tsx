@@ -3,6 +3,7 @@
 import { Component, use, type ErrorInfo, type ReactNode } from "react"
 import { WrenchIcon } from "lucide-react"
 
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
@@ -24,7 +25,6 @@ import {
 import { supportIdentifier } from "@/features/conversations/format"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
-  approvalFallbackFields,
   autoUiFields,
   friendlyResultText,
   resolveUiFields,

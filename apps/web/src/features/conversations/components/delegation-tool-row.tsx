@@ -5,9 +5,9 @@ import { BotIcon, ExternalLinkIcon, UsersIcon } from "lucide-react"
 
 import {
   ToolApprovalDecisionCard,
-  type ApprovalFallbackField,
   type ToolApprovalDecisionControls,
 } from "@/components/tool-ui/approval-card"
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { resolveToolField, type ResolvedToolField } from "@/components/tool-ui/field-resolution"
 import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
@@ -21,7 +21,6 @@ import { ActivityStatusBadge } from "@/features/conversations/components/tool-ac
 import { supportIdentifier } from "@/features/conversations/format"
 import { delegateAgentSummaries } from "@/features/conversations/delegation-agent-list"
 import type { DelegationToolActivity, ToolActivity } from "@/features/conversations/message-parts"
-import { autoUiFields } from "@/features/conversations/tool-ui"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -106,18 +105,15 @@ export function DelegationToolRow({
   const toolLabel = presentation?.label ?? activity.name
   if (approvalDecision) {
     const isDelegatedToolApproval = activity.name !== DELEGATE_TO_AGENT_TOOL_NAME
+    const fields = presentation?.ui.arg_fields ?? []
     return (
       <ToolApprovalDecisionCard
         activityId={activity.id}
         approveLabel={isDelegatedToolApproval ? "Approve" : "Approve & Delegate"}
         args={activity.args}
         controls={approvalDecision}
-        fallbackFields={
-          isDelegatedToolApproval
-            ? delegatedToolApprovalFields(activity.args, toolLabel)
-            : delegationApprovalFields(delegate, toolLabel)
-        }
-        fields={isDelegatedToolApproval ? (presentation?.ui.arg_fields ?? []) : []}
+        fallbackFields={approvalFallbackFields(activity.args, fields)}
+        fields={fields}
         icon={<DelegationIdentity delegate={delegate} label={targetLabel} />}
         label={toolLabel}
         prompt={
@@ -298,19 +294,4 @@ function DelegationField({ field }: { field: ResolvedToolField | null }) {
       </div>
     </div>
   )
-}
-
-function delegationApprovalFields(
-  delegate: DelegationToolActivity,
-  toolLabel: string
-): ApprovalFallbackField[] {
-  return [
-    resolveToolField({ key: "task", label: "Task", format: "multiline" }, delegate.taskPreview),
-    resolveToolField({ key: "tool", label: "Tool", format: "text" }, toolLabel),
-  ].filter((field): field is ApprovalFallbackField => field !== null)
-}
-
-function delegatedToolApprovalFields(args: unknown, toolLabel: string): ApprovalFallbackField[] {
-  const toolField = resolveToolField({ key: "tool", label: "Tool", format: "text" }, toolLabel)
-  return [...(toolField ? [toolField] : []), ...autoUiFields(args)]
 }

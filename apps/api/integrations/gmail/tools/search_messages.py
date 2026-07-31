@@ -76,7 +76,16 @@ DEFINITION = RuntimeToolDefinition(
         running_label="Searching Gmail for {query}",
         completed_label="Searched Gmail for {query}",
         failed_label="Couldn't Search Gmail",
-        arg_fields=(ToolFieldPresentation(key="query", label="Search"),),
+        arg_fields=(
+            ToolFieldPresentation(key="query", label="Search", editable=True),
+            ToolFieldPresentation(
+                key="limit",
+                label="Maximum Messages",
+                format="number",
+                editable=True,
+                secondary=True,
+            ),
+        ),
         result_fields=RESULTS_FIELD,
     ),
 )

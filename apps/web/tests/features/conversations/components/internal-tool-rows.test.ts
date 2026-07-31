@@ -116,6 +116,7 @@ describe("delegation tool rows", () => {
     expect(html).toContain("Decline")
     expect(html).toContain("Review launch evidence")
     expect(html).toContain("Delegate to Agent")
+    expect(html).toContain("<textarea")
     expect(controls.onDecisionChange).not.toHaveBeenCalled()
   })
 
@@ -161,7 +162,6 @@ describe("delegation tool rows", () => {
       })
     )
 
-    expect(html).toContain("Tool")
     expect(html).toContain("custom_external_action")
     expect(html).toContain("Attempts")
     expect(html).toContain(">2<")
@@ -495,7 +495,26 @@ function render(element: ReactElement, options: { seedSkills?: boolean } = {}) {
           approval_prompt: "Delegate this task.",
           approval_title: "Delegate to Agent",
           approve_label: "Approve & Delegate",
-          arg_fields: [],
+          arg_fields: [
+            {
+              editable: false,
+              format: "text",
+              key: "agent_id",
+              label: "Agent",
+              options: [],
+              placeholder: "",
+              secondary: false,
+            },
+            {
+              editable: true,
+              format: "multiline",
+              key: "task",
+              label: "Task",
+              options: [],
+              placeholder: "",
+              secondary: false,
+            },
+          ],
           completed_label: "Delegated",
           failed_label: "Delegation Failed",
           icon: "bot",

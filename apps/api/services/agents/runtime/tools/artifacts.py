@@ -13,6 +13,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_APPROVAL,
+    ToolFieldPresentation,
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
@@ -48,6 +49,16 @@ from services.artifacts.schemas import ArtifactToolResult
         approval_title="Create artifact?",
         approval_prompt="Review this artifact before it is created.",
         approve_label="Create Artifact",
+        arg_fields=(
+            ToolFieldPresentation(key="title", label="Title", editable=True),
+            ToolFieldPresentation(key="artifact_type", label="Type"),
+            ToolFieldPresentation(
+                key="content",
+                label="Content",
+                format="multiline",
+                editable=True,
+            ),
+        ),
     ),
 )
 async def create_artifact(
@@ -97,6 +108,16 @@ async def create_artifact(
         approval_title="Update artifact?",
         approval_prompt="Review this new artifact version before it is saved.",
         approve_label="Update Artifact",
+        arg_fields=(
+            ToolFieldPresentation(key="artifact_id", label="Artifact"),
+            ToolFieldPresentation(key="title", label="Title", editable=True),
+            ToolFieldPresentation(
+                key="content",
+                label="Content",
+                format="multiline",
+                editable=True,
+            ),
+        ),
     ),
 )
 async def update_artifact(

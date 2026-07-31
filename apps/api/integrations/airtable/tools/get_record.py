@@ -78,7 +78,7 @@ DEFINITION = RuntimeToolDefinition(
         completed_label="Got Airtable Record",
         failed_label="Couldn't Get Airtable Record",
         arg_fields=(
-            ToolFieldPresentation(key="table", label="Table"),
+            ToolFieldPresentation(key="table", label="Table", editable=True),
             ToolFieldPresentation(key="record_id", label="Record"),
         ),
         result_fields=RESULTS_FIELD,

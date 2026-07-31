@@ -262,7 +262,10 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     assert read_todos_entry["ui"]["icon"] == "list-todo"
     delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
     assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
-    assert delegate_entry["ui"]["arg_fields"][0]["key"] == "task"
+    delegate_fields = {field["key"]: field for field in delegate_entry["ui"]["arg_fields"]}
+    assert delegate_fields["agent_id"]["editable"] is False
+    assert delegate_fields["task"]["editable"] is True
+    assert delegate_fields["task"]["format"] == "multiline"
     save_memory_entry = next(tool for tool in body["tools"] if tool["name"] == "save_memory")
     save_memory_fields = {field["key"]: field for field in save_memory_entry["ui"]["arg_fields"]}
     assert save_memory_fields["kind"]["options"] == ["core", "note"]

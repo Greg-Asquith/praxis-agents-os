@@ -1,8 +1,9 @@
 // apps/web/src/integrations/gmail/presenters/send.tsx
 
-import { ToolApprovalDecisionCard, type ApprovalField } from "@/components/tool-ui/approval-card"
+import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { ToolRowPresenter } from "@/integrations/contract"
 import { GmailLogo } from "@/integrations/gmail/components/logo"
 import { GmailSendMessage, sentMessageArgs } from "@/integrations/gmail/components/sent-message"
@@ -10,30 +11,24 @@ import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
 import { GmailToolHeading } from "@/integrations/gmail/components/tool-heading"
 import { isRecord } from "@/lib/guards"
 
-const SEND_FIELDS: ApprovalField[] = [
-  field("to", "To", "list"),
-  field("subject", "Subject", "text", true),
-  field("body_text", "Message", "multiline", true),
-  field("cc", "Cc", "list", false, true),
-  field("bcc", "Bcc", "list", false, true),
-]
-
 export const gmailSendPresenter: ToolRowPresenter = {
   handlesApprovals: true,
   key: "gmail-send-message",
   matches: (activity) => activity.name === "gmail_send_message",
-  render: ({ activity, approvalDecision, defaultOpen }) => {
+  render: ({ activity, approvalDecision, defaultOpen, ui }) => {
     if (approvalDecision) {
       if (!sentMessageArgs(activity.args)) {
         return null
       }
+      const fields = ui?.arg_fields ?? []
       return (
         <ToolApprovalDecisionCard
           activityId={activity.id}
           approveLabel="Approve & Send"
           args={activity.args}
           controls={approvalDecision}
-          fields={SEND_FIELDS}
+          fallbackFields={approvalFallbackFields(activity.args, fields)}
+          fields={fields}
           icon={<GmailLogo className="size-4" />}
           label="Send Gmail Message"
           prompt="The agent wants to send this email from the selected mailbox."
@@ -129,16 +124,6 @@ function sendFailure(activityId: string, args: unknown, description: string, def
       </FanOutShell>
     </div>
   )
-}
-
-function field(
-  key: string,
-  label: string,
-  format: ApprovalField["format"],
-  editable = false,
-  secondary = false
-): ApprovalField {
-  return { key, label, format, editable, secondary, options: [], placeholder: "" }
 }
 
 function sentMessageId(value: unknown): string | null {

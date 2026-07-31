@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { BrainIcon } from "lucide-react"
 
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
@@ -28,7 +29,6 @@ import {
 } from "@/features/conversations/native-tools/memory-tools"
 import { formatMemoryConfidence } from "@/features/memories/components/memory-display"
 import type { ToolUi } from "@/features/tools/types"
-import { approvalFallbackFields } from "@/features/conversations/tool-ui"
 import { plainTextPreview, pluralize, titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

@@ -10,6 +10,7 @@ import {
   initialAgentStreamState,
 } from "@/features/conversations/stream/reducer"
 import type { ConversationMessage } from "@/features/conversations/types"
+import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import {
   integrationToolRowPresenters,
@@ -301,6 +302,13 @@ describe("Gmail tool presenters", () => {
 
   it("renders an email-shaped approval surface with the existing controls contract", () => {
     const onDecisionChange = vi.fn()
+    const declaredFields = [
+      field("to", "Recipients", "list", true),
+      field("subject", "Declared Subject", "text", true),
+      field("body_text", "Declared Message", "multiline", true),
+      field("cc", "Declared Cc", "list", true, true),
+      field("bcc", "Declared Bcc", "list", true, true),
+    ]
     const controls = {
       decision: { decision: "pending" as const, edits: {}, message: "" as const },
       error: null,
@@ -324,14 +332,16 @@ describe("Gmail tool presenters", () => {
             bcc: [],
           },
         },
-        controls
+        controls,
+        toolUi(declaredFields)
       )
     )
 
     expect(isValidElement(rendered)).toBe(true)
-    if (isValidElement<{ controls: unknown }>(rendered)) {
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
       expect(rendered.type).toBe(ToolApprovalDecisionCard)
       expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
     }
     const html = render(rendered)
     expect(html).toContain("Review email before sending")
@@ -584,7 +594,8 @@ describe("Gmail tool presenters", () => {
 
 function props(
   activity: ToolActivity,
-  approvalDecision?: Parameters<typeof gmailSendPresenter.render>[0]["approvalDecision"]
+  approvalDecision?: Parameters<typeof gmailSendPresenter.render>[0]["approvalDecision"],
+  ui?: ToolUi
 ) {
   return {
     activity,
@@ -593,6 +604,31 @@ function props(
     defaultOpen: true,
     live: false,
     providerKey: "gmail",
+    ...(ui ? { ui } : {}),
+  }
+}
+
+function field(
+  key: string,
+  label: string,
+  format: ToolUiField["format"],
+  editable = false,
+  secondary = false
+): ToolUiField {
+  return { key, label, format, editable, secondary, options: [], placeholder: "" }
+}
+
+function toolUi(argFields: ToolUiField[]): ToolUi {
+  return {
+    approval_prompt: "",
+    approval_title: "",
+    approve_label: "",
+    arg_fields: argFields,
+    completed_label: "",
+    failed_label: "",
+    icon: "gmail",
+    result_fields: [],
+    running_label: "",
   }
 }
 

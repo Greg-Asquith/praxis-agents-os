@@ -275,6 +275,29 @@ async def search_memory(
         running_label="Updating Memory",
         completed_label="Updated Memory",
         failed_label="Couldn't Update Memory",
+        arg_fields=(
+            ToolFieldPresentation(key="memory_id", label="Memory"),
+            ToolFieldPresentation(key="title", label="Title", editable=True),
+            ToolFieldPresentation(
+                key="content",
+                label="Details",
+                format="markdown",
+                editable=True,
+            ),
+            ToolFieldPresentation(
+                key="importance",
+                label="Importance",
+                format="number",
+                editable=True,
+            ),
+            ToolFieldPresentation(
+                key="expires_in_days",
+                label="Expires in Days",
+                format="number",
+                editable=True,
+                secondary=True,
+            ),
+        ),
     ),
 )
 async def update_memory(
@@ -338,6 +361,14 @@ async def update_memory(
         running_label="Forgetting Memory",
         completed_label="Forgot Memory",
         failed_label="Couldn't Forget Memory",
+        arg_fields=(
+            ToolFieldPresentation(key="memory_id", label="Memory"),
+            ToolFieldPresentation(
+                key="reason",
+                label="Reason",
+                format="multiline",
+            ),
+        ),
     ),
 )
 async def forget_memory(

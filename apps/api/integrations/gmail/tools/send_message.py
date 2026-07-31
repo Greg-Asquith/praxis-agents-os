@@ -109,7 +109,7 @@ DEFINITION = RuntimeToolDefinition(
         approval_prompt="The agent wants to send this email from the selected mailbox.",
         approve_label="Approve & Send",
         arg_fields=(
-            ToolFieldPresentation(key="to", label="To", format="list"),
+            ToolFieldPresentation(key="to", label="To", format="list", editable=True),
             ToolFieldPresentation(key="subject", label="Subject", editable=True),
             ToolFieldPresentation(
                 key="body_text",
@@ -117,8 +117,20 @@ DEFINITION = RuntimeToolDefinition(
                 format="multiline",
                 editable=True,
             ),
-            ToolFieldPresentation(key="cc", label="Cc", format="list", secondary=True),
-            ToolFieldPresentation(key="bcc", label="Bcc", format="list", secondary=True),
+            ToolFieldPresentation(
+                key="cc",
+                label="Cc",
+                format="list",
+                editable=True,
+                secondary=True,
+            ),
+            ToolFieldPresentation(
+                key="bcc",
+                label="Bcc",
+                format="list",
+                editable=True,
+                secondary=True,
+            ),
         ),
         result_fields=RESULTS_FIELD,
     ),

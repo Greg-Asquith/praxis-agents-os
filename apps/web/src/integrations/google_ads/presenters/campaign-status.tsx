@@ -1,8 +1,9 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-status.tsx
 
-import { ToolApprovalDecisionCard, type ApprovalField } from "@/components/tool-ui/approval-card"
+import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { ToolRowPresenter } from "@/integrations/contract"
 import {
   CampaignFailure,
@@ -16,43 +17,24 @@ import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-
 import { formatGoogleAdsAccountId } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
-const CAMPAIGN_FIELDS: ApprovalField[] = [
-  {
-    editable: false,
-    format: "list",
-    key: "campaign_ids",
-    label: "Campaigns",
-    options: [],
-    placeholder: "",
-    secondary: false,
-  },
-  {
-    editable: true,
-    format: "text",
-    key: "status",
-    label: "New status",
-    options: ["ENABLED", "PAUSED"],
-    placeholder: "",
-    secondary: false,
-  },
-]
-
 export const googleAdsCampaignStatusPresenter: ToolRowPresenter = {
   handlesApprovals: true,
   key: "google-ads-update-campaign-status",
   matches: (activity) => activity.name === "google_ads_update_campaign_status",
-  render: ({ activity, approvalDecision, defaultOpen }) => {
+  render: ({ activity, approvalDecision, defaultOpen, ui }) => {
     if (approvalDecision) {
       if (!campaignArgs(activity.args)) {
         return null
       }
+      const fields = ui?.arg_fields ?? []
       return (
         <ToolApprovalDecisionCard
           activityId={activity.id}
           approveLabel="Approve & Update"
           args={activity.args}
           controls={approvalDecision}
-          fields={CAMPAIGN_FIELDS}
+          fallbackFields={approvalFallbackFields(activity.args, fields)}
+          fields={fields}
           icon={<GoogleAdsLogo className="size-4" />}
           label="Update Google Ads Campaign Status"
           prompt="This changes live campaign delivery."

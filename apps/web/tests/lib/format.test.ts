@@ -5,6 +5,7 @@ import {
   formatCompactDate,
   formatDateTime,
   formatGoogleAdsAccountId,
+  humanizeKey,
   initials,
   normalize,
   normalizeOptionalText,
@@ -39,6 +40,12 @@ describe("format helpers", () => {
     expect(titleCaseToken("agent_run-status", "Fallback")).toBe("Agent Run Status")
     expect(titleCaseToken("  ", "Fallback")).toBe("Fallback")
     expect(titleFromSegment("workspace-settings")).toBe("Workspace Settings")
+  })
+
+  it("humanizes snake, kebab, and camel-case keys", () => {
+    expect(humanizeKey("file_name")).toBe("File name")
+    expect(humanizeKey("file-name")).toBe("File name")
+    expect(humanizeKey("maxBytes")).toBe("Max bytes")
   })
 
   it("derives initials from names and email-like values", () => {

@@ -115,8 +115,9 @@ Functional, but visibly unstyled.
 | 033 | Integrations: calm app list & provider detail pages | P1 | L | — | DONE |
 | 034 | Sidebar consolidation: the Context hub | P1 | M | — | IN PROGRESS — implementation and static gate complete; visual QA pending (no browser instance available 2026-07-28) |
 | 035 | Typed argument editing: contract beyond strings | P1 | M | — | DONE |
-| 036 | Editability sweep: every approvable argument editable | P1 | L | 035 | TODO |
+| 036 | Editability sweep: every approvable argument editable | P1 | L | 035 | DONE |
 | 037 | Edit & run again: steering tools after they ran | P1 | L | 035, 036 | TODO |
+| 038 | Human-readable tool entity references and selectors | P1 | XL | 035, 036 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale)
@@ -198,7 +199,7 @@ Dependency notes:
   `src/config/navigation.ts`, `src/app/router.tsx`, the shell
   breadcrumbs, and the navigation tests. Do not run it concurrently with
   any roadmap plan touching those files.
-- 035–037 (the editability series, written 2026-07-30 at `c4777c1` from a
+- 035–038 (the editability series, written 2026-07-30 at `c4777c1` from a
   full-catalog audit of tool-argument editability) extend the UI-022/025
   editing contract. 035 is contract-first (backend `ToolFieldFormat` +
   the typed approval-card editors and merge) and runs alone; 036 is the
@@ -210,6 +211,12 @@ Dependency notes:
   036. 035/036 touch `approval-card.tsx`,
   `approval-decisions.ts`, and the integration presenters — do not run
   them concurrently with any plan editing conversation tool UI.
+- 038 (written 2026-07-31 against the in-flight 036 tree) is the entity
+  reference layer missing from the typed field contract: people select named,
+  scoped campaigns, messages, records, and internal entities while stable IDs
+  remain server-validated execution details. It runs after 036. Do not run it
+  concurrently with 037 because both extend the shared field editors and tool
+  execution surfaces.
 - 021–024 (written 2026-07-16 at `01104f7`) are independent of the
   outstanding 017–020 (disjoint files) and may run in parallel
   worktrees with them. Within the set: 021 (conversation headers) and

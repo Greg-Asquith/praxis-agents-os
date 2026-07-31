@@ -40,9 +40,9 @@ import {
   writeFileResult,
   WRITE_FILE_TOOL_NAME,
 } from "@/features/conversations/native-tools/file-tools"
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { FileContentView } from "@/features/files/components/file-content-view"
 import type { ToolUi } from "@/features/tools/types"
-import { approvalFallbackFields } from "@/features/conversations/tool-ui"
 import { formatBytes, formatDateTime, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 

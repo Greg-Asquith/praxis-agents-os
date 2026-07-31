@@ -102,7 +102,7 @@ DEFINITION = RuntimeToolDefinition(
         approval_prompt="The agent wants to add this record to the selected Airtable bases.",
         approve_label="Approve & Create",
         arg_fields=(
-            ToolFieldPresentation(key="table", label="Table"),
+            ToolFieldPresentation(key="table", label="Table", editable=True),
             ToolFieldPresentation(key="fields", label="Fields", format="keyvalue", editable=True),
         ),
         result_fields=RESULTS_FIELD,

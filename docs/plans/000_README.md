@@ -432,6 +432,17 @@ prompt does not count as the replacement, and query invalidation does not clear
 the stream first. This prevents visible scroll oscillation without changing the
 reader-scroll opt-out.
 
+UI-033 completed the integrations list/provider-detail visual pass on
+2026-07-22. UI-034's Context hub implementation and static gate are complete,
+with visual QA still pending. UI-035 completed typed approval editing on
+2026-07-31, preserving markdown, number, list, and flat key/value shapes through
+approval overrides. UI-036 completed the catalog declaration sweep on
+2026-07-31: safe steering fields are declared, deliberate locks are recorded,
+and Gmail, Google Ads, Airtable, and delegation approval presenters consume the
+server-owned contract. Opaque campaign IDs remain locked. UI-038 now records
+the required human-readable, scoped entity-reference and selector capability;
+UI-037 remains queued for governed edit-and-run-again behavior.
+
 A 2026-07-17 decomposition pass reviewed all pending Phase 4a/4b plans
 against the commit sizes that have proven reviewable and added a binding
 "Execution slices" section to each of the seven chunkiest: 039 (discovery

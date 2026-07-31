@@ -97,6 +97,14 @@ class ReadDocumentOutput(BaseModel):
             ToolFieldPresentation(
                 key="query",
                 label="Search",
+                editable=True,
+            ),
+            ToolFieldPresentation(
+                key="limit",
+                label="Maximum Matches",
+                format="number",
+                editable=True,
+                secondary=True,
             ),
         ),
         result_fields=(ToolFieldPresentation(key="results", label="Matches", format="list"),),

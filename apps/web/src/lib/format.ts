@@ -150,6 +150,17 @@ export function titleFromSegment(segment: string) {
     .join(" ")
 }
 
+export function humanizeKey(key: string): string {
+  const spaced = key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .trim()
+  if (!spaced) {
+    return key
+  }
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase()
+}
+
 export function initials(value: string | null | undefined) {
   if (!value) {
     return "PA"

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { ApprovalRequestFields, type ApprovalField } from "@/components/tool-ui/approval-card"
-import { approvalFallbackFields } from "@/features/conversations/tool-ui"
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 
 describe("ApprovalRequestFields", () => {
   it("uses two columns for compact fields and full width for long-form fields", () => {

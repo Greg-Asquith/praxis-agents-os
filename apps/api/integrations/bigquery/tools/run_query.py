@@ -110,7 +110,12 @@ DEFINITION = RuntimeToolDefinition(
         completed_label="Ran BigQuery Query",
         failed_label="Couldn't Run BigQuery Query",
         arg_fields=(
-            ToolFieldPresentation(key="query", label="GoogleSQL Query", format="multiline"),
+            ToolFieldPresentation(
+                key="query",
+                label="GoogleSQL Query",
+                format="multiline",
+                editable=True,
+            ),
         ),
         result_fields=(
             ToolFieldPresentation(key="rows", label="Rows", format="list"),

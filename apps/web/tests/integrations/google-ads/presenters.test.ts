@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
@@ -206,6 +207,13 @@ describe("Google Ads tool presenters", () => {
 
   it("uses the existing approval controls with an editable status and strong warning", () => {
     const controls = approvalControls()
+    const declaredFields = [
+      field("campaign_ids", "Declared Campaigns", "list", false),
+      {
+        ...field("status", "Declared Status", "text", true),
+        options: ["ENABLED", "PAUSED"],
+      },
+    ]
     const rendered = googleAdsCampaignStatusPresenter.render(
       props(
         {
@@ -215,7 +223,8 @@ describe("Google Ads tool presenters", () => {
           status: "awaiting_approval",
           args: { campaign_ids: ["10", "20"], status: "PAUSED" },
         },
-        controls
+        controls,
+        toolUi(declaredFields)
       )
     )
 
@@ -228,6 +237,7 @@ describe("Google Ads tool presenters", () => {
     ) {
       expect(rendered.type).toBe(ToolApprovalDecisionCard)
       expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
       expect(rendered.props.fields).toContainEqual(
         expect.objectContaining({
           key: "status",
@@ -355,7 +365,8 @@ function props(
   activity: ToolActivity,
   approvalDecision?: Parameters<
     typeof googleAdsCampaignStatusPresenter.render
-  >[0]["approvalDecision"]
+  >[0]["approvalDecision"],
+  ui?: ToolUi
 ) {
   return {
     activity,
@@ -364,6 +375,30 @@ function props(
     defaultOpen: true,
     live: false,
     providerKey: "google_ads",
+    ...(ui ? { ui } : {}),
+  }
+}
+
+function field(
+  key: string,
+  label: string,
+  format: ToolUiField["format"],
+  editable = false
+): ToolUiField {
+  return { key, label, format, editable, secondary: false, options: [], placeholder: "" }
+}
+
+function toolUi(argFields: ToolUiField[]): ToolUi {
+  return {
+    approval_prompt: "",
+    approval_title: "",
+    approve_label: "",
+    arg_fields: argFields,
+    completed_label: "",
+    failed_label: "",
+    icon: "google_ads",
+    result_fields: [],
+    running_label: "",
   }
 }
 

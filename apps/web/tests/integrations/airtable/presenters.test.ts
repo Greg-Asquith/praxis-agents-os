@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import airtableModule from "@/integrations/airtable"
 import {
@@ -121,6 +122,11 @@ describe("Airtable tool presenters", () => {
 
   it("renders record write approvals through the existing controls and lists every field", () => {
     const controls = approvalControls()
+    const declaredFields = [
+      field("table", "Declared Table", "text", true),
+      field("record_id", "Declared Record"),
+      field("fields", "Declared Fields", "keyvalue", true),
+    ]
     const rendered = airtableUpdateRecordPresenter.render(
       props(
         {
@@ -134,14 +140,16 @@ describe("Airtable tool presenters", () => {
             fields: { Status: "Complete", Owner: "Ada" },
           },
         },
-        controls
+        controls,
+        toolUi(declaredFields)
       )
     )
 
     expect(isValidElement(rendered)).toBe(true)
-    if (isValidElement<{ controls: unknown }>(rendered)) {
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
       expect(rendered.type).toBe(ToolApprovalDecisionCard)
       expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
     }
     const html = render(rendered)
     expect(html).toContain("Review Airtable record update")
@@ -301,7 +309,8 @@ describe("Airtable tool presenters", () => {
 
 function props(
   activity: ToolActivity,
-  approvalDecision?: Parameters<typeof airtableUpdateRecordPresenter.render>[0]["approvalDecision"]
+  approvalDecision?: Parameters<typeof airtableUpdateRecordPresenter.render>[0]["approvalDecision"],
+  ui?: ToolUi
 ) {
   return {
     activity,
@@ -310,6 +319,30 @@ function props(
     defaultOpen: true,
     live: false,
     providerKey: "airtable",
+    ...(ui ? { ui } : {}),
+  }
+}
+
+function field(
+  key: string,
+  label: string,
+  format: ToolUiField["format"] = "text",
+  editable = false
+): ToolUiField {
+  return { key, label, format, editable, secondary: false, options: [], placeholder: "" }
+}
+
+function toolUi(argFields: ToolUiField[]): ToolUi {
+  return {
+    approval_prompt: "",
+    approval_title: "",
+    approve_label: "",
+    arg_fields: argFields,
+    completed_label: "",
+    failed_label: "",
+    icon: "airtable",
+    result_fields: [],
+    running_label: "",
   }
 }
 

@@ -1,8 +1,9 @@
 // apps/web/src/integrations/airtable/presenters/write.tsx
 
-import { ToolApprovalDecisionCard, type ApprovalField } from "@/components/tool-ui/approval-card"
+import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import { AirtableLogo } from "@/integrations/airtable/components/logo"
 import { isAirtableJson } from "@/integrations/airtable/lib/record-data"
@@ -14,12 +15,6 @@ import {
   AirtableWriteReceipt,
 } from "@/integrations/airtable/components/write-outcome"
 import { isRecord } from "@/lib/guards"
-
-const CREATE_FIELDS: ApprovalField[] = [approvalField("table", "Table")]
-const UPDATE_FIELDS: ApprovalField[] = [
-  approvalField("table", "Table"),
-  approvalField("record_id", "Record"),
-]
 
 export const airtableCreateRecordPresenter = airtableWritePresenter({
   action: "create",
@@ -50,19 +45,21 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
     handlesApprovals: true,
     key: config.key,
     matches: (activity) => activity.name === config.name,
-    render: ({ activity, approvalDecision, defaultOpen }) => {
+    render: ({ activity, approvalDecision, defaultOpen, ui }) => {
       const args = airtableWriteArgs(activity.args, config.action)
       if (approvalDecision) {
         if (!args) {
           return null
         }
+        const fields = ui?.arg_fields ?? []
         return (
           <ToolApprovalDecisionCard
             activityId={activity.id}
             approveLabel={config.approveLabel}
             args={activity.args}
             controls={approvalDecision}
-            fields={config.action === "create" ? CREATE_FIELDS : UPDATE_FIELDS}
+            fallbackFields={approvalFallbackFields(activity.args, fields)}
+            fields={fields}
             icon={<AirtableLogo className="size-4" />}
             label={config.completedHeading}
             prompt={`The agent wants to ${config.action} this record in the selected Airtable bases.`}
@@ -183,18 +180,6 @@ function writeSkeleton(config: AirtableWriteConfig, createLabel: string, updateL
       label={config.action === "create" ? createLabel : updateLabel}
     />
   )
-}
-
-function approvalField(key: string, label: string): ApprovalField {
-  return {
-    editable: false,
-    format: "text",
-    key,
-    label,
-    options: [],
-    placeholder: "",
-    secondary: false,
-  }
 }
 
 function airtableWriteArgs(value: unknown, action: AirtableWriteConfig["action"]) {

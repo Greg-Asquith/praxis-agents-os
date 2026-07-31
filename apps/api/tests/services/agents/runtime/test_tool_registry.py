@@ -2,14 +2,38 @@
 
 """Unit tests for the runtime tool registry contract."""
 
-from typing import get_args
+from typing import get_args, get_type_hints
 from uuid import uuid4
 
 import pytest
 
 from core.exceptions.general import AppValidationError
+from integrations.airtable.tools.create_record import (
+    DEFINITION as AIRTABLE_CREATE_RECORD_DEFINITION,
+)
+from integrations.airtable.tools.get_record import DEFINITION as AIRTABLE_GET_RECORD_DEFINITION
+from integrations.airtable.tools.list_records import DEFINITION as AIRTABLE_LIST_RECORDS_DEFINITION
+from integrations.airtable.tools.update_record import (
+    DEFINITION as AIRTABLE_UPDATE_RECORD_DEFINITION,
+)
+from integrations.bigquery.tools.run_query import DEFINITION as BIGQUERY_RUN_QUERY_DEFINITION
+from integrations.gmail.tools.read_message import DEFINITION as GMAIL_READ_MESSAGE_DEFINITION
+from integrations.gmail.tools.search_messages import (
+    DEFINITION as GMAIL_SEARCH_MESSAGES_DEFINITION,
+)
+from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSAGE_DEFINITION
+from integrations.google_ads.tools.run_report import (
+    DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
+)
+from integrations.google_ads.tools.update_campaign_status import (
+    DEFINITION as GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+    google_ads_update_campaign_status,
+)
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.delegation.build_delegation_tools import (
+    DELEGATE_TO_AGENT_DEFINITION,
+)
 from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
@@ -368,6 +392,142 @@ def test_save_memory_editable_options_match_domain_literals() -> None:
     assert fields["kind"].options == get_args(MemoryKind.__value__)
     assert fields["scope"].options == get_args(MemoryScope.__value__)
     assert fields["memory_type"].options == get_args(MemoryType.__value__)
+
+
+def test_google_ads_status_options_match_tool_literal() -> None:
+    definition = get_runtime_tool_definition("google_ads_update_campaign_status")
+    assert definition is not None
+    fields = {field.key: field for field in definition.presentation.arg_fields}
+    status_annotation = get_type_hints(
+        google_ads_update_campaign_status,
+        include_extras=True,
+    )["status"]
+    status_literal = get_args(status_annotation)[0]
+
+    assert fields["status"].options == get_args(status_literal)
+
+
+def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
+    integration_definitions = (
+        AIRTABLE_CREATE_RECORD_DEFINITION,
+        AIRTABLE_GET_RECORD_DEFINITION,
+        AIRTABLE_LIST_RECORDS_DEFINITION,
+        AIRTABLE_UPDATE_RECORD_DEFINITION,
+        BIGQUERY_RUN_QUERY_DEFINITION,
+        GMAIL_READ_MESSAGE_DEFINITION,
+        GMAIL_SEARCH_MESSAGES_DEFINITION,
+        GMAIL_SEND_MESSAGE_DEFINITION,
+        GOOGLE_ADS_RUN_REPORT_DEFINITION,
+        GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+    )
+    definitions = {definition.name: definition for definition in integration_definitions}
+    definitions.update(
+        {
+            name: definition
+            for name in {
+                "create_artifact",
+                "forget_memory",
+                "read_document",
+                "read_file",
+                "save_memory",
+                "search_knowledge",
+                "update_artifact",
+                "update_memory",
+            }
+            if (definition := get_runtime_tool_definition(name)) is not None
+        }
+    )
+    definitions[DELEGATE_TO_AGENT_DEFINITION.name] = DELEGATE_TO_AGENT_DEFINITION
+    expected_editable_fields = {
+        "airtable_create_record": {"fields", "table"},
+        "airtable_get_record": {"table"},
+        "airtable_list_records": {
+            "filter_by_formula",
+            "max_records",
+            "table",
+            "view",
+        },
+        "airtable_update_record": {"fields", "table"},
+        "bigquery_run_query": {"query"},
+        "create_artifact": {"content", "title"},
+        "delegate_to_agent": {"task"},
+        "gmail_search_messages": {"limit", "query"},
+        "gmail_send_message": {"bcc", "body_text", "cc", "subject", "to"},
+        "google_ads_run_report": {"query"},
+        "google_ads_update_campaign_status": {"status"},
+        "save_memory": {
+            "content",
+            "expires_in_days",
+            "importance",
+            "kind",
+            "memory_type",
+            "scope",
+            "title",
+        },
+        "search_knowledge": {"limit", "query"},
+        "update_artifact": {"content", "title"},
+        "update_memory": {"content", "expires_in_days", "importance", "title"},
+    }
+
+    for tool_name, expected_keys in expected_editable_fields.items():
+        definition = definitions[tool_name]
+        actual_keys = {field.key for field in definition.presentation.arg_fields if field.editable}
+        assert actual_keys == expected_keys, tool_name
+
+    expected_locked_fields = {
+        "airtable_get_record": {"record_id"},
+        "airtable_update_record": {"record_id"},
+        "create_artifact": {"artifact_type"},
+        "delegate_to_agent": {"agent_id"},
+        "forget_memory": {"memory_id", "reason"},
+        "gmail_read_message": {"message_id"},
+        "google_ads_update_campaign_status": {"campaign_ids"},
+        "read_document": {"document_id", "range"},
+        "read_file": {"file_id", "mode"},
+        "update_artifact": {"artifact_id"},
+        "update_memory": {"memory_id"},
+    }
+    for tool_name, expected_keys in expected_locked_fields.items():
+        definition = definitions[tool_name]
+        actual_keys = {
+            field.key for field in definition.presentation.arg_fields if not field.editable
+        }
+        assert actual_keys == expected_keys, tool_name
+
+    format_expectations = {
+        ("airtable_create_record", "fields"): "keyvalue",
+        ("airtable_list_records", "max_records"): "number",
+        ("bigquery_run_query", "query"): "multiline",
+        ("create_artifact", "content"): "multiline",
+        ("gmail_search_messages", "limit"): "number",
+        ("gmail_send_message", "to"): "list",
+        ("google_ads_update_campaign_status", "campaign_ids"): "list",
+        ("save_memory", "content"): "markdown",
+        ("search_knowledge", "limit"): "number",
+        ("update_memory", "content"): "markdown",
+    }
+    for (tool_name, field_key), expected_format in format_expectations.items():
+        definition = definitions[tool_name]
+        fields = {field.key: field for field in definition.presentation.arg_fields}
+        assert fields[field_key].format == expected_format
+
+    for tool_name, field_key in {
+        ("airtable_list_records", "filter_by_formula"),
+        ("airtable_list_records", "max_records"),
+        ("airtable_list_records", "view"),
+        ("gmail_search_messages", "limit"),
+        ("gmail_send_message", "bcc"),
+        ("gmail_send_message", "cc"),
+        ("save_memory", "expires_in_days"),
+        ("search_knowledge", "limit"),
+        ("update_memory", "expires_in_days"),
+    }:
+        definition = definitions[tool_name]
+        fields = {field.key: field for field in definition.presentation.arg_fields}
+        assert fields[field_key].secondary is True
+
+    report_definition = definitions["google_ads_run_report"]
+    assert report_definition.presentation.arg_fields[0].placeholder.startswith("SELECT ")
 
 
 @pytest.mark.parametrize("icon", ["airtable", "gmail", "google_ads"])

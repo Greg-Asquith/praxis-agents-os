@@ -47,7 +47,10 @@ from services.storage.factory import get_storage_provider
         running_label="Reading a File",
         completed_label="Read a File",
         failed_label="Couldn't Read the File",
-        arg_fields=(ToolFieldPresentation(key="mode", label="Read As", secondary=True),),
+        arg_fields=(
+            ToolFieldPresentation(key="file_id", label="File"),
+            ToolFieldPresentation(key="mode", label="Read As", secondary=True),
+        ),
     ),
 )
 async def read_file(

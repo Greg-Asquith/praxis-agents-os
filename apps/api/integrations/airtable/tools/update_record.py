@@ -108,7 +108,7 @@ DEFINITION = RuntimeToolDefinition(
         approval_prompt="The agent wants to change this record in the selected Airtable bases.",
         approve_label="Approve & Update",
         arg_fields=(
-            ToolFieldPresentation(key="table", label="Table"),
+            ToolFieldPresentation(key="table", label="Table", editable=True),
             ToolFieldPresentation(key="record_id", label="Record"),
             ToolFieldPresentation(key="fields", label="Fields", format="keyvalue", editable=True),
         ),

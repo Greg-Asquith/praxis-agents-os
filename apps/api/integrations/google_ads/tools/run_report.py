@@ -80,7 +80,15 @@ DEFINITION = RuntimeToolDefinition(
         running_label="Running Google Ads Report",
         completed_label="Ran Google Ads Report",
         failed_label="Couldn't Run Google Ads Report",
-        arg_fields=(ToolFieldPresentation(key="query", label="GAQL Query", format="multiline"),),
+        arg_fields=(
+            ToolFieldPresentation(
+                key="query",
+                label="GAQL Query",
+                format="multiline",
+                editable=True,
+                placeholder="SELECT campaign.id, metrics.clicks FROM campaign",
+            ),
+        ),
         result_fields=RESULTS_FIELD,
     ),
 )
