@@ -91,9 +91,15 @@ class GoogleOAuthProvider(OAuthProviderWithRetry):
                 method="POST",
                 url=self.revoke_url,
                 endpoint_name="token_revoke",
-                params={"token": token},
+                data={"token": token},
             )
             return True
-        except Exception as e:
-            logger.warning("Failed to revoke %s OAuth token: %s", self.provider_display_name, e)
+        except Exception:
+            logger.warning(
+                "OAuth token revocation failed",
+                extra={
+                    "provider": self.provider_name,
+                    "operation": "token_revoke",
+                },
+            )
             return False

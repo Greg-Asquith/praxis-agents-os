@@ -87,7 +87,13 @@ class MicrosoftOAuthProvider(OAuthProviderWithRetry):
                 data["picture"] = f"data:image/jpeg;base64,{b64}"
         except Exception:
             # Non-fatal; many accounts may have no photo
-            logger.debug("Failed to fetch Microsoft profile photo", exc_info=True)
+            logger.debug(
+                "Optional OAuth profile photo request failed",
+                extra={
+                    "provider": self.provider_name,
+                    "operation": "user_photo",
+                },
+            )
 
         return data
 

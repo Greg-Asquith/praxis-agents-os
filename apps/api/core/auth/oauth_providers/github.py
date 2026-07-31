@@ -98,6 +98,12 @@ class GitHubOAuthProvider(OAuthProviderWithRetry):
                 auth=(self.client_id, self.client_secret),
             )
             return response.status_code == 204
-        except Exception as e:
-            logger.warning("Failed to revoke %s OAuth token: %s", self.provider_display_name, e)
+        except Exception:
+            logger.warning(
+                "OAuth token revocation failed",
+                extra={
+                    "provider": self.provider_name,
+                    "operation": "token_revoke",
+                },
+            )
             return False

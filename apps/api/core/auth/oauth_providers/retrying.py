@@ -36,10 +36,11 @@ class OAuthProviderWithRetry(OAuthProvider):
         data = response.json()
         if not isinstance(data, dict) or data.get("error") or not data.get("access_token"):
             logger.error(
-                "%s OAuth %s returned an invalid token payload (error=%s)",
-                self.provider_display_name,
-                endpoint_name,
-                data.get("error") if isinstance(data, dict) else "non-object",
+                "OAuth provider returned an invalid token payload",
+                extra={
+                    "provider": self.provider_name,
+                    "operation": endpoint_name,
+                },
             )
             raise OAuthAuthenticationError(
                 message=f"{self.provider_display_name} OAuth authentication failed on {endpoint_name}",
@@ -68,13 +69,15 @@ class OAuthProviderWithRetry(OAuthProvider):
                 except httpx2.HTTPStatusError as exc:
                     status_code = exc.response.status_code
                     if 400 <= status_code < 500:
-                        # Provider bodies may reflect codes/tokens; keep them in the server log only and raise a generic message.
-                        logger.exception(
-                            "%s OAuth %s client error: %s - %s",
-                            self.provider_display_name,
-                            endpoint_name,
-                            status_code,
-                            exc.response.text,
+                        logger.warning(
+                            "OAuth provider request rejected",
+                            extra={
+                                "provider": self.provider_name,
+                                "operation": endpoint_name,
+                                "status_code": status_code,
+                                "attempt": attempt + 1,
+                                "max_attempts": self.max_retries + 1,
+                            },
                         )
                         raise OAuthAuthenticationError(
                             message=(
@@ -86,27 +89,32 @@ class OAuthProviderWithRetry(OAuthProvider):
                         ) from exc
 
                     logger.warning(
-                        "%s OAuth %s attempt %s failed: %s",
-                        self.provider_display_name,
-                        endpoint_name,
-                        attempt + 1,
-                        status_code,
+                        "OAuth provider request failed",
+                        extra={
+                            "provider": self.provider_name,
+                            "operation": endpoint_name,
+                            "status_code": status_code,
+                            "attempt": attempt + 1,
+                            "max_attempts": self.max_retries + 1,
+                        },
                     )
                     last_exception = OAuthNetworkError(
                         message=f"{self.provider_display_name} OAuth server error: {status_code}",
                         provider=self.provider_name,
                         endpoint=endpoint_name,
                     )
-                except (TimeoutError, httpx2.RequestError) as exc:
+                except (TimeoutError, httpx2.RequestError):
                     logger.warning(
-                        "%s OAuth %s network error on attempt %s: %s",
-                        self.provider_display_name,
-                        endpoint_name,
-                        attempt + 1,
-                        exc,
+                        "OAuth provider network request failed",
+                        extra={
+                            "provider": self.provider_name,
+                            "operation": endpoint_name,
+                            "attempt": attempt + 1,
+                            "max_attempts": self.max_retries + 1,
+                        },
                     )
                     last_exception = OAuthNetworkError(
-                        message=f"{self.provider_display_name} OAuth network error: {exc}",
+                        message=f"{self.provider_display_name} OAuth network error",
                         provider=self.provider_name,
                         endpoint=endpoint_name,
                     )
@@ -114,10 +122,14 @@ class OAuthProviderWithRetry(OAuthProvider):
                 if attempt < self.max_retries:
                     wait_time = self.backoff_factor * (2**attempt)
                     logger.info(
-                        "Retrying %s OAuth %s in %.2fs",
-                        self.provider_display_name,
-                        endpoint_name,
-                        wait_time,
+                        "Retrying OAuth provider request",
+                        extra={
+                            "provider": self.provider_name,
+                            "operation": endpoint_name,
+                            "attempt": attempt + 1,
+                            "max_attempts": self.max_retries + 1,
+                            "retry_delay_seconds": wait_time,
+                        },
                     )
                     await asyncio.sleep(wait_time)
 
@@ -125,7 +137,15 @@ class OAuthProviderWithRetry(OAuthProvider):
             f"{self.provider_display_name} OAuth {endpoint_name} failed after "
             f"{self.max_retries + 1} attempts"
         )
-        logger.error(error_msg)
+        logger.error(
+            "OAuth provider request exhausted retries",
+            extra={
+                "provider": self.provider_name,
+                "operation": endpoint_name,
+                "attempt": self.max_retries + 1,
+                "max_attempts": self.max_retries + 1,
+            },
+        )
         if last_exception is not None:
             raise last_exception
         raise OAuthNetworkError(
