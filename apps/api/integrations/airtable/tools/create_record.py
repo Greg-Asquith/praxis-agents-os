@@ -103,7 +103,7 @@ DEFINITION = RuntimeToolDefinition(
         approve_label="Approve & Create",
         arg_fields=(
             ToolFieldPresentation(key="table", label="Table"),
-            ToolFieldPresentation(key="fields", label="Fields", format="multiline", editable=True),
+            ToolFieldPresentation(key="fields", label="Fields", format="keyvalue", editable=True),
         ),
         result_fields=RESULTS_FIELD,
     ),

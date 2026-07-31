@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
 import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
+import type { EditedKeyValue, EditedValue, EditedValues } from "@/components/tool-ui/edited-values"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import { normalizeOptionalText } from "@/lib/format"
@@ -102,7 +103,7 @@ export function summarizeApprovalDecisions(
 function buildMergedArgs(
   display: unknown,
   replay: unknown,
-  edits: Record<string, string>
+  edits: EditedValues
 ): Record<string, unknown> | null | string {
   const editEntries = Object.entries(edits)
   if (editEntries.length === 0) {
@@ -115,20 +116,114 @@ function buildMergedArgs(
     return "This request can no longer be edited. Refresh and try again."
   }
 
-  const changedEntries: [string, string][] = []
+  const changedEntries: [string, unknown][] = []
   for (const [key, edit] of editEntries) {
     const originalValue = displayArgs[key]
-    if (typeof originalValue !== "string") {
+    const mergedEdit = mergeEditedValue(originalValue, edit)
+    if (mergedEdit === INVALID_EDIT) {
       return "This request can no longer be edited. Refresh and try again."
     }
-
-    const trimmedEdit = edit.trim()
-    const trimmedOriginal = originalValue.trim()
-    if (trimmedEdit === trimmedOriginal || (!trimmedEdit && trimmedOriginal)) {
+    if (mergedEdit === NO_CHANGE) {
       continue
     }
-    changedEntries.push([key, trimmedEdit])
+    changedEntries.push([key, mergedEdit])
   }
 
   return changedEntries.length > 0 ? { ...replayArgs, ...Object.fromEntries(changedEntries) } : null
+}
+
+const NO_CHANGE = Symbol("no-change")
+const INVALID_EDIT = Symbol("invalid-edit")
+
+function mergeEditedValue(original: unknown, edit: EditedValue): unknown {
+  if (typeof edit === "string") {
+    if (typeof original !== "string") {
+      return INVALID_EDIT
+    }
+    const trimmedEdit = edit.trim()
+    const trimmedOriginal = original.trim()
+    return trimmedEdit === trimmedOriginal || (!trimmedEdit && trimmedOriginal)
+      ? NO_CHANGE
+      : trimmedEdit
+  }
+
+  if (typeof edit === "number") {
+    if (
+      typeof original !== "number" ||
+      !Number.isFinite(original) ||
+      !Number.isFinite(edit) ||
+      (Number.isInteger(original) && !Number.isInteger(edit))
+    ) {
+      return INVALID_EDIT
+    }
+    return Object.is(edit, original) ? NO_CHANGE : edit
+  }
+
+  if (Array.isArray(edit)) {
+    if (
+      !Array.isArray(original) ||
+      !original.every((item) => typeof item === "string") ||
+      !edit.every((item) => typeof item === "string")
+    ) {
+      return INVALID_EDIT
+    }
+    return structurallyEqual(edit, original) ? NO_CHANGE : edit
+  }
+
+  if (!isRecord(original) || !isEditedKeyValue(edit)) {
+    return INVALID_EDIT
+  }
+  const preservedComplexEntries = Object.entries(original).filter(
+    ([, value]) => !isEditedScalar(value)
+  )
+  const merged = {
+    ...dropEmptyAddedRows(original, edit),
+    ...Object.fromEntries(preservedComplexEntries),
+  }
+  return structurallyEqual(merged, original) ? NO_CHANGE : merged
+}
+
+function dropEmptyAddedRows(
+  original: Record<string, unknown>,
+  edit: EditedKeyValue
+): EditedKeyValue {
+  return Object.fromEntries(
+    Object.entries(edit).filter(
+      ([key, value]) =>
+        Object.hasOwn(original, key) || typeof value !== "string" || value.trim().length > 0
+    )
+  )
+}
+
+function isEditedKeyValue(value: EditedValue): value is EditedKeyValue {
+  return isRecord(value) && Object.values(value).every((item) => isEditedScalar(item))
+}
+
+function isEditedScalar(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  )
+}
+
+function structurallyEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((item, index) => structurallyEqual(item, right[index]))
+    )
+  }
+  if (isRecord(left) && isRecord(right)) {
+    const leftKeys = Object.keys(left)
+    const rightKeys = Object.keys(right)
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every((key) => Object.hasOwn(right, key) && structurallyEqual(left[key], right[key]))
+    )
+  }
+  return false
 }

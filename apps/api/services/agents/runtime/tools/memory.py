@@ -93,10 +93,39 @@ def _service_retry(exc: Exception) -> ModelRetry:
         completed_label="Saved Memory",
         failed_label="Couldn't Save Memory",
         arg_fields=(
-            ToolFieldPresentation(key="kind", label="Kind"),
-            ToolFieldPresentation(key="scope", label="Scope"),
-            ToolFieldPresentation(key="title", label="Memory"),
-            ToolFieldPresentation(key="content", label="Details", format="markdown"),
+            ToolFieldPresentation(
+                key="kind",
+                label="Kind",
+                editable=True,
+                options=("core", "note"),
+            ),
+            ToolFieldPresentation(
+                key="scope",
+                label="Scope",
+                editable=True,
+                options=("agent", "user", "workspace"),
+            ),
+            ToolFieldPresentation(key="title", label="Memory", editable=True),
+            ToolFieldPresentation(key="content", label="Details", format="markdown", editable=True),
+            ToolFieldPresentation(
+                key="importance",
+                label="Importance",
+                format="number",
+                editable=True,
+            ),
+            ToolFieldPresentation(
+                key="memory_type",
+                label="Memory Type",
+                editable=True,
+                options=("fact", "preference", "episode", "outcome"),
+            ),
+            ToolFieldPresentation(
+                key="expires_in_days",
+                label="Expires in Days",
+                format="number",
+                editable=True,
+                secondary=True,
+            ),
         ),
     ),
 )

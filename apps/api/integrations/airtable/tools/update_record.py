@@ -110,7 +110,7 @@ DEFINITION = RuntimeToolDefinition(
         arg_fields=(
             ToolFieldPresentation(key="table", label="Table"),
             ToolFieldPresentation(key="record_id", label="Record"),
-            ToolFieldPresentation(key="fields", label="Fields", format="multiline", editable=True),
+            ToolFieldPresentation(key="fields", label="Fields", format="keyvalue", editable=True),
         ),
         result_fields=RESULTS_FIELD,
     ),

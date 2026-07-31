@@ -166,6 +166,184 @@ describe("approval decision helpers", () => {
     ])
   })
 
+  it("merges typed number, list, and key/value edits structurally", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "typed-1",
+      name: "typed_write",
+      args: {
+        importance: 3,
+        recipients: ["one@example.com"],
+        fields: {
+          Name: "Praxis",
+          Score: 3,
+          Active: true,
+          Linked: [{ id: "record-1" }],
+        },
+      },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "typed-1": {
+          decision: "approved",
+          message: "",
+          edits: {
+            importance: 5,
+            recipients: ["two@example.com", "three@example.com"],
+            fields: { Name: "Praxis Agents", Score: 4, Active: false },
+          },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: {
+          importance: 5,
+          recipients: ["two@example.com", "three@example.com"],
+          fields: {
+            Name: "Praxis Agents",
+            Score: 4,
+            Active: false,
+            Linked: [{ id: "record-1" }],
+          },
+        },
+        tool_call_id: "typed-1",
+      },
+    ])
+  })
+
+  it("drops structurally unchanged typed edits", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "typed-1",
+      name: "typed_write",
+      args: {
+        importance: 3,
+        recipients: ["one@example.com", "two@example.com"],
+        fields: { Name: "Praxis", Score: 3, Active: true },
+      },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "typed-1": {
+          decision: "approved",
+          message: "",
+          edits: {
+            importance: 3,
+            recipients: ["one@example.com", "two@example.com"],
+            fields: { Name: "Praxis", Score: 3, Active: true },
+          },
+        },
+      })
+    ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "typed-1" }])
+  })
+
+  it("preserves integer shape and rejects unsupported edited value shapes", () => {
+    const integerApproval: PendingToolApproval = {
+      tool_call_id: "integer-1",
+      name: "save_memory",
+      args: { importance: 3 },
+    }
+
+    expect(
+      buildResumeDecisions([integerApproval], {
+        "integer-1": {
+          decision: "approved",
+          message: "",
+          edits: { importance: 4.5 },
+        },
+      })
+    ).toBe("This request can no longer be edited. Refresh and try again.")
+
+    const unsupportedApproval: PendingToolApproval = {
+      tool_call_id: "unsupported-1",
+      name: "typed_write",
+      args: { recipients: [{ address: "one@example.com" }] },
+    }
+    expect(
+      buildResumeDecisions([unsupportedApproval], {
+        "unsupported-1": {
+          decision: "approved",
+          message: "",
+          edits: { recipients: ["two@example.com"] },
+        },
+      })
+    ).toBe("This request can no longer be edited. Refresh and try again.")
+  })
+
+  it("allows removing scalar rows and cannot overwrite complex read-only rows", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "fields-1",
+      name: "airtable_update_record",
+      args: {
+        fields: {
+          Name: "Praxis",
+          RemoveMe: "old",
+          Linked: [{ id: "record-1" }],
+        },
+      },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "fields-1": {
+          decision: "approved",
+          message: "",
+          edits: { fields: { Name: "Praxis", Linked: "clobbered" } },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: {
+          fields: { Name: "Praxis", Linked: [{ id: "record-1" }] },
+        },
+        tool_call_id: "fields-1",
+      },
+    ])
+  })
+
+  it("drops empty newly added key/value rows", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "fields-1",
+      name: "airtable_create_record",
+      args: {
+        fields: {
+          Name: "Praxis",
+          ExistingEmpty: "",
+        },
+      },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "fields-1": {
+          decision: "approved",
+          message: "",
+          edits: {
+            fields: {
+              Name: "Praxis Agents",
+              ExistingEmpty: "",
+              "Field 3": "",
+              Notes: "   ",
+            },
+          },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: {
+          fields: {
+            Name: "Praxis Agents",
+            ExistingEmpty: "",
+          },
+        },
+        tool_call_id: "fields-1",
+      },
+    ])
+  })
+
   it("builds approved and denied decisions together", () => {
     expect(
       buildResumeDecisions(approvals.slice(0, 2), {

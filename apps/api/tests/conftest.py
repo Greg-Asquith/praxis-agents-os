@@ -12,7 +12,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
-from pydantic_ai import RunContext, models as pydantic_ai_models
+from pydantic_ai import ApprovalRequired, RunContext, models as pydantic_ai_models
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -39,6 +39,21 @@ pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
 def test_add_numbers(a: int, b: int) -> int:
     """Test-only approval-capable arithmetic fixture."""
     return a + b
+
+
+@runtime_tool(
+    name="test_conditional_integer",
+    label="Test conditional integer",
+    description="Echo an integer after conditional approval in tests.",
+    takes_ctx=True,
+    timeout=5,
+    configurable=False,
+)
+def test_conditional_integer(ctx: RunContext[RuntimeDeps], value: int) -> int:
+    """Test-only conditional approval fixture."""
+    if not ctx.tool_call_approved:
+        raise ApprovalRequired(metadata={"reason": "integer_confirmation"})
+    return value
 
 
 @runtime_tool(

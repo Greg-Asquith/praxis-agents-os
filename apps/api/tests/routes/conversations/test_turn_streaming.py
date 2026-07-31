@@ -13,7 +13,8 @@ import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from pydantic_ai import DeferredToolRequests
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.messages import ToolReturnPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -1122,6 +1123,102 @@ async def test_resume_run_streams_approved_tool_to_completion(
                 "assistant",
             ]
             assert "11" in str(messages[2].parts)
+    finally:
+        await _delete_committed_context(
+            committed_db_session_factory,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            agent_id=agent.id,
+            conversation_id=conversation.id,
+        )
+
+
+async def test_resume_run_replays_edited_integer_through_conditional_approval(
+    app: FastAPI,
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def conditional_integer_then_done(
+        messages: list[Any],
+        _agent_info: Any,
+    ):
+        if any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield "Integer confirmed."
+        else:
+            yield {
+                0: DeltaToolCall(
+                    name="test_conditional_integer",
+                    json_args='{"value":3}',
+                    tool_call_id="conditional-integer-call",
+                )
+            }
+
+    monkeypatch.setattr(
+        "services.agents.runtime.loop.build_model",
+        lambda _resolved_model: FunctionModel(
+            stream_function=conditional_integer_then_done,
+            model_name="conditional-integer-route-test",
+        ),
+    )
+    async with committed_db_session_factory() as db:
+        user, workspace, agent, conversation, headers = await _authenticated_context(db)
+        agent.tool_names = ["test_conditional_integer"]
+        run = await create_agent_run(
+            db,
+            conversation_id=conversation.id,
+            agent_id=agent.id,
+            workspace_id=workspace.id,
+            user_id=user.id,
+            trigger="interactive",
+        )
+        await db.commit()
+
+    try:
+        async with committed_db_session_factory() as db:
+            suspended = await execute_run(
+                db,
+                conversation_id=conversation.id,
+                run_id=run.id,
+                user_prompt="Confirm an integer",
+                sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
+                model=FunctionModel(
+                    stream_function=conditional_integer_then_done,
+                    model_name="conditional-integer-direct-test",
+                ),
+            )
+            assert isinstance(suspended.output, DeferredToolRequests)
+
+            stored_run = await db.get(AgentRun, run.id)
+            assert stored_run is not None
+            tool_call_id = load_suspended_run_state(stored_run).pending_tool_call_ids[0]
+
+        transport = ASGITransport(app=app)
+        async with (
+            AsyncClient(transport=transport, base_url="http://testserver") as client,
+            client.stream(
+                "POST",
+                f"/api/v1/agent-runs/{run.id}/resume",
+                headers=headers,
+                json={
+                    "decisions": [
+                        {
+                            "tool_call_id": tool_call_id,
+                            "decision": "approved",
+                            "override_args": {"value": 5},
+                        },
+                    ],
+                },
+            ) as response,
+        ):
+            body = (await response.aread()).decode()
+
+        assert response.status_code == 200
+        assert f"event: {EVENT_TOOL_CALL}" in body
+        assert '"args":{"value":5}' in body
+        assert f"event: {EVENT_TOOL_RESULT}" in body
+        assert '"result":5' in body
+        assert f"event: {EVENT_DONE}" in body
+        assert '"status":"completed"' in body
     finally:
         await _delete_committed_context(
             committed_db_session_factory,

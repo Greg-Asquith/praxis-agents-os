@@ -2,6 +2,7 @@
 
 """Unit tests for the runtime tool registry contract."""
 
+from typing import get_args
 from uuid import uuid4
 
 import pytest
@@ -29,7 +30,9 @@ from services.agents.runtime.tools.registry import (
     list_allowed_tool_definitions,
     runtime_tool,
 )
+from services.agents.runtime.tools.schemas import ToolPresentationRead
 from services.agents.utils import validate_tool_configuration
+from services.memories.domain import MemoryKind, MemoryScope, MemoryType
 
 
 @pytest.fixture
@@ -238,13 +241,18 @@ def test_validate_definition_rejects_editable_result_fields() -> None:
             "options must be unique",
         ),
         (
+            ToolFieldPresentation(key="enabled", label="Enabled", format="boolean", editable=True),
+            "must use an editable format",
+        ),
+        (
             ToolFieldPresentation(
-                key="body",
-                label="Body",
-                format="markdown",
+                key="count",
+                label="Count",
+                format="number",
                 editable=True,
+                options=("One", "Two"),
             ),
-            "must use text or multiline format",
+            "options require a string-shaped format",
         ),
     ],
 )
@@ -303,6 +311,63 @@ def test_validate_definition_accepts_url_and_list_result_fields() -> None:
     )
 
     validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    "format",
+    ["text", "multiline", "markdown", "number", "list", "keyvalue"],
+)
+def test_validate_definition_accepts_every_editable_field_format(format: str) -> None:
+    definition = RuntimeToolDefinition(
+        name="editable_field",
+        function=_noop,
+        description="Supports typed argument editing.",
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(
+                    key="value",
+                    label="Value",
+                    format=format,
+                    editable=True,
+                ),
+            )
+        ),
+    )
+
+    validate_definition(definition)
+
+
+def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
+    presentation = ToolPresentation(
+        arg_fields=(
+            ToolFieldPresentation(
+                key="importance",
+                label="Importance",
+                format="number",
+                editable=True,
+            ),
+            ToolFieldPresentation(
+                key="fields",
+                label="Fields",
+                format="keyvalue",
+                editable=True,
+            ),
+        )
+    )
+
+    serialized = ToolPresentationRead.from_presentation(presentation)
+
+    assert [field.format for field in serialized.arg_fields] == ["number", "keyvalue"]
+
+
+def test_save_memory_editable_options_match_domain_literals() -> None:
+    definition = get_runtime_tool_definition("save_memory")
+    assert definition.presentation is not None
+    fields = {field.key: field for field in definition.presentation.arg_fields}
+
+    assert fields["kind"].options == get_args(MemoryKind.__value__)
+    assert fields["scope"].options == get_args(MemoryScope.__value__)
+    assert fields["memory_type"].options == get_args(MemoryType.__value__)
 
 
 @pytest.mark.parametrize("icon", ["airtable", "gmail", "google_ads"])

@@ -114,7 +114,7 @@ Functional, but visibly unstyled.
 | 032 | Resilient conversation streams across navigation | P1 | M | — | DONE |
 | 033 | Integrations: calm app list & provider detail pages | P1 | L | — | DONE |
 | 034 | Sidebar consolidation: the Context hub | P1 | M | — | IN PROGRESS — implementation and static gate complete; visual QA pending (no browser instance available 2026-07-28) |
-| 035 | Typed argument editing: contract beyond strings | P1 | M | — | TODO |
+| 035 | Typed argument editing: contract beyond strings | P1 | M | — | DONE |
 | 036 | Editability sweep: every approvable argument editable | P1 | L | 035 | TODO |
 | 037 | Edit & run again: steering tools after they ran | P1 | L | 035, 036 | TODO |
 

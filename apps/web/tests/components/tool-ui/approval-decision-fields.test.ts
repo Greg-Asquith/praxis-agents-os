@@ -6,6 +6,45 @@ import { ApprovalRequestFields, type ApprovalField } from "@/components/tool-ui/
 import { approvalFallbackFields } from "@/features/conversations/tool-ui"
 
 describe("ApprovalRequestFields", () => {
+  it("uses two columns for compact fields and full width for long-form fields", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "memory-1",
+        args: {
+          kind: "core",
+          scope: "user",
+          title: "Python preference",
+          content: "Prefers Python.",
+          importance: 4,
+        },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [
+          {
+            ...approvalField("kind", "Kind", "text"),
+            editable: true,
+            options: ["core", "note"],
+          },
+          {
+            ...approvalField("scope", "Scope", "text"),
+            editable: true,
+            options: ["agent", "user", "workspace"],
+          },
+          { ...approvalField("title", "Memory", "text"), editable: true },
+          { ...approvalField("content", "Details", "markdown"), editable: true },
+          { ...approvalField("importance", "Importance", "number"), editable: true },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("sm:grid-cols-2")
+    expect(html).toContain("sm:col-span-2")
+    expect(html).toContain('value="core"')
+    expect(html).toContain('value="user"')
+  })
+
   it("title-cases option labels while preserving their submitted values", () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalRequestFields, {
@@ -108,6 +147,98 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain(">3<")
     expect(html).toContain('href="https://praxis-agents.ai/approved"')
     expect(html).not.toContain("example.com/original")
+  })
+
+  it("renders typed editors for numbers, string lists, and flat key/value fields", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "typed-1",
+        args: {
+          importance: 3,
+          recipients: ["one@example.com", "two@example.com"],
+          fields: {
+            Name: "Praxis",
+            Active: true,
+            Score: 4,
+            Linked: [{ id: "record-1" }],
+          },
+        },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [
+          { ...approvalField("importance", "Importance", "number"), editable: true },
+          { ...approvalField("recipients", "Recipients", "list"), editable: true },
+          { ...approvalField("fields", "Fields", "keyvalue"), editable: true },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain('type="number"')
+    expect(html).toContain('inputMode="decimal"')
+    expect(html).toContain("one@example.com")
+    expect(html).toContain("Remove one@example.com")
+    expect(html).toContain("Add list item")
+    expect(html).toContain("Add Field")
+    expect(html).toContain("Active")
+    expect(html).toContain("Complex value — read only")
+    expect(html).not.toContain("record-1")
+  })
+
+  it("re-resolves typed edits through read-only fields after approval", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "typed-2",
+        args: {
+          importance: 3,
+          recipients: ["one@example.com"],
+          fields: { Name: "Praxis", Active: true },
+        },
+        decision: {
+          decision: "approved",
+          edits: {
+            importance: 5,
+            recipients: ["two@example.com", "three@example.com"],
+            fields: { Name: "Praxis Agents", Active: false },
+          },
+          message: "",
+        },
+        disabled: true,
+        fallbackFields: [],
+        fields: [
+          { ...approvalField("importance", "Importance", "number"), editable: true },
+          { ...approvalField("recipients", "Recipients", "list"), editable: true },
+          { ...approvalField("fields", "Fields", "keyvalue"), editable: true },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain(">5<")
+    expect(html).toContain("two@example.com")
+    expect(html).toContain("three@example.com")
+    expect(html).toContain("Praxis Agents")
+    expect(html).toContain("No")
+    expect(html).not.toContain('type="number"')
+    expect(html).not.toContain("one@example.com")
+  })
+
+  it("edits markdown strings as plain text", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "markdown-1",
+        args: { content: "**Keep this Markdown**" },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [{ ...approvalField("content", "Details", "markdown"), editable: true }],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("<textarea")
+    expect(html).toContain("**Keep this Markdown**")
   })
 
   it("shows undeclared executable arguments in a collapsed disclosure", () => {

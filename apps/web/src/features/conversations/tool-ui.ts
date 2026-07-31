@@ -63,14 +63,6 @@ export function resolveUiFields(fields: ToolUiField[], source: unknown): Resolve
   return resolveToolFields(fields, record)
 }
 
-export function editableUiFields(fields: ToolUiField[], source: unknown): ToolUiField[] {
-  const record = normalizeToolArgs(source)
-  if (!isRecord(record)) {
-    return []
-  }
-  return fields.filter((field) => field.editable && typeof record[field.key] === "string")
-}
-
 export function autoUiFields(source: unknown): ResolvedToolField[] {
   const normalized = normalizeToolArgs(source)
   if (!isRecord(normalized)) {

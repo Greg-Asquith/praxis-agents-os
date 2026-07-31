@@ -263,6 +263,21 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
     assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
     assert delegate_entry["ui"]["arg_fields"][0]["key"] == "task"
+    save_memory_entry = next(tool for tool in body["tools"] if tool["name"] == "save_memory")
+    save_memory_fields = {field["key"]: field for field in save_memory_entry["ui"]["arg_fields"]}
+    assert save_memory_fields["kind"]["options"] == ["core", "note"]
+    assert save_memory_fields["scope"]["options"] == ["agent", "user", "workspace"]
+    assert save_memory_fields["title"]["editable"] is True
+    assert save_memory_fields["content"]["editable"] is True
+    assert save_memory_fields["importance"]["format"] == "number"
+    assert save_memory_fields["importance"]["editable"] is True
+    assert save_memory_fields["memory_type"]["options"] == [
+        "fact",
+        "preference",
+        "episode",
+        "outcome",
+    ]
+    assert save_memory_fields["expires_in_days"]["secondary"] is True
 
 
 async def test_tool_presentations_route_requires_authentication(

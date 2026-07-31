@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import {
   autoUiFields,
-  editableUiFields,
   friendlyResultText,
   humanizeKey,
   resolveToolTemplate,
@@ -145,24 +144,6 @@ describe("shortOutcomeMetric", () => {
       ])
     ).toBeNull()
     expect(shortOutcomeMetric([])).toBeNull()
-  })
-})
-
-describe("editableUiFields", () => {
-  const fields = [
-    uiField({ key: "query", label: "Search", editable: true }),
-    uiField({ key: "provider", label: "Provider" }),
-    uiField({ key: "limit", label: "Limit", editable: true }),
-  ] as const
-
-  it("returns only editable fields backed by string arguments", () => {
-    expect(
-      editableUiFields([...fields], { query: "Praxis", provider: "openai", limit: 10 })
-    ).toEqual([fields[0]])
-  })
-
-  it("returns no fields for non-record arguments", () => {
-    expect(editableUiFields([...fields], "not structured")).toEqual([])
   })
 })
 

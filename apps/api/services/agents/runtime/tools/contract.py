@@ -27,6 +27,8 @@ ToolFieldFormat = Literal[
     "boolean",
     "url",
     "list",
+    "number",
+    "keyvalue",
 ]
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
@@ -57,8 +59,23 @@ _INTEGRATION_PARAMETER_DENYLIST = frozenset(
     }
 )
 VALID_TOOL_FIELD_FORMATS = frozenset(
-    {"text", "multiline", "markdown", "bytes", "datetime", "boolean", "url", "list"}
+    {
+        "text",
+        "multiline",
+        "markdown",
+        "bytes",
+        "datetime",
+        "boolean",
+        "url",
+        "list",
+        "number",
+        "keyvalue",
+    }
 )
+EDITABLE_TOOL_FIELD_FORMATS = frozenset(
+    {"text", "multiline", "markdown", "number", "list", "keyvalue"}
+)
+STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
 # Semantic icon tokens the web client maps to concrete icons.
 VALID_TOOL_ICONS = frozenset(
     {
@@ -361,13 +378,17 @@ def _validate_presentation(presentation: ToolPresentation) -> None:
             raise RuntimeError(
                 f"Runtime tool presentation field format must be one of the known formats, got {field.format!r}"
             )
-        if field.editable and field.format not in {"text", "multiline"}:
+        if field.editable and field.format not in EDITABLE_TOOL_FIELD_FORMATS:
             raise RuntimeError(
-                "Editable runtime tool presentation fields must use text or multiline format"
+                "Editable runtime tool presentation fields must use an editable format"
             )
         if (field.options or field.placeholder) and not field.editable:
             raise RuntimeError(
                 "Runtime tool presentation field options and placeholders require editable fields"
+            )
+        if field.options and field.format not in STRING_TOOL_FIELD_FORMATS:
+            raise RuntimeError(
+                "Runtime tool presentation field options require a string-shaped format"
             )
         normalized_options = [option.strip() for option in field.options]
         if any(not option for option in normalized_options):

@@ -1,59 +1,31 @@
 // apps/web/src/components/tool-ui/approval-card.tsx
 
-import { useCallback, useRef, useState, type ChangeEvent, type ReactNode } from "react"
-import { CheckIcon, ChevronDownIcon, WrenchIcon } from "lucide-react"
+import { useCallback, useRef, useState, type ReactNode } from "react"
+import { CheckIcon, WrenchIcon } from "lucide-react"
 
-import {
-  resolveToolField,
-  type ResolvedToolField,
-  type ToolFieldFormat,
-} from "@/components/tool-ui/field-resolution"
-import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
-import { ToolFieldValue } from "@/components/tool-ui/field-value"
+import { ApprovalRequestFields } from "@/components/tool-ui/approval-request-fields"
+import { ApprovalStaticField } from "@/components/tool-ui/approval-static-field"
+import type {
+  ApprovalDecision,
+  ApprovalFallbackField,
+  ApprovalField,
+  ToolApprovalDecisionControls,
+} from "@/components/tool-ui/approval-types"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { pluralize, titleCaseToken } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export type ApprovalDecision =
-  | { decision: "pending"; edits: Record<string, string>; message: "" }
-  | { decision: "approved"; edits: Record<string, string>; message: "" }
-  | { decision: "denied"; edits: Record<string, string>; message: string }
-
-export type ToolApprovalDecisionControls = {
-  decision: ApprovalDecision
-  disabled?: boolean
-  error: string | null
-  onDecisionChange: (decision: ApprovalDecision) => void
-  onRetry: () => void
-  pendingCount: number
-  submitting: boolean
-}
-
-export type ApprovalField = {
-  editable: boolean
-  format: ToolFieldFormat
-  key: string
-  label: string
-  options: string[]
-  placeholder: string
-  secondary: boolean
-}
-
-export type ApprovalFallbackField = ResolvedToolField
+export type {
+  ApprovalDecision,
+  ApprovalFallbackField,
+  ApprovalField,
+  ToolApprovalDecisionControls,
+} from "./approval-types"
+export { ApprovalRequestFields } from "./approval-request-fields"
 
 const NO_FIELDS: ApprovalField[] = []
 const NO_FALLBACK_FIELDS: ApprovalFallbackField[] = []
@@ -214,190 +186,6 @@ export function ToolApprovalCard({
   )
 }
 
-export function ApprovalRequestFields({
-  activityId,
-  args,
-  decision,
-  disabled,
-  fallbackFields,
-  fields,
-  onEditsChange,
-}: {
-  activityId: string
-  args: unknown
-  decision: ApprovalDecision
-  disabled: boolean
-  fallbackFields: ApprovalFallbackField[]
-  fields: ApprovalField[]
-  onEditsChange: (edits: Record<string, string>) => void
-}) {
-  const [revealedFields, setRevealedFields] = useState<Set<string>>(() => new Set())
-  const focusFieldKey = useRef<string | null>(null)
-
-  if (fields.length === 0 || !isRecord(args)) {
-    return fallbackFields.length > 0 ? (
-      <div className="grid min-w-0 gap-3">
-        {fallbackFields.map((field) => (
-          <ApprovalStaticField field={field} key={field.key} />
-        ))}
-      </div>
-    ) : null
-  }
-
-  const lockedRecord = { ...args, ...decision.edits }
-  return (
-    <div className="grid min-w-0 gap-3">
-      {fields.map((field) => {
-        const rawValue = args[field.key]
-        const originalValue = editableValue(rawValue)
-        const editable = field.editable && originalValue !== null
-        const value = originalValue === null ? "" : (decision.edits[field.key] ?? originalValue)
-        const isEmptySecondary = field.secondary && !value.trim()
-        const isRevealed = revealedFields.has(field.key)
-
-        if (decision.decision !== "pending") {
-          const resolved = resolveApprovalField(field, lockedRecord[field.key])
-          return resolved ? <ApprovalStaticField field={resolved} key={field.key} /> : null
-        }
-        if (field.secondary && rawValue == null && !editable) {
-          return null
-        }
-        if (isEmptySecondary && !isRevealed) {
-          return editable ? (
-            <Button
-              className="text-muted-foreground w-fit px-0"
-              disabled={disabled}
-              key={field.key}
-              onClick={() => {
-                focusFieldKey.current = field.key
-                setRevealedFields((current) => new Set(current).add(field.key))
-              }}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              + Add {field.label}
-            </Button>
-          ) : null
-        }
-        if (!editable) {
-          const resolved = resolveApprovalField(field, rawValue)
-          return resolved ? <ApprovalStaticField field={resolved} key={field.key} /> : null
-        }
-
-        const id = `${activityId}-${field.key}-edit`
-        const focusRef = (node: HTMLElement | null) => {
-          if (node && focusFieldKey.current === field.key) {
-            focusFieldKey.current = null
-            node.focus()
-          }
-        }
-        return (
-          <Field className="gap-1" data-disabled={disabled} key={field.key}>
-            <div className="flex items-center justify-between gap-2">
-              <FieldLabel className={fieldLabelClass} htmlFor={id}>
-                {field.label}
-              </FieldLabel>
-              {field.secondary && isRevealed ? (
-                <Button
-                  className="h-auto px-1 py-0 text-xs"
-                  disabled={disabled}
-                  onClick={() => {
-                    onEditsChange(
-                      Object.fromEntries(
-                        Object.entries(decision.edits).filter(([key]) => key !== field.key)
-                      )
-                    )
-                    setRevealedFields((current) => {
-                      const next = new Set(current)
-                      next.delete(field.key)
-                      return next
-                    })
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-            {field.options.length > 0 ? (
-              <Select<string>
-                disabled={disabled}
-                onValueChange={(nextValue) => {
-                  if (nextValue !== null) {
-                    onEditsChange({ ...decision.edits, [field.key]: nextValue })
-                  }
-                }}
-                value={value}
-              >
-                <SelectTrigger className={cn(fieldWellClass, "h-8")} id={id} ref={focusRef}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  <SelectGroup>
-                    {field.options.map((option) => (
-                      <SelectItem
-                        key={option}
-                        label={titleCaseToken(option, option)}
-                        value={option}
-                      >
-                        {titleCaseToken(option, option)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            ) : field.format === "multiline" || value.length > 80 ? (
-              <Textarea
-                className={cn(fieldWellClass, "min-h-16")}
-                disabled={disabled}
-                id={id}
-                onChange={changeHandler(field.key, decision.edits, onEditsChange)}
-                placeholder={field.placeholder || undefined}
-                ref={focusRef}
-                value={value}
-              />
-            ) : (
-              <Input
-                className={fieldWellClass}
-                disabled={disabled}
-                id={id}
-                onChange={changeHandler(field.key, decision.edits, onEditsChange)}
-                placeholder={field.placeholder || undefined}
-                ref={focusRef}
-                value={value}
-              />
-            )}
-          </Field>
-        )
-      })}
-      {fallbackFields.length > 0 ? (
-        <details className="group min-w-0 rounded-md border">
-          <summary className="focus-visible:ring-ring flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
-            <span>
-              Other Options
-              <span className="text-muted-foreground ml-1.5 font-normal">
-                ({String(fallbackFields.length)})
-              </span>
-            </span>
-            <ChevronDownIcon
-              aria-hidden="true"
-              className="text-muted-foreground size-3.5 transition-transform group-open:rotate-180"
-            />
-          </summary>
-          <div className="grid min-w-0 gap-3 border-t p-3">
-            {fallbackFields.map((field) => (
-              <ApprovalStaticField field={field} key={field.key} />
-            ))}
-          </div>
-        </details>
-      ) : null}
-    </div>
-  )
-}
-
 function ApprovalFooter({
   approveLabel,
   controls,
@@ -512,42 +300,4 @@ function ApprovalDenialMessageField({
       />
     </Field>
   )
-}
-
-function ApprovalStaticField({ field }: { field: ApprovalFallbackField }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <p className={fieldLabelClass}>{field.label}</p>
-      <div
-        className={cn(
-          fieldWellClass,
-          "border-input bg-muted/40 wrap-break-word whitespace-pre-wrap"
-        )}
-      >
-        <ToolFieldValue field={field} />
-      </div>
-    </div>
-  )
-}
-
-function editableValue(value: unknown): string | null {
-  return typeof value === "string" ? value : null
-}
-
-function resolveApprovalField(field: ApprovalField, value: unknown): ApprovalFallbackField | null {
-  const resolved = resolveToolField(field, value)
-  if (resolved === null || (!resolved.value.trim() && field.secondary)) {
-    return null
-  }
-  return resolved
-}
-
-function changeHandler(
-  key: string,
-  edits: Record<string, string>,
-  onEditsChange: (edits: Record<string, string>) => void
-) {
-  return (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    onEditsChange({ ...edits, [key]: event.currentTarget.value })
-  }
 }

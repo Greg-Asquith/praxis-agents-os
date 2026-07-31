@@ -8,7 +8,8 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
+- **Completed**: 2026-07-31
 - **Written**: 2026-07-30 against HEAD `c4777c1` (clean working tree).
 - **Priority**: P1
 - **Effort**: M

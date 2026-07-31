@@ -60,6 +60,22 @@ export function ToolFieldValue({
     )
   }
 
+  if (field.format === "keyvalue" && field.entries && field.entries.length > 0) {
+    return (
+      <dl className="divide-border/60 -mx-2.5 -my-1 divide-y">
+        {field.entries.map((entry) => (
+          <div
+            className="grid min-w-0 gap-1 px-2.5 py-2 sm:grid-cols-[minmax(7rem,0.4fr)_minmax(0,1fr)] sm:gap-3"
+            key={entry.key}
+          >
+            <dt className="text-foreground/75 truncate text-xs font-medium">{entry.key}</dt>
+            <dd className="min-w-0 wrap-break-word">{entry.value}</dd>
+          </div>
+        ))}
+      </dl>
+    )
+  }
+
   if (field.format === "markdown" && renderMarkdown) {
     return renderMarkdown(field.value)
   }

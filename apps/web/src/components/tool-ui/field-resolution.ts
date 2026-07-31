@@ -4,7 +4,16 @@ import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { formatBytes, formatDateTime } from "@/lib/format"
 
 export type ToolFieldFormat =
-  "text" | "multiline" | "markdown" | "bytes" | "datetime" | "boolean" | "url" | "list"
+  | "text"
+  | "multiline"
+  | "markdown"
+  | "bytes"
+  | "datetime"
+  | "boolean"
+  | "url"
+  | "list"
+  | "number"
+  | "keyvalue"
 
 export type ToolFieldDefinition = {
   format: ToolFieldFormat
@@ -13,10 +22,16 @@ export type ToolFieldDefinition = {
 }
 
 export type ResolvedToolField = {
+  entries?: ResolvedKeyValueEntry[]
   format: ToolFieldFormat
   items?: string[]
   key: string
   label: string
+  value: string
+}
+
+type ResolvedKeyValueEntry = {
+  key: string
   value: string
 }
 
@@ -31,7 +46,11 @@ export function resolveToolField(
 
   const baseField = { key: field.key, label: field.label, value: resolved, format: field.format }
   const items = field.format === "list" ? toolFieldListItems(value) : null
-  return items === null ? baseField : { ...baseField, items }
+  if (items !== null) {
+    return { ...baseField, items }
+  }
+  const entries = field.format === "keyvalue" ? toolFieldKeyValueEntries(value) : null
+  return entries === null ? baseField : { ...baseField, entries }
 }
 
 export function resolveToolFields(
@@ -78,6 +97,15 @@ function toolFieldDisplayValue(value: unknown, format: ToolFieldFormat): string 
     const items = toolFieldListItems(value)
     return items && items.length > 0 ? items.join(", ") : null
   }
+  if (format === "number") {
+    return typeof value === "number" && Number.isFinite(value)
+      ? new Intl.NumberFormat().format(value)
+      : null
+  }
+  if (format === "keyvalue") {
+    const entries = toolFieldKeyValueEntries(value)
+    return entries && entries.length > 0 ? `${String(entries.length)} fields` : null
+  }
   return scalarToolFieldDisplayValue(value)
 }
 
@@ -113,4 +141,25 @@ function toolFieldListItems(value: unknown): string[] | null {
     }
   }
   return items
+}
+
+function toolFieldKeyValueEntries(value: unknown): ResolvedKeyValueEntry[] | null {
+  if (!isPlainRecord(value)) {
+    return null
+  }
+  return Object.entries(value).map(([key, item]) => ({
+    key,
+    value: keyValueDisplayValue(item),
+  }))
+}
+
+function keyValueDisplayValue(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Intl.NumberFormat().format(value)
+  }
+  return scalarToolFieldDisplayValue(value) ?? "Complex value"
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
