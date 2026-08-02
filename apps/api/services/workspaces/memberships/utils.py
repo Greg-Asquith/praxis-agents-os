@@ -18,6 +18,7 @@ async def get_membership_or_raise(
     workspace_id: UUID,
     membership_id: UUID,
     include_deleted: bool = False,
+    lock: bool = False,
 ) -> WorkspaceMembership:
     stmt = (
         select(WorkspaceMembership)
@@ -29,6 +30,8 @@ async def get_membership_or_raise(
     )
     if not include_deleted:
         stmt = stmt.where(WorkspaceMembership.deleted.is_(False))
+    if lock:
+        stmt = stmt.with_for_update()
     result = await db.execute(stmt)
     membership = result.scalar_one_or_none()
     if membership is None:

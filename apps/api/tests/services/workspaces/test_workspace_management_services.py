@@ -179,6 +179,144 @@ async def test_update_membership_rejects_demoting_the_last_owner(
     assert owner_membership.role == WorkspaceRole.OWNER.value
 
 
+async def test_concurrent_owner_demotion_and_removal_keep_one_active_owner(
+    committed_db_session_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unique_id = uuid4().hex
+    first_owner = build_user(email=f"owner-one-{unique_id}@example.com")
+    second_owner = build_user(email=f"owner-two-{unique_id}@example.com")
+    workspace = build_workspace(slug=f"owner-race-{unique_id}", is_personal=False)
+    first_membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=first_owner.id,
+        role=WorkspaceRole.OWNER,
+    )
+    second_membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=second_owner.id,
+        role=WorkspaceRole.OWNER,
+    )
+    async with committed_db_session_factory() as setup:
+        setup.add_all([first_owner, second_owner, workspace, first_membership, second_membership])
+        await setup.commit()
+        first_owner_id = first_owner.id
+        second_owner_id = second_owner.id
+        workspace_id = workspace.id
+        first_membership_id = first_membership.id
+        second_membership_id = second_membership.id
+
+    update_module = importlib.import_module("services.workspaces.memberships.update_membership")
+    delete_module = importlib.import_module("services.workspaces.memberships.delete_membership")
+    original_lock = update_module.lock_workspace_membership_writes
+    both_ready = asyncio.Event()
+    arrivals = 0
+
+    async def wait_for_both_mutations(db, *, workspace_id):
+        nonlocal arrivals
+        arrivals += 1
+        if arrivals == 2:
+            both_ready.set()
+        await asyncio.wait_for(both_ready.wait(), timeout=5)
+        await original_lock(db, workspace_id=workspace_id)
+
+    monkeypatch.setattr(
+        update_module,
+        "lock_workspace_membership_writes",
+        wait_for_both_mutations,
+    )
+    monkeypatch.setattr(
+        delete_module,
+        "lock_workspace_membership_writes",
+        wait_for_both_mutations,
+    )
+
+    async def demote_first_owner() -> str | AppValidationError:
+        async with committed_db_session_factory() as db:
+            actor = await db.get(User, first_owner_id)
+            assert actor is not None
+            try:
+                await update_membership(
+                    db,
+                    request=build_test_request(
+                        path=(
+                            f"/api/v1/workspaces/{workspace_id}/memberships/{first_membership_id}"
+                        ),
+                        method="PATCH",
+                    ),
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    membership_id=first_membership_id,
+                    payload=WorkspaceMembershipUpdateRequest(role=WorkspaceRole.MEMBER),
+                )
+                await db.commit()
+                return "demoted"
+            except AppValidationError as exc:
+                await db.rollback()
+                return exc
+
+    async def remove_second_owner() -> str | AppValidationError:
+        async with committed_db_session_factory() as db:
+            actor = await db.get(User, second_owner_id)
+            assert actor is not None
+            try:
+                await delete_membership(
+                    db,
+                    request=build_test_request(
+                        path=(
+                            f"/api/v1/workspaces/{workspace_id}/memberships/{second_membership_id}"
+                        ),
+                        method="DELETE",
+                    ),
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    membership_id=second_membership_id,
+                )
+                await db.commit()
+                return "removed"
+            except AppValidationError as exc:
+                await db.rollback()
+                return exc
+
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(demote_first_owner(), remove_second_owner()),
+            timeout=10,
+        )
+
+        assert sum(isinstance(result, AppValidationError) for result in results) == 1
+        error = next(result for result in results if isinstance(result, AppValidationError))
+        assert "must keep at least one active owner" in str(error)
+
+        async with committed_db_session_factory() as verify:
+            active_owner_ids = set(
+                await verify.scalars(
+                    select(WorkspaceMembership.user_id).where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        WorkspaceMembership.role == WorkspaceRole.OWNER.value,
+                        WorkspaceMembership.deleted.is_(False),
+                    )
+                )
+            )
+            assert len(active_owner_ids) == 1
+    finally:
+        async with committed_db_session_factory() as cleanup:
+            await cleanup.execute(delete(AuditEvent).where(AuditEvent.workspace_id == workspace_id))
+            await cleanup.execute(
+                delete(SecurityEvent).where(
+                    SecurityEvent.details["workspace_id"].astext == str(workspace_id)
+                )
+            )
+            await cleanup.execute(
+                delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
+            )
+            await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
+            await cleanup.execute(
+                delete(User).where(User.id.in_([first_owner_id, second_owner_id]))
+            )
+            await cleanup.commit()
+
+
 async def test_delete_membership_rejects_non_manager_removing_another_member(
     db_session: AsyncSession,
 ) -> None:

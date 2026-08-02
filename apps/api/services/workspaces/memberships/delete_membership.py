@@ -19,6 +19,7 @@ from services.workspaces.utils import (
     READ_ROLES,
     ensure_not_last_owner,
     ensure_team_workspace,
+    lock_workspace_membership_writes,
     record_workspace_security_event,
     require_workspace_role,
 )
@@ -43,11 +44,14 @@ async def delete_membership(
         db,
         workspace_id=workspace_id,
         membership_id=membership_id,
+        lock=True,
     )
     # Managers can remove anyone; other members may only remove themselves (leave).
     if membership.user_id != actor.id and actor_membership.role not in MANAGER_ROLES:
         raise AuthorizationError("Requires higher level role")
 
+    # Lock entity rows first, then the workspace serialization point.
+    await lock_workspace_membership_writes(db, workspace_id=workspace_id)
     await ensure_not_last_owner(db, membership=membership)
     membership.soft_delete(deleted_by=actor.id, cascade=False)
     await db.execute(

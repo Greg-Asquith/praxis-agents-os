@@ -23,7 +23,10 @@ from services.workspaces.schemas import (
     WorkspaceMembershipRead,
     WorkspaceRead,
 )
-from services.workspaces.utils import record_workspace_security_event
+from services.workspaces.utils import (
+    lock_workspace_membership_writes,
+    record_workspace_security_event,
+)
 
 
 async def record_failed_accept(
@@ -77,6 +80,7 @@ async def accept_invitation(
             WorkspaceMembership.workspace_id == workspace.id,
             WorkspaceMembership.user_id == actor.id,
         )
+        .with_for_update()
     )
     membership = existing.scalar_one_or_none()
     if membership and not membership.deleted:
@@ -94,6 +98,9 @@ async def accept_invitation(
             raise AppValidationError("Invitation has already been accepted")
         if invitation.expires_at <= datetime.now(UTC):
             raise AppValidationError("Invitation has expired")
+
+        # Invitation and membership rows are locked before workspace serialization.
+        await lock_workspace_membership_writes(db, workspace_id=workspace.id)
 
         if membership and membership.deleted:
             membership.restore(cascade=False)

@@ -24,6 +24,7 @@ from services.workspaces.utils import (
     MANAGER_ROLES,
     ensure_team_workspace,
     get_user_or_raise,
+    lock_workspace_membership_writes,
     record_workspace_security_event,
     require_workspace_role,
 )
@@ -73,6 +74,9 @@ async def create_membership(
             "User is already a member of this workspace",
             conflicting_resource="workspace_membership",
         )
+
+    # Existing user/invitation/membership rows precede the workspace lock.
+    await lock_workspace_membership_writes(db, workspace_id=workspace_id)
 
     revoked_invitation_ids = [str(invitation.id) for invitation in pending_invitations]
     for invitation in pending_invitations:

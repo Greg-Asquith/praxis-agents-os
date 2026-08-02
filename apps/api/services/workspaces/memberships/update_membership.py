@@ -20,6 +20,7 @@ from services.workspaces.utils import (
     MANAGER_ROLES,
     ensure_not_last_owner,
     ensure_team_workspace,
+    lock_workspace_membership_writes,
     record_workspace_security_event,
     require_workspace_role,
 )
@@ -45,10 +46,13 @@ async def update_membership(
         db,
         workspace_id=workspace_id,
         membership_id=membership_id,
+        lock=True,
     )
 
     new_role = payload.role.value
     if new_role != membership.role:
+        # Lock entity rows first, then the workspace serialization point.
+        await lock_workspace_membership_writes(db, workspace_id=workspace_id)
         await ensure_not_last_owner(db, membership=membership)
         previous_role = membership.role
         membership.role = new_role

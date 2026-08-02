@@ -2,6 +2,7 @@
 
 """Service-specific helpers for workspace operations."""
 
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
@@ -137,6 +138,17 @@ async def active_owner_count(db: AsyncSession, *, workspace_id: UUID) -> int:
         )
     )
     return int(count or 0)
+
+
+async def lock_workspace_membership_writes(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+) -> None:
+    """Serialize membership role and deletion writes for one workspace."""
+    lock_material = f"workspace-membership-write:{workspace_id}".encode()
+    lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
+    await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
 
 async def ensure_not_last_owner(
