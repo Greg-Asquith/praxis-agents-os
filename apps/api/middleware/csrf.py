@@ -3,6 +3,7 @@
 """CSRF protection middleware for cookie-authenticated requests."""
 
 import logging
+import re
 from collections.abc import Callable
 from urllib.parse import urlparse
 
@@ -19,6 +20,19 @@ from services.security import SecurityEventType, safe_record_security_event
 from utils.security import generate_csrf_token, verify_csrf_token
 
 logger = logging.getLogger(__name__)
+
+
+_CSRF_EXEMPT_OPERATIONS = (
+    # Pre-auth session creation must tolerate stale local auth cookies. These
+    # operations are JSON/CORS-gated and issue a new session.
+    ("POST", re.compile(r"/api/v1/auth/register")),
+    ("POST", re.compile(r"/api/v1/auth/login")),
+    ("POST", re.compile(r"/api/v1/auth/oauth/[^/]+/authorization-url")),
+    ("POST", re.compile(r"/api/v1/auth/oauth/[^/]+/callback")),
+    # Local direct-upload URLs are HMAC-signed storage capabilities. Cloud
+    # signed uploads bypass app cookies and this middleware entirely.
+    ("PUT", re.compile(r"/api/v1/storage/upload/[^/]+/.+")),
+)
 
 
 def _cookie_name_count(request: Request, name: str) -> int:
@@ -41,23 +55,15 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     request is cookie-authenticated). Exempt routes are skipped entirely.
     """
 
-    def __init__(self, app, exempt_paths: list | None = None):
+    def __init__(self, app):
         super().__init__(app)
-        self.exempt_paths = exempt_paths or [
-            # Pre-auth session creation endpoints must tolerate stale local auth cookies. They are JSON/CORS-gated and issue a new session.
-            "/api/v1/auth/register",
-            "/api/v1/auth/login",
-            "/api/v1/auth/oauth",
-            # Direct-upload URLs are HMAC-signed storage capabilities. They mirror cloud signed uploads, which bypass app cookies and CSRF middleware entirely.
-            "/api/v1/storage/upload",
-            # Health/metrics are GET-only; keep list accurate for clarity
-            "/healthz",
-            "/readyz",
-            "/api/metrics",
-        ]
 
-    def _is_exempt(self, path: str) -> bool:
-        return any(path.startswith(p) for p in self.exempt_paths)
+    @staticmethod
+    def _is_exempt(request: Request) -> bool:
+        return any(
+            request.method == method and pattern.fullmatch(request.url.path)
+            for method, pattern in _CSRF_EXEMPT_OPERATIONS
+        )
 
     @staticmethod
     def _has_cookie_session(request: Request) -> bool:
@@ -66,7 +72,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     def _should_enforce_csrf(self, request: Request) -> bool:
         if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
             return False
-        if self._is_exempt(request.url.path):
+        if self._is_exempt(request):
             return False
         return self._has_cookie_session(request)
 
