@@ -10,6 +10,7 @@ async function login(payload: LoginRequest) {
   return apiRequest<AuthResponse>("/auth/login", {
     body: payload,
     method: "POST",
+    sessionPolicy: "optional",
   })
 }
 

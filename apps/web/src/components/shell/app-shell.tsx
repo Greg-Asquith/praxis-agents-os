@@ -36,7 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     logoutMutation.mutate(undefined, {
-      onSuccess: () => {
+      onSettled: () => {
         window.location.replace("/login")
       },
     })

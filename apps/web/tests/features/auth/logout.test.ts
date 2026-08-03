@@ -81,4 +81,26 @@ describe("logout mutation", () => {
     expect(activeUserQueryScope()).toBe("__no_user__")
     expect(activeWorkspaceQueryScope()).toBe("__no_workspace__")
   })
+
+  it("clears local authenticated state when the server logout fails", async () => {
+    apiRequest.mockRejectedValue(new Error("Server unavailable"))
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(identitiesQueryOptions().queryKey, {
+      has_password: true,
+      identities: [],
+    })
+    setActiveUserId("user-a")
+    setActiveWorkspaceSlug("acme")
+    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, "acme")
+
+    const mutation = queryClient
+      .getMutationCache()
+      .build(queryClient, logoutMutationOptions(queryClient))
+
+    await expect(mutation.execute(undefined)).rejects.toThrow("Server unavailable")
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
+    expect(window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)).toBeNull()
+    expect(activeUserQueryScope()).toBe("__no_user__")
+    expect(activeWorkspaceQueryScope()).toBe("__no_workspace__")
+  })
 })

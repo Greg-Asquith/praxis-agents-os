@@ -10,6 +10,7 @@ async function register(payload: RegisterRequest) {
   return apiRequest<AuthResponse>("/auth/register", {
     body: payload,
     method: "POST",
+    sessionPolicy: "optional",
   })
 }
 

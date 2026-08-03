@@ -38,6 +38,7 @@ async function verifyTotp(payload: TotpVerifyRequest) {
   return apiRequest<AuthResponse>("/auth/totp/verify", {
     body: payload,
     method: "POST",
+    sessionPolicy: "optional",
   })
 }
 

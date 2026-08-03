@@ -9,16 +9,27 @@ type QueryValue = string | number | boolean | null | undefined
 type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown
   query?: Record<string, QueryValue>
+  sessionPolicy?: "required" | "optional"
 }
 
 type ApiRequestHeadersProvider = () => Record<string, string | null | undefined>
+type ApiUnauthorizedHandler = () => void
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
 
 let apiRequestHeadersProvider: ApiRequestHeadersProvider | null = null
+let apiUnauthorizedHandler: ApiUnauthorizedHandler | null = null
 
 export function setApiRequestHeadersProvider(provider: ApiRequestHeadersProvider | null) {
   apiRequestHeadersProvider = provider
+}
+
+export function setApiUnauthorizedHandler(handler: ApiUnauthorizedHandler | null) {
+  apiUnauthorizedHandler = handler
+}
+
+export function reportSessionLoss() {
+  apiUnauthorizedHandler?.()
 }
 
 export function buildUrl(path: string, query?: Record<string, QueryValue>) {
@@ -88,8 +99,15 @@ function buildRequest(
 }
 
 export async function apiFetch(path: string, options: ApiRequestOptions = {}) {
-  const { url, init } = buildRequest(path, options)
-  return fetch(url, init)
+  const { sessionPolicy = "required", ...requestOptions } = options
+  const { url, init } = buildRequest(path, requestOptions)
+  const response = await fetch(url, init)
+
+  if (response.status === 401 && sessionPolicy === "required") {
+    reportSessionLoss()
+  }
+
+  return response
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}) {

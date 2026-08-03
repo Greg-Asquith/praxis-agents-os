@@ -18,3 +18,11 @@ export function getCsrfToken() {
   const value = getCookie("csrf")
   return value ? decodeURIComponent(value) : null
 }
+
+export function clearCsrfToken() {
+  if (typeof document === "undefined") {
+    return
+  }
+
+  document.cookie = "csrf=; Max-Age=0; Path=/; SameSite=Lax"
+}

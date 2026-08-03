@@ -61,6 +61,7 @@ describe("TOTP verification", () => {
     expect(apiRequest).toHaveBeenCalledWith("/auth/totp/verify", {
       body: { token: "123456" },
       method: "POST",
+      sessionPolicy: "optional",
     })
     expect(queryClient.getQueryData(currentUserQueryKey)).toEqual(user)
   })

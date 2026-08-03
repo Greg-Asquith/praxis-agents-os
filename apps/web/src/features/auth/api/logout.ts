@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
-import { clearActiveWorkspace } from "@/lib/workspace"
+import { clearAuthenticatedSessionState } from "@/features/auth/session-loss"
 
 async function logout() {
   return apiRequest<{ message: string }>("/auth/logout", {
@@ -19,9 +19,8 @@ async function logout() {
 export function logoutMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: logout,
-    onSuccess: () => {
-      queryClient.clear()
-      clearActiveWorkspace()
+    onSettled: () => {
+      clearAuthenticatedSessionState(queryClient)
     },
   })
 }

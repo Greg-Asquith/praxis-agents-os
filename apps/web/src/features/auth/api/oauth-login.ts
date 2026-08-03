@@ -32,6 +32,7 @@ async function startOauthLogin(provider: string) {
     {
       body: oauthRedirectPayload(),
       method: "POST",
+      sessionPolicy: "optional",
     }
   )
 }
@@ -40,6 +41,7 @@ export async function completeOauthLogin({ provider, code, state }: CompleteOaut
   return apiRequest<AuthResponse>(`/auth/oauth/${encodeURIComponent(provider)}/callback`, {
     body: { ...oauthRedirectPayload(), code, state },
     method: "POST",
+    sessionPolicy: "optional",
   })
 }
 
