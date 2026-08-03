@@ -1,4 +1,4 @@
-# apps/api/services/auth/setup_totp.py
+# apps/api/services/auth/totp/setup_totp.py
 
 """Set up TOTP for the current user."""
 

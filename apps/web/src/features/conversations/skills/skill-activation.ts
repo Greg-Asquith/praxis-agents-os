@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/skill-activation.ts
+// apps/web/src/features/conversations/skills/skill-activation.ts
 
 import type { Skill } from "@/features/skills/types"
 import { isRecord } from "@/lib/guards"

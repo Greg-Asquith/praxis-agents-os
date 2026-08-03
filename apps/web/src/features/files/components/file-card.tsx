@@ -1,4 +1,4 @@
-// apps/web/src/features/files/components/file-card.ts
+// apps/web/src/features/files/components/file-card.tsx
 
 import { useState } from "react"
 import { DownloadIcon, ExternalLinkIcon, FileIcon } from "lucide-react"

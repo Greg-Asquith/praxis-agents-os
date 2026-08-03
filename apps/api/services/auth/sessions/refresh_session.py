@@ -1,4 +1,4 @@
-# apps/api/services/auth/refresh_session.py
+# apps/api/services/auth/sessions/refresh_session.py
 
 """Refresh the current session."""
 

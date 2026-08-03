@@ -1,4 +1,4 @@
-# apps/api/services/auth/create_oauth_authorization_url.py
+# apps/api/services/auth/oauth/create_oauth_authorization_url.py
 
 """Create an OAuth authorization URL for the frontend."""
 

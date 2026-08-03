@@ -1,4 +1,4 @@
-# apps/api/tests/conversations/test_conversation_schemas.py
+# apps/api/tests/services/conversations/test_conversation_schemas.py
 
 """Schema regression tests for conversation service contracts."""
 

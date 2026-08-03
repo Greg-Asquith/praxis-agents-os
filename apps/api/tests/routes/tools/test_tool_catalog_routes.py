@@ -1,4 +1,4 @@
-# apps/api/tests/routes/tools/test_tool_cataloy_routes.py
+# apps/api/tests/routes/tools/test_tool_catalog_routes.py
 
 """HTTP-boundary tests for runtime tool catalog routes."""
 

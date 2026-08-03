@@ -1,4 +1,4 @@
-# apps/api/service/tools/__init__.py
+# apps/api/services/tools/__init__.py
 
 """Workspace tool availability services."""
 

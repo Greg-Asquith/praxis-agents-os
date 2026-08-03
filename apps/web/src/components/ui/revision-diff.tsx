@@ -1,4 +1,4 @@
-// apps/web/src/components/revision-diff.tsx
+// apps/web/src/components/ui/revision-diff.tsx
 
 import { diffTooLarge, lineDiff, type LineDiffItem } from "@/lib/line-diff"
 

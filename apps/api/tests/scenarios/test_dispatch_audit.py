@@ -1,4 +1,4 @@
-# apps/api/tests/scenarios/test_dispatch_auit.py
+# apps/api/tests/scenarios/test_dispatch_audit.py
 
 """Dispatch and audit behavior through the real runtime lifecycle."""
 

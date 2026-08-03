@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/skill-document-read.ts
+// apps/web/src/features/conversations/skills/skill-document-read.ts
 
 import { isRecord, stringValue } from "@/lib/guards"
 

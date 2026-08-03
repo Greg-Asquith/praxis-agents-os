@@ -1,4 +1,4 @@
-// apps/web/src/features/files/components/files-table.ts
+// apps/web/src/features/files/components/files-table.tsx
 
 import { useState, type KeyboardEvent, type ReactNode } from "react"
 import {

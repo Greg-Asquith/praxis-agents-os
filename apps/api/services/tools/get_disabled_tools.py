@@ -1,4 +1,4 @@
-# apps/api/service/tools/get_disabled_tools.py
+# apps/api/services/tools/get_disabled_tools.py
 
 """Read disabled runtime tools for one workspace."""
 

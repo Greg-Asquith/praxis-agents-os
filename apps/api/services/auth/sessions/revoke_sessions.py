@@ -1,4 +1,4 @@
-# apps/api/services/auth/revoke_sessions.py
+# apps/api/services/auth/sessions/revoke_sessions.py
 
 """Revoke active sessions for the current user."""
 

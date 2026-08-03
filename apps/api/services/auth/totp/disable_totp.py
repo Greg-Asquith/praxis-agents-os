@@ -1,4 +1,4 @@
-# apps/api/services/auth/disable_totp.py
+# apps/api/services/auth/totp/disable_totp.py
 
 """Disable TOTP for the current user."""
 

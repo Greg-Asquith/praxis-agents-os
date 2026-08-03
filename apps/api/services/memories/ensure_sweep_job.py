@@ -1,4 +1,4 @@
-# apps/api/services/memories/ensure_sweetp_job.py
+# apps/api/services/memories/ensure_sweep_job.py
 
 """Ensure the agent-memory retention sweep is scheduled."""
 

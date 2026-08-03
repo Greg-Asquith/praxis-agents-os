@@ -1,4 +1,4 @@
-# apps/api/services/auth/list_oauth_providers.py
+# apps/api/services/auth/oauth/list_oauth_providers.py
 
 """List configured OAuth providers."""
 

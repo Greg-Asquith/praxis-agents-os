@@ -1,4 +1,4 @@
-// apps/web/features/files/components/file-detail-modal.tsx
+// apps/web/src/features/files/components/file-detail-modal.tsx
 
 import { Suspense, useState } from "react"
 import { useQuery } from "@tanstack/react-query"

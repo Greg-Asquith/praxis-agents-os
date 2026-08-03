@@ -1,4 +1,4 @@
-// apps/web/src/lib/storage.ts
+// apps/web/src/features/storage/types.ts
 
 type StorageObjectRef = {
   bucket: "public" | "private"

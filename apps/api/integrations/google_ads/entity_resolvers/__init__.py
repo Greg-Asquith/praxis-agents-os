@@ -1,4 +1,4 @@
-# apps/api/integrations/google_ads/entity_resolves/__init__.py
+# apps/api/integrations/google_ads/entity_resolvers/__init__.py
 
 """Google Ads entity resolvers."""
 

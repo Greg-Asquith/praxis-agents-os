@@ -1,4 +1,4 @@
-# apps/api/service/tools/set_tool_enabled.py
+# apps/api/services/tools/set_tool_enabled.py
 
 """Set workspace availability for one runtime tool."""
 

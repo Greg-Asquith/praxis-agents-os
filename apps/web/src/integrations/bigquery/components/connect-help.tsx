@@ -1,4 +1,4 @@
-// apps/web/src/integrations/bigquery/components/conenct-help.tsx
+// apps/web/src/integrations/bigquery/components/connect-help.tsx
 
 import { LightbulbIcon, ShieldCheckIcon } from "lucide-react"
 

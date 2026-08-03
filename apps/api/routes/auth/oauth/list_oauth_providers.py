@@ -1,4 +1,4 @@
-# apps/api/routes/auth/list_oauth_providers.py
+# apps/api/routes/auth/oauth/list_oauth_providers.py
 
 """Route for listing OAuth providers."""
 

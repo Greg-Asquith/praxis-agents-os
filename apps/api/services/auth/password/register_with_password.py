@@ -1,4 +1,4 @@
-# apps/api/services/auth/register_with_password.py
+# apps/api/services/auth/password/register_with_password.py
 
 """Register a user with email/password auth."""
 

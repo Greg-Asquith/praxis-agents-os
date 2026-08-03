@@ -1,4 +1,4 @@
-# apps/api/services/conversation_summaries/safe_enqueu_history_summary.py
+# apps/api/services/conversation_summaries/safe_enqueue_history_summary.py
 
 """Best-effort isolated enqueue for conversation history summaries."""
 

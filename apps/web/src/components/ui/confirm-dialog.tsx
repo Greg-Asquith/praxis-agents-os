@@ -1,4 +1,4 @@
-// apps/web/src/components/confirm-dialog.tsx
+// apps/web/src/components/ui/confirm-dialog.tsx
 
 import type { ReactNode } from "react"
 

@@ -1,4 +1,4 @@
-# apps/api/service/tools/utils.py
+# apps/api/services/tools/utils.py
 
 """Request-scoped cache helpers for tool availability services."""
 

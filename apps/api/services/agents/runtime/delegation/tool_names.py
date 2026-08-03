@@ -1,4 +1,4 @@
-# apps/api/service/agents/runtime/delegation/tool_names.py
+# apps/api/services/agents/runtime/delegation/tool_names.py
 
 """Runtime-owned delegation tool names."""
 

@@ -1,4 +1,4 @@
-# apps/api/routes/auth/list_sessions.py
+# apps/api/routes/auth/sessions/list_sessions.py
 
 """Route for listing current-user sessions."""
 

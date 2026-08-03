@@ -1,4 +1,4 @@
-# apps/api/routes/integrations/update_resouce_selection.py
+# apps/api/routes/integrations/update_resource_selection.py
 
 """Replace enabled resources for one integration connection."""
 

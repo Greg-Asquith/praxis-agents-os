@@ -1,4 +1,4 @@
-# apps/api/routes/auth/delete_upload.py
+# apps/api/routes/auth/delete_avatar.py
 
 """Route for deleting the current user's avatar."""
 

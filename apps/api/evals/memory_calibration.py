@@ -1,4 +1,4 @@
-# apps/api/evals/memory_calibration/.py
+# apps/api/evals/memory_calibration.py
 
 """Opt-in live calibration for memory near-duplicate resolution."""
 

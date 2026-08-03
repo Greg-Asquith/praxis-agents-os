@@ -1,4 +1,4 @@
-# apps/api/routes/auth/revoke_session.py
+# apps/api/routes/auth/sessions/revoke_session.py
 
 """Route for revoking one current-user session."""
 

@@ -1,4 +1,4 @@
-# apps/api/routes/auth/refresh_session.py
+# apps/api/routes/auth/sessions/refresh_session.py
 
 """Route for refreshing the current session."""
 

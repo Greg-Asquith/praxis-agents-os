@@ -1,4 +1,4 @@
-# apps/api/alembic/versions/core/006_rename_agent_call_conversation_source.py
+# apps/api/alembic/versions/core/0006_rename_agent_call_conversation_source.py
 
 """rename agent_call conversation source to delegated"""
 

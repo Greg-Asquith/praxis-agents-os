@@ -1,4 +1,4 @@
-# apps/api/tests/scenarios/test_evelopes.py
+# apps/api/tests/scenarios/test_envelopes.py
 
 """Server-minted run-envelope scenarios for external writes."""
 

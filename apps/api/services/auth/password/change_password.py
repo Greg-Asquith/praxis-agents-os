@@ -1,4 +1,4 @@
-# apps/api/services/auth/change_password.py
+# apps/api/services/auth/password/change_password.py
 
 """Change the current user's password."""
 

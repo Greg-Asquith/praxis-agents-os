@@ -1,4 +1,4 @@
-# apps/api/services/auth/revoke_session_by_id.py
+# apps/api/services/auth/sessions/revoke_session_by_id.py
 
 """Revoke a single active session by ID."""
 

@@ -1,4 +1,4 @@
-// apps/web/src/components/markdown-content.tsx
+// apps/web/src/components/markdown/markdown-content.tsx
 
 import { isValidElement, memo, useMemo, type ReactNode } from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"

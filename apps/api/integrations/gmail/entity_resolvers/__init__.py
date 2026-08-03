@@ -1,4 +1,4 @@
-# apps/api/integrations/gmail/entity_resolves/__init__.py
+# apps/api/integrations/gmail/entity_resolvers/__init__.py
 
 """Gmail entity resolvers."""
 

@@ -1,4 +1,4 @@
-# apps/api/routes/meta/get_openai_schema.py
+# apps/api/routes/meta/get_openapi_schema.py
 
 """Authenticated OpenAPI schema route."""
 

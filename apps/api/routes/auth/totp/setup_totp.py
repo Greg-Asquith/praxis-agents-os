@@ -1,4 +1,4 @@
-# apps/api/routes/auth/setup_totp.py
+# apps/api/routes/auth/totp/setup_totp.py
 
 """Route for setting up TOTP."""
 

@@ -1,4 +1,4 @@
-# apps/api/routes/auth/complete_oauth_login.py
+# apps/api/routes/auth/oauth/complete_oauth_login.py
 
 """Route for completing OAuth login."""
 

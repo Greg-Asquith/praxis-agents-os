@@ -1,4 +1,4 @@
-# apps/api/service/tools/schemas.py
+# apps/api/services/tools/schemas.py
 
 """Pydantic contracts for workspace tool availability."""
 

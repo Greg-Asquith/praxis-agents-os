@@ -1,4 +1,4 @@
-// apps/web/src/features/files/components/file-status-badge.ts
+// apps/web/src/features/files/components/file-status-badge.tsx
 
 import { Loader2Icon } from "lucide-react"
 

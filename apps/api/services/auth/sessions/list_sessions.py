@@ -1,4 +1,4 @@
-# apps/api/services/auth/list_sessions.py
+# apps/api/services/auth/sessions/list_sessions.py
 
 """List active sessions for the current user."""
 

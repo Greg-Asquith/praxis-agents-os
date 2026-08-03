@@ -1,4 +1,4 @@
-# apps/api/tests/routes/workspaces/test_workspace_icon_assets.py
+# apps/api/tests/routes/workspaces/test_workspace_icon_asset_routes.py
 
 """Route tests for workspace icon assets."""
 

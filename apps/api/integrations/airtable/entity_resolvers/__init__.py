@@ -1,4 +1,4 @@
-# apps/api/integrations/airtable/entity_resolves/__init__.py
+# apps/api/integrations/airtable/entity_resolvers/__init__.py
 
 """Airtable entity resolvers."""
 

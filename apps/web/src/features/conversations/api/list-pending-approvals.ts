@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/api/list-pendinga-approvals.ts
+// apps/web/src/features/conversations/api/list-pending-approvals.ts
 
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 

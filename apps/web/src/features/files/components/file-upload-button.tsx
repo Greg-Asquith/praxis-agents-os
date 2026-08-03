@@ -1,4 +1,4 @@
-// apps/web/src/features/files/components/file-upload-button.ts
+// apps/web/src/features/files/components/file-upload-button.tsx
 
 import { useId, useRef, useState } from "react"
 import { UploadIcon } from "lucide-react"

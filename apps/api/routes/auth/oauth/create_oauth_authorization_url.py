@@ -1,4 +1,4 @@
-# apps/api/routes/auth/create_oauth_authorization_url.py
+# apps/api/routes/auth/oauth/create_oauth_authorization_url.py
 
 """Route for creating OAuth authorization URLs."""
 

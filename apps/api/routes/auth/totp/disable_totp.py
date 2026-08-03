@@ -1,4 +1,4 @@
-# apps/api/routes/auth/disable_totp.py
+# apps/api/routes/auth/totp/disable_totp.py
 
 """Route for disabling TOTP."""
 

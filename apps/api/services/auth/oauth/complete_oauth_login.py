@@ -1,4 +1,4 @@
-# apps/api/services/auth/complete_oauth_login.py
+# apps/api/services/auth/oauth/complete_oauth_login.py
 
 """Complete OAuth login by exchanging a provider code server-to-server."""
 

@@ -1,4 +1,4 @@
-# apps/api/services/auth/verify_totp.py
+# apps/api/services/auth/totp/verify_totp.py
 
 """Verify TOTP and upgrade a partial session."""
 

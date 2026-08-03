@@ -1,4 +1,4 @@
-# apps/api/services/auth/login_with_password.py
+# apps/api/services/auth/password/login_with_password.py
 
 """Authenticate a user with email/password auth."""
 

@@ -1,4 +1,4 @@
-// apps/web/sec/integrations/airtable/components/write-outcome.tsx
+// apps/web/src/integrations/airtable/components/write-outcome.tsx
 
 import { CircleCheckIcon } from "lucide-react"
 

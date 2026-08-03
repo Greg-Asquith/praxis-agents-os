@@ -1,4 +1,4 @@
-# apps/api/routes/auth/change_password.py
+# apps/api/routes/auth/password/change_password.py
 
 """Route for changing the current user's password."""
 

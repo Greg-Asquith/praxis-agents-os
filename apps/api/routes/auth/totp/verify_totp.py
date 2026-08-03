@@ -1,4 +1,4 @@
-# apps/api/routes/auth/verify_totp.py
+# apps/api/routes/auth/totp/verify_totp.py
 
 """Route for verifying TOTP."""
 
