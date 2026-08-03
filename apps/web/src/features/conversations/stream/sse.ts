@@ -5,7 +5,7 @@ import {
   type StreamEvent,
   type StreamEventName,
 } from "@/features/conversations/stream/protocol"
-import { isRecord } from "@/lib/guards"
+import { parseStreamEvent } from "@/features/conversations/stream/validation"
 
 export async function* parseSseStream(
   stream: ReadableStream<Uint8Array> | null
@@ -96,11 +96,7 @@ function parseSseFrame(frame: string): StreamEvent | null {
   }
 
   const parsed = parseJsonData(eventName, dataLines.join("\n"))
-  if (!isRecord(parsed)) {
-    throw new Error(`SSE event "${eventName}" data must be a JSON object.`)
-  }
-
-  return { event: eventName, data: parsed } as StreamEvent
+  return parseStreamEvent(eventName, parsed)
 }
 
 function parseJsonData(eventName: StreamEventName, value: string): unknown {
