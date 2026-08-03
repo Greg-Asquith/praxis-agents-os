@@ -23,6 +23,7 @@ from integrations.gmail.tools.search_messages import (
     DEFINITION as GMAIL_SEARCH_MESSAGES_DEFINITION,
 )
 from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSAGE_DEFINITION
+from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools.run_report import (
     DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
@@ -59,6 +60,7 @@ from services.agents.runtime.tools.registry import (
 )
 from services.agents.runtime.tools.schemas import ToolPresentationRead
 from services.agents.utils import validate_tool_configuration
+from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.memories.domain import MemoryKind, MemoryScope, MemoryType
 
 
@@ -68,6 +70,15 @@ def cleanup_test_tools():
     yield
     for name in set(RUNTIME_TOOL_CATALOG) - before:
         RUNTIME_TOOL_CATALOG.pop(name, None)
+
+
+@pytest.fixture
+def google_ads_manifest(monkeypatch):
+    monkeypatch.setitem(
+        PROVIDER_MANIFESTS,
+        GOOGLE_ADS_PROVIDER.manifest.provider_key,
+        GOOGLE_ADS_PROVIDER.manifest,
+    )
 
 
 def _noop() -> str:
@@ -266,7 +277,7 @@ def test_validate_definition_rejects_editable_result_fields() -> None:
         validate_definition(definition)
 
 
-def test_integration_binding_accepts_scope_only_in_typed_reference() -> None:
+def test_integration_binding_accepts_scope_only_in_typed_reference(google_ads_manifest) -> None:
     definition = RuntimeToolDefinition(
         name="google_ads_scoped_campaign",
         function=_scoped_campaign,
@@ -292,7 +303,10 @@ def test_integration_binding_accepts_scope_only_in_typed_reference() -> None:
     "function",
     [_bare_customer, _unsafe_nested_scope, _unsafe_wrapped_scope],
 )
-def test_integration_binding_rejects_untyped_scope_parameters(function) -> None:
+def test_integration_binding_rejects_untyped_scope_parameters(
+    function,
+    google_ads_manifest,
+) -> None:
     definition = RuntimeToolDefinition(
         name="google_ads_unsafe_scope",
         function=function,
@@ -524,8 +538,7 @@ def test_save_memory_editable_options_match_domain_literals() -> None:
 
 
 def test_google_ads_status_options_match_tool_literal() -> None:
-    definition = get_runtime_tool_definition("google_ads_update_campaign_status")
-    assert definition is not None
+    definition = GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION
     fields = {field.key: field for field in definition.presentation.arg_fields}
     status_annotation = get_type_hints(
         google_ads_update_campaign_status,
