@@ -121,16 +121,6 @@ class OAuthProviderWithRetry(OAuthProvider):
 
                 if attempt < self.max_retries:
                     wait_time = self.backoff_factor * (2**attempt)
-                    logger.info(
-                        "Retrying OAuth provider request",
-                        extra={
-                            "provider": self.provider_name,
-                            "operation": endpoint_name,
-                            "attempt": attempt + 1,
-                            "max_attempts": self.max_retries + 1,
-                            "retry_delay_seconds": wait_time,
-                        },
-                    )
                     await asyncio.sleep(wait_time)
 
         error_msg = (
