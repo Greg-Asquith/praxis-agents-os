@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select, update
 
+from core.database import set_session_tenant_context
 from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationRateLimitError,
@@ -32,9 +33,15 @@ pytestmark = pytest.mark.asyncio
 
 async def _connection(db_session, credential, *, status="active") -> IntegrationConnection:
     user = build_user(email=f"credential-{uuid4()}@example.com")
-    workspace = build_workspace(slug=f"credential-{uuid4()}")
-    db_session.add_all([user, workspace])
+    workspace = await db_session.get(Workspace, credential.owner_workspace_id)
+    assert workspace is not None
+    db_session.add(user)
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
     connection = IntegrationConnection(
         provider_key=credential.provider_key,
         label="Credential test",
@@ -48,7 +55,19 @@ async def _connection(db_session, credential, *, status="active") -> Integration
     return connection
 
 
-async def _stored(db_session, *, principal="principal-1", expires_in=3600):
+async def _stored(
+    db_session,
+    *,
+    principal="principal-1",
+    expires_in=3600,
+    owner_workspace_id=None,
+):
+    if owner_workspace_id is None:
+        workspace = build_workspace(slug=f"credential-owner-{uuid4()}")
+        db_session.add(workspace)
+        await db_session.flush()
+        owner_workspace_id = workspace.id
+    await set_session_tenant_context(db_session, workspace_id=owner_workspace_id)
     return await store_oauth_credential(
         db_session,
         provider_key="test_provider",
@@ -61,6 +80,7 @@ async def _stored(db_session, *, principal="principal-1", expires_in=3600):
         external_principal_id=principal,
         external_principal_label="principal@example.com",
         granted_scopes=["read"],
+        owner_workspace_id=owner_workspace_id,
     )
 
 
@@ -91,13 +111,19 @@ async def test_secret_reference_store_rejects_oauth_mode_before_database_write(
 
 async def test_duplicate_principal_detection_warns_without_blocking(db_session) -> None:
     first = await _stored(db_session, principal="same-principal")
-    second = await _stored(db_session, principal="same-principal")
+    second = await _stored(
+        db_session,
+        principal="same-principal",
+        owner_workspace_id=first.owner_workspace_id,
+    )
     cross_workspace = await _stored(db_session, principal="same-principal")
     first_connection = await _connection(db_session, first)
     second_connection = await _connection(db_session, second)
     cross_workspace_connection = await _connection(db_session, cross_workspace)
-    second_connection.owner_workspace_id = first_connection.owner_workspace_id
-    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=first_connection.owner_workspace_id,
+    )
     duplicates = await find_duplicate_principals(
         db_session,
         provider_key="test_provider",

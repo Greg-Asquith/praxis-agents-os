@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from models.user import User
 from services.audit_events.enums import (
     AuditAction,
@@ -30,6 +31,12 @@ async def record_user_audit_event(
     resource_type: AuditResourceType = AuditResourceType.USER,
     workspace_id: UUID | None = None,
 ) -> None:
+    if workspace_id is not None:
+        await set_session_tenant_context(
+            db,
+            workspace_id=workspace_id,
+            user_id=actor.id,
+        )
     await safe_record_operation_audit_event(
         db,
         workspace_id=workspace_id,

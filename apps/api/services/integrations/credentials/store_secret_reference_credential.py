@@ -2,11 +2,14 @@
 
 """Persist a non-OAuth credential as a secret reference only."""
 
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.integration import IntegrationValidationError
 from models.integrations import ExternalCredential
 from services.audit_events import AuditAction, AuditResourceType
+from services.integrations.credentials.utils import resolve_credential_owner
 from services.integrations.utils import (
     compute_principal_fingerprint,
     ensure_credential_keys_loaded,
@@ -23,6 +26,8 @@ async def store_secret_reference_credential(
     secret_reference: SecretReference,
     external_principal_id: str | None = None,
     external_principal_label: str | None = None,
+    owner_user_id: UUID | None = None,
+    owner_workspace_id: UUID | None = None,
 ) -> ExternalCredential:
     if auth_mode not in {"api_key", "service_account", "system_token"}:
         raise IntegrationValidationError(
@@ -31,7 +36,15 @@ async def store_secret_reference_credential(
             operation="store_secret_reference_credential",
         )
     await ensure_credential_keys_loaded(db)
+    owner_user_id, owner_workspace_id = resolve_credential_owner(
+        db,
+        provider_key=provider_key,
+        owner_user_id=owner_user_id,
+        owner_workspace_id=owner_workspace_id,
+    )
     credential = ExternalCredential(
+        owner_user_id=owner_user_id,
+        owner_workspace_id=owner_workspace_id,
         provider_key=provider_key,
         auth_mode=auth_mode,
         secret_provider=secret_reference.provider,

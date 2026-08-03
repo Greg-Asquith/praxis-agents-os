@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth.sessions import session_manager
+from core.database import set_session_tenant_context
 from core.rate_limiting import rate_limiter
 from core.settings import settings
 from models.artifacts import Artifact, ArtifactRevision, ArtifactShare
@@ -558,6 +559,7 @@ async def test_signed_serving_fails_closed_for_all_invalid_targets(
     assert cross_chain.status_code == 404
     assert cross_chain.headers["content-type"].startswith("application/problem+json")
 
+    await set_session_tenant_context(db_session, workspace_id=artifact.workspace_id)
     artifact.deleted = True
     await db_session.commit()
     deleted = await db_async_client.get(relative)

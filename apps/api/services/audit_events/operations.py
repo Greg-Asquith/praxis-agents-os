@@ -11,6 +11,11 @@ from uuid import UUID
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import (
+    SESSION_MAINTENANCE_KEY,
+    configure_async_db_session,
+    get_maintenance_async_db_session_factory,
+)
 from models.audit_event import AuditEvent
 from services.audit_events.enums import (
     AuditAction,
@@ -87,6 +92,20 @@ async def safe_record_operation_audit_event(db: AsyncSession, **kwargs: Any) -> 
     This is the only supported way to write an audit event: auditing must never
     stop the thing it audits from happening.
     """
+    if kwargs.get("workspace_id") is None and not db.info.get(SESSION_MAINTENANCE_KEY):
+        try:
+            session_factory = get_maintenance_async_db_session_factory()
+            async with session_factory() as maintenance_db:
+                await configure_async_db_session(maintenance_db)
+                await _record_operation_audit_event(maintenance_db, **kwargs)
+                await maintenance_db.commit()
+        except Exception:
+            logger.error(
+                "Failed to record global audit event; primary operation preserved",
+                exc_info=True,
+            )
+        return
+
     try:
         async with db.begin_nested():
             await _record_operation_audit_event(db, **kwargs)

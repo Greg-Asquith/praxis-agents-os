@@ -70,6 +70,7 @@ def test_conversation_message_read_uses_public_error_alias_only_on_output() -> N
     message = ConversationMessage(
         id=uuid4(),
         conversation_id=uuid4(),
+        workspace_id=uuid4(),
         role="tool",
         parts={"content": "Failed"},
         metadata_json={"source": "runtime"},

@@ -243,6 +243,8 @@ async def finalize_cancelled_run(
     *,
     event_sink: EventSink,
     run_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
 ) -> None:
     """Persist and emit cancelled terminal state during cancellation unwind."""
     with suppress(Exception):
@@ -250,7 +252,11 @@ async def finalize_cancelled_run(
 
     status = RUN_STATUS_CANCELLED
     with suppress(Exception):
-        cancelled_run = await persist_cancelled_run(run_id)
+        cancelled_run = await persist_cancelled_run(
+            run_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         if cancelled_run is not None:
             status = str(cancelled_run.status)
 

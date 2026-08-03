@@ -88,6 +88,7 @@ async def connect_service_account(
             secret_reference=reference,
             external_principal_id=parsed.client_email,
             external_principal_label=parsed.client_email,
+            owner_workspace_id=workspace.id,
         )
         connection = IntegrationConnection(
             provider_key=manifest.provider_key,

@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from core.settings import settings
 from models.files import FileRevision
 from models.jobs import Job
@@ -243,7 +244,7 @@ async def test_restore_ingestible_revision_enqueues_extraction(
 async def test_files_processing_summary_counts_workspace_statuses_and_jobs(
     db_session: AsyncSession,
 ) -> None:
-    _actor, workspace, _membership = await _workspace_context(db_session)
+    actor, workspace, _membership = await _workspace_context(db_session)
     other_workspace = build_workspace(slug=f"processing-other-{uuid4().hex[:8]}")
     db_session.add(other_workspace)
     await db_session.flush()
@@ -252,7 +253,6 @@ async def test_files_processing_summary_counts_workspace_statuses_and_jobs(
     deleted = build_file(workspace=workspace, processing_status="error")
     deleted.soft_delete()
     db_session.add(deleted)
-    db_session.add(build_file(workspace=other_workspace, processing_status="pending"))
     db_session.add(
         Job(
             kind="files.extract",
@@ -262,6 +262,9 @@ async def test_files_processing_summary_counts_workspace_statuses_and_jobs(
             content_hash=sha256_hex(b"running"),
         )
     )
+    await db_session.flush()
+    await set_session_tenant_context(db_session, workspace_id=other_workspace.id)
+    db_session.add(build_file(workspace=other_workspace, processing_status="pending"))
     db_session.add(
         Job(
             kind="jobs.sweep_terminal",
@@ -281,6 +284,11 @@ async def test_files_processing_summary_counts_workspace_statuses_and_jobs(
         )
     )
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=actor.id,
+    )
 
     summary = await get_files_processing_summary(db_session, workspace=workspace)
 

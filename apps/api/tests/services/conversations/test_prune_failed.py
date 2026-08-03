@@ -77,11 +77,12 @@ async def test_failed_first_run_with_zero_messages_prunes(
 
 
 async def test_failed_run_with_message_is_preserved(db_session: AsyncSession) -> None:
-    user, _workspace, _agent, conversation, run = await _conversation_context(db_session)
+    user, workspace, _agent, conversation, run = await _conversation_context(db_session)
     await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
     db_session.add(
         ConversationMessage(
             conversation_id=conversation.id,
+            workspace_id=workspace.id,
             role="user",
             parts={"kind": "request", "parts": []},
             sequence=1,

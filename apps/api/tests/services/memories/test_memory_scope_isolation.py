@@ -4,8 +4,10 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from core.exceptions.general import NotFoundError
 from core.settings import settings
 from models.agent import Agent
@@ -44,7 +46,7 @@ async def test_search_returns_only_the_callers_visible_scope_union(
     )
     db_session.add(other_agent)
     await db_session.flush()
-    rows = [
+    visible_and_same_workspace_rows = [
         build_memory(
             workspace_id=memory_context.workspace.id,
             scope="agent",
@@ -79,15 +81,28 @@ async def test_search_returns_only_the_callers_visible_scope_union(
             title="Hidden user policy",
             content_md="Weekly summary policy.",
         ),
+    ]
+    db_session.add_all(visible_and_same_workspace_rows)
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=other_workspace.id,
+        user_id=memory_context.user.id,
+    )
+    db_session.add(
         build_memory(
             workspace_id=other_workspace.id,
             scope="workspace",
             title="Hidden workspace policy",
             content_md="Weekly summary policy.",
-        ),
-    ]
-    db_session.add_all(rows)
+        )
+    )
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=memory_context.workspace.id,
+        user_id=memory_context.user.id,
+    )
     result = await search_memories(
         db_session,
         workspace=memory_context.workspace,
@@ -142,6 +157,7 @@ async def test_hybrid_search_configures_filtered_hnsw_before_querying(
     memory_context: MemoryContext,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert await db_session.scalar(text("SELECT current_user")) == "praxis_app"
     provider = FakeEmbeddingProvider()
     embedded = await provider.embed_texts(
         ["Quarterly renewal policy"],

@@ -144,6 +144,8 @@ async def create_conversation_turn_stream(
         run_turn_worker(
             run_id=run.id,
             conversation_id=conversation.id,
+            workspace_id=workspace.id,
+            user_id=actor.id,
             user_prompt=payload.user_prompt,
             attachment_file_ids=attachment_file_ids,
             sink=sink,

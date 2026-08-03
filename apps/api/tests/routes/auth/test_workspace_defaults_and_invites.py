@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.database import get_maintenance_async_db_session_factory
 from models.audit_event import AuditEvent
 from models.security import SecurityEvent
 from models.user import User
@@ -200,16 +201,18 @@ async def test_patch_auth_me_persists_default_workspace_and_records_audit(
     assert refreshed_user is not None
     assert refreshed_user.default_workspace_id == second_workspace_id
 
-    audit_event = await db_session.scalar(
-        select(AuditEvent)
-        .where(
-            AuditEvent.action == AuditAction.UPDATE.value,
-            AuditEvent.resource_type == AuditResourceType.USER.value,
-            AuditEvent.resource_id == str(user_id),
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        audit_event = await maintenance_db.scalar(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == AuditAction.UPDATE.value,
+                AuditEvent.resource_type == AuditResourceType.USER.value,
+                AuditEvent.resource_id == str(user_id),
+            )
+            .order_by(AuditEvent.created_at.desc())
         )
-        .order_by(AuditEvent.created_at.desc())
-    )
     assert audit_event is not None
+    assert audit_event.workspace_id is None
     assert audit_event.details["fields"] == ["default_workspace_id"]
 
 

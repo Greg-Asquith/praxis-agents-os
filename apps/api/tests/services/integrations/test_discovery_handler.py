@@ -49,6 +49,7 @@ async def test_user_owned_discovery_uses_user_concurrency_bucket(
 ) -> None:
     user = build_user()
     credential = build_external_credential()
+    credential.owner_user_id = user.id
     db_session.add_all([user, credential])
     await db_session.flush()
     connection = build_integration_connection(

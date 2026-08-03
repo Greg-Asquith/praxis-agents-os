@@ -11,7 +11,11 @@ from uuid import UUID
 from pydantic import Field
 from pydantic_ai import ApprovalRequired, DeferredToolRequests, RunContext
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from models.conversation import CONVERSATION_SOURCE_DELEGATED, Conversation
 from services.agent_runs.domain import RUN_TRIGGER_DELEGATED
 from services.agents.runtime.context import RuntimeDeps
@@ -85,6 +89,11 @@ async def delegate_to_agent(
 
     try:
         await configure_async_db_session(session)
+        await set_session_tenant_context(
+            session,
+            workspace_id=ctx.deps.workspace.id,
+            user_id=ctx.deps.user.id,
+        )
         target = await get_visible_delegate_agent(
             session,
             caller=ctx.deps.agent,
@@ -143,6 +152,8 @@ async def delegate_to_agent(
         heartbeat_task = asyncio.create_task(
             heartbeat(
                 child_run.id,
+                ctx.deps.workspace.id,
+                ctx.deps.user.id,
                 owner_id,
                 heartbeat_stop,
                 cancel_target=asyncio.current_task(),

@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import settings
 from models.agent import Agent
@@ -138,6 +139,11 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
         content_type="text/plain",
         filename="foreign.txt",
         content=b"foreign",
+    )
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=actor.id,
     )
     with pytest.raises(NotFoundError):
         await resolve_chat_attachments(

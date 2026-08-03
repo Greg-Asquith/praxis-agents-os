@@ -33,6 +33,8 @@ class PreparedScheduleRunExecution:
 
     schedule_id: UUID
     schedule_run_id: UUID
+    workspace_id: UUID
+    user_id: UUID
     conversation_id: UUID | None
     agent_run_id: UUID | None
     user_prompt: str | None
@@ -86,6 +88,8 @@ async def prepare_schedule_run_execution(
         return PreparedScheduleRunExecution(
             schedule_id=schedule.id,
             schedule_run_id=schedule_run.id,
+            workspace_id=schedule.workspace_id,
+            user_id=schedule.user_id,
             conversation_id=None,
             agent_run_id=None,
             user_prompt=None,
@@ -105,6 +109,8 @@ async def prepare_schedule_run_execution(
         return PreparedScheduleRunExecution(
             schedule_id=schedule.id,
             schedule_run_id=schedule_run.id,
+            workspace_id=schedule.workspace_id,
+            user_id=schedule.user_id,
             conversation_id=None,
             agent_run_id=None,
             user_prompt=None,
@@ -133,6 +139,8 @@ async def prepare_schedule_run_execution(
     return PreparedScheduleRunExecution(
         schedule_id=schedule.id,
         schedule_run_id=schedule_run.id,
+        workspace_id=schedule.workspace_id,
+        user_id=schedule.user_id,
         conversation_id=conversation.id,
         agent_run_id=run.id,
         user_prompt=prompt,

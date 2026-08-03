@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.auth.sessions import session_manager
-from core.database import get_async_db_session
+from core.database import get_async_db_session, set_session_tenant_context
 from core.exceptions.auth import AuthenticationError, AuthorizationError
 from core.settings import settings
 from models.agent import AgentScheduleRun
@@ -57,6 +57,7 @@ class SessionAuth(HTTPBearer):
         # Try to validate as regular session first
         user = await session_manager.validate_session(db, session_token)
         if user:
+            await set_session_tenant_context(db, user_id=user.id)
             return user
 
         # If not a regular session, try to decode as JWT session token
@@ -96,6 +97,7 @@ class SessionAuth(HTTPBearer):
             if not workspace_id_str:
                 return None
             internal_workspace_id = UUID(workspace_id_str)
+            await set_session_tenant_context(db, workspace_id=internal_workspace_id)
 
             schedule_run_id_str = payload.get("schedule_run_id")
             if schedule_run_id_str:
@@ -117,6 +119,7 @@ class SessionAuth(HTTPBearer):
             user = result.scalar_one_or_none()
 
             if user:
+                await set_session_tenant_context(db, user_id=user.id)
                 setattr(user, _INTERNAL_TOKEN_WORKSPACE_ATTR, internal_workspace_id)
                 logger.debug("Validated JWT session token for user %s", user_id)
                 return user
@@ -191,6 +194,11 @@ async def get_current_workspace(
 
         if membership:
             _enforce_internal_token_workspace(user, membership.workspace)
+            await set_session_tenant_context(
+                db,
+                workspace_id=membership.workspace.id,
+                user_id=user.id,
+            )
             return membership.workspace, membership
 
         logger.warning(
@@ -202,6 +210,11 @@ async def get_current_workspace(
 
     fallback_membership = await require_default_workspace_membership_for_user(db, user)
     _enforce_internal_token_workspace(user, fallback_membership.workspace)
+    await set_session_tenant_context(
+        db,
+        workspace_id=fallback_membership.workspace.id,
+        user_id=user.id,
+    )
     return fallback_membership.workspace, fallback_membership
 
 

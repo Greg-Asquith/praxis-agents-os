@@ -15,6 +15,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import set_session_tenant_context
 from core.exceptions.general import NotFoundError
 from models.agent import Agent
 from models.agent_run import AgentRun
@@ -114,8 +115,25 @@ async def test_visible_delegate_agents_are_active_same_workspace_allowlist_membe
         workspace_id=other_workspace.id,
         user_id=user.id,
     )
-    db_session.add_all([caller, first, second, inactive, deleted, other_workspace_agent])
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db_session.add_all([caller, first, second, inactive, deleted])
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=other_workspace.id,
+        user_id=user.id,
+    )
+    db_session.add(other_workspace_agent)
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
     caller.allowed_agent_ids = [
         str(second.id),
         str(caller.id),

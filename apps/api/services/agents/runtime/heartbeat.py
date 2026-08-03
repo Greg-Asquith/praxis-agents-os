@@ -7,7 +7,11 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.settings import settings
 from services.agent_runs import renew_agent_run_lease
 from services.agent_runs.domain import RUN_STATUS_CANCELLED
@@ -22,12 +26,15 @@ logger = logging.getLogger(__name__)
 async def renew_agent_run_lease_once(
     *,
     run_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     owner_instance_id: str,
 ) -> bool:
     """Renew one run lease in an isolated short-lived transaction."""
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
         await configure_async_db_session(db)
+        await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         try:
             renewed = await renew_agent_run_lease(
                 db,
@@ -44,6 +51,8 @@ async def renew_agent_run_lease_once(
 async def heartbeat_agent_run_lease(
     *,
     run_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     owner_instance_id: str,
     stop: asyncio.Event,
     cancel_target: asyncio.Task | None = None,
@@ -58,6 +67,8 @@ async def heartbeat_agent_run_lease(
         try:
             renewed = await renew_agent_run_lease_once(
                 run_id=run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
                 owner_instance_id=owner_instance_id,
             )
         except Exception:
@@ -71,6 +82,8 @@ async def heartbeat_agent_run_lease(
         if not renewed:
             await cancel_target_if_run_cancelled(
                 run_id=run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
                 owner_instance_id=owner_instance_id,
                 cancel_target=cancel_target,
             )
@@ -84,6 +97,8 @@ async def heartbeat_agent_run_lease(
 async def cancel_target_if_run_cancelled(
     *,
     run_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     owner_instance_id: str,
     cancel_target: asyncio.Task | None,
 ) -> bool:
@@ -91,7 +106,11 @@ async def cancel_target_if_run_cancelled(
     if cancel_target is None or cancel_target.done() or cancel_target.cancelling() > 0:
         return False
 
-    status = await read_agent_run_status_once(run_id=run_id)
+    status = await read_agent_run_status_once(
+        run_id=run_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
     if status != RUN_STATUS_CANCELLED:
         return False
 

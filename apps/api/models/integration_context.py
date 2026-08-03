@@ -89,6 +89,7 @@ class ActiveContextSelection(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     integration_resource_id = Column(
         UUID(as_uuid=True),

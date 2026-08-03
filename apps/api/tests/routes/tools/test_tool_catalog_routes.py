@@ -9,6 +9,7 @@ from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.database import set_session_tenant_context
 from core.settings import settings
 from models.agent import Agent
 from models.conversation import Conversation
@@ -318,7 +319,16 @@ async def test_entity_reference_route_searches_and_hydrates_only_workspace_files
     await db_session.flush()
     current_file = build_file(workspace=workspace, name="Quarterly plan.pdf")
     other_file = build_file(workspace=other_workspace, name="Private roadmap.pdf")
-    db_session.add_all([current_file, other_file])
+    await set_session_tenant_context(db_session, workspace_id=other_workspace.id)
+    db_session.add(other_file)
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
+    db_session.add(current_file)
+    await db_session.flush()
     await db_session.commit()
 
     endpoint = f"/api/v1/tools/conversations/{conversation.id}/entity-references"

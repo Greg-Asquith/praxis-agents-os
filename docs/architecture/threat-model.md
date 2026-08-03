@@ -54,6 +54,25 @@ Delimiters reduce authority confusion but do not make model behavior
 deterministic. Authorization, approval, workspace isolation, dispatch audit,
 output validation, and run envelopes remain independent enforcement layers.
 
+### Database workspace-isolation backstop
+
+Workspace-confidential Postgres tables use forced row-level security in
+addition to explicit service-layer predicates. Runtime API and tenant worker
+transactions execute as the non-owner `praxis_app` role and receive
+transaction-local `app.current_workspace_id` and `app.current_user_id` GUCs
+from SQLAlchemy session context. An unset GUC matches no protected rows and
+cannot authorize writes. Alembic, cross-workspace job claiming, and deliberate
+system jobs use a separate owning connection configured by
+`DATABASE_MAINTENANCE_URL`; that connection must not be passed to tenant job
+handlers. The role split and full-table policy coverage are pinned by
+`apps/api/tests/security/test_workspace_rls.py`.
+
+Integration credentials carry an explicit user-or-workspace owner so their
+policy can authorize the row before its connection exists. This
+denormalization avoids a credential/connection insertion cycle while the
+connection foreign key remains the lifecycle link. Global audit events with
+no workspace remain maintenance-only.
+
 ## 2. Channel Inventory
 
 Every channel has both a mechanical contract and a behavioral contract. CI

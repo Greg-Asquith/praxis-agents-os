@@ -7,7 +7,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    inherit_session_tenant_context,
+)
 from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationConnectionError,
@@ -82,6 +86,7 @@ async def test_connection(
             )
         except (IntegrationAuthError, IntegrationPermissionError):
             await _mark_identity_test_failed(
+                db,
                 connection_id=connection.id,
                 expected_credential_id=credential.id,
                 audit_workspace_id=workspace.id,
@@ -118,6 +123,7 @@ async def test_connection(
 
 
 async def _mark_identity_test_failed(
+    source_db: AsyncSession,
     *,
     connection_id: UUID,
     expected_credential_id: UUID,
@@ -126,6 +132,7 @@ async def _mark_identity_test_failed(
     session_factory = get_async_db_session_factory()
     async with session_factory() as failure_db:
         await configure_async_db_session(failure_db)
+        await inherit_session_tenant_context(failure_db, source_db)
         connection = await failure_db.scalar(
             select(IntegrationConnection)
             .where(

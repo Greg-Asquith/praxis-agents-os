@@ -10,6 +10,7 @@ from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.database import get_maintenance_async_db_session_factory
 from models.audit_event import AuditEvent
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
@@ -252,7 +253,9 @@ async def test_audit_event_detail_scoping_and_system_visibility(
         details={"field": "value"},
     )
     hidden = await _seed_audit_event(db_session, workspace=workspace_b, actor=user)
-    system_event = await _seed_audit_event(db_session, workspace=None, actor=None)
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        system_event = await _seed_audit_event(maintenance_db, workspace=None, actor=None)
+        await maintenance_db.commit()
     await db_session.commit()
 
     detail_response = await db_async_client.get(

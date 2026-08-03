@@ -18,6 +18,8 @@ from core.database import (
     close_db_connections,
     configure_async_db_session,
     get_async_db_session_factory,
+    get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
 )
 from core.logging import setup_logging
 from core.settings import settings
@@ -49,7 +51,7 @@ logger = logging.getLogger(__name__)
 async def run_once(*, owner_instance_id: str | None = None) -> int:
     """Reclaim stale work, claim due jobs, and execute one claimed batch."""
     owner_id = owner_instance_id or _owner_instance_id()
-    session_factory = get_async_db_session_factory()
+    session_factory = get_maintenance_async_db_session_factory()
 
     async with session_factory() as db:
         await configure_async_db_session(db)
@@ -89,9 +91,40 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
 async def execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
     """Execute one claimed job and finalize the attempt."""
     definition = None
-    session_factory = get_async_db_session_factory()
+    maintenance_session_factory = get_maintenance_async_db_session_factory()
+    async with maintenance_session_factory() as maintenance_db:
+        claimed_job = await maintenance_db.scalar(
+            select(Job).where(
+                Job.id == job_id,
+                Job.status == JOB_STATUS_RUNNING,
+                Job.locked_by == owner_instance_id,
+                Job.lock_expires_at.is_not(None),
+                Job.lock_expires_at > datetime.now(UTC),
+            )
+        )
+        if claimed_job is None:
+            logger.warning(
+                "Claimed job is no longer executable by this worker",
+                extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+            )
+            return
+        workspace_id = claimed_job.workspace_id
+        user_id = claimed_job.concurrency_user_id
+
+    is_system_job = workspace_id is None and user_id is None
+    session_factory = (
+        get_maintenance_async_db_session_factory()
+        if is_system_job
+        else get_async_db_session_factory()
+    )
     async with session_factory() as db:
         await configure_async_db_session(db)
+        if not is_system_job:
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
         now_utc = datetime.now(UTC)
         job = await db.scalar(
             select(Job)
@@ -214,7 +247,7 @@ async def _record_job_failure(
     code: str,
     message: str,
 ) -> None:
-    session_factory = get_async_db_session_factory()
+    session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         await configure_async_db_session(db)
         try:

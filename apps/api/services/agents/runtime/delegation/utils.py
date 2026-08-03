@@ -75,6 +75,8 @@ def owner_instance_id() -> str:
 
 async def heartbeat(
     run_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     owner_instance_id: str,
     stop: asyncio.Event,
     cancel_target: asyncio.Task | None = None,
@@ -83,6 +85,8 @@ async def heartbeat(
 
     await heartbeat_agent_run_lease(
         run_id=run_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
         owner_instance_id=owner_instance_id,
         stop=stop,
         cancel_target=cancel_target,

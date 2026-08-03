@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import delete, select
 
+from core.database import get_maintenance_async_db_session_factory
 from core.exceptions.integration import IntegrationCredentialUnavailableError
 from core.settings import settings
 from models.audit_event import AuditEvent
@@ -159,12 +160,14 @@ async def test_resolve_failure_audits_reference_without_secret_value(
     ref = SecretReference(provider="local", name="missing-audited", version="latest")
     with pytest.raises(IntegrationCredentialUnavailableError):
         await resolve_secret(db_session, ref)
-    event = await db_session.scalar(
-        select(AuditEvent).where(
-            AuditEvent.resource_type == "secret_reference",
-            AuditEvent.status == "failure",
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        event = await maintenance_db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.resource_type == "secret_reference",
+                AuditEvent.status == "failure",
+                AuditEvent.details["reference"].astext == ref.render(),
+            )
         )
-    )
     assert event is not None
     assert event.details == {"reference": ref.render()}
     secrets_factory._provider = None
@@ -187,7 +190,7 @@ async def test_resolve_failure_audit_survives_caller_rollback(
             await resolve_secret(caller_db, ref)
         await caller_db.rollback()
 
-    async with committed_db_session_factory() as verify_db:
+    async with get_maintenance_async_db_session_factory()() as verify_db:
         event = await verify_db.scalar(
             select(AuditEvent).where(
                 AuditEvent.resource_type == "secret_reference",
@@ -214,18 +217,19 @@ async def test_write_and_delete_operations_audit_reference_only(
     secrets_factory._provider_key = None
     ref = await write_secret(db_session, name="audited-secret", value="never-audited-value")
     assert await delete_secret(db_session, ref) is True
-    events = list(
-        (
-            await db_session.scalars(
-                select(AuditEvent)
-                .where(
-                    AuditEvent.resource_type == "secret_reference",
-                    AuditEvent.details["reference"].astext == ref.render(),
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        events = list(
+            (
+                await maintenance_db.scalars(
+                    select(AuditEvent)
+                    .where(
+                        AuditEvent.resource_type == "secret_reference",
+                        AuditEvent.details["reference"].astext == ref.render(),
+                    )
+                    .order_by(AuditEvent.occurred_at, AuditEvent.id)
                 )
-                .order_by(AuditEvent.occurred_at, AuditEvent.id)
-            )
-        ).all()
-    )
+            ).all()
+        )
     assert [event.action for event in events] == ["create", "delete"]
     rendered = repr([event.details for event in events])
     assert "never-audited-value" not in rendered

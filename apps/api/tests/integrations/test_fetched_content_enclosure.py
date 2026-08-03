@@ -47,6 +47,8 @@ async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> Non
     deps = SimpleNamespace(
         envelope=SimpleNamespace(side_effect_policy="allow"),
         run=SimpleNamespace(id="run-1"),
+        workspace=SimpleNamespace(id="workspace-1"),
+        user=SimpleNamespace(id="user-1"),
     )
     ctx = SimpleNamespace(deps=deps, tool_call_approved=False)
     call = SimpleNamespace(tool_name="fixture_tool", tool_call_id="call-1")

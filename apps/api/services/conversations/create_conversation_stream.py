@@ -12,7 +12,11 @@ from fastapi import Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from models.conversation import CONVERSATION_SOURCE_DIRECT, Conversation
 from models.user import User
 from models.workspace import Workspace
@@ -143,6 +147,7 @@ async def create_conversation_stream(
         _run_initial_conversation_worker(
             run_id=run.id,
             conversation_id=conversation.id,
+            workspace_id=workspace.id,
             actor_id=actor.id,
             user_prompt=payload.user_prompt,
             attachment_file_ids=attachment_file_ids,
@@ -168,6 +173,7 @@ async def _run_initial_conversation_worker(
     *,
     run_id: UUID,
     conversation_id: UUID,
+    workspace_id: UUID,
     actor_id: UUID,
     user_prompt: str,
     attachment_file_ids: Sequence[UUID],
@@ -178,6 +184,8 @@ async def _run_initial_conversation_worker(
     title_task = _spawn_title_task(
         run_conversation_title_worker(
             conversation_id=conversation_id,
+            workspace_id=workspace_id,
+            user_id=actor_id,
             user_prompt=user_prompt,
             fallback_title=fallback_title,
             sink=sink,
@@ -192,6 +200,8 @@ async def _run_initial_conversation_worker(
     await run_turn_worker(
         run_id=run_id,
         conversation_id=conversation_id,
+        workspace_id=workspace_id,
+        user_id=actor_id,
         user_prompt=user_prompt,
         attachment_file_ids=attachment_file_ids,
         sink=title_update_sink,
@@ -200,6 +210,7 @@ async def _run_initial_conversation_worker(
     await _prune_failed_initial_conversation(
         run_id=run_id,
         conversation_id=conversation_id,
+        workspace_id=workspace_id,
         actor_id=actor_id,
     )
 
@@ -208,12 +219,18 @@ async def _prune_failed_initial_conversation(
     *,
     run_id: UUID,
     conversation_id: UUID,
+    workspace_id: UUID,
     actor_id: UUID,
 ) -> None:
     session_factory = get_async_db_session_factory()
     session = session_factory()
     try:
         await configure_async_db_session(session)
+        await set_session_tenant_context(
+            session,
+            workspace_id=workspace_id,
+            user_id=actor_id,
+        )
         await prune_failed_empty_conversation_for_run(
             session,
             conversation_id=conversation_id,

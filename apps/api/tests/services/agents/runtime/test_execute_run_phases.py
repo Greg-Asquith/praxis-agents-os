@@ -276,9 +276,18 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
         finalize_module = importlib.import_module("services.agents.runtime.execute.finalize")
         real_persist_cancelled_run = finalize_module.persist_cancelled_run
 
-        async def slow_persist_cancelled_run(run_id: UUID):
+        async def slow_persist_cancelled_run(
+            run_id: UUID,
+            *,
+            workspace_id: UUID,
+            user_id: UUID,
+        ):
             await asyncio.sleep(0.05)
-            return await real_persist_cancelled_run(run_id)
+            return await real_persist_cancelled_run(
+                run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
 
         async def slow_stream(
             _messages: list[ModelMessage],

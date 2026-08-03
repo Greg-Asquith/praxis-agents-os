@@ -351,6 +351,15 @@ For a non-Compose production upgrade, stop the worker first, apply
 `alembic upgrade heads`, then start the API and worker against the migrated
 schema. The local Compose paths perform that sequence automatically.
 
+Outside local development, provision the `praxis_app` login and its
+credential before applying migrations, then configure `DATABASE_URL` with
+that login. Configure `DATABASE_MAINTENANCE_URL` with a distinct owning
+migration role. Migration `core_0032` creates `praxis_app` without a password
+when the role is absent, so password- or certificate-based deployments must
+set the login credential through their database administration layer. API and
+worker startup verify that the runtime connection authenticates directly as
+`praxis_app` and that the maintenance connection uses a different role.
+
 Production deployment currently targets cloud infrastructure: outside
 `ENVIRONMENT=local`, Praxis requires cloud-backed storage and a cloud secret
 manager. A production email transport is not implemented yet. Public cloud

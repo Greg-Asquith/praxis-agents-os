@@ -28,6 +28,8 @@ class ExternalCredential(BaseModel):
 
     __tablename__ = "external_credentials"
 
+    owner_user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    owner_workspace_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     provider_key = Column(String(64), nullable=False, index=True)
     auth_mode = Column(String(32), nullable=False)
     access_token_encrypted = Column(Text, nullable=True)
@@ -47,6 +49,10 @@ class ExternalCredential(BaseModel):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        CheckConstraint(
+            "num_nonnulls(owner_user_id, owner_workspace_id) = 1",
+            name="ck_external_credentials_owner_xor",
+        ),
         CheckConstraint(
             "auth_mode IN ('oauth', 'api_key', 'service_account', 'system_token')",
             name="ck_external_credentials_auth_mode",

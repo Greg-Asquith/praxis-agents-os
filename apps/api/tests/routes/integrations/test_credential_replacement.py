@@ -10,6 +10,7 @@ from httpx2 import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
 from models.jobs import Job
@@ -181,7 +182,7 @@ async def test_replacement_rejects_another_workspaces_secret_reference(
         foreign_connection.credential_id,
     )
 
-    _user, _workspace, _membership, other_headers = await create_identity(
+    other_user, other_workspace, _membership, other_headers = await create_identity(
         db_session,
         role=WorkspaceRole.ADMIN,
     )
@@ -191,6 +192,11 @@ async def test_replacement_rejects_another_workspaces_secret_reference(
         json={"provider_key": "airtable", "label": "Owned", "api_key": "owned-key"},
     )
     assert owned.status_code == 200, owned.text
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=other_workspace.id,
+        user_id=other_user.id,
+    )
     owned_connection = await db_session.get(IntegrationConnection, owned.json()["id"])
     owned_credential = await db_session.get(
         ExternalCredential,

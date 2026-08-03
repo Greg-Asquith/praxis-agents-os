@@ -24,6 +24,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import set_session_tenant_context
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
@@ -1289,6 +1290,11 @@ async def _delete_committed_runtime_context(
     context: DispatchRuntimeContext,
 ) -> None:
     async with session_factory() as db:
+        await set_session_tenant_context(
+            db,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
         await db.execute(
             delete(AuditEvent).where(
                 or_(
@@ -1338,6 +1344,11 @@ async def _execute_single_tool(
         seen_messages=seen_messages,
     )
     async with session_factory() as db:
+        await set_session_tenant_context(
+            db,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
         return await execute_run(
             db,
             conversation_id=context.conversation_id,
@@ -1403,6 +1414,11 @@ async def _tool_audit_events(
     tool_name: str,
 ) -> list[AuditEvent]:
     async with session_factory() as db:
+        await set_session_tenant_context(
+            db,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+        )
         return list(
             (
                 await db.scalars(

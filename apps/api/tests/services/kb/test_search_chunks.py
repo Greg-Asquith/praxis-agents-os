@@ -4,6 +4,7 @@ import importlib
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
@@ -76,6 +77,7 @@ async def test_hybrid_search_returns_typed_hit_and_collection_guard(
     kb_actors: KBActors,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert await db_session.scalar(text("SELECT current_user")) == "praxis_app"
     document, chunk = await _add_document(
         db_session,
         actors=kb_actors,

@@ -74,6 +74,7 @@ def _add_messages(db: AsyncSession, conversation: Conversation, *, count: int) -
         db.add(
             ConversationMessage(
                 conversation_id=conversation.id,
+                workspace_id=conversation.workspace_id,
                 role="user",
                 parts={"parts": [{"part_kind": "user-prompt", "content": str(sequence)}]},
                 sequence=sequence,

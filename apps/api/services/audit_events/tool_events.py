@@ -6,7 +6,7 @@ import logging
 from typing import Any, Literal
 from uuid import UUID
 
-from core.database import get_async_db_session_factory
+from core.database import get_async_db_session_factory, set_session_tenant_context
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -58,6 +58,11 @@ async def record_tool_invocation_audit_event(
     try:
         session_factory = get_async_db_session_factory()
         async with session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=UUID(str(workspace_id)),
+                user_id=run.user_id,
+            )
             user = await db.get(User, run.user_id)
             actor_display = _user_display(user)
             audit_context = _run_audit_context(run)

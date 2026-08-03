@@ -16,6 +16,7 @@ def configure_test_environment() -> None:
                 "postgresql://", "postgresql+asyncpg://", 1
             )
         os.environ.setdefault("DATABASE_URL", test_database_url)
+        os.environ.setdefault("DATABASE_MAINTENANCE_URL", test_database_url)
 
     os.environ.setdefault("ENVIRONMENT", "local")
     os.environ.setdefault("STORAGE_PROVIDER", "local_fs")

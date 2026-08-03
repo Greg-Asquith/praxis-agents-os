@@ -11,7 +11,11 @@ from pydantic_ai import DeferredToolRequests
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
@@ -193,12 +197,22 @@ async def persist_failed_run(
     return run
 
 
-async def persist_cancelled_run(run_id: UUID) -> AgentRun | None:
+async def persist_cancelled_run(
+    run_id: UUID,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+) -> AgentRun | None:
     """Mark a run cancelled in an isolated transaction without raising to unwind code."""
     try:
         session_factory = get_async_db_session_factory()
         async with session_factory() as db:
             await configure_async_db_session(db)
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             run = await db.get(AgentRun, run_id, populate_existing=True)
             if run is None:
                 await db.commit()

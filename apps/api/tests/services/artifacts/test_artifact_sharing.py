@@ -45,7 +45,10 @@ def _production_settings(**overrides: Any) -> Settings:
         "SECRET_PROVIDER": "aws_secrets_manager",
         "CREDENTIAL_MASTER_KEYS": "",
         "DATABASE_URL": (
-            "postgresql+asyncpg://postgres:postgres@db.example.com/postgres?sslmode=require"
+            "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require"
+        ),
+        "DATABASE_MAINTENANCE_URL": (
+            "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
         ),
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
@@ -160,6 +163,13 @@ async def test_expired_share_sweep_deletes_expired_and_reschedules(
     )
     db_session.add_all([expired, live, expired_revoked])
     await db_session.flush()
+    existing_job_ids = set(
+        (
+            await db_session.scalars(
+                select(Job.id).where(Job.kind == SWEEP_EXPIRED_ARTIFACT_SHARES_KIND)
+            )
+        ).all()
+    )
 
     ensured = await ensure_artifact_shares_sweep_job(db_session)
     ensured_again = await ensure_artifact_shares_sweep_job(db_session)
@@ -174,4 +184,7 @@ async def test_expired_share_sweep_deletes_expired_and_reschedules(
     jobs = (
         await db_session.scalars(select(Job).where(Job.kind == SWEEP_EXPIRED_ARTIFACT_SHARES_KIND))
     ).all()
-    assert len(jobs) == 2
+    new_job_ids = {job.id for job in jobs if job.id not in existing_job_ids}
+    expected_new_count = 1 + int(ensured.id not in existing_job_ids)
+    assert len(new_job_ids) == expected_new_count
+    assert any(job.id != ensured.id for job in jobs)

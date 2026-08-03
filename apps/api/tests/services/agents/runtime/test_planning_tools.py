@@ -12,6 +12,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import set_session_tenant_context
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -281,6 +282,7 @@ async def _create_second_conversation_context(
     context: PlanningRuntimeContext,
 ) -> PlanningRuntimeContext:
     async with session_factory() as db:
+        await _use_context(db, context)
         conversation = Conversation(
             user_id=context.user_id,
             workspace_id=context.workspace_id,
@@ -308,6 +310,7 @@ async def _execute_tool_turn(
     seen_messages: list[ModelMessage] | None = None,
 ) -> tuple[ExecuteRunResult, CollectingSink, UUID]:
     async with session_factory() as db:
+        await _use_context(db, context)
         run = await create_agent_run(
             db,
             conversation_id=context.conversation_id,
@@ -326,6 +329,7 @@ async def _execute_tool_turn(
     )
     sink = CollectingSink(run_id=run.id, conversation_id=context.conversation_id)
     async with session_factory() as db:
+        await _use_context(db, context)
         result = await execute_run(
             db,
             conversation_id=context.conversation_id,
@@ -377,6 +381,7 @@ async def _todo_list(
     context: PlanningRuntimeContext,
 ) -> ConversationTodoList | None:
     async with session_factory() as db:
+        await _use_context(db, context)
         return await db.scalar(
             select(ConversationTodoList).where(
                 ConversationTodoList.conversation_id == context.conversation_id,
@@ -394,6 +399,7 @@ async def _tool_audit_events(
     tool_name: str,
 ) -> list[AuditEvent]:
     async with session_factory() as db:
+        await _use_context(db, context)
         return list(
             (
                 await db.scalars(
@@ -416,6 +422,7 @@ async def _delete_committed_planning_context(
     delete_shared: bool = True,
 ) -> None:
     async with session_factory() as db:
+        await _use_context(db, context)
         await db.execute(delete(AuditEvent).where(AuditEvent.workspace_id == context.workspace_id))
         await db.execute(
             delete(ConversationTodoList).where(
@@ -441,3 +448,11 @@ async def _delete_committed_planning_context(
             await db.execute(delete(User).where(User.id == context.user_id))
             await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))
         await db.commit()
+
+
+async def _use_context(db: AsyncSession, context: PlanningRuntimeContext) -> None:
+    await set_session_tenant_context(
+        db,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+    )

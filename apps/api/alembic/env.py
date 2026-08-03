@@ -29,11 +29,15 @@ def get_database_url() -> str:
     x_args = context.get_x_argument(as_dictionary=True)
     raw_url = (
         x_args.get("database_url")
+        or os.environ.get("DATABASE_MAINTENANCE_URL")
         or os.environ.get("DATABASE_URL")
         or config.get_main_option("sqlalchemy.url")
     )
     if not raw_url:
-        raise RuntimeError("DATABASE_URL or sqlalchemy.url must be configured for Alembic")
+        raise RuntimeError(
+            "DATABASE_MAINTENANCE_URL, DATABASE_URL, or sqlalchemy.url must be configured "
+            "for Alembic"
+        )
 
     url = make_url(raw_url)
     if url.drivername == "postgresql":

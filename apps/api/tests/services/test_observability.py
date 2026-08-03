@@ -110,7 +110,8 @@ def _production_settings(**overrides: Any) -> Settings:
         "EMAIL_PROVIDER": "ses",
         "SECRET_PROVIDER": "aws_secrets_manager",
         "CREDENTIAL_MASTER_KEYS": None,
-        "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@db.example.com/postgres?sslmode=require",
+        "DATABASE_URL": "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require",
+        "DATABASE_MAINTENANCE_URL": "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require",
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
         "SECURE_COOKIES": True,
@@ -125,3 +126,21 @@ def _production_settings(**overrides: Any) -> Settings:
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
+
+
+def test_settings_require_distinct_production_database_roles() -> None:
+    with pytest.raises(ValidationError, match="distinct from DATABASE_URL"):
+        _production_settings(
+            DATABASE_MAINTENANCE_URL=(
+                "postgresql+asyncpg://praxis_app:other@db.example.com/maintenance?sslmode=require"
+            )
+        )
+
+
+def test_settings_require_praxis_app_runtime_role() -> None:
+    with pytest.raises(ValidationError, match="praxis_app role"):
+        _production_settings(
+            DATABASE_URL=(
+                "postgresql+asyncpg://owner:postgres@db.example.com/postgres?sslmode=require"
+            )
+        )

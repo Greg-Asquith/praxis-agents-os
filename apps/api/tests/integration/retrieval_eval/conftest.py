@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from core.database import set_session_tenant_context
 from models.kb import KBDocument
 from models.user import User
 from models.workspace import Workspace
@@ -157,6 +158,11 @@ async def retrieval_corpus(
                 ]
             )
             await db.flush()
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace.id,
+                user_id=creator.id,
+            )
 
             documents: dict[str, KBDocument] = {}
             for filename in CORPUS_FILENAMES:
@@ -198,6 +204,11 @@ async def retrieval_corpus(
                 ),
                 is_private=True,
             )
+            await set_session_tenant_context(
+                db,
+                workspace_id=isolation_workspace.id,
+                user_id=isolation_user.id,
+            )
             isolation_document = await _seed_document(
                 db,
                 workspace=isolation_workspace,
@@ -206,6 +217,11 @@ async def retrieval_corpus(
                 content=(
                     "# Isolation\n\nISOLATED-WORKSPACE-BEACON belongs only to the second workspace."
                 ),
+            )
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace.id,
+                user_id=creator.id,
             )
 
             assert documents["product_roadmap.md"].chunk_count > 20

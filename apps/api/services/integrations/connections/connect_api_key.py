@@ -75,6 +75,7 @@ async def connect_api_key(
             auth_mode="api_key",
             secret_reference=reference,
             external_principal_id=reference.name,
+            owner_workspace_id=workspace.id,
         )
         connection = IntegrationConnection(
             provider_key=manifest.provider_key,

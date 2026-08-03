@@ -102,6 +102,8 @@ async def resume_agent_run_stream(
         run_resume_worker(
             run_id=run.id,
             conversation_id=run.conversation_id,
+            workspace_id=workspace.id,
+            user_id=actor.id,
             message_history=suspended_state.message_history,
             deferred_tool_results=deferred_tool_results,
             sink=sink,

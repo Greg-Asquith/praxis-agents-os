@@ -90,10 +90,14 @@ async def test_remote_cancellation_prevents_pending_tool_side_effect(
     release_gate = asyncio.Event()
     durable_cancel_check = dispatch_module.raise_if_agent_run_cancelled
 
-    async def paused_cancel_check(*, run_id):
+    async def paused_cancel_check(*, run_id, workspace_id, user_id):
         gate_reached.set()
         await release_gate.wait()
-        await durable_cancel_check(run_id=run_id)
+        await durable_cancel_check(
+            run_id=run_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
 
     monkeypatch.setattr(
         dispatch_module,

@@ -354,7 +354,11 @@ async def dispatch_tool_execution(
         )
 
     try:
-        await raise_if_agent_run_cancelled(run_id=ctx.deps.run.id)
+        await raise_if_agent_run_cancelled(
+            run_id=ctx.deps.run.id,
+            workspace_id=ctx.deps.workspace.id,
+            user_id=ctx.deps.user.id,
+        )
         result = await handler(args)
     except ApprovalRequired:
         await record_invocation(

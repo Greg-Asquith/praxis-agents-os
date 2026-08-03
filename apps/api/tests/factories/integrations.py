@@ -44,6 +44,8 @@ def build_integration_connection(
     owner_user_id: UUID | None = None,
     **overrides,
 ) -> IntegrationConnection:
+    credential.owner_workspace_id = workspace.id if workspace is not None else None
+    credential.owner_user_id = owner_user_id
     defaults = {
         "id": uuid4(),
         "provider_key": credential.provider_key,

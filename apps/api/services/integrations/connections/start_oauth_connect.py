@@ -79,6 +79,8 @@ async def start_oauth_connect(
     if payload.connection_id is None:
         stub = ExternalCredential(
             id=uuid4(),
+            owner_user_id=actor.id if manifest.owner_scope == "user" else None,
+            owner_workspace_id=workspace.id if manifest.owner_scope == "workspace" else None,
             provider_key=manifest.provider_key,
             auth_mode="oauth",
             principal_fingerprint=f"pending:{connection_id}",

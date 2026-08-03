@@ -4,12 +4,14 @@
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.integration import IntegrationAuthError
 from models.integrations import ExternalCredential
 from services.audit_events import AuditAction, AuditResourceType
+from services.integrations.credentials.utils import resolve_credential_owner
 from services.integrations.utils import (
     compute_principal_fingerprint,
     credential_encryption_key_id,
@@ -26,6 +28,8 @@ async def store_oauth_credential(
     external_principal_id: str,
     external_principal_label: str | None,
     granted_scopes: list[str] | tuple[str, ...],
+    owner_user_id: UUID | None = None,
+    owner_workspace_id: UUID | None = None,
 ) -> ExternalCredential:
     await ensure_credential_keys_loaded(db)
     access_token = token_payload.get("access_token")
@@ -35,7 +39,15 @@ async def store_oauth_credential(
             provider_key=provider_key,
             operation="store_oauth_credential",
         )
+    owner_user_id, owner_workspace_id = resolve_credential_owner(
+        db,
+        provider_key=provider_key,
+        owner_user_id=owner_user_id,
+        owner_workspace_id=owner_workspace_id,
+    )
     credential = ExternalCredential(
+        owner_user_id=owner_user_id,
+        owner_workspace_id=owner_workspace_id,
         provider_key=provider_key,
         auth_mode="oauth",
         principal_fingerprint=compute_principal_fingerprint(provider_key, external_principal_id),

@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from models.integrations import ExternalCredential, IntegrationConnection
 from tests.factories import build_user, build_workspace
@@ -39,7 +39,9 @@ async def test_connection_owner_xor_and_label_checks(db_session) -> None:
         db_session.add(credential)
         await db_session.flush()
         async with db_session.begin_nested():
-            with pytest.raises(IntegrityError):
+            # A missing owner can be rejected by the fail-closed RLS policy
+            # before PostgreSQL evaluates the owner XOR constraint.
+            with pytest.raises((IntegrityError, ProgrammingError)):
                 db_session.add(
                     IntegrationConnection(
                         provider_key="test_provider",

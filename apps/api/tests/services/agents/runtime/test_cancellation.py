@@ -35,7 +35,7 @@ async def test_heartbeat_cancel_detection_cancels_live_target(monkeypatch: pytes
     run_id = uuid4()
     target = asyncio.create_task(asyncio.Event().wait())
 
-    async def fake_status(*, run_id):
+    async def fake_status(*, run_id, **_kwargs):
         return RUN_STATUS_CANCELLED
 
     monkeypatch.setattr(
@@ -45,6 +45,8 @@ async def test_heartbeat_cancel_detection_cancels_live_target(monkeypatch: pytes
 
     delivered = await cancel_target_if_run_cancelled(
         run_id=run_id,
+        workspace_id=uuid4(),
+        user_id=uuid4(),
         owner_instance_id="test-worker",
         cancel_target=target,
     )
@@ -63,7 +65,7 @@ async def test_heartbeat_cancel_detection_dedupes_existing_cancel(
     target.cancel()
     status_read = False
 
-    async def fake_status(*, run_id):
+    async def fake_status(*, run_id, **_kwargs):
         nonlocal status_read
         status_read = True
         return RUN_STATUS_CANCELLED
@@ -75,6 +77,8 @@ async def test_heartbeat_cancel_detection_dedupes_existing_cancel(
 
     delivered = await cancel_target_if_run_cancelled(
         run_id=uuid4(),
+        workspace_id=uuid4(),
+        user_id=uuid4(),
         owner_instance_id="test-worker",
         cancel_target=target,
     )

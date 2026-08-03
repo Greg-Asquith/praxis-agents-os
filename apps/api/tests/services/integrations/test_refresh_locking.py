@@ -7,6 +7,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import delete, select
 
+from core.database import (
+    get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.exceptions.integration import IntegrationAuthError
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
@@ -27,6 +31,11 @@ async def test_concurrent_refresh_hits_provider_once(committed_db_session_factor
         workspace = Workspace(slug=slug, name="Refresh lock", is_personal=False)
         setup.add_all([user, workspace])
         await setup.flush()
+        await set_session_tenant_context(
+            setup,
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
         credential = await store_oauth_credential(
             setup,
             provider_key="test_provider",
@@ -38,6 +47,7 @@ async def test_concurrent_refresh_hits_provider_once(committed_db_session_factor
             external_principal_id=str(uuid4()),
             external_principal_label=None,
             granted_scopes=[],
+            owner_workspace_id=workspace.id,
         )
         credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         connection = IntegrationConnection(
@@ -69,6 +79,11 @@ async def test_concurrent_refresh_hits_provider_once(committed_db_session_factor
 
     async def caller() -> str | None:
         async with committed_db_session_factory() as session:
+            await set_session_tenant_context(
+                session,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             result = await ensure_fresh_credential(
                 session,
                 credential_id=credential_id,
@@ -84,7 +99,7 @@ async def test_concurrent_refresh_hits_provider_once(committed_db_session_factor
         ]
         assert refresh_calls == 1
     finally:
-        async with committed_db_session_factory() as cleanup:
+        async with get_maintenance_async_db_session_factory()() as cleanup:
             await cleanup.execute(
                 delete(Notification).where(Notification.recipient_user_id == user_id)
             )
@@ -104,7 +119,7 @@ async def test_concurrent_refresh_hits_provider_once(committed_db_session_factor
             await cleanup.execute(delete(User).where(User.id == user_id))
             await cleanup.commit()
 
-    async with committed_db_session_factory() as verify:
+    async with get_maintenance_async_db_session_factory()() as verify:
         assert (
             await verify.scalar(
                 select(ExternalCredential.id).where(ExternalCredential.id == credential_id)
@@ -123,6 +138,11 @@ async def test_auth_refresh_failure_survives_request_style_rollback(
         workspace = Workspace(slug=slug, name="Refresh failure", is_personal=False)
         setup.add_all([user, workspace])
         await setup.flush()
+        await set_session_tenant_context(
+            setup,
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
         credential = await store_oauth_credential(
             setup,
             provider_key="test_provider",
@@ -134,6 +154,7 @@ async def test_auth_refresh_failure_survives_request_style_rollback(
             external_principal_id=str(uuid4()),
             external_principal_label=None,
             granted_scopes=[],
+            owner_workspace_id=workspace.id,
         )
         credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         connection = IntegrationConnection(
@@ -154,6 +175,11 @@ async def test_auth_refresh_failure_survives_request_style_rollback(
     try:
         unrelated_workspace_id = uuid4()
         async with committed_db_session_factory() as request_db:
+            await set_session_tenant_context(
+                request_db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             request_db.add(
                 Workspace(
                     id=unrelated_workspace_id,
@@ -169,6 +195,11 @@ async def test_auth_refresh_failure_survives_request_style_rollback(
             await request_db.rollback()
 
         async with committed_db_session_factory() as verify:
+            await set_session_tenant_context(
+                verify,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             durable_credential = await verify.get(ExternalCredential, credential_id)
             durable_connection = await verify.get(IntegrationConnection, connection_id)
             assert durable_credential is not None
@@ -186,7 +217,7 @@ async def test_auth_refresh_failure_survives_request_style_rollback(
                 is not None
             )
     finally:
-        async with committed_db_session_factory() as cleanup:
+        async with get_maintenance_async_db_session_factory()() as cleanup:
             await cleanup.execute(
                 delete(Notification).where(Notification.recipient_user_id == user_id)
             )
@@ -218,6 +249,11 @@ async def test_identity_failure_transition_survives_request_style_rollback(
         workspace = Workspace(slug=slug, name="Identity failure", is_personal=False)
         setup.add_all([user, workspace])
         await setup.flush()
+        await set_session_tenant_context(
+            setup,
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
         membership = WorkspaceMembership(
             workspace_id=workspace.id,
             user_id=user.id,
@@ -234,6 +270,7 @@ async def test_identity_failure_transition_survives_request_style_rollback(
             external_principal_id=str(uuid4()),
             external_principal_label=None,
             granted_scopes=[],
+            owner_user_id=user.id,
         )
         connection = IntegrationConnection(
             provider_key="gmail",
@@ -266,6 +303,11 @@ async def test_identity_failure_transition_survives_request_style_rollback(
     monkeypatch.setattr(module, "fetch_external_principal", rejected_identity)
     try:
         async with committed_db_session_factory() as request_db:
+            await set_session_tenant_context(
+                request_db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             request_user = await request_db.get(User, user_id)
             request_workspace = await request_db.get(Workspace, workspace_id)
             request_membership = await request_db.get(WorkspaceMembership, membership_id)
@@ -283,6 +325,11 @@ async def test_identity_failure_transition_survives_request_style_rollback(
             await request_db.rollback()
 
         async with committed_db_session_factory() as verify:
+            await set_session_tenant_context(
+                verify,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             durable_connection = await verify.get(IntegrationConnection, connection_id)
             assert durable_connection is not None
             assert durable_connection.status == "needs_reauth"
@@ -296,7 +343,7 @@ async def test_identity_failure_transition_survives_request_style_rollback(
                 is not None
             )
     finally:
-        async with committed_db_session_factory() as cleanup:
+        async with get_maintenance_async_db_session_factory()() as cleanup:
             await cleanup.execute(
                 delete(Notification).where(Notification.recipient_user_id == user_id)
             )

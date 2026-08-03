@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import set_session_tenant_context
 from models.embedding_usage import EmbeddingTokenUsage
 from models.workspace import Workspace
 from services.embeddings.get_embedding_usage import get_embedding_usage
@@ -30,6 +31,7 @@ async def test_usage_upsert_increments_and_periods_are_isolated(
     january_later = date(2026, 1, 19)
     february = date(2026, 2, 1)
 
+    await set_session_tenant_context(db_session, workspace_id=first.id)
     assert (
         await record_embedding_usage(
             db_session,
@@ -54,6 +56,7 @@ async def test_usage_upsert_increments_and_periods_are_isolated(
         tokens=3,
         period_month=february,
     )
+    await set_session_tenant_context(db_session, workspace_id=second.id)
     await record_embedding_usage(
         db_session,
         workspace_id=second.id,
@@ -61,6 +64,7 @@ async def test_usage_upsert_increments_and_periods_are_isolated(
         period_month=january,
     )
 
+    await set_session_tenant_context(db_session, workspace_id=first.id)
     assert (
         await get_embedding_usage(
             db_session,
@@ -77,6 +81,7 @@ async def test_usage_upsert_increments_and_periods_are_isolated(
         )
         == 3
     )
+    await set_session_tenant_context(db_session, workspace_id=second.id)
     assert (
         await get_embedding_usage(
             db_session,

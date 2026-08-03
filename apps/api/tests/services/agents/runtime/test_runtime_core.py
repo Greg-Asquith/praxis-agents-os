@@ -1003,6 +1003,8 @@ async def test_worker_renews_lease_during_turn_longer_than_original_ttl(
         run_turn_worker(
             run_id=runtime_context.run_id,
             conversation_id=runtime_context.conversation_id,
+            workspace_id=runtime_context.workspace_id,
+            user_id=runtime_context.user_id,
             user_prompt="Hello",
             sink=sink,
             model=FunctionModel(stream_function=delayed_stream, model_name="delayed"),

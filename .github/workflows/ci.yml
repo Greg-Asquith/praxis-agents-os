@@ -29,6 +29,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/praxis
+      DATABASE_MAINTENANCE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/praxis
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/praxis_test
       ENVIRONMENT: local
       STORAGE_PROVIDER: local_fs

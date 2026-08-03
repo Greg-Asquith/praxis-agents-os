@@ -10,7 +10,8 @@ from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.exceptions.general import AppValidationError, NotFoundError
+from core.database import set_session_tenant_context
+from core.exceptions.general import NotFoundError
 from models.audit_event import AuditEvent
 from models.conversation import Conversation
 from models.integration_context import ActiveContextSelection
@@ -275,7 +276,7 @@ async def test_selection_rejects_dangling_target(
     db_session: AsyncSession,
     context_data: dict[str, object],
 ) -> None:
-    with pytest.raises(AppValidationError):
+    with pytest.raises(NotFoundError):
         await set_active_context_selection(
             db_session,
             request=None,
@@ -292,8 +293,15 @@ async def test_selection_hides_cross_workspace_resource(
 ) -> None:
     other_user = build_user(email=f"foreign-selection-{uuid4().hex}@example.com")
     other_workspace = build_workspace(slug=f"foreign-selection-{uuid4().hex[:8]}")
+    db_session.add_all([other_user, other_workspace])
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=other_workspace.id,
+        user_id=other_user.id,
+    )
     credential = build_external_credential(principal_fingerprint="b" * 64)
-    db_session.add_all([other_user, other_workspace, credential])
+    db_session.add(credential)
     await db_session.flush()
     connection = build_integration_connection(
         credential=credential,
@@ -305,6 +313,11 @@ async def test_selection_hides_cross_workspace_resource(
     resource = build_integration_resource(connection=connection)
     db_session.add(resource)
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=context_data["workspace"].id,
+        user_id=context_data["user"].id,
+    )
 
     with pytest.raises(NotFoundError):
         await set_active_context_selection(

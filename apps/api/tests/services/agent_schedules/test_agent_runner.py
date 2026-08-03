@@ -18,6 +18,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import workers.agent_runner as agent_runner
+from core.database import (
+    get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
@@ -92,6 +96,19 @@ async def _create_due_schedule(
         return schedule_id
 
 
+async def _set_schedule_tenant_context(db: AsyncSession, schedule_id: UUID) -> None:
+    """Resolve test tenant data explicitly before opening an RLS-scoped view."""
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        workspace_id, user_id = (
+            await maintenance_db.execute(
+                select(AgentSchedule.workspace_id, AgentSchedule.user_id).where(
+                    AgentSchedule.id == schedule_id
+                )
+            )
+        ).one()
+    await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
+
+
 @pytest.fixture
 def scheduled_external_write_tool():
     tool_name = "scheduled_external_write"
@@ -123,6 +140,7 @@ async def test_run_once_executes_due_once_schedule(
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
         schedule = await db.get(AgentSchedule, schedule_id)
         assert schedule is not None
         schedule_run = await db.scalar(
@@ -164,6 +182,7 @@ async def test_run_once_suspends_approval_required_schedule(
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
         schedule = await db.get(AgentSchedule, schedule_id)
         assert schedule is not None
         schedule_run = await db.scalar(
@@ -225,6 +244,7 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
     assert attempted >= 1
     assert scheduled_external_write_tool["count"] == 0
     async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
         schedule_run = await db.scalar(
             select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
         )
@@ -239,11 +259,15 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
         suspended_state = load_suspended_run_state(agent_run)
         tool_call_id = suspended_state.pending_tool_call_ids[0]
         run_id = agent_run.id
+        workspace_id = agent_run.workspace_id
+        user_id = agent_run.user_id
         conversation_id = schedule_run.conversation_id
 
     await run_resume_worker(
         run_id=run_id,
         conversation_id=conversation_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
         message_history=suspended_state.message_history,
         deferred_tool_results=DeferredToolResults(approvals={tool_call_id: ToolApproved()}),
         sink=NullSink(run_id=run_id, conversation_id=conversation_id),
@@ -253,6 +277,7 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
     assert scheduled_external_write_tool["count"] == 1
 
     async with committed_db_session_factory() as db:
+        await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         schedule = await db.get(AgentSchedule, schedule_id)
         assert schedule is not None
         schedule_run = await db.scalar(
@@ -282,6 +307,7 @@ async def test_run_once_provider_failure_disables_schedule_and_prunes_conversati
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
         schedule = await db.get(AgentSchedule, schedule_id)
         assert schedule is not None
         schedule_run = await db.scalar(
@@ -310,6 +336,11 @@ async def test_run_once_finalizes_cooperatively_cancelled_schedule(
         assert owner_instance_id == "test-worker"
         assert model is None
         async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=prepared.workspace_id,
+                user_id=prepared.user_id,
+            )
             run = await db.get(AgentRun, prepared.agent_run_id)
             assert run is not None
             await cancel_agent_run(db, run)
@@ -322,6 +353,7 @@ async def test_run_once_finalizes_cooperatively_cancelled_schedule(
 
     assert attempted >= 1
     async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
         schedule = await db.get(AgentSchedule, schedule_id)
         assert schedule is not None
         schedule_run = await db.scalar(
@@ -355,12 +387,14 @@ async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
             cancelled_run_events[run_id] = event
         return event
 
-    async def fake_status(*, run_id):
+    async def fake_status(*, run_id, **_kwargs):
         return RUN_STATUS_CANCELLED if run_id in cancelled_run_ids else None
 
     async def fake_heartbeat(
         *,
         run_id,
+        workspace_id,
+        user_id,
         owner_instance_id: str,
         stop: asyncio.Event,
         cancel_target: asyncio.Task | None = None,
@@ -380,6 +414,8 @@ async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
             return
         await cancel_target_if_run_cancelled(
             run_id=run_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
             owner_instance_id=owner_instance_id,
             cancel_target=cancel_target,
         )
@@ -388,6 +424,11 @@ async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
         assert owner_instance_id == "test-worker"
         assert model is None
         async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=prepared.workspace_id,
+                user_id=prepared.user_id,
+            )
             run = await db.get(AgentRun, prepared.agent_run_id)
             assert run is not None
             await cancel_agent_run(db, run)
@@ -410,7 +451,7 @@ async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
     )
 
     assert attempted >= 2
-    async with committed_db_session_factory() as db:
+    async with get_maintenance_async_db_session_factory()() as db:
         schedule_runs = (
             await db.scalars(
                 select(AgentScheduleRun).where(AgentScheduleRun.schedule_id.in_(schedule_ids))
@@ -460,6 +501,7 @@ async def test_run_once_shutdown_cancel_does_not_mark_schedule_cancelled(
         await run_task
 
     async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
         schedule = await db.get(AgentSchedule, schedule_id)
         assert schedule is not None
         schedule_run = await db.scalar(

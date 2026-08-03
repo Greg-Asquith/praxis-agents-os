@@ -9,11 +9,18 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import workers.job_runner as job_runner
+from core.database import (
+    get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
+)
+from models.agent import Agent
 from models.jobs import Job
+from models.user import User
+from models.workspace import Workspace
 from services.jobs.domain import (
     JOB_STATUS_FAILED,
     JOB_STATUS_PENDING,
@@ -22,6 +29,7 @@ from services.jobs.domain import (
 )
 from services.jobs.enqueue_job import enqueue_job
 from services.jobs.registry import JOB_HANDLERS, job_handler
+from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
 
@@ -65,6 +73,80 @@ async def test_run_once_executes_registered_kind(
         assert job.status == JOB_STATUS_SUCCEEDED
         assert job.payload["handled"] is True
     await _clear_jobs(committed_db_session_factory)
+
+
+async def test_workspace_handler_cannot_read_another_workspaces_rows(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    kind = f"tests.job_runner.rls.{uuid4().hex}"
+
+    async def handler(db: AsyncSession, job: Job) -> None:
+        job.payload = {
+            **job.payload,
+            "visible_agents": await db.scalar(select(func.count()).select_from(Agent)),
+        }
+
+    job_handler(kind=kind, timeout=1.0)(handler)
+    user = build_user(email=f"job-rls-{uuid4().hex}@example.com")
+    workspace_a = build_workspace(slug=f"job-rls-a-{uuid4().hex[:8]}")
+    workspace_b = build_workspace(slug=f"job-rls-b-{uuid4().hex[:8]}")
+    try:
+        await _clear_jobs(committed_db_session_factory)
+        async with committed_db_session_factory() as db:
+            db.add_all([user, workspace_a, workspace_b])
+            await db.commit()
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_a.id,
+                user_id=user.id,
+            )
+            db.add(
+                Agent(
+                    name="Visible",
+                    slug=f"visible-{uuid4().hex[:8]}",
+                    instructions="Visible to workspace A.",
+                    workspace_id=workspace_a.id,
+                    created_by=user.id,
+                )
+            )
+            await db.commit()
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_b.id,
+                user_id=user.id,
+            )
+            db.add(
+                Agent(
+                    name="Hidden",
+                    slug=f"hidden-{uuid4().hex[:8]}",
+                    instructions="Hidden in workspace B.",
+                    workspace_id=workspace_b.id,
+                    created_by=user.id,
+                )
+            )
+            await db.commit()
+            job = await enqueue_job(db, kind=kind, workspace_id=workspace_a.id)
+            job_id = job.id
+            await db.commit()
+
+        assert await job_runner.run_once(owner_instance_id="test-worker") >= 1
+
+        async with get_maintenance_async_db_session_factory()() as maintenance_db:
+            persisted = await maintenance_db.get(Job, job_id)
+            assert persisted is not None
+            assert persisted.payload["visible_agents"] == 1
+    finally:
+        JOB_HANDLERS.pop(kind, None)
+        async with get_maintenance_async_db_session_factory()() as maintenance_db:
+            await maintenance_db.execute(delete(Job).where(Job.kind == kind))
+            await maintenance_db.execute(
+                delete(Agent).where(Agent.workspace_id.in_([workspace_a.id, workspace_b.id]))
+            )
+            await maintenance_db.execute(
+                delete(Workspace).where(Workspace.id.in_([workspace_a.id, workspace_b.id]))
+            )
+            await maintenance_db.execute(delete(User).where(User.id == user.id))
+            await maintenance_db.commit()
 
 
 async def test_handler_exception_retries(

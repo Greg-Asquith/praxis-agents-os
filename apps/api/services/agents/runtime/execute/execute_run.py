@@ -232,6 +232,8 @@ async def execute_run_with_builders(
                 db,
                 event_sink=event_sink,
                 run_id=run_id,
+                workspace_id=run.workspace_id,
+                user_id=run.user_id,
             )
         )
         try:

@@ -52,6 +52,7 @@ async def _authenticated_conversation(
     db.add(
         ConversationMessage(
             conversation_id=conversation.id,
+            workspace_id=workspace.id,
             role="user",
             parts={"parts": [{"part_kind": "user-prompt", "content": "hello"}]},
             sequence=1,

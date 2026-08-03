@@ -7,6 +7,10 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import delete, select
 
+from core.database import (
+    get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.exceptions.integration import IntegrationConnectionError
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
@@ -168,6 +172,11 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
     async with committed_db_session_factory() as setup:
         setup.add_all([user, workspace, membership])
         await setup.flush()
+        await set_session_tenant_context(
+            setup,
+            workspace_id=workspace.id,
+            user_id=user.id,
+        )
         credential = await store_oauth_credential(
             setup,
             provider_key="gmail",
@@ -179,6 +188,7 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
             external_principal_id="old-principal",
             external_principal_label="old@example.com",
             granted_scopes=[],
+            owner_workspace_id=workspace.id,
         )
         connection = build_integration_connection(
             credential=credential,
@@ -209,7 +219,7 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
         remote_revocation_started.set()
         await finish_remote_revocation.wait()
 
-    async def consume_state(_jti: str) -> str:
+    async def consume_state(_db, _jti: str) -> str:
         return "encrypted-verifier"
 
     async def decrypt_verifier(_db, _encrypted_verifier: str) -> str:
@@ -249,6 +259,11 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
 
     async def revoke() -> None:
         async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             await revoke_connection(
                 db,
                 connection_id=connection_id,
@@ -260,6 +275,11 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
 
     async def callback() -> None:
         async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             try:
                 await complete_oauth_callback(
                     db,
@@ -294,6 +314,11 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
             await asyncio.wait_for(callback_task, timeout=5)
 
         async with committed_db_session_factory() as verify:
+            await set_session_tenant_context(
+                verify,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
             persisted = await verify.get(IntegrationConnection, connection_id)
             assert persisted is not None
             assert persisted.status == "revoked"
@@ -317,7 +342,7 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
         if callback_task is not None:
             tasks.append(callback_task)
         await asyncio.gather(*tasks, return_exceptions=True)
-        async with committed_db_session_factory() as cleanup:
+        async with get_maintenance_async_db_session_factory()() as cleanup:
             await cleanup.execute(
                 delete(AuditEvent).where(
                     AuditEvent.resource_id.in_([str(connection_id), str(old_credential_id)])

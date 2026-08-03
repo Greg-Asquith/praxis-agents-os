@@ -21,6 +21,12 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
   new route carries the right RBAC dependency (`require_role`/
   `require_owner`/`require_editor`/`require_read`). This is the highest-risk
   class of defect in the codebase.
+- Every new workspace-confidential table enables and forces Postgres RLS in
+  its creating migration, has both `USING` and `WITH CHECK` enforcement, and
+  is added to the full-table blindness list in
+  `apps/api/tests/security/test_workspace_rls.py`. Runtime paths set the
+  workspace/user GUC contract; cross-workspace maintenance access is explicit
+  and never leaks into a tenant handler.
 - Nothing loosens CORS, cookie, CSRF, rate-limit, or provider validation, and
   no exempt lists were widened, even "temporarily" or for local convenience.
 - No secrets committed or logged. Credentials resolve through the established

@@ -15,7 +15,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import ConflictError, CustomValueError
+from core.database import set_session_tenant_context
+from core.exceptions.general import ConflictError, CustomValueError, NotFoundError
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation
@@ -170,6 +171,11 @@ async def test_create_rejects_conversation_workspace_mismatch(
     db_session.add(other_workspace)
     await db_session.flush()
 
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=run_context.workspace_id,
+        user_id=run_context.user_id,
+    )
     with pytest.raises(ConflictError, match="context is inconsistent"):
         await create_agent_run(
             db_session,
@@ -198,7 +204,12 @@ async def test_create_rejects_agent_workspace_mismatch(
     db_session.add(other_agent)
     await db_session.flush()
 
-    with pytest.raises(ConflictError, match="context is inconsistent"):
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=run_context.workspace_id,
+        user_id=run_context.user_id,
+    )
+    with pytest.raises(NotFoundError, match="Agent not found"):
         await create_agent_run(
             db_session,
             conversation_id=run_context.conversation_id,

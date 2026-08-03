@@ -5,7 +5,7 @@
 import logging
 from uuid import UUID
 
-from core.database import get_async_db_session_factory
+from core.database import get_async_db_session_factory, set_session_tenant_context
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -39,6 +39,11 @@ async def record_integration_operation_audit_event(
     try:
         session_factory = get_async_db_session_factory()
         async with session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=workspace_id,
+                user_id=run.user_id,
+            )
             event = AuditEvent(
                 workspace_id=workspace_id,
                 action=AuditAction.EXECUTE,

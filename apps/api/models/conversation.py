@@ -140,6 +140,9 @@ class ConversationMessage(BaseModel):
     conversation_id = Column(
         UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False, index=True
     )
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+    )
     role = Column(String(32), nullable=False)
     parts = Column(JSONB, nullable=False)
     metadata_json = Column("metadata", JSONB, nullable=True)

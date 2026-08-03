@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from models.audit_event import AuditEvent
 from models.integration_context import IntegrationContextGroup
@@ -151,8 +152,15 @@ async def test_context_group_rejects_foreign_workspace_resource(
 ) -> None:
     other_user = build_user(email=f"foreign-{uuid4().hex}@example.com")
     other_workspace = build_workspace(slug=f"foreign-{uuid4().hex[:8]}")
+    db_session.add_all([other_user, other_workspace])
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=other_workspace.id,
+        user_id=other_user.id,
+    )
     credential = build_external_credential(principal_fingerprint="a" * 64)
-    db_session.add_all([other_user, other_workspace, credential])
+    db_session.add(credential)
     await db_session.flush()
     connection = build_integration_connection(
         credential=credential,
@@ -164,6 +172,11 @@ async def test_context_group_rejects_foreign_workspace_resource(
     foreign_resource = build_integration_resource(connection=connection)
     db_session.add(foreign_resource)
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=context_data["workspace"].id,
+        user_id=context_data["user"].id,
+    )
 
     with pytest.raises(AppValidationError):
         await create_context_group(
@@ -284,12 +297,22 @@ async def test_personal_context_group_rejects_another_workspace_resource(
     )
     db_session.add_all([other_workspace, membership])
     await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=other_workspace.id,
+        user_id=context_data["user"].id,
+    )
     foreign_resource = await _add_resource(
         db_session,
         user=context_data["user"],
         workspace=other_workspace,
         provider_key="google_ads",
         resource_type="google_ads_account",
+    )
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=context_data["user"].id,
     )
 
     with pytest.raises(AppValidationError):

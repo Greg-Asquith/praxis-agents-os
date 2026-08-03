@@ -8,7 +8,11 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    inherit_session_tenant_context,
+)
 from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationConnectionError,
@@ -65,7 +69,7 @@ async def complete_oauth_callback(
         )
 
     jti = str(claims["jti"])
-    encrypted_verifier = await _consume_pending_state(jti)
+    encrypted_verifier = await _consume_pending_state(db, jti)
     if encrypted_verifier is None:
         await _record_invalid_state(ip_address=ip_address, endpoint=endpoint, jti=jti)
         raise IntegrationAuthError("Integration OAuth state is invalid", operation="oauth_state")
@@ -177,6 +181,8 @@ async def complete_oauth_callback(
         external_principal_id=principal.external_id,
         external_principal_label=principal.label,
         granted_scopes=granted,
+        owner_user_id=connection.owner_user_id,
+        owner_workspace_id=connection.owner_workspace_id,
     )
     previous_credential = await db.get(ExternalCredential, expected_credential_id)
     connection.credential_id = credential.id
@@ -308,11 +314,12 @@ async def _record_callback_failure(
     )
 
 
-async def _consume_pending_state(jti: str) -> str | None:
+async def _consume_pending_state(source_db: AsyncSession, jti: str) -> str | None:
     """Consume state in its own committed transaction so provider failures cannot replay it."""
     session_factory = get_async_db_session_factory()
     async with session_factory() as consume_db:
         await configure_async_db_session(consume_db)
+        await inherit_session_tenant_context(consume_db, source_db)
         value = await consume_db.scalar(
             delete(IntegrationOAuthState)
             .where(

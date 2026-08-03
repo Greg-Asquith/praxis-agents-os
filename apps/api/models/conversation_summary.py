@@ -28,6 +28,12 @@ class ConversationSummary(BaseModel):
         nullable=False,
         index=True,
     )
+    workspace_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id"),
+        nullable=False,
+        index=True,
+    )
     watermark_key = Column(
         UUID(as_uuid=True),
         ForeignKey("conversation_messages.id", ondelete="CASCADE"),

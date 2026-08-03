@@ -21,6 +21,7 @@ set +a
 [ -z "$host_azure_openai_api_key" ] || export AZURE_OPENAI_API_KEY="$host_azure_openai_api_key"
 
 export DATABASE_URL="postgresql+asyncpg://postgres:postgres@postgres:5432/postgres"
+export DATABASE_MAINTENANCE_URL="$DATABASE_URL"
 export LOCAL_SECRET_STORE_PATH="/data/secrets.enc.json"
 export LOCAL_STORAGE_ROOT="/data/storage"
 

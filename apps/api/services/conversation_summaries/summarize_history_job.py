@@ -133,6 +133,7 @@ async def summarize_history_job(
 
     summary = ConversationSummary(
         conversation_id=conversation_id,
+        workspace_id=conversation.workspace_id,
         watermark_key=watermark_key,
         content=content,
         source_message_count=prior_source_count + len(source_messages),

@@ -26,6 +26,30 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Maintain the middleware ordering notes in `apps/api/main.py` when adding or
   moving middleware. The comment there is authoritative.
 
+## Database Tenancy
+
+- Runtime API and tenant-owned worker sessions use `DATABASE_URL` and execute
+  as the non-owner `praxis_app` role. Alembic, cross-workspace job claiming,
+  and deliberate system work use `DATABASE_MAINTENANCE_URL`. The two URLs must
+  identify distinct database roles outside local development; local Postgres
+  may use the owner URL for both because runtime transactions immediately
+  `SET LOCAL ROLE praxis_app`.
+- In non-local deployments, provision the `praxis_app` login credential through
+  the database administration layer before migrations. Startup verifies that
+  `DATABASE_URL` authenticates directly as `praxis_app` and that the maintenance
+  connection authenticates as a different, unassumed role.
+- Workspace and user tenancy is carried in SQLAlchemy `session.info` and
+  applied as transaction-local `app.current_workspace_id` and
+  `app.current_user_id` GUCs. Request dependencies establish the context;
+  tenant job handlers must establish it before reading protected rows. New
+  background entrypoints must either set this context or deliberately use a
+  maintenance session.
+- New workspace-confidential tables must enable and force RLS in the same
+  migration that creates them, retain explicit application-layer tenant
+  predicates, and be added to `tests/security/test_workspace_rls.py`.
+  Missing GUCs must continue to fail closed. Never grant the runtime role
+  `BYPASSRLS`, ownership, or superuser privileges.
+
 ## Agent Runtime And Providers
 
 - The agent runtime lives in `services/agents/runtime/`: SSE streaming with a
@@ -142,6 +166,10 @@ Repo-wide expectations are in the root `AGENTS.md`.
   database and sets that variable automatically. Use the fixtures in
   `conftest.py` and the helpers in `tests/factories/` and `tests/support/`
   instead of hand-rolling setup. Live LLM calls are blocked in tests.
+- The shared database fixture runs ordinary test sessions under `praxis_app`.
+  Multi-workspace fixtures must switch tenant context explicitly; use a
+  maintenance session only when the behavior under test is intentionally
+  cross-workspace or system-owned.
 - Live-model behavior evaluations live outside pytest under `apps/api/evals`
   and run only through the explicit `make evals` target with `EVALS_MODEL`
   and matching provider credentials. The same command first runs live memory

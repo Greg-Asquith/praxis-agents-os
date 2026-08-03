@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth.sessions import session_manager
+from core.database import set_session_tenant_context
 from core.exceptions.general import ConflictError
 from models.agent import Agent
 from models.agent_run import AgentRun
@@ -115,6 +116,8 @@ async def test_create_turn_stream_returns_ordered_sse_events(
         *,
         run_id: UUID,
         conversation_id: UUID,
+        workspace_id: UUID,
+        user_id: UUID,
         user_prompt: str,
         attachment_file_ids: Sequence[UUID] = (),
         sink: EventSink,
@@ -187,6 +190,8 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     async def fake_title_worker(
         *,
         conversation_id: UUID,
+        workspace_id: UUID,
+        user_id: UUID,
         user_prompt: str,
         fallback_title: str,
         sink: EventSink,
@@ -214,6 +219,8 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         *,
         run_id: UUID,
         conversation_id: UUID,
+        workspace_id: UUID,
+        user_id: UUID,
         user_prompt: str,
         attachment_file_ids: Sequence[UUID] = (),
         sink: EventSink,
@@ -619,8 +626,9 @@ async def test_mark_conversation_read_rejects_other_workspace_user(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
 ) -> None:
-    _user, _workspace, _agent, conversation, _headers = await _authenticated_context(db_session)
+    user, workspace, _agent, conversation, _headers = await _authenticated_context(db_session)
     conversation.unread = True
+    await db_session.commit()
     (
         _other_user,
         _other_workspace,
@@ -628,7 +636,6 @@ async def test_mark_conversation_read_rejects_other_workspace_user(
         _other_conversation,
         other_headers,
     ) = await _authenticated_context(db_session)
-    await db_session.commit()
 
     response = await db_async_client.post(
         f"/api/v1/conversations/{conversation.id}/read",
@@ -636,6 +643,11 @@ async def test_mark_conversation_read_rejects_other_workspace_user(
     )
 
     assert response.status_code == 404
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=workspace.id,
+        user_id=user.id,
+    )
     await db_session.refresh(conversation)
     assert conversation.unread is True
 
@@ -941,6 +953,7 @@ async def test_create_turn_rejects_duplicate_completed_client_message_id(
     await complete_agent_run(db_session, completed_run)
     existing_message = ConversationMessage(
         conversation_id=conversation.id,
+        workspace_id=workspace.id,
         role="user",
         parts={"kind": "request", "parts": []},
         metadata_json={"source": "pydantic_ai", "agent_run_id": str(completed_run.id)},

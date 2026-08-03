@@ -231,6 +231,7 @@ async def persist_new_messages(
             metadata["approval_results"] = approval_results
         row = ConversationMessage(
             conversation_id=conversation.id,
+            workspace_id=conversation.workspace_id,
             role=role,
             parts=message,
             metadata_json=metadata,

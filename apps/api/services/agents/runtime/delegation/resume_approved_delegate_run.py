@@ -11,7 +11,11 @@ from pydantic import TypeAdapter
 from pydantic_ai import ApprovalRequired, DeferredToolRequests, DeferredToolResults, RunContext
 from sqlalchemy import select
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.exceptions.general import NotFoundError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
@@ -93,6 +97,11 @@ async def resume_approved_delegate_run(
 
     try:
         await configure_async_db_session(session)
+        await set_session_tenant_context(
+            session,
+            workspace_id=ctx.deps.workspace.id,
+            user_id=ctx.deps.user.id,
+        )
         child_run = await session.scalar(
             select(AgentRun).where(
                 AgentRun.id == child_run_id,
@@ -137,6 +146,8 @@ async def resume_approved_delegate_run(
         heartbeat_task = asyncio.create_task(
             heartbeat(
                 child_run.id,
+                ctx.deps.workspace.id,
+                ctx.deps.user.id,
                 owner_id,
                 heartbeat_stop,
                 cancel_target=asyncio.current_task(),

@@ -14,7 +14,11 @@ from pydantic_ai.messages import ModelMessage, UserContent
 from pydantic_ai.models import Model
 from sqlalchemy import select
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.exceptions.general import ConflictError
 from models.agent import AgentScheduleRun
 from models.agent_run import AgentRun
@@ -34,6 +38,8 @@ async def run_turn_worker(
     *,
     run_id: UUID,
     conversation_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     user_prompt: str | Sequence[UserContent],
     attachment_file_ids: Sequence[UUID] = (),
     sink: EventSink,
@@ -52,6 +58,8 @@ async def run_turn_worker(
         heartbeat_task = asyncio.create_task(
             heartbeat_agent_run_lease(
                 run_id=run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
                 owner_instance_id=owner_instance_id,
                 stop=heartbeat_stop,
                 cancel_target=worker_task,
@@ -60,6 +68,11 @@ async def run_turn_worker(
         )
 
         await configure_async_db_session(session)
+        await set_session_tenant_context(
+            session,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         await execute_run(
             session,
             conversation_id=conversation_id,
@@ -92,6 +105,8 @@ async def run_resume_worker(
     *,
     run_id: UUID,
     conversation_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     message_history: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults,
     sink: EventSink,
@@ -109,6 +124,8 @@ async def run_resume_worker(
         heartbeat_task = asyncio.create_task(
             heartbeat_agent_run_lease(
                 run_id=run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
                 owner_instance_id=owner_instance_id,
                 stop=heartbeat_stop,
                 cancel_target=worker_task,
@@ -117,6 +134,11 @@ async def run_resume_worker(
         )
 
         await configure_async_db_session(session)
+        await set_session_tenant_context(
+            session,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         await execute_run(
             session,
             conversation_id=conversation_id,
@@ -142,7 +164,11 @@ async def run_resume_worker(
             with suppress(asyncio.CancelledError):
                 await heartbeat_task
         await session.close()
-        await _finalize_linked_schedule_run(run_id)
+        await _finalize_linked_schedule_run(
+            run_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         await sink.close()
 
 
@@ -150,7 +176,12 @@ def _owner_instance_id() -> str:
     return f"{os.uname().nodename}:{os.getpid()}"
 
 
-async def _finalize_linked_schedule_run(run_id: UUID) -> None:
+async def _finalize_linked_schedule_run(
+    run_id: UUID,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+) -> None:
     """Finalize a schedule run linked to a resumed generic run, if one exists."""
     from services.agent_schedules.finalize_schedule_run_execution import (
         finalize_schedule_run_execution,
@@ -159,6 +190,7 @@ async def _finalize_linked_schedule_run(run_id: UUID) -> None:
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
         await configure_async_db_session(db)
+        await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         schedule_run_id: UUID | None = None
         try:
             run = await db.get(AgentRun, run_id)

@@ -11,7 +11,11 @@ from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import (
+    configure_async_db_session,
+    get_async_db_session_factory,
+    set_session_tenant_context,
+)
 from models.conversation import Conversation
 from services.agents.models import build_model, resolve_naming_model
 from services.agents.runtime.events import EVENT_CONVERSATION_UPDATED
@@ -74,6 +78,8 @@ async def generate_conversation_title(
 async def run_conversation_title_worker(
     *,
     conversation_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
     user_prompt: str,
     fallback_title: str,
     sink: EventSink,
@@ -83,6 +89,11 @@ async def run_conversation_title_worker(
     session = session_factory()
     try:
         await configure_async_db_session(session)
+        await set_session_tenant_context(
+            session,
+            workspace_id=workspace_id,
+            user_id=user_id,
+        )
         title = await _safe_generate_title(user_prompt, fallback_title=fallback_title)
         await _persist_title_update(
             session,

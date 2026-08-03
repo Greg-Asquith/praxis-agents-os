@@ -55,9 +55,10 @@ async def load_selection_resource(
         )
     ).one_or_none()
     if row is None:
-        raise AppValidationError(
-            "Selected integration resource does not exist",
-            field="integration_resource_id",
+        raise NotFoundError(
+            "Integration resource not found",
+            resource_type="integration_resource",
+            resource_id=str(resource_id),
         )
     resource, connection = row
     is_visible = (
@@ -85,9 +86,10 @@ async def load_selection_group(
 ) -> IntegrationContextGroup:
     group = await db.get(IntegrationContextGroup, group_id)
     if group is None:
-        raise AppValidationError(
-            "Selected context group does not exist",
-            field="context_group_id",
+        raise NotFoundError(
+            "Context group not found",
+            resource_type="integration_context_group",
+            resource_id=str(group_id),
         )
     if group.workspace_id != workspace.id:
         raise NotFoundError(

@@ -8,6 +8,10 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import delete, select
 
+from core.database import (
+    get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
+)
 from core.settings import settings
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential
@@ -47,6 +51,8 @@ async def test_rotation_reencrypts_under_newest_key_and_old_key_can_be_dropped(
     new_key = Fernet.generate_key().decode()
     monkeypatch.setattr(settings, "CREDENTIAL_MASTER_KEYS", old_key)
     _reset_credential_key_cache()
+    owner_user_id = uuid4()
+    await set_session_tenant_context(db_session, user_id=owner_user_id)
     credential = await store_oauth_credential(
         db_session,
         provider_key="test_provider",
@@ -54,6 +60,7 @@ async def test_rotation_reencrypts_under_newest_key_and_old_key_can_be_dropped(
         external_principal_id="rotation-principal",
         external_principal_label=None,
         granted_scopes=[],
+        owner_user_id=owner_user_id,
     )
     old_key_id = credential.encryption_key_id
     _limit_rotation_to(monkeypatch, credential.id)
@@ -80,7 +87,9 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
     new_key = Fernet.generate_key().decode()
     monkeypatch.setattr(settings, "CREDENTIAL_MASTER_KEYS", old_key)
     _reset_credential_key_cache()
+    owner_user_id = uuid4()
     async with committed_db_session_factory() as setup:
+        await set_session_tenant_context(setup, user_id=owner_user_id)
         credential = await store_oauth_credential(
             setup,
             provider_key="test_provider",
@@ -88,6 +97,7 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
             external_principal_id="concurrent-revocation",
             external_principal_label=None,
             granted_scopes=[],
+            owner_user_id=owner_user_id,
         )
         await setup.commit()
         credential_id = credential.id
@@ -98,7 +108,7 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
     new_key_id = hashlib.sha256(new_key.encode("ascii")).hexdigest()[:16]
 
     async def rotate() -> None:
-        async with committed_db_session_factory() as rotation_db:
+        async with get_maintenance_async_db_session_factory()() as rotation_db:
             await rotate_credential_encryption(
                 rotation_db,
                 Job(id=uuid4(), kind="rotation"),
@@ -107,6 +117,7 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
 
     try:
         async with committed_db_session_factory() as revoke_db:
+            await set_session_tenant_context(revoke_db, user_id=owner_user_id)
             locked = await revoke_db.scalar(
                 select(ExternalCredential)
                 .where(ExternalCredential.id == credential_id)
@@ -123,6 +134,7 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
             await rotation_task
 
         async with committed_db_session_factory() as verify:
+            await set_session_tenant_context(verify, user_id=owner_user_id)
             revoked = await verify.get(ExternalCredential, credential_id)
             assert revoked is not None
             assert revoked.revoked_at is not None
@@ -130,7 +142,7 @@ async def test_rotation_does_not_restamp_credential_revoked_while_waiting_for_lo
             assert revoked.refresh_token_encrypted is None
             assert revoked.encryption_key_id is None
     finally:
-        async with committed_db_session_factory() as cleanup:
+        async with get_maintenance_async_db_session_factory()() as cleanup:
             await cleanup.execute(
                 delete(AuditEvent).where(
                     (AuditEvent.resource_id == str(credential_id))

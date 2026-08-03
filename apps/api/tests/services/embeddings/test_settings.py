@@ -18,7 +18,10 @@ def _production_settings(**overrides: Any) -> Settings:
         "EMAIL_PROVIDER": "ses",
         "SECRET_PROVIDER": "aws_secrets_manager",
         "DATABASE_URL": (
-            "postgresql+asyncpg://postgres:postgres@db.example.com/postgres?sslmode=require"
+            "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require"
+        ),
+        "DATABASE_MAINTENANCE_URL": (
+            "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
         ),
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEY": Fernet.generate_key().decode(),
