@@ -1,6 +1,7 @@
 // apps/web/src/features/files/file-actions.ts
 
 import { createFileDownload } from "@/features/files/api/download-file"
+import { openSignedResource } from "@/lib/open-signed-resource"
 
 export type WorkspaceFileActionTarget = {
   fileId: string
@@ -11,13 +12,16 @@ export async function openWorkspaceFile(
   file: WorkspaceFileActionTarget,
   { forceDownload }: { forceDownload: boolean }
 ) {
-  const grant = await createFileDownload(file.fileId, { forceDownload })
   if (forceDownload) {
+    const grant = await createFileDownload(file.fileId, { forceDownload })
     triggerDownload(grant.download.url, file.name)
     return
   }
 
-  window.open(grant.download.url, "_blank", "noopener,noreferrer")
+  await openSignedResource(async () => {
+    const grant = await createFileDownload(file.fileId, { forceDownload })
+    return grant.download.url
+  })
 }
 
 function triggerDownload(url: string, filename: string) {

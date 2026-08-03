@@ -23,6 +23,7 @@ import type { SkillDocument } from "@/features/skills/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { contentTypeForFile } from "@/lib/file"
+import { openSignedResource } from "@/lib/open-signed-resource"
 
 const DOCUMENT_NAME_PATTERN = /^[a-z0-9]+(_[a-z0-9]+)*$/
 
@@ -88,8 +89,10 @@ export function SkillDocumentsSection({ skillId }: { skillId: string }) {
     setMessage(null)
 
     try {
-      const signed = await createSkillDocumentDownload(skillId, document.name)
-      window.open(signed.url, "_blank", "noopener,noreferrer")
+      await openSignedResource(async () => {
+        const signed = await createSkillDocumentDownload(skillId, document.name)
+        return signed.url
+      })
     } catch (downloadError) {
       setError(getErrorMessage(downloadError))
     }

@@ -22,6 +22,7 @@ import { ArtifactVersionSelector } from "@/features/artifacts/components/artifac
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
+import { openSignedResource } from "@/lib/open-signed-resource"
 
 export function ArtifactDetail({ artifactId }: { artifactId: string }) {
   const { workspace } = useActiveWorkspace()
@@ -64,8 +65,10 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
     setError(null)
     setOpening(true)
     try {
-      const grant = await createArtifactViewUrl(artifact.id, selectedVersionId)
-      window.open(grant.url, "_blank", "noopener,noreferrer")
+      await openSignedResource(async () => {
+        const grant = await createArtifactViewUrl(artifact.id, selectedVersionId)
+        return grant.url
+      })
     } catch (openError) {
       setError(getErrorMessage(openError))
     } finally {

@@ -33,6 +33,7 @@ import {
   artifactToolResult,
 } from "@/features/conversations/native-tools/artifact-tools"
 import { getErrorMessage } from "@/lib/api/errors"
+import { openSignedResource } from "@/lib/open-signed-resource"
 
 type ArtifactToolRowProps = {
   activity: ToolActivity
@@ -89,8 +90,10 @@ function CompletedArtifactRow({
     setError(null)
     setOpening(true)
     try {
-      const grant = await createArtifactViewUrl(result.artifact_id, result.version_id)
-      window.open(grant.url, "_blank", "noopener,noreferrer")
+      await openSignedResource(async () => {
+        const grant = await createArtifactViewUrl(result.artifact_id, result.version_id)
+        return grant.url
+      })
     } catch (openError) {
       setError(getErrorMessage(openError))
     } finally {
