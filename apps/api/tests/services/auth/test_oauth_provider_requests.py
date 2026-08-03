@@ -11,6 +11,7 @@ from core.auth.oauth_providers.google import GoogleOAuthProvider
 from core.exceptions.oauth import OAuthAuthenticationError, OAuthNetworkError
 
 SENTINEL = "oauth-secret-sentinel"
+OAUTH_RETRY_LOGGER = "core.auth.oauth_providers.retrying"
 
 
 def _install_transport(
@@ -44,9 +45,7 @@ def _assert_safe_diagnostics(
     status_code: int | None = None,
 ) -> None:
     assert SENTINEL not in caplog.text
-    records = [
-        record for record in caplog.records if record.name == "core.auth.oauth_providers.retrying"
-    ]
+    records = [record for record in caplog.records if record.name == OAUTH_RETRY_LOGGER]
     assert records
     assert all(record.exc_info is None for record in records)
     assert any(
@@ -69,7 +68,10 @@ async def test_oauth_provider_4xx_diagnostics_redact_url_and_response_body(
     _install_transport(monkeypatch, handler)
     provider = _provider(monkeypatch, max_retries=0)
 
-    with caplog.at_level(logging.INFO), pytest.raises(OAuthAuthenticationError) as exc_info:
+    with (
+        caplog.at_level(logging.INFO, logger=OAUTH_RETRY_LOGGER),
+        pytest.raises(OAuthAuthenticationError) as exc_info,
+    ):
         await provider._make_request(
             "POST",
             f"https://provider.example/token?credential={SENTINEL}",
@@ -90,7 +92,10 @@ async def test_oauth_provider_5xx_diagnostics_redact_url_and_response_body(
     _install_transport(monkeypatch, handler)
     provider = _provider(monkeypatch, max_retries=1)
 
-    with caplog.at_level(logging.INFO), pytest.raises(OAuthNetworkError) as exc_info:
+    with (
+        caplog.at_level(logging.INFO, logger=OAUTH_RETRY_LOGGER),
+        pytest.raises(OAuthNetworkError) as exc_info,
+    ):
         await provider._make_request(
             "GET",
             f"https://provider.example/token?credential={SENTINEL}",
@@ -111,7 +116,10 @@ async def test_oauth_provider_network_diagnostics_and_problem_detail_are_redacte
     _install_transport(monkeypatch, handler)
     provider = _provider(monkeypatch, max_retries=1)
 
-    with caplog.at_level(logging.INFO), pytest.raises(OAuthNetworkError) as exc_info:
+    with (
+        caplog.at_level(logging.INFO, logger=OAUTH_RETRY_LOGGER),
+        pytest.raises(OAuthNetworkError) as exc_info,
+    ):
         await provider._make_request(
             "GET",
             f"https://provider.example/token?credential={SENTINEL}",
@@ -133,7 +141,10 @@ async def test_oauth_provider_invalid_token_payload_diagnostic_is_redacted(
         request=httpx2.Request("POST", "https://provider.example/token"),
     )
 
-    with caplog.at_level(logging.INFO), pytest.raises(OAuthAuthenticationError):
+    with (
+        caplog.at_level(logging.INFO, logger=OAUTH_RETRY_LOGGER),
+        pytest.raises(OAuthAuthenticationError),
+    ):
         provider._parse_token_payload(response, "test_operation")
 
     assert SENTINEL not in caplog.text
@@ -161,7 +172,7 @@ async def test_google_oauth_revoke_sends_token_in_form_body(
     _install_transport(monkeypatch, handler)
     provider = _provider(monkeypatch, max_retries=0)
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.INFO, logger=OAUTH_RETRY_LOGGER):
         assert await provider.revoke_token(SENTINEL) is True
 
     assert captured_request is not None
@@ -180,7 +191,7 @@ async def test_google_oauth_revoke_failure_logs_no_exception_or_provider_body(
     _install_transport(monkeypatch, handler)
     provider = _provider(monkeypatch, max_retries=0)
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.INFO, logger=OAUTH_RETRY_LOGGER):
         assert await provider.revoke_token(SENTINEL) is False
 
     assert SENTINEL not in caplog.text
