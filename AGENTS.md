@@ -78,6 +78,9 @@ it as pending instead of implying it works.
 - `make check` runs the full gate: backend ruff lint + format check, Alembic
   migration-drift check, database-backed pytest (it provisions the local test
   database automatically), and the complete frontend `pnpm check`.
+- `python3 .github/scripts/dependency_audit.py api` and `python3
+  .github/scripts/dependency_audit.py web` run the same blocking,
+  production-only dependency audits as CI; both require registry access.
 - Per-app commands are listed in each app's AGENTS.md. Before finishing, run
   the most relevant checks for the files you changed and call out any you
   could not run.

@@ -23,6 +23,31 @@ The maintainer aims to acknowledge reports within five working days. This is a
 target, not a service-level agreement. Updates will follow as the issue is
 validated and a remediation path is established.
 
+## Dependency audit policy
+
+CI audits the locked production dependency sets for both applications. The API
+audit exports hashed requirements from `apps/api/uv.lock` without development
+dependencies and fails on every known advisory. The web audit reads
+`apps/web/pnpm-lock.yaml`, includes only production dependencies, and fails on
+high or critical advisories. Scanner or registry failures also fail the job.
+Development-only and low or moderate web findings are reviewed through routine
+dependency maintenance but are not release blockers.
+
+The audit allowlist is
+`.github/dependency-audit-allowlist.json` and should normally remain empty. A
+temporary exception must identify the `ecosystem` (`python` or `npm`), affected
+`package`, scanner `advisory` ID, specific `rationale`, accountable `owner`, and
+an ISO `expires` date. npm exceptions use GHSA IDs. Expiry is exclusive: an
+entry fails CI on its expiry date, before the scanner runs. Remove exceptions
+as soon as the dependency is fixed; extending one requires a fresh risk review.
+
+Run the same audits locally from the repository root:
+
+```bash
+python3 .github/scripts/dependency_audit.py api
+python3 .github/scripts/dependency_audit.py web
+```
+
 ## Deployment hardening
 
 Do not leave registration open while claiming the first super-admin identity.

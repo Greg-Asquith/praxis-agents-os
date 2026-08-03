@@ -100,7 +100,6 @@ jobs:
       - run: pnpm check
 
   audit:
-    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -111,10 +110,7 @@ jobs:
           cache-dependency-glob: apps/api/uv.lock
           prune-cache: true
       - name: Audit API production dependencies
-        working-directory: apps/api
-        run: |
-          uv export --quiet --locked --no-dev --format requirements-txt --output-file requirements-audit.txt
-          uvx pip-audit --disable-pip --require-hashes -r requirements-audit.txt
+        run: python3 .github/scripts/dependency_audit.py api
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           package_json_file: apps/web/package.json
@@ -122,8 +118,7 @@ jobs:
         with:
           node-version: 24
       - name: Audit web production dependencies
-        working-directory: apps/web
-        run: pnpm audit --prod
+        run: python3 .github/scripts/dependency_audit.py web
 
   docker-build:
     runs-on: ubuntu-latest
