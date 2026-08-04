@@ -26,7 +26,7 @@ export function HomeRoute() {
     <div className="flex flex-col gap-6">
       <PageHeader
         actions={
-          <Button render={<Link to="/conversations/new" />}>
+          <Button variant="outline" render={<Link to="/conversations/new" />}>
             <MessageSquarePlusIcon data-icon="inline-start" />
             New Conversation
           </Button>

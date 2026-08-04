@@ -50,7 +50,6 @@ from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.native import web_search as web_search_tools
 from services.agents.runtime.tools.registry import (
     RUNTIME_TOOL_CATALOG,
-    build_runtime_native_capabilities,
     build_runtime_tools,
     list_allowed_tool_definitions,
 )
@@ -163,19 +162,11 @@ def test_web_search_catalog_entry_is_native_function_tool() -> None:
 
 def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> None:
     agent = _agent(tool_names=["web_search", "test_add_numbers"])
-    resolved_model = ResolvedModel(
-        provider=PROVIDER_OPENAI,
-        model="gpt-5.4-mini",
-        settings={},
-        max_steps=10,
-    )
-
-    capabilities = build_runtime_native_capabilities(agent, resolved_model)
     tools = build_runtime_tools(agent)
 
-    assert capabilities == []
     assert [tool.name for tool in tools] == [
         "build_chart",
+        "create_artifact",
         "forget_memory",
         "list_files",
         "read_document",
@@ -184,6 +175,7 @@ def test_web_search_mounts_as_function_tool_and_todos_are_always_active() -> Non
         "save_memory",
         "search_knowledge",
         "search_memory",
+        "update_artifact",
         "update_memory",
         "write_file",
         "write_todos",

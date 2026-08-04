@@ -43,7 +43,6 @@ from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
-    TOOL_KIND_CAPABILITY,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
@@ -166,9 +165,6 @@ def test_runtime_tool_decorator_accepts_explicit_version(cleanup_test_tools) -> 
 def test_registered_function_schemas_are_cached() -> None:
     for definition in RUNTIME_TOOL_CATALOG.values():
         schema = definition.serialized_input_schema()
-        if definition.kind == TOOL_KIND_CAPABILITY:
-            assert schema is None
-            continue
         assert schema is not None
         assert schema is definition.serialized_input_schema()
         assert schema["type"] == "object"
@@ -212,35 +208,6 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             function=_noop,
             description="Read cannot be external.",
             effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
-        ),
-        RuntimeToolDefinition(
-            name="bad_capability_function",
-            function=_noop,
-            description="Capability cannot carry a function.",
-            kind=TOOL_KIND_CAPABILITY,
-            capability_factory=lambda: object(),
-        ),
-        RuntimeToolDefinition(
-            name="bad_capability_factory",
-            function=None,
-            description="Capability needs a factory.",
-            kind=TOOL_KIND_CAPABILITY,
-        ),
-        RuntimeToolDefinition(
-            name="bad_capability_write",
-            function=None,
-            description="Capability cannot be write effect.",
-            kind=TOOL_KIND_CAPABILITY,
-            effect=TOOL_EFFECT_WRITE,
-            capability_factory=lambda: object(),
-            supports_approval=False,
-        ),
-        RuntimeToolDefinition(
-            name="bad_capability_approval",
-            function=None,
-            description="Capability cannot offer approval.",
-            kind=TOOL_KIND_CAPABILITY,
-            capability_factory=lambda: object(),
         ),
         RuntimeToolDefinition(
             name="bad_result_bound",
@@ -712,27 +679,6 @@ def test_allowed_policies_and_tool_build_reject_unsupported_policy() -> None:
     assert exc_info.value.details["allowed_tool_policies"] == [TOOL_POLICY_APPROVAL]
 
 
-def test_capability_definition_cannot_mount_as_function_tool() -> None:
-    definition = RuntimeToolDefinition(
-        name="native_capability",
-        function=None,
-        description="Provider-native capability.",
-        kind=TOOL_KIND_CAPABILITY,
-        capability_factory=lambda: object(),
-        supports_approval=False,
-    )
-
-    validate_definition(definition)
-
-    with pytest.raises(ModelConfigurationError) as exc_info:
-        definition.to_pydantic_tool()
-
-    assert exc_info.value.details == {
-        "tool_name": "native_capability",
-        "tool_kind": TOOL_KIND_CAPABILITY,
-    }
-
-
 def test_validate_tool_configuration_rejects_unsupported_tool_policy(
     cleanup_test_tools,
 ) -> None:
@@ -776,6 +722,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
 
     assert [tool.name for tool in default_tools] == [
         "build_chart",
+        "create_artifact",
         "forget_memory",
         "list_files",
         "read_document",
@@ -784,6 +731,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         "save_memory",
         "search_knowledge",
         "search_memory",
+        "update_artifact",
         "update_memory",
         "write_file",
         "write_todos",
@@ -792,9 +740,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     ]
     assert [tool.requires_approval for tool in default_tools] == [
         False,
-        False,
-        False,
-        False,
+        True,
         False,
         False,
         False,
@@ -805,9 +751,14 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         False,
         True,
         False,
+        False,
+        False,
+        True,
+        False,
     ]
     assert [tool.timeout for tool in default_tools] == [
         5,
+        30,
         15,
         10.0,
         15,
@@ -816,6 +767,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         15,
         30,
         15,
+        30,
         15,
         30.0,
         5,
@@ -836,10 +788,13 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         None,
         None,
         None,
+        None,
+        None,
         1,
     ]
     assert [tool.requires_approval for tool in approved_tools] == [
         False,
+        True,
         False,
         False,
         False,
@@ -848,6 +803,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         False,
         False,
         False,
+        True,
         False,
         False,
         False,
@@ -869,6 +825,7 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
 
     assert [tool.name for tool in tools] == [
         "build_chart",
+        "create_artifact",
         "forget_memory",
         "list_files",
         "read_document",
@@ -877,6 +834,7 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
         "save_memory",
         "search_knowledge",
         "search_memory",
+        "update_artifact",
         "update_memory",
         "write_file",
         "write_todos",

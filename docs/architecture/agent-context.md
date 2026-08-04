@@ -82,11 +82,12 @@ handing an agent a specific document to work on.
   the workspace's document store — inputs and working material, inert bytes
   behind signed downloads. Artifacts are agent-authored deliverables that get
   *rendered*: the CSP-locked serving pipeline, sandboxed previews, and share
-  links exist only for artifacts, which is why artifact tools are
-  external-effect with an approval default while `write_file` is an internal
-  write. The razor: content the user will view, present, or share → artifact;
-  data or documents kept for reference and later work → file. An `.html` File
-  is never served as a page; an `html` artifact is.
+  links exist only for artifacts. `create_artifact` and `update_artifact` are
+  auto-mounted on every agent and remain external-effect tools with an
+  approval default, while `write_file` is an internal write. The razor:
+  content the user will view, present, or share → artifact; data or documents
+  kept for reference and later work → file. An `.html` File is never served as
+  a page; an `html` artifact is.
 
 Use files when the unit of work is *a specific document* — read it, edit it,
 produce it — rather than something the agent should find by searching.

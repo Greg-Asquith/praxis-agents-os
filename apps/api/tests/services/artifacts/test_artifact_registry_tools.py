@@ -26,7 +26,7 @@ from services.artifacts.domain import (
 from services.artifacts.schemas import ArtifactToolResult
 
 
-def test_artifact_tools_are_approval_capable_external_writes() -> None:
+def test_artifact_tools_are_auto_mounted_approval_capable_external_writes() -> None:
     assert [name for name in sorted(RUNTIME_TOOL_CATALOG) if "artifact" in name] == [
         "create_artifact",
         "update_artifact",
@@ -39,6 +39,8 @@ def test_artifact_tools_are_approval_capable_external_writes() -> None:
         assert definition.supports_approval is True
         assert definition.supports_auto is True
         assert definition.output_model is ArtifactToolResult
+        assert definition.configurable is False
+        assert definition.auto_mount is True
     assert "image-ref" not in CREATABLE_ARTIFACT_TYPES
 
 

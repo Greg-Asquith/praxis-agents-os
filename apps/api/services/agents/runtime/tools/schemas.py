@@ -2,7 +2,7 @@
 
 """Pydantic contracts for runtime tool catalog routes."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -101,7 +101,7 @@ class ToolCatalogEntry(BaseModel):
     provider: str
     label: str
     description: str
-    kind: str
+    kind: Literal["function"]
     effect: str
     effect_scope: str
     default_policy: str
@@ -119,7 +119,7 @@ class ToolCatalogEntry(BaseModel):
             provider=definition.provider,
             label=definition.label,
             description=definition.description,
-            kind=definition.kind,
+            kind="function",
             effect=definition.effect,
             effect_scope=definition.effect_scope,
             default_policy=definition.default_policy,

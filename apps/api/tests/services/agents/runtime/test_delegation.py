@@ -185,6 +185,7 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
 
     assert [tool.name for tool in base_tools] == [
         "build_chart",
+        "create_artifact",
         "forget_memory",
         "list_files",
         "read_document",
@@ -193,6 +194,7 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
         "save_memory",
         "search_knowledge",
         "search_memory",
+        "update_artifact",
         "update_memory",
         "write_file",
         "write_todos",
@@ -200,6 +202,7 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
     ]
     assert [tool.name for tool in delegation_tools] == [
         "build_chart",
+        "create_artifact",
         "forget_memory",
         "list_files",
         "read_document",
@@ -208,6 +211,7 @@ async def test_runtime_tools_append_delegation_tools_only_when_enabled(
         "save_memory",
         "search_knowledge",
         "search_memory",
+        "update_artifact",
         "update_memory",
         "write_file",
         "write_todos",

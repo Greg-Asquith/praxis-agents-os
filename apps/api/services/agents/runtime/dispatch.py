@@ -2,13 +2,12 @@
 
 """Runtime tool dispatch choke point.
 
-Hook probe findings, recorded 2026-07-03 against the installed ``pydantic-ai``
-package:
+Hook probe findings, re-verified 2026-08-04 against installed
+``pydantic-ai`` 2.20.0:
 - ``Hooks.on`` exposes ``before_tool_execute``, ``after_tool_execute``,
   ``tool_execute``, ``tool_execute_error``, and ``before_tool_validate``.
 - Tool execution hooks receive ``RunContext.deps`` and fire for tools mounted
-  through the agent ``tools=[...]`` argument and capability ``tools=[...]``
-  (capability coverage re-probed 2026-07-10).
+  through the agent ``tools=[...]`` argument and capability ``tools=[...]``.
 - Raising ``ModelRetry`` from a tool-execution hook prevents the tool body from
   running and returns a model-visible retry message.
 - Approval-required tools do not fire execution hooks when the approval request

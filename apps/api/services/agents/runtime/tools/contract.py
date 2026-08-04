@@ -17,7 +17,6 @@ from services.agents.runtime.context import RuntimeDeps
 ToolPolicy = Literal["auto", "approval"]
 ToolEffect = Literal["read", "write"]
 ToolEffectScope = Literal["internal", "external"]
-ToolKind = Literal["function", "capability"]
 ToolFieldFormat = Literal[
     "text",
     "multiline",
@@ -42,9 +41,6 @@ VALID_TOOL_EFFECTS = frozenset({TOOL_EFFECT_READ, TOOL_EFFECT_WRITE})
 TOOL_EFFECT_SCOPE_INTERNAL: ToolEffectScope = "internal"
 TOOL_EFFECT_SCOPE_EXTERNAL: ToolEffectScope = "external"
 VALID_TOOL_EFFECT_SCOPES = frozenset({TOOL_EFFECT_SCOPE_INTERNAL, TOOL_EFFECT_SCOPE_EXTERNAL})
-TOOL_KIND_FUNCTION: ToolKind = "function"
-TOOL_KIND_CAPABILITY: ToolKind = "capability"
-VALID_TOOL_KINDS = frozenset({TOOL_KIND_FUNCTION, TOOL_KIND_CAPABILITY})
 _TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 _INTEGRATION_PARAMETER_DENYLIST = frozenset(
@@ -149,12 +145,11 @@ class RuntimeToolDefinition:
     """One Python-owned runtime tool entry."""
 
     name: str
-    function: Callable[..., Any] | None
+    function: Callable[..., Any]
     description: str
     version: int = 1
     provider: str = "core"
     label: str = ""
-    kind: ToolKind = TOOL_KIND_FUNCTION
     effect: ToolEffect = TOOL_EFFECT_READ
     effect_scope: ToolEffectScope = TOOL_EFFECT_SCOPE_INTERNAL
     takes_ctx: bool = False
@@ -170,8 +165,6 @@ class RuntimeToolDefinition:
     """Declared output contract, enforced by the tool dispatch layer."""
     max_result_chars: int | None = None
     """Optional free-text result bound overriding the runtime default."""
-    capability_factory: Callable[[], Any] | None = None
-    supported_model_providers: frozenset[str] | None = None
     configurable: bool = True
     auto_mount: bool = False
     integration_binding: IntegrationToolBinding | None = None
@@ -202,20 +195,13 @@ class RuntimeToolDefinition:
     def serialized_input_schema(self) -> dict[str, Any] | None:
         """Return the registration-cached JSON schema for function arguments."""
         if not self._input_schema_cached:
-            schema = None
-            if self.kind == TOOL_KIND_FUNCTION and self.function is not None:
-                schema = self.to_pydantic_tool().tool_def.parameters_json_schema
+            schema = self.to_pydantic_tool().tool_def.parameters_json_schema
             object.__setattr__(self, "_serialized_input_schema", schema)
             object.__setattr__(self, "_input_schema_cached", True)
         return self._serialized_input_schema
 
     def to_pydantic_tool(self, *, policy: ToolPolicy | None = None) -> Tool[RuntimeDeps]:
         """Build the Pydantic AI tool instance for one turn."""
-        if self.kind != TOOL_KIND_FUNCTION or self.function is None:
-            raise ModelConfigurationError(
-                "Runtime capability entries cannot be mounted as function tools",
-                details={"tool_name": self.name, "tool_kind": self.kind},
-            )
         resolved_policy = policy or self.default_policy
         if resolved_policy not in VALID_TOOL_POLICIES:
             raise ModelConfigurationError(
@@ -260,8 +246,6 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool description must not be blank")
     if definition.version < 1:
         raise RuntimeError("Runtime tool version must be greater than or equal to one")
-    if definition.kind not in VALID_TOOL_KINDS:
-        raise RuntimeError("Runtime tool kind must be function or capability")
     if definition.effect not in VALID_TOOL_EFFECTS:
         raise RuntimeError("Runtime tool effect must be read or write")
     if definition.effect_scope not in VALID_TOOL_EFFECT_SCOPES:
@@ -275,43 +259,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Read runtime tools must use internal effect scope")
     if definition.effect == TOOL_EFFECT_READ and definition.effect_scope_resolver is not None:
         raise RuntimeError("Read runtime tools cannot provide an effect scope resolver")
-    if definition.supported_model_providers is not None:
-        for provider in definition.supported_model_providers:
-            if not _TOOL_PROVIDER_PATTERN.fullmatch(provider):
-                raise RuntimeError(
-                    "Runtime tool supported model providers must be lowercase tokens"
-                )
     _validate_integration_binding(definition)
     _validate_presentation(definition)
-
-    if definition.kind == TOOL_KIND_FUNCTION:
-        if definition.function is None:
-            raise RuntimeError("Function runtime tools must provide a function")
-        if definition.capability_factory is not None:
-            raise RuntimeError("Function runtime tools cannot provide a capability factory")
-    else:
-        if definition.function is not None:
-            raise RuntimeError("Capability runtime tools cannot provide a function")
-        if definition.capability_factory is None:
-            raise RuntimeError("Capability runtime tools must provide a capability factory")
-        if definition.effect != TOOL_EFFECT_READ:
-            raise RuntimeError("Capability runtime tools must be read-only")
-        if definition.takes_ctx:
-            raise RuntimeError("Capability runtime tools cannot take RunContext")
-        if definition.timeout is not None:
-            raise RuntimeError("Capability runtime tools cannot set a function timeout")
-        if definition.max_retries is not None:
-            raise RuntimeError("Capability runtime tools cannot set function retries")
-        if definition.args_validator is not None:
-            raise RuntimeError("Capability runtime tools cannot set an args validator")
-        if definition.effect_scope_resolver is not None:
-            raise RuntimeError("Capability runtime tools cannot set an effect scope resolver")
-        if definition.output_model is not None:
-            raise RuntimeError("Capability runtime tools cannot set an output model")
-        if definition.supports_approval:
-            raise RuntimeError("Capability runtime tools cannot support approval policy")
-        if definition.auto_mount:
-            raise RuntimeError("Capability runtime tools cannot be auto-mounted")
 
     allowed_policies = definition.allowed_policies()
     if not allowed_policies:
@@ -332,8 +281,6 @@ def _validate_integration_binding(definition: RuntimeToolDefinition) -> None:
     binding = definition.integration_binding
     if binding is None:
         return
-    if definition.kind != TOOL_KIND_FUNCTION or definition.function is None:
-        raise RuntimeError("Integration bindings require function runtime tools")
     if not binding.provider_keys or not binding.resource_types:
         raise RuntimeError("Integration bindings require provider keys and resource types")
 

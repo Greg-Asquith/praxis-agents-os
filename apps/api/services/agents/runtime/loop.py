@@ -31,10 +31,7 @@ from services.agents.runtime.prompt import (
     runtime_prompt_blocks,
 )
 from services.agents.runtime.skills import build_skill_capabilities
-from services.agents.runtime.tools import (
-    build_runtime_native_capabilities,
-    build_runtime_tools,
-)
+from services.agents.runtime.tools import build_runtime_tools
 
 if TYPE_CHECKING:
     from services.integrations.context.domain import ResolvedActiveContext
@@ -103,12 +100,6 @@ def build_runtime_agent(
                     agent,
                     history_compaction=history_compaction,
                     trimmer_out=trimmer_out,
-                ),
-                *build_runtime_native_capabilities(
-                    agent,
-                    resolved_model,
-                    workspace=workspace,
-                    disabled_tool_names=disabled_tool_names,
                 ),
                 *build_skill_capabilities(skills),
             ],

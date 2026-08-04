@@ -41,6 +41,8 @@ from services.artifacts.schemas import ArtifactToolResult
     takes_ctx=True,
     timeout=30,
     output_model=ArtifactToolResult,
+    configurable=False,
+    auto_mount=True,
     presentation=ToolPresentation(
         icon="file-plus",
         running_label="Creating artifact",
@@ -105,6 +107,8 @@ async def create_artifact(
     takes_ctx=True,
     timeout=30,
     output_model=ArtifactToolResult,
+    configurable=False,
+    auto_mount=True,
     presentation=ToolPresentation(
         icon="file",
         running_label="Updating artifact",

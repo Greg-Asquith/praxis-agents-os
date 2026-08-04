@@ -11,7 +11,9 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
-from services.storage.enqueue_workspace_bucket_provisioning import enqueue_workspace_bucket_provisioning
+from services.storage.enqueue_workspace_bucket_provisioning import (
+    enqueue_workspace_bucket_provisioning,
+)
 from services.workspaces.schemas import WorkspaceCreateRequest, WorkspaceRead
 from utils.slugify import slugify
 

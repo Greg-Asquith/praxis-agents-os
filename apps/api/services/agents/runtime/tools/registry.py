@@ -4,25 +4,22 @@
 """Python-owned catalog of built-in runtime tools."""
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from models.agent import Agent
-from services.agents.models.domain import ModelConfigurationError, ResolvedModel
+from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
-    TOOL_KIND_CAPABILITY,
-    TOOL_KIND_FUNCTION,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     IntegrationToolBinding,
     RuntimeToolDefinition,
     ToolEffect,
     ToolEffectScope,
-    ToolKind,
     ToolPolicy,
     ToolPresentation,
     validate_definition,
@@ -72,7 +69,6 @@ def runtime_tool(
     version: int = 1,
     provider: str = "core",
     label: str | None = None,
-    kind: ToolKind = TOOL_KIND_FUNCTION,
     effect: ToolEffect = TOOL_EFFECT_READ,
     effect_scope: ToolEffectScope = "internal",
     default_policy: ToolPolicy = TOOL_POLICY_AUTO,
@@ -86,8 +82,6 @@ def runtime_tool(
     effect_scope_resolver: Callable[[dict[str, Any]], ToolEffectScope] | None = None,
     output_model: type[BaseModel] | None = None,
     max_result_chars: int | None = None,
-    capability_factory: Callable[[], Any] | None = None,
-    supported_model_providers: Iterable[str] | None = None,
     configurable: bool = True,
     auto_mount: bool = False,
     integration_binding: IntegrationToolBinding | None = None,
@@ -97,17 +91,13 @@ def runtime_tool(
     """Register a Python function as a runtime tool."""
 
     def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
-        normalized_supported_providers = (
-            frozenset(supported_model_providers) if supported_model_providers is not None else None
-        )
         definition = RuntimeToolDefinition(
             name=name,
-            function=function if kind == TOOL_KIND_FUNCTION else None,
+            function=function,
             description=description,
             version=version,
             provider=provider,
             label=label or _derive_label(name),
-            kind=kind,
             effect=effect,
             effect_scope=effect_scope,
             takes_ctx=takes_ctx,
@@ -121,8 +111,6 @@ def runtime_tool(
             effect_scope_resolver=effect_scope_resolver,
             output_model=output_model,
             max_result_chars=max_result_chars,
-            capability_factory=capability_factory,
-            supported_model_providers=normalized_supported_providers,
             configurable=configurable,
             auto_mount=auto_mount,
             integration_binding=integration_binding,
@@ -152,7 +140,7 @@ def build_runtime_tools(
                 RUNTIME_TOOL_CATALOG.values(),
                 key=lambda tool_definition: tool_definition.name,
             )
-            if definition.auto_mount and definition.kind == TOOL_KIND_FUNCTION
+            if definition.auto_mount
         ),
         *_normalize_tool_names(agent.tool_names or []),
     ]
@@ -174,8 +162,6 @@ def build_runtime_tools(
                 agent.id,
                 extra={"agent_id": str(agent.id), "skipped_tool_names": [name]},
             )
-            continue
-        if definition.kind == TOOL_KIND_CAPABILITY:
             continue
         if definition.integration_binding is not None and (
             active_context is None
@@ -212,53 +198,6 @@ def build_runtime_tools(
         tools.extend(build_delegation_tools())
 
     return tools
-
-
-def build_runtime_native_capabilities(
-    agent: Agent,
-    resolved_model: ResolvedModel,
-    *,
-    workspace: object | None = None,
-    disabled_tool_names: frozenset[str] = frozenset(),
-) -> list[Any]:
-    """Resolve an agent row's configured capability-backed runtime entries."""
-    tool_names = _normalize_tool_names(agent.tool_names or [])
-    capabilities = []
-
-    for name in tool_names:
-        definition = RUNTIME_TOOL_CATALOG.get(name)
-        if definition is None or definition.kind != TOOL_KIND_CAPABILITY:
-            continue
-        if not permissions.is_tool_allowed(
-            definition,
-            workspace=workspace,
-            agent=agent,
-            disabled_tool_names=disabled_tool_names,
-        ):
-            logger.info(
-                "Skipping disallowed native capability %s for agent %s",
-                definition.name,
-                agent.id,
-            )
-            continue
-        if (
-            definition.supported_model_providers is not None
-            and resolved_model.provider not in definition.supported_model_providers
-        ):
-            logger.info(
-                "Skipping native capability %s for provider %s",
-                definition.name,
-                resolved_model.provider,
-            )
-            continue
-        if definition.capability_factory is None:
-            raise ModelConfigurationError(
-                "Runtime capability entry is missing a factory",
-                details={"tool_name": definition.name},
-            )
-        capabilities.append(definition.capability_factory())
-
-    return capabilities
 
 
 def list_allowed_tool_definitions(

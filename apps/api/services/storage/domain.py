@@ -13,6 +13,7 @@ from services.storage.paths import validate_object_key
 
 PROVISION_WORKSPACE_BUCKET_KIND = "storage.provision_workspace_bucket"
 
+
 class StorageBucket(StrEnum):
     """Logical application storage buckets."""
 
