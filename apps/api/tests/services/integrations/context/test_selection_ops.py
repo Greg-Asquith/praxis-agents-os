@@ -23,7 +23,9 @@ from services.integrations.context import (
     set_active_context_selection,
 )
 from services.integrations.context.schemas import (
+    MAX_ACTIVE_CONTEXT_TARGETS,
     ActiveContextSelectionValue,
+    ActiveContextTargets,
     ContextGroupCreateRequest,
 )
 from tests.factories import (
@@ -35,6 +37,10 @@ from tests.factories import (
     build_workspace,
     build_workspace_membership,
 )
+
+
+def _targets(*targets: ActiveContextSelectionValue) -> ActiveContextTargets:
+    return ActiveContextTargets(targets=list(targets))
 
 
 def test_selection_value_is_a_strict_discriminated_shape() -> None:
@@ -65,7 +71,23 @@ def test_selection_value_is_a_strict_discriminated_shape() -> None:
         )
 
 
-async def test_selection_upsert_keeps_one_row_and_clear_audits(
+def test_target_set_is_capped_and_rejects_duplicates() -> None:
+    resource = ActiveContextSelectionValue.for_resource(uuid4())
+
+    with pytest.raises(ValidationError):
+        ActiveContextTargets.model_validate({})
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
+        ActiveContextTargets(targets=[resource, resource])
+    with pytest.raises(ValidationError):
+        ActiveContextTargets(
+            targets=[
+                ActiveContextSelectionValue.for_resource(uuid4())
+                for _ in range(MAX_ACTIVE_CONTEXT_TARGETS + 1)
+            ]
+        )
+
+
+async def test_selection_replace_set_and_clear_audit_once_per_operation(
     db_session: AsyncSession,
     context_data: dict[str, object],
 ) -> None:
@@ -75,7 +97,10 @@ async def test_selection_upsert_keeps_one_row_and_clear_audits(
         actor=context_data["user"],
         workspace=context_data["workspace"],
         conversation_id=context_data["conversation"].id,
-        selection=ActiveContextSelectionValue.for_resource(context_data["first"].id),
+        targets=_targets(
+            ActiveContextSelectionValue.for_resource(context_data["first"].id),
+            ActiveContextSelectionValue.for_resource(context_data["second"].id),
+        ),
     )
     second = await set_active_context_selection(
         db_session,
@@ -83,10 +108,15 @@ async def test_selection_upsert_keeps_one_row_and_clear_audits(
         actor=context_data["user"],
         workspace=context_data["workspace"],
         conversation_id=context_data["conversation"].id,
-        selection=ActiveContextSelectionValue.for_resource(context_data["second"].id),
+        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["second"].id)),
     )
-    assert second.id == first.id
-    assert second.integration_resource_id == context_data["second"].id
+    assert {selection.integration_resource_id for selection in first} == {
+        context_data["first"].id,
+        context_data["second"].id,
+    }
+    assert [selection.integration_resource_id for selection in second] == [
+        context_data["second"].id
+    ]
     count = await db_session.scalar(
         select(func.count())
         .select_from(ActiveContextSelection)
@@ -108,7 +138,7 @@ async def test_selection_upsert_keeps_one_row_and_clear_audits(
             workspace=context_data["workspace"],
             conversation_id=context_data["conversation"].id,
         )
-        is None
+        == []
     )
     actions = (
         await db_session.scalars(
@@ -121,6 +151,63 @@ async def test_selection_upsert_keeps_one_row_and_clear_audits(
         )
     ).all()
     assert actions == ["update", "update", "delete"]
+    replace_events = (
+        await db_session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.resource_type == "active_context_selection",
+                AuditEvent.action == "update",
+                AuditEvent.workspace_id == context_data["workspace"].id,
+            )
+            .order_by(AuditEvent.occurred_at)
+        )
+    ).all()
+    assert replace_events[0].resource_id == str(context_data["conversation"].id)
+    assert {
+        target["integration_resource_id"] for target in replace_events[0].details["targets"]
+    } == {str(context_data["first"].id), str(context_data["second"].id)}
+
+
+async def test_empty_target_set_clears_with_one_replace_audit(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    await set_active_context_selection(
+        db_session,
+        request=None,
+        actor=context_data["user"],
+        workspace=context_data["workspace"],
+        conversation_id=context_data["conversation"].id,
+        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["first"].id)),
+    )
+    await set_active_context_selection(
+        db_session,
+        request=None,
+        actor=context_data["user"],
+        workspace=context_data["workspace"],
+        conversation_id=context_data["conversation"].id,
+        targets=ActiveContextTargets(targets=[]),
+    )
+
+    assert (
+        await get_active_context_selection(
+            db_session,
+            actor=context_data["user"],
+            workspace=context_data["workspace"],
+            conversation_id=context_data["conversation"].id,
+        )
+        == []
+    )
+    latest = await db_session.scalar(
+        select(AuditEvent)
+        .where(
+            AuditEvent.resource_type == "active_context_selection",
+            AuditEvent.action == "update",
+        )
+        .order_by(AuditEvent.occurred_at.desc())
+    )
+    assert latest is not None
+    assert latest.details["targets"] == []
 
 
 async def test_selection_accepts_a_workspace_group(
@@ -137,14 +224,15 @@ async def test_selection_accepts_a_workspace_group(
             resource_ids=[context_data["first"].id],
         ),
     )
-    selection = await set_active_context_selection(
+    selections = await set_active_context_selection(
         db_session,
         request=None,
         actor=context_data["user"],
         workspace=context_data["workspace"],
         conversation_id=context_data["conversation"].id,
-        selection=ActiveContextSelectionValue.for_context_group(group.id),
+        targets=_targets(ActiveContextSelectionValue.for_context_group(group.id)),
     )
+    selection = selections[0]
     assert selection.context_group_id == group.id
     assert selection.integration_resource_id is None
 
@@ -167,7 +255,7 @@ async def test_each_conversation_restores_its_own_active_context(
         actor=context_data["user"],
         workspace=context_data["workspace"],
         conversation_id=context_data["conversation"].id,
-        selection=ActiveContextSelectionValue.for_resource(context_data["first"].id),
+        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["first"].id)),
     )
     await set_active_context_selection(
         db_session,
@@ -175,7 +263,7 @@ async def test_each_conversation_restores_its_own_active_context(
         actor=context_data["user"],
         workspace=context_data["workspace"],
         conversation_id=other_conversation.id,
-        selection=ActiveContextSelectionValue.for_resource(context_data["second"].id),
+        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["second"].id)),
     )
 
     first_selection = await get_active_context_selection(
@@ -190,10 +278,12 @@ async def test_each_conversation_restores_its_own_active_context(
         workspace=context_data["workspace"],
         conversation_id=other_conversation.id,
     )
-    assert first_selection is not None
-    assert second_selection is not None
-    assert first_selection.integration_resource_id == context_data["first"].id
-    assert second_selection.integration_resource_id == context_data["second"].id
+    assert [selection.integration_resource_id for selection in first_selection] == [
+        context_data["first"].id
+    ]
+    assert [selection.integration_resource_id for selection in second_selection] == [
+        context_data["second"].id
+    ]
 
 
 async def test_concurrent_selection_upserts_never_create_duplicate_rows(
@@ -243,7 +333,7 @@ async def test_concurrent_selection_upserts_never_create_duplicate_rows(
                 actor=user,
                 workspace=workspace,
                 conversation_id=conversation.id,
-                selection=ActiveContextSelectionValue.for_resource(resource_id),
+                targets=_targets(ActiveContextSelectionValue.for_resource(resource_id)),
             )
             await db.commit()
 
@@ -276,6 +366,14 @@ async def test_selection_rejects_dangling_target(
     db_session: AsyncSession,
     context_data: dict[str, object],
 ) -> None:
+    await set_active_context_selection(
+        db_session,
+        request=None,
+        actor=context_data["user"],
+        workspace=context_data["workspace"],
+        conversation_id=context_data["conversation"].id,
+        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["second"].id)),
+    )
     with pytest.raises(NotFoundError):
         await set_active_context_selection(
             db_session,
@@ -283,8 +381,21 @@ async def test_selection_rejects_dangling_target(
             actor=context_data["user"],
             workspace=context_data["workspace"],
             conversation_id=context_data["conversation"].id,
-            selection=ActiveContextSelectionValue.for_resource(uuid4()),
+            targets=_targets(
+                ActiveContextSelectionValue.for_resource(context_data["first"].id),
+                ActiveContextSelectionValue.for_resource(uuid4()),
+            ),
         )
+
+    assert [
+        selection.integration_resource_id
+        for selection in await get_active_context_selection(
+            db_session,
+            actor=context_data["user"],
+            workspace=context_data["workspace"],
+            conversation_id=context_data["conversation"].id,
+        )
+    ] == [context_data["second"].id]
 
 
 async def test_selection_hides_cross_workspace_resource(
@@ -326,5 +437,43 @@ async def test_selection_hides_cross_workspace_resource(
             actor=context_data["user"],
             workspace=context_data["workspace"],
             conversation_id=context_data["conversation"].id,
-            selection=ActiveContextSelectionValue.for_resource(resource.id),
+            targets=_targets(ActiveContextSelectionValue.for_resource(resource.id)),
+        )
+
+
+async def test_selection_hides_another_users_personal_resource(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    other_user = build_user(email=f"personal-context-{uuid4().hex}@example.com")
+    db_session.add(other_user)
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=context_data["workspace"].id,
+        user_id=other_user.id,
+    )
+    credential = build_external_credential(principal_fingerprint="c" * 64)
+    connection = build_integration_connection(
+        credential=credential,
+        user=other_user,
+        owner_user_id=other_user.id,
+    )
+    resource = build_integration_resource(connection=connection)
+    db_session.add_all([credential, connection, resource])
+    await db_session.flush()
+    await set_session_tenant_context(
+        db_session,
+        workspace_id=context_data["workspace"].id,
+        user_id=context_data["user"].id,
+    )
+
+    with pytest.raises(NotFoundError):
+        await set_active_context_selection(
+            db_session,
+            request=None,
+            actor=context_data["user"],
+            workspace=context_data["workspace"],
+            conversation_id=context_data["conversation"].id,
+            targets=_targets(ActiveContextSelectionValue.for_resource(resource.id)),
         )

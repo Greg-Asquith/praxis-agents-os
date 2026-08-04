@@ -104,7 +104,7 @@ async def create_conversation_stream(
             actor=actor,
             workspace=workspace,
             conversation_id=conversation.id,
-            selection=payload.active_context,
+            targets=payload.active_context,
         )
     await create_conversation_file_references(
         db,

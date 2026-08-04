@@ -55,13 +55,18 @@ async def test_context_routes_round_trip_selection_and_group(
     selected = await db_async_client.put(
         f"/api/v1/integrations/conversations/{conversation.id}/context",
         headers=integration_identity["headers"],
-        json={"type": "context_group", "context_group_id": group["id"]},
+        json={
+            "targets": [
+                {"type": "context_group", "context_group_id": group["id"]},
+                {"type": "resource", "integration_resource_id": str(resource.id)},
+            ]
+        },
     )
     assert selected.status_code == 200, selected.text
-    assert selected.json()["selection"] == {
-        "type": "context_group",
-        "context_group_id": group["id"],
-    }
+    assert selected.json()["targets"] == [
+        {"type": "context_group", "context_group_id": group["id"]},
+        {"type": "resource", "integration_resource_id": str(resource.id)},
+    ]
     other_conversation = build_conversation(
         user=integration_identity["user"],
         workspace=integration_identity["workspace"],
@@ -72,7 +77,7 @@ async def test_context_routes_round_trip_selection_and_group(
     other_selected = await db_async_client.put(
         f"/api/v1/integrations/conversations/{other_conversation.id}/context",
         headers=integration_identity["headers"],
-        json={"type": "resource", "integration_resource_id": str(resource.id)},
+        json={"targets": [{"type": "resource", "integration_resource_id": str(resource.id)}]},
     )
     assert other_selected.status_code == 200, other_selected.text
     fetched = await db_async_client.get(
@@ -87,6 +92,14 @@ async def test_context_routes_round_trip_selection_and_group(
     )
     assert other_fetched.status_code == 200
     assert other_fetched.json() == other_selected.json()
+
+    emptied = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+        json={"targets": []},
+    )
+    assert emptied.status_code == 200
+    assert emptied.json() == {"targets": [], "entries": [], "unavailable": []}
 
     cleared = await db_async_client.delete(
         f"/api/v1/integrations/conversations/{conversation.id}/context",
@@ -122,7 +135,7 @@ async def test_context_route_allows_read_only_member_to_manage_own_selection(
     selected = await db_async_client.put(
         f"/api/v1/integrations/conversations/{reader_conversation.id}/context",
         headers=headers,
-        json={"type": "resource", "integration_resource_id": str(resource.id)},
+        json={"targets": [{"type": "resource", "integration_resource_id": str(resource.id)}]},
     )
     assert selected.status_code == 200
     cleared = await db_async_client.delete(
@@ -155,8 +168,12 @@ async def test_context_route_hides_cross_workspace_resource(
         f"/api/v1/integrations/conversations/{conversation.id}/context",
         headers=integration_identity["headers"],
         json={
-            "type": "resource",
-            "integration_resource_id": str(foreign_resource.id),
+            "targets": [
+                {
+                    "type": "resource",
+                    "integration_resource_id": str(foreign_resource.id),
+                }
+            ]
         },
     )
     assert response.status_code == 404, response.text

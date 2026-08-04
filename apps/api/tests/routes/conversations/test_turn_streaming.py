@@ -260,8 +260,12 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
             "user_prompt": "Plan the launch",
             "client_message_id": "first-message",
             "active_context": {
-                "type": "resource",
-                "integration_resource_id": str(resource.id),
+                "targets": [
+                    {
+                        "type": "resource",
+                        "integration_resource_id": str(resource.id),
+                    }
+                ]
             },
         },
     ) as response:
@@ -369,8 +373,12 @@ async def test_read_only_member_can_create_conversation_with_active_context(
             "agent_id": str(agent.id),
             "user_prompt": "Summarize this account",
             "active_context": {
-                "type": "resource",
-                "integration_resource_id": str(resource.id),
+                "targets": [
+                    {
+                        "type": "resource",
+                        "integration_resource_id": str(resource.id),
+                    }
+                ]
             },
         },
     ) as response:

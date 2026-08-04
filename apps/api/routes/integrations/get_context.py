@@ -22,14 +22,12 @@ async def get_context(
     workspace_context: CurrentWorkspaceDep,
 ) -> ActiveContextRead:
     workspace, _membership = workspace_context
-    selection = await get_active_context_selection(
+    selections = await get_active_context_selection(
         db,
         actor=actor,
         workspace=workspace,
         conversation_id=conversation_id,
     )
     return ActiveContextRead(
-        selection=(
-            ActiveContextSelectionValue.from_selection(selection) if selection is not None else None
-        )
+        targets=[ActiveContextSelectionValue.from_selection(selection) for selection in selections]
     )

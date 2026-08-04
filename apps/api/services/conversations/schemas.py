@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agent_runs.schemas import AgentRunRead
-from services.integrations.context.schemas import ActiveContextSelectionValue
+from services.integrations.context.schemas import ActiveContextTargets
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -23,7 +23,7 @@ class ConversationCreateRequest(BaseModel):
     user_prompt: str = Field(min_length=1, max_length=20000)
     client_message_id: str | None = Field(default=None, max_length=128)
     attachments: list[UUID] = Field(default_factory=list)
-    active_context: ActiveContextSelectionValue | None = None
+    active_context: ActiveContextTargets | None = None
 
     @field_validator("user_prompt")
     @classmethod

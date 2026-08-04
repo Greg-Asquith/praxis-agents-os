@@ -1,6 +1,6 @@
 # apps/api/services/integrations/context/get_active_context_selection.py
 
-"""Read one conversation's active integration context selection."""
+"""Read one conversation's active integration context target set."""
 
 from uuid import UUID
 
@@ -18,7 +18,7 @@ async def get_active_context_selection(
     actor: User,
     workspace: Workspace,
     conversation_id: UUID,
-) -> ActiveContextSelection | None:
+) -> list[ActiveContextSelection]:
     # Import lazily to avoid a cycle between runtime setup and conversation streaming.
     from services.conversations.utils import get_conversation_for_actor
 
@@ -28,11 +28,20 @@ async def get_active_context_selection(
         workspace=workspace,
         conversation_id=conversation_id,
     )
-    return await db.scalar(
-        select(ActiveContextSelection)
-        .where(
-            ActiveContextSelection.conversation_id == conversation.id,
-            ActiveContextSelection.workspace_id == workspace.id,
+    selections = list(
+        await db.scalars(
+            select(ActiveContextSelection)
+            .where(
+                ActiveContextSelection.conversation_id == conversation.id,
+                ActiveContextSelection.workspace_id == workspace.id,
+            )
+            .execution_options(populate_existing=True)
         )
-        .execution_options(populate_existing=True)
+    )
+    return sorted(
+        selections,
+        key=lambda selection: (
+            "context_group" if selection.context_group_id is not None else "resource",
+            str(selection.context_group_id or selection.integration_resource_id),
+        ),
     )

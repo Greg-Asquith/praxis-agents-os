@@ -6,9 +6,11 @@ from datetime import datetime
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 from models.integration_context import ActiveContextSelection, IntegrationContextGroup
+
+MAX_ACTIVE_CONTEXT_TARGETS = 10
 
 
 class _ResourceSelectionValue(BaseModel):
@@ -67,6 +69,34 @@ class ActiveContextSelectionValue(RootModel[_SelectionValue]):
         return cls.for_context_group(selection.context_group_id)
 
 
+class ActiveContextTargets(BaseModel):
+    """A bounded, duplicate-free set of active context targets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    targets: list[ActiveContextSelectionValue] = Field(max_length=MAX_ACTIVE_CONTEXT_TARGETS)
+
+    @field_validator("targets")
+    @classmethod
+    def reject_duplicate_targets(
+        cls,
+        value: list[ActiveContextSelectionValue],
+    ) -> list[ActiveContextSelectionValue]:
+        identities = [
+            (target.type, target.integration_resource_id or target.context_group_id)
+            for target in value
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError("Active context targets must not contain duplicates")
+        return sorted(
+            value,
+            key=lambda target: (
+                target.type,
+                str(target.integration_resource_id or target.context_group_id),
+            ),
+        )
+
+
 class ResolvedContextEntryRead(BaseModel):
     integration_resource_id: UUID
     provider_key: str
@@ -86,7 +116,7 @@ class UnavailableContextEntryRead(BaseModel):
 
 
 class ActiveContextRead(BaseModel):
-    selection: ActiveContextSelectionValue | None
+    targets: list[ActiveContextSelectionValue] = Field(default_factory=list)
     entries: list[ResolvedContextEntryRead] = Field(default_factory=list)
     unavailable: list[UnavailableContextEntryRead] = Field(default_factory=list)
 

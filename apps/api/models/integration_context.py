@@ -76,7 +76,7 @@ class IntegrationContextGroupMember(Base, UUIDMixin, CreatedAtMixin):
 
 
 class ActiveContextSelection(Base, UUIDMixin, TimestampMixin):
-    """One active integration context target per conversation."""
+    """One member of a conversation's active integration context target set."""
 
     __tablename__ = "active_context_selections"
 
@@ -103,9 +103,23 @@ class ActiveContextSelection(Base, UUIDMixin, TimestampMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "ix_active_context_selections_conversation_id",
             "conversation_id",
-            name="uq_active_context_selections_conversation",
+        ),
+        Index(
+            "uq_active_context_selections_conversation_resource",
+            "conversation_id",
+            "integration_resource_id",
+            unique=True,
+            postgresql_where=text("integration_resource_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_active_context_selections_conversation_group",
+            "conversation_id",
+            "context_group_id",
+            unique=True,
+            postgresql_where=text("context_group_id IS NOT NULL"),
         ),
         CheckConstraint(
             "num_nonnulls(integration_resource_id, context_group_id) = 1",
