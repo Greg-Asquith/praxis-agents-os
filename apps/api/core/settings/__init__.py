@@ -33,6 +33,7 @@ from core.settings.models import LLMSettingsMixin
 from core.settings.observability import ObservabilitySettingsMixin
 from core.settings.providers import ProviderSettingsMixin
 from core.settings.rate_limit import RateLimitSettingsMixin
+from core.settings.retention import EventRetentionSettingsMixin
 from core.settings.scratch import ScratchSettingsMixin
 from core.settings.security import SecuritySettingsMixin
 from core.settings.urls import UrlSettingsMixin
@@ -67,6 +68,7 @@ class Settings(
     ObservabilitySettingsMixin,
     ProviderSettingsMixin,
     RateLimitSettingsMixin,
+    EventRetentionSettingsMixin,
     SecuritySettingsMixin,
     ScratchSettingsMixin,
     UrlSettingsMixin,

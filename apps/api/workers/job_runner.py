@@ -40,7 +40,11 @@ from services.jobs.handlers.sweep_expired_agent_run_approvals import (
 from services.jobs.handlers.sweep_expired_artifact_shares import (
     ensure_artifact_shares_sweep_job,
 )
+from services.jobs.handlers.sweep_expired_audit_events import ensure_audit_event_sweep_job
 from services.jobs.handlers.sweep_expired_scratch import ensure_scratch_sweep_job
+from services.jobs.handlers.sweep_expired_security_events import (
+    ensure_security_event_sweep_job,
+)
 from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_sweep_job
 from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
@@ -75,6 +79,8 @@ async def run_once(
         await ensure_files_sweep_job(db)
         await ensure_artifact_shares_sweep_job(db)
         await ensure_agent_run_approval_sweep_job(db)
+        await ensure_audit_event_sweep_job(db)
+        await ensure_security_event_sweep_job(db)
         await ensure_scratch_sweep_job(db)
         await ensure_rate_limit_sweep_job(db)
         await ensure_integrations_sweep_job(db)

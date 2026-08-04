@@ -132,6 +132,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   concurrency ownership; authenticated work must use one of those buckets,
   while `NULL` ownership is reserved for system work. Queue new background work
   as jobs rather than inventing ad-hoc task mechanisms.
+- Append-only `audit_events` and `security_events` are retained through
+  independent system jobs. Their settings default to 400 days, production
+  rejects values below 400, and staging may explicitly use a shorter positive
+  window such as 90 days. The sweepers delete only rows strictly older than a
+  cutoff computed once per run, work in bounded batches with immediate
+  continuation when capped, and record deletion counts in the completed job
+  payload without emitting replacement audit events.
 - Storage goes through the `services/storage` provider abstraction.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as

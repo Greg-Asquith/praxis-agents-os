@@ -52,6 +52,8 @@ def _disable_periodic_enqueuers(monkeypatch: pytest.MonkeyPatch) -> None:
         "ensure_sweep_job",
         "ensure_files_sweep_job",
         "ensure_artifact_shares_sweep_job",
+        "ensure_audit_event_sweep_job",
+        "ensure_security_event_sweep_job",
         "ensure_scratch_sweep_job",
         "ensure_rate_limit_sweep_job",
         "ensure_integrations_sweep_job",

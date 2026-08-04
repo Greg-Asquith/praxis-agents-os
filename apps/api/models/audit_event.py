@@ -52,6 +52,7 @@ class AuditEvent(Base, UUIDMixin, CreatedAtMixin):
     user_agent = Column(Text, nullable=True)
 
     __table_args__ = (
+        Index("ix_audit_events_retention", "created_at", "id"),
         Index("ix_audit_events_occurred_at", "occurred_at"),
         Index("ix_audit_events_workspace_occurred", "workspace_id", "occurred_at"),
         Index(

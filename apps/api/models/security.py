@@ -24,6 +24,7 @@ class SecurityEvent(Base, UUIDMixin, CreatedAtMixin):
     request_id = Column(String(160), nullable=True, index=True)
 
     __table_args__ = (
+        Index("ix_security_events_retention", "created_at", "id"),
         Index("ix_security_events_type_occurred", "event_type", "occurred_at"),
         Index("ix_security_events_ip_occurred", "ip_address", "occurred_at"),
         Index("ix_security_events_user_occurred", "user_email", "occurred_at"),

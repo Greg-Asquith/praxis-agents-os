@@ -16,8 +16,10 @@ from services.jobs.handlers import (
     sweep_deleted_kb_documents,  # noqa: F401
     sweep_expired_agent_run_approvals,  # noqa: F401
     sweep_expired_artifact_shares,  # noqa: F401
+    sweep_expired_audit_events,  # noqa: F401
     sweep_expired_memories,  # noqa: F401
     sweep_expired_scratch,  # noqa: F401
+    sweep_expired_security_events,  # noqa: F401
     sweep_rate_limit_attempts,  # noqa: F401
     sweep_terminal_jobs,  # noqa: F401
 )
