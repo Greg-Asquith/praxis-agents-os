@@ -36,6 +36,7 @@ export const googleAdsAccountsPresenter: ToolRowPresenter = {
           entries={entries}
           emptyLabel="No Google Ads account contexts were available."
           externalLabel="Customer ID"
+          formatContextValue={formatGoogleAdsAccountId}
           heading={<GoogleAdsToolHeading>List Google Ads Accounts</GoogleAdsToolHeading>}
         >
           {(_entry, index) => {

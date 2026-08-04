@@ -102,6 +102,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
   only through the `provider_api_key` seam — never rely on implicit env
   pickup. All providers share the retrying HTTP client
   (`retrying_http_client()`).
+- Native URL fetching uses the governed `fetch_url` helper-tool path for
+  Anthropic and Google only. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
+  requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,
+  and comma-separated `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is enforced before
+  dispatch as well as passed natively. Google is unavailable while that
+  denylist is configured because URL Context cannot enforce domain filtering.
+  Keep the full URL editable and visible under the default approval policy;
+  never enable the local fetch fallback.
 - Background work runs in the worker process (`python -m workers.main`),
   which supervises the scheduled-agent runner (croniter schedules, TTL leases
   with heartbeats, terminal failure states) and the generic jobs runner over

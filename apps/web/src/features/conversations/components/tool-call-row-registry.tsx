@@ -12,6 +12,8 @@ import { MemoryToolRow } from "@/features/conversations/components/memory-tool-r
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
 import { TodoListRow } from "@/features/conversations/components/todo-list-row"
+import { webFetchResult, webFetchUrl } from "@/features/conversations/components/web-fetch-result"
+import { WebFetchToolRow } from "@/features/conversations/components/web-fetch-tool-row"
 import {
   webSearchQuery,
   webSearchResult,
@@ -89,6 +91,17 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
       activity.name === BUILD_CHART_TOOL_NAME &&
       (activity.status === "running" || activity.status === "completed"),
     render: ({ activity }) => <ChartToolRow activity={activity} />,
+  },
+  {
+    key: "web-fetch",
+    matches: (activity) =>
+      activity.name === "fetch_url" &&
+      (activity.status === "running"
+        ? webFetchUrl(activity.args) !== null
+        : activity.status === "completed" && webFetchResult(activity.result) !== null),
+    render: ({ activity, defaultOpen }) => (
+      <WebFetchToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
   },
   {
     key: "web-search",

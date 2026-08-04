@@ -14,7 +14,6 @@ import { titleCaseToken } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export function AgentToolProviderGroup({
-  compactCatalog,
   forceOpen,
   group,
   onModeChange,
@@ -22,7 +21,6 @@ export function AgentToolProviderGroup({
   openOverride,
   toolModes,
 }: {
-  compactCatalog: boolean
   forceOpen: boolean
   group: ToolGroup
   onModeChange: (toolName: string, mode: RuntimeToolMode) => void
@@ -31,7 +29,7 @@ export function AgentToolProviderGroup({
   toolModes: AgentFormState["toolModes"]
 }) {
   const activeCount = group.tools.filter((tool) => (toolModes[tool.name] ?? "off") !== "off").length
-  const open = openOverride ?? (forceOpen || activeCount > 0 || compactCatalog)
+  const open = openOverride ?? forceOpen
   const providerLabel = titleCaseToken(group.provider, group.provider)
 
   return (

@@ -79,7 +79,6 @@ export function AgentToolsSection({
       : 0)
   const totalToolCount = toolCatalog.length + allUnavailableToolNames.length
   const hasActiveFilter = normalizedSearch.length > 0 || providerFilter !== ALL_TOOL_PROVIDERS_VALUE
-  const compactCatalog = toolCatalog.length <= 12
   return (
     <FormSection
       description="Tools let an agent read information or take actions in connected systems. Approval means a person confirms each use before it runs. You can change this later."
@@ -158,7 +157,6 @@ export function AgentToolsSection({
               <AgentToolProviderGroup
                 key={group.provider}
                 group={group}
-                compactCatalog={compactCatalog}
                 forceOpen={normalizedSearch.length > 0}
                 openOverride={providerOpenOverrides[group.provider]}
                 toolModes={state.toolModes}

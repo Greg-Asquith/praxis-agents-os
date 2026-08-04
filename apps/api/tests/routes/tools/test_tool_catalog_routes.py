@@ -109,6 +109,12 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
     assert "timeout" not in web_search
     assert "max_retries" not in web_search
     assert "output_model" not in web_search
+    fetch_url = next(tool for tool in body["tools"] if tool["name"] == "fetch_url")
+    assert fetch_url["provider"] == "native"
+    assert fetch_url["effect"] == "read"
+    assert fetch_url["default_policy"] == "approval"
+    assert fetch_url["supported_policies"] == ["approval", "auto"]
+    assert fetch_url["input_schema"]["required"] == ["url"]
 
 
 async def test_tool_catalog_route_hides_web_search_without_provider_keys(
@@ -267,6 +273,14 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
         },
     ]
     assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])
+    fetch_url_entry = next(tool for tool in body["tools"] if tool["name"] == "fetch_url")
+    assert fetch_url_entry["ui"]["approve_label"] == "Approve & Fetch"
+    assert fetch_url_entry["ui"]["arg_fields"][0]["key"] == "url"
+    assert fetch_url_entry["ui"]["arg_fields"][0]["editable"] is True
+    assert [field["key"] for field in fetch_url_entry["ui"]["result_fields"]] == [
+        "content",
+        "sources",
+    ]
     read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
     assert read_todos_entry["ui"]["icon"] == "list-todo"
     delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")

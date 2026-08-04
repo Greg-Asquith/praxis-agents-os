@@ -8,7 +8,14 @@ The model catalog itself is Python-owned in services/agents/models/registry.py;
 these settings only pick defaults and hold credentials.
 """
 
+import re
+
 from pydantic import Field, SecretStr, field_validator, model_validator
+
+_DOMAIN_PATTERN = re.compile(
+    r"^(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
 
 # Provider -> API key setting name. Kept in sync with the runtime credential
 # seam in services/agents/models/utils.py (settings cannot import services).
@@ -46,6 +53,39 @@ class LLMSettingsMixin:
         le=10,
         description="Maximum model requests for one native web-search helper run.",
     )
+    NATIVE_WEB_FETCH_MAX_STEPS: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum model requests for one native web-fetch helper run.",
+    )
+    NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS: int = Field(
+        default=20_000,
+        ge=1_000,
+        le=100_000,
+        description="Provider-side content-token cap for one native web fetch.",
+    )
+    NATIVE_WEB_FETCH_BLOCKED_DOMAINS: str = Field(
+        default="",
+        description=(
+            "Comma-separated domains that native web fetch must refuse. Configuring this "
+            "policy limits native web fetch to providers that enforce domain filtering."
+        ),
+    )
+
+    @field_validator("NATIVE_WEB_FETCH_BLOCKED_DOMAINS")
+    @classmethod
+    def validate_native_web_fetch_blocked_domains(cls, value: str) -> str:
+        domains = tuple(
+            dict.fromkeys(domain.strip().lower().rstrip(".") for domain in value.split(","))
+        )
+        invalid = [domain for domain in domains if domain and not _DOMAIN_PATTERN.fullmatch(domain)]
+        if invalid:
+            raise ValueError(
+                "NATIVE_WEB_FETCH_BLOCKED_DOMAINS entries must be bare domain names: "
+                + ", ".join(invalid)
+            )
+        return ",".join(domain for domain in domains if domain)
 
     # Provider HTTP retry policy. Max attempts of 1 means one try and no retry.
     LLM_HTTP_RETRY_MAX_ATTEMPTS: int = Field(

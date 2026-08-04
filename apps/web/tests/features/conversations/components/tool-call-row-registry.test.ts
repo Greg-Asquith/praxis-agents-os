@@ -14,6 +14,58 @@ afterEach(() => {
 })
 
 describe("renderCustomToolCallRow", () => {
+  it("renders a running Fetch URL call through the native web presenter", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      activity: {
+        id: "fetch-1",
+        kind: "call",
+        name: "fetch_url",
+        status: "running",
+        args: { url: "https://docs.example.com/page" },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Web Fetch")
+    expect(html).toContain("Fetching https://docs.example.com/page…")
+    expect(html).toContain('aria-busy="true"')
+  })
+
+  it("renders a completed Fetch URL result through the native web presenter", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      defaultOpen: true,
+      activity: {
+        id: "fetch-1",
+        kind: "result",
+        name: "fetch_url",
+        status: "completed",
+        result: {
+          content: {
+            node: "praxis_untrusted",
+            source_kind: "web_fetch",
+            source_ref: "https://docs.example.com/page",
+            content: "# Praxis documentation",
+          },
+          model: "claude-sonnet-5",
+          model_provider: "anthropic",
+          sources: [{ title: "Praxis docs", url: "https://docs.example.com/page" }],
+          url: "https://docs.example.com/page",
+        },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Web Fetch")
+    expect(html).toContain("Fetched Page Content")
+    expect(html).toContain("Praxis docs")
+  })
+
   it("renders a completed Build Chart result through the native chart presenter", () => {
     integrationToolRowPresenters.mockReturnValue([])
 

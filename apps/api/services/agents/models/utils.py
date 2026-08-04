@@ -13,6 +13,7 @@ from functools import lru_cache
 # OpenAI, Anthropic, and Google provider SDKs currently enforce the original
 # httpx AsyncClient type at runtime and reject httpx2 clients.
 import httpx
+from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
 from tenacity import stop_after_attempt, wait_exponential
 
@@ -59,7 +60,10 @@ def _build_retrying_http_client(
         wrapped=wrapped,
         validate_response=_raise_for_retryable_status,
     )
-    return httpx.AsyncClient(transport=transport)
+    return httpx.AsyncClient(
+        transport=transport,
+        timeout=httpx.Timeout(timeout=DEFAULT_HTTP_TIMEOUT, connect=5),
+    )
 
 
 @lru_cache(maxsize=1)

@@ -4,6 +4,7 @@
 
 import httpx
 import pytest
+from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 
 from core.settings import settings
 from services.agents.models.utils import _build_retrying_http_client
@@ -15,6 +16,17 @@ def _fast_retry_settings(monkeypatch, *, attempts: int) -> None:
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", attempts)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0.001)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS", 0.001)
+
+
+async def test_retrying_http_client_uses_provider_request_timeout() -> None:
+    client = _build_retrying_http_client(wrapped=httpx.MockTransport(lambda _request: None))
+    try:
+        assert client.timeout.connect == 5
+        assert client.timeout.read == DEFAULT_HTTP_TIMEOUT
+        assert client.timeout.write == DEFAULT_HTTP_TIMEOUT
+        assert client.timeout.pool == DEFAULT_HTTP_TIMEOUT
+    finally:
+        await client.aclose()
 
 
 async def test_retrying_http_client_retries_429_then_succeeds(monkeypatch) -> None:

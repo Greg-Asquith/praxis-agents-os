@@ -197,6 +197,9 @@ describe("Google Ads tool presenters", () => {
 
     expect(html).toContain("Agency manager")
     expect(html).toContain("Client account")
+    expect(html).toContain("Customer ID")
+    expect(html).toContain("123-456-7890")
+    expect(html).not.toContain("1234567890")
     expect(html).toContain("111-111-1111")
     expect(html).toContain("222-222-2222")
     expect(html).toContain("Manager")
