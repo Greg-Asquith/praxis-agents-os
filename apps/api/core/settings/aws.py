@@ -11,13 +11,17 @@ class AwsSettingsMixin:
         default="",
         description="S3 bucket for public assets. Required when STORAGE_PROVIDER=s3.",
     )
-    S3_PRIVATE_ASSETS_BUCKET: str = Field(
-        default="",
-        description="S3 bucket for private originals and documents. Required when STORAGE_PROVIDER=s3.",
-    )
     AWS_REGION: str = Field(
         default="",
         description="AWS region for S3 clients and presigned URLs. Required when STORAGE_PROVIDER=s3.",
+    )
+    AWS_ACCOUNT_ID: str = Field(
+        default="",
+        pattern=r"^(?:|\d{12})$",
+        description=(
+            "Twelve-digit AWS account ID used for account-regional workspace bucket names. "
+            "Required when STORAGE_PROVIDER=s3."
+        ),
     )
 
     # AWS SES Config

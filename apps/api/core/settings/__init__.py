@@ -36,6 +36,11 @@ from core.settings.rate_limit import RateLimitSettingsMixin
 from core.settings.scratch import ScratchSettingsMixin
 from core.settings.security import SecuritySettingsMixin
 from core.settings.urls import UrlSettingsMixin
+from core.storage_buckets import (
+    LOCAL_WORKSPACE_BUCKET_PREFIX,
+    S3_ACCOUNT_REGIONAL_UNSUPPORTED_REGIONS,
+    s3_workspace_bucket_prefix_max_length,
+)
 
 _LOCAL_EXAMPLE_SECRET_KEY = "not-a-secret-local-development-secret-key-change-me"
 _LOCAL_EXAMPLE_ENCRYPTION_KEY = "bm90LWEtc2VjcmV0LWxvY2FsLWRldi1rZXktMDAwMDA="
@@ -96,6 +101,14 @@ class Settings(
 
         if self.STORAGE_PROVIDER == "local_fs" and self.ENVIRONMENT != "local":
             raise ValueError("STORAGE_PROVIDER=local_fs is only allowed when ENVIRONMENT=local")
+
+        if (
+            self.ENVIRONMENT != "local"
+            and self.WORKSPACE_BUCKET_PREFIX == LOCAL_WORKSPACE_BUCKET_PREFIX
+        ):
+            raise ValueError(
+                "WORKSPACE_BUCKET_PREFIX must identify the deployment outside local environments"
+            )
 
         if self.EMAIL_PROVIDER == "console" and self.ENVIRONMENT != "local":
             raise ValueError("EMAIL_PROVIDER=console is only allowed when ENVIRONMENT=local")
@@ -193,7 +206,6 @@ class Settings(
             required_fields = {
                 "AZURE_STORAGE_ACCOUNT_NAME": self.AZURE_STORAGE_ACCOUNT_NAME,
                 "AZURE_STORAGE_PUBLIC_CONTAINER": self.AZURE_STORAGE_PUBLIC_CONTAINER,
-                "AZURE_STORAGE_PRIVATE_CONTAINER": self.AZURE_STORAGE_PRIVATE_CONTAINER,
             }
             missing_fields = [
                 field_name
@@ -208,8 +220,9 @@ class Settings(
 
         if self.STORAGE_PROVIDER == "gcs":
             required_fields = {
+                "GCP_PROJECT_ID": self.GCP_PROJECT_ID,
                 "GCS_PUBLIC_ASSETS_BUCKET": self.GCS_PUBLIC_ASSETS_BUCKET,
-                "GCS_PRIVATE_ASSETS_BUCKET": self.GCS_PRIVATE_ASSETS_BUCKET,
+                "GCS_WORKSPACE_BUCKET_LOCATION": self.GCS_WORKSPACE_BUCKET_LOCATION,
             }
             missing_fields = [
                 field_name
@@ -225,8 +238,8 @@ class Settings(
         if self.STORAGE_PROVIDER == "s3":
             required_fields = {
                 "S3_PUBLIC_ASSETS_BUCKET": self.S3_PUBLIC_ASSETS_BUCKET,
-                "S3_PRIVATE_ASSETS_BUCKET": self.S3_PRIVATE_ASSETS_BUCKET,
                 "AWS_REGION": self.AWS_REGION,
+                "AWS_ACCOUNT_ID": self.AWS_ACCOUNT_ID,
                 "PUBLIC_ASSETS_BASE_URL": self.PUBLIC_ASSETS_BASE_URL,
             }
             missing_fields = [
@@ -238,6 +251,18 @@ class Settings(
                 raise ValueError(
                     "STORAGE_PROVIDER=s3 requires the following settings: "
                     + ", ".join(missing_fields)
+                )
+            if self.AWS_REGION in S3_ACCOUNT_REGIONAL_UNSUPPORTED_REGIONS:
+                raise ValueError(
+                    "STORAGE_PROVIDER=s3 requires an AWS region that supports "
+                    "account-regional buckets"
+                )
+            s3_prefix_max_length = s3_workspace_bucket_prefix_max_length(self.AWS_REGION)
+            if len(self.WORKSPACE_BUCKET_PREFIX) > s3_prefix_max_length:
+                raise ValueError(
+                    "WORKSPACE_BUCKET_PREFIX must be at most "
+                    f"{s3_prefix_max_length} characters for account-regional S3 buckets "
+                    f"in {self.AWS_REGION}"
                 )
 
         return self

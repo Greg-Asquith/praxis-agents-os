@@ -146,7 +146,7 @@ async def test_upload_ingests_extracted_markdown(
     file = build_file(workspace=kb_actors.workspace)
     revision = build_file_revision(
         file,
-        markdown_object_key=f"private/{kb_actors.workspace.id}/kb-source.md",
+        markdown_object_key=f"workspaces/{kb_actors.workspace.id}/kb-source.md",
     )
     db_session.add_all([file, revision])
     await db_session.flush()
@@ -179,7 +179,7 @@ async def test_upload_ingest_rejects_secret_before_storing_extracted_content(
     file = build_file(workspace=kb_actors.workspace)
     revision = build_file_revision(
         file,
-        markdown_object_key=f"private/{kb_actors.workspace.id}/kb-secret-source.md",
+        markdown_object_key=f"workspaces/{kb_actors.workspace.id}/kb-secret-source.md",
     )
     db_session.add_all([file, revision])
     await db_session.flush()
@@ -217,7 +217,7 @@ async def test_upload_ingest_rejects_duplicate_materialized_content(
         revision = build_file_revision(
             file,
             markdown_object_key=(
-                f"private/{kb_actors.workspace.id}/kb-duplicate-source-{index}.md"
+                f"workspaces/{kb_actors.workspace.id}/kb-duplicate-source-{index}.md"
             ),
         )
         db_session.add_all([file, revision])

@@ -5,8 +5,11 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from services.storage.domain import (
     SignedDownload,
@@ -30,6 +33,7 @@ from services.storage.providers._common import (
     require_setting as _require_setting,
     string_metadata as _string_metadata,
 )
+from services.storage.workspace_buckets import workspace_bucket_name, workspace_id_for_ref
 
 if TYPE_CHECKING:
     from core.settings import Settings
@@ -44,6 +48,13 @@ try:  # pragma: no cover - exercised through provider-specific extras
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
     gcs_exceptions = None
 
+try:  # pragma: no cover - exercised through provider-specific extras
+    from google.auth import credentials as google_auth_credentials
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+except ImportError:  # pragma: no cover - base install intentionally omits SDKs
+    google_auth_credentials = None
+    GoogleAuthRequest = None
+
 
 class GcsStorageProvider:
     """Google Cloud Storage implementation of the provider-neutral contract."""
@@ -54,7 +65,8 @@ class GcsStorageProvider:
         self,
         *,
         public_bucket_name: str,
-        private_bucket_name: str,
+        workspace_bucket_prefix: str,
+        workspace_bucket_location: str,
         public_assets_base_url: str | None = None,
         public_cache_control: str | None = None,
         project_id: str | None = None,
@@ -65,28 +77,93 @@ class GcsStorageProvider:
             "GCS_PUBLIC_ASSETS_BUCKET",
             provider_key=self.provider_key,
         )
-        self.private_bucket_name = _require_setting(
-            private_bucket_name,
-            "GCS_PRIVATE_ASSETS_BUCKET",
+        self.workspace_bucket_prefix = _require_setting(
+            workspace_bucket_prefix,
+            "WORKSPACE_BUCKET_PREFIX",
             provider_key=self.provider_key,
         )
         self.public_assets_base_url = (
             public_assets_base_url.rstrip("/") if public_assets_base_url else None
         )
         self.public_cache_control = public_cache_control
+        self.project_id = _require_setting(
+            project_id,
+            "GCP_PROJECT_ID",
+            provider_key=self.provider_key,
+        )
+        self.workspace_bucket_location = _require_setting(
+            workspace_bucket_location,
+            "GCS_WORKSPACE_BUCKET_LOCATION",
+            provider_key=self.provider_key,
+        )
         self.client = client if client is not None else self._create_client(project_id=project_id)
         self.public_bucket = self.client.bucket(self.public_bucket_name)
-        self.private_bucket = self.client.bucket(self.private_bucket_name)
+        self._workspace_buckets: OrderedDict[UUID, Any] = OrderedDict()
+        self._ensured_workspace_ids: set[UUID] = set()
+        self._workspace_buckets_lock = threading.Lock()
+        self._signing_credentials_lock = threading.Lock()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> GcsStorageProvider:
         return cls(
             public_bucket_name=settings.GCS_PUBLIC_ASSETS_BUCKET,
-            private_bucket_name=settings.GCS_PRIVATE_ASSETS_BUCKET,
+            workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL,
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
             project_id=settings.GCP_PROJECT_ID,
+            workspace_bucket_location=settings.GCS_WORKSPACE_BUCKET_LOCATION,
         )
+
+    async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
+        """Create and harden the GCS bucket dedicated to one workspace."""
+        with self._workspace_buckets_lock:
+            if workspace_id in self._ensured_workspace_ids:
+                self._workspace_buckets.move_to_end(workspace_id)
+                return
+        bucket = self._workspace_bucket(workspace_id)
+        try:
+            await asyncio.to_thread(bucket.reload)
+        except Exception as exc:
+            if not _is_gcs_not_found(exc):
+                raise StorageError(
+                    "Failed to inspect workspace GCS bucket",
+                    provider_key=self.provider_key,
+                    operation="ensure_workspace_bucket",
+                    bucket=bucket.name,
+                    original_error=exc,
+                ) from exc
+            try:
+                bucket = await asyncio.to_thread(
+                    self.client.create_bucket,
+                    bucket,
+                    project=self.project_id,
+                    location=self.workspace_bucket_location,
+                )
+            except Exception as create_exc:
+                if not _is_gcs_conflict(create_exc):
+                    raise StorageError(
+                        "Failed to create workspace GCS bucket",
+                        provider_key=self.provider_key,
+                        operation="ensure_workspace_bucket",
+                        bucket=bucket.name,
+                        original_error=create_exc,
+                    ) from create_exc
+                await asyncio.to_thread(bucket.reload)
+
+        try:
+            bucket.iam_configuration.uniform_bucket_level_access_enabled = True
+            bucket.iam_configuration.public_access_prevention = "enforced"
+            bucket.labels = {**(bucket.labels or {}), "praxis-workspace": str(workspace_id)}
+            await asyncio.to_thread(bucket.patch)
+        except Exception as exc:
+            raise StorageError(
+                "Failed to harden workspace GCS bucket",
+                provider_key=self.provider_key,
+                operation="ensure_workspace_bucket",
+                bucket=bucket.name,
+                original_error=exc,
+            ) from exc
+        self._remember_ensured_workspace_bucket(workspace_id, bucket)
 
     async def put_object(
         self,
@@ -98,7 +175,10 @@ class GcsStorageProvider:
         metadata: dict[str, str] | None = None,
         overwrite: bool = True,
     ) -> StoredObject:
-        bucket = self._bucket(ref.bucket)
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
+        bucket = self._bucket(ref)
         blob = bucket.blob(ref.key)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
@@ -142,7 +222,7 @@ class GcsStorageProvider:
         return stored
 
     async def get_object(self, ref: StorageObjectRef) -> bytes:
-        blob = self._bucket(ref.bucket).blob(ref.key)
+        blob = self._bucket(ref).blob(ref.key)
         try:
             exists = await asyncio.to_thread(blob.exists)
             if not exists:
@@ -167,7 +247,7 @@ class GcsStorageProvider:
             ) from exc
 
     async def stream_object(self, ref: StorageObjectRef):
-        blob = self._bucket(ref.bucket).blob(ref.key)
+        blob = self._bucket(ref).blob(ref.key)
         try:
             exists = await asyncio.to_thread(blob.exists)
             if not exists:
@@ -205,7 +285,7 @@ class GcsStorageProvider:
             ) from exc
 
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:
-        blob = self._bucket(ref.bucket).blob(ref.key)
+        blob = self._bucket(ref).blob(ref.key)
         try:
             await asyncio.to_thread(blob.reload)
         except Exception as exc:
@@ -232,7 +312,7 @@ class GcsStorageProvider:
         )
 
     async def delete_object(self, ref: StorageObjectRef) -> bool:
-        blob = self._bucket(ref.bucket).blob(ref.key)
+        blob = self._bucket(ref).blob(ref.key)
         try:
             exists = await asyncio.to_thread(blob.exists)
             if not exists:
@@ -265,7 +345,19 @@ class GcsStorageProvider:
                 object_key=destination.key,
             )
 
-        bucket = self._bucket(source.bucket)
+        source_workspace_id = workspace_id_for_ref(source)
+        destination_workspace_id = workspace_id_for_ref(destination)
+        if source_workspace_id != destination_workspace_id:
+            raise StorageValidationError(
+                "Storage promotion cannot cross workspace buckets",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+        if destination_workspace_id is not None:
+            await self.ensure_workspace_bucket(destination_workspace_id)
+        bucket = self._bucket(source)
         source_blob = bucket.blob(source.key)
         try:
             await asyncio.to_thread(source_blob.reload)
@@ -335,20 +427,31 @@ class GcsStorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         normalized_content_type = _require_content_type(
             content_type, provider_key=self.provider_key, ref=ref
         )
         expires_at = datetime.now(UTC) + expires_in
-        blob = self._bucket(ref.bucket).blob(ref.key)
+        blob = self._bucket(ref).blob(ref.key)
+        upload_headers = {
+            "content-type": normalized_content_type,
+            "x-goog-if-generation-match": "0",
+        }
         try:
+            signing_kwargs = await asyncio.to_thread(self._remote_signing_kwargs)
             url = await asyncio.to_thread(
                 blob.generate_signed_url,
                 expiration=expires_at,
                 method="PUT",
                 content_type=normalized_content_type,
                 version="v4",
-                query_parameters={"ifGenerationMatch": "0"},
+                headers={"x-goog-if-generation-match": "0"},
+                **signing_kwargs,
             )
+        except StorageError:
+            raise
         except Exception as exc:
             raise StorageError(
                 "Failed to create GCS signed upload URL",
@@ -361,7 +464,7 @@ class GcsStorageProvider:
         return SignedUpload(
             ref=ref,
             url=str(url),
-            headers={"content-type": normalized_content_type},
+            headers=upload_headers,
             expires_at=expires_at,
         )
 
@@ -382,15 +485,19 @@ class GcsStorageProvider:
             if force_download
             else None
         )
-        blob = self._bucket(ref.bucket).blob(ref.key)
+        blob = self._bucket(ref).blob(ref.key)
         try:
+            signing_kwargs = await asyncio.to_thread(self._remote_signing_kwargs)
             url = await asyncio.to_thread(
                 blob.generate_signed_url,
                 expiration=expires_at,
                 method="GET",
                 version="v4",
                 response_disposition=response_disposition,
+                **signing_kwargs,
             )
+        except StorageError:
+            raise
         except Exception as exc:
             raise StorageError(
                 "Failed to create GCS signed download URL",
@@ -435,8 +542,40 @@ class GcsStorageProvider:
     ) -> None:
         self._raise_no_local_signature("require_valid_download_signature")
 
-    def _bucket(self, bucket: StorageBucket):
-        return self.public_bucket if bucket == StorageBucket.PUBLIC else self.private_bucket
+    def _bucket(self, ref: StorageObjectRef):
+        workspace_id = workspace_id_for_ref(ref)
+        return self.public_bucket if workspace_id is None else self._workspace_bucket(workspace_id)
+
+    def _workspace_bucket(self, workspace_id: UUID):
+        with self._workspace_buckets_lock:
+            cached = self._workspace_buckets.get(workspace_id)
+            if cached is not None:
+                self._workspace_buckets.move_to_end(workspace_id)
+                return cached
+            bucket = self.client.bucket(
+                workspace_bucket_name(self.workspace_bucket_prefix, workspace_id)
+            )
+            self._cache_workspace_bucket_locked(workspace_id, bucket, ensured=False)
+            return bucket
+
+    def _remember_ensured_workspace_bucket(self, workspace_id: UUID, bucket: Any) -> None:
+        with self._workspace_buckets_lock:
+            self._cache_workspace_bucket_locked(workspace_id, bucket, ensured=True)
+
+    def _cache_workspace_bucket_locked(
+        self,
+        workspace_id: UUID,
+        bucket: Any,
+        *,
+        ensured: bool,
+    ) -> None:
+        self._workspace_buckets[workspace_id] = bucket
+        self._workspace_buckets.move_to_end(workspace_id)
+        if ensured:
+            self._ensured_workspace_ids.add(workspace_id)
+        if len(self._workspace_buckets) > 256:
+            evicted_workspace_id, _handle = self._workspace_buckets.popitem(last=False)
+            self._ensured_workspace_ids.discard(evicted_workspace_id)
 
     def _create_client(self, *, project_id: str | None):
         if gcs_storage is None:
@@ -455,6 +594,50 @@ class GcsStorageProvider:
                 original_error=exc,
             ) from exc
 
+    def _remote_signing_kwargs(self) -> dict[str, str]:
+        """Return IAM signing inputs when ADC cannot sign with a private key locally."""
+        credentials = getattr(self.client, "_credentials", None)
+        if credentials is None or google_auth_credentials is None:
+            return {}
+        if isinstance(credentials, google_auth_credentials.Signing):
+            return {}
+        if GoogleAuthRequest is None:
+            raise StorageProviderUnavailableError(
+                "GCS remote signed URLs require google-auth request support",
+                provider_key=self.provider_key,
+                operation="sign_url",
+            )
+
+        with self._signing_credentials_lock:
+            service_account_email = getattr(credentials, "service_account_email", None)
+            if (
+                not getattr(credentials, "valid", False)
+                or not service_account_email
+                or service_account_email == "default"
+            ):
+                try:
+                    credentials.refresh(GoogleAuthRequest())
+                except Exception as exc:
+                    raise StorageProviderUnavailableError(
+                        "Failed to refresh GCS credentials for remote URL signing",
+                        provider_key=self.provider_key,
+                        operation="sign_url",
+                        original_error=exc,
+                    ) from exc
+                service_account_email = getattr(credentials, "service_account_email", None)
+
+            access_token = getattr(credentials, "token", None)
+            if not service_account_email or service_account_email == "default" or not access_token:
+                raise StorageProviderUnavailableError(
+                    "GCS signed URLs require signing credentials or service-account ADC",
+                    provider_key=self.provider_key,
+                    operation="sign_url",
+                )
+            return {
+                "service_account_email": str(service_account_email),
+                "access_token": str(access_token),
+            }
+
     def _raise_no_local_signature(self, operation: str) -> None:
         raise StorageProviderUnavailableError(
             "GCS signed URLs are verified by Google Cloud Storage, not local callback routes",
@@ -471,3 +654,7 @@ def _is_gcs_not_found(exc: Exception) -> bool:
 
 def _is_gcs_precondition_failed(exc: Exception) -> bool:
     return getattr(exc, "code", None) in {409, 412}
+
+
+def _is_gcs_conflict(exc: Exception) -> bool:
+    return getattr(exc, "code", None) == 409

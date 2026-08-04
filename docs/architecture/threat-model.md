@@ -9,6 +9,10 @@
   streams; model-only framing at prompt assembly)
 - **Amended**: 2026-07-27 (operator decision: internal agent memory is a
   trusted control surface and never receives untrusted-content framing)
+- **Amended**: 2026-08-03 (workspace-private object storage is isolated by a
+  dedicated bucket/container as well as the retained workspace key prefix)
+- **Amended**: 2026-08-04 (provider hardening pins GCS location, S3
+  account-regional naming and controls, and Azure access-policy preservation)
 - **Rule**: downstream plans implement slices of this note and cite the
   relevant sections. A plan that changes a channel, defense, or test contract
   records the deviation here in the same change. New model-visible untrusted
@@ -72,6 +76,21 @@ policy can authorize the row before its connection exists. This
 denormalization avoids a credential/connection insertion cycle while the
 connection foreign key remains the lifecycle link. Global audit events with
 no workspace remain maintenance-only.
+
+### Object-storage workspace-isolation backstop
+
+Private objects fail closed unless their key is under
+`workspaces/{workspace_id}/...`. The storage provider resolves that UUID to a
+dedicated bucket/container named from the deployment-unique
+`WORKSPACE_BUCKET_PREFIX` (plus the account-regional suffix on S3); it retains
+the full workspace-prefixed key inside the bucket as defense in depth. Reads,
+writes, metadata checks, promotions, deletes, and signed URLs all resolve
+through the same boundary, and promotion
+cannot cross workspace buckets. Workspace creation provisions storage through
+the jobs harness, with an idempotent first-write/signed-upload backstop for the
+creation race. Public avatars and icons remain in the intentionally shared
+public bucket. Per-workspace IAM identities and CMEK are later hardening, not
+properties claimed by this bucket boundary.
 
 ## 2. Channel Inventory
 

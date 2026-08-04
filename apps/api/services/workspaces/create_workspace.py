@@ -11,6 +11,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
+from services.storage.enqueue_workspace_bucket_provisioning import enqueue_workspace_bucket_provisioning
 from services.workspaces.schemas import WorkspaceCreateRequest, WorkspaceRead
 from utils.slugify import slugify
 
@@ -77,6 +78,11 @@ async def create_workspace(
             "is_personal": False,
             "owner_membership_id": str(membership.id),
         },
+    )
+    await enqueue_workspace_bucket_provisioning(
+        db,
+        workspace_id=workspace.id,
+        initiated_by_user_id=actor.id,
     )
     await db.refresh(workspace)
     return WorkspaceRead.from_workspace(

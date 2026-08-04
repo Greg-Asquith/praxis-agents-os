@@ -91,6 +91,7 @@ def bootstrap(workspace: Path) -> list[str]:
     for path in (api_env, api_generated_env):
         _write_value(path, "CREDENTIAL_MASTER_KEYS", key)
         _write_value(path, "ARTIFACT_SHARING_ENABLED", "true")
+        _write_value(path, "WORKSPACE_BUCKET_PREFIX", "praxis-local")
 
     if not web_generated_env.exists():
         web_generated_env.write_text("VITE_API_BASE_URL=http://localhost:8000/api/v1\n")

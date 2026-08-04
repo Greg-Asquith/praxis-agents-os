@@ -21,3 +21,5 @@ def test_bootstrap_enables_artifact_sharing_only_in_local_env_files(tmp_path: Pa
     assert "ARTIFACT_SHARING_ENABLED=true" in api_env
     assert "ARTIFACT_SHARING_ENABLED=true" in generated_env
     assert "ARTIFACT_SHARING_ENABLED=false" in example_env
+    assert "WORKSPACE_BUCKET_PREFIX=praxis-local" in api_env
+    assert "WORKSPACE_BUCKET_PREFIX=praxis-local" in generated_env

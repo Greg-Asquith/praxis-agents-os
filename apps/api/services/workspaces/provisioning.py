@@ -17,6 +17,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
+from services.storage.enqueue_workspace_bucket_provisioning import enqueue_workspace_bucket_provisioning
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,12 @@ async def provision_personal_workspace(db: AsyncSession, user: User) -> Workspac
         resource_id=workspace.id,
         actor=user,
         details={"slug": workspace.slug, "is_personal": True, "role": "owner"},
+    )
+
+    await enqueue_workspace_bucket_provisioning(
+        db,
+        workspace_id=workspace.id,
+        initiated_by_user_id=user.id,
     )
 
     return workspace

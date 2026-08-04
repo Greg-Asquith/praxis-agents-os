@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import timedelta
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 from services.storage.domain import SignedDownload, SignedUpload, StorageObjectRef, StoredObject
 
@@ -18,6 +19,10 @@ class StorageProvider(Protocol):
     """Provider-neutral object storage surface used by application services."""
 
     provider_key: str
+
+    async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
+        """Create and harden a workspace-private bucket when it does not exist."""
+        ...
 
     async def put_object(
         self,

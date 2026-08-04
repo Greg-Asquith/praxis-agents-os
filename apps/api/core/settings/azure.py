@@ -15,10 +15,6 @@ class AzureSettingsMixin:
         default="",
         description="Azure Blob container for public assets. Required when CLOUD_PROVIDER=azure.",
     )
-    AZURE_STORAGE_PRIVATE_CONTAINER: str = Field(
-        default="",
-        description="Azure Blob container for private originals and documents. Required when CLOUD_PROVIDER=azure.",
-    )
     AZURE_STORAGE_ACCOUNT_URL: str | None = Field(
         default=None,
         description=(

@@ -112,11 +112,25 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Storage goes through the `services/storage` provider abstraction.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as
-  optional extras (`gcp`, `aws`, `azure`). Direct-upload grants target unique
-  temporary keys only; confirmation validates and conditionally promotes bytes
-  to a distinct create-only durable key. Managed asset and skill-document
-  grants persist consumption state so confirmation is replay-safe and
-  crash-idempotent.
+  optional extras (`gcp`, `aws`, `azure`). Public assets stay in one shared
+  public bucket; every private key must use `workspaces/{workspace_id}/...`
+  and resolves unconditionally to that workspace's dedicated bucket/container.
+  GCS bucket creation must pass the configured immutable
+  `GCS_WORKSPACE_BUCKET_LOCATION`. S3 workspace buckets use the account-regional
+  namespace and derive their physical name from the configured prefix, compact
+  workspace UUID, `AWS_ACCOUNT_ID`, and `AWS_REGION`; retain ownership controls,
+  versioning, HTTPS-only policy, blocked public access, and the encryption
+  baseline when changing S3 provisioning.
+  Workspace creation enqueues `storage.provision_workspace_bucket`, while
+  first writes and signed uploads retain an idempotent provisioning backstop.
+  Cloud identities must be able to inspect, create, harden, and read/write
+  bucket tags or labels without discarding provider- or operator-owned values.
+  Direct-upload grants target unique temporary keys only; confirmation
+  validates and conditionally promotes bytes to a distinct create-only durable
+  key. Managed asset and skill-document grants persist consumption state so
+  confirmation is replay-safe and crash-idempotent. For a clean local reset
+  from the repository root, remove `apps/api/.local/storage` and re-upload
+  development files; there is deliberately no compatibility read path.
 - Non-OAuth integration credentials remain secret references. Admins replace
   API keys and service-account keys in place through
   `PUT /integrations/connections/{connection_id}/credential`; discovery

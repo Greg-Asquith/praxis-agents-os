@@ -6,6 +6,11 @@ from typing import Literal
 
 from pydantic import Field
 
+from core.storage_buckets import (
+    LOCAL_WORKSPACE_BUCKET_PREFIX,
+    WORKSPACE_BUCKET_PREFIX_MAX_LENGTH,
+)
+
 
 class ProviderSettingsMixin:
     # Provider Configuration
@@ -30,6 +35,15 @@ class ProviderSettingsMixin:
     LOCAL_STORAGE_ROOT: str = Field(
         default=".local/storage",
         description="Root for local filesystem storage when STORAGE_PROVIDER=local_fs.",
+    )
+    WORKSPACE_BUCKET_PREFIX: str = Field(
+        default=LOCAL_WORKSPACE_BUCKET_PREFIX,
+        min_length=1,
+        max_length=WORKSPACE_BUCKET_PREFIX_MAX_LENGTH,
+        pattern=r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+        description=(
+            "Deployment-unique lowercase prefix for private workspace buckets/containers."
+        ),
     )
     LOCAL_SECRET_STORE_PATH: str = Field(
         default=".local/secrets.enc.json",

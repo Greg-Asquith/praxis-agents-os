@@ -12,6 +12,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
+from uuid import UUID
 
 from core.settings import Settings
 from services.storage.domain import (
@@ -29,6 +30,7 @@ from services.storage.errors import (
 )
 from services.storage.paths import build_content_disposition, quote_object_key
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
+from services.storage.workspace_buckets import workspace_id_for_ref
 
 
 class LocalStorageProvider:
@@ -48,10 +50,10 @@ class LocalStorageProvider:
     ) -> None:
         self.root = Path(root).resolve()
         self.public_root = self.root / StorageBucket.PUBLIC.value
-        self.private_root = self.root / StorageBucket.PRIVATE.value
+        self.private_workspace_root = self.root / "private-ws"
         self.metadata_root = self.root / ".metadata"
         self.public_metadata_root = self.metadata_root / StorageBucket.PUBLIC.value
-        self.private_metadata_root = self.metadata_root / StorageBucket.PRIVATE.value
+        self.private_workspace_metadata_root = self.metadata_root / "private-ws"
         self.app_base_url = app_base_url.rstrip("/")
         self.api_prefix = api_prefix.rstrip("/")
         self.secret_key = secret_key
@@ -60,9 +62,7 @@ class LocalStorageProvider:
         )
         self.public_cache_control = public_cache_control
         self.public_root.mkdir(parents=True, exist_ok=True)
-        self.private_root.mkdir(parents=True, exist_ok=True)
         self.public_metadata_root.mkdir(parents=True, exist_ok=True)
-        self.private_metadata_root.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def from_settings(cls, settings: Settings) -> LocalStorageProvider:
@@ -75,6 +75,21 @@ class LocalStorageProvider:
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
         )
 
+    async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
+        """Create the local directories representing one private workspace bucket."""
+        await asyncio.gather(
+            asyncio.to_thread(
+                (self.private_workspace_root / str(workspace_id)).mkdir,
+                parents=True,
+                exist_ok=True,
+            ),
+            asyncio.to_thread(
+                (self.private_workspace_metadata_root / str(workspace_id)).mkdir,
+                parents=True,
+                exist_ok=True,
+            ),
+        )
+
     async def put_object(
         self,
         ref: StorageObjectRef,
@@ -85,6 +100,9 @@ class LocalStorageProvider:
         metadata: dict[str, str] | None = None,
         overwrite: bool = True,
     ) -> StoredObject:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         path = self.filesystem_path(ref)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
@@ -217,6 +235,14 @@ class LocalStorageProvider:
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
+        if workspace_id_for_ref(source) != workspace_id_for_ref(destination):
+            raise StorageValidationError(
+                "Storage promotion cannot cross workspace buckets",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
 
         try:
             data = await self.get_object(source)
@@ -256,6 +282,9 @@ class LocalStorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         normalized_content_type = content_type.strip()
         if not normalized_content_type:
             raise StorageValidationError(
@@ -330,7 +359,7 @@ class LocalStorageProvider:
         return f"{base}/{quote_object_key(ref.key)}"
 
     def filesystem_path(self, ref: StorageObjectRef) -> Path:
-        root = self._bucket_root(ref.bucket)
+        root = self._bucket_root(ref)
         relative = Path(ref.key)
         resolved = (root / relative).resolve()
         if root not in resolved.parents and resolved != root:
@@ -430,15 +459,17 @@ class LocalStorageProvider:
             filename=filename,
         )
 
-    def _bucket_root(self, bucket: StorageBucket) -> Path:
-        return self.public_root if bucket == StorageBucket.PUBLIC else self.private_root
+    def _bucket_root(self, ref: StorageObjectRef) -> Path:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is None:
+            return self.public_root
+        return self.private_workspace_root / str(workspace_id)
 
-    def _metadata_bucket_root(self, bucket: StorageBucket) -> Path:
-        return (
-            self.public_metadata_root
-            if bucket == StorageBucket.PUBLIC
-            else self.private_metadata_root
-        )
+    def _metadata_bucket_root(self, ref: StorageObjectRef) -> Path:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is None:
+            return self.public_metadata_root
+        return self.private_workspace_metadata_root / str(workspace_id)
 
     def _local_route_base(self) -> str:
         return f"{self.app_base_url}{self.api_prefix}/storage"
@@ -468,7 +499,7 @@ class LocalStorageProvider:
         return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
     def _metadata_path(self, ref: StorageObjectRef) -> Path:
-        root = self._metadata_bucket_root(ref.bucket)
+        root = self._metadata_bucket_root(ref)
         relative = Path(ref.key)
         resolved = (root / relative).with_name(f"{relative.name}.metadata.json").resolve()
         if root not in resolved.parents and resolved != root:

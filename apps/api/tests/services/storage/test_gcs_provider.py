@@ -4,7 +4,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -17,6 +21,12 @@ from services.storage.errors import (
 from services.storage.providers.gcs import GcsStorageProvider
 
 pytestmark = pytest.mark.asyncio
+WORKSPACE_ID = UUID("11111111-1111-4111-8111-111111111111")
+WORKSPACE_BUCKET = f"praxis-test-{WORKSPACE_ID}"
+
+
+def _private_key(suffix: str) -> str:
+    return f"workspaces/{WORKSPACE_ID}/{suffix}"
 
 
 class _GcsNotFoundError(Exception):
@@ -87,12 +97,26 @@ class _FakeGcsBlob:
 
 
 class _FakeGcsBucket:
-    def __init__(self, name: str) -> None:
+    def __init__(self, client: _FakeGcsClient, name: str) -> None:
+        self.client = client
         self.name = name
         self.objects: dict[str, dict] = {}
         self.signed_calls: list[dict] = []
         self.copy_calls: list[dict] = []
         self.next_generation = 1
+        self.labels: dict[str, str] = {}
+        self.iam_configuration = SimpleNamespace(
+            uniform_bucket_level_access_enabled=False,
+            public_access_prevention=None,
+        )
+        self.patch_calls = 0
+
+    def reload(self) -> None:
+        if self.name not in self.client.existing_buckets:
+            raise _GcsNotFoundError()
+
+    def patch(self) -> None:
+        self.patch_calls += 1
 
     def blob(self, key: str) -> _FakeGcsBlob:
         return _FakeGcsBlob(self, key)
@@ -118,18 +142,41 @@ class _FakeGcsBucket:
 class _FakeGcsClient:
     def __init__(self) -> None:
         self.buckets: dict[str, _FakeGcsBucket] = {}
+        self.existing_buckets = {"public-bucket"}
+        self.create_calls: list[dict] = []
 
     def bucket(self, name: str) -> _FakeGcsBucket:
-        self.buckets.setdefault(name, _FakeGcsBucket(name))
+        self.buckets.setdefault(name, _FakeGcsBucket(self, name))
         return self.buckets[name]
+
+    def create_bucket(self, bucket: _FakeGcsBucket, **kwargs) -> _FakeGcsBucket:
+        self.create_calls.append({"bucket": bucket.name, **kwargs})
+        self.existing_buckets.add(bucket.name)
+        return bucket
+
+
+class _FakeMetadataCredentials:
+    def __init__(self) -> None:
+        self.valid = False
+        self.service_account_email = "default"
+        self.token = None
+        self.refresh_calls = 0
+
+    def refresh(self, _request) -> None:
+        self.valid = True
+        self.service_account_email = "praxis@example.iam.gserviceaccount.com"
+        self.token = "access-token"
+        self.refresh_calls += 1
 
 
 def _provider(client: _FakeGcsClient) -> GcsStorageProvider:
     return GcsStorageProvider(
         public_bucket_name="public-bucket",
-        private_bucket_name="private-bucket",
+        workspace_bucket_prefix="praxis-test",
+        workspace_bucket_location="europe-west2",
         public_assets_base_url="https://cdn.example",
         public_cache_control="public, max-age=60",
+        project_id="praxis-test-project",
         client=client,
     )
 
@@ -161,7 +208,7 @@ async def test_gcs_provider_put_get_stat_and_delete_object() -> None:
 
 async def test_gcs_provider_maps_get_not_found_to_storage_error() -> None:
     provider = _provider(_FakeGcsClient())
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "runs/run_1/missing.txt")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("missing.txt"))
 
     with pytest.raises(StorageNotFoundError):
         await provider.get_object(ref)
@@ -172,7 +219,7 @@ async def test_gcs_provider_maps_get_not_found_to_storage_error() -> None:
 async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> None:
     client = _FakeGcsClient()
     provider = _provider(client)
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "runs/run_1/output.txt")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("output.txt"))
 
     upload = await provider.create_signed_upload(
         ref,
@@ -186,20 +233,47 @@ async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> N
         filename="output.txt",
     )
 
-    signed_calls = client.bucket("private-bucket").signed_calls
-    assert upload.headers == {"content-type": "text/plain"}
+    signed_calls = client.bucket(WORKSPACE_BUCKET).signed_calls
+    assert upload.headers == {
+        "content-type": "text/plain",
+        "x-goog-if-generation-match": "0",
+    }
     assert signed_calls[0]["method"] == "PUT"
     assert signed_calls[0]["content_type"] == "text/plain"
-    assert signed_calls[0]["query_parameters"] == {"ifGenerationMatch": "0"}
+    assert signed_calls[0]["headers"] == {"x-goog-if-generation-match": "0"}
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert signed_calls[1]["method"] == "GET"
     assert signed_calls[1]["response_disposition"] == 'attachment; filename="output.txt"'
 
 
+async def test_gcs_signed_urls_use_iam_signing_for_metadata_credentials() -> None:
+    client = _FakeGcsClient()
+    credentials = _FakeMetadataCredentials()
+    client._credentials = credentials
+    provider = _provider(client)
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("output.txt"))
+
+    await provider.create_signed_upload(
+        ref,
+        content_type="text/plain",
+        expires_in=timedelta(minutes=5),
+    )
+    await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
+
+    signed_calls = client.bucket(WORKSPACE_BUCKET).signed_calls
+    assert credentials.refresh_calls == 1
+    assert signed_calls[0]["service_account_email"] == credentials.service_account_email
+    assert signed_calls[0]["access_token"] == credentials.token
+    assert signed_calls[1]["service_account_email"] == credentials.service_account_email
+    assert signed_calls[1]["access_token"] == credentials.token
+
+
 async def test_gcs_native_public_url_is_used_without_cdn_base() -> None:
     provider = GcsStorageProvider(
         public_bucket_name="public-bucket",
-        private_bucket_name="private-bucket",
+        workspace_bucket_prefix="praxis-test",
+        workspace_bucket_location="europe-west2",
+        project_id="praxis-test-project",
         client=_FakeGcsClient(),
     )
     ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u 1/avatar/me.png")
@@ -213,8 +287,8 @@ async def test_gcs_native_public_url_is_used_without_cdn_base() -> None:
 async def test_gcs_promotion_is_create_only_and_source_conditional() -> None:
     client = _FakeGcsClient()
     provider = _provider(client)
-    source = make_storage_object_ref(StorageBucket.PRIVATE, "uploads/source.txt")
-    destination = make_storage_object_ref(StorageBucket.PRIVATE, "files/final.txt")
+    source = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("uploads/source.txt"))
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/final.txt"))
     source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
 
     promoted = await provider.promote_object(
@@ -225,7 +299,7 @@ async def test_gcs_promotion_is_create_only_and_source_conditional() -> None:
 
     assert await provider.get_object(destination) == b"validated"
     assert promoted.content_type == "text/plain"
-    copy_call = client.bucket("private-bucket").copy_calls[0]
+    copy_call = client.bucket(WORKSPACE_BUCKET).copy_calls[0]
     assert copy_call["if_generation_match"] == 0
     assert copy_call["if_source_generation_match"] == copy_call["source_generation"]
     with pytest.raises(StoragePreconditionError):
@@ -240,6 +314,57 @@ async def test_gcs_provider_missing_required_settings_fail_clearly() -> None:
     with pytest.raises(StorageProviderUnavailableError):
         GcsStorageProvider(
             public_bucket_name="",
-            private_bucket_name="private-bucket",
+            workspace_bucket_prefix="praxis-test",
+            workspace_bucket_location="europe-west2",
+            project_id="praxis-test-project",
             client=_FakeGcsClient(),
         )
+
+
+async def test_gcs_workspace_bucket_is_hardened_and_handle_is_cached() -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+
+    await provider.ensure_workspace_bucket(WORKSPACE_ID)
+    await provider.ensure_workspace_bucket(WORKSPACE_ID)
+
+    bucket = client.bucket(WORKSPACE_BUCKET)
+    assert bucket.iam_configuration.uniform_bucket_level_access_enabled is True
+    assert bucket.iam_configuration.public_access_prevention == "enforced"
+    assert bucket.labels == {"praxis-workspace": str(WORKSPACE_ID)}
+    assert client.create_calls == [
+        {
+            "bucket": WORKSPACE_BUCKET,
+            "project": "praxis-test-project",
+            "location": "europe-west2",
+        }
+    ]
+    assert provider._workspace_bucket(WORKSPACE_ID) is bucket
+
+
+async def test_gcs_provisioning_restores_handle_if_it_is_evicted_while_awaiting() -> None:
+    client = _FakeGcsClient()
+    client.existing_buckets.add(WORKSPACE_BUCKET)
+    provider = _provider(client)
+    bucket = provider._workspace_bucket(WORKSPACE_ID)
+    reload_started = threading.Event()
+    release_reload = threading.Event()
+    original_reload = bucket.reload
+
+    def blocking_reload() -> None:
+        reload_started.set()
+        assert release_reload.wait(timeout=5)
+        original_reload()
+
+    bucket.reload = blocking_reload
+    provisioning = asyncio.create_task(provider.ensure_workspace_bucket(WORKSPACE_ID))
+    assert await asyncio.to_thread(reload_started.wait, 5)
+    for _index in range(256):
+        provider._workspace_bucket(uuid4())
+    assert WORKSPACE_ID not in provider._workspace_buckets
+
+    release_reload.set()
+    await provisioning
+
+    assert provider._workspace_buckets[WORKSPACE_ID] is bucket
+    await provider.ensure_workspace_bucket(WORKSPACE_ID)

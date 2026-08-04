@@ -5,8 +5,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import threading
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from services.storage.domain import (
     SignedDownload,
@@ -30,6 +34,7 @@ from services.storage.providers._common import (
     require_setting as _require_setting,
     string_metadata as _string_metadata,
 )
+from services.storage.workspace_buckets import s3_workspace_bucket_name, workspace_id_for_ref
 
 if TYPE_CHECKING:
     from core.settings import Settings
@@ -54,8 +59,9 @@ class S3StorageProvider:
         self,
         *,
         public_bucket_name: str,
-        private_bucket_name: str,
+        workspace_bucket_prefix: str,
         region_name: str,
+        account_id: str,
         public_assets_base_url: str,
         public_cache_control: str | None = None,
         access_key_id: str | None = None,
@@ -67,13 +73,16 @@ class S3StorageProvider:
             "S3_PUBLIC_ASSETS_BUCKET",
             provider_key=self.provider_key,
         )
-        self.private_bucket_name = _require_setting(
-            private_bucket_name,
-            "S3_PRIVATE_ASSETS_BUCKET",
+        self.workspace_bucket_prefix = _require_setting(
+            workspace_bucket_prefix,
+            "WORKSPACE_BUCKET_PREFIX",
             provider_key=self.provider_key,
         )
         self.region_name = _require_setting(
             region_name, "AWS_REGION", provider_key=self.provider_key
+        )
+        self.account_id = _require_setting(
+            account_id, "AWS_ACCOUNT_ID", provider_key=self.provider_key
         )
         self.public_assets_base_url = _require_setting(
             public_assets_base_url,
@@ -89,18 +98,134 @@ class S3StorageProvider:
                 secret_access_key=secret_access_key,
             )
         )
+        self._ensured_workspace_ids: OrderedDict[UUID, None] = OrderedDict()
+        self._ensured_workspace_ids_lock = threading.Lock()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> S3StorageProvider:
         return cls(
             public_bucket_name=settings.S3_PUBLIC_ASSETS_BUCKET,
-            private_bucket_name=settings.S3_PRIVATE_ASSETS_BUCKET,
+            workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
             region_name=settings.AWS_REGION,
+            account_id=settings.AWS_ACCOUNT_ID,
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL or "",
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
             access_key_id=settings.AWS_ACCESS_KEY_ID,
             secret_access_key=settings.AWS_SECRET_ACCESS_KEY.get_secret_value(),
         )
+
+    async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
+        """Create and harden the S3 bucket dedicated to one workspace."""
+        with self._ensured_workspace_ids_lock:
+            if workspace_id in self._ensured_workspace_ids:
+                self._ensured_workspace_ids.move_to_end(workspace_id)
+                return
+        bucket_name = self._workspace_bucket_name(workspace_id)
+        try:
+            await asyncio.to_thread(self.client.head_bucket, Bucket=bucket_name)
+        except Exception as exc:
+            if not _is_not_found_error(exc):
+                raise StorageError(
+                    "Failed to inspect workspace S3 bucket",
+                    provider_key=self.provider_key,
+                    operation="ensure_workspace_bucket",
+                    bucket=bucket_name,
+                    original_error=exc,
+                ) from exc
+            create_params: dict[str, Any] = {
+                "Bucket": bucket_name,
+                "BucketNamespace": "account-regional",
+                "ObjectOwnership": "BucketOwnerEnforced",
+            }
+            if self.region_name != "us-east-1":
+                create_params["CreateBucketConfiguration"] = {
+                    "LocationConstraint": self.region_name
+                }
+            try:
+                await asyncio.to_thread(self.client.create_bucket, **create_params)
+            except Exception as create_exc:
+                if not _is_bucket_already_owned_error(create_exc):
+                    raise StorageError(
+                        "Failed to create workspace S3 bucket",
+                        provider_key=self.provider_key,
+                        operation="ensure_workspace_bucket",
+                        bucket=bucket_name,
+                        original_error=create_exc,
+                    ) from create_exc
+
+        try:
+            await asyncio.to_thread(
+                self.client.put_public_access_block,
+                Bucket=bucket_name,
+                PublicAccessBlockConfiguration={
+                    "BlockPublicAcls": True,
+                    "IgnorePublicAcls": True,
+                    "BlockPublicPolicy": True,
+                    "RestrictPublicBuckets": True,
+                },
+            )
+            await asyncio.to_thread(
+                self.client.put_bucket_encryption,
+                Bucket=bucket_name,
+                ServerSideEncryptionConfiguration={
+                    "Rules": [
+                        {
+                            "ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"},
+                            "BucketKeyEnabled": True,
+                            "BlockedEncryptionTypes": {"EncryptionType": ["SSE-C"]},
+                        }
+                    ]
+                },
+            )
+            await asyncio.to_thread(
+                self.client.put_bucket_ownership_controls,
+                Bucket=bucket_name,
+                OwnershipControls={
+                    "Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}],
+                },
+            )
+            await asyncio.to_thread(
+                self.client.put_bucket_versioning,
+                Bucket=bucket_name,
+                VersioningConfiguration={"Status": "Enabled"},
+            )
+            await self._ensure_https_only_policy(bucket_name)
+            try:
+                tag_response = await asyncio.to_thread(
+                    self.client.get_bucket_tagging,
+                    Bucket=bucket_name,
+                )
+            except Exception as tag_exc:
+                if not _is_no_such_tag_set_error(tag_exc):
+                    raise
+                existing_tags = []
+            else:
+                existing_tags = tag_response.get("TagSet", [])
+            tags_by_key = {
+                str(tag["Key"]): {"Key": str(tag["Key"]), "Value": str(tag["Value"])}
+                for tag in existing_tags
+            }
+            tags_by_key["praxis-workspace"] = {
+                "Key": "praxis-workspace",
+                "Value": str(workspace_id),
+            }
+            await asyncio.to_thread(
+                self.client.put_bucket_tagging,
+                Bucket=bucket_name,
+                Tagging={"TagSet": list(tags_by_key.values())},
+            )
+        except Exception as exc:
+            raise StorageError(
+                "Failed to harden workspace S3 bucket",
+                provider_key=self.provider_key,
+                operation="ensure_workspace_bucket",
+                bucket=bucket_name,
+                original_error=exc,
+            ) from exc
+        with self._ensured_workspace_ids_lock:
+            self._ensured_workspace_ids[workspace_id] = None
+            if len(self._ensured_workspace_ids) > 256:
+                self._ensured_workspace_ids.popitem(last=False)
 
     async def put_object(
         self,
@@ -112,12 +237,15 @@ class S3StorageProvider:
         metadata: dict[str, str] | None = None,
         overwrite: bool = True,
     ) -> StoredObject:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
             resolved_cache_control = self.public_cache_control
 
         params: dict[str, Any] = {
-            "Bucket": self._bucket_name(ref.bucket),
+            "Bucket": self._bucket_name(ref),
             "Key": ref.key,
             "Body": data,
         }
@@ -166,7 +294,7 @@ class S3StorageProvider:
         try:
             response = await asyncio.to_thread(
                 self.client.get_object,
-                Bucket=self._bucket_name(ref.bucket),
+                Bucket=self._bucket_name(ref),
                 Key=ref.key,
             )
             body = response["Body"]
@@ -198,7 +326,7 @@ class S3StorageProvider:
         try:
             response = await asyncio.to_thread(
                 self.client.get_object,
-                Bucket=self._bucket_name(ref.bucket),
+                Bucket=self._bucket_name(ref),
                 Key=ref.key,
             )
             body = response["Body"]
@@ -255,7 +383,7 @@ class S3StorageProvider:
         try:
             response = await asyncio.to_thread(
                 self.client.head_object,
-                Bucket=self._bucket_name(ref.bucket),
+                Bucket=self._bucket_name(ref),
                 Key=ref.key,
             )
         except Exception as exc:
@@ -288,7 +416,7 @@ class S3StorageProvider:
         try:
             await asyncio.to_thread(
                 self.client.delete_object,
-                Bucket=self._bucket_name(ref.bucket),
+                Bucket=self._bucket_name(ref),
                 Key=ref.key,
             )
             return True
@@ -318,7 +446,19 @@ class S3StorageProvider:
                 object_key=destination.key,
             )
 
-        bucket_name = self._bucket_name(source.bucket)
+        source_workspace_id = workspace_id_for_ref(source)
+        destination_workspace_id = workspace_id_for_ref(destination)
+        if source_workspace_id != destination_workspace_id:
+            raise StorageValidationError(
+                "Storage promotion cannot cross workspace buckets",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+        if destination_workspace_id is not None:
+            await self.ensure_workspace_bucket(destination_workspace_id)
+        bucket_name = self._bucket_name(source)
         try:
             await asyncio.to_thread(
                 self.client.copy_object,
@@ -375,6 +515,9 @@ class S3StorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         normalized_content_type = _require_content_type(
             content_type, provider_key=self.provider_key, ref=ref
         )
@@ -384,7 +527,7 @@ class S3StorageProvider:
                 self.client.generate_presigned_url,
                 "put_object",
                 Params={
-                    "Bucket": self._bucket_name(ref.bucket),
+                    "Bucket": self._bucket_name(ref),
                     "Key": ref.key,
                     "ContentType": normalized_content_type,
                     "IfNoneMatch": "*",
@@ -420,7 +563,7 @@ class S3StorageProvider:
         if ref.bucket == StorageBucket.PUBLIC:
             return SignedDownload(ref=ref, url=self.public_url(ref) or "", expires_at=expires_at)
 
-        params = {"Bucket": self._bucket_name(ref.bucket), "Key": ref.key}
+        params = {"Bucket": self._bucket_name(ref), "Key": ref.key}
         response_disposition = (
             build_content_disposition(filename or ref.key.rsplit("/", 1)[-1])
             if force_download
@@ -477,9 +620,60 @@ class S3StorageProvider:
     ) -> None:
         self._raise_no_local_signature("require_valid_download_signature")
 
-    def _bucket_name(self, bucket: StorageBucket) -> str:
-        return (
-            self.public_bucket_name if bucket == StorageBucket.PUBLIC else self.private_bucket_name
+    def _bucket_name(self, ref: StorageObjectRef) -> str:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is None:
+            return self.public_bucket_name
+        return self._workspace_bucket_name(workspace_id)
+
+    def _workspace_bucket_name(self, workspace_id: UUID) -> str:
+        return s3_workspace_bucket_name(
+            self.workspace_bucket_prefix,
+            workspace_id,
+            account_id=self.account_id,
+            region=self.region_name,
+        )
+
+    async def _ensure_https_only_policy(self, bucket_name: str) -> None:
+        try:
+            response = await asyncio.to_thread(
+                self.client.get_bucket_policy,
+                Bucket=bucket_name,
+            )
+        except Exception as exc:
+            if not _is_no_such_bucket_policy_error(exc):
+                raise
+            policy: dict[str, Any] = {"Version": "2012-10-17", "Statement": []}
+        else:
+            policy = json.loads(response["Policy"])
+
+        statements = policy.get("Statement")
+        if isinstance(statements, dict):
+            statements = [statements]
+        elif not isinstance(statements, list):
+            raise StorageValidationError(
+                "Workspace S3 bucket policy must contain a Statement list",
+                provider_key=self.provider_key,
+                operation="ensure_workspace_bucket",
+                bucket=bucket_name,
+            )
+        https_only_statement = {
+            "Sid": "DenyInsecureTransport",
+            "Effect": "Deny",
+            "Principal": "*",
+            "Action": "s3:*",
+            "Resource": [f"arn:aws:s3:::{bucket_name}", f"arn:aws:s3:::{bucket_name}/*"],
+            "Condition": {"Bool": {"aws:SecureTransport": "false"}},
+        }
+        policy["Statement"] = [
+            statement
+            for statement in statements
+            if not isinstance(statement, dict) or statement.get("Sid") != "DenyInsecureTransport"
+        ] + [https_only_statement]
+        await asyncio.to_thread(
+            self.client.put_bucket_policy,
+            Bucket=bucket_name,
+            Policy=json.dumps(policy, separators=(",", ":"), sort_keys=True),
         )
 
     def _create_client(self, *, access_key_id: str | None, secret_access_key: str | None):
@@ -543,6 +737,27 @@ def _is_precondition_error(exc: Exception) -> bool:
         "ConditionalRequestConflict",
         "PreconditionFailed",
     } or status in {409, 412}
+
+
+def _is_bucket_already_owned_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code", "")) == "BucketAlreadyOwnedByYou"
+
+
+def _is_no_such_tag_set_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code", "")) == "NoSuchTagSet"
+
+
+def _is_no_such_bucket_policy_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code", "")) == "NoSuchBucketPolicy"
 
 
 def _next_or_none(iterator):

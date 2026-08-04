@@ -237,6 +237,40 @@ docker build --build-arg CLOUD_EXTRA=aws apps/api
 
 Supported cloud extras are `gcp`, `aws`, and `azure`.
 
+Cloud storage also requires a deployment-unique `WORKSPACE_BUCKET_PREFIX`.
+GCS deployments must set `GCP_PROJECT_ID` and the immutable
+`GCS_WORKSPACE_BUCKET_LOCATION`; S3 deployments must set `AWS_ACCOUNT_ID` and
+`AWS_REGION` so workspace buckets use the account-regional namespace. The S3
+account/region suffix reduces the permitted prefix length, which settings
+validation reports before startup.
+
+### Cloud storage provisioning
+
+Praxis creates and hardens one private bucket or container for each workspace.
+Workspace creation queues this work; the first private write or signed upload
+also provisions synchronously as a race-safe backstop. The shared public
+bucket/container is different: create it before deployment, configure its
+intended public object access separately, and set the provider-specific public
+resource variable shown below. Praxis does not create or harden that shared
+public resource.
+
+The API and worker must use the same runtime identity and storage configuration.
+Grant that identity only the capabilities used by the selected provider:
+
+| Provider | Required configuration | Runtime identity capabilities |
+|---|---|---|
+| GCS | `GCP_PROJECT_ID`, `GCS_PUBLIC_ASSETS_BUCKET`, `GCS_WORKSPACE_BUCKET_LOCATION` | Get, create, and update buckets; create, read, copy, and delete objects. For signed URLs with Cloud Run or other metadata-server credentials, enable the IAM Service Account Credentials API and grant `iam.serviceAccounts.signBlob` on the runtime service account. |
+| S3 | `S3_PUBLIC_ASSETS_BUCKET`, `AWS_ACCOUNT_ID`, `AWS_REGION`, `PUBLIC_ASSETS_BASE_URL` | Create and inspect buckets; set public-access block, encryption, ownership, versioning, policy, and tags; read, write, copy, and delete objects. Account-regional workspace buckets are unsupported in `me-south-1` and `me-central-1`. |
+| Azure Blob | `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_PUBLIC_CONTAINER`; optionally `AZURE_STORAGE_ACCOUNT_URL` and `AZURE_MANAGED_IDENTITY_CLIENT_ID` | Create and inspect containers; update metadata and access policy; read, write, copy, and delete blobs. Signed URLs also require `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`; `Storage Blob Data Contributor` plus `Storage Blob Delegator` are suitable built-in-role starting points. |
+
+Plan capacity before adopting bucket-per-workspace storage. S3 accounts default
+to 10,000 general-purpose buckets (an adjustable quota). GCS limits bucket
+creation and deletion to roughly one request every two seconds per project, so
+workspace bursts may temporarily retry through the jobs worker. Monitor failed
+`storage.provision_workspace_bucket` jobs and request quota changes or revisit
+the storage topology before those limits bind; do not silently fall back to a
+shared private bucket.
+
 The database server must expose the `vector` extension. Alembic enables it
 with `CREATE EXTENSION IF NOT EXISTS "vector"` during core migrations; if the
 provider does not make pgvector available, migration fails instead of silently

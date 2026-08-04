@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
 from models.audit_event import AuditEvent
+from models.jobs import Job
 from models.security import SecurityEvent
 from models.user import User
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
+from services.storage.domain import PROVISION_WORKSPACE_BUCKET_KIND
 from services.workspaces import create_workspace, delete_workspace
 from services.workspaces.invitations import (
     accept_invitation_by_token,
@@ -26,6 +28,7 @@ from services.workspaces.invitations import (
     create_invitation,
 )
 from services.workspaces.memberships import create_membership, delete_membership, update_membership
+from services.workspaces.provisioning import provision_personal_workspace
 from services.workspaces.schemas import (
     WorkspaceCreateRequest,
     WorkspaceInvitationCreateRequest,
@@ -76,6 +79,35 @@ async def test_create_workspace_generates_unique_slug_and_owner_membership(
     assert audit_event is not None
     assert audit_event.details["slug"] == "agent-team-2"
     assert audit_event.details["owner_membership_id"] == str(membership.id)
+
+    job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == PROVISION_WORKSPACE_BUCKET_KIND,
+            Job.workspace_id == result.id,
+        )
+    )
+    assert job is not None
+    assert job.initiated_by_user_id == actor.id
+
+
+async def test_personal_workspace_creation_enqueues_bucket_provisioning(
+    db_session: AsyncSession,
+) -> None:
+    user = build_user(email="personal-storage@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    workspace = await provision_personal_workspace(db_session, user)
+
+    job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == PROVISION_WORKSPACE_BUCKET_KIND,
+            Job.workspace_id == workspace.id,
+        )
+    )
+    assert job is not None
+    assert job.subject_type == "workspace"
+    assert job.subject_id == workspace.id
 
 
 async def test_delete_workspace_rejects_personal_workspaces(db_session: AsyncSession) -> None:

@@ -11,6 +11,10 @@ class GcpSettingsMixin:
     GCS_PUBLIC_ASSETS_BUCKET: str = Field(
         default="", description="GCS bucket for public assets (public-read)"
     )
-    GCS_PRIVATE_ASSETS_BUCKET: str = Field(
-        default="", description="GCS bucket for private originals and documents"
+    GCS_WORKSPACE_BUCKET_LOCATION: str = Field(
+        default="",
+        description=(
+            "Immutable GCS location for workspace-private buckets. "
+            "Required when STORAGE_PROVIDER=gcs."
+        ),
     )

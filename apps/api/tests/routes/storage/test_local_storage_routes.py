@@ -5,6 +5,7 @@
 from collections.abc import Iterator
 from datetime import timedelta
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import pytest
 from httpx2 import AsyncClient
@@ -15,6 +16,11 @@ from services.storage.factory import get_local_storage_provider
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
+WORKSPACE_ID = UUID("11111111-1111-4111-8111-111111111111")
+
+
+def _private_key(suffix: str) -> str:
+    return f"workspaces/{WORKSPACE_ID}/{suffix}"
 
 
 @pytest.fixture
@@ -39,7 +45,7 @@ async def test_local_signed_upload_and_download_routes(
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "runs/run_1/results/output.txt")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/output.txt"))
 
     upload = await provider.create_signed_upload(
         ref,
@@ -74,7 +80,7 @@ async def test_local_inline_pdf_is_frameable_only_by_configured_app_origins(
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "files/report.pdf")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/report.pdf"))
     await provider.put_object(ref, b"%PDF-1.7", content_type="application/pdf")
 
     preview = await provider.create_signed_download(
@@ -101,7 +107,7 @@ async def test_signed_upload_route_uses_active_provider_selection(
     reset_storage_provider_cache()
     try:
         response = await db_async_client.put(
-            "/api/v1/storage/upload/private/runs/run_1/results/output.txt",
+            f"/api/v1/storage/upload/private/{_private_key('results/output.txt')}",
             params={
                 "expires": "9999999999",
                 "sig": "invalid",
@@ -123,7 +129,7 @@ async def test_local_signed_upload_rejects_tampered_content_type(
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "runs/run_1/results/output.json")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/output.json"))
 
     upload = await provider.create_signed_upload(
         ref,
@@ -145,7 +151,7 @@ async def test_local_signed_upload_rejects_content_type_parameters(
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "runs/run_1/results/output.txt")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/output.txt"))
 
     upload = await provider.create_signed_upload(
         ref,
@@ -167,7 +173,7 @@ async def test_local_private_download_rejects_tampered_signature_inputs(
     local_storage_settings: None,
 ) -> None:
     provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, "runs/run_1/results/output.txt")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/output.txt"))
     await provider.put_object(ref, b"stored", content_type="text/plain")
 
     download = await provider.create_signed_download(

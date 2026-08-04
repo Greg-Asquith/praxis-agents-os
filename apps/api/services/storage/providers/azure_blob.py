@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from services.storage.domain import (
     SignedDownload,
@@ -30,6 +32,7 @@ from services.storage.providers._common import (
     require_setting as _require_setting,
     string_metadata as _string_metadata,
 )
+from services.storage.workspace_buckets import workspace_bucket_name, workspace_id_for_ref
 
 if TYPE_CHECKING:
     from core.settings import Settings
@@ -74,7 +77,7 @@ class AzureBlobStorageProvider:
         *,
         account_name: str,
         public_container_name: str,
-        private_container_name: str,
+        workspace_bucket_prefix: str,
         account_url: str | None = None,
         managed_identity_client_id: str | None = None,
         public_assets_base_url: str | None = None,
@@ -96,9 +99,9 @@ class AzureBlobStorageProvider:
             "AZURE_STORAGE_PUBLIC_CONTAINER",
             provider_key=self.provider_key,
         )
-        self.private_container_name = _require_setting(
-            private_container_name,
-            "AZURE_STORAGE_PRIVATE_CONTAINER",
+        self.workspace_bucket_prefix = _require_setting(
+            workspace_bucket_prefix,
+            "WORKSPACE_BUCKET_PREFIX",
             provider_key=self.provider_key,
         )
         self.account_url = (
@@ -114,9 +117,9 @@ class AzureBlobStorageProvider:
             service_client if service_client is not None else self._create_service_client()
         )
         self.public_container = self.service_client.get_container_client(self.public_container_name)
-        self.private_container = self.service_client.get_container_client(
-            self.private_container_name
-        )
+        self._workspace_containers: OrderedDict[UUID, Any] = OrderedDict()
+        self._ensured_workspace_ids: set[UUID] = set()
+        self._workspace_containers_lock = threading.Lock()
         self.content_settings_cls = content_settings_cls or self._require_content_settings_cls()
         self.match_conditions_cls = match_conditions_cls or self._require_match_conditions_cls()
         self.sas_permissions_cls = sas_permissions_cls or self._require_sas_permissions_cls()
@@ -130,12 +133,75 @@ class AzureBlobStorageProvider:
         return cls(
             account_name=settings.AZURE_STORAGE_ACCOUNT_NAME,
             public_container_name=settings.AZURE_STORAGE_PUBLIC_CONTAINER,
-            private_container_name=settings.AZURE_STORAGE_PRIVATE_CONTAINER,
+            workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
             account_url=settings.AZURE_STORAGE_ACCOUNT_URL,
             managed_identity_client_id=settings.AZURE_MANAGED_IDENTITY_CLIENT_ID,
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL,
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
         )
+
+    async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
+        """Create and keep private the Azure container dedicated to one workspace."""
+        with self._workspace_containers_lock:
+            if workspace_id in self._ensured_workspace_ids:
+                self._workspace_containers.move_to_end(workspace_id)
+                return
+        container = self._workspace_container(workspace_id)
+        metadata = {"praxis_workspace": str(workspace_id)}
+        try:
+            properties = await asyncio.to_thread(container.get_container_properties)
+        except Exception as exc:
+            if not _is_azure_not_found(exc):
+                raise StorageError(
+                    "Failed to inspect workspace Azure container",
+                    provider_key=self.provider_key,
+                    operation="ensure_workspace_bucket",
+                    bucket=container.container_name,
+                    original_error=exc,
+                ) from exc
+            try:
+                await asyncio.to_thread(container.create_container, metadata=metadata)
+            except Exception as create_exc:
+                if not _is_azure_precondition_failed(create_exc):
+                    raise StorageError(
+                        "Failed to create workspace Azure container",
+                        provider_key=self.provider_key,
+                        operation="ensure_workspace_bucket",
+                        bucket=container.container_name,
+                        original_error=create_exc,
+                    ) from create_exc
+                properties = await asyncio.to_thread(container.get_container_properties)
+            else:
+                properties = None
+
+        try:
+            existing_metadata = _string_metadata(
+                _get_property(properties, "metadata") if properties is not None else None
+            )
+            existing_signed_identifiers = {}
+            if properties is not None:
+                access_policy = await asyncio.to_thread(container.get_container_access_policy)
+                existing_signed_identifiers = (
+                    _get_property(access_policy, "signed_identifiers") or {}
+                )
+            await asyncio.to_thread(
+                container.set_container_metadata,
+                metadata={**existing_metadata, **metadata},
+            )
+            await asyncio.to_thread(
+                container.set_container_access_policy,
+                signed_identifiers=existing_signed_identifiers,
+                public_access=None,
+            )
+        except Exception as exc:
+            raise StorageError(
+                "Failed to harden workspace Azure container",
+                provider_key=self.provider_key,
+                operation="ensure_workspace_bucket",
+                bucket=container.container_name,
+                original_error=exc,
+            ) from exc
+        self._remember_ensured_workspace_container(workspace_id, container)
 
     async def put_object(
         self,
@@ -147,6 +213,9 @@ class AzureBlobStorageProvider:
         metadata: dict[str, str] | None = None,
         overwrite: bool = True,
     ) -> StoredObject:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
             resolved_cache_control = self.public_cache_control
@@ -154,7 +223,7 @@ class AzureBlobStorageProvider:
             content_type=content_type,
             cache_control=resolved_cache_control,
         )
-        blob = self._container(ref.bucket).get_blob_client(ref.key)
+        blob = self._container(ref).get_blob_client(ref.key)
         try:
             await asyncio.to_thread(
                 blob.upload_blob,
@@ -194,7 +263,7 @@ class AzureBlobStorageProvider:
         return stored
 
     async def get_object(self, ref: StorageObjectRef) -> bytes:
-        blob = self._container(ref.bucket).get_blob_client(ref.key)
+        blob = self._container(ref).get_blob_client(ref.key)
         try:
             exists = await asyncio.to_thread(blob.exists)
             if not exists:
@@ -219,7 +288,7 @@ class AzureBlobStorageProvider:
             ) from exc
 
     async def stream_object(self, ref: StorageObjectRef):
-        blob = self._container(ref.bucket).get_blob_client(ref.key)
+        blob = self._container(ref).get_blob_client(ref.key)
         try:
             exists = await asyncio.to_thread(blob.exists)
             if not exists:
@@ -256,7 +325,7 @@ class AzureBlobStorageProvider:
             ) from exc
 
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:
-        blob = self._container(ref.bucket).get_blob_client(ref.key)
+        blob = self._container(ref).get_blob_client(ref.key)
         try:
             properties = await asyncio.to_thread(blob.get_blob_properties)
         except Exception as exc:
@@ -284,7 +353,7 @@ class AzureBlobStorageProvider:
         )
 
     async def delete_object(self, ref: StorageObjectRef) -> bool:
-        blob = self._container(ref.bucket).get_blob_client(ref.key)
+        blob = self._container(ref).get_blob_client(ref.key)
         try:
             exists = await asyncio.to_thread(blob.exists)
             if not exists:
@@ -317,7 +386,19 @@ class AzureBlobStorageProvider:
                 object_key=destination.key,
             )
 
-        container = self._container(source.bucket)
+        source_workspace_id = workspace_id_for_ref(source)
+        destination_workspace_id = workspace_id_for_ref(destination)
+        if source_workspace_id != destination_workspace_id:
+            raise StorageValidationError(
+                "Storage promotion cannot cross workspace buckets",
+                provider_key=self.provider_key,
+                operation="promote_object",
+                bucket=destination.bucket.value,
+                object_key=destination.key,
+            )
+        if destination_workspace_id is not None:
+            await self.ensure_workspace_bucket(destination_workspace_id)
+        container = self._container(source)
         source_blob = container.get_blob_client(source.key)
         destination_blob = container.get_blob_client(destination.key)
         try:
@@ -391,6 +472,9 @@ class AzureBlobStorageProvider:
         content_type: str,
         expires_in: timedelta,
     ) -> SignedUpload:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
         normalized_content_type = _require_content_type(
             content_type, provider_key=self.provider_key, ref=ref
         )
@@ -466,15 +550,50 @@ class AzureBlobStorageProvider:
     ) -> None:
         self._raise_no_local_signature("require_valid_download_signature")
 
-    def _container(self, bucket: StorageBucket):
-        return self.public_container if bucket == StorageBucket.PUBLIC else self.private_container
-
-    def _container_name(self, bucket: StorageBucket) -> str:
+    def _container(self, ref: StorageObjectRef):
+        workspace_id = workspace_id_for_ref(ref)
         return (
-            self.public_container_name
-            if bucket == StorageBucket.PUBLIC
-            else self.private_container_name
+            self.public_container
+            if workspace_id is None
+            else self._workspace_container(workspace_id)
         )
+
+    def _container_name(self, ref: StorageObjectRef) -> str:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is None:
+            return self.public_container_name
+        return workspace_bucket_name(self.workspace_bucket_prefix, workspace_id)
+
+    def _workspace_container(self, workspace_id: UUID):
+        with self._workspace_containers_lock:
+            cached = self._workspace_containers.get(workspace_id)
+            if cached is not None:
+                self._workspace_containers.move_to_end(workspace_id)
+                return cached
+            container = self.service_client.get_container_client(
+                workspace_bucket_name(self.workspace_bucket_prefix, workspace_id)
+            )
+            self._cache_workspace_container_locked(workspace_id, container, ensured=False)
+            return container
+
+    def _remember_ensured_workspace_container(self, workspace_id: UUID, container: Any) -> None:
+        with self._workspace_containers_lock:
+            self._cache_workspace_container_locked(workspace_id, container, ensured=True)
+
+    def _cache_workspace_container_locked(
+        self,
+        workspace_id: UUID,
+        container: Any,
+        *,
+        ensured: bool,
+    ) -> None:
+        self._workspace_containers[workspace_id] = container
+        self._workspace_containers.move_to_end(workspace_id)
+        if ensured:
+            self._ensured_workspace_ids.add(workspace_id)
+        if len(self._workspace_containers) > 256:
+            evicted_workspace_id, _handle = self._workspace_containers.popitem(last=False)
+            self._ensured_workspace_ids.discard(evicted_workspace_id)
 
     async def _create_signed_blob_url(
         self,
@@ -488,7 +607,7 @@ class AzureBlobStorageProvider:
         starts_on = datetime.now(UTC) - timedelta(minutes=SIGNED_URL_CLOCK_SKEW_MINUTES)
         delegation_key = await self._get_user_delegation_key(expires_at=expires_at)
         permissions = self.sas_permissions_cls(**permission_kwargs)
-        container_name = self._container_name(ref.bucket)
+        container_name = self._container_name(ref)
         try:
             sas_token = await asyncio.to_thread(
                 self.generate_sas_func,

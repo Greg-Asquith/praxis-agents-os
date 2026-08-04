@@ -9,6 +9,7 @@ from services.jobs.handlers import (
     ingest_kb_document,  # noqa: F401
     integration_discovery,  # noqa: F401
     integration_events,  # noqa: F401
+    provision_workspace_bucket,  # noqa: F401
     rotate_credential_encryption,  # noqa: F401
     summarize_conversation_history,  # noqa: F401
     sweep_deleted_files,  # noqa: F401
