@@ -305,7 +305,7 @@ describe("Gmail tool presenters", () => {
     const declaredFields = [
       field("to", "Recipients", "list", true),
       field("subject", "Declared Subject", "text", true),
-      field("body_text", "Declared Message", "multiline", true),
+      field("body_html", "Declared Message", "html", true),
       field("cc", "Declared Cc", "list", true, true),
       field("bcc", "Declared Bcc", "list", true, true),
     ]
@@ -327,7 +327,7 @@ describe("Gmail tool presenters", () => {
           args: {
             to: ["client@example.com"],
             subject: "Project update",
-            body_text: "The work is complete.",
+            body_html: "<p>The work is complete.</p>",
             cc: [],
             bcc: [],
           },
@@ -357,12 +357,11 @@ describe("Gmail tool presenters", () => {
       gmailSendDetails({
         to: ["client@example.com"],
         subject: "Project update",
-        body_text: "A long message body",
+        body_html: "<p>A long message body</p>",
       })
     ).toEqual([
       { label: "To", value: "client@example.com" },
       { label: "Subject", summary: true, value: "Project update" },
-      { label: "Message", summary: false, value: "A long message body" },
     ])
   })
 
@@ -376,7 +375,7 @@ describe("Gmail tool presenters", () => {
         args: {
           to: ["client@example.com"],
           subject: "Project update",
-          body_text: "The work is complete.\nThanks,\nAda",
+          body_html: "<p>The work is complete.</p><p>Thanks,<br>Ada</p>",
           cc: ["team@example.com"],
           bcc: [],
         },
@@ -408,7 +407,7 @@ describe("Gmail tool presenters", () => {
           args: {
             to: ["client@example.com"],
             subject: "Project update",
-            body_text: "The work is complete.",
+            body_html: "<p>The work is complete.</p>",
           },
         })
       )

@@ -2,6 +2,7 @@
 
 import { MailCheckIcon, MailXIcon } from "lucide-react"
 
+import { HtmlContentFrame } from "@/components/tool-ui/html-content-frame"
 import { isRecord } from "@/lib/guards"
 
 export function GmailSendMessage({
@@ -57,9 +58,13 @@ export function GmailSendMessage({
               </>
             ) : null}
           </dl>
-          <p className="pt-3 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap">
-            {message.body}
-          </p>
+          <div className="pt-3">
+            <HtmlContentFrame
+              className="border-border/70 h-80 rounded-lg border"
+              html={message.body}
+              title={message.subject || "Email body"}
+            />
+          </div>
         </>
       ) : null}
     </article>
@@ -87,13 +92,13 @@ export function sentMessageArgs(value: unknown) {
     !Array.isArray(value["to"]) ||
     !value["to"].every((item) => typeof item === "string") ||
     typeof value["subject"] !== "string" ||
-    typeof value["body_text"] !== "string"
+    typeof value["body_html"] !== "string"
   ) {
     return null
   }
   return {
     bcc: stringList(value["bcc"]),
-    body: value["body_text"],
+    body: value["body_html"],
     cc: stringList(value["cc"]),
     subject: value["subject"],
     to: value["to"],

@@ -37,7 +37,15 @@ async def gmail_send_message(
     ctx: RunContext[RuntimeDeps],
     to: Annotated[list[str], Field(min_length=1, description="Recipient email addresses.")],
     subject: Annotated[str, Field(description="Email subject.")],
-    body_text: Annotated[str, Field(description="Plain-text email body.")],
+    body_html: Annotated[
+        str,
+        Field(
+            description=(
+                "HTML email body. Use simple, inline-styled HTML (paragraphs, headings, "
+                "lists, tables, links). A plain-text alternative is derived automatically."
+            )
+        ),
+    ],
     cc: Annotated[list[str] | None, Field(description="Optional CC recipients.")] = None,
     bcc: Annotated[list[str] | None, Field(description="Optional BCC recipients.")] = None,
 ) -> dict[str, Any]:
@@ -52,7 +60,7 @@ async def gmail_send_message(
                 client,
                 to=recipients,
                 subject=subject,
-                body_text=body_text,
+                body_html=body_html,
                 cc=cc,
                 bcc=bcc,
             )
@@ -89,7 +97,10 @@ async def gmail_send_message(
 DEFINITION = RuntimeToolDefinition(
     name="gmail_send_message",
     function=gmail_send_message,
-    description="Send a plain-text email from every writable Gmail mailbox in context.",
+    description=(
+        "Send a rich HTML email from every writable Gmail mailbox in context. "
+        "A plain-text alternative is derived from the HTML automatically."
+    ),
     provider="gmail",
     label="Send Gmail Message",
     effect=TOOL_EFFECT_WRITE,
@@ -112,9 +123,9 @@ DEFINITION = RuntimeToolDefinition(
             ToolFieldPresentation(key="to", label="To", format="list", editable=True),
             ToolFieldPresentation(key="subject", label="Subject", editable=True),
             ToolFieldPresentation(
-                key="body_text",
+                key="body_html",
                 label="Message",
-                format="multiline",
+                format="html",
                 editable=True,
             ),
             ToolFieldPresentation(

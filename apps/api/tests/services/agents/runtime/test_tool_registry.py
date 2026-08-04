@@ -562,7 +562,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         "delegate_to_agent": {"agent_id", "task"},
         "gmail_read_message": {"message_id"},
         "gmail_search_messages": {"limit", "query"},
-        "gmail_send_message": {"bcc", "body_text", "cc", "subject", "to"},
+        "gmail_send_message": {"bcc", "body_html", "cc", "subject", "to"},
         "google_ads_run_report": {"query"},
         "google_ads_update_campaign_status": {"campaign_ids", "status"},
         "save_memory": {

@@ -21,6 +21,7 @@ ToolFieldFormat = Literal[
     "text",
     "multiline",
     "markdown",
+    "html",
     "bytes",
     "datetime",
     "boolean",
@@ -61,6 +62,7 @@ VALID_TOOL_FIELD_FORMATS = frozenset(
         "text",
         "multiline",
         "markdown",
+        "html",
         "bytes",
         "datetime",
         "boolean",
@@ -73,7 +75,7 @@ VALID_TOOL_FIELD_FORMATS = frozenset(
     }
 )
 EDITABLE_TOOL_FIELD_FORMATS = frozenset(
-    {"text", "multiline", "markdown", "number", "list", "keyvalue", "entity", "entity_list"}
+    {"text", "multiline", "markdown", "html", "number", "list", "keyvalue", "entity", "entity_list"}
 )
 STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
 # Semantic icon tokens the web client maps to concrete icons.

@@ -13,6 +13,7 @@ import type {
 import type { EditedKeyValue, EditedValue, EditedValues } from "@/components/tool-ui/edited-values"
 import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
 import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import { HtmlFieldInput } from "@/components/tool-ui/html-field-input"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
 import { ListFieldInput } from "@/components/tool-ui/list-field-input"
 import { Button } from "@/components/ui/button"
@@ -283,10 +284,20 @@ export function ApprovalRequestFields({
                 step={Number.isInteger(rawValue) ? 1 : "any"}
                 type="number"
               />
+            ) : field.format === "html" && typeof value === "string" ? (
+              <HtmlFieldInput
+                disabled={disabled}
+                id={id}
+                label={field.label}
+                onChange={(nextValue) => {
+                  applyFieldEdit(field.key, nextValue)
+                }}
+                value={value}
+              />
             ) : typeof value === "string" &&
               (field.format === "multiline" || field.format === "markdown" || value.length > 80) ? (
               <Textarea
-                className={cn(fieldWellClass, "min-h-16")}
+                className={cn(fieldWellClass, "field-sizing-content max-h-96 min-h-24")}
                 disabled={disabled}
                 id={id}
                 onChange={changeHandler(field.key, applyFieldEdit)}
@@ -361,13 +372,15 @@ function UnavailableEntityField({
 }
 
 function fieldSpanClass(format: ToolFieldFormat): string | undefined {
-  return ["multiline", "markdown", "list", "keyvalue", "entity", "entity_list"].includes(format)
+  return ["multiline", "markdown", "html", "list", "keyvalue", "entity", "entity_list"].includes(
+    format
+  )
     ? "sm:col-span-2"
     : undefined
 }
 
 function editableValue(format: ToolFieldFormat, value: unknown): EditedValue | null {
-  if (format === "text" || format === "multiline" || format === "markdown") {
+  if (format === "text" || format === "multiline" || format === "markdown" || format === "html") {
     return typeof value === "string" ? value : null
   }
   if (format === "number") {

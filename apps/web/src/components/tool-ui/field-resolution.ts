@@ -7,6 +7,7 @@ export type ToolFieldFormat =
   | "text"
   | "multiline"
   | "markdown"
+  | "html"
   | "bytes"
   | "datetime"
   | "boolean"

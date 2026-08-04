@@ -16,20 +16,14 @@ export function gmailSendDetails(args: unknown): FanOutDetail[] {
   return compact([
     listArg(args, "to", "To"),
     stringDetail(args, "subject", "Subject"),
-    stringDetail(args, "body_text", "Message", false),
     listArg(args, "cc", "Cc"),
     listArg(args, "bcc", "Bcc"),
   ])
 }
 
-function stringDetail(
-  args: unknown,
-  key: string,
-  label: string,
-  summary = true
-): FanOutDetail | null {
+function stringDetail(args: unknown, key: string, label: string): FanOutDetail | null {
   const value = stringArg(args, key)
-  return value ? { label, summary, value } : null
+  return value ? { label, summary: true, value } : null
 }
 
 function listArg(args: unknown, key: string, label: string): FanOutDetail | null {

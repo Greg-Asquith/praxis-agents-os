@@ -22,7 +22,7 @@ from integrations.gmail.entity_resolvers.message import (
 from integrations.gmail.operations.preview_message import preview_message
 from integrations.gmail.operations.read_message import MAX_BODY_CHARS, read_message
 from integrations.gmail.operations.search_messages import search_messages
-from integrations.gmail.operations.send_message import send_message
+from integrations.gmail.operations.send_message import html_to_text, send_message
 from integrations.gmail.references import GmailMessageReference
 from integrations.gmail.tools.read_message import gmail_read_message
 from services.integrations import http as integration_http
@@ -136,7 +136,7 @@ async def test_send_builds_rfc_message_and_returns_id() -> None:
             cc=["cc@example.com"],
             bcc=["bcc@example.com"],
             subject="Subject",
-            body_text="Hello from Praxis",
+            body_html="<p>Hello from <strong>Praxis</strong></p><script>alert(1)</script>",
         )
 
     padding = "=" * (-len(captured_raw) % 4)
@@ -145,8 +145,31 @@ async def test_send_builds_rfc_message_and_returns_id() -> None:
     assert message["Cc"] == "cc@example.com"
     assert message["Bcc"] == "bcc@example.com"
     assert message["Subject"] == "Subject"
-    assert "Hello from Praxis" in message.get_payload()
+    assert message.is_multipart()
+    parts = {
+        part.get_content_type(): part.get_payload(decode=True)
+        for part in message.walk()
+        if not part.is_multipart()
+    }
+    assert b"Hello from Praxis" in parts["text/plain"]
+    assert b"<strong>Praxis</strong>" in parts["text/html"]
+    assert b"script" not in parts["text/html"]
     assert result == {"message_id": "sent-1"}
+
+
+def test_html_to_text_flattens_blocks_lists_and_links() -> None:
+    text = html_to_text(
+        "<h1>Update</h1><p>Hi&nbsp;there,</p>"
+        "<ul><li>First</li><li>Second</li></ul>"
+        '<p><a href="https://example.com/report">View the report</a></p>'
+        "<style>p{color:red}</style>"
+    )
+    assert "Update" in text
+    assert "Hi there," in text
+    assert "- First\n- Second" in text
+    assert "View the report (https://example.com/report)" in text
+    assert "color:red" not in text
+    assert "\n\n\n" not in text
 
 
 async def test_client_forces_one_refresh_after_unauthorized() -> None:

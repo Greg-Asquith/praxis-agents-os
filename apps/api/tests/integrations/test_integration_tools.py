@@ -186,7 +186,7 @@ async def test_write_gating_fails_closed_without_provider_call(monkeypatch) -> N
         ctx,
         to=["recipient@example.com"],
         subject="Subject",
-        body_text="Body",
+        body_html="<p>Body</p>",
     )
 
     assert result["results"][0]["error_code"] == "write_not_permitted"

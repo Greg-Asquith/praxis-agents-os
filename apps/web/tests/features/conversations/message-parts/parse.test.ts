@@ -52,7 +52,7 @@ describe("parseConversationMessages", () => {
               part_kind: "tool-call",
               tool_call_id: "send-1",
               tool_name: "gmail_send_message",
-              args: { to: ["client@example.com"], subject: "Update", body_text: "Hello" },
+              args: { to: ["client@example.com"], subject: "Update", body_html: "<p>Hello</p>" },
             },
           ],
           { agent_run_id: "run-1" }
