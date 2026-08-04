@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  activeContextTargetsKey,
+  activeContextTargetsLabel,
   activeContextSelectionFromKey,
   activeContextSelectionKey,
   activeContextSelectionLabel,
+  MAX_ACTIVE_CONTEXT_TARGETS,
+  toggleActiveContextTarget,
 } from "@/features/integrations/active-context"
 import type { IntegrationContextGroup, IntegrationResource } from "@/features/integrations/types"
 
@@ -38,8 +42,7 @@ const resource: IntegrationResource = {
 }
 
 describe("active context picker values", () => {
-  it("round-trips none, context groups, and resources", () => {
-    expect(activeContextSelectionFromKey("none", [group], [resource])).toBeNull()
+  it("round-trips context groups and resources", () => {
     expect(activeContextSelectionFromKey("group:group-1", [group], [resource])).toEqual({
       context_group_id: "group-1",
       type: "context_group",
@@ -79,5 +82,35 @@ describe("active context picker values", () => {
         [googleAdsResource]
       )
     ).toBe("123-456-7890")
+  })
+
+  it("uses order-independent set keys and a compact summary", () => {
+    const groupTarget = { context_group_id: group.id, type: "context_group" } as const
+    const resourceTarget = { integration_resource_id: resource.id, type: "resource" } as const
+
+    expect(activeContextTargetsKey([groupTarget, resourceTarget])).toBe(
+      activeContextTargetsKey([resourceTarget, groupTarget])
+    )
+    expect(activeContextTargetsLabel([], [group], [resource])).toBe("None")
+    expect(activeContextTargetsLabel([groupTarget, resourceTarget], [group], [resource])).toBe(
+      "Client X +1 more"
+    )
+  })
+
+  it("toggles targets without duplicates and enforces the target cap", () => {
+    const groupTarget = { context_group_id: group.id, type: "context_group" } as const
+    const resourceTarget = { integration_resource_id: resource.id, type: "resource" } as const
+
+    expect(toggleActiveContextTarget([groupTarget], groupTarget)).toEqual([])
+    expect(toggleActiveContextTarget([groupTarget], resourceTarget)).toEqual([
+      groupTarget,
+      resourceTarget,
+    ])
+
+    const fullSelection = Array.from({ length: MAX_ACTIVE_CONTEXT_TARGETS }, (_, index) => ({
+      integration_resource_id: `resource-${String(index)}`,
+      type: "resource" as const,
+    }))
+    expect(toggleActiveContextTarget(fullSelection, groupTarget)).toBe(fullSelection)
   })
 })

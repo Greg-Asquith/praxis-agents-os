@@ -29,6 +29,13 @@ function validState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormSta
   }
 }
 
+function buildEditPayload(
+  state: ScheduleFormState,
+  initialState: ScheduleFormState = validState()
+) {
+  return buildSchedulePayload(state, "edit", initialState)
+}
+
 const schedule: AgentSchedule = {
   id: "schedule-1",
   agent_id: "agent-1",
@@ -166,8 +173,7 @@ describe("buildSchedulePayload", () => {
       execution_params: null,
       is_active: true,
     })
-    expect(buildSchedulePayload(validState({ cronExpression: "*/15 * * * *" }), "edit")).toEqual({
-      active_context: null,
+    expect(buildEditPayload(validState({ cronExpression: "*/15 * * * *" }))).toEqual({
       name: "Weekly launch report",
       schedule_type: "cron",
       cron_expression: "*/15 * * * *",
@@ -193,21 +199,79 @@ describe("buildSchedulePayload", () => {
       buildSchedulePayload(
         validState({
           activeContext: {
-            type: "context_group",
-            context_group_id: "group-1",
+            targets: [
+              {
+                type: "context_group",
+                context_group_id: "group-1",
+              },
+              {
+                type: "resource",
+                integration_resource_id: "resource-1",
+              },
+            ],
           },
         }),
         "create"
       )
     ).toMatchObject({
       active_context: {
-        type: "context_group",
-        context_group_id: "group-1",
+        targets: [
+          {
+            type: "context_group",
+            context_group_id: "group-1",
+          },
+          {
+            type: "resource",
+            integration_resource_id: "resource-1",
+          },
+        ],
       },
     })
-    expect(buildSchedulePayload(validState({ activeContext: null }), "edit")).toMatchObject({
+    const initialState = validState({
+      activeContext: {
+        targets: [{ type: "resource", integration_resource_id: "resource-1" }],
+      },
+    })
+    expect(buildEditPayload(validState({ activeContext: null }), initialState)).toMatchObject({
       active_context: null,
     })
+  })
+
+  it("omits unchanged active context from update payloads", () => {
+    const initialState = validState({
+      activeContext: {
+        targets: [
+          { type: "context_group", context_group_id: "group-1" },
+          { type: "resource", integration_resource_id: "resource-1" },
+        ],
+      },
+    })
+    const reorderedState = validState({
+      activeContext: {
+        targets: [
+          { type: "resource", integration_resource_id: "resource-1" },
+          { type: "context_group", context_group_id: "group-1" },
+        ],
+      },
+      name: "Admin renamed schedule",
+    })
+
+    expect(buildEditPayload(reorderedState, initialState)).not.toHaveProperty("active_context")
+  })
+
+  it("includes active context when an update replaces the target set", () => {
+    const initialState = validState({
+      activeContext: {
+        targets: [{ type: "context_group", context_group_id: "group-1" }],
+      },
+    })
+    const replacement = {
+      targets: [{ type: "resource" as const, integration_resource_id: "resource-1" }],
+    }
+
+    expect(
+      buildEditPayload(validState({ activeContext: replacement }), initialState)
+    ).toHaveProperty("active_context", replacement)
   })
 
   it("removes a revoked grant while preserving unrelated execution params", () => {
@@ -222,7 +286,7 @@ describe("buildSchedulePayload", () => {
       externalWritesAllowed: false,
     })
 
-    expect(buildSchedulePayload(state, "edit")).toMatchObject({
+    expect(buildEditPayload(state)).toMatchObject({
       execution_params: {
         envelope: {
           requested_by: "ops",
@@ -240,7 +304,7 @@ describe("buildSchedulePayload", () => {
       externalWritesAllowed: false,
     })
 
-    expect(buildSchedulePayload(state, "edit")).toMatchObject({
+    expect(buildEditPayload(state)).toMatchObject({
       execution_params: {
         envelope: { side_effect_policy: "require_approval" },
       },
@@ -288,9 +352,9 @@ describe("buildSchedulePayload", () => {
   })
 
   it("returns validation strings for invalid interval payloads", () => {
-    expect(
-      buildSchedulePayload(validState({ intervalMinutes: "abc", scheduleType: "interval" }), "edit")
-    ).toBe("Interval must be a whole number of at least 1 minute.")
+    expect(buildEditPayload(validState({ intervalMinutes: "abc", scheduleType: "interval" }))).toBe(
+      "Interval must be a whole number of at least 1 minute."
+    )
   })
 })
 
@@ -324,7 +388,9 @@ describe("isScheduleFormDirty", () => {
       isScheduleFormDirty(
         {
           ...initial,
-          activeContext: { type: "resource", integration_resource_id: "resource-1" },
+          activeContext: {
+            targets: [{ type: "resource", integration_resource_id: "resource-1" }],
+          },
         },
         initial
       )

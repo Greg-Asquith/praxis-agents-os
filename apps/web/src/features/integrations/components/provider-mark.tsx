@@ -3,6 +3,7 @@
 import { PlugZapIcon } from "lucide-react"
 
 import { useIntegrationUiModule } from "@/integrations/registry"
+import { cn } from "@/lib/utils"
 
 export function ProviderMark({
   className,
@@ -13,5 +14,5 @@ export function ProviderMark({
 }) {
   const module = useIntegrationUiModule(providerKey)
   const Icon = module?.icons?.[providerKey] ?? PlugZapIcon
-  return <Icon className={className} aria-hidden="true" />
+  return <Icon className={cn("size-4", className)} aria-hidden="true" />
 }

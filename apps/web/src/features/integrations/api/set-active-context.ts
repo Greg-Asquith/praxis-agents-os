@@ -3,17 +3,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
-import type { ActiveContextRead, ActiveContextSelectionValue } from "@/features/integrations/types"
+import type { ActiveContextRead, ActiveContextTargets } from "@/features/integrations/types"
 import { apiRequest } from "@/lib/api/client"
 
 type SetActiveContextInput = {
   conversationId: string
-  selection: ActiveContextSelectionValue
+  activeContext: ActiveContextTargets
 }
 
-async function setActiveContext({ conversationId, selection }: SetActiveContextInput) {
+async function setActiveContext({ activeContext, conversationId }: SetActiveContextInput) {
   return apiRequest<ActiveContextRead>(`/integrations/conversations/${conversationId}/context`, {
-    body: selection,
+    body: activeContext,
     method: "PUT",
   })
 }

@@ -33,17 +33,17 @@ export function ConversationContextPicker({ conversationId }: { conversationId: 
     resourcesQuery.isPending
   const activeContext = activeContextQuery.data ?? {
     entries: [],
-    selection: null,
+    targets: [],
     unavailable: [],
   }
 
-  async function handleChange(selection: ActiveContextSelectionValue | null) {
+  async function handleChange(targets: ActiveContextSelectionValue[]) {
     setError(null)
     try {
-      if (selection === null) {
+      if (targets.length === 0) {
         await clearMutation.mutateAsync(conversationId)
       } else {
-        await setMutation.mutateAsync({ conversationId, selection })
+        await setMutation.mutateAsync({ activeContext: { targets }, conversationId })
       }
     } catch (mutationError) {
       setError(getErrorMessage(mutationError))
@@ -67,7 +67,8 @@ export function ConversationContextPicker({ conversationId }: { conversationId: 
         }}
         resources={resourcesQuery.data ?? []}
         showManageIntegrations
-        value={activeContext.selection}
+        showPersonalBadges={!workspace.is_personal}
+        value={activeContext.targets}
       />
       <span aria-live="polite" className="sr-only">
         {error ?? (queryUnavailable ? "Integration context is temporarily unavailable" : "")}
@@ -82,8 +83,8 @@ export function NewConversationContextPicker({
   value,
 }: {
   disabled?: boolean
-  onChange: (selection: ActiveContextSelectionValue | null) => void
-  value: ActiveContextSelectionValue | null
+  onChange: (targets: ActiveContextSelectionValue[]) => void
+  value: ActiveContextSelectionValue[]
 }) {
   const { workspace } = useActiveWorkspace()
   const contextGroupsQuery = useQuery(contextGroupsQueryOptions())
@@ -109,6 +110,7 @@ export function NewConversationContextPicker({
         onChange={onChange}
         resources={resourcesQuery.data ?? []}
         showManageIntegrations
+        showPersonalBadges={!workspace.is_personal}
         value={value}
       />
       <span aria-live="polite" className="sr-only">

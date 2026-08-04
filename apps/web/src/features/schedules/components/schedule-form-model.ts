@@ -8,8 +8,8 @@ import type {
   ScheduleType,
   ScheduleUpdateRequest,
 } from "@/features/schedules/types"
-import type { ActiveContextSelectionValue } from "@/features/integrations/types"
-import { activeContextSelectionKey } from "@/features/integrations/active-context"
+import type { ActiveContextTargets } from "@/features/integrations/types"
+import { activeContextTargetsKey } from "@/features/integrations/active-context"
 import type { FormValidationEntry } from "@/lib/forms"
 
 export const DEFAULT_CRON_EXPRESSION = "0 9 * * 1-5"
@@ -28,7 +28,7 @@ type DateTimeLocalParts = {
 type ScheduleTimingPayload = Omit<SchedulePreviewRequest, "preview_count">
 
 export type ScheduleFormState = {
-  activeContext: ActiveContextSelectionValue | null
+  activeContext: ActiveContextTargets | null
   agentId: string
   cronExpression: string
   defaultPrompt: string
@@ -176,11 +176,13 @@ export function buildSchedulePayload(
 ): ScheduleCreateRequest | string
 export function buildSchedulePayload(
   state: ScheduleFormState,
-  mode: "edit"
+  mode: "edit",
+  initialState: ScheduleFormState
 ): ScheduleUpdateRequest | string
 export function buildSchedulePayload(
   state: ScheduleFormState,
-  mode: "create" | "edit"
+  mode: "create" | "edit",
+  initialState?: ScheduleFormState
 ): ScheduleCreateRequest | ScheduleUpdateRequest | string {
   const validationEntry = validateScheduleFormState(state)[0]
   if (validationEntry) {
@@ -194,7 +196,6 @@ export function buildSchedulePayload(
 
   const basePayload = {
     ...timingPayload,
-    active_context: state.activeContext,
     default_prompt: state.defaultPrompt.trim(),
     execution_params: buildExecutionParams(state),
     is_active: state.isActive,
@@ -204,17 +205,29 @@ export function buildSchedulePayload(
   if (mode === "create") {
     return {
       ...basePayload,
+      active_context: state.activeContext,
       agent_id: state.agentId,
     }
   }
 
-  return basePayload
+  if (!initialState) {
+    throw new Error("Initial schedule state is required when building an update payload")
+  }
+
+  const activeContextChanged =
+    activeContextTargetsKey(state.activeContext?.targets ?? []) !==
+    activeContextTargetsKey(initialState.activeContext?.targets ?? [])
+
+  return {
+    ...basePayload,
+    ...(activeContextChanged ? { active_context: state.activeContext } : {}),
+  }
 }
 
 export function isScheduleFormDirty(current: ScheduleFormState, initial: ScheduleFormState) {
   return (
-    activeContextSelectionKey(current.activeContext) !==
-      activeContextSelectionKey(initial.activeContext) ||
+    activeContextTargetsKey(current.activeContext?.targets ?? []) !==
+      activeContextTargetsKey(initial.activeContext?.targets ?? []) ||
     current.agentId !== initial.agentId ||
     current.cronExpression !== initial.cronExpression ||
     current.defaultPrompt !== initial.defaultPrompt ||

@@ -7,6 +7,7 @@ import type {
   IntegrationContextGroup,
   IntegrationResource,
 } from "@/features/integrations/types"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 
 export function ScheduleContextField({
   contextGroups,
@@ -15,10 +16,12 @@ export function ScheduleContextField({
   value,
 }: {
   contextGroups: IntegrationContextGroup[]
-  onChange: (value: ActiveContextSelectionValue | null) => void
+  onChange: (value: ActiveContextSelectionValue[]) => void
   resources: IntegrationResource[]
-  value: ActiveContextSelectionValue | null
+  value: ActiveContextSelectionValue[]
 }) {
+  const { workspace } = useActiveWorkspace()
+
   return (
     <Field>
       <FieldLabel htmlFor="schedule-active-context">Active context</FieldLabel>
@@ -27,10 +30,11 @@ export function ScheduleContextField({
         id="schedule-active-context"
         onChange={onChange}
         resources={resources}
+        showPersonalBadges={!workspace.is_personal}
         value={value}
       />
       <FieldDescription>
-        Integration tools use this group or resource for every scheduled run.
+        Integration tools use these groups and resources for every scheduled run.
       </FieldDescription>
     </Field>
   )

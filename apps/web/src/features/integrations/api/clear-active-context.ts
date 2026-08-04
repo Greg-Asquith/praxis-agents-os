@@ -19,7 +19,7 @@ export function useClearActiveContextMutation() {
     onSuccess: (_response, conversationId) => {
       queryClient.setQueryData<ActiveContextRead>(
         integrationsQueryKeys.activeContext(conversationId),
-        { entries: [], selection: null, unavailable: [] }
+        { entries: [], targets: [], unavailable: [] }
       )
     },
   })

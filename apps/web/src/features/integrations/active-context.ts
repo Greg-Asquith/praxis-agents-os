@@ -7,14 +7,9 @@ import type {
   IntegrationResource,
 } from "@/features/integrations/types"
 
-const NO_ACTIVE_CONTEXT = "none"
+export const MAX_ACTIVE_CONTEXT_TARGETS = 10
 
-export const MANAGE_INTEGRATIONS_SELECTION = "manage-integrations"
-
-export function activeContextSelectionKey(value: ActiveContextSelectionValue | null) {
-  if (value === null) {
-    return NO_ACTIVE_CONTEXT
-  }
+export function activeContextSelectionKey(value: ActiveContextSelectionValue) {
   return value.type === "context_group"
     ? contextGroupSelectionKey(value.context_group_id)
     : resourceSelectionKey(value.integration_resource_id)
@@ -32,10 +27,7 @@ export function activeContextSelectionFromKey(
   key: string,
   contextGroups: IntegrationContextGroup[],
   resources: IntegrationResource[]
-): ActiveContextSelectionValue | null | undefined {
-  if (key === NO_ACTIVE_CONTEXT) {
-    return null
-  }
+): ActiveContextSelectionValue | undefined {
   const group = contextGroups.find((item) => contextGroupSelectionKey(item.id) === key)
   if (group) {
     return { context_group_id: group.id, type: "context_group" }
@@ -48,13 +40,10 @@ export function activeContextSelectionFromKey(
 }
 
 export function activeContextSelectionLabel(
-  value: ActiveContextSelectionValue | null,
+  value: ActiveContextSelectionValue,
   contextGroups: IntegrationContextGroup[],
   resources: IntegrationResource[]
 ) {
-  if (value === null) {
-    return "None"
-  }
   if (value.type === "context_group") {
     return (
       contextGroups.find((group) => group.id === value.context_group_id)?.name ??
@@ -65,4 +54,33 @@ export function activeContextSelectionLabel(
   return resource
     ? formatIntegrationResourceValue(resource.provider_key, resource.display_name)
     : "Context unavailable"
+}
+
+export function activeContextTargetsKey(values: ActiveContextSelectionValue[]) {
+  return values.map(activeContextSelectionKey).toSorted().join("|")
+}
+
+export function activeContextTargetsLabel(
+  values: ActiveContextSelectionValue[],
+  contextGroups: IntegrationContextGroup[],
+  resources: IntegrationResource[]
+) {
+  const first = values[0]
+  if (!first) {
+    return "None"
+  }
+  const firstLabel = activeContextSelectionLabel(first, contextGroups, resources)
+  return values.length === 1 ? firstLabel : `${firstLabel} +${String(values.length - 1)} more`
+}
+
+export function toggleActiveContextTarget(
+  values: ActiveContextSelectionValue[],
+  target: ActiveContextSelectionValue
+) {
+  const targetKey = activeContextSelectionKey(target)
+  const selected = values.some((value) => activeContextSelectionKey(value) === targetKey)
+  if (selected) {
+    return values.filter((value) => activeContextSelectionKey(value) !== targetKey)
+  }
+  return values.length < MAX_ACTIVE_CONTEXT_TARGETS ? [...values, target] : values
 }

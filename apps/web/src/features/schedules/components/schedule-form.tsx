@@ -5,7 +5,7 @@ import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
 import { FormAlerts } from "@/components/forms/form-alerts"
 import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
 import type { Agent } from "@/features/agents/types"
-import { activeContextSelectionLabel } from "@/features/integrations/active-context"
+import { activeContextTargetsLabel } from "@/features/integrations/active-context"
 import type { IntegrationContextGroup, IntegrationResource } from "@/features/integrations/types"
 import {
   buildSchedulePayload,
@@ -67,8 +67,8 @@ export function ScheduleForm(props: ScheduleFormProps) {
   const preview = useSchedulePreview(state)
   const isDirty = props.mode === "edit" ? isScheduleFormDirty(state, initialState) : true
   const selectedAgent = props.agents.find((agent) => agent.id === state.agentId) ?? null
-  const activeContextLabel = activeContextSelectionLabel(
-    state.activeContext,
+  const activeContextLabel = activeContextTargetsLabel(
+    state.activeContext?.targets ?? [],
     props.contextGroups,
     props.resources
   )
@@ -100,7 +100,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
         }
         await props.onSubmit(payload)
       } else {
-        const payload = buildSchedulePayload(state, "edit")
+        const payload = buildSchedulePayload(state, "edit", initialState)
         if (typeof payload === "string") {
           setFormError(payload)
           return

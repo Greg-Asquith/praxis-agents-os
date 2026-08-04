@@ -141,10 +141,10 @@ export function ScheduleRunSection({
         <ScheduleContextField
           contextGroups={contextGroups}
           onChange={(value) => {
-            setField("activeContext", value)
+            setField("activeContext", value.length > 0 ? { targets: value } : null)
           }}
           resources={resources}
-          value={state.activeContext}
+          value={state.activeContext?.targets ?? []}
         />
       </FieldGroup>
     </FormSection>

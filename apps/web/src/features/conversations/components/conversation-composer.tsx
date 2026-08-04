@@ -92,7 +92,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
     }
     return null
   })
-  const [activeContext, setActiveContext] = useState<ActiveContextSelectionValue | null>(null)
+  const [activeContext, setActiveContext] = useState<ActiveContextSelectionValue[]>([])
   const [prompt, setPrompt] = useState("")
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
@@ -166,7 +166,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
     try {
       if (props.mode === "create") {
         await stream.sendFirstMessage({
-          active_context: activeContext,
+          active_context: activeContext.length > 0 ? { targets: activeContext } : null,
           agent_id: effectiveSelectedAgentId,
           attachments: readyAttachments.map((attachment) => attachment.fileId),
           client_message_id: clientMessageId,

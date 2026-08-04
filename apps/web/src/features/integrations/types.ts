@@ -131,6 +131,10 @@ export type ActiveContextSelectionValue =
       context_group_id: string
     }
 
+export type ActiveContextTargets = {
+  targets: ActiveContextSelectionValue[]
+}
+
 type ContextGroupMember = {
   id: string
   connection_id: string
@@ -165,6 +169,7 @@ type ResolvedContextEntry = {
   connection_label: string
   connection_status: string
   write_allowed: boolean
+  is_personal: boolean
 }
 
 type UnavailableContextEntry = {
@@ -174,7 +179,7 @@ type UnavailableContextEntry = {
 }
 
 export type ActiveContextRead = {
-  selection: ActiveContextSelectionValue | null
+  targets: ActiveContextSelectionValue[]
   entries: ResolvedContextEntry[]
   unavailable: UnavailableContextEntry[]
 }

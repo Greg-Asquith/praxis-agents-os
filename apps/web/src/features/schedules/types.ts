@@ -1,6 +1,6 @@
 // apps/web/src/features/schedules/types.ts
 
-import type { ActiveContextSelectionValue } from "@/features/integrations/types"
+import type { ActiveContextTargets } from "@/features/integrations/types"
 
 export type ScheduleType = "cron" | "interval" | "once"
 
@@ -55,7 +55,7 @@ export type AgentSchedule = {
   timezone: string
   default_prompt: string | null
   execution_params: ScheduleExecutionParams | null
-  active_context: ActiveContextSelectionValue | null
+  active_context: ActiveContextTargets | null
   is_active: boolean
   last_run_at: string | null
   next_run_at: string | null
@@ -89,7 +89,7 @@ export type ScheduleCreateRequest = {
   timezone?: string | null
   default_prompt: string
   execution_params?: ScheduleExecutionParams | null
-  active_context?: ActiveContextSelectionValue | null
+  active_context?: ActiveContextTargets | null
   is_active?: boolean
 }
 
