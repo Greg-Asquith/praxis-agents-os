@@ -125,7 +125,7 @@ class NativeWebSearchResult(BaseModel):
     supports_auto=True,
     default_policy=TOOL_POLICY_APPROVAL,
     takes_ctx=True,
-    timeout=60,
+    timeout=None,
     output_model=WebSearchOutput,
     availability_check=lambda: bool(configured_native_search_providers()),
     presentation=ToolPresentation(

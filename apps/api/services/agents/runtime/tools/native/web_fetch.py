@@ -139,7 +139,7 @@ class NativeWebFetchResult(BaseModel):
     supports_auto=True,
     default_policy=TOOL_POLICY_APPROVAL,
     takes_ctx=True,
-    timeout=60,
+    timeout=None,
     output_model=WebFetchOutput,
     availability_check=lambda: bool(configured_native_fetch_providers()),
     presentation=ToolPresentation(
