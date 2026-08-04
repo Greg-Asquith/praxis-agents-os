@@ -152,6 +152,7 @@ async def test_share_is_hashed_pinned_cookie_free_and_revocable(
     assert updated.status_code == 200
     assert updated.json()["current_version_id"] != str(version_id)
 
+    await set_session_tenant_context(db_session, workspace_id=uuid4())
     db_async_client.cookies.set("session", session_token)
     served = await db_async_client.get(urlsplit(body["share_url"]).path)
     db_async_client.cookies.delete("session")
@@ -507,6 +508,7 @@ async def test_html_serving_headers_are_exact_and_cookie_free(
 ) -> None:
     _headers, artifact, version_id, session_token = await _seed(db_session)
     capability = create_artifact_view_url(artifact=artifact, version_id=version_id)
+    await set_session_tenant_context(db_session, workspace_id=uuid4())
     db_async_client.cookies.set("session", session_token)
     response = await db_async_client.get(_relative_url(capability.url))
     db_async_client.cookies.delete("session")
@@ -533,6 +535,11 @@ async def test_signed_serving_fails_closed_for_all_invalid_targets(
     relative = _relative_url(capability.url)
     tampered = relative[:-1] + ("0" if relative[-1] != "0" else "1")
     assert (await db_async_client.get(tampered)).status_code == 404
+    tampered_workspace = relative.replace(
+        f"workspace_id={artifact.workspace_id}",
+        f"workspace_id={uuid4()}",
+    )
+    assert (await db_async_client.get(tampered_workspace)).status_code == 404
 
     unknown_version = uuid4()
     unknown_capability = create_artifact_view_url(
@@ -541,7 +548,7 @@ async def test_signed_serving_fails_closed_for_all_invalid_targets(
     )
     assert (await db_async_client.get(_relative_url(unknown_capability.url))).status_code == 404
 
-    unknown_artifact = Artifact(id=uuid4())
+    unknown_artifact = Artifact(id=uuid4(), workspace_id=artifact.workspace_id)
     unknown_artifact_capability = create_artifact_view_url(
         artifact=unknown_artifact,
         version_id=uuid4(),

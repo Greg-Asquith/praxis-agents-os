@@ -740,7 +740,6 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     ]
     assert [tool.requires_approval for tool in default_tools] == [
         False,
-        True,
         False,
         False,
         False,
@@ -749,7 +748,8 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         False,
         False,
         False,
-        True,
+        False,
+        False,
         False,
         False,
         False,
@@ -794,7 +794,6 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     ]
     assert [tool.requires_approval for tool in approved_tools] == [
         False,
-        True,
         False,
         False,
         False,
@@ -803,7 +802,8 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         False,
         False,
         False,
-        True,
+        False,
+        False,
         False,
         False,
         False,

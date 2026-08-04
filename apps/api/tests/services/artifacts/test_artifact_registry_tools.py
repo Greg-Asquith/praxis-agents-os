@@ -13,7 +13,7 @@ from core.settings import Settings
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
-    TOOL_POLICY_APPROVAL,
+    TOOL_POLICY_AUTO,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.artifacts.create_view_url import require_valid_artifact_view_signature
@@ -26,7 +26,7 @@ from services.artifacts.domain import (
 from services.artifacts.schemas import ArtifactToolResult
 
 
-def test_artifact_tools_are_auto_mounted_approval_capable_external_writes() -> None:
+def test_artifact_tools_are_auto_mounted_auto_default_external_writes() -> None:
     assert [name for name in sorted(RUNTIME_TOOL_CATALOG) if "artifact" in name] == [
         "create_artifact",
         "update_artifact",
@@ -35,7 +35,7 @@ def test_artifact_tools_are_auto_mounted_approval_capable_external_writes() -> N
         definition = RUNTIME_TOOL_CATALOG[name]
         assert definition.effect == TOOL_EFFECT_WRITE
         assert definition.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-        assert definition.default_policy == TOOL_POLICY_APPROVAL
+        assert definition.default_policy == TOOL_POLICY_AUTO
         assert definition.supports_approval is True
         assert definition.supports_auto is True
         assert definition.output_model is ArtifactToolResult
@@ -66,6 +66,7 @@ def test_html_csp_has_no_external_content_hosts() -> None:
 def test_expired_view_capability_fails_before_lookup() -> None:
     with pytest.raises(NotFoundError):
         require_valid_artifact_view_signature(
+            workspace_id=uuid4(),
             artifact_id=uuid4(),
             version_id=uuid4(),
             expires=0,
