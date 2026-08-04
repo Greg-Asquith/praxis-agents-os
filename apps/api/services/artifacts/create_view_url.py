@@ -20,22 +20,28 @@ def _signature_key() -> str:
     return derive_purpose_key(root, _SIGNATURE_PURPOSE).hex()
 
 
-def _payload(*, artifact_id: UUID, version_id: UUID, expires: int) -> str:
-    return f"artifact-view:v1:{artifact_id}:{version_id}:{expires}"
+def _payload(*, workspace_id: UUID, artifact_id: UUID, version_id: UUID, expires: int) -> str:
+    return f"artifact-view:v1:{workspace_id}:{artifact_id}:{version_id}:{expires}"
 
 
 def create_artifact_view_url(*, artifact: Artifact, version_id: UUID) -> ArtifactViewUrl:
     expires_at = datetime.now(UTC) + timedelta(seconds=settings.ARTIFACT_VIEW_URL_TTL_SECONDS)
     expires = int(expires_at.timestamp())
     digest = create_hmac_signature(
-        _payload(artifact_id=artifact.id, version_id=version_id, expires=expires),
+        _payload(
+            workspace_id=artifact.workspace_id,
+            artifact_id=artifact.id,
+            version_id=version_id,
+            expires=expires,
+        ),
         _signature_key(),
     )
     base = settings.ARTIFACT_ORIGIN or settings.APP_BASE_URL
     return ArtifactViewUrl(
         url=(
             f"{base}/artifacts/view/{artifact.id}/{version_id}"
-            f"?expires={expires}&sig={_SIGNATURE_VERSION}.{digest}"
+            f"?workspace_id={artifact.workspace_id}&expires={expires}"
+            f"&sig={_SIGNATURE_VERSION}.{digest}"
         ),
         expires_at=datetime.fromtimestamp(expires, tz=UTC),
     )
@@ -43,6 +49,7 @@ def create_artifact_view_url(*, artifact: Artifact, version_id: UUID) -> Artifac
 
 def require_valid_artifact_view_signature(
     *,
+    workspace_id: UUID,
     artifact_id: UUID,
     version_id: UUID,
     expires: int,
@@ -54,7 +61,12 @@ def require_valid_artifact_view_signature(
     if separator != "." or prefix != _SIGNATURE_VERSION or not digest:
         raise NotFoundError("Artifact not found")
     if not verify_hmac_signature(
-        _payload(artifact_id=artifact_id, version_id=version_id, expires=expires),
+        _payload(
+            workspace_id=workspace_id,
+            artifact_id=artifact_id,
+            version_id=version_id,
+            expires=expires,
+        ),
         digest,
         _signature_key(),
     ):
