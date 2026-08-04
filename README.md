@@ -77,7 +77,8 @@ The core platform is wired end to end (API, worker, and UI):
   management, append-only edit and restore flows, and expiring, revocable
   anonymous share links served cookie-free behind a self-contained CSP.
 - Operations: agent schedules with a leased background worker, a generic jobs
-  worker, audit and security event viewers, and an LLM model catalog.
+  worker, audit and security event viewers, rotatable application encryption
+  with an old-key removal proof, and an LLM model catalog.
 
 Notifications exist as a backend service without routes or UI yet.
 
@@ -95,6 +96,8 @@ in infrastructure you configure.
 |   +-- web/      # Vite + React frontend
 +-- docs/
 |   +-- architecture/ # Stable runtime, governance, context, and threat-model notes
++-- deploy/
+|   +-- gcp/      # GCP deployment and security runbooks
 +-- makefiles/    # Focused local-development and verification targets
 +-- docker-compose.yml
 +-- AGENTS.md     # Contributor and coding-agent guidance (per-app files in apps/)

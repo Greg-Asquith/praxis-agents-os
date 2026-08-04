@@ -3,6 +3,7 @@
 """Built-in generic job handlers."""
 
 from services.jobs.handlers import (
+    converge_application_encryption,  # noqa: F401
     embed_kb_chunks,  # noqa: F401
     embed_memory,  # noqa: F401
     extract_file_markdown,  # noqa: F401

@@ -24,7 +24,7 @@ def _production_settings(**overrides: Any) -> Settings:
             "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
         ),
         "SECRET_KEY": "x" * 40,
-        "ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
         "SECURE_COOKIES": True,
         "INTERNAL_SCHEDULE_TRIGGER_SECRET": "test-schedule-secret-value",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
@@ -65,7 +65,7 @@ def test_local_master_keys_cannot_leave_local() -> None:
     ("overrides", "expected"),
     [
         ({"SECRET_KEY": LOCAL_EXAMPLE_SECRET_KEY}, "SECRET_KEY"),
-        ({"ENCRYPTION_KEY": LOCAL_EXAMPLE_ENCRYPTION_KEY}, "ENCRYPTION_KEY"),
+        ({"ENCRYPTION_KEYS": LOCAL_EXAMPLE_ENCRYPTION_KEY}, "ENCRYPTION_KEYS"),
         ({"SECURE_COOKIES": False}, "SECURE_COOKIES"),
     ],
 )
@@ -79,12 +79,12 @@ def test_public_local_security_defaults_are_allowed_in_local_environment() -> No
         _env_file=None,
         ENVIRONMENT="local",
         SECRET_KEY=LOCAL_EXAMPLE_SECRET_KEY,
-        ENCRYPTION_KEY=LOCAL_EXAMPLE_ENCRYPTION_KEY,
+        ENCRYPTION_KEYS=LOCAL_EXAMPLE_ENCRYPTION_KEY,
         SECURE_COOKIES=False,
     )
 
     assert resolved.SECRET_KEY.get_secret_value() == LOCAL_EXAMPLE_SECRET_KEY
-    assert resolved.ENCRYPTION_KEY.get_secret_value() == LOCAL_EXAMPLE_ENCRYPTION_KEY
+    assert resolved.application_encryption_keys == (LOCAL_EXAMPLE_ENCRYPTION_KEY,)
     assert resolved.SECURE_COOKIES is False
 
 

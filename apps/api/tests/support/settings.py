@@ -22,7 +22,7 @@ def configure_test_environment() -> None:
     os.environ.setdefault("STORAGE_PROVIDER", "local_fs")
     os.environ.setdefault("EMAIL_PROVIDER", "console")
     os.environ.setdefault("SECRET_KEY", "x" * 40)
-    os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
+    os.environ.setdefault("ENCRYPTION_KEYS", Fernet.generate_key().decode())
     os.environ.setdefault("CREDENTIAL_MASTER_KEYS", Fernet.generate_key().decode())
     os.environ.setdefault("SECURE_COOKIES", "false")
     os.environ.setdefault("SUPER_ADMIN_EMAILS", "admin@example.com")

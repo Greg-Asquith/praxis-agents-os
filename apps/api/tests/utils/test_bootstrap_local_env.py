@@ -23,3 +23,19 @@ def test_bootstrap_enables_artifact_sharing_only_in_local_env_files(tmp_path: Pa
     assert "ARTIFACT_SHARING_ENABLED=false" in example_env
     assert "WORKSPACE_BUCKET_PREFIX=praxis-local" in api_env
     assert "WORKSPACE_BUCKET_PREFIX=praxis-local" in generated_env
+
+
+def test_bootstrap_renames_legacy_application_encryption_key(tmp_path: Path) -> None:
+    workspace = tmp_path
+    api_dir = workspace / "apps/api"
+    api_dir.mkdir(parents=True)
+    (api_dir / ".env.example").write_text("ENCRYPTION_KEYS=example-ring\nCREDENTIAL_MASTER_KEYS=\n")
+    (api_dir / ".env").write_text(
+        "ENCRYPTION_KEY=existing-key\nCREDENTIAL_MASTER_KEYS=existing-root\n"
+    )
+
+    bootstrap(workspace)
+
+    api_env = (api_dir / ".env").read_text()
+    assert "ENCRYPTION_KEYS=existing-key" in api_env
+    assert "ENCRYPTION_KEY=" not in api_env

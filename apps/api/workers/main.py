@@ -7,9 +7,14 @@ import logging
 import signal
 from contextlib import suppress
 
-from core.database import close_db_connections
+from core.database import (
+    close_db_connections,
+    configure_async_db_session,
+    get_maintenance_async_db_session_factory,
+)
 from core.logging import setup_logging
 from core.settings import settings
+from services.security import ensure_application_encryption_keys_loaded
 from workers import agent_runner, job_runner
 
 setup_logging()
@@ -22,6 +27,10 @@ async def main() -> int:
     _install_signal_handlers(shutdown_event)
 
     try:
+        session_factory = get_maintenance_async_db_session_factory()
+        async with session_factory() as db:
+            await configure_async_db_session(db)
+            await ensure_application_encryption_keys_loaded(db)
         if settings.WORKER_MODE == "drain":
             return await _run_drain_mode(shutdown_event)
         return await _run_forever_mode(shutdown_event)

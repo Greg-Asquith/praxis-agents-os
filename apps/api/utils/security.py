@@ -18,7 +18,7 @@ import logging
 import secrets
 import time
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pwdlib import PasswordHash
@@ -29,11 +29,8 @@ from core.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize encryption with primary key
-_primary_fernet = Fernet(settings.ENCRYPTION_KEY.get_secret_value().encode())
-
-# For key rotation, we could have multiple keys (future enhancement)
-_encryption_keys = [_primary_fernet]
+_primary_fernet: Fernet | None = None
+_encryption_key_ring: MultiFernet | None = None
 
 # Password hashing context
 password_hasher = PasswordHash.recommended()
@@ -116,6 +113,33 @@ def derive_purpose_key(root: bytes, purpose: str) -> bytes:
 # =============================================================================
 
 
+def configure_application_encryption_keys(keys: tuple[str, ...]) -> None:
+    """Atomically install a validated newest-first Fernet key ring."""
+    if not keys:
+        raise CustomValueError("Application encryption key ring cannot be empty")
+    try:
+        instances = [Fernet(key.encode("ascii")) for key in keys]
+    except (UnicodeEncodeError, ValueError) as exc:
+        raise CustomValueError(
+            "Application encryption key ring contains an invalid Fernet key",
+            details={"error_type": type(exc).__name__},
+        ) from exc
+
+    global _primary_fernet, _encryption_key_ring
+    _primary_fernet = instances[0]
+    _encryption_key_ring = MultiFernet(instances)
+
+
+def is_encrypted_with_primary(token: str) -> bool:
+    """Return whether a token authenticates with the newest configured key."""
+    primary = _require_primary_fernet()
+    try:
+        primary.decrypt(token.encode("utf-8"))
+    except InvalidToken:
+        return False
+    return True
+
+
 def encrypt_data(data: str) -> str:
     """
     Encrypt sensitive data using Fernet encryption.
@@ -130,7 +154,7 @@ def encrypt_data(data: str) -> str:
         ValueError: If encryption fails
     """
     try:
-        encrypted_bytes = _primary_fernet.encrypt(data.encode("utf-8"))
+        encrypted_bytes = _require_primary_fernet().encrypt(data.encode("utf-8"))
         return encrypted_bytes.decode("utf-8")
     except Exception as e:
         logger.error("Encryption failed", exc_info=True)
@@ -153,25 +177,30 @@ def decrypt_data(encrypted_data: str) -> str:
     Raises:
         ValueError: If decryption fails with all available keys
     """
-    # Try each encryption key (for key rotation support)
-    last_error: Exception | None = None
-    for fernet_instance in _encryption_keys:
-        try:
-            decrypted_bytes = fernet_instance.decrypt(encrypted_data.encode("utf-8"))
-            return decrypted_bytes.decode("utf-8")
-        except InvalidToken as e:
-            # Try next key on invalid token (key rotation support)
-            last_error = e
-            continue
-        except Exception as e:  # pragma: no cover
-            last_error = e
-            continue
+    try:
+        decrypted_bytes = _require_encryption_key_ring().decrypt(encrypted_data.encode("utf-8"))
+        return decrypted_bytes.decode("utf-8")
+    except Exception as exc:
+        raise CustomValueError(
+            "Failed to decrypt data with any available key",
+            details={"error_type": type(exc).__name__},
+        ) from exc
 
-    # All keys failed
-    raise CustomValueError(
-        "Failed to decrypt data with any available key",
-        details={"error_type": type(last_error).__name__ if last_error else None},
-    )
+
+def _require_primary_fernet() -> Fernet:
+    if _primary_fernet is None:
+        raise CustomValueError("Application encryption keys have not been loaded")
+    return _primary_fernet
+
+
+def _require_encryption_key_ring() -> MultiFernet:
+    if _encryption_key_ring is None:
+        raise CustomValueError("Application encryption keys have not been loaded")
+    return _encryption_key_ring
+
+
+if configured_keys := settings.application_encryption_keys:
+    configure_application_encryption_keys(configured_keys)
 
 
 # =============================================================================

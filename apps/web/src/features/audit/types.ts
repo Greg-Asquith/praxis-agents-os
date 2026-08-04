@@ -17,6 +17,7 @@ export type AuditResourceType =
   | "tool_call"
   | "agent_schedule"
   | "agent_schedule_run"
+  | "application_encryption"
 
 export type AuditStatus = "success" | "pending" | "failure" | "denied"
 
@@ -73,6 +74,7 @@ export const AUDIT_RESOURCE_TYPES = [
   "tool_call",
   "agent_schedule",
   "agent_schedule_run",
+  "application_encryption",
 ] as const satisfies readonly AuditResourceType[]
 
 export const AUDIT_STATUSES = [

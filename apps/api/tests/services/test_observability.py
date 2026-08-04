@@ -43,7 +43,7 @@ def test_settings_allow_agent_trace_content_outside_production() -> None:
         STORAGE_PROVIDER="local_fs",
         EMAIL_PROVIDER="console",
         SECRET_KEY="x" * 40,
-        ENCRYPTION_KEY=Fernet.generate_key().decode(),
+        ENCRYPTION_KEYS=Fernet.generate_key().decode(),
         AGENT_TRACING_INCLUDE_CONTENT=True,
     )
 
@@ -113,7 +113,7 @@ def _production_settings(**overrides: Any) -> Settings:
         "DATABASE_URL": "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require",
         "DATABASE_MAINTENANCE_URL": "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require",
         "SECRET_KEY": "x" * 40,
-        "ENCRYPTION_KEY": Fernet.generate_key().decode(),
+        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
         "SECURE_COOKIES": True,
         "INTERNAL_SCHEDULE_TRIGGER_SECRET": "not-a-secret-test-schedule-secret",
         "OPENAI_API_KEY": "sk-test",

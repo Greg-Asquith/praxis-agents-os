@@ -6,6 +6,9 @@ Writes go through :func:`safe_record_security_event` so a failed security-log
 write never rolls back the request being protected.
 """
 
+from services.security.ensure_application_encryption_keys_loaded import (
+    ensure_application_encryption_keys_loaded,
+)
 from services.security.enums import SecurityEventType
 from services.security.events import (
     safe_record_security_event,
@@ -21,6 +24,7 @@ from services.security.queries import (
 
 __all__ = [
     "SecurityEventType",
+    "ensure_application_encryption_keys_loaded",
     "get_security_event",
     "get_security_event_for_super_admin",
     "list_security_events",

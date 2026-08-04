@@ -66,15 +66,46 @@ Alembic owns database schema changes for this service. Migrations are run
 explicitly from `apps/api`; the API does not apply migrations at startup.
 
 Required runtime environment variables, including `DATABASE_URL`, `SECRET_KEY`,
-`ENCRYPTION_KEY`, and `INTERNAL_SCHEDULE_TRIGGER_SECRET`, must be present when
-running Alembic because the model registry imports the normal application
-settings.
+an application encryption source (`ENCRYPTION_KEYS` or
+`ENCRYPTION_KEYS_SECRET_NAME`), and `INTERNAL_SCHEDULE_TRIGGER_SECRET`, must be
+present when running Alembic because the model registry imports the normal
+application settings.
 
 Apply all migration heads:
 
 ```bash
 uv run alembic upgrade heads
 ```
+
+## Application encryption rotation
+
+`ENCRYPTION_KEYS` is a newest-first comma-separated list or JSON array of
+Fernet keys. Non-local environments can set `ENCRYPTION_KEYS_SECRET_NAME`; the
+API and worker resolve that secret through the configured `SECRET_PROVIDER` at
+startup.
+
+Rotate without data loss:
+
+1. Prepend the new Fernet key to the ring and restart or redeploy the API and
+   worker.
+2. Run `uv run python -m bin.application_encryption converge` from `apps/api`
+   with the deployment's normal worker configuration.
+3. Run `uv run python -m bin.application_encryption check`; require both
+   `stale` and `undecryptable` in the JSON result to be zero.
+4. Remove the old key and restart or redeploy again.
+5. Run the check command again and require zero `stale` and `undecryptable`.
+
+The convergence report's `stale` count records values encountered before they
+were rewritten; only the separate check pass is removal proof. The scan covers
+TOTP secrets, backup codes, and legacy user OAuth access and refresh tokens.
+OAuth browser-binding cookies are intentionally not rewritten because they are
+short-lived; the ring keeps old cookies readable during the rotation window.
+Every converge and check pass also writes its counts and job ID to the retained
+global audit log without recording key material.
+
+This is separate from `SECRET_KEY` rotation, which invalidates signed transient
+tokens, and credential-vault root rotation, which uses
+`integrations.rotate_credential_encryption` and its `encryption_key_id` proof.
 
 Create a public/core-schema migration:
 

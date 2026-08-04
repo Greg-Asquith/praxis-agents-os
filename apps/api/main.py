@@ -15,7 +15,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST
 
-from core.database import check_database_connection, close_db_connections
+from core.database import (
+    check_database_connection,
+    close_db_connections,
+    configure_async_db_session,
+    get_maintenance_async_db_session_factory,
+)
 from core.exceptions.auth import AuthenticationError
 from core.exceptions.exception_handlers import register_exception_handlers
 from core.exceptions.general import NotFoundError
@@ -37,6 +42,7 @@ from routes import api_router, artifact_serving_router, health_router
 from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
 from services.agents.runtime.events import STREAM_VERSION_HEADER
 from services.notifications.registration import register_notification_action_handlers
+from services.security import ensure_application_encryption_keys_loaded
 
 # Initialize logging as early as possible so all subsequent loggers/middleware use it
 setup_logging()
@@ -59,6 +65,12 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.error("Database connection failed", exc_info=True)
         raise
+
+    session_factory = get_maintenance_async_db_session_factory()
+    async with session_factory() as db:
+        await configure_async_db_session(db)
+        await ensure_application_encryption_keys_loaded(db)
+    logger.info("Application encryption key ring loaded")
 
     await sweep_abandoned_agent_runs_on_startup()
 

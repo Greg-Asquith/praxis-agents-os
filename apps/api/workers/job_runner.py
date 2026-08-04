@@ -50,6 +50,7 @@ from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import get_job_handler
 from services.memories.ensure_sweep_job import ensure_memory_sweep_job
+from services.security import ensure_application_encryption_keys_loaded
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -270,6 +271,10 @@ async def main(argv: Sequence[str] | None = None) -> int:
     _install_signal_handlers(shutdown_event)
 
     try:
+        session_factory = get_maintenance_async_db_session_factory()
+        async with session_factory() as db:
+            await configure_async_db_session(db)
+            await ensure_application_encryption_keys_loaded(db)
         if args.once:
             await run_once()
             return 0

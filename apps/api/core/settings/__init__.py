@@ -92,10 +92,10 @@ class Settings(
                     "SECRET_KEY uses the public .env.example placeholder; "
                     "set SECRET_KEY to a unique secret outside ENVIRONMENT=local"
                 )
-            if self.ENCRYPTION_KEY.get_secret_value() == _LOCAL_EXAMPLE_ENCRYPTION_KEY:
+            if _LOCAL_EXAMPLE_ENCRYPTION_KEY in self.application_encryption_keys:
                 raise ValueError(
-                    "ENCRYPTION_KEY uses the public .env.example placeholder; "
-                    "set ENCRYPTION_KEY to a newly generated Fernet key outside "
+                    "ENCRYPTION_KEYS uses the public .env.example "
+                    "placeholder; configure a newly generated Fernet key outside "
                     "ENVIRONMENT=local"
                 )
             if not self.SECURE_COOKIES:

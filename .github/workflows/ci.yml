@@ -35,7 +35,7 @@ jobs:
       STORAGE_PROVIDER: local_fs
       EMAIL_PROVIDER: console
       SECRET_KEY: not-a-secret-ci-secret-key-change-me
-      ENCRYPTION_KEY: bm90LWEtc2VjcmV0LWxvY2FsLWNpLWtleS0wMDAwMDA=
+      ENCRYPTION_KEYS: bm90LWEtc2VjcmV0LWxvY2FsLWNpLWtleS0wMDAwMDA=
       SECURE_COOKIES: "false"
       SUPER_ADMIN_EMAILS: admin@example.com
     steps:

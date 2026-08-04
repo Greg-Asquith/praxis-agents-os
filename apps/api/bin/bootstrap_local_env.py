@@ -46,6 +46,18 @@ def _write_value(path: Path, name: str, value: str) -> None:
     path.write_text("\n".join(output) + "\n")
 
 
+def _rename_value(path: Path, old_name: str, new_name: str) -> None:
+    """Move a legacy env value to its replacement without changing the value."""
+    old_value = _read_value(path, old_name)
+    if old_value is None:
+        return
+    if _read_value(path, new_name) is None:
+        _write_value(path, new_name, old_value)
+    old_prefix = f"{old_name}="
+    lines = [line for line in path.read_text().splitlines() if not line.startswith(old_prefix)]
+    path.write_text("\n".join(lines) + "\n")
+
+
 def _credential_key(paths: list[Path]) -> str:
     for path in paths:
         value = _read_value(path, "CREDENTIAL_MASTER_KEYS")
@@ -86,6 +98,9 @@ def bootstrap(workspace: Path) -> list[str]:
         created.append(str(api_env.relative_to(workspace)))
     if _copy_if_missing(api_example, api_generated_env):
         created.append(str(api_generated_env.relative_to(workspace)))
+
+    for path in (api_env, api_generated_env):
+        _rename_value(path, "ENCRYPTION_KEY", "ENCRYPTION_KEYS")
 
     key = _credential_key([api_env, api_generated_env])
     for path in (api_env, api_generated_env):

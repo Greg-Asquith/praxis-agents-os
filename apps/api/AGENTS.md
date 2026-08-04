@@ -139,6 +139,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   cutoff computed once per run, work in bounded batches with immediate
   continuation when capped, and record deletion counts in the completed job
   payload without emitting replacement audit events.
+- Application encryption uses a newest-first Fernet key ring loaded from
+  `ENCRYPTION_KEYS` or the configured secret provider via
+  `ENCRYPTION_KEYS_SECRET_NAME`. API and worker startup load the ring before
+  serving work. Manual `security.converge_application_encryption` jobs rotate
+  all durable user/TOTP/OAuth ciphertext in locked batches; a check pass must
+  report zero stale and undecryptable values before an old key is removed, and
+  both modes retain their count reports in the global audit log.
 - Storage goes through the `services/storage` provider abstraction.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as
