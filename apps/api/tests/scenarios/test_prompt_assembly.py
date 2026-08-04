@@ -70,8 +70,7 @@ async def test_active_context_prompt_preserves_tool_specific_execution_scope(
 ) -> None:
     context = await build_scenario_agent(db_session_factory)
     active_context = ResolvedActiveContext(
-        selection_kind="context_group",
-        group_name="Warehouse",
+        groups=((uuid4(), "Warehouse"),),
         entries=(
             ResolvedContextEntry(
                 integration_resource_id=uuid4(),

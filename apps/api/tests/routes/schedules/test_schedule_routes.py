@@ -36,6 +36,7 @@ from tests.factories import (
 from tests.support.auth import bearer_headers
 
 pytestmark = pytest.mark.asyncio
+_DUPLICATE_TARGET_ID = str(uuid4())
 
 
 async def _authenticated_workspace(
@@ -207,8 +208,12 @@ async def test_schedule_active_context_create_update_and_clear_round_trip(
             "interval_minutes": 15,
             "default_prompt": "Review the selected account.",
             "active_context": {
-                "type": "resource",
-                "integration_resource_id": str(resource.id),
+                "targets": [
+                    {
+                        "type": "resource",
+                        "integration_resource_id": str(resource.id),
+                    }
+                ]
             },
         },
     )
@@ -216,8 +221,12 @@ async def test_schedule_active_context_create_update_and_clear_round_trip(
     assert create_response.status_code == 201
     schedule_id = create_response.json()["id"]
     assert create_response.json()["active_context"] == {
-        "type": "resource",
-        "integration_resource_id": str(resource.id),
+        "targets": [
+            {
+                "type": "resource",
+                "integration_resource_id": str(resource.id),
+            }
+        ]
     }
 
     update_response = await db_async_client.patch(
@@ -225,16 +234,24 @@ async def test_schedule_active_context_create_update_and_clear_round_trip(
         headers=headers,
         json={
             "active_context": {
-                "type": "context_group",
-                "context_group_id": str(group.id),
+                "targets": [
+                    {
+                        "type": "context_group",
+                        "context_group_id": str(group.id),
+                    }
+                ]
             }
         },
     )
 
     assert update_response.status_code == 200
     assert update_response.json()["active_context"] == {
-        "type": "context_group",
-        "context_group_id": str(group.id),
+        "targets": [
+            {
+                "type": "context_group",
+                "context_group_id": str(group.id),
+            }
+        ]
     }
 
     clear_response = await db_async_client.patch(
@@ -295,14 +312,161 @@ async def test_schedule_active_context_rejects_cross_workspace_target(
             "interval_minutes": 15,
             "default_prompt": "Do not run.",
             "active_context": {
-                "type": "resource",
-                "integration_resource_id": str(resource.id),
+                "targets": [
+                    {
+                        "type": "resource",
+                        "integration_resource_id": str(resource.id),
+                    }
+                ]
             },
         },
     )
 
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        [
+            {"type": "resource", "integration_resource_id": _DUPLICATE_TARGET_ID},
+            {"type": "resource", "integration_resource_id": _DUPLICATE_TARGET_ID},
+        ],
+        [{"type": "resource", "integration_resource_id": str(uuid4())} for _index in range(11)],
+    ],
+    ids=["duplicate", "over-cap"],
+)
+async def test_schedule_active_context_enforces_set_contract(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    targets: list[dict[str, str]],
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    agent = await _create_agent(db_session, workspace=workspace, user=user)
+    await db_session.commit()
+
+    response = await db_async_client.post(
+        "/api/v1/schedules/",
+        headers=headers,
+        json={
+            "agent_id": str(agent.id),
+            "name": "Invalid target set",
+            "schedule_type": "interval",
+            "interval_minutes": 15,
+            "default_prompt": "Do not run.",
+            "active_context": {"targets": targets},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_schedule_personal_context_is_owner_scoped_on_admin_updates(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    owner, workspace, owner_headers = await _authenticated_workspace(db_session)
+    admin, _workspace, admin_headers = await _authenticated_workspace(
+        db_session,
+        role=WorkspaceRole.ADMIN,
+        workspace=workspace,
+    )
+    agent = await _create_agent(db_session, workspace=workspace, user=owner)
+    workspace_credential = build_external_credential()
+    personal_credential = build_external_credential(
+        provider_key="gmail",
+        principal_fingerprint=uuid4().hex.ljust(64, "0"),
+    )
+    workspace_connection = build_integration_connection(
+        credential=workspace_credential,
+        user=owner,
+        workspace=workspace,
+        status="active",
+    )
+    personal_connection = build_integration_connection(
+        credential=personal_credential,
+        user=owner,
+        owner_user_id=owner.id,
+        provider_key="gmail",
+        status="active",
+    )
+    db_session.add_all(
+        [
+            workspace_credential,
+            personal_credential,
+            workspace_connection,
+            personal_connection,
+        ]
+    )
+    await db_session.flush()
+    workspace_resource = build_integration_resource(
+        connection=workspace_connection,
+        enabled=True,
+        availability="available",
+    )
+    personal_resource = build_integration_resource(
+        connection=personal_connection,
+        resource_type="gmail_mailbox",
+        external_id="owner@example.com",
+        display_name="owner@example.com",
+        enabled=True,
+        availability="available",
+    )
+    db_session.add_all([workspace_resource, personal_resource])
+    await db_session.flush()
+    group = build_integration_context_group(
+        workspace=workspace,
+        user=owner,
+        resources=[workspace_resource],
+    )
+    db_session.add(group)
+    await db_session.commit()
+    active_context = {
+        "targets": [
+            {"type": "context_group", "context_group_id": str(group.id)},
+            {
+                "type": "resource",
+                "integration_resource_id": str(personal_resource.id),
+            },
+        ]
+    }
+
+    create_response = await db_async_client.post(
+        "/api/v1/schedules/",
+        headers=owner_headers,
+        json={
+            "agent_id": str(agent.id),
+            "name": "Shared and personal context",
+            "schedule_type": "interval",
+            "interval_minutes": 15,
+            "default_prompt": "Review and email the results.",
+            "active_context": active_context,
+        },
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["active_context"] == active_context
+    schedule_id = create_response.json()["id"]
+
+    unrelated_update = await db_async_client.patch(
+        f"/api/v1/schedules/{schedule_id}",
+        headers=admin_headers,
+        json={"name": "Admin renamed schedule"},
+    )
+
+    assert admin.id != owner.id
+    assert unrelated_update.status_code == 200
+    assert unrelated_update.json()["active_context"] == active_context
+
+    context_replacement = await db_async_client.patch(
+        f"/api/v1/schedules/{schedule_id}",
+        headers=admin_headers,
+        json={"active_context": active_context},
+    )
+
+    assert context_replacement.status_code == 404
+    assert context_replacement.headers["content-type"].startswith("application/problem+json")
 
 
 async def test_update_schedule_audits_effective_side_effect_policy_transition(

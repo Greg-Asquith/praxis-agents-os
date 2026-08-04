@@ -137,7 +137,7 @@ class AgentSchedule(BaseModel):
     execution_params = Column(JSONB, nullable=True)
 
     # Active Context for scheduled runs.
-    # Format: {type: 'resource', integration_resource_id: uuid} or {type: 'context_group', context_group_id: uuid}
+    # Format: {targets: [{type: 'resource', integration_resource_id: uuid}, ...]}
     active_context = Column(JSONB, nullable=True)
 
     # Schedule state

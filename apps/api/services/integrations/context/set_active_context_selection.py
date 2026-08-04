@@ -14,7 +14,7 @@ from models.user import User
 from models.workspace import Workspace
 from services.audit_events import AuditAction, AuditResourceType, record_workspace_audit_event
 from services.integrations.context.schemas import ActiveContextTargets
-from services.integrations.context.utils import load_selection_group, load_selection_resource
+from services.integrations.context.utils import validate_active_context_targets
 from services.workspaces.utils import READ_ROLES, require_workspace_role
 
 
@@ -50,26 +50,12 @@ async def set_active_context_selection(
         select(Conversation.id).where(Conversation.id == conversation.id).with_for_update()
     )
 
-    for target in targets.targets:
-        if target.type == "resource":
-            resource_id = target.integration_resource_id
-            if resource_id is None:  # pragma: no cover - enforced by the tagged schema
-                raise RuntimeError("Resource selection has no resource target")
-            await load_selection_resource(
-                db,
-                resource_id=resource_id,
-                actor=actor,
-                workspace=workspace,
-            )
-        else:
-            group_id = target.context_group_id
-            if group_id is None:  # pragma: no cover - enforced by the tagged schema
-                raise RuntimeError("Context group selection has no group target")
-            await load_selection_group(
-                db,
-                group_id=group_id,
-                workspace=workspace,
-            )
+    await validate_active_context_targets(
+        db,
+        targets=targets,
+        actor=actor,
+        workspace=workspace,
+    )
 
     await db.execute(
         delete(ActiveContextSelection).where(

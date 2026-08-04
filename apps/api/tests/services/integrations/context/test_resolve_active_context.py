@@ -4,7 +4,7 @@
 
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ from tests.factories import (
     build_integration_connection,
     build_integration_context_group,
     build_integration_resource,
+    build_user,
 )
 
 
@@ -136,6 +137,57 @@ async def test_unavailable_resource_and_connection_states_are_reported(
     assert [item.reason for item in resolved.unavailable] == [reason]
 
 
+async def test_unavailable_entries_are_sorted_deterministically(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    first = build_integration_resource(
+        connection=context_data["connection"],
+        id=UUID(int=1),
+        external_id="zulu",
+        display_name="Zulu resource",
+        enabled=False,
+    )
+    second = build_integration_resource(
+        connection=context_data["connection"],
+        id=UUID(int=2),
+        external_id="alpha",
+        display_name="Alpha resource",
+        enabled=False,
+    )
+    db_session.add_all([first, second])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=first,
+            ),
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=second,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resolved = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    assert [entry.display_name for entry in resolved.unavailable] == [
+        "Alpha resource",
+        "Zulu resource",
+    ]
+
+
 async def test_group_spans_connections_and_deduplicates_newest_active_resource(
     db_session: AsyncSession,
     context_data: dict[str, object],
@@ -185,6 +237,13 @@ async def test_group_spans_connections_and_deduplicates_newest_active_resource(
             group=group,
         )
     )
+    db_session.add(
+        build_active_context_selection(
+            workspace=context_data["workspace"],
+            conversation=context_data["conversation"],
+            resource=context_data["first"],
+        )
+    )
     await db_session.flush()
 
     resolved = await resolve_active_context(
@@ -199,6 +258,121 @@ async def test_group_spans_connections_and_deduplicates_newest_active_resource(
         "Third resource",
     }
     assert next(entry for entry in resolved.entries if entry.external_id == "first").write_allowed
+
+
+async def test_shared_and_personal_targets_resolve_together(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    credential = build_external_credential(
+        provider_key="gmail", principal_fingerprint=uuid4().hex.ljust(64, "0")
+    )
+    db_session.add(credential)
+    await db_session.flush()
+    personal_connection = build_integration_connection(
+        credential=credential,
+        user=context_data["user"],
+        owner_user_id=context_data["user"].id,
+        status="active",
+        label="Personal Gmail",
+        provider_key="gmail",
+    )
+    db_session.add(personal_connection)
+    await db_session.flush()
+    personal_resource = build_integration_resource(
+        connection=personal_connection,
+        resource_type="gmail_mailbox",
+        external_id="me@example.com",
+        display_name="me@example.com",
+        enabled=True,
+    )
+    db_session.add(personal_resource)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=context_data["first"],
+            ),
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=personal_resource,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resolved = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    assert {entry.display_name for entry in resolved.entries} == {
+        "First resource",
+        "me@example.com",
+    }
+    personal_entry = next(entry for entry in resolved.entries if entry.provider_key == "gmail")
+    assert personal_entry.is_personal
+    assert not next(
+        entry for entry in resolved.entries if entry.display_name == "First resource"
+    ).is_personal
+
+
+async def test_forged_other_user_personal_target_resolves_as_dangling(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    other_user = build_user(email=f"other-context-{uuid4().hex}@example.com")
+    db_session.add(other_user)
+    await db_session.flush()
+    credential = build_external_credential(
+        provider_key="gmail",
+        principal_fingerprint=uuid4().hex.ljust(64, "0"),
+    )
+    connection = build_integration_connection(
+        credential=credential,
+        user=other_user,
+        owner_user_id=other_user.id,
+        provider_key="gmail",
+        status="active",
+    )
+    db_session.add_all([credential, connection])
+    await db_session.flush()
+    resource = build_integration_resource(
+        connection=connection,
+        resource_type="gmail_mailbox",
+        external_id="other@example.com",
+        display_name="other@example.com",
+        enabled=True,
+    )
+    db_session.add(resource)
+    await db_session.flush()
+    db_session.add(
+        build_active_context_selection(
+            workspace=context_data["workspace"],
+            conversation=context_data["conversation"],
+            resource=resource,
+        )
+    )
+    await db_session.flush()
+
+    resolved = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    assert not resolved.entries
+    assert [entry.reason for entry in resolved.unavailable] == ["dangling"]
 
 
 async def test_degraded_connection_is_usable(
@@ -247,6 +421,13 @@ async def test_deleted_group_degrades_to_dangling(
             group=group,
         )
     )
+    db_session.add(
+        build_active_context_selection(
+            workspace=context_data["workspace"],
+            conversation=context_data["conversation"],
+            resource=context_data["second"],
+        )
+    )
     group.soft_delete(deleted_by=context_data["user"].id, cascade=False)
     await db_session.flush()
 
@@ -257,7 +438,8 @@ async def test_deleted_group_degrades_to_dangling(
         workspace=context_data["workspace"],
     )
 
-    assert resolved.unavailable[0].reason == "dangling"
+    assert [entry.display_name for entry in resolved.entries] == ["Second resource"]
+    assert [entry.reason for entry in resolved.unavailable] == ["dangling"]
 
 
 async def test_scheduled_and_delegated_runs_use_schedule_context(
@@ -266,6 +448,36 @@ async def test_scheduled_and_delegated_runs_use_schedule_context(
 ) -> None:
     agent = await _agent(db_session, context_data)
     root = await _run(db_session, context_data, agent, trigger=RUN_TRIGGER_SCHEDULED)
+    group = build_integration_context_group(
+        workspace=context_data["workspace"],
+        user=context_data["user"],
+        resources=[context_data["first"]],
+        name="Shared accounts",
+    )
+    credential = build_external_credential(
+        provider_key="gmail",
+        principal_fingerprint=uuid4().hex.ljust(64, "0"),
+    )
+    db_session.add_all([group, credential])
+    await db_session.flush()
+    personal_connection = build_integration_connection(
+        credential=credential,
+        user=context_data["user"],
+        owner_user_id=context_data["user"].id,
+        provider_key="gmail",
+        status="active",
+    )
+    db_session.add(personal_connection)
+    await db_session.flush()
+    personal_resource = build_integration_resource(
+        connection=personal_connection,
+        resource_type="gmail_mailbox",
+        external_id="owner@example.com",
+        display_name="owner@example.com",
+        enabled=True,
+    )
+    db_session.add(personal_resource)
+    await db_session.flush()
     schedule = AgentSchedule(
         agent_id=agent.id,
         user_id=context_data["user"].id,
@@ -273,8 +485,16 @@ async def test_scheduled_and_delegated_runs_use_schedule_context(
         schedule_type="interval",
         interval_minutes=15,
         active_context={
-            "type": "resource",
-            "integration_resource_id": str(context_data["second"].id),
+            "targets": [
+                {
+                    "type": "context_group",
+                    "context_group_id": str(group.id),
+                },
+                {
+                    "type": "resource",
+                    "integration_resource_id": str(personal_resource.id),
+                },
+            ]
         },
     )
     db_session.add(schedule)
@@ -324,7 +544,26 @@ async def test_scheduled_and_delegated_runs_use_schedule_context(
 
     assert root_context.source == child_context.source == "schedule"
     assert root_context.entries == child_context.entries
-    assert root_context.entries[0].display_name == "Second resource"
+    assert root_context.groups == ((group.id, "Shared accounts"),)
+    assert {entry.display_name for entry in root_context.entries} == {
+        "First resource",
+        "owner@example.com",
+    }
+    assert next(
+        entry for entry in root_context.entries if entry.provider_key == "gmail"
+    ).is_personal
+
+    personal_connection.status = "revoked"
+    await db_session.flush()
+    revoked_context = await resolve_active_context(
+        db_session,
+        run=root,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    assert [entry.display_name for entry in revoked_context.entries] == ["First resource"]
+    assert [entry.reason for entry in revoked_context.unavailable] == ["connection_revoked"]
 
 
 async def test_malformed_schedule_context_is_ignored(
@@ -345,7 +584,7 @@ async def test_malformed_schedule_context_is_ignored(
         workspace_id=context_data["workspace"].id,
         schedule_type="interval",
         interval_minutes=15,
-        active_context={"type": "resource"},
+        active_context={"targets": [{"type": "resource"}]},
     )
     db_session.add(schedule)
     await db_session.flush()

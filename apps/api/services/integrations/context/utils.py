@@ -14,7 +14,7 @@ from models.integration_context import IntegrationContextGroup, IntegrationConte
 from models.integrations import IntegrationConnection, IntegrationResource
 from models.user import User
 from models.workspace import Workspace
-from services.integrations.context.schemas import ContextGroupRead
+from services.integrations.context.schemas import ActiveContextTargets, ContextGroupRead
 
 CONTEXT_GROUP_NAME_UNIQUE_CONSTRAINT = "uq_integration_context_groups_workspace_name"
 
@@ -103,6 +103,32 @@ async def load_selection_group(
             field="context_group_id",
         )
     return group
+
+
+async def validate_active_context_targets(
+    db: AsyncSession,
+    *,
+    targets: ActiveContextTargets,
+    actor: User,
+    workspace: Workspace,
+) -> None:
+    """Validate every active-context target for the acting user and workspace."""
+    for target in targets.targets:
+        if target.type == "resource":
+            resource_id = target.integration_resource_id
+            if resource_id is None:  # pragma: no cover - enforced by the tagged schema
+                raise RuntimeError("Resource selection has no resource target")
+            await load_selection_resource(
+                db,
+                resource_id=resource_id,
+                actor=actor,
+                workspace=workspace,
+            )
+        else:
+            group_id = target.context_group_id
+            if group_id is None:  # pragma: no cover - enforced by the tagged schema
+                raise RuntimeError("Context group selection has no group target")
+            await load_selection_group(db, group_id=group_id, workspace=workspace)
 
 
 async def load_workspace_group(

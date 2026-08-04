@@ -40,9 +40,8 @@ def test_prompt_renders_law_entries_and_unavailable_reasons() -> None:
     rendered = render_active_context_block(
         ResolvedActiveContext(
             source="conversation",
-            selection_kind="context_group",
-            group_name="Morning review",
-            entries=(_entry(),),
+            groups=((uuid4(), "Morning review"), (uuid4(), "Evening review")),
+            entries=(_entry(is_personal=True),),
             unavailable=(
                 UnavailableContextEntry(
                     display_name="Old account",
@@ -57,8 +56,8 @@ def test_prompt_renders_law_entries_and_unavailable_reasons() -> None:
     assert "authorization boundary" in rendered
     assert "some tools run once per compatible resource" in rendered
     assert "others perform one operation constrained to the listed resources" in rendered
-    assert 'Context group: "Morning review"' in rendered
-    assert "degraded, read-only" in rendered
+    assert 'Context groups: "Morning review", "Evening review"' in rendered
+    assert "degraded, read-only, personal" in rendered
     assert "connection_needs_reauth" in rendered
 
 

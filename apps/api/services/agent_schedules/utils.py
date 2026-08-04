@@ -12,8 +12,8 @@ from models.agent import Agent, AgentSchedule
 from models.user import User
 from models.workspace import Workspace
 from services.agent_schedules.domain import ScheduleConfig, normalize_schedule_config
-from services.integrations.context.schemas import ActiveContextSelectionValue
-from services.integrations.context.utils import load_selection_group, load_selection_resource
+from services.integrations.context.schemas import ActiveContextTargets
+from services.integrations.context.utils import validate_active_context_targets
 
 TIMING_FIELD_NAMES = frozenset(
     {"schedule_type", "cron_expression", "interval_minutes", "run_once_at", "timezone"}
@@ -85,27 +85,18 @@ def normalize_schedule_name(value: str | None) -> str:
 async def validate_schedule_active_context(
     db: AsyncSession,
     *,
-    selection: ActiveContextSelectionValue | None,
+    selection: ActiveContextTargets | None,
     actor: User,
     workspace: Workspace,
 ) -> dict[str, object] | None:
     if selection is None:
         return None
-    if selection.type == "resource":
-        resource_id = selection.integration_resource_id
-        if resource_id is None:  # pragma: no cover - enforced by the tagged schema
-            raise RuntimeError("Resource selection has no resource target")
-        await load_selection_resource(
-            db,
-            resource_id=resource_id,
-            actor=actor,
-            workspace=workspace,
-        )
-    else:
-        group_id = selection.context_group_id
-        if group_id is None:  # pragma: no cover - enforced by the tagged schema
-            raise RuntimeError("Context group selection has no group target")
-        await load_selection_group(db, group_id=group_id, workspace=workspace)
+    await validate_active_context_targets(
+        db,
+        targets=selection,
+        actor=actor,
+        workspace=workspace,
+    )
     return selection.model_dump(mode="json")
 
 

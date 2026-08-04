@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_schedules.runs import schedule_health_from_run
-from services.integrations.context.schemas import ActiveContextSelectionValue
+from services.integrations.context.schemas import ActiveContextTargets
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -86,7 +86,7 @@ class AgentScheduleRead(BaseModel):
     timezone: str
     default_prompt: str | None = None
     execution_params: dict[str, Any] | None = None
-    active_context: ActiveContextSelectionValue | None = None
+    active_context: ActiveContextTargets | None = None
     is_active: bool
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
@@ -150,7 +150,7 @@ class AgentScheduleCreateRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     default_prompt: str = Field(max_length=20000)
     execution_params: dict[str, Any] | None = None
-    active_context: ActiveContextSelectionValue | None = None
+    active_context: ActiveContextTargets | None = None
     is_active: bool = True
 
     @field_validator("name")
@@ -189,7 +189,7 @@ class AgentScheduleUpdateRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
     default_prompt: str | None = Field(default=None, max_length=20000)
     execution_params: dict[str, Any] | None = None
-    active_context: ActiveContextSelectionValue | None = None
+    active_context: ActiveContextTargets | None = None
     is_active: bool | None = None
 
     @field_validator("name")

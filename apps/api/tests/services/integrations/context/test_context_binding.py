@@ -133,7 +133,6 @@ def test_build_runtime_tools_filters_only_bound_tools(integration_manifest) -> N
         )
         compatible = ResolvedActiveContext(
             source="conversation",
-            selection_kind="resource",
             entries=(
                 ResolvedContextEntry(
                     integration_resource_id=uuid4(),

@@ -21,6 +21,9 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
   new route carries the right RBAC dependency (`require_role`/
   `require_owner`/`require_editor`/`require_read`). This is the highest-risk
   class of defect in the codebase.
+- Context Groups in shared workspaces stay workspace-pure. Personal integration
+  resources may appear only in actor-scoped active-context target sets, and
+  every accepted target is validated as the acting user.
 - Every new workspace-confidential table enables and forces Postgres RLS in
   its creating migration, has both `USING` and `WITH CHECK` enforcement, and
   is added to the full-table blindness list in

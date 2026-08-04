@@ -31,7 +31,7 @@ from services.integrations.context.domain import (
     ResolvedContextEntry,
     UnavailableContextEntry,
 )
-from services.integrations.context.schemas import ActiveContextSelectionValue
+from services.integrations.context.schemas import ActiveContextSelectionValue, ActiveContextTargets
 from services.integrations.domain import (
     CONNECTION_STATUS_ACTIVE,
     CONNECTION_STATUS_DEGRADED,
@@ -56,24 +56,15 @@ async def resolve_active_context(
     if root_run is None:
         return EMPTY_ACTIVE_CONTEXT
 
-    selection, source = await _load_selection(db, run=root_run, workspace_id=workspace.id)
-    if selection is None:
+    selections, source = await _load_selection(db, run=root_run, workspace_id=workspace.id)
+    if not selections:
         return EMPTY_ACTIVE_CONTEXT
 
-    resource_ids, group_id, group_name, dangling = await _expand_selection(
+    resource_ids, groups, dangling = await _expand_selection(
         db,
-        selection=selection,
+        selections=selections,
         workspace_id=workspace.id,
     )
-    if dangling is not None:
-        return ResolvedActiveContext(
-            source=source,
-            selection_kind=selection.type,
-            group_id=group_id,
-            group_name=group_name,
-            unavailable=(dangling,),
-        )
-
     entries, unavailable = await _resolve_resources(
         db,
         resource_ids=resource_ids,
@@ -82,13 +73,16 @@ async def resolve_active_context(
     )
     return ResolvedActiveContext(
         source=source,
-        selection_kind=selection.type,
-        group_id=group_id,
-        group_name=group_name,
+        groups=groups,
         entries=tuple(
             sorted(entries, key=lambda item: (item.provider_key, item.display_name.casefold()))
         ),
-        unavailable=tuple(unavailable),
+        unavailable=tuple(
+            sorted(
+                (*dangling, *unavailable),
+                key=lambda item: (item.provider_key, item.display_name.casefold(), item.reason),
+            )
+        ),
     )
 
 
@@ -124,20 +118,26 @@ async def _load_selection(
     *,
     run: AgentRun,
     workspace_id: UUID,
-) -> tuple[ActiveContextSelectionValue | None, str | None]:
+) -> tuple[list[ActiveContextSelectionValue], str | None]:
     if run.trigger == RUN_TRIGGER_INTERACTIVE:
-        row = await db.scalar(
-            select(ActiveContextSelection).where(
-                ActiveContextSelection.conversation_id == run.conversation_id,
-                ActiveContextSelection.workspace_id == workspace_id,
+        rows = list(
+            await db.scalars(
+                select(ActiveContextSelection).where(
+                    ActiveContextSelection.conversation_id == run.conversation_id,
+                    ActiveContextSelection.workspace_id == workspace_id,
+                )
             )
         )
-        return (
-            ActiveContextSelectionValue.from_selection(row) if row is not None else None,
-            "conversation",
-        )
+        targets = [ActiveContextSelectionValue.from_selection(row) for row in rows]
+        return sorted(
+            targets,
+            key=lambda target: (
+                target.type,
+                str(target.integration_resource_id or target.context_group_id),
+            ),
+        ), "conversation"
     if run.trigger != RUN_TRIGGER_SCHEDULED:
-        return None, None
+        return [], None
 
     saved = await db.scalar(
         select(AgentSchedule.active_context)
@@ -148,40 +148,61 @@ async def _load_selection(
         )
     )
     if saved is None:
-        return None, "schedule"
+        return [], "schedule"
     try:
-        return ActiveContextSelectionValue.model_validate(saved), "schedule"
+        return ActiveContextTargets.model_validate(saved).targets, "schedule"
     except (ValidationError, TypeError, ValueError):
         logger.warning(
             "Ignoring malformed scheduled active context",
             extra={"agent_run_id": str(run.id)},
         )
-        return None, "schedule"
+        return [], "schedule"
 
 
 async def _expand_selection(
     db: AsyncSession,
     *,
-    selection: ActiveContextSelectionValue,
+    selections: Sequence[ActiveContextSelectionValue],
     workspace_id: UUID,
-) -> tuple[list[UUID], UUID | None, str | None, UnavailableContextEntry | None]:
-    if selection.integration_resource_id is not None:
-        return [selection.integration_resource_id], None, None, None
+) -> tuple[list[UUID], tuple[tuple[UUID, str], ...], tuple[UnavailableContextEntry, ...]]:
+    resource_ids = [
+        resource_id
+        for selection in selections
+        if (resource_id := selection.integration_resource_id) is not None
+    ]
+    group_ids = [
+        group_id for selection in selections if (group_id := selection.context_group_id) is not None
+    ]
+    if not group_ids:
+        return list(dict.fromkeys(resource_ids)), (), ()
 
-    group_id = selection.context_group_id
-    if group_id is None:
-        return [], None, None, _dangling_entry()
-    group = await db.get(IntegrationContextGroup, group_id)
-    if group is None or group.workspace_id != workspace_id or group.deleted:
-        return [], group_id, None, _dangling_entry()
-    resource_ids = list(
+    loaded_groups = list(
         await db.scalars(
-            select(IntegrationContextGroupMember.integration_resource_id).where(
-                IntegrationContextGroupMember.group_id == group.id
+            select(IntegrationContextGroup).where(
+                IntegrationContextGroup.id.in_(group_ids),
+                IntegrationContextGroup.workspace_id == workspace_id,
+                IntegrationContextGroup.deleted.is_(False),
             )
         )
     )
-    return resource_ids, group.id, group.name, None
+    groups_by_id = {group.id: group for group in loaded_groups}
+    groups = [
+        (group.id, group.name)
+        for group_id in group_ids
+        if (group := groups_by_id.get(group_id)) is not None
+    ]
+    dangling = [_dangling_entry() for group_id in group_ids if group_id not in groups_by_id]
+    if groups:
+        resource_ids.extend(
+            await db.scalars(
+                select(IntegrationContextGroupMember.integration_resource_id).where(
+                    IntegrationContextGroupMember.group_id.in_(
+                        [group_id for group_id, _name in groups]
+                    )
+                )
+            )
+        )
+    return list(dict.fromkeys(resource_ids)), tuple(groups), tuple(dangling)
 
 
 async def _resolve_resources(
@@ -240,6 +261,10 @@ async def _resolve_resources(
                     connection_label=connection.label,
                     connection_status=connection.status,
                     write_allowed=bool(resource.writable and resource.permissions_metadata),
+                    is_personal=(
+                        connection.owner_user_id is not None
+                        and connection.owner_workspace_id is None
+                    ),
                     permissions_metadata=dict(resource.permissions_metadata or {}),
                 ),
                 connection,

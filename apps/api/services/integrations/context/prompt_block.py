@@ -18,8 +18,10 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
     if resolved.is_empty:
         return ""
     lines = ["## Active Integrations", "", ACTIVE_CONTEXT_LAW]
-    if resolved.group_name:
-        lines.extend(["", f'Context group: "{resolved.group_name}"'])
+    if resolved.groups:
+        label = "Context group" if len(resolved.groups) == 1 else "Context groups"
+        names = ", ".join(f'"{name}"' for _group_id, name in resolved.groups)
+        lines.extend(["", f"{label}: {names}"])
     if resolved.entries:
         lines.append("")
     for entry in resolved.entries:
@@ -30,6 +32,8 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
             markers.append("degraded")
         if not entry.write_allowed:
             markers.append("read-only")
+        if entry.is_personal:
+            markers.append("personal")
         suffix = f", {', '.join(markers)}" if markers else ""
         lines.append(
             f"- {entry.display_name} ({provider_label} {entry.resource_type}, "

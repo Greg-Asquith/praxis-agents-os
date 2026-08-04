@@ -39,6 +39,7 @@ class ResolvedContextEntry:
     connection_label: str
     connection_status: str
     write_allowed: bool
+    is_personal: bool = False
     permissions_metadata: dict[str, object] = field(default_factory=dict)
 
 
@@ -52,9 +53,7 @@ class UnavailableContextEntry:
 @dataclass(frozen=True)
 class ResolvedActiveContext:
     source: Literal["conversation", "schedule"] | None = None
-    selection_kind: Literal["resource", "context_group"] | None = None
-    group_id: UUID | None = None
-    group_name: str | None = None
+    groups: tuple[tuple[UUID, str], ...] = ()
     entries: tuple[ResolvedContextEntry, ...] = ()
     unavailable: tuple[UnavailableContextEntry, ...] = ()
 

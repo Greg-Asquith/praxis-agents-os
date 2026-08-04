@@ -107,6 +107,7 @@ class ResolvedContextEntryRead(BaseModel):
     connection_label: str
     connection_status: str
     write_allowed: bool
+    is_personal: bool
 
 
 class UnavailableContextEntryRead(BaseModel):
