@@ -43,6 +43,12 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   parser, a typed versioned event protocol, and a reducer. The parser throws
   on unknown event names, so a new server-side event breaks stale clients —
   ship the client change first.
+- The conversation active-run read also returns the latest run outcome so a
+  terminal approval expiry can mark its unresolved tool row failed and show
+  plain-language outcome copy without keeping the conversation blocked. It
+  includes the active approval's expiry deadline; schedule one healing read at
+  that deadline instead of polling throughout a days-long wait. An active run
+  always takes precedence over an older expiry outcome.
 - API types are hand-written per feature in `types.ts`; there is no OpenAPI
   codegen. Use `type` aliases, not `interface` (lint-enforced).
 - Forms use native HTML forms plus `FormData` with the helpers in

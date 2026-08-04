@@ -121,6 +121,23 @@ async def get_active_run_for_conversation(
     )
 
 
+async def get_latest_run_for_conversation(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+) -> AgentRun | None:
+    """Return the newest run for a conversation, including terminal outcomes."""
+    return await db.scalar(
+        select(AgentRun)
+        .where(
+            AgentRun.conversation_id == conversation_id,
+            AgentRun.deleted == False,  # noqa: E712
+        )
+        .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+        .limit(1)
+    )
+
+
 async def get_conversation_agent_name(
     db: AsyncSession,
     *,

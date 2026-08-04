@@ -74,7 +74,7 @@ async def test_approval_suspend_then_override_args_and_execute(
     assert resumed.output == "The approved write completed."
 
 
-async def test_auto_mounted_artifact_tool_requests_approval_without_agent_configuration(
+async def test_auto_mounted_artifact_tool_runs_without_agent_configuration(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     context = await build_scenario_agent(db_session_factory)
@@ -89,22 +89,21 @@ async def test_auto_mounted_artifact_tool_requests_approval_without_agent_config
                             "artifact_type": "markdown",
                             "content": "# Quarterly summary\n\nRevenue increased.",
                         },
-                        "artifact-approval-call",
+                        "artifact-call",
                     ),
                 )
-            )
+            ),
+            "The artifact was created.",
         ]
     )
 
-    suspended = await run_scenario(db_session_factory, context, model=model)
+    completed = await run_scenario(db_session_factory, context, model=model)
 
     assert context.agent.tool_names == []
-    assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
-    state = load_suspended_run_state(suspended.run)
-    assert state.pending_tool_call_ids == ["artifact-approval-call"]
-    [pending] = suspended.audit_rows
-    assert pending.tool_name == "create_artifact"
-    assert pending.details["outcome"] == "approval_requested"
+    assert completed.run.status == "completed"
+    [invocation] = completed.audit_rows
+    assert invocation.tool_name == "create_artifact"
+    assert invocation.details["outcome"] == "completed"
 
 
 async def test_approval_denial_is_audited_and_visible_in_persisted_history(

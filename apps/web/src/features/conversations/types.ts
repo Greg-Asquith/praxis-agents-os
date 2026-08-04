@@ -80,6 +80,8 @@ export type AgentRun = {
 
 export type ConversationActiveRunResponse = {
   active_run: AgentRun | null
+  latest_run: AgentRun | null
+  approval_expires_at?: string | null
 }
 
 export type AgentRunCancelResponse = {

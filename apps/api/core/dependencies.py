@@ -22,7 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.auth.sessions import session_manager
-from core.database import get_async_db_session, set_session_tenant_context
+from core.database import (
+    get_async_db_session,
+    get_maintenance_async_db_session,
+    set_session_tenant_context,
+)
 from core.exceptions.auth import AuthenticationError, AuthorizationError
 from core.settings import settings
 from models.agent import AgentScheduleRun
@@ -34,6 +38,10 @@ from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES, READ_ROLES
 logger = logging.getLogger(__name__)
 _INTERNAL_TOKEN_WORKSPACE_ATTR = "_internal_token_workspace_id"
 AsyncDbSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]
+MaintenanceAsyncDbSessionDep = Annotated[
+    AsyncSession,
+    Depends(get_maintenance_async_db_session),
+]
 
 
 class SessionAuth(HTTPBearer):

@@ -48,6 +48,7 @@ type MessageListProps = {
   messages: ConversationMessage[]
   activeRun: AgentRun | null
   approvalError: string | null
+  approvalExpiryMessage: string | null
   approvals: PendingToolApproval[]
   assistantAgentId: string
   assistantLabel: string
@@ -70,6 +71,7 @@ export function MessageList({
   messages,
   activeRun,
   approvalError,
+  approvalExpiryMessage,
   approvals,
   assistantAgentId,
   pendingDelegations,
@@ -254,6 +256,15 @@ export function MessageList({
 
           {isAwaitingApproval && isApprovalLoading && approvals.length === 0 && (
             <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
+          )}
+
+          {approvalExpiryMessage && (
+            <div className="w-full px-1 py-2">
+              <Alert variant="destructive">
+                <AlertTitle>Approval Expired</AlertTitle>
+                <AlertDescription>{approvalExpiryMessage}</AlertDescription>
+              </Alert>
+            </div>
           )}
 
           {streamError && (

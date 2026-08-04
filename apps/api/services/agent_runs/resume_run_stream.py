@@ -15,8 +15,9 @@ from core.exceptions.general import AppValidationError, ConflictError, NotFoundE
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
+from services.agent_runs.start_with_lease import start_agent_run_with_lease
 from services.agent_runs.utils import load_delegated_child_run_for_approval
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.delegation_approval import (
@@ -48,12 +49,15 @@ async def resume_agent_run_stream(
 ) -> StreamingResponse:
     """Validate human approval decisions and stream the resumed run."""
     run = await db.scalar(
-        select(AgentRun).where(
+        select(AgentRun)
+        .where(
             AgentRun.id == run_id,
             AgentRun.workspace_id == workspace.id,
             AgentRun.user_id == actor.id,
             AgentRun.deleted == False,  # noqa: E712
         )
+        .with_for_update(of=AgentRun)
+        .execution_options(populate_existing=True)
     )
     if run is None:
         raise NotFoundError(
@@ -91,7 +95,8 @@ async def resume_agent_run_stream(
             **(run.metadata_json or {}),
             "audit_context": request_audit_context(request),
         }
-        await db.commit()
+    await start_agent_run_with_lease(db, run)
+    await db.commit()
 
     sink = StreamSink(run_id=run.id, conversation_id=run.conversation_id)
     await sink.emit(EVENT_RUN_STATUS, {"status": run.status})
@@ -107,6 +112,7 @@ async def resume_agent_run_stream(
             message_history=suspended_state.message_history,
             deferred_tool_results=deferred_tool_results,
             sink=sink,
+            expected_status=RUN_STATUS_RUNNING,
         ),
     )
 

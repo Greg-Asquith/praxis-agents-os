@@ -34,6 +34,8 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
             streamEvent.data.run_id,
             conversation.active_run_status ?? "pending"
           ),
+          latest_run: null,
+          approval_expires_at: null,
         }
     )
     return
@@ -69,7 +71,13 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
     conversationsQueryKeys.activeRun(conversationId),
     (current) => {
       if (!isActiveRunStatus(status)) {
-        return { active_run: null }
+        return {
+          active_run: null,
+          latest_run: current?.active_run
+            ? { ...current.active_run, status }
+            : (current?.latest_run ?? null),
+          approval_expires_at: null,
+        }
       }
 
       if (current?.active_run) {
@@ -78,6 +86,9 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
             ...current.active_run,
             status,
           },
+          latest_run: current.latest_run,
+          approval_expires_at:
+            status === "awaiting_approval" ? (current.approval_expires_at ?? null) : null,
         }
       }
 
@@ -88,6 +99,8 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
         active_run: conversation
           ? buildStreamAgentRun(conversation, streamEvent.data.run_id, status)
           : null,
+        latest_run: current?.latest_run ?? null,
+        approval_expires_at: null,
       }
     }
   )

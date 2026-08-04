@@ -77,6 +77,11 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Grace period before an unleased pending run is considered abandoned.",
     )
+    AGENT_RUN_APPROVAL_EXPIRY_DAYS: int = Field(
+        default=7,
+        ge=0,
+        description="Days before a parked approval expires; 0 disables expiry.",
+    )
     AGENT_RUN_TOTAL_TOKENS_LIMIT: int | None = Field(
         default=1_000_000,
         gt=0,

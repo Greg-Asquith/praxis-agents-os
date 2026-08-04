@@ -13,6 +13,10 @@ from core.settings import settings
 from models.agent_run import AgentRun
 from services.agent_runs.domain import RUN_STATUS_PENDING, RUN_STATUS_RUNNING
 from services.agent_runs.fail import fail_agent_run
+from services.agent_runs.staged_content_cleanup import (
+    enqueue_staged_approval_content_cleanup,
+)
+from services.agents.runtime.approval_state import clear_suspended_run_metadata
 from utils.dates import normalize_utc_datetime
 
 DEFAULT_REAPER_BATCH_SIZE = 100
@@ -75,6 +79,8 @@ async def reap_abandoned_runs(
     runs = list(result.scalars())
     failed_run_ids: list[UUID] = []
     for run in runs:
+        await enqueue_staged_approval_content_cleanup(db, run=run)
+        run.metadata_json = clear_suspended_run_metadata(run)
         await fail_agent_run(
             db,
             run,

@@ -146,6 +146,63 @@ def tool_replay_args_for_editing(*, tool_name: str, args: Any) -> dict[str, Any]
     return mapped_args
 
 
+def staged_write_content_refs(requests: DeferredToolRequests) -> list[str]:
+    """Return the unique staged write refs owned by deferred tool requests."""
+    refs: list[str] = []
+    seen: set[str] = set()
+    for approval in requests.approvals:
+        if approval.tool_name != WRITE_FILE_TOOL_NAME:
+            continue
+        args = _mapping_args(approval.args)
+        content_ref = args.get(WRITE_FILE_CONTENT_REF_ARG) if args is not None else None
+        if not isinstance(content_ref, str) or content_ref in seen:
+            continue
+        refs.append(content_ref)
+        seen.add(content_ref)
+    return refs
+
+
+def staged_write_content_refs_from_metadata(
+    metadata_json: Mapping[str, Any] | None,
+    *,
+    workspace_id: UUID,
+    run_id: UUID,
+) -> list[str]:
+    """Recover valid staged write refs without requiring state rehydration."""
+    from services.agents.runtime.approval_state import APPROVAL_STATE_METADATA_KEY
+
+    approval_state = (metadata_json or {}).get(APPROVAL_STATE_METADATA_KEY)
+    if not isinstance(approval_state, Mapping):
+        return []
+    deferred_requests = approval_state.get("deferred_tool_requests")
+    if not isinstance(deferred_requests, Mapping):
+        return []
+    approvals = deferred_requests.get("approvals")
+    if not isinstance(approvals, list):
+        return []
+
+    refs: list[str] = []
+    seen: set[str] = set()
+    for approval in approvals:
+        if not isinstance(approval, Mapping) or approval.get("tool_name") != WRITE_FILE_TOOL_NAME:
+            continue
+        args = _mapping_args(approval.get("args"))
+        content_ref = args.get(WRITE_FILE_CONTENT_REF_ARG) if args is not None else None
+        if not isinstance(content_ref, str) or content_ref in seen:
+            continue
+        try:
+            _validate_staged_write_ref(
+                workspace_id=workspace_id,
+                run_id=run_id,
+                content_ref=content_ref,
+            )
+        except AppValidationError:
+            continue
+        refs.append(content_ref)
+        seen.add(content_ref)
+    return refs
+
+
 async def resolve_staged_write_content(
     *,
     workspace_id: UUID,

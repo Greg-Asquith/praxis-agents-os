@@ -17,7 +17,10 @@ import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { MessageList } from "@/features/conversations/components/message-list"
-import { conversationHealPollInterval } from "@/features/conversations/conversation-heal-polling"
+import {
+  conversationActiveRunRefetchInterval,
+  conversationHealPollInterval,
+} from "@/features/conversations/conversation-heal-polling"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
@@ -33,6 +36,7 @@ import {
 } from "@/features/conversations/format"
 import { pendingMessagesForConversation } from "@/features/conversations/message-parts"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
+import { conversationApprovalExpiryOutcome } from "@/features/conversations/run-error-copy"
 import {
   EMPTY_CONVERSATION_MESSAGES,
   streamActiveRunFromState,
@@ -47,7 +51,7 @@ import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catal
 import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
 import { scheduleTitle } from "@/features/schedules/format"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
-import { getErrorMessage } from "@/lib/api/errors"
+import { ApiError, getErrorMessage } from "@/lib/api/errors"
 
 export function ConversationRoute() {
   const params = useParams({ strict: false })
@@ -96,7 +100,11 @@ function ConversationDetail({
     : undefined
   const initialActiveRun =
     isLiveStreamConversation && streamActiveRun !== undefined
-      ? ({ active_run: streamActiveRun } satisfies ConversationActiveRunResponse)
+      ? ({
+          active_run: streamActiveRun,
+          latest_run: null,
+          approval_expires_at: null,
+        } satisfies ConversationActiveRunResponse)
       : undefined
   const messagesOptions = conversationMessagesQueryOptions(conversationId)
   const activeRunOptions = conversationActiveRunQueryOptions(conversationId)
@@ -132,11 +140,14 @@ function ConversationDetail({
             ConversationActiveRunResponse,
             typeof activeRunQueryKey
           >
-        ) => conversationHealPollInterval(query.state.data?.active_run?.status, query.state.error),
+        ) => conversationActiveRunRefetchInterval(query.state.data, query.state.error),
       },
     ],
   })
   const activeRun = streamActiveRun ?? activeRunQuery.data.active_run
+  const latestRun = activeRunQuery.data.latest_run
+  const approvalExpiryMessage = conversationApprovalExpiryOutcome(activeRun, latestRun)
+  const transcriptRun = activeRun ?? (approvalExpiryMessage ? latestRun : null)
   const [agentQuery, modelCatalogQuery] = useSuspenseQueries({
     queries: [agentQueryOptions(conversation.active_agent_id ?? ""), modelCatalogQueryOptions()],
   })
@@ -206,6 +217,16 @@ function ConversationDetail({
       await queryClient.invalidateQueries({
         queryKey: conversationsQueryKeys.approvalState(runId),
       })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: activeRunQueryKey }),
+          queryClient.invalidateQueries({
+            queryKey: conversationsQueryKeys.approvalState(runId),
+          }),
+        ])
+      }
+      throw error
     } finally {
       setSubmittingApprovalRunId((currentRunId) => (currentRunId === runId ? null : currentRunId))
     }
@@ -226,8 +247,9 @@ function ConversationDetail({
         <div ref={scrollRef} className="h-full overflow-y-auto" onScroll={handleScroll}>
           <div className="mx-auto w-full max-w-4xl px-6 py-6 pb-8">
             <MessageList
-              activeRun={activeRun}
+              activeRun={transcriptRun}
               approvalError={approvalError}
+              approvalExpiryMessage={approvalExpiryMessage}
               approvals={pendingApprovals}
               assistantAgentId={assistantAgentId}
               assistantLabel={assistantLabel}

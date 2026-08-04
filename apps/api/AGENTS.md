@@ -56,6 +56,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
   versioned event protocol, run persistence, approval state
   (`DeferredToolRequests`/`DeferredToolResults`), capabilities, cooperative
   cancellation, and agent-to-agent delegation under `runtime/delegation/`.
+  Parked approvals expire through the generic jobs harness after
+  `AGENT_RUN_APPROVAL_EXPIRY_DAYS` (default 7; 0 disables), which fails the run,
+  clears durable approval state, and transactionally enqueues retryable staged
+  write-content cleanup. Lease reaping also queues that cleanup before clearing
+  a resumed run's approval state. Resume reserves the locked run as `running`
+  before its SSE response begins. The conversation active-run read exposes the
+  parked run's expiry deadline and always treats an existing active run as the
+  latest run, so an older terminal outcome cannot replace a new stream.
 - Direct conversation creation may include an `active_context` selection. It
   must be validated and persisted after the conversation is flushed but before
   its first run is created, so the initial turn resolves the selected context.

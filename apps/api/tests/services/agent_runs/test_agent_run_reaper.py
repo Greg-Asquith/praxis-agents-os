@@ -8,14 +8,20 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
+from models.jobs import Job
 from services.agent_runs import create_agent_run, reap_abandoned_runs, start_agent_run
 from services.agent_runs.domain import RUN_STATUS_FAILED, RUN_STATUS_PENDING, RUN_STATUS_RUNNING
 from services.agent_runs.reap_abandoned import RUN_ABANDONED_ERROR_CODE
+from services.agents.runtime.approval_state import APPROVAL_STATE_METADATA_KEY
+from services.jobs.handlers.sweep_expired_agent_run_approvals import (
+    DELETE_STAGED_APPROVAL_CONTENT_KIND,
+)
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
@@ -90,6 +96,64 @@ async def test_reap_abandoned_runs_fails_expired_running_lease(
     assert run.status == RUN_STATUS_FAILED
     assert run.error_code == RUN_ABANDONED_ERROR_CODE
     assert "lease expired" in (run.error_message or "")
+
+
+async def test_reap_abandoned_runs_clears_suspended_approval_state(
+    db_session: AsyncSession,
+    run_context: RunContext,
+) -> None:
+    now = datetime.now(UTC)
+    run = await _create_run(db_session, run_context)
+    await start_agent_run(db_session, run)
+    run.metadata_json = {
+        "diagnostic": "keep",
+        APPROVAL_STATE_METADATA_KEY: {"message_history": ["large state"]},
+    }
+    run.lease_expires_at = now - timedelta(seconds=1)
+    await db_session.flush()
+
+    await reap_abandoned_runs(db_session, run_id=run.id, now=now)
+
+    assert run.metadata_json == {"diagnostic": "keep"}
+
+
+async def test_reap_abandoned_resumed_run_queues_staged_content_cleanup(
+    db_session: AsyncSession,
+    run_context: RunContext,
+) -> None:
+    now = datetime.now(UTC)
+    run = await _create_run(db_session, run_context)
+    await start_agent_run(db_session, run)
+    content_ref = (
+        f"workspaces/{run.workspace_id}/agent-runs/{run.id}/staged-tool-inputs/"
+        f"{'a' * 64}-{'b' * 64}.txt"
+    )
+    run.metadata_json = {
+        APPROVAL_STATE_METADATA_KEY: {
+            "deferred_tool_requests": {
+                "approvals": [
+                    {
+                        "tool_name": "write_file",
+                        "args": {"content_ref": content_ref},
+                    }
+                ]
+            }
+        }
+    }
+    run.lease_expires_at = now - timedelta(seconds=1)
+    await db_session.flush()
+
+    await reap_abandoned_runs(db_session, run_id=run.id, now=now)
+
+    cleanup_job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == DELETE_STAGED_APPROVAL_CONTENT_KIND,
+            Job.subject_id == run.id,
+        )
+    )
+    assert cleanup_job is not None
+    assert cleanup_job.payload["content_refs"] == [content_ref]
+    assert APPROVAL_STATE_METADATA_KEY not in (run.metadata_json or {})
 
 
 async def test_reap_abandoned_runs_leaves_live_lease_running(

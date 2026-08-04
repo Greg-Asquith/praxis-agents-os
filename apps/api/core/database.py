@@ -198,6 +198,24 @@ async def get_async_db_session(request: Request) -> AsyncGenerator[AsyncSession]
         await session.close()
 
 
+async def get_maintenance_async_db_session() -> AsyncGenerator[AsyncSession]:
+    """Yield a deliberate cross-workspace session for capability lookups."""
+    session_factory = get_maintenance_async_db_session_factory()
+    async with session_factory() as session:
+        await configure_async_db_session(session)
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        else:
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+
 async def close_db_connections() -> None:
     """Dispose database connections and reset cached factories."""
     global _async_engine, _async_session_factory

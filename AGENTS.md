@@ -35,7 +35,8 @@ behind good defaults and progressive disclosure, not in their face.
 
 Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations
-(SSE chat with tool calls and approvals), agent runs (approval resume), the
+(SSE chat with tool calls and approvals), agent runs (durable approval resume,
+configurable approval expiry, and staged-input cleanup), the
 LLM model catalog, files and storage (signed uploads, revisions, background
 markdown extraction), skills, knowledge base, agent memories, the context hub,
 schedules, integrations (OAuth, API-key, and service-account connections),

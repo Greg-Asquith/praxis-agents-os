@@ -111,6 +111,7 @@ async def run_resume_worker(
     deferred_tool_results: DeferredToolResults,
     sink: EventSink,
     model: Model | None = None,
+    expected_status: str = RUN_STATUS_AWAITING_APPROVAL,
 ) -> None:
     """Resume a suspended approval run with an independent DB session."""
     owner_instance_id = _owner_instance_id()
@@ -147,7 +148,7 @@ async def run_resume_worker(
             sink=sink,
             model=model,
             owner_instance_id=owner_instance_id,
-            expected_status=RUN_STATUS_AWAITING_APPROVAL,
+            expected_status=expected_status,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
         )

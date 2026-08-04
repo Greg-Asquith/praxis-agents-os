@@ -52,6 +52,9 @@ from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import CollectingSink, EventSink
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationTurnCreateRequest
+from services.jobs.handlers.sweep_expired_agent_run_approvals import (
+    sweep_expired_agent_run_approvals,
+)
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -1017,12 +1020,44 @@ async def test_get_active_run_lazily_reaps_expired_run(
     )
 
     assert response.status_code == 200
-    assert response.json()["active_run"] is None
+    body = response.json()
+    assert body["active_run"] is None
+    assert body["latest_run"]["id"] == str(run.id)
+    assert body["latest_run"]["status"] == "failed"
 
     stored = await db_session.get(AgentRun, run.id)
     assert stored is not None
     await db_session.refresh(stored)
     assert stored.status == "failed"
+
+
+async def test_get_active_run_reports_parked_approval_expiry_deadline(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
+    run = await create_agent_run(
+        db_session,
+        conversation_id=conversation.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger="interactive",
+    )
+    await start_agent_run(db_session, run)
+    await mark_run_awaiting_approval(db_session, run)
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    response = await db_async_client.get(
+        f"/api/v1/conversations/{conversation.id}/active-run",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["active_run"]["id"] == str(run.id)
+    assert datetime.fromisoformat(body["approval_expires_at"]) == run.updated_at + timedelta(days=7)
 
 
 async def test_resume_run_rejects_run_not_awaiting_approval(
@@ -1054,6 +1089,54 @@ async def test_resume_run_rejects_run_not_awaiting_approval(
     body: Mapping[str, object] = response.json()
     assert body["conflicting_resource"] == "agent_run"
     assert body["run_status"] == "pending"
+
+
+async def test_resume_expired_approval_returns_conflict_before_streaming(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    now = datetime.now(UTC)
+    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
+    agent.tool_names = ["test_add_numbers"]
+    agent.tool_policies = {"test_add_numbers": "approval"}
+    run = await create_agent_run(
+        db_session,
+        conversation_id=conversation.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger="interactive",
+    )
+    suspended = await execute_run(
+        db_session,
+        conversation_id=conversation.id,
+        run_id=run.id,
+        user_prompt="Add two numbers",
+        sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
+        model=TestModel(call_tools=["test_add_numbers"]),
+    )
+    assert isinstance(suspended.output, DeferredToolRequests)
+    run.updated_at = now - timedelta(days=8)
+    await db_session.flush()
+    await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+
+    response = await db_async_client.post(
+        f"/api/v1/agent-runs/{run.id}/resume",
+        headers=headers,
+        json={
+            "decisions": [
+                {
+                    "tool_call_id": suspended.output.approvals[0].tool_call_id,
+                    "decision": "approved",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 409
+    body: Mapping[str, object] = response.json()
+    assert body["conflicting_resource"] == "agent_run"
+    assert body["run_status"] == "failed"
 
 
 async def test_resume_run_streams_approved_tool_to_completion(
@@ -1116,7 +1199,7 @@ async def test_resume_run_streams_approved_tool_to_completion(
         assert response.headers["content-type"].startswith("text/event-stream")
         assert response.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
         assert f"event: {EVENT_RUN_STATUS}" in body
-        assert '"status":"awaiting_approval"' in body
+        assert '"status":"running"' in body
         assert f"event: {EVENT_TOOL_CALL}" in body
         assert f"event: {EVENT_TOOL_RESULT}" in body
         assert f'"tool_call_id":"{tool_call_id}"' in body

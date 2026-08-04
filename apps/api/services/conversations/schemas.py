@@ -154,6 +154,8 @@ class ConversationMessagesResponse(BaseModel):
 
 class ConversationActiveRunResponse(BaseModel):
     active_run: AgentRunRead | None
+    latest_run: AgentRunRead | None
+    approval_expires_at: datetime | None
 
 
 class ConversationsListResponse(OffsetPage):

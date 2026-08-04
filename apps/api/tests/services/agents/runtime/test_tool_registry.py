@@ -84,6 +84,17 @@ def _noop() -> str:
     return "ok"
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    ["delegate_to_agent", "fetch_url", "web_search"],
+)
+def test_long_running_tools_have_no_outer_execution_deadline(tool_name: str) -> None:
+    definition = get_runtime_tool_definition(tool_name)
+
+    assert definition is not None
+    assert definition.timeout is None
+
+
 def _scoped_campaign(campaign: GoogleAdsCampaignReference) -> str:
     return campaign.external_id
 
