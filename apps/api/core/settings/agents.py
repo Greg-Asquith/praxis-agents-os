@@ -8,6 +8,15 @@ from pydantic import Field
 
 
 class AgentRunSettingsMixin:
+    WORKER_MODE: Literal["forever", "drain"] = Field(
+        default="forever",
+        description="Worker process lifecycle: poll forever or drain available work and exit.",
+    )
+    WORKER_DRAIN_MAX_SECONDS: float = Field(
+        default=300.0,
+        gt=0,
+        description="Maximum wall-clock seconds for one worker drain execution.",
+    )
     AGENT_SCHEDULE_WORKER_POLL_SECONDS: float = Field(
         default=5.0,
         gt=0,

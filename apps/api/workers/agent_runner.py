@@ -57,6 +57,7 @@ async def run_once(
     *,
     owner_instance_id: str | None = None,
     model: Model | None = None,
+    batch_size: int | None = None,
 ) -> int:
     """Reconcile stale work, claim due schedules, and execute one claimed batch."""
     owner_id = owner_instance_id or _owner_instance_id()
@@ -69,7 +70,7 @@ async def run_once(
             logger.info("Reconciled scheduled agent runs", extra={"count": reconciled})
         claimed = await claim_due_schedule_runs(
             db,
-            batch_size=settings.AGENT_SCHEDULE_WORKER_BATCH_SIZE,
+            batch_size=batch_size or settings.AGENT_SCHEDULE_WORKER_BATCH_SIZE,
             claim_ttl_seconds=settings.AGENT_SCHEDULE_RUN_CLAIM_TTL_SECONDS,
         )
         schedule_run_ids = [claimed_run.run.id for claimed_run in claimed]
@@ -184,6 +185,34 @@ async def run_forever(
             )
 
 
+async def run_drain(
+    *,
+    shutdown_event: asyncio.Event,
+    owner_instance_id: str | None = None,
+    model: Model | None = None,
+) -> int:
+    """Run scheduled-agent passes without polling delays until no work remains."""
+    owner_id = owner_instance_id or _owner_instance_id()
+    total_claimed = 0
+    while not shutdown_event.is_set():
+        claimed_count = await _run_once_until_shutdown(
+            shutdown_event=shutdown_event,
+            owner_instance_id=owner_id,
+            model=model,
+            batch_size=1,
+        )
+        if claimed_count is None:
+            return total_claimed
+        total_claimed += claimed_count
+        if shutdown_event.is_set():
+            return total_claimed
+        if claimed_count == 0:
+            return total_claimed
+        logger.info("Executed scheduled agent run batch", extra={"count": claimed_count})
+
+    return total_claimed
+
+
 async def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint for the scheduled agent runner."""
     parser = argparse.ArgumentParser(description="Run scheduled Praxis agents.")
@@ -208,9 +237,20 @@ async def _run_once_until_shutdown(
     *,
     shutdown_event: asyncio.Event,
     owner_instance_id: str,
+    model: Model | None = None,
+    batch_size: int | None = None,
 ) -> int | None:
+    pass_coro = (
+        run_once(owner_instance_id=owner_instance_id, model=model)
+        if batch_size is None
+        else run_once(
+            owner_instance_id=owner_instance_id,
+            model=model,
+            batch_size=batch_size,
+        )
+    )
     polling_task = asyncio.create_task(
-        run_once(owner_instance_id=owner_instance_id),
+        pass_coro,
         name="scheduled-agent-runner-pass",
     )
     shutdown_task = asyncio.create_task(

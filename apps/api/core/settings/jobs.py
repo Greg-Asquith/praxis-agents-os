@@ -16,6 +16,11 @@ class JobsSettingsMixin:
         gt=0,
         description="Maximum jobs claimed by one worker polling pass.",
     )
+    JOBS_WORKER_SHUTDOWN_SECONDS: float = Field(
+        default=30.0,
+        gt=0,
+        description="Seconds to wait for generic job worker shutdown.",
+    )
     JOBS_LOCK_TTL_SECONDS: int = Field(
         default=300,
         gt=0,

@@ -302,6 +302,7 @@ def migrated_test_database(test_database_url: str) -> str:
     from alembic import command
 
     os.environ["DATABASE_URL"] = test_database_url
+    os.environ["DATABASE_MAINTENANCE_URL"] = test_database_url
     api_root = Path(__file__).resolve().parents[1]
     config = Config(str(api_root / "alembic.ini"))
     command.upgrade(config, "heads")

@@ -23,7 +23,9 @@ behind good defaults and progressive disclosure, not in their face.
 
 - `apps/api` is the FastAPI backend. Background work runs in a separate worker
   process (`python -m workers.main`) that supervises two loops: the
-  scheduled-agent runner and the generic jobs runner.
+  scheduled-agent runner and the generic jobs runner. It polls continuously by
+  default; `WORKER_MODE=drain` processes available work until both queues are
+  empty or the drain budget expires, then exits for run-to-completion platforms.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router +
   TanStack Query). It talks to the API over REST and consumes agent turns over
   SSE.

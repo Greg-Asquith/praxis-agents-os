@@ -48,7 +48,11 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-async def run_once(*, owner_instance_id: str | None = None) -> int:
+async def run_once(
+    *,
+    owner_instance_id: str | None = None,
+    batch_size: int | None = None,
+) -> int:
     """Reclaim stale work, claim due jobs, and execute one claimed batch."""
     owner_id = owner_instance_id or _owner_instance_id()
     session_factory = get_maintenance_async_db_session_factory()
@@ -76,7 +80,7 @@ async def run_once(*, owner_instance_id: str | None = None) -> int:
         claimed_jobs = await claim_jobs(
             db,
             owner_instance_id=owner_id,
-            batch_size=settings.JOBS_WORKER_BATCH_SIZE,
+            batch_size=batch_size or settings.JOBS_WORKER_BATCH_SIZE,
             lock_ttl_seconds=settings.JOBS_LOCK_TTL_SECONDS,
         )
         job_ids = [job.id for job in claimed_jobs]
@@ -220,6 +224,32 @@ async def run_forever(
             )
 
 
+async def run_drain(
+    *,
+    shutdown_event: asyncio.Event,
+    owner_instance_id: str | None = None,
+) -> int:
+    """Run generic-job passes without polling delays until no work remains."""
+    owner_id = owner_instance_id or _owner_instance_id()
+    total_claimed = 0
+    while not shutdown_event.is_set():
+        claimed_count = await _run_once_until_shutdown(
+            shutdown_event=shutdown_event,
+            owner_instance_id=owner_id,
+            batch_size=1,
+        )
+        if claimed_count is None:
+            return total_claimed
+        total_claimed += claimed_count
+        if shutdown_event.is_set():
+            return total_claimed
+        if claimed_count == 0:
+            return total_claimed
+        logger.info("Executed generic job batch", extra={"count": claimed_count})
+
+    return total_claimed
+
+
 async def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint for the generic job runner."""
     parser = argparse.ArgumentParser(description="Run generic Praxis background jobs.")
@@ -287,9 +317,15 @@ async def _run_once_until_shutdown(
     *,
     shutdown_event: asyncio.Event,
     owner_instance_id: str,
+    batch_size: int | None = None,
 ) -> int | None:
+    pass_coro = (
+        run_once(owner_instance_id=owner_instance_id)
+        if batch_size is None
+        else run_once(owner_instance_id=owner_instance_id, batch_size=batch_size)
+    )
     polling_task = asyncio.create_task(
-        run_once(owner_instance_id=owner_instance_id),
+        pass_coro,
         name="generic-job-runner-pass",
     )
     shutdown_task = asyncio.create_task(
@@ -304,7 +340,7 @@ async def _run_once_until_shutdown(
         if polling_task in done:
             return polling_task.result()
 
-        timeout_seconds = settings.AGENT_SCHEDULE_WORKER_SHUTDOWN_SECONDS
+        timeout_seconds = settings.JOBS_WORKER_SHUTDOWN_SECONDS
         logger.info(
             "Shutdown requested; waiting for generic job runner pass",
             extra={"timeout_seconds": timeout_seconds},

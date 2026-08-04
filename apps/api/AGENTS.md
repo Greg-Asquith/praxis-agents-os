@@ -113,10 +113,17 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Background work runs in the worker process (`python -m workers.main`),
   which supervises the scheduled-agent runner (croniter schedules, TTL leases
   with heartbeats, terminal failure states) and the generic jobs runner over
-  the SKIP-LOCKED `jobs` table. Generic jobs use mutually exclusive workspace
-  or user concurrency ownership; authenticated work must use one of those
-  buckets, while `NULL` ownership is reserved for system work. Queue new
-  background work as jobs rather than inventing ad-hoc task mechanisms.
+  the SKIP-LOCKED `jobs` table. `WORKER_MODE=forever` is the local/service
+  default; `WORKER_MODE=drain` runs both queues to empty without polling sleeps
+  and exits 0 when drained or when `WORKER_DRAIN_MAX_SECONDS` requests a clean
+  stop. Drain passes claim one item at a time so shutdown cannot strand an
+  unstarted batch, and the supervisor repeats both runners until they complete
+  one jointly idle validation round. Each runner finishes or bounds its
+  in-flight pass with its own shutdown grace setting. Generic jobs use mutually
+  exclusive workspace or user
+  concurrency ownership; authenticated work must use one of those buckets,
+  while `NULL` ownership is reserved for system work. Queue new background work
+  as jobs rather than inventing ad-hoc task mechanisms.
 - Storage goes through the `services/storage` provider abstraction.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as
