@@ -14,7 +14,7 @@ from models.audit_event import AuditEvent
 from models.conversation import Conversation
 from services.agents.runtime.dispatch import dispatch_tool_execution
 from services.agents.runtime.envelope import RunEnvelope
-from services.agents.runtime.tools.memory import save_memory, update_memory
+from services.agents.runtime.tools.memory import forget_memory, save_memory, update_memory
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from tests.services.memories.conftest import MemoryContext, install_fake_embeddings
 
@@ -117,6 +117,31 @@ async def _dispatch_update(
     )
 
 
+async def _dispatch_forget(
+    ctx,
+    *,
+    memory_id: str,
+) -> dict[str, object]:
+    args = {
+        "memory_id": memory_id,
+        "reason": "No longer relevant.",
+    }
+
+    async def handler(values):
+        return await forget_memory(ctx, **values)
+
+    return await dispatch_tool_execution(
+        ctx,
+        call=SimpleNamespace(
+            tool_name="forget_memory",
+            tool_call_id=f"forget-memory-{uuid4().hex}",
+        ),
+        tool_def=None,
+        args=args,
+        handler=handler,
+    )
+
+
 async def test_note_runs_automatically_and_core_requires_then_accepts_approval(
     db_session: AsyncSession,
     memory_context: MemoryContext,
@@ -200,6 +225,49 @@ async def test_core_update_requires_approval_and_succeeds_on_approved_replay(
     assert memory.title == "Approved identity"
     audits = list(
         await db_session.scalars(select(AuditEvent).where(AuditEvent.tool_name == "update_memory"))
+    )
+    assert {"completed", "approval_requested"}.issubset(
+        {event.details["outcome"] for event in audits}
+    )
+
+
+async def test_core_forget_requires_approval_while_note_forget_remains_automatic(
+    db_session: AsyncSession,
+    memory_context: MemoryContext,
+    monkeypatch,
+) -> None:
+    install_fake_embeddings(monkeypatch)
+    creator = await _runtime_context(db_session, memory_context, approved=True)
+    core = await _dispatch_save(creator, kind="core", title="Protected identity")
+    note = await _dispatch_save(creator, kind="note", title="Temporary note")
+
+    automatic = await _runtime_context(db_session, memory_context, approved=False)
+    note_result = await _dispatch_forget(
+        automatic,
+        memory_id=note["memory"]["id"],
+    )
+    assert note_result["status"] == "archived"
+
+    pending = await _runtime_context(db_session, memory_context, approved=False)
+    with pytest.raises(ApprovalRequired):
+        await _dispatch_forget(
+            pending,
+            memory_id=core["memory"]["id"],
+        )
+    core_memory = await db_session.get(AgentMemory, core["memory"]["id"])
+    assert core_memory.status == "active"
+
+    approved = await _runtime_context(db_session, memory_context, approved=True)
+    core_result = await _dispatch_forget(
+        approved,
+        memory_id=core["memory"]["id"],
+    )
+    assert core_result["status"] == "archived"
+    await db_session.refresh(core_memory)
+    assert core_memory.status == "archived"
+
+    audits = list(
+        await db_session.scalars(select(AuditEvent).where(AuditEvent.tool_name == "forget_memory"))
     )
     assert {"completed", "approval_requested"}.issubset(
         {event.details["outcome"] for event in audits}

@@ -391,14 +391,24 @@ async def forget_memory(
     memory_id: MemoryReference,
     reason: str | None = None,
 ) -> dict[str, object]:
-    """Archive one visible memory."""
+    """Archive one visible memory; core targets conditionally require approval."""
     try:
+        parsed_id = internal_entity_id(memory_id)
+        target = await get_memory(
+            ctx.deps.db,
+            workspace=ctx.deps.workspace,
+            agent=ctx.deps.agent,
+            user=ctx.deps.user,
+            memory_id=parsed_id,
+        )
+        if target.kind == MEMORY_KIND_CORE and not ctx.tool_call_approved:
+            raise ApprovalRequired(metadata={"reason": "core_memory_write"})
         result = await forget_memory_service(
             ctx.deps.db,
             workspace=ctx.deps.workspace,
             agent=ctx.deps.agent,
             user=ctx.deps.user,
-            memory_id=internal_entity_id(memory_id),
+            memory_id=parsed_id,
             reason=reason,
         )
     except (AppValidationError, ConflictError, NotFoundError) as exc:
