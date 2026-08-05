@@ -115,6 +115,7 @@ async def create_file_upload(
     upload = await provider.create_signed_upload(
         ref,
         content_type=entry.content_type,
+        expected_size_bytes=payload.size_bytes,
         expires_in=timedelta(minutes=10),
     )
     upload_token, token_expires_at = create_asset_upload_token(

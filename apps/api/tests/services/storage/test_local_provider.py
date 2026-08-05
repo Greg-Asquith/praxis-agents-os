@@ -200,6 +200,7 @@ async def test_local_provider_signed_upload_signature_binds_content_type(tmp_pat
     signed = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
     parsed = urlsplit(signed.url)
@@ -212,12 +213,14 @@ async def test_local_provider_signed_upload_signature_binds_content_type(tmp_pat
         expires=int(query["expires"][0]),
         signature=query["sig"][0],
         content_type="text/plain",
+        expected_size_bytes=4,
     )
     assert not provider.verify_signature(
         action="upload",
         ref=ref,
         expires=int(query["expires"][0]),
         signature=query["sig"][0],
+        expected_size_bytes=4,
         content_type="application/json",
     )
 

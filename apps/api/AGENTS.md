@@ -169,8 +169,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   bucket tags or labels without discarding provider- or operator-owned values.
   Direct-upload grants target unique temporary keys only; confirmation
   validates and conditionally promotes bytes to a distinct create-only durable
-  key. Managed asset and skill-document grants persist consumption state so
-  confirmation is replay-safe and crash-idempotent. For a clean local reset
+  key. Upload capabilities bind the exact client-declared byte length; Azure
+  uploads use the bounded signed API relay because Blob SAS cannot constrain
+  request size. Managed asset and skill-document grants persist consumption
+  state so confirmation is replay-safe and crash-idempotent, and the storage
+  sweeper deletes expired unconfirmed objects and grant rows. For a clean local reset
   from the repository root, remove `apps/api/.local/storage` and re-upload
   development files; there is deliberately no compatibility read path.
 - Non-OAuth integration credentials remain secret references. Admins replace

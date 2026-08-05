@@ -13,10 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
+from models.asset_upload import AssetUpload
 from models.audit_event import AuditEvent
 from models.files import File, FileRevision, FileUpload
 from models.jobs import Job
 from models.workspace import WorkspaceRole
+from services.assets.domain import AssetKind
 from services.audit_events import AuditAction, AuditResourceType
 from services.files import (
     confirm_file_upload,
@@ -373,7 +375,7 @@ async def test_reusing_confirmed_upload_grant_cannot_change_revision_bytes(
     actor, workspace, membership = await _workspace_context(db_session)
     provider = get_storage_provider()
     original = b"immutable revision"
-    replacement = b"changed after confirm"
+    replacement = b"X" * len(original)
     grant_result = await create_file_upload(
         db_session,
         actor=actor,
@@ -1033,3 +1035,36 @@ async def test_sweep_deleted_files_purges_expired_rows_and_abandoned_uploads(
     first = await ensure_files_sweep_job(db_session)
     second = await ensure_files_sweep_job(db_session)
     assert first.id == second.id
+
+
+async def test_sweep_deleted_files_purges_expired_skill_document_grants(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, _membership = await _workspace_context(db_session, role=WorkspaceRole.ADMIN)
+    object_key = (
+        f"workspaces/{workspace.id}/skills/{uuid4()}/docs/guide/"
+        f"pending/{uuid4().hex}/original/guide.md"
+    )
+    provider = get_storage_provider()
+    await provider.put_object(
+        private_ref_from_key(object_key),
+        b"abandoned",
+        content_type="text/markdown",
+    )
+    upload = AssetUpload(
+        token_id=f"expired-{uuid4().hex}",
+        kind=AssetKind.SKILL_DOCUMENT.value,
+        object_key=object_key,
+        created_by_user_id=actor.id,
+        workspace_id=workspace.id,
+        expires_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    job = Job(kind="files.sweep_deleted", content_hash=f"test-asset-sweep-{uuid4()}")
+    db_session.add_all([upload, job])
+    await db_session.flush()
+
+    await sweep_deleted_files(db_session, job)
+
+    assert await db_session.get(AssetUpload, upload.id) is None
+    assert await provider.stat_object(private_ref_from_key(object_key)) is None

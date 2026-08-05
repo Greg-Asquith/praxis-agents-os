@@ -173,7 +173,7 @@ async def test_skill_document_upload_confirm_read_download_and_delete(
 
     reused_upload = await db_async_client.put(
         _relative_url(upload_grant["upload"]["url"]),
-        content=b"# Replayed bytes",
+        content=b"X" * len(content),
         headers=upload_grant["upload"]["headers"],
     )
     assert reused_upload.status_code == 204
@@ -359,6 +359,37 @@ async def test_skill_document_upload_rejects_new_document_over_cap(
 
     assert response.status_code == 400
     assert response.json()["field"] == "document_name"
+
+
+async def test_skill_document_upload_limits_pending_grants_per_actor_and_workspace(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MAX_PENDING_SKILL_DOCUMENT_UPLOADS", 1)
+    _user, _workspace, skill, headers = await _authenticated_workspace_with_skill(db_session)
+    payload = {
+        "document_name": "quick_start",
+        "filename": "guide.md",
+        "content_type": "text/markdown",
+        "size_bytes": 4,
+    }
+
+    first = await db_async_client.post(
+        f"/api/v1/skills/{skill.id}/documents/upload",
+        headers=headers,
+        json=payload,
+    )
+    second = await db_async_client.post(
+        f"/api/v1/skills/{skill.id}/documents/upload",
+        headers=headers,
+        json=payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 400
+    assert second.json()["limit"] == 1
 
 
 async def test_skill_document_markdown_for_failed_entry_returns_not_found(

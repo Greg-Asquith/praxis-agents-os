@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from services.storage.errors import (
     StorageNotFoundError,
     StoragePreconditionError,
     StorageProviderUnavailableError,
+    StorageSignatureError,
 )
 from services.storage.providers.azure_blob import AzureBlobStorageProvider
 
@@ -182,6 +184,9 @@ def _provider(service_client: _FakeBlobServiceClient) -> AzureBlobStorageProvide
         account_name="storageacct",
         public_container_name="public",
         workspace_bucket_prefix="praxis-test",
+        app_base_url="http://testserver",
+        api_prefix="/api/v1",
+        secret_key="s" * 32,
         account_url="https://storageacct.blob.core.windows.net",
         public_assets_base_url="https://cdn.example",
         public_cache_control="public, max-age=60",
@@ -230,7 +235,7 @@ async def test_azure_blob_provider_maps_get_not_found_to_storage_error() -> None
     assert await provider.stat_object(ref) is None
 
 
-async def test_azure_blob_signed_urls_bind_upload_headers_and_disposition() -> None:
+async def test_azure_blob_uses_size_bound_upload_relay_and_signed_download() -> None:
     service_client = _FakeBlobServiceClient()
     provider = _provider(service_client)
     ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("output.txt"))
@@ -238,6 +243,7 @@ async def test_azure_blob_signed_urls_bind_upload_headers_and_disposition() -> N
     upload = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
     download = await provider.create_signed_download(
@@ -247,19 +253,31 @@ async def test_azure_blob_signed_urls_bind_upload_headers_and_disposition() -> N
         filename="output.txt",
     )
 
-    assert upload.headers == {
-        "x-ms-blob-type": "BlockBlob",
-        "x-ms-blob-content-type": "text/plain",
-    }
-    assert _fake_generate_blob_sas.calls[0]["container_name"] == WORKSPACE_CONTAINER
-    assert _fake_generate_blob_sas.calls[0]["content_type"] == "text/plain"
-    assert _fake_generate_blob_sas.calls[0]["permission"].kwargs == {"create": True}
+    parsed_upload = urlsplit(upload.url)
+    upload_query = parse_qs(parsed_upload.query)
+    assert upload.headers == {"content-type": "text/plain"}
+    assert parsed_upload.path == f"/api/v1/storage/upload/private/{_private_key('output.txt')}"
+    provider.require_valid_upload_signature(
+        ref,
+        expires=int(upload_query["expires"][0]),
+        signature=upload_query["sig"][0],
+        content_type="text/plain",
+        expected_size_bytes=4,
+    )
+    with pytest.raises(StorageSignatureError):
+        provider.require_valid_upload_signature(
+            ref,
+            expires=int(upload_query["expires"][0]),
+            signature=upload_query["sig"][0],
+            content_type="text/plain",
+            expected_size_bytes=5,
+        )
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert (
-        _fake_generate_blob_sas.calls[1]["content_disposition"]
+        _fake_generate_blob_sas.calls[0]["content_disposition"]
         == 'attachment; filename="output.txt"'
     )
-    assert _fake_generate_blob_sas.calls[1]["permission"].kwargs == {"read": True}
+    assert _fake_generate_blob_sas.calls[0]["permission"].kwargs == {"read": True}
     assert service_client.delegation_key_calls == 1
 
 
@@ -268,6 +286,9 @@ async def test_azure_blob_native_public_url_is_used_without_cdn_base() -> None:
         account_name="storageacct",
         public_container_name="public",
         workspace_bucket_prefix="praxis-test",
+        app_base_url="http://testserver",
+        api_prefix="/api/v1",
+        secret_key="s" * 32,
         credential=object(),
         service_client=_FakeBlobServiceClient(),
         content_settings_cls=_FakeContentSettings,
@@ -312,6 +333,9 @@ async def test_azure_blob_provider_missing_required_settings_fail_clearly() -> N
             account_name="",
             public_container_name="public",
             workspace_bucket_prefix="praxis-test",
+            app_base_url="http://testserver",
+            api_prefix="/api/v1",
+            secret_key="s" * 32,
             credential=object(),
             service_client=_FakeBlobServiceClient(),
             content_settings_cls=_FakeContentSettings,

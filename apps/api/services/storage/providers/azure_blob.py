@@ -5,10 +5,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import threading
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from services.storage.domain import (
@@ -23,6 +27,7 @@ from services.storage.errors import (
     StorageNotFoundError,
     StoragePreconditionError,
     StorageProviderUnavailableError,
+    StorageSignatureError,
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
@@ -78,6 +83,9 @@ class AzureBlobStorageProvider:
         account_name: str,
         public_container_name: str,
         workspace_bucket_prefix: str,
+        app_base_url: str,
+        api_prefix: str,
+        secret_key: str,
         account_url: str | None = None,
         managed_identity_client_id: str | None = None,
         public_assets_base_url: str | None = None,
@@ -104,6 +112,9 @@ class AzureBlobStorageProvider:
             "WORKSPACE_BUCKET_PREFIX",
             provider_key=self.provider_key,
         )
+        self.app_base_url = app_base_url.rstrip("/")
+        self.api_prefix = api_prefix.rstrip("/")
+        self.secret_key = secret_key
         self.account_url = (
             account_url or f"https://{self.account_name}.blob.core.windows.net"
         ).rstrip("/")
@@ -134,6 +145,9 @@ class AzureBlobStorageProvider:
             account_name=settings.AZURE_STORAGE_ACCOUNT_NAME,
             public_container_name=settings.AZURE_STORAGE_PUBLIC_CONTAINER,
             workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
+            app_base_url=settings.APP_BASE_URL,
+            api_prefix=settings.API_V1_PREFIX,
+            secret_key=settings.SECRET_KEY.get_secret_value(),
             account_url=settings.AZURE_STORAGE_ACCOUNT_URL,
             managed_identity_client_id=settings.AZURE_MANAGED_IDENTITY_CLIENT_ID,
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL,
@@ -470,6 +484,7 @@ class AzureBlobStorageProvider:
         ref: StorageObjectRef,
         *,
         content_type: str,
+        expected_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
         workspace_id = workspace_id_for_ref(ref)
@@ -479,19 +494,26 @@ class AzureBlobStorageProvider:
             content_type, provider_key=self.provider_key, ref=ref
         )
         expires_at = datetime.now(UTC) + expires_in
-        url = await self._create_signed_blob_url(
-            ref=ref,
-            expires_at=expires_at,
-            permission_kwargs={"create": True},
-            content_type=normalized_content_type,
+        expires = int(expires_at.timestamp())
+        query = {
+            "content_type": normalized_content_type,
+            "expires": str(expires),
+            "size_bytes": str(expected_size_bytes),
+            "sig": self._upload_signature(
+                ref=ref,
+                expires=expires,
+                content_type=normalized_content_type,
+                expected_size_bytes=expected_size_bytes,
+            ),
+        }
+        url = (
+            f"{self.app_base_url}{self.api_prefix}/storage/upload/"
+            f"{ref.bucket.value}/{quote_object_key(ref.key)}?{urlencode(query)}"
         )
         return SignedUpload(
             ref=ref,
             url=url,
-            headers={
-                "x-ms-blob-type": "BlockBlob",
-                "x-ms-blob-content-type": normalized_content_type,
-            },
+            headers={"content-type": normalized_content_type},
             expires_at=expires_at,
         )
 
@@ -536,8 +558,45 @@ class AzureBlobStorageProvider:
         expires: int,
         signature: str,
         content_type: str,
+        expected_size_bytes: int,
     ) -> None:
-        self._raise_no_local_signature("require_valid_upload_signature")
+        if expires < int(datetime.now(UTC).timestamp()) or not hmac.compare_digest(
+            signature,
+            self._upload_signature(
+                ref=ref,
+                expires=expires,
+                content_type=content_type,
+                expected_size_bytes=expected_size_bytes,
+            ),
+        ):
+            raise StorageSignatureError(
+                "Invalid or expired Azure upload URL",
+                provider_key=self.provider_key,
+                operation="upload",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+            )
+
+    def _upload_signature(
+        self,
+        *,
+        ref: StorageObjectRef,
+        expires: int,
+        content_type: str,
+        expected_size_bytes: int,
+    ) -> str:
+        payload = "\n".join(
+            [
+                "upload",
+                ref.bucket.value,
+                ref.key,
+                str(expires),
+                content_type,
+                str(expected_size_bytes),
+            ]
+        )
+        digest = hmac.new(self.secret_key.encode(), payload.encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
     def require_valid_download_signature(
         self,

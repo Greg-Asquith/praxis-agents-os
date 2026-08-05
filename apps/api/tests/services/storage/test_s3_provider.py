@@ -238,6 +238,7 @@ async def test_s3_provider_signed_urls_bind_content_type_and_disposition() -> No
     upload = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
     download = await provider.create_signed_download(
@@ -250,6 +251,7 @@ async def test_s3_provider_signed_urls_bind_content_type_and_disposition() -> No
     assert upload.headers == {"content-type": "text/plain", "if-none-match": "*"}
     assert client.presigned_calls[0]["operation"] == "put_object"
     assert client.presigned_calls[0]["Params"]["ContentType"] == "text/plain"
+    assert client.presigned_calls[0]["Params"]["ContentLength"] == 4
     assert client.presigned_calls[0]["Params"]["IfNoneMatch"] == "*"
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert client.presigned_calls[1]["operation"] == "get_object"
@@ -313,6 +315,7 @@ async def test_s3_workspace_bucket_is_hardened_and_signed_urls_are_confined() ->
     signed = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
 

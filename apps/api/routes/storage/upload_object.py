@@ -21,17 +21,22 @@ async def upload_storage_object(
     expires: Annotated[int, Query()],
     sig: Annotated[str, Query()],
     content_type: Annotated[str, Query()],
+    size_bytes: Annotated[int, Query(ge=1)],
 ) -> Response:
-    # Local dev provider only: buffer the body because the real cloud adapters
-    # use provider-native direct uploads instead of proxying bytes here.
-    body = await request.body()
+    content_length_value = request.headers.get("content-length")
+    try:
+        content_length = int(content_length_value) if content_length_value is not None else None
+    except ValueError:
+        content_length = None
     await accept_signed_upload(
         bucket,
         object_key,
         expires=expires,
         signature=sig,
         content_type=content_type,
+        expected_size_bytes=size_bytes,
         request_content_type=request.headers.get("content-type") or "",
-        data=body,
+        request_content_length=content_length,
+        chunks=request.stream(),
     )
     return Response(status_code=204)

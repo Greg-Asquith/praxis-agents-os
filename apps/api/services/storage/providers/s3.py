@@ -513,6 +513,7 @@ class S3StorageProvider:
         ref: StorageObjectRef,
         *,
         content_type: str,
+        expected_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
         workspace_id = workspace_id_for_ref(ref)
@@ -530,6 +531,7 @@ class S3StorageProvider:
                     "Bucket": self._bucket_name(ref),
                     "Key": ref.key,
                     "ContentType": normalized_content_type,
+                    "ContentLength": expected_size_bytes,
                     "IfNoneMatch": "*",
                 },
                 ExpiresIn=max(1, int(expires_in.total_seconds())),
@@ -606,6 +608,7 @@ class S3StorageProvider:
         expires: int,
         signature: str,
         content_type: str,
+        expected_size_bytes: int,
     ) -> None:
         self._raise_no_local_signature("require_valid_upload_signature")
 

@@ -50,6 +50,7 @@ async def test_local_signed_upload_and_download_routes(
     upload = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=len(b"stored by signed upload"),
         expires_in=timedelta(minutes=5),
     )
     upload_response = await db_async_client.put(
@@ -112,6 +113,7 @@ async def test_signed_upload_route_uses_active_provider_selection(
                 "expires": "9999999999",
                 "sig": "invalid",
                 "content_type": "text/plain",
+                "size_bytes": str(len(b"stored by signed upload")),
             },
             content=b"stored by signed upload",
             headers={"content-type": "text/plain"},
@@ -134,6 +136,7 @@ async def test_local_signed_upload_rejects_tampered_content_type(
     upload = await provider.create_signed_upload(
         ref,
         content_type="application/json",
+        expected_size_bytes=2,
         expires_in=timedelta(minutes=5),
     )
     response = await db_async_client.put(
@@ -156,6 +159,7 @@ async def test_local_signed_upload_rejects_content_type_parameters(
     upload = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
     response = await db_async_client.put(
@@ -166,6 +170,30 @@ async def test_local_signed_upload_rejects_content_type_parameters(
 
     assert response.status_code == 400
     assert response.json()["title"] == "Storage Validation Error"
+
+
+async def test_signed_upload_rejects_body_one_byte_over_granted_size(
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    provider = get_local_storage_provider()
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/bounded.txt"))
+    upload = await provider.create_signed_upload(
+        ref,
+        content_type="text/plain",
+        expected_size_bytes=4,
+        expires_in=timedelta(minutes=5),
+    )
+
+    response = await db_async_client.put(
+        _relative_url(upload.url),
+        content=b"12345",
+        headers=upload.headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["title"] == "Storage Validation Error"
+    assert await provider.stat_object(ref) is None
 
 
 async def test_local_private_download_rejects_tampered_signature_inputs(

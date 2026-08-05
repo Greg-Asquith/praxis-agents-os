@@ -280,6 +280,7 @@ class LocalStorageProvider:
         ref: StorageObjectRef,
         *,
         content_type: str,
+        expected_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
         workspace_id = workspace_id_for_ref(ref)
@@ -300,11 +301,13 @@ class LocalStorageProvider:
         query = {
             "content_type": normalized_content_type,
             "expires": str(expires),
+            "size_bytes": str(expected_size_bytes),
             "sig": self._signature(
                 action="upload",
                 ref=ref,
                 expires=expires,
                 content_type=normalized_content_type,
+                expected_size_bytes=expected_size_bytes,
             ),
         }
         url = (
@@ -380,6 +383,7 @@ class LocalStorageProvider:
         expires: int,
         signature: str,
         content_type: str = "",
+        expected_size_bytes: int | None = None,
         force_download: bool = False,
         filename: str = "",
     ) -> bool:
@@ -390,6 +394,7 @@ class LocalStorageProvider:
             ref=ref,
             expires=expires,
             content_type=content_type,
+            expected_size_bytes=expected_size_bytes,
             force_download=force_download,
             filename=filename,
         )
@@ -403,6 +408,7 @@ class LocalStorageProvider:
         expires: int,
         signature: str,
         content_type: str = "",
+        expected_size_bytes: int | None = None,
         force_download: bool = False,
         filename: str = "",
     ) -> None:
@@ -412,6 +418,7 @@ class LocalStorageProvider:
             expires=expires,
             signature=signature,
             content_type=content_type,
+            expected_size_bytes=expected_size_bytes,
             force_download=force_download,
             filename=filename,
         ):
@@ -432,6 +439,7 @@ class LocalStorageProvider:
         expires: int,
         signature: str,
         content_type: str,
+        expected_size_bytes: int,
     ) -> None:
         self.require_valid_signature(
             action="upload",
@@ -439,6 +447,7 @@ class LocalStorageProvider:
             expires=expires,
             signature=signature,
             content_type=content_type,
+            expected_size_bytes=expected_size_bytes,
         )
 
     def require_valid_download_signature(
@@ -481,6 +490,7 @@ class LocalStorageProvider:
         ref: StorageObjectRef,
         expires: int,
         content_type: str = "",
+        expected_size_bytes: int | None = None,
         force_download: bool = False,
         filename: str = "",
     ) -> str:
@@ -491,6 +501,7 @@ class LocalStorageProvider:
                 ref.key,
                 str(expires),
                 content_type,
+                str(expected_size_bytes) if expected_size_bytes is not None else "",
                 "1" if force_download else "0",
                 filename,
             ]

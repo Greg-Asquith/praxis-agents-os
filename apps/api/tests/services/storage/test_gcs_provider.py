@@ -226,6 +226,7 @@ async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> N
     upload = await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
     download = await provider.create_signed_download(
@@ -242,7 +243,10 @@ async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> N
     }
     assert signed_calls[0]["method"] == "PUT"
     assert signed_calls[0]["content_type"] == "text/plain"
-    assert signed_calls[0]["headers"] == {"x-goog-if-generation-match": "0"}
+    assert signed_calls[0]["headers"] == {
+        "content-length": "4",
+        "x-goog-if-generation-match": "0",
+    }
     assert download.headers == {"content-disposition": 'attachment; filename="output.txt"'}
     assert signed_calls[1]["method"] == "GET"
     assert signed_calls[1]["response_disposition"] == 'attachment; filename="output.txt"'
@@ -258,6 +262,7 @@ async def test_gcs_signed_urls_use_iam_signing_for_metadata_credentials() -> Non
     await provider.create_signed_upload(
         ref,
         content_type="text/plain",
+        expected_size_bytes=4,
         expires_in=timedelta(minutes=5),
     )
     await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))

@@ -58,6 +58,12 @@ class FilesSettingsMixin:
         le=100,
         description="Max documents per skill",
     )
+    MAX_PENDING_SKILL_DOCUMENT_UPLOADS: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Max unexpired skill-document upload grants per actor and workspace",
+    )
     MAX_SKILL_DOC_MARKDOWN_BYTES: int = Field(
         default=2097152,
         ge=65536,

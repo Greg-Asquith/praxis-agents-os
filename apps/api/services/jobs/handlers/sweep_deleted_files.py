@@ -2,21 +2,26 @@
 
 """Retention sweeper for deleted files and abandoned uploads."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from models.asset_upload import AssetUpload
 from models.files import File, FileRevision, FileUpload
 from models.jobs import Job
+from services.assets.domain import AssetKind
 from services.files.utils import best_effort_delete_file_object, distinct_object_keys
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.registry import job_handler
+from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 
 SWEEP_DELETED_FILES_KIND = "files.sweep_deleted"
 _SWEEP_BATCH_SIZE = 100
+logger = logging.getLogger(__name__)
 
 
 @job_handler(kind=SWEEP_DELETED_FILES_KIND, timeout=300.0)
@@ -25,6 +30,7 @@ async def sweep_deleted_files(db: AsyncSession, job: Job) -> None:
     now = datetime.now(UTC)
     await _purge_expired_deleted_files(db, now=now)
     await _purge_expired_uploads(db, now=now)
+    await _purge_expired_asset_uploads(db, now=now)
 
     from services.jobs.enqueue_job import enqueue_job
 
@@ -110,4 +116,39 @@ async def _purge_expired_uploads(db: AsyncSession, *, now: datetime) -> None:
     provider = get_storage_provider()
     for upload in uploads:
         await best_effort_delete_file_object(upload.object_key, provider=provider)
+        await db.delete(upload)
+
+
+async def _purge_expired_asset_uploads(db: AsyncSession, *, now: datetime) -> None:
+    uploads = (
+        await db.scalars(
+            select(AssetUpload)
+            .where(
+                AssetUpload.consumed_at.is_(None),
+                AssetUpload.expires_at < now,
+            )
+            .order_by(AssetUpload.expires_at, AssetUpload.id)
+            .limit(_SWEEP_BATCH_SIZE)
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    if not uploads:
+        return
+
+    provider = get_storage_provider()
+    for upload in uploads:
+        bucket = (
+            StorageBucket.PRIVATE
+            if upload.kind == AssetKind.SKILL_DOCUMENT.value
+            else StorageBucket.PUBLIC
+        )
+        try:
+            await provider.delete_object(make_storage_object_ref(bucket, upload.object_key))
+        except Exception:
+            logger.warning(
+                "Failed to delete expired unconfirmed asset upload",
+                extra={"asset_upload_id": str(upload.id), "object_key": upload.object_key},
+                exc_info=True,
+            )
+            continue
         await db.delete(upload)

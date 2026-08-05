@@ -68,9 +68,10 @@ class StorageProvider(Protocol):
         ref: StorageObjectRef,
         *,
         content_type: str,
+        expected_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
-        """Create a direct-upload capability for this provider."""
+        """Create an upload capability bound to the exact declared byte size."""
         ...
 
     async def create_signed_download(
@@ -95,6 +96,7 @@ class StorageProvider(Protocol):
         expires: int,
         signature: str,
         content_type: str,
+        expected_size_bytes: int,
     ) -> None:
         """Validate a provider-specific upload callback signature."""
         ...

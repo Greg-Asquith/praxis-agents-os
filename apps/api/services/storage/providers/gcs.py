@@ -429,6 +429,7 @@ class GcsStorageProvider:
         ref: StorageObjectRef,
         *,
         content_type: str,
+        expected_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
         workspace_id = workspace_id_for_ref(ref)
@@ -443,6 +444,10 @@ class GcsStorageProvider:
             "content-type": normalized_content_type,
             "x-goog-if-generation-match": "0",
         }
+        signed_headers = {
+            "content-length": str(expected_size_bytes),
+            "x-goog-if-generation-match": "0",
+        }
         try:
             signing_kwargs = await asyncio.to_thread(self._remote_signing_kwargs)
             url = await asyncio.to_thread(
@@ -451,7 +456,7 @@ class GcsStorageProvider:
                 method="PUT",
                 content_type=normalized_content_type,
                 version="v4",
-                headers={"x-goog-if-generation-match": "0"},
+                headers=signed_headers,
                 **signing_kwargs,
             )
         except StorageError:
@@ -532,6 +537,7 @@ class GcsStorageProvider:
         expires: int,
         signature: str,
         content_type: str,
+        expected_size_bytes: int,
     ) -> None:
         self._raise_no_local_signature("require_valid_upload_signature")
 

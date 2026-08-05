@@ -3,11 +3,14 @@
 """Create a direct-upload grant for a skill document."""
 
 import secrets
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.asset_upload import AssetUpload
 from models.user import User
@@ -36,6 +39,26 @@ async def create_skill_document_upload(
         payload,
         existing_manifest=skill.documentation_refs,
     )
+    lock_material = f"skill-document-upload:{workspace.id}:{actor.id}".encode()
+    lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
+    await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
+    pending_upload_count = await db.scalar(
+        select(func.count())
+        .select_from(AssetUpload)
+        .where(
+            AssetUpload.kind == AssetKind.SKILL_DOCUMENT.value,
+            AssetUpload.created_by_user_id == actor.id,
+            AssetUpload.workspace_id == workspace.id,
+            AssetUpload.consumed_at.is_(None),
+            AssetUpload.expires_at >= datetime.now(UTC),
+        )
+    )
+    if (pending_upload_count or 0) >= settings.MAX_PENDING_SKILL_DOCUMENT_UPLOADS:
+        raise AppValidationError(
+            "Too many pending skill document uploads",
+            field="document_name",
+            details={"limit": settings.MAX_PENDING_SKILL_DOCUMENT_UPLOADS},
+        )
     ref = upload_ref(
         workspace.id,
         skill.id,
@@ -46,6 +69,7 @@ async def create_skill_document_upload(
     upload = await provider.create_signed_upload(
         ref,
         content_type=content_type,
+        expected_size_bytes=payload.size_bytes,
         expires_in=timedelta(minutes=10),
     )
     upload_token, expires_at = create_asset_upload_token(
