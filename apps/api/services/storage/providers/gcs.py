@@ -38,6 +38,8 @@ from services.storage.workspace_buckets import workspace_bucket_name, workspace_
 if TYPE_CHECKING:
     from core.settings import Settings
 
+GCS_WORKSPACE_SOFT_DELETE_SECONDS = 30 * 24 * 60 * 60
+
 try:  # pragma: no cover - exercised through provider-specific extras
     from google.cloud import storage as gcs_storage
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
@@ -153,6 +155,8 @@ class GcsStorageProvider:
         try:
             bucket.iam_configuration.uniform_bucket_level_access_enabled = True
             bucket.iam_configuration.public_access_prevention = "enforced"
+            bucket.versioning_enabled = True
+            bucket.soft_delete_policy.retention_duration_seconds = GCS_WORKSPACE_SOFT_DELETE_SECONDS
             bucket.labels = {**(bucket.labels or {}), "praxis-workspace": str(workspace_id)}
             await asyncio.to_thread(bucket.patch)
         except Exception as exc:

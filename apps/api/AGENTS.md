@@ -150,10 +150,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `local_fs` is the local default; cloud providers (`gcs`, `s3`, `azure_blob`)
   must stay behind the `StorageProvider` contract, with their SDKs as
   optional extras (`gcp`, `aws`, `azure`). Public assets stay in one shared
-  public bucket; every private key must use `workspaces/{workspace_id}/...`
+  public bucket; managed avatar/icon keys retain their existing `users/...`
+  and `workspaces/...` roots, so deployment URLs and public-access policies
+  must not insert an extra prefix. Every private key must use
+  `workspaces/{workspace_id}/...`
   and resolves unconditionally to that workspace's dedicated bucket/container.
   GCS bucket creation must pass the configured immutable
-  `GCS_WORKSPACE_BUCKET_LOCATION`. S3 workspace buckets use the account-regional
+  `GCS_WORKSPACE_BUCKET_LOCATION`; provisioned GCS workspace buckets retain
+  object versioning and a 30-day soft-delete policy alongside uniform access
+  and public-access prevention. S3 workspace buckets use the account-regional
   namespace and derive their physical name from the configured prefix, compact
   workspace UUID, `AWS_ACCOUNT_ID`, and `AWS_REGION`; retain ownership controls,
   versioning, HTTPS-only policy, blocked public access, and the encryption
@@ -176,7 +181,9 @@ Repo-wide expectations are in the root `AGENTS.md`.
   from `LOCAL_STORAGE_ROOT`. Application-managed secrets and externally
   provisioned references use the `workspaces/{workspace_id}/` namespace;
   unnamespaced legacy references may only be reused by the workspace of an
-  existing connection.
+  existing connection. Production runtime identities must be able to create
+  application-managed secret resources and manage their versions while
+  remaining scoped to the provider's physical Praxis secret namespace.
 - The runtime HTTP dependency is `httpx2`; plain `httpx` is dev-only.
 
 ## Auth And Request Handling

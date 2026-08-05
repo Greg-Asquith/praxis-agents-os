@@ -43,12 +43,6 @@ class SecuritySettingsMixin:
         description="Global request body size limit (default 10MB for images)",
     )
 
-    # Scheduled Task Execution Configuration
-    INTERNAL_SCHEDULE_TRIGGER_SECRET: str = Field(
-        default="",
-        description="Secret for scheduler -> Next.js internal schedule execution authentication (x-internal-secret header).",
-    )
-
     # Security lockout Configuration
     SECURITY_LOCKOUT_DURATION_MINUTES: int = Field(
         default=60, ge=5, le=1440, description="Account lockout duration in minutes"
@@ -74,24 +68,6 @@ class SecuritySettingsMixin:
         if not self.SUPER_ADMIN_EMAILS:
             return []
         return [e.strip().lower() for e in self.SUPER_ADMIN_EMAILS.split(",") if e.strip()]
-
-    @model_validator(mode="after")
-    def validate_internal_schedule_trigger_secret(self):
-        """Require a non-empty secret in non-local/development environments.
-
-        Uses a model validator (not a field validator) so that ENVIRONMENT —
-        which is defined on a different settings mixin — is guaranteed to be
-        populated regardless of field/MRO ordering.
-        """
-        environment = getattr(self, "ENVIRONMENT", None)
-        if not self.INTERNAL_SCHEDULE_TRIGGER_SECRET and environment not in (
-            "local",
-            "development",
-        ):
-            raise ValueError(
-                "INTERNAL_SCHEDULE_TRIGGER_SECRET must be set in non-local/development environments"
-            )
-        return self
 
     @field_validator("ENCRYPTION_KEYS", mode="before")
     @classmethod

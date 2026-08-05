@@ -109,6 +109,8 @@ class _FakeGcsBucket:
             uniform_bucket_level_access_enabled=False,
             public_access_prevention=None,
         )
+        self.versioning_enabled = False
+        self.soft_delete_policy = SimpleNamespace(retention_duration_seconds=None)
         self.patch_calls = 0
 
     def reload(self) -> None:
@@ -331,6 +333,8 @@ async def test_gcs_workspace_bucket_is_hardened_and_handle_is_cached() -> None:
     bucket = client.bucket(WORKSPACE_BUCKET)
     assert bucket.iam_configuration.uniform_bucket_level_access_enabled is True
     assert bucket.iam_configuration.public_access_prevention == "enforced"
+    assert bucket.versioning_enabled is True
+    assert bucket.soft_delete_policy.retention_duration_seconds == 30 * 24 * 60 * 60
     assert bucket.labels == {"praxis-workspace": str(WORKSPACE_ID)}
     assert client.create_calls == [
         {

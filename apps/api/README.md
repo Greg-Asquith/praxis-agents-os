@@ -66,10 +66,9 @@ Alembic owns database schema changes for this service. Migrations are run
 explicitly from `apps/api`; the API does not apply migrations at startup.
 
 Required runtime environment variables, including `DATABASE_URL`, `SECRET_KEY`,
-an application encryption source (`ENCRYPTION_KEYS` or
-`ENCRYPTION_KEYS_SECRET_NAME`), and `INTERNAL_SCHEDULE_TRIGGER_SECRET`, must be
-present when running Alembic because the model registry imports the normal
-application settings.
+and an application encryption source (`ENCRYPTION_KEYS` or
+`ENCRYPTION_KEYS_SECRET_NAME`), must be present when running Alembic because
+the model registry imports the normal application settings.
 
 Apply all migration heads:
 

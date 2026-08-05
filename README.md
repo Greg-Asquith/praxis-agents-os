@@ -137,7 +137,7 @@ Frontend:
 
 Local infrastructure:
 
-- Postgres 17 with pgvector available; pgvector is enabled by Alembic
+- Postgres 18 with pgvector available; pgvector is enabled by Alembic migration
 - Docker Compose for local service orchestration
 
 ## Contributor prerequisites

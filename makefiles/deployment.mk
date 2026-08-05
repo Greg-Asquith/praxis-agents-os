@@ -40,3 +40,17 @@ compose-down: ## Stop the Compose stack without deleting volumes
 .PHONY: compose-logs
 compose-logs: ## Follow logs for the Compose stack
 	$(COMPOSE) logs -f
+
+.PHONY: gcp-bootstrap
+gcp-bootstrap: ## Bootstrap one GCP environment (requires ENV_FILE=... and interactive approval)
+	@test -n "$(ENV_FILE)" || { echo "ENV_FILE is required"; exit 2; }
+	deploy/gcp/bootstrap.sh "$(ENV_FILE)"
+
+.PHONY: gcp-deploy
+gcp-deploy: ## Build, migrate, and deploy one GCP environment (requires ENV_FILE=...)
+	@test -n "$(ENV_FILE)" || { echo "ENV_FILE is required"; exit 2; }
+	deploy/gcp/deploy.sh "$(ENV_FILE)" $(GIT_SHA)
+
+.PHONY: gcp-check
+gcp-check: ## Validate GCP helpers and render fake manifests
+	deploy/gcp/tests/test.sh

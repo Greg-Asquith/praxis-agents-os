@@ -27,7 +27,6 @@ def _production_settings(**overrides: Any) -> Settings:
         "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
         "SECURE_COOKIES": True,
         "CREDENTIAL_MASTER_KEYS": None,
-        "INTERNAL_SCHEDULE_TRIGGER_SECRET": "test-schedule-secret-value",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
         "WORKSPACE_BUCKET_PREFIX": "praxis-test",
         "AWS_REGION": "eu-west-2",

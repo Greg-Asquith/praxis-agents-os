@@ -12,7 +12,7 @@ x-api-volumes: &api-volumes
   - ./.local/data:/data
 
 volumes:
-  praxis-postgres-data:
+  praxis-postgres-18-data:
     driver: local
   praxis-web-pnpm-node-modules:
     driver: local
@@ -35,7 +35,7 @@ services:
     restart: "no"
 
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg18
     container_name: praxis-postgres
     environment:
       POSTGRES_DB: postgres
@@ -45,7 +45,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - praxis-postgres-data:/var/lib/postgresql/data
+      - praxis-postgres-18-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s

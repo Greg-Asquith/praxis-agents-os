@@ -18,11 +18,8 @@ class UrlSettingsMixin:
     FRONTEND_URL: str = Field(
         default="http://localhost:3000", description="Frontend application URL"
     )
-    NEXTJS_INTERNAL_URL: str = Field(
-        default="http://localhost:3000", description="Next.js internal URL"
-    )
 
-    @field_validator("APP_BASE_URL", "FRONTEND_URL", "NEXTJS_INTERNAL_URL")
+    @field_validator("APP_BASE_URL", "FRONTEND_URL")
     @classmethod
     def validate_http_url(cls, v):
         """Validate URL scheme and strip any trailing slash."""

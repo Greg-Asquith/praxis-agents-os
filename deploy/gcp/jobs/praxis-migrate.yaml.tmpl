@@ -1,0 +1,116 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: praxis-migrate
+  namespace: "${GCP_PROJECT_NUMBER}"
+  labels:
+    cloud.googleapis.com/location: ${GCP_REGION}
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cloudsql-instances: ${CLOUD_SQL_CONNECTION_NAME}
+        run.googleapis.com/secrets: '${MIGRATE_SECRET_ANNOTATION}'
+    spec:
+      parallelism: 1
+      taskCount: 1
+      template:
+        spec:
+          maxRetries: 0
+          timeoutSeconds: 1800
+          serviceAccountName: ${MIGRATE_SERVICE_ACCOUNT}
+          containers:
+            - image: ${API_IMAGE}
+              command:
+                - alembic
+              args:
+                - upgrade
+                - heads
+              resources:
+                limits:
+                  cpu: "${JOB_CPU}"
+                  memory: ${JOB_MEMORY}
+              env:
+                - name: ENVIRONMENT
+                  value: ${DEPLOYMENT_ENVIRONMENT}
+                - name: DEBUG
+                  value: "false"
+                - name: SQL_DEBUG
+                  value: "false"
+                - name: CLOUD_PROVIDER
+                  value: gcp
+                - name: SECRET_PROVIDER
+                  value: gcp_secret_manager
+                - name: STORAGE_PROVIDER
+                  value: gcs
+                - name: GCP_PROJECT_ID
+                  value: ${GCP_PROJECT_ID}
+                - name: GCS_PUBLIC_ASSETS_BUCKET
+                  value: ${GCS_PUBLIC_ASSETS_BUCKET}
+                - name: GCS_WORKSPACE_BUCKET_LOCATION
+                  value: ${GCS_WORKSPACE_BUCKET_LOCATION}
+                - name: WORKSPACE_BUCKET_PREFIX
+                  value: ${WORKSPACE_BUCKET_PREFIX}
+                - name: PUBLIC_ASSETS_BASE_URL
+                  value: ${PUBLIC_ASSETS_BASE_URL}
+                - name: APP_BASE_URL
+                  value: ${APP_BASE_URL}
+                - name: FRONTEND_URL
+                  value: ${FRONTEND_URL}
+                - name: ALLOWED_CORS_ORIGINS
+                  value: ${ALLOWED_CORS_ORIGINS}
+                - name: SECURE_COOKIES
+                  value: "true"
+                - name: COOKIE_DOMAIN
+                  value: ${COOKIE_DOMAIN}
+                - name: ARTIFACT_ORIGIN
+                  value: ${ARTIFACT_ORIGIN}
+                - name: ARTIFACT_SHARING_ENABLED
+                  value: "${ARTIFACT_SHARING_ENABLED}"
+                - name: ALLOW_SIGNUP
+                  value: "${ALLOW_SIGNUP}"
+                - name: ALLOW_WORKSPACE_CREATION
+                  value: "${ALLOW_WORKSPACE_CREATION}"
+                - name: EMAIL_PROVIDER
+                  value: ${EMAIL_PROVIDER}
+                - name: EMAIL_ENABLED
+                  value: "${EMAIL_ENABLED}"
+                - name: EMAIL_REPLY_TO
+                  value: ${EMAIL_REPLY_TO}
+                - name: INTEGRATIONS_ENABLED_PROVIDERS
+                  value: '${INTEGRATIONS_ENABLED_PROVIDERS}'
+                - name: INTEGRATIONS_OAUTH_REDIRECT_URI
+                  value: ${INTEGRATIONS_OAUTH_REDIRECT_URI}
+                - name: ENCRYPTION_KEYS_SECRET_NAME
+                  value: ${ENCRYPTION_KEYS_SECRET_NAME}
+                - name: CREDENTIAL_MASTER_KEY_SECRET_NAME
+                  value: ${CREDENTIAL_MASTER_KEY_SECRET_NAME}
+                - name: DEFAULT_MODEL_PROVIDER
+                  value: ${DEFAULT_MODEL_PROVIDER}
+                - name: DEFAULT_MODEL
+                  value: ${DEFAULT_MODEL}
+                - name: CONVERSATION_NAMING_PROVIDER
+                  value: ${CONVERSATION_NAMING_PROVIDER}
+                - name: CONVERSATION_NAMING_MODEL
+                  value: ${CONVERSATION_NAMING_MODEL}
+                - name: AGENT_HISTORY_SUMMARY_MODEL_PROVIDER
+                  value: ${AGENT_HISTORY_SUMMARY_MODEL_PROVIDER}
+                - name: AGENT_HISTORY_SUMMARY_MODEL
+                  value: ${AGENT_HISTORY_SUMMARY_MODEL}
+                - name: EMBEDDINGS_PROVIDER
+                  value: ${EMBEDDINGS_PROVIDER}
+                - name: EMBEDDINGS_MODEL
+                  value: ${EMBEDDINGS_MODEL}
+                - name: EMBEDDINGS_DIMENSIONS
+                  value: "${EMBEDDINGS_DIMENSIONS}"
+                - name: METRICS_ENABLED
+                  value: "${METRICS_ENABLED}"
+                - name: TRUSTED_PROXY_CIDRS
+                  value: ${TRUSTED_PROXY_CIDRS}
+                - name: AUDIT_EVENTS_RETENTION_DAYS
+                  value: "${AUDIT_EVENTS_RETENTION_DAYS}"
+                - name: SECURITY_EVENTS_RETENTION_DAYS
+                  value: "${SECURITY_EVENTS_RETENTION_DAYS}"
+                - name: AGENT_RUN_APPROVAL_EXPIRY_DAYS
+                  value: "${AGENT_RUN_APPROVAL_EXPIRY_DAYS}"
+${MIGRATE_SECRET_ENV_YAML}

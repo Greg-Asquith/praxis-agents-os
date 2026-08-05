@@ -32,6 +32,11 @@ behind good defaults and progressive disclosure, not in their face.
 - `docker-compose.yml` defines local Postgres (pgvector image), the API, the
   worker, and the web app. The root `Makefile` wraps the local dev flow
   (`make bootstrap`, `make dev`, `make check`).
+- `deploy/gcp/` contains the customer-independent GCP bootstrap, Cloud Run
+  service/job templates, and the build/migrate/deploy path. Real environment
+  files stay outside git (or under `.local/`); the GCP bootstrap and deploy
+  Make targets require an explicit `ENV_FILE`, and bootstrap keeps
+  API/IAM/billable mutations behind a typed interactive approval gate.
 
 Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations
@@ -109,10 +114,11 @@ the initializer enables anonymous artifact sharing for local development while
 the application default remains disabled for other environments;
 `make dev` starts Postgres, migrates, and runs the API, worker, and web dev
 servers. In that workflow only Postgres runs in Docker; the API, worker, and
-web processes run locally, and `make dev-kill` stops all three. `make
-compose-dev` runs the complete development stack in Docker using
-`docker-compose.dev.yml`, while `make quickstart` runs the default
-production-image stack and prompts for an LLM provider key if none is
+web processes run locally, and `make dev-kill` stops all three. PostgreSQL 18
+uses the major-aware `/var/lib/postgresql` mount and a dedicated
+`praxis-postgres-18-data` volum. `makecompose-dev` runs the complete development
+stack in Docker using `docker-compose.dev.yml`, while `make quickstart` runs the 
+default production-image stack and prompts for an LLM provider key if none is
 configured.
 Make detects both `docker compose` and legacy `docker-compose`. When changing Docker
 behavior: keep local services bound to

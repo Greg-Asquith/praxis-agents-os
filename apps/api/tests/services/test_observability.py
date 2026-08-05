@@ -115,7 +115,6 @@ def _production_settings(**overrides: Any) -> Settings:
         "SECRET_KEY": "x" * 40,
         "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
         "SECURE_COOKIES": True,
-        "INTERNAL_SCHEDULE_TRIGGER_SECRET": "not-a-secret-test-schedule-secret",
         "OPENAI_API_KEY": "sk-test",
         "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
         "WORKSPACE_BUCKET_PREFIX": "praxis-test",
