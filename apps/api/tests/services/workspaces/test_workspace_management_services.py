@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
@@ -16,13 +16,14 @@ from core.exceptions.general import AppValidationError, ConflictError
 from models.audit_event import AuditEvent
 from models.jobs import Job
 from models.security import SecurityEvent
-from models.user import User
+from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
 from services.storage.domain import PROVISION_WORKSPACE_BUCKET_KIND
 from services.workspaces import create_workspace, delete_workspace
 from services.workspaces.invitations import (
+    accept_invitation_by_id,
     accept_invitation_by_token,
     accept_pending_invitations_for_user,
     create_invitation,
@@ -681,6 +682,26 @@ async def test_accept_invitation_by_token_creates_membership_and_records_securit
     assert security_event is not None
     assert security_event.details["invitation_id"] == str(invitation.id)
     assert security_event.details["membership_id"] == str(membership.id)
+    assert security_event.details["identity_proof"] == "invitation_token"
+
+    replay = await accept_invitation_by_token(
+        db_session,
+        request=build_test_request(path="/api/v1/workspaces/invitations/accept"),
+        actor=invited,
+        token=raw_token,
+    )
+
+    assert replay.status == "already_accepted"
+    membership_count = await db_session.scalar(
+        select(func.count())
+        .select_from(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == workspace.id,
+            WorkspaceMembership.user_id == invited.id,
+            WorkspaceMembership.deleted.is_(False),
+        )
+    )
+    assert membership_count == 1
 
 
 async def test_accept_pending_invitations_for_user_accepts_valid_matches_only_and_skips_failures(
@@ -689,6 +710,13 @@ async def test_accept_pending_invitations_for_user_accepts_valid_matches_only_an
 ) -> None:
     owner = build_user(email="owner@example.com")
     invited = build_user(email="invited@example.com")
+    verified_identity = UserAuth(
+        user_id=invited.id,
+        provider="google",
+        provider_user_id="verified-invited-user",
+        email=invited.email,
+        email_verified=True,
+    )
     valid_workspace = build_workspace(slug="valid-team", is_personal=False)
     failing_workspace = build_workspace(slug="failing-team", is_personal=False)
     expired_workspace = build_workspace(slug="expired-team", is_personal=False)
@@ -737,6 +765,7 @@ async def test_accept_pending_invitations_for_user_accepts_valid_matches_only_an
         [
             owner,
             invited,
+            verified_identity,
             valid_workspace,
             failing_workspace,
             expired_workspace,
@@ -793,6 +822,45 @@ async def test_accept_pending_invitations_for_user_accepts_valid_matches_only_an
     assert skipped_membership is None
 
 
+async def test_accept_pending_invitations_for_user_rejects_unverified_email(
+    db_session: AsyncSession,
+) -> None:
+    owner = build_user(email="owner@example.com")
+    invited = build_user(email="unverified@example.com")
+    workspace = build_workspace(slug="unverified-team", is_personal=False)
+    owner_membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        role=WorkspaceRole.OWNER,
+    )
+    invitation = WorkspaceInvitation(
+        workspace_id=workspace.id,
+        email=invited.email,
+        role=WorkspaceRole.ADMIN.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("unverified-invite-token"),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    db_session.add_all([owner, invited, workspace, owner_membership, invitation])
+    await db_session.flush()
+
+    accepted_count = await accept_pending_invitations_for_user(
+        db_session,
+        user=invited,
+        request=build_test_request(path="/api/v1/auth/register"),
+    )
+
+    assert accepted_count == 0
+    assert invitation.accepted_at is None
+    membership = await db_session.scalar(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace.id,
+            WorkspaceMembership.user_id == invited.id,
+        )
+    )
+    assert membership is None
+
+
 async def test_accept_invitation_by_token_rejects_different_user_email(
     db_session: AsyncSession,
 ) -> None:
@@ -832,3 +900,61 @@ async def test_accept_invitation_by_token_rejects_different_user_email(
         )
     )
     assert membership is None
+
+
+async def test_accept_invitation_by_id_requires_matching_verified_identity(
+    db_session: AsyncSession,
+) -> None:
+    owner = build_user(email="owner@example.com")
+    invited = build_user(email="invited@example.com")
+    workspace = build_workspace(slug="verified-identity-team", is_personal=False)
+    owner_membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        role=WorkspaceRole.OWNER,
+    )
+    invitation = WorkspaceInvitation(
+        workspace_id=workspace.id,
+        email=invited.email,
+        role=WorkspaceRole.ADMIN.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token("verified-identity-token"),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    db_session.add_all([owner, invited, workspace, owner_membership, invitation])
+    await db_session.flush()
+
+    with pytest.raises(AuthorizationError, match="Verify your email"):
+        await accept_invitation_by_id(
+            db_session,
+            actor=invited,
+            invitation_id=invitation.id,
+        )
+
+    verified_identity = UserAuth(
+        user_id=invited.id,
+        provider="google",
+        provider_user_id="verified-invited-user",
+        email=invited.email,
+        email_verified=True,
+    )
+    db_session.add(verified_identity)
+    await db_session.flush()
+
+    response = await accept_invitation_by_id(
+        db_session,
+        actor=invited,
+        invitation_id=invitation.id,
+        request=build_test_request(path=f"/api/v1/workspaces/invitations/{invitation.id}/accept"),
+    )
+
+    assert response.status == "accepted"
+    security_event = await db_session.scalar(
+        select(SecurityEvent).where(
+            SecurityEvent.event_type == SecurityEventType.WORKSPACE_INVITATION_ACCEPTED.value,
+            SecurityEvent.user_email == invited.email,
+        )
+    )
+    assert security_event is not None
+    assert security_event.details["identity_proof"] == "verified_identity"
+    assert security_event.details["verified_identity_id"] == str(verified_identity.id)

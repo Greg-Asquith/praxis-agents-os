@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
 from models.workspace import WorkspaceInvitation
-from services.workspaces.invitations.accept_invitation_utils import accept_invitation
+from services.workspaces.invitations.accept_invitation_utils import (
+    accept_invitation,
+    get_verified_email_identity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,10 @@ async def accept_pending_invitations_for_user(
     request: Request | None = None,
 ) -> int:
     """Accept all currently valid pending invitations addressed to the user."""
+    verified_identity = await get_verified_email_identity(db, actor=user, email=user.email)
+    if verified_identity is None:
+        return 0
+
     result = await db.execute(
         select(WorkspaceInvitation)
         .where(

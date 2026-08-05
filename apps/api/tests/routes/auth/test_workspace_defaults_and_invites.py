@@ -14,7 +14,7 @@ from core.auth.sessions import session_manager
 from core.database import get_maintenance_async_db_session_factory
 from models.audit_event import AuditEvent
 from models.security import SecurityEvent
-from models.user import User
+from models.user import User, UserAuth
 from models.workspace import WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
@@ -27,12 +27,19 @@ ORIGIN = "http://localhost:3000"
 PASSWORD = "StrongerPassword123!"
 
 
-async def test_login_accepts_pending_invitation_and_records_security_event(
+async def test_login_accepts_pending_invitation_for_verified_identity(
     db_async_client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
     owner = build_user(email="owner@example.com")
     invited = build_user(email="invited@example.com", password=PASSWORD)
+    verified_identity = UserAuth(
+        user_id=invited.id,
+        provider="google",
+        provider_user_id="verified-invited-user",
+        email=invited.email,
+        email_verified=True,
+    )
     workspace = build_workspace(slug="client-team", name="Client Team", is_personal=False)
     owner_membership = build_workspace_membership(
         workspace_id=workspace.id,
@@ -47,12 +54,13 @@ async def test_login_accepts_pending_invitation_and_records_security_event(
         token_hash=WorkspaceInvitation.hash_raw_token("pending-invite-token"),
         expires_at=datetime.now(UTC) + timedelta(days=7),
     )
-    db_session.add_all([owner, invited, workspace, owner_membership, invitation])
+    db_session.add_all([owner, invited, verified_identity, workspace, owner_membership, invitation])
     await db_session.flush()
     workspace_id = workspace.id
     invited_id = invited.id
     invited_email = invited.email
     invitation_id = invitation.id
+    verified_identity_id = verified_identity.id
     await db_session.commit()
 
     response = await db_async_client.post(
@@ -85,14 +93,23 @@ async def test_login_accepts_pending_invitation_and_records_security_event(
     )
     assert security_event is not None
     assert security_event.details["invitation_id"] == str(invitation_id)
+    assert security_event.details["identity_proof"] == "verified_identity"
+    assert security_event.details["verified_identity_id"] == str(verified_identity_id)
 
 
-async def test_login_with_twofa_accepts_invitation_only_after_totp_verification(
+async def test_verified_login_with_twofa_accepts_invitation_only_after_totp_verification(
     db_async_client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
     owner = build_user(email="owner@example.com")
     invited = build_user(email="totp-invited@example.com", password=PASSWORD)
+    verified_identity = UserAuth(
+        user_id=invited.id,
+        provider="google",
+        provider_user_id="verified-totp-invited-user",
+        email=invited.email,
+        email_verified=True,
+    )
     secret = invited.generate_totp_secret()
     invited.enable_totp()
     workspace = build_workspace(slug="totp-team", name="TOTP Team", is_personal=False)
@@ -109,7 +126,7 @@ async def test_login_with_twofa_accepts_invitation_only_after_totp_verification(
         token_hash=WorkspaceInvitation.hash_raw_token("totp-pending-invite-token"),
         expires_at=datetime.now(UTC) + timedelta(days=7),
     )
-    db_session.add_all([owner, invited, workspace, owner_membership, invitation])
+    db_session.add_all([owner, invited, verified_identity, workspace, owner_membership, invitation])
     await db_session.flush()
     workspace_id = workspace.id
     invited_id = invited.id

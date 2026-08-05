@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError
-from models.user import User
+from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -51,12 +51,30 @@ async def record_failed_accept(
     )
 
 
+async def get_verified_email_identity(
+    db: AsyncSession,
+    *,
+    actor: User,
+    email: str,
+) -> UserAuth | None:
+    """Return the active identity that proves the actor owns an email address."""
+    return await db.scalar(
+        select(UserAuth).where(
+            UserAuth.user_id == actor.id,
+            UserAuth.email == email,
+            UserAuth.email_verified.is_(True),
+            UserAuth.deleted.is_(False),
+        )
+    )
+
+
 async def accept_invitation(
     db: AsyncSession,
     *,
     actor: User,
     invitation: WorkspaceInvitation,
     request: Request | None,
+    invitation_token_verified: bool = False,
 ) -> WorkspaceInvitationAcceptResponse:
     workspace = await db.scalar(
         select(Workspace).where(
@@ -73,6 +91,15 @@ async def accept_invitation(
         raise AuthorizationError("Your account does not have a verified email")
     if user_email != invite_email:
         raise AuthorizationError("This invitation was sent to a different email address")
+    verified_identity = None
+    if not invitation_token_verified:
+        verified_identity = await get_verified_email_identity(
+            db,
+            actor=actor,
+            email=invite_email,
+        )
+        if verified_identity is None:
+            raise AuthorizationError("Verify your email before accepting this invitation")
     existing = await db.execute(
         select(WorkspaceMembership)
         .options(selectinload(WorkspaceMembership.user))
@@ -138,6 +165,10 @@ async def accept_invitation(
             "role": invitation.role,
             "status": status,
             "membership_id": str(membership.id),
+            "identity_proof": "invitation_token"
+            if invitation_token_verified
+            else "verified_identity",
+            "verified_identity_id": str(verified_identity.id) if verified_identity else None,
         },
     )
     if request is not None:
@@ -151,6 +182,10 @@ async def accept_invitation(
                 "invitation_id": str(invitation.id),
                 "membership_id": str(membership.id),
                 "status": status,
+                "identity_proof": "invitation_token"
+                if invitation_token_verified
+                else "verified_identity",
+                "verified_identity_id": str(verified_identity.id) if verified_identity else None,
             },
         )
 

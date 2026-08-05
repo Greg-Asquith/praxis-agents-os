@@ -49,6 +49,7 @@ async def accept_invitation_by_token(
             actor=actor,
             invitation=invitation,
             request=request,
+            invitation_token_verified=True,
         )
     except (AppValidationError, AuthorizationError) as exc:
         await record_failed_accept(
