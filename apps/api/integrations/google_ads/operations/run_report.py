@@ -24,7 +24,7 @@ async def run_report(
         login_customer_id=login_customer_id,
         json={"query": query_with_limit},
     )
-    rows = stream_rows(payload)
+    rows = stream_rows(payload, max_rows=max_rows + 1)
     truncated = len(rows) > max_rows
     bounded = rows[:max_rows]
     return {

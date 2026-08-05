@@ -30,6 +30,7 @@ from integrations.google_ads.entity_resolvers.campaign import (
 from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
+from integrations.google_ads.operations.utils import bounded_query, stream_rows
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.run_report import google_ads_run_report
@@ -133,6 +134,44 @@ async def test_report_caps_rows_without_model_framing() -> None:
     assert result["truncated"] is True
     assert result["rows"][0]["campaign"]["name"] == "one"
     assert client.last_json["query"].endswith("LIMIT 2")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT campaign.id FROM campaign WHERE campaign.name = 'LIMIT 1'",
+            "SELECT campaign.id FROM campaign WHERE campaign.name = 'LIMIT 1' LIMIT 3",
+        ),
+        ("SELECT campaign.id FROM campaign -- LIMIT 1", "SELECT campaign.id FROM campaign LIMIT 3"),
+        (
+            "SELECT campaign.id FROM campaign /* LIMIT 1 */",
+            "SELECT campaign.id FROM campaign LIMIT 3",
+        ),
+        (
+            "SELECT campaign.id FROM campaign LIMIT 1 ORDER BY campaign.id",
+            "SELECT campaign.id FROM campaign ORDER BY campaign.id LIMIT 3",
+        ),
+        ("SELECT campaign.id FROM campaign LIMIT 2", "SELECT campaign.id FROM campaign LIMIT 2"),
+        ("SELECT campaign.id FROM campaign LIMIT 20", "SELECT campaign.id FROM campaign LIMIT 3"),
+    ],
+)
+def test_bounded_query_enforces_one_terminal_clause(query: str, expected: str) -> None:
+    assert bounded_query(query, max_rows=2) == expected
+
+
+def test_stream_rows_stops_collecting_at_budget() -> None:
+    class OversizedResults(list[dict]):
+        def __iter__(self):
+            for index, item in enumerate(super().__iter__()):
+                if index >= 3:
+                    raise AssertionError("stream_rows read beyond its row budget")
+                yield item
+
+    results = OversizedResults({"campaign": {"id": str(index)}} for index in range(100))
+    payload = [{"results": results}, {"results": [{"campaign": {"id": "unreachable"}}]}]
+
+    assert stream_rows(payload, max_rows=3) == results[:3]
 
 
 async def test_report_tool_rejects_non_select_gaql_before_dispatch() -> None:
