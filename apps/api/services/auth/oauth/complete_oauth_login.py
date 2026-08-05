@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.oauth_providers.oauth_registry import oauth_registry
 from core.exceptions.auth import AuthenticationError
-from core.exceptions.general import NotFoundError
+from core.exceptions.general import ConflictError, NotFoundError
 from core.exceptions.oauth import OAuthAuthenticationError
 from services.auth.oauth.utils import (
     clear_oauth_login_binding_cookie,
@@ -74,11 +74,14 @@ async def complete_oauth_login(
             profile=profile,
             request=request,
         )
-    except Exception:
+    except Exception as exc:
+        details = {"provider": provider_name}
+        if isinstance(exc, ConflictError) and exc.details.get("reason") == "oauth_email_collision":
+            details["reason"] = "oauth_email_collision"
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_OAUTH_FAILED,
             request=request,
-            details={"provider": provider_name},
+            details=details,
             committed=True,
         )
         raise

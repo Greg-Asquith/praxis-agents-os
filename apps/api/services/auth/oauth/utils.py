@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.exceptions.auth import AuthenticationError, AuthorizationError
-from core.exceptions.general import CustomValueError
+from core.exceptions.general import ConflictError, CustomValueError
 from core.exceptions.oauth import OAuthAuthenticationError, OAuthConfigurationError
 from core.settings import settings
 from models.user import User, UserAuth
@@ -71,7 +71,14 @@ async def upsert_oauth_user(
         .with_for_update()
     )
     auth_record = result.scalar_one_or_none()
-    user = auth_record.user if auth_record else await get_user_by_email(db, email)
+    user = auth_record.user if auth_record else None
+
+    if auth_record is None and await get_user_by_email(db, email) is not None:
+        raise ConflictError(
+            "An account with this email already exists. Sign in first, then link this provider.",
+            conflicting_resource="user_auth",
+            details={"reason": "oauth_email_collision"},
+        )
 
     created_user = False
     if user is None:
