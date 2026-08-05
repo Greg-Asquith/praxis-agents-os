@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, m
 
 from models.integration_context import ActiveContextSelection, IntegrationContextGroup
 
-MAX_ACTIVE_CONTEXT_TARGETS = 10
+MAX_ACTIVE_CONTEXT_TARGETS = 20
 
 
 class _ResourceSelectionValue(BaseModel):
@@ -176,12 +176,18 @@ class ContextGroupListResponse(BaseModel):
 
 class ContextGroupCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    resource_ids: list[UUID] = Field(default_factory=list)
+    resource_ids: list[UUID] = Field(
+        default_factory=list,
+        max_length=MAX_ACTIVE_CONTEXT_TARGETS,
+    )
 
 
 class ContextGroupUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    resource_ids: list[UUID] | None = None
+    resource_ids: list[UUID] | None = Field(
+        default=None,
+        max_length=MAX_ACTIVE_CONTEXT_TARGETS,
+    )
 
     @model_validator(mode="after")
     def has_update(self) -> Self:

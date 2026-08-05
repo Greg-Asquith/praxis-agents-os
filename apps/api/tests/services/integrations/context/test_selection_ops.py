@@ -27,6 +27,7 @@ from services.integrations.context.schemas import (
     ActiveContextSelectionValue,
     ActiveContextTargets,
     ContextGroupCreateRequest,
+    ContextGroupUpdateRequest,
 )
 from tests.factories import (
     build_conversation,
@@ -85,6 +86,15 @@ def test_target_set_is_capped_and_rejects_duplicates() -> None:
                 for _ in range(MAX_ACTIVE_CONTEXT_TARGETS + 1)
             ]
         )
+
+
+def test_context_group_resource_set_is_capped() -> None:
+    resource_ids = [uuid4() for _ in range(MAX_ACTIVE_CONTEXT_TARGETS + 1)]
+
+    with pytest.raises(ValidationError):
+        ContextGroupCreateRequest(name="Oversized", resource_ids=resource_ids)
+    with pytest.raises(ValidationError):
+        ContextGroupUpdateRequest(resource_ids=resource_ids)
 
 
 async def test_selection_replace_set_and_clear_audit_once_per_operation(

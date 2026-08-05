@@ -31,7 +31,11 @@ from services.integrations.context.domain import (
     ResolvedContextEntry,
     UnavailableContextEntry,
 )
-from services.integrations.context.schemas import ActiveContextSelectionValue, ActiveContextTargets
+from services.integrations.context.schemas import (
+    MAX_ACTIVE_CONTEXT_TARGETS,
+    ActiveContextSelectionValue,
+    ActiveContextTargets,
+)
 from services.integrations.domain import (
     CONNECTION_STATUS_ACTIVE,
     CONNECTION_STATUS_DEGRADED,
@@ -173,36 +177,42 @@ async def _expand_selection(
     group_ids = [
         group_id for selection in selections if (group_id := selection.context_group_id) is not None
     ]
-    if not group_ids:
-        return list(dict.fromkeys(resource_ids)), (), ()
+    resource_ids = list(dict.fromkeys(resource_ids))
+    if not group_ids or len(resource_ids) >= MAX_ACTIVE_CONTEXT_TARGETS:
+        return resource_ids[:MAX_ACTIVE_CONTEXT_TARGETS], (), ()
 
-    loaded_groups = list(
-        await db.scalars(
-            select(IntegrationContextGroup).where(
+    loaded_groups = (
+        await db.execute(
+            select(IntegrationContextGroup.id, IntegrationContextGroup.name).where(
                 IntegrationContextGroup.id.in_(group_ids),
                 IntegrationContextGroup.workspace_id == workspace_id,
                 IntegrationContextGroup.deleted.is_(False),
             )
         )
-    )
-    groups_by_id = {group.id: group for group in loaded_groups}
+    ).all()
+    groups_by_id = dict(loaded_groups)
     groups = [
-        (group.id, group.name)
+        (group_id, group_name)
         for group_id in group_ids
-        if (group := groups_by_id.get(group_id)) is not None
+        if (group_name := groups_by_id.get(group_id)) is not None
     ]
     dangling = [_dangling_entry() for group_id in group_ids if group_id not in groups_by_id]
     if groups:
-        resource_ids.extend(
-            await db.scalars(
-                select(IntegrationContextGroupMember.integration_resource_id).where(
-                    IntegrationContextGroupMember.group_id.in_(
-                        [group_id for group_id, _name in groups]
-                    )
-                )
+        remaining = MAX_ACTIVE_CONTEXT_TARGETS - len(resource_ids)
+        member_statement = (
+            select(IntegrationContextGroupMember.integration_resource_id)
+            .distinct()
+            .where(
+                IntegrationContextGroupMember.group_id.in_(
+                    [group_id for group_id, _name in groups]
+                ),
+                IntegrationContextGroupMember.integration_resource_id.not_in(resource_ids),
             )
+            .order_by(IntegrationContextGroupMember.integration_resource_id)
+            .limit(remaining)
         )
-    return list(dict.fromkeys(resource_ids)), tuple(groups), tuple(dangling)
+        resource_ids.extend(await db.scalars(member_statement))
+    return resource_ids, tuple(groups), tuple(dangling)
 
 
 async def _resolve_resources(

@@ -12,6 +12,7 @@ from core.exceptions.integration import IntegrationRateLimitError
 from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 
 
 def _entry(
@@ -146,3 +147,17 @@ async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resou
     assert google_ads.integration_resource_id not in {
         result.integration_resource_id for result in results
     }
+
+
+async def test_fan_out_never_exceeds_active_context_target_budget() -> None:
+    entries = tuple(_entry(f"Account {index}") for index in range(MAX_ACTIVE_CONTEXT_TARGETS + 1))
+    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    calls = []
+
+    async def operation(entry: ResolvedContextEntry):
+        calls.append(entry)
+
+    results = await run_context_fan_out(deps, binding=_binding(), operation=operation)
+
+    assert calls == list(entries[:MAX_ACTIVE_CONTEXT_TARGETS])
+    assert len(results) == MAX_ACTIVE_CONTEXT_TARGETS

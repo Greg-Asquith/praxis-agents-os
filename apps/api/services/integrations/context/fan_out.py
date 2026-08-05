@@ -11,6 +11,7 @@ from pydantic_ai import ModelRetry
 
 from core.exceptions.integration import IntegrationError
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 from services.integrations.context.utils import sanitize_context_error
 from services.integrations.manifest import PROVIDER_MANIFESTS
 
@@ -42,7 +43,11 @@ async def run_context_fan_out(
 ) -> list[FanOutEntryResult]:
     """Run an operation once per compatible entry and isolate failures."""
     active_context = deps.active_context
-    entries = active_context.compatible_entries(binding) if active_context is not None else ()
+    entries = (
+        active_context.compatible_entries(binding)[:MAX_ACTIVE_CONTEXT_TARGETS]
+        if active_context is not None
+        else ()
+    )
     if not entries:
         providers = ", ".join(
             sorted(

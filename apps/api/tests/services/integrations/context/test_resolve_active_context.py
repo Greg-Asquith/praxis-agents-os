@@ -18,6 +18,7 @@ from services.agent_runs.domain import (
     RUN_TRIGGER_SCHEDULED,
 )
 from services.integrations.context.resolve_active_context import resolve_active_context
+from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 from tests.factories import (
     build_active_context_selection,
     build_external_credential,
@@ -258,6 +259,106 @@ async def test_group_spans_connections_and_deduplicates_newest_active_resource(
         "Third resource",
     }
     assert next(entry for entry in resolved.entries if entry.external_id == "first").write_allowed
+
+
+async def test_group_expansion_is_capped_deterministically(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    resources = [
+        build_integration_resource(
+            connection=context_data["connection"],
+            id=UUID(int=index),
+            external_id=f"expanded-{index}",
+            display_name=f"Expanded {index}",
+            enabled=True,
+        )
+        for index in range(1, MAX_ACTIVE_CONTEXT_TARGETS + 2)
+    ]
+    db_session.add_all(resources)
+    await db_session.flush()
+    group = build_integration_context_group(
+        workspace=context_data["workspace"],
+        user=context_data["user"],
+        resources=resources,
+    )
+    db_session.add(group)
+    await db_session.flush()
+    db_session.add(
+        build_active_context_selection(
+            workspace=context_data["workspace"],
+            conversation=context_data["conversation"],
+            group=group,
+        )
+    )
+    await db_session.flush()
+
+    resolved = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    assert {entry.integration_resource_id for entry in resolved.entries} == {
+        UUID(int=index) for index in range(1, MAX_ACTIVE_CONTEXT_TARGETS + 1)
+    }
+
+
+async def test_direct_and_grouped_resources_share_expansion_budget(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    grouped_resources = [
+        build_integration_resource(
+            connection=context_data["connection"],
+            id=UUID(int=index),
+            external_id=f"grouped-{index}",
+            display_name=f"Grouped {index}",
+            enabled=True,
+        )
+        for index in range(1, MAX_ACTIVE_CONTEXT_TARGETS + 1)
+    ]
+    db_session.add_all(grouped_resources)
+    await db_session.flush()
+    group = build_integration_context_group(
+        workspace=context_data["workspace"],
+        user=context_data["user"],
+        resources=grouped_resources,
+    )
+    db_session.add(group)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=context_data["first"],
+            ),
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                group=group,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resolved = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    resolved_ids = {entry.integration_resource_id for entry in resolved.entries}
+    assert len(resolved_ids) == MAX_ACTIVE_CONTEXT_TARGETS
+    assert context_data["first"].id in resolved_ids
+    assert UUID(int=MAX_ACTIVE_CONTEXT_TARGETS) not in resolved_ids
 
 
 async def test_shared_and_personal_targets_resolve_together(
