@@ -18,27 +18,27 @@ dependencies = [
     "pgvector==0.5.0",
     "prometheus-client>=0.26.0",
     "pwdlib[argon2]>=0.3.0",
-    "pydantic-ai>=2.20.0",
+    "pydantic-ai>=2.22.0",
     "pydantic-evals>=2.20.0",
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.13.0",
     "pyotp>=2.10.0",
     "sqlalchemy>=2.0.51",
     "tzdata>=2026.3",
-    "uvicorn>=0.52.0",
+    "uvicorn>=0.52.1",
 ]
 
 [project.optional-dependencies]
 azure = ["azure-identity>=1.17", "azure-keyvault-secrets>=4.8", "azure-storage-blob>=12.22"]
 gcp = ["google-cloud-secret-manager>=2.30.0", "google-cloud-storage>=3.13.0"]
-aws = ["boto3>=1.43.59"]
+aws = ["boto3>=1.43.62"]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
-    "ruff>=0.16.0",
+    "ruff>=0.16.1",
     "watchfiles>=1.1.1",
 ]
 
