@@ -3,6 +3,7 @@
 """Deterministic, offset-preserving markdown chunking."""
 
 import re
+from bisect import bisect_left
 from dataclasses import dataclass
 
 from services.kb.domain import ChunkDraft
@@ -227,6 +228,8 @@ def chunk_markdown(
         heading_path = piece.heading_path
     packed.append((chunk_start, chunk_end, heading_path))
 
+    fence_pieces = [piece for piece in pieces if piece.is_fence]
+    fence_starts = [piece.start for piece in fence_pieces]
     drafts: list[ChunkDraft] = []
     previous_start: int | None = None
     previous_end: int | None = None
@@ -241,18 +244,19 @@ def chunk_markdown(
                 overlap_tokens=overlap_tokens,
                 max_tokens=max_tokens,
             )
-            for piece in pieces:
-                if piece.is_fence and piece.start < char_start < piece.end:
-                    with_fence = content_md[piece.start : chunk_end]
-                    fence_overlap = content_md[piece.start : previous_end]
+            fence_index = bisect_left(fence_starts, char_start) - 1
+            if fence_index >= 0:
+                fence = fence_pieces[fence_index]
+                if char_start < fence.end:
+                    with_fence = content_md[fence.start : chunk_end]
+                    fence_overlap = content_md[fence.start : previous_end]
                     if (
                         estimate_tokens(with_fence) <= max_tokens
                         and estimate_tokens(fence_overlap) <= overlap_tokens
                     ):
-                        char_start = piece.start
+                        char_start = fence.start
                     else:
-                        char_start = piece.end
-                    break
+                        char_start = fence.end
         chunk_content = content_md[char_start:chunk_end]
         drafts.append(
             ChunkDraft(

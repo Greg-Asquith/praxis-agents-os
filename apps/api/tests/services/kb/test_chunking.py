@@ -3,7 +3,9 @@
 """Offset and structure invariants for knowledge-base markdown chunking."""
 
 from itertools import pairwise
+from unittest.mock import patch
 
+import services.kb.chunking as chunking_module
 from services.kb.chunking import chunk_markdown
 
 
@@ -118,3 +120,31 @@ def test_chunk_markdown_is_deterministic_and_empty_safe() -> None:
         )
         == []
     )
+
+
+def test_dense_markdown_fence_lookups_scale_linearly() -> None:
+    def count_fence_lookups(size_bytes: int) -> tuple[int, int]:
+        content = ("x\n\n" * ((size_bytes // 3) + 1))[:size_bytes]
+        lookup_count = 0
+        bisect_left = chunking_module.bisect_left
+
+        def counted_bisect_left(values: list[int], offset: int) -> int:
+            nonlocal lookup_count
+            lookup_count += 1
+            return bisect_left(values, offset)
+
+        with patch.object(chunking_module, "bisect_left", counted_bisect_left):
+            chunks = chunk_markdown(
+                content,
+                target_tokens=128,
+                max_tokens=160,
+                overlap_tokens=16,
+            )
+        return lookup_count, len(chunks)
+
+    small_lookups, small_chunks = count_fence_lookups(512 * 1024)
+    large_lookups, large_chunks = count_fence_lookups(1024 * 1024)
+
+    assert small_lookups == small_chunks - 1
+    assert large_lookups == large_chunks - 1
+    assert large_lookups <= (small_lookups * 2) + 2
