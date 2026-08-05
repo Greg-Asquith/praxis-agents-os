@@ -145,12 +145,12 @@ async def test_selection_replace_set_recomputes_status_and_audits_diff(
     connection, available, removed = await _connection_with_resources(
         db_session, integration_identity
     )
-    _member, _workspace, _membership, headers = await create_identity(
+    _admin, _workspace, _membership, headers = await create_identity(
         db_session,
-        role=WorkspaceRole.MEMBER,
+        role=WorkspaceRole.ADMIN,
         workspace=integration_identity["workspace"],
     )
-    member_id = _member.id
+    admin_id = _admin.id
 
     selected = await db_async_client.put(
         f"/api/v1/integrations/connections/{connection.id}/resources/selection",
@@ -193,7 +193,7 @@ async def test_selection_replace_set_recomputes_status_and_audits_diff(
         )
     )
     assert metadata_job is not None
-    assert metadata_job.initiated_by_user_id == member_id
+    assert metadata_job.initiated_by_user_id == admin_id
 
     cleared = await db_async_client.put(
         f"/api/v1/integrations/connections/{connection_id}/resources/selection",
@@ -212,8 +212,13 @@ async def test_selection_rejects_unknown_foreign_and_removed_resource_ids(
     connection, _available, removed = await _connection_with_resources(
         db_session, integration_identity
     )
+    foreign_user, foreign_workspace, _foreign_membership, _foreign_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.OWNER,
+    )
+    foreign_identity = {"user": foreign_user, "workspace": foreign_workspace}
     other_connection, foreign, _other_removed = await _connection_with_resources(
-        db_session, integration_identity
+        db_session, foreign_identity
     )
     assert other_connection.id != connection.id
 
@@ -224,6 +229,45 @@ async def test_selection_rejects_unknown_foreign_and_removed_resource_ids(
             json={"enabled_resource_ids": [str(resource_id)]},
         )
         assert response.status_code == 400, response.text
+
+
+async def test_editor_cannot_change_workspace_connection_resource_selection(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    connection, available, removed = await _connection_with_resources(
+        db_session, integration_identity
+    )
+    _editor, _workspace, _membership, editor_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+        workspace=integration_identity["workspace"],
+    )
+
+    for enabled_resource_ids in ([str(available.id)], []):
+        response = await db_async_client.put(
+            f"/api/v1/integrations/connections/{connection.id}/resources/selection",
+            headers=editor_headers,
+            json={"enabled_resource_ids": enabled_resource_ids},
+        )
+        assert response.status_code == 403, response.text
+
+    connection_id = connection.id
+    available_id = available.id
+    removed_id = removed.id
+    db_session.expire_all()
+    persisted_available = await db_session.get(IntegrationResource, available_id)
+    persisted_removed = await db_session.get(IntegrationResource, removed_id)
+    assert persisted_available is not None and persisted_available.enabled is False
+    assert persisted_removed is not None and persisted_removed.enabled is True
+    metadata_job = await db_session.scalar(
+        select(Job).where(
+            Job.kind == "tests.sync_selected_metadata",
+            Job.subject_id == connection_id,
+        )
+    )
+    assert metadata_job is None
 
 
 @pytest.mark.parametrize(

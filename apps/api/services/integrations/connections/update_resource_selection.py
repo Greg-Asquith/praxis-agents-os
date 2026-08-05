@@ -44,8 +44,7 @@ async def update_resource_selection(
         actor=actor,
         workspace=workspace,
     )
-    if connection.owner_user_id is not None:
-        require_connection_mutation_allowed(connection, actor=actor, membership=membership)
+    require_connection_mutation_allowed(connection, actor=actor, membership=membership)
     if connection.status in CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS:
         raise IntegrationConnectionError(
             "Connection credentials must be ready before resource selection",
