@@ -24,6 +24,7 @@ from services.agent_schedules.runs import (
     RUN_STATUS_RETRYABLE_FAILED,
 )
 from services.audit_events import AuditAction, AuditResourceType
+from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -333,7 +334,10 @@ async def test_schedule_active_context_rejects_cross_workspace_target(
             {"type": "resource", "integration_resource_id": _DUPLICATE_TARGET_ID},
             {"type": "resource", "integration_resource_id": _DUPLICATE_TARGET_ID},
         ],
-        [{"type": "resource", "integration_resource_id": str(uuid4())} for _index in range(11)],
+        [
+            {"type": "resource", "integration_resource_id": str(uuid4())}
+            for _index in range(MAX_ACTIVE_CONTEXT_TARGETS + 1)
+        ],
     ],
     ids=["duplicate", "over-cap"],
 )
