@@ -50,7 +50,11 @@ from services.agents.runtime.events import EVENT_TOOL_APPROVAL_REQUIRED
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools import build_runtime_tools
-from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_EXTERNAL,
+    TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
+)
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.conversations import get_conversation, list_conversations
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -85,6 +89,7 @@ def delegated_external_write_tool():
         description="Perform an external write for delegated envelope tests.",
         effect=TOOL_EFFECT_WRITE,
         effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+        egress=TOOL_EGRESS_EXTERNAL_WRITE,
     )
     async def delegated_external_write(value: str) -> dict[str, bool]:
         executions["count"] += 1

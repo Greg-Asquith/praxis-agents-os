@@ -12,6 +12,7 @@ from services.agents.runtime.entity_references.domain import ArtifactReference
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
     TOOL_POLICY_AUTO,
     ToolFieldPresentation,
     ToolPresentation,
@@ -36,6 +37,7 @@ from services.artifacts.schemas import ArtifactToolResult
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+    egress=TOOL_EGRESS_EXTERNAL_WRITE,
     default_policy=TOOL_POLICY_AUTO,
     supports_auto=True,
     takes_ctx=True,
@@ -102,6 +104,7 @@ async def create_artifact(
     description="Append a new immutable version to an existing artifact.",
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+    egress=TOOL_EGRESS_EXTERNAL_WRITE,
     default_policy=TOOL_POLICY_AUTO,
     supports_auto=True,
     takes_ctx=True,

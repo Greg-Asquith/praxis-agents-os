@@ -4,6 +4,7 @@ import type { ToolFieldFormat } from "@/components/tool-ui/field-resolution"
 
 type ToolEffect = "read" | "write"
 type ToolEffectScope = "internal" | "external"
+type ToolEgress = "none" | "provider_query" | "arbitrary_url" | "external_write"
 type ToolKind = "function" | "capability"
 export type ToolCatalogPolicy = "auto" | "approval"
 
@@ -15,6 +16,7 @@ export type ToolCatalogEntry = {
   kind: ToolKind
   effect: ToolEffect
   effect_scope: ToolEffectScope
+  egress: ToolEgress
   default_policy: ToolCatalogPolicy
   supported_policies: ToolCatalogPolicy[]
   defer_loading: boolean

@@ -10,6 +10,7 @@ from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
+    TOOL_EGRESS_PROVIDER_QUERY,
     RuntimeToolDefinition,
     ToolFieldPresentation,
     ToolPresentation,
@@ -100,6 +101,7 @@ DEFINITION = RuntimeToolDefinition(
     provider="bigquery",
     label="Run BigQuery Query",
     effect=TOOL_EFFECT_READ,
+    egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=bigquery_settings.BIGQUERY_QUERY_TIMEOUT_SECONDS + 15,
     output_model=BigQueryRunQueryOutput,

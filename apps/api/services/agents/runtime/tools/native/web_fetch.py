@@ -42,6 +42,7 @@ from services.agents.models.registry import get_model
 from services.agents.models.utils import has_provider_api_key
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
+    TOOL_EGRESS_ARBITRARY_URL,
     TOOL_POLICY_APPROVAL,
     ToolFieldPresentation,
     ToolPresentation,
@@ -138,6 +139,7 @@ class NativeWebFetchResult(BaseModel):
     supports_approval=True,
     supports_auto=True,
     default_policy=TOOL_POLICY_APPROVAL,
+    egress=TOOL_EGRESS_ARBITRARY_URL,
     takes_ctx=True,
     timeout=None,
     output_model=WebFetchOutput,

@@ -349,6 +349,7 @@ async def dispatch_tool_execution(
             metadata={
                 "side_effect_policy": ctx.deps.envelope.side_effect_policy,
                 "effect_scope": envelope_verdict.effect_scope,
+                "egress": definition.egress,
             }
         )
 

@@ -17,6 +17,7 @@ from services.agents.runtime.context import RuntimeDeps
 ToolPolicy = Literal["auto", "approval"]
 ToolEffect = Literal["read", "write"]
 ToolEffectScope = Literal["internal", "external"]
+ToolEgress = Literal["none", "provider_query", "arbitrary_url", "external_write"]
 ToolFieldFormat = Literal[
     "text",
     "multiline",
@@ -42,6 +43,18 @@ VALID_TOOL_EFFECTS = frozenset({TOOL_EFFECT_READ, TOOL_EFFECT_WRITE})
 TOOL_EFFECT_SCOPE_INTERNAL: ToolEffectScope = "internal"
 TOOL_EFFECT_SCOPE_EXTERNAL: ToolEffectScope = "external"
 VALID_TOOL_EFFECT_SCOPES = frozenset({TOOL_EFFECT_SCOPE_INTERNAL, TOOL_EFFECT_SCOPE_EXTERNAL})
+TOOL_EGRESS_NONE: ToolEgress = "none"
+TOOL_EGRESS_PROVIDER_QUERY: ToolEgress = "provider_query"
+TOOL_EGRESS_ARBITRARY_URL: ToolEgress = "arbitrary_url"
+TOOL_EGRESS_EXTERNAL_WRITE: ToolEgress = "external_write"
+VALID_TOOL_EGRESS = frozenset(
+    {
+        TOOL_EGRESS_NONE,
+        TOOL_EGRESS_PROVIDER_QUERY,
+        TOOL_EGRESS_ARBITRARY_URL,
+        TOOL_EGRESS_EXTERNAL_WRITE,
+    }
+)
 _TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 _INTEGRATION_PARAMETER_DENYLIST = frozenset(
@@ -154,6 +167,7 @@ class RuntimeToolDefinition:
     label: str = ""
     effect: ToolEffect = TOOL_EFFECT_READ
     effect_scope: ToolEffectScope = TOOL_EFFECT_SCOPE_INTERNAL
+    egress: ToolEgress = TOOL_EGRESS_NONE
     takes_ctx: bool = False
     default_policy: ToolPolicy = TOOL_POLICY_AUTO
     supports_auto: bool = True
@@ -252,6 +266,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool effect must be read or write")
     if definition.effect_scope not in VALID_TOOL_EFFECT_SCOPES:
         raise RuntimeError("Runtime tool effect scope must be internal or external")
+    if definition.egress not in VALID_TOOL_EGRESS:
+        raise RuntimeError("Runtime tool egress must be a known classification")
     if definition.max_result_chars is not None and definition.max_result_chars < 1:
         raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
     if (
@@ -261,6 +277,20 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Read runtime tools must use internal effect scope")
     if definition.effect == TOOL_EFFECT_READ and definition.effect_scope_resolver is not None:
         raise RuntimeError("Read runtime tools cannot provide an effect scope resolver")
+    is_external_write = definition.effect == TOOL_EFFECT_WRITE and (
+        definition.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
+        or definition.effect_scope_resolver is not None
+    )
+    if (definition.egress == TOOL_EGRESS_EXTERNAL_WRITE) != is_external_write:
+        raise RuntimeError(
+            "External-effect write runtime tools must use external_write egress, and only those tools may use it"
+        )
+    if (
+        definition.effect == TOOL_EFFECT_WRITE
+        and not is_external_write
+        and definition.egress != TOOL_EGRESS_NONE
+    ):
+        raise RuntimeError("Internal-only write runtime tools must use none egress")
     _validate_integration_binding(definition)
     _validate_presentation(definition)
 

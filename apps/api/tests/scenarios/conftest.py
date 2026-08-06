@@ -12,6 +12,7 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 
@@ -58,6 +59,7 @@ def scenario_runtime_tools():
         description="Perform a deterministic external write for a runtime scenario.",
         effect=TOOL_EFFECT_WRITE,
         effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+        egress=TOOL_EGRESS_EXTERNAL_WRITE,
         output_model=ScenarioWriteOutput,
         configurable=False,
     )

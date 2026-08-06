@@ -11,6 +11,7 @@ from integrations.gmail.references import GmailMessageReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
+    TOOL_EGRESS_PROVIDER_QUERY,
     RuntimeToolDefinition,
     ToolFieldPresentation,
     ToolPresentation,
@@ -82,6 +83,7 @@ DEFINITION = RuntimeToolDefinition(
     provider="gmail",
     label="Search Gmail",
     effect=TOOL_EFFECT_READ,
+    egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=60,
     output_model=GmailSearchOutput,

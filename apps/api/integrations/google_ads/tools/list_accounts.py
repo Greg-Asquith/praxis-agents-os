@@ -9,6 +9,7 @@ from pydantic_ai import RunContext
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
+    TOOL_EGRESS_PROVIDER_QUERY,
     RuntimeToolDefinition,
     ToolPresentation,
 )
@@ -51,6 +52,7 @@ DEFINITION = RuntimeToolDefinition(
     provider="google_ads",
     label="List Google Ads Accounts",
     effect=TOOL_EFFECT_READ,
+    egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=60,
     output_model=GoogleAdsOutput,

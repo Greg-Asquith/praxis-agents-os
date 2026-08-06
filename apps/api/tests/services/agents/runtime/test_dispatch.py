@@ -51,7 +51,11 @@ from services.agents.runtime.dispatch import (
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
-from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_EXTERNAL,
+    TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
+)
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.agents.runtime.untrusted import (
     UNTRUSTED_CONTENT_END,
@@ -209,6 +213,7 @@ def dispatch_test_tools():
         description="Return a valid write output for dispatch tests.",
         effect=TOOL_EFFECT_WRITE,
         effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+        egress=TOOL_EGRESS_EXTERNAL_WRITE,
         effect_scope_resolver=resolve_dispatch_write_scope,
         output_model=DispatchToolOutput,
     )
@@ -874,6 +879,11 @@ async def test_envelope_requires_approval_for_external_write_tool_and_resumes(
             )
 
         assert isinstance(suspended.output, DeferredToolRequests)
+        assert suspended.output.metadata["dispatch_write_ok-call"] == {
+            "side_effect_policy": "require_approval",
+            "effect_scope": "external",
+            "egress": "external_write",
+        }
         assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
         assert dispatch_test_tools["write_ok"] == 0
         [pending_event] = await _tool_audit_events(

@@ -12,6 +12,7 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
     TOOL_POLICY_APPROVAL,
     RuntimeToolDefinition,
     ToolFieldPresentation,
@@ -126,6 +127,7 @@ DEFINITION = RuntimeToolDefinition(
     label="Update Google Ads Campaign Status",
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+    egress=TOOL_EGRESS_EXTERNAL_WRITE,
     default_policy=TOOL_POLICY_APPROVAL,
     supports_auto=False,
     takes_ctx=True,

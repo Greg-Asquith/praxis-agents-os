@@ -9,6 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from core.exceptions.general import AppValidationError
+from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.airtable.tools.create_record import (
     DEFINITION as AIRTABLE_CREATE_RECORD_DEFINITION,
 )
@@ -17,7 +18,9 @@ from integrations.airtable.tools.list_records import DEFINITION as AIRTABLE_LIST
 from integrations.airtable.tools.update_record import (
     DEFINITION as AIRTABLE_UPDATE_RECORD_DEFINITION,
 )
+from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.bigquery.tools.run_query import DEFINITION as BIGQUERY_RUN_QUERY_DEFINITION
+from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
 from integrations.gmail.tools.read_message import DEFINITION as GMAIL_READ_MESSAGE_DEFINITION
 from integrations.gmail.tools.search_messages import (
     DEFINITION as GMAIL_SEARCH_MESSAGES_DEFINITION,
@@ -25,6 +28,7 @@ from integrations.gmail.tools.search_messages import (
 from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSAGE_DEFINITION
 from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
 from integrations.google_ads.references import GoogleAdsCampaignReference
+from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_ads.tools.run_report import (
     DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
 )
@@ -37,15 +41,19 @@ from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATE_TO_AGENT_DEFINITION,
+    DELEGATION_TOOL_DEFINITIONS,
 )
 from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
+    TOOL_EGRESS_NONE,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
+    ToolEffectScope,
     ToolFieldPresentation,
     ToolPresentation,
     validate_definition,
@@ -82,6 +90,10 @@ def google_ads_manifest(monkeypatch):
 
 def _noop() -> str:
     return "ok"
+
+
+def _external_scope(_args: dict[str, object]) -> ToolEffectScope:
+    return TOOL_EFFECT_SCOPE_EXTERNAL
 
 
 @pytest.mark.parametrize(
@@ -155,6 +167,7 @@ def test_runtime_tool_decorator_registers_definition_with_derived_label(
     assert definition.label == "Test echo value"
     assert definition.effect == "read"
     assert definition.effect_scope == "internal"
+    assert definition.egress == TOOL_EGRESS_NONE
     assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
     assert definition.version == 1
     assert definition.serialized_input_schema() == {
@@ -232,6 +245,39 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             description="Version must be positive.",
             version=0,
         ),
+        RuntimeToolDefinition(
+            name="bad_egress",
+            function=_noop,
+            description="Unknown egress.",
+            egress="unknown",  # type: ignore[arg-type]
+        ),
+        RuntimeToolDefinition(
+            name="bad_external_write_egress",
+            function=_noop,
+            description="External write without matching egress.",
+            effect=TOOL_EFFECT_WRITE,
+            effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+        ),
+        RuntimeToolDefinition(
+            name="bad_resolved_write_egress",
+            function=_noop,
+            description="Resolvable external write without matching egress.",
+            effect=TOOL_EFFECT_WRITE,
+            effect_scope_resolver=_external_scope,
+        ),
+        RuntimeToolDefinition(
+            name="bad_read_external_write_egress",
+            function=_noop,
+            description="Read with write egress.",
+            egress=TOOL_EGRESS_EXTERNAL_WRITE,
+        ),
+        RuntimeToolDefinition(
+            name="bad_internal_write_egress",
+            function=_noop,
+            description="Internal write with outbound egress.",
+            effect=TOOL_EFFECT_WRITE,
+            egress="provider_query",
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_invariants(
@@ -239,6 +285,94 @@ def test_validate_definition_rejects_invalid_invariants(
 ) -> None:
     with pytest.raises(RuntimeError):
         validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        RuntimeToolDefinition(name="valid_read", function=_noop, description="Read."),
+        RuntimeToolDefinition(
+            name="valid_internal_write",
+            function=_noop,
+            description="Internal write.",
+            effect=TOOL_EFFECT_WRITE,
+        ),
+        RuntimeToolDefinition(
+            name="valid_external_write",
+            function=_noop,
+            description="External write.",
+            effect=TOOL_EFFECT_WRITE,
+            effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+            egress=TOOL_EGRESS_EXTERNAL_WRITE,
+        ),
+        RuntimeToolDefinition(
+            name="valid_resolved_write",
+            function=_noop,
+            description="Resolved write.",
+            effect=TOOL_EFFECT_WRITE,
+            effect_scope_resolver=_external_scope,
+            egress=TOOL_EGRESS_EXTERNAL_WRITE,
+        ),
+    ],
+)
+def test_validate_definition_accepts_egress_invariants(
+    definition: RuntimeToolDefinition,
+) -> None:
+    validate_definition(definition)
+
+
+def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
+    definitions = {
+        definition.name: definition
+        for definition in (
+            *(
+                definition
+                for definition in RUNTIME_TOOL_CATALOG.values()
+                if definition.integration_binding is None
+                and not definition.name.startswith("test_")
+            ),
+            *AIRTABLE_TOOL_DEFINITIONS,
+            *BIGQUERY_TOOL_DEFINITIONS,
+            *GMAIL_TOOL_DEFINITIONS,
+            *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *DELEGATION_TOOL_DEFINITIONS,
+        )
+    }
+    expected = {
+        "airtable_create_record": "external_write",
+        "airtable_get_record": "provider_query",
+        "airtable_list_records": "provider_query",
+        "airtable_update_record": "external_write",
+        "bigquery_get_table_schema": "none",
+        "bigquery_list_tables": "none",
+        "bigquery_run_query": "provider_query",
+        "build_chart": "none",
+        "create_artifact": "external_write",
+        "delegate_to_agent": "none",
+        "fetch_url": "arbitrary_url",
+        "forget_memory": "none",
+        "gmail_read_message": "provider_query",
+        "gmail_search_messages": "provider_query",
+        "gmail_send_message": "external_write",
+        "google_ads_list_accounts": "provider_query",
+        "google_ads_run_report": "provider_query",
+        "google_ads_update_campaign_status": "external_write",
+        "list_delegate_agents": "none",
+        "list_files": "none",
+        "read_document": "none",
+        "read_file": "none",
+        "read_todos": "none",
+        "save_memory": "none",
+        "search_knowledge": "none",
+        "search_memory": "none",
+        "update_artifact": "external_write",
+        "update_memory": "none",
+        "web_search": "provider_query",
+        "write_file": "none",
+        "write_todos": "none",
+    }
+
+    assert {name: definition.egress for name, definition in definitions.items()} == expected
 
 
 def test_validate_definition_rejects_editable_result_fields() -> None:

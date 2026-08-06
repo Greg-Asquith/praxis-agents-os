@@ -16,6 +16,7 @@ const group: ToolGroup = {
       kind: "function",
       effect: "read",
       effect_scope: "external",
+      egress: "external_write",
       default_policy: "approval",
       supported_policies: ["approval"],
       defer_loading: false,

@@ -38,7 +38,11 @@ from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.heartbeat import cancel_target_if_run_cancelled
 from services.agents.runtime.sinks import NullSink
-from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL, TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_EXTERNAL,
+    TOOL_EFFECT_WRITE,
+    TOOL_EGRESS_EXTERNAL_WRITE,
+)
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.agents.runtime.worker import run_resume_worker
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -122,6 +126,7 @@ def scheduled_external_write_tool():
         description="Perform an external write for scheduled worker tests.",
         effect=TOOL_EFFECT_WRITE,
         effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+        egress=TOOL_EGRESS_EXTERNAL_WRITE,
     )
     async def scheduled_external_write(value: str) -> dict[str, bool]:
         executions["count"] += 1
