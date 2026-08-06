@@ -1,9 +1,12 @@
 """Completion-report verdicts through the real scheduled runtime pipeline."""
 
 import pytest
+from pydantic_ai import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from models.agent_run import AgentRun
 from models.workspace import WorkspaceRole
 from services.completion_contract import REPORT_COMPLETION_TOOL_NAME
 from tests.support.scenario import (
@@ -184,4 +187,39 @@ async def test_completion_report_tool_is_absent_without_required_contract(
     assert result.run.outcome == "success"
     assert REPORT_COMPLETION_TOOL_NAME not in {
         tool.name for tool in seen_requests[0][1].function_tools
+    }
+
+
+async def test_scheduled_token_budget_records_the_tripped_budget(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={
+            "completion_contract": {
+                "required": False,
+                "criteria": [],
+                "max_total_tokens": 1,
+            }
+        },
+    )
+
+    with pytest.raises(UsageLimitExceeded):
+        await run_scenario(
+            committed_db_session_factory,
+            context,
+            model=TestModel(call_tools=[]),
+        )
+
+    async with committed_db_session_factory() as db:
+        run = await db.get(AgentRun, context.run_id)
+
+    assert run is not None
+    assert run.status == "failed"
+    assert run.outcome == "budget_exhausted"
+    assert run.error_code == "usage_limit_exceeded"
+    assert run.completion_json == {
+        "error_code": "usage_limit_exceeded",
+        "tripped_budget": {"kind": "total_tokens", "limit": 1},
     }

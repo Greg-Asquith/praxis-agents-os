@@ -18,6 +18,8 @@ function formState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormStat
     externalWritesAllowed: false,
     intervalMinutes: "60",
     isActive: true,
+    maxRequests: "",
+    maxTotalTokens: "",
     name: "Weekly report",
     runOnceAt: "",
     scheduleType: "cron",

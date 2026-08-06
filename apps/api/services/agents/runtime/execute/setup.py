@@ -50,6 +50,7 @@ from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
 from services.completion_contract import (
     REPORT_COMPLETION_TOOL_NAME,
+    ScheduleCompletionContract,
     completion_contract_from_run_metadata,
     render_completion_contract_instructions,
 )
@@ -78,6 +79,7 @@ class RuntimeAgentBuilder(Protocol):
         conversation_context_block: str = "",
         core_memory_block: str = "",
         completion_contract_block: str = "",
+        completion_contract: ScheduleCompletionContract | None = None,
         available_files: Sequence[AvailableFile] = (),
         active_context: ResolvedActiveContext | None = None,
         skipped_tool_names: list[str] | None = None,
@@ -216,6 +218,7 @@ async def prepare_runtime(
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
+        completion_contract=completion_contract,
         completion_tool_names=completion_tool_names,
         available_files=available_files,
         active_context=active_context,
@@ -289,6 +292,7 @@ async def build_agent_for_run(
     conversation_context_block: str,
     core_memory_block: str,
     completion_contract_block: str,
+    completion_contract: ScheduleCompletionContract | None,
     completion_tool_names: Sequence[str],
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
@@ -332,6 +336,7 @@ async def build_agent_for_run(
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
+        completion_contract=completion_contract,
         available_files=available_files,
         active_context=active_context,
         skipped_tool_names=skipped_tool_names,

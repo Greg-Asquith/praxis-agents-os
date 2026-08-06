@@ -136,6 +136,33 @@ def scheduled_external_write_tool():
     RUNTIME_TOOL_CATALOG.pop(tool_name, None)
 
 
+def _scheduled_external_write_model() -> FunctionModel:
+    async def stream_external_write(
+        messages: list[ModelMessage],
+        _info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        if not any(
+            getattr(part, "part_kind", None) == "tool-return"
+            and getattr(part, "tool_name", None) == "scheduled_external_write"
+            for message in messages
+            for part in getattr(message, "parts", [])
+        ):
+            yield {
+                0: DeltaToolCall(
+                    name="scheduled_external_write",
+                    json_args=json.dumps({"value": "scheduled mutation"}),
+                    tool_call_id="scheduled-write",
+                )
+            }
+            return
+        yield "scheduled external write completed"
+
+    return FunctionModel(
+        stream_function=stream_external_write,
+        model_name="scheduled-external-write-flow",
+    )
+
+
 async def test_run_once_executes_due_once_schedule(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -217,30 +244,7 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
         execution_params={"envelope": {"side_effect_policy": "require_approval"}},
     )
 
-    async def stream_external_write(
-        messages: list[ModelMessage],
-        _info: AgentInfo,
-    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-        if not any(
-            getattr(part, "part_kind", None) == "tool-return"
-            and getattr(part, "tool_name", None) == "scheduled_external_write"
-            for message in messages
-            for part in getattr(message, "parts", [])
-        ):
-            yield {
-                0: DeltaToolCall(
-                    name="scheduled_external_write",
-                    json_args=json.dumps({"value": "scheduled mutation"}),
-                    tool_call_id="scheduled-write",
-                )
-            }
-            return
-        yield "scheduled external write completed"
-
-    model = FunctionModel(
-        stream_function=stream_external_write,
-        model_name="scheduled-external-write-flow",
-    )
+    model = _scheduled_external_write_model()
 
     attempted = await run_once(
         owner_instance_id="test-worker",
@@ -297,6 +301,83 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
         assert agent_run is not None
         assert agent_run.status == "completed"
         assert agent_run.outcome == "success"
+        assert agent_run.requests == 2
+
+
+async def test_worker_request_budget_is_cumulative_across_approval_resume(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    scheduled_external_write_tool,
+) -> None:
+    schedule_id = await _create_due_schedule(
+        committed_db_session_factory,
+        tool_names=["scheduled_external_write"],
+        execution_params={
+            "envelope": {"side_effect_policy": "require_approval"},
+            "completion_contract": {
+                "required": False,
+                "criteria": [],
+                "max_requests": 1,
+            },
+        },
+    )
+    model = _scheduled_external_write_model()
+
+    await run_once(owner_instance_id="test-worker", model=model)
+
+    async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == RUN_STATUS_AWAITING_APPROVAL
+        assert schedule_run.agent_run_id is not None
+        assert schedule_run.conversation_id is not None
+
+        agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert agent_run is not None
+        assert agent_run.requests == 1
+        assert agent_run.metadata_json["completion_contract"]["max_requests"] == 1
+        suspended_state = load_suspended_run_state(agent_run)
+        tool_call_id = suspended_state.pending_tool_call_ids[0]
+        run_id = agent_run.id
+        workspace_id = agent_run.workspace_id
+        user_id = agent_run.user_id
+        conversation_id = schedule_run.conversation_id
+
+    await run_resume_worker(
+        run_id=run_id,
+        conversation_id=conversation_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        message_history=suspended_state.message_history,
+        deferred_tool_results=DeferredToolResults(approvals={tool_call_id: ToolApproved()}),
+        sink=NullSink(run_id=run_id, conversation_id=conversation_id),
+        model=model,
+    )
+
+    assert scheduled_external_write_tool["count"] == 1
+
+    async with committed_db_session_factory() as db:
+        await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
+        schedule = await db.get(AgentSchedule, schedule_id)
+        assert schedule is not None
+        assert schedule.is_active is False
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(AgentScheduleRun.schedule_id == schedule_id)
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+
+        agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert agent_run is not None
+        assert agent_run.status == "failed"
+        assert agent_run.outcome == "budget_exhausted"
+        assert agent_run.requests == 1
+        assert agent_run.completion_json == {
+            "error_code": "usage_limit_exceeded",
+            "tripped_budget": {"kind": "requests", "limit": 1},
+        }
 
 
 async def test_run_once_provider_failure_disables_schedule_and_prunes_conversation(

@@ -13,6 +13,7 @@ import { activeContextTargetsKey } from "@/features/integrations/active-context"
 import type { FormValidationEntry } from "@/lib/forms"
 
 export const DEFAULT_CRON_EXPRESSION = "0 9 * * 1-5"
+export const MAX_SCHEDULE_BUDGET = Number.MAX_SAFE_INTEGER
 const DATE_TIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>()
 
@@ -32,6 +33,8 @@ export type ScheduleFormState = {
   agentId: string
   completionCriteria: string
   completionReportRequired: boolean
+  maxRequests: string
+  maxTotalTokens: string
   cronExpression: string
   defaultPrompt: string
   executionParams: ScheduleExecutionParams | null
@@ -57,6 +60,10 @@ export function initialScheduleFormState(schedule: AgentSchedule | null): Schedu
     agentId: schedule?.agent_id ?? "",
     completionCriteria: scheduleCompletionCriteria(schedule?.execution_params).join("\n"),
     completionReportRequired: schedule?.execution_params?.completion_contract?.required === true,
+    maxRequests: scheduleBudgetValue(schedule?.execution_params?.completion_contract?.max_requests),
+    maxTotalTokens: scheduleBudgetValue(
+      schedule?.execution_params?.completion_contract?.max_total_tokens
+    ),
     cronExpression: schedule?.cron_expression ?? DEFAULT_CRON_EXPRESSION,
     defaultPrompt: schedule?.default_prompt ?? "",
     executionParams: schedule?.execution_params ?? null,
@@ -124,6 +131,23 @@ export function validateScheduleFormState(state: ScheduleFormState): ScheduleFor
         fieldId: "schedule-completion-criteria",
         label: "Completion checks",
         message: "Each completion check must be 500 characters or fewer.",
+      })
+    }
+  }
+
+  for (const budget of [
+    { fieldId: "schedule-max-requests", label: "Request budget", value: state.maxRequests },
+    {
+      fieldId: "schedule-max-total-tokens",
+      label: "Token budget",
+      value: state.maxTotalTokens,
+    },
+  ]) {
+    if (budget.value.trim() && parseOptionalBudget(budget.value) === null) {
+      entries.push({
+        fieldId: budget.fieldId,
+        label: budget.label,
+        message: `${budget.label} must be a whole number between 1 and ${MAX_SCHEDULE_BUDGET.toLocaleString()}.`,
       })
     }
   }
@@ -263,6 +287,8 @@ export function isScheduleFormDirty(current: ScheduleFormState, initial: Schedul
     current.externalWritesAllowed !== initial.externalWritesAllowed ||
     current.intervalMinutes !== initial.intervalMinutes ||
     current.isActive !== initial.isActive ||
+    current.maxRequests !== initial.maxRequests ||
+    current.maxTotalTokens !== initial.maxTotalTokens ||
     current.name !== initial.name ||
     current.runOnceAt !== initial.runOnceAt ||
     current.scheduleType !== initial.scheduleType ||
@@ -279,26 +305,34 @@ function buildExecutionParams(state: ScheduleFormState): ScheduleExecutionParams
     ...(state.executionParams?.envelope ?? {}),
   }
   const existingContract = state.executionParams?.completion_contract
-
-  if (state.completionReportRequired) {
-    params.completion_contract = {
-      ...(existingContract ?? {}),
-      required: true,
-      criteria: parseCompletionCriteria(state.completionCriteria),
-    }
-  } else if (existingContract?.required === true) {
-    const contractExtensions = Object.fromEntries(
-      Object.entries(existingContract).filter(([key]) => key !== "required" && key !== "criteria")
+  const contractExtensions = Object.fromEntries(
+    Object.entries(existingContract ?? {}).filter(
+      ([key]) =>
+        key !== "required" &&
+        key !== "criteria" &&
+        key !== "max_requests" &&
+        key !== "max_total_tokens"
     )
-    if (Object.keys(contractExtensions).length > 0) {
-      params.completion_contract = {
-        ...contractExtensions,
-        required: false,
-        criteria: [],
-      }
-    } else {
-      delete params.completion_contract
+  )
+  const maxRequests = parseOptionalBudget(state.maxRequests)
+  const maxTotalTokens = parseOptionalBudget(state.maxTotalTokens)
+  if (
+    state.completionReportRequired ||
+    maxRequests !== undefined ||
+    maxTotalTokens !== undefined ||
+    Object.keys(contractExtensions).length > 0
+  ) {
+    params.completion_contract = {
+      ...contractExtensions,
+      required: state.completionReportRequired,
+      criteria: state.completionReportRequired
+        ? parseCompletionCriteria(state.completionCriteria)
+        : [],
+      ...(typeof maxRequests === "number" ? { max_requests: maxRequests } : {}),
+      ...(typeof maxTotalTokens === "number" ? { max_total_tokens: maxTotalTokens } : {}),
     }
+  } else {
+    delete params.completion_contract
   }
 
   if (state.externalWritesAllowed) {
@@ -334,6 +368,23 @@ function parseCompletionCriteria(value: string): string[] {
     .split("\n")
     .map((criterion) => criterion.trim())
     .filter(Boolean)
+}
+
+function scheduleBudgetValue(value: unknown): string {
+  return typeof value === "number" && isScheduleBudget(value) ? String(value) : ""
+}
+
+function parseOptionalBudget(value: string): number | null | undefined {
+  const normalized = value.trim()
+  if (!normalized) {
+    return undefined
+  }
+  const parsed = Number(normalized)
+  return isScheduleBudget(parsed) ? parsed : null
+}
+
+function isScheduleBudget(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 1 && value <= MAX_SCHEDULE_BUDGET
 }
 
 function buildScheduleTimingPayload(state: ScheduleFormState): ScheduleTimingPayload | string {

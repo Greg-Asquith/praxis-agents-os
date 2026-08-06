@@ -80,6 +80,7 @@ from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.worker import run_turn_worker
+from services.completion_contract import ScheduleCompletionContract
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
@@ -529,6 +530,8 @@ async def test_execute_run_persists_messages_usage_and_events(
 ) -> None:
     agent = await db_session.get(Agent, runtime_context.agent_id)
     assert agent is not None
+    assert agent.max_steps is not None
+    assert settings.AGENT_RUN_TOTAL_TOKENS_LIMIT is not None
     assert (
         build_runtime_agent(
             agent,
@@ -536,6 +539,30 @@ async def test_execute_run_persists_messages_usage_and_events(
         ).usage_limits.total_tokens_limit
         == settings.AGENT_RUN_TOTAL_TOKENS_LIMIT
     )
+
+    tightened = build_runtime_agent(
+        agent,
+        model=TestModel(),
+        completion_contract=ScheduleCompletionContract(
+            required=False,
+            max_requests=2,
+            max_total_tokens=100,
+        ),
+    ).usage_limits
+    assert tightened.request_limit == min(agent.max_steps, 2)
+    assert tightened.total_tokens_limit == min(settings.AGENT_RUN_TOTAL_TOKENS_LIMIT, 100)
+
+    non_widening = build_runtime_agent(
+        agent,
+        model=TestModel(),
+        completion_contract=ScheduleCompletionContract(
+            required=False,
+            max_requests=agent.max_steps + 1,
+            max_total_tokens=settings.AGENT_RUN_TOTAL_TOKENS_LIMIT + 1,
+        ),
+    ).usage_limits
+    assert non_widening.request_limit == agent.max_steps
+    assert non_widening.total_tokens_limit == settings.AGENT_RUN_TOTAL_TOKENS_LIMIT
 
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -970,14 +997,22 @@ async def test_execute_run_total_token_limit_fails_cleanly(
     assert stored_run is not None
     assert stored_run.status == RUN_STATUS_FAILED
     assert stored_run.error_code == "usage_limit_exceeded"
-    assert stored_run.error_message == "The agent run exceeded its configured usage limit."
+    assert (
+        stored_run.error_message == "The agent run stopped after reaching its total token budget."
+    )
     assert stored_run.outcome == "budget_exhausted"
-    assert stored_run.completion_json == {"error_code": "usage_limit_exceeded"}
+    assert stored_run.completion_json == {
+        "error_code": "usage_limit_exceeded",
+        "tripped_budget": {"kind": "total_tokens", "limit": 1},
+    }
 
     event_names = [event.event for event in sink.events]
     assert event_names[-2:] == [EVENT_ERROR, EVENT_DONE]
     assert sink.events[-2].data["code"] == "usage_limit_exceeded"
-    assert sink.events[-2].data["message"] == "The agent run exceeded its configured usage limit."
+    assert (
+        sink.events[-2].data["message"]
+        == "The agent run stopped after reaching its total token budget."
+    )
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 

@@ -12,6 +12,8 @@ type ScheduleSideEffectPolicy = "allow" | "require_approval"
 type ScheduleCompletionContract = Record<string, unknown> & {
   required: boolean
   criteria: string[]
+  max_requests?: number
+  max_total_tokens?: number
 }
 
 export type ScheduleExecutionParams = Record<string, unknown> & {

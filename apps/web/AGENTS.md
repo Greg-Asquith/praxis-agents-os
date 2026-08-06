@@ -71,9 +71,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   disclosure. Criteria are one plain-language check per line; do not expose the
   underlying completion JSON or outcome codes in the form. Completion reports
   use the shared compact `ToolResultCard` pattern; keep evidence collapsed by
-  default like other rich tool results. When the report requirement is removed,
-  preserve unknown completion-contract fields so later budget settings and
-  extension data survive schedule edits.
+  default like other rich tool results. Optional request and total-token
+  budgets share the same Advanced disclosure and use the platform defaults when
+  blank. When the report requirement or a budget is removed, preserve unknown
+  completion-contract extension data through schedule edits. Run history names
+  the precise tripped budget when bounded evidence contains it. Keep persisted
+  budget values within JavaScript's safe-integer range so API-created schedules
+  round-trip without numeric loss.
 - Integration recovery actions derive from the connection credential's
   `auth_mode`, never from the provider's supported-mode list. OAuth may offer
   sign-in/refresh; API-key and service-account connections offer obscured,

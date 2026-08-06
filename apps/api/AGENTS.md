@@ -69,6 +69,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
   regardless of workspace tool settings, role write policy, or the run
   side-effect envelope. The first accepted report is authoritative; later
   report attempts fail without replacing its evidence.
+  Optional schedule `max_requests` and `max_total_tokens` completion-contract
+  budgets may only tighten the resolved model/platform `UsageLimits`; they
+  never widen defaults. Approval continuations must restore the run's persisted
+  cumulative Pydantic AI usage so those limits apply across the whole generic
+  run, not once per resume segment. A tripped limit fails the run with outcome
+  `budget_exhausted` and records only its allowlisted kind and limit in bounded
+  completion evidence. Budget declarations remain within the largest integer
+  that round-trips losslessly through JSON and the TypeScript schedule editor.
   Parked approvals expire through the generic jobs harness after
   `AGENT_RUN_APPROVAL_EXPIRY_DAYS` (default 7; 0 disables), which fails the run,
   clears durable approval state, and transactionally enqueues retryable staged

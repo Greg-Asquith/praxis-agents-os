@@ -185,6 +185,10 @@ export function ScheduleForm(props: ScheduleFormProps) {
               {activeStepId === "review" ? (
                 <ScheduleReviewSection
                   activeContextLabel={activeContextLabel}
+                  budgetErrors={{
+                    requests: fieldErrors["schedule-max-requests"],
+                    totalTokens: fieldErrors["schedule-max-total-tokens"],
+                  }}
                   completionCriteriaError={fieldErrors["schedule-completion-criteria"]}
                   preview={preview}
                   selectedAgent={selectedAgent}

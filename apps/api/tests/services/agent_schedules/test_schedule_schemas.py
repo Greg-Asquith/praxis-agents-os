@@ -10,6 +10,7 @@ from services.agent_schedules.runs import schedule_health_from_run
 from services.agent_schedules.schemas import AgentScheduleCreateRequest
 from services.completion_contract import (
     MAX_COMPLETION_JSON_BYTES,
+    MAX_SCHEDULE_BUDGET,
     validate_completion_json,
 )
 
@@ -75,6 +76,8 @@ def test_schedule_completion_contract_normalizes_bounded_criteria() -> None:
                 "completion_contract": {
                     "required": True,
                     "criteria": ["  A report was created  ", "Every account was reviewed"],
+                    "max_requests": 4,
+                    "max_total_tokens": 12000,
                 },
                 "future_setting": True,
             }
@@ -85,6 +88,8 @@ def test_schedule_completion_contract_normalizes_bounded_criteria() -> None:
         "completion_contract": {
             "required": True,
             "criteria": ["A report was created", "Every account was reviewed"],
+            "max_requests": 4,
+            "max_total_tokens": 12000,
         },
         "future_setting": True,
     }
@@ -96,6 +101,14 @@ def test_schedule_completion_contract_normalizes_bounded_criteria() -> None:
         {"required": True, "criteria": []},
         {"required": True, "criteria": ["x" * 501]},
         {"required": True, "criteria": [str(index) for index in range(21)]},
+        {"required": False, "criteria": [], "max_requests": 0},
+        {"required": False, "criteria": [], "max_requests": True},
+        {"required": False, "criteria": [], "max_total_tokens": -1},
+        {
+            "required": False,
+            "criteria": [],
+            "max_total_tokens": MAX_SCHEDULE_BUDGET + 1,
+        },
     ],
 )
 def test_schedule_completion_contract_rejects_invalid_criteria(contract: object) -> None:

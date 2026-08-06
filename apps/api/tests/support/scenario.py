@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from pydantic_ai import DeferredToolResults
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -236,7 +237,7 @@ async def run_scenario(
     session_factory: async_sessionmaker[AsyncSession],
     context: ScenarioContext,
     *,
-    model: FunctionModel,
+    model: Model,
     prompt: str | None = "Run the scenario.",
     expected_status: str | None = RUN_STATUS_PENDING,
     message_history: Sequence[ModelMessage] | None = None,

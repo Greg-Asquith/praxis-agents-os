@@ -9,6 +9,7 @@ from models.conversation import Conversation
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE, RUN_TRIGGER_SCHEDULED
 from services.agents.runtime.run_persistence import (
     _mark_background_output_unread,
+    restored_run_usage,
     usage_snapshot,
 )
 
@@ -56,3 +57,27 @@ def test_usage_snapshot_preserves_cache_creation_tokens() -> None:
     assert snapshot.raw_json is not None
     assert snapshot.raw_json["cache_read_tokens"] == 40
     assert snapshot.raw_json["cache_write_tokens"] == 60
+
+
+def test_restored_run_usage_preserves_cumulative_provider_details() -> None:
+    run = AgentRun(
+        usage_json={
+            "input_tokens": 100,
+            "cache_read_tokens": 40,
+            "cache_write_tokens": 60,
+            "output_tokens": 10,
+            "requests": 2,
+            "tool_calls": 1,
+            "details": {"accepted_prediction_tokens": 3},
+        }
+    )
+
+    usage = restored_run_usage(run)
+
+    assert usage.input_tokens == 100
+    assert usage.cache_read_tokens == 40
+    assert usage.cache_write_tokens == 60
+    assert usage.output_tokens == 10
+    assert usage.requests == 2
+    assert usage.tool_calls == 1
+    assert usage.details == {"accepted_prediction_tokens": 3}

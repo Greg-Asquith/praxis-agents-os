@@ -7,7 +7,9 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
+from pydantic import TypeAdapter
 from pydantic_ai import DeferredToolRequests
+from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +54,7 @@ from services.agents.runtime.staged_tool_content import stage_write_file_approva
 from services.completion_contract import completion_contract_from_run_metadata
 
 logger = logging.getLogger(__name__)
+_RUN_USAGE_ADAPTER = TypeAdapter(RunUsage)
 
 
 async def persist_suspended_run(
@@ -192,6 +195,7 @@ async def persist_failed_run(
     run_id: UUID,
     error_code: str,
     error_message: str,
+    completion_json: dict[str, Any] | None = None,
 ) -> AgentRun | None:
     """Mark a started run failed without losing diagnostic state."""
     run = await db.scalar(
@@ -214,7 +218,7 @@ async def persist_failed_run(
         error_code=error_code,
         error_message=error_message,
         outcome=terminal_run_outcome(RUN_STATUS_FAILED, error_code=error_code),
-        completion_json=failure_completion_json(error_code),
+        completion_json=completion_json or failure_completion_json(error_code),
     )
     await db.commit()
     return run
@@ -273,6 +277,13 @@ def usage_snapshot(usage: Any) -> RunUsageSnapshot:
         tool_calls=getattr(usage, "tool_calls", None),
         raw_json=raw if isinstance(raw, dict) else {"usage": raw},
     )
+
+
+def restored_run_usage(run: AgentRun) -> RunUsage:
+    """Rehydrate cumulative Pydantic AI usage for an approval continuation."""
+    if run.usage_json is None:
+        return RunUsage()
+    return _RUN_USAGE_ADAPTER.validate_python(run.usage_json)
 
 
 def _successful_run_completion(run: AgentRun) -> tuple[RunOutcome, dict[str, Any] | None]:

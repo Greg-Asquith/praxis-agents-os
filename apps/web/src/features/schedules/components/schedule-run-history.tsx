@@ -84,7 +84,11 @@ export function ScheduleRunHistory({ scheduleId }: { scheduleId: string }) {
               <TableRow key={run.id}>
                 <TableCell>{formatDateTime(run.scheduled_for)}</TableCell>
                 <TableCell>
-                  <ScheduleRunStatusBadge outcome={run.outcome} status={run.status} />
+                  <ScheduleRunStatusBadge
+                    completionJson={run.completion_json}
+                    outcome={run.outcome}
+                    status={run.status}
+                  />
                 </TableCell>
                 <TableCell>
                   {run.attempt_count} {pluralize(run.attempt_count, "attempt")}
@@ -115,7 +119,11 @@ function ScheduleRunMobileRow({ run }: { run: AgentScheduleRun }) {
               {run.attempt_count} {pluralize(run.attempt_count, "attempt")}
             </p>
           </div>
-          <ScheduleRunStatusBadge outcome={run.outcome} status={run.status} />
+          <ScheduleRunStatusBadge
+            completionJson={run.completion_json}
+            outcome={run.outcome}
+            status={run.status}
+          />
         </div>
 
         <dl className="grid gap-3">

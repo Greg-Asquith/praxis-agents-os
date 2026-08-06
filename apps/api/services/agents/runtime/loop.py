@@ -32,6 +32,7 @@ from services.agents.runtime.prompt import (
 )
 from services.agents.runtime.skills import build_skill_capabilities
 from services.agents.runtime.tools import build_runtime_tools
+from services.completion_contract import ScheduleCompletionContract
 
 if TYPE_CHECKING:
     from services.integrations.context.domain import ResolvedActiveContext
@@ -58,6 +59,7 @@ def build_runtime_agent(
     conversation_context_block: str = "",
     core_memory_block: str = "",
     completion_contract_block: str = "",
+    completion_contract: ScheduleCompletionContract | None = None,
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
     skipped_tool_names: list[str] | None = None,
@@ -110,11 +112,26 @@ def build_runtime_agent(
         ),
         resolved_model=resolved_model,
         usage_limits=UsageLimits(
-            request_limit=resolved_model.max_steps,
-            total_tokens_limit=settings.AGENT_RUN_TOTAL_TOKENS_LIMIT,
+            request_limit=_tightened_limit(
+                resolved_model.max_steps,
+                completion_contract.max_requests if completion_contract is not None else None,
+            ),
+            total_tokens_limit=_tightened_limit(
+                settings.AGENT_RUN_TOTAL_TOKENS_LIMIT,
+                completion_contract.max_total_tokens if completion_contract is not None else None,
+            ),
         ),
         history_trimmer=trimmer_out[0],
     )
+
+
+def _tightened_limit(default: int | None, declared: int | None) -> int | None:
+    """Apply a schedule budget without allowing it to widen the runtime default."""
+    if default is None:
+        return declared
+    if declared is None:
+        return default
+    return min(default, declared)
 
 
 def _agent_name(agent: Agent) -> str:

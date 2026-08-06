@@ -2,7 +2,9 @@
 
 """Map internal execute-run exceptions to the public failure contract."""
 
+import re
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic_ai import UsageLimitExceeded
 
@@ -19,6 +21,22 @@ class PublicRunError:
 
     code: str
     message: str
+    completion_json: dict[str, Any] | None = None
+
+
+_USAGE_LIMIT_PATTERN = re.compile(
+    r"(?:exceed|exceeded) the "
+    r"(?P<kind>request_limit|input_tokens_limit|output_tokens_limit|total_tokens_limit|tool_calls_limit) "
+    r"of (?P<limit>\d+)",
+    re.IGNORECASE,
+)
+_BUDGET_KINDS = {
+    "request_limit": "requests",
+    "input_tokens_limit": "input_tokens",
+    "output_tokens_limit": "output_tokens",
+    "total_tokens_limit": "total_tokens",
+    "tool_calls_limit": "tool_calls",
+}
 
 
 def public_run_error(exc: Exception) -> PublicRunError:
@@ -34,11 +52,39 @@ def public_run_error(exc: Exception) -> PublicRunError:
             message=str(exc),
         )
     if isinstance(exc, UsageLimitExceeded):
+        tripped_budget = _tripped_budget(exc)
         return PublicRunError(
             code="usage_limit_exceeded",
-            message="The agent run exceeded its configured usage limit.",
+            message=_usage_limit_message(tripped_budget),
+            completion_json={
+                "error_code": "usage_limit_exceeded",
+                **({"tripped_budget": tripped_budget} if tripped_budget is not None else {}),
+            },
         )
     return PublicRunError(
         code=DEFAULT_RUN_ERROR_CODE,
         message=DEFAULT_RUN_ERROR_MESSAGE,
     )
+
+
+def _tripped_budget(exc: UsageLimitExceeded) -> dict[str, str | int] | None:
+    """Extract only allowlisted framework limit metadata from the exception."""
+    match = _USAGE_LIMIT_PATTERN.search(str(exc))
+    if match is None:
+        return None
+    return {
+        "kind": _BUDGET_KINDS[match.group("kind").lower()],
+        "limit": int(match.group("limit")),
+    }
+
+
+def _usage_limit_message(tripped_budget: dict[str, str | int] | None) -> str:
+    kind = tripped_budget.get("kind") if tripped_budget is not None else None
+    messages = {
+        "requests": "The agent run stopped after reaching its request budget.",
+        "input_tokens": "The agent run stopped after reaching its input token budget.",
+        "output_tokens": "The agent run stopped after reaching its output token budget.",
+        "total_tokens": "The agent run stopped after reaching its total token budget.",
+        "tool_calls": "The agent run stopped after reaching its tool-call budget.",
+    }
+    return messages.get(str(kind), "The agent run exceeded its configured usage limit.")

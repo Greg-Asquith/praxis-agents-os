@@ -215,6 +215,7 @@ async def emit_failure_events(
             run_id=run_id,
             error_code=public_error.code,
             error_message=public_error.message,
+            completion_json=public_error.completion_json,
         )
         if failed_run is not None:
             terminal_status = failed_run.status

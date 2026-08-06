@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   DEFAULT_CRON_EXPRESSION,
+  MAX_SCHEDULE_BUDGET,
   buildSchedulePayload,
   buildSchedulePreviewPayload,
   initialScheduleFormState,
@@ -23,6 +24,8 @@ function validState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormSta
     externalWritesAllowed: false,
     intervalMinutes: "60",
     isActive: true,
+    maxRequests: "",
+    maxTotalTokens: "",
     name: "  Weekly launch report  ",
     runOnceAt: "",
     scheduleType: "cron",
@@ -74,6 +77,8 @@ describe("initialScheduleFormState", () => {
       externalWritesAllowed: false,
       intervalMinutes: "60",
       isActive: true,
+      maxRequests: "",
+      maxTotalTokens: "",
       name: "",
       runOnceAt: "",
       scheduleType: "cron",
@@ -93,11 +98,30 @@ describe("initialScheduleFormState", () => {
       externalWritesAllowed: false,
       intervalMinutes: "60",
       isActive: false,
+      maxRequests: "",
+      maxTotalTokens: "",
       name: "One-time report",
       runOnceAt: "2027-07-01T09:30",
       scheduleType: "once",
       timezone: "Europe/London",
     })
+  })
+
+  it("round-trips the largest cross-platform-safe schedule budgets", () => {
+    const state = initialScheduleFormState({
+      ...schedule,
+      execution_params: {
+        completion_contract: {
+          required: false,
+          criteria: [],
+          max_requests: MAX_SCHEDULE_BUDGET,
+          max_total_tokens: MAX_SCHEDULE_BUDGET,
+        },
+      },
+    })
+
+    expect(state.maxRequests).toBe(String(MAX_SCHEDULE_BUDGET))
+    expect(state.maxTotalTokens).toBe(String(MAX_SCHEDULE_BUDGET))
   })
 })
 
@@ -183,6 +207,27 @@ describe("validateScheduleFormState", () => {
       message: "Each completion check must be 500 characters or fewer.",
     })
   })
+
+  it("requires positive whole-number schedule budgets", () => {
+    const rangeMessage = `must be a whole number between 1 and ${MAX_SCHEDULE_BUDGET.toLocaleString()}.`
+    expect(validateScheduleFormState(validState({ maxRequests: "0" }))).toContainEqual({
+      fieldId: "schedule-max-requests",
+      label: "Request budget",
+      message: `Request budget ${rangeMessage}`,
+    })
+    expect(validateScheduleFormState(validState({ maxTotalTokens: "1.5" }))).toContainEqual({
+      fieldId: "schedule-max-total-tokens",
+      label: "Token budget",
+      message: `Token budget ${rangeMessage}`,
+    })
+    expect(
+      validateScheduleFormState(validState({ maxTotalTokens: String(MAX_SCHEDULE_BUDGET + 1) }))
+    ).toContainEqual({
+      fieldId: "schedule-max-total-tokens",
+      label: "Token budget",
+      message: `Token budget ${rangeMessage}`,
+    })
+  })
 })
 
 describe("buildSchedulePayload", () => {
@@ -245,6 +290,7 @@ describe("buildSchedulePayload", () => {
       buildEditPayload(
         validState({
           completionReportRequired: false,
+          maxRequests: "5",
           executionParams: {
             completion_contract: {
               required: true,
@@ -280,6 +326,21 @@ describe("buildSchedulePayload", () => {
         })
       )
     ).toMatchObject({ execution_params: { temperature: 0 } })
+  })
+
+  it("builds budget-only completion contracts", () => {
+    expect(
+      buildSchedulePayload(validState({ maxRequests: "3", maxTotalTokens: "12000" }), "create")
+    ).toMatchObject({
+      execution_params: {
+        completion_contract: {
+          required: false,
+          criteria: [],
+          max_requests: 3,
+          max_total_tokens: 12000,
+        },
+      },
+    })
   })
 
   it("round-trips an active context selection and explicit clear", () => {

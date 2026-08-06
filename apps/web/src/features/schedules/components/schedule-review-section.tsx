@@ -6,19 +6,22 @@ import { ChevronDownIcon, ClipboardCheckIcon } from "lucide-react"
 import { FormSection } from "@/components/forms/form-section"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import type { Agent } from "@/features/agents/types"
-import { formatScheduleFormCadence } from "@/features/schedules/format"
-import type {
-  ScheduleFormFieldSetter,
-  ScheduleFormState,
+import {
+  MAX_SCHEDULE_BUDGET,
+  type ScheduleFormFieldSetter,
+  type ScheduleFormState,
 } from "@/features/schedules/components/schedule-form-model"
+import { formatScheduleFormCadence } from "@/features/schedules/format"
 import { SchedulePreviewResult } from "@/features/schedules/components/schedule-preview-panel"
 import type { SchedulePreviewView } from "@/features/schedules/components/use-schedule-preview"
 
 export function ScheduleReviewSection({
   activeContextLabel,
+  budgetErrors,
   completionCriteriaError,
   preview,
   selectedAgent,
@@ -26,6 +29,10 @@ export function ScheduleReviewSection({
   state,
 }: {
   activeContextLabel: string
+  budgetErrors: {
+    requests: string | undefined
+    totalTokens: string | undefined
+  }
   completionCriteriaError: string | undefined
   preview: SchedulePreviewView
   selectedAgent: Agent | null
@@ -105,12 +112,16 @@ export function ScheduleReviewSection({
 
           <details
             className="group rounded-md border"
-            open={completionCriteriaError ? true : undefined}
+            open={
+              completionCriteriaError || budgetErrors.requests || budgetErrors.totalTokens
+                ? true
+                : undefined
+            }
           >
             <summary className="focus-visible:ring-ring flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
               <span>
                 <span className="font-medium">Advanced</span>
-                <span className="text-muted-foreground ml-2">Completion checks</span>
+                <span className="text-muted-foreground ml-2">Checks and budgets</span>
               </span>
               <ChevronDownIcon
                 aria-hidden="true"
@@ -147,11 +158,71 @@ export function ScheduleReviewSection({
                   <FieldError>{completionCriteriaError}</FieldError>
                 </Field>
               ) : null}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <BudgetField
+                  description="Maximum model requests for each run. Leave blank to use the agent default."
+                  error={budgetErrors.requests}
+                  id="schedule-max-requests"
+                  label="Request budget"
+                  onChange={(value) => {
+                    setField("maxRequests", value)
+                  }}
+                  value={state.maxRequests}
+                />
+                <BudgetField
+                  description="Maximum input and output tokens combined. Leave blank to use the platform default."
+                  error={budgetErrors.totalTokens}
+                  id="schedule-max-total-tokens"
+                  label="Total token budget"
+                  onChange={(value) => {
+                    setField("maxTotalTokens", value)
+                  }}
+                  value={state.maxTotalTokens}
+                />
+              </div>
             </div>
           </details>
         </div>
       </div>
     </FormSection>
+  )
+}
+
+function BudgetField({
+  description,
+  error,
+  id,
+  label,
+  onChange,
+  value,
+}: {
+  description: string
+  error: string | undefined
+  id: string
+  label: string
+  onChange: (value: string) => void
+  value: string
+}) {
+  return (
+    <Field data-invalid={error ? true : undefined}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input
+        aria-invalid={error ? true : undefined}
+        id={id}
+        inputMode="numeric"
+        max={MAX_SCHEDULE_BUDGET}
+        min={1}
+        onChange={(event) => {
+          onChange(event.currentTarget.value)
+        }}
+        placeholder="Use default"
+        step={1}
+        type="number"
+        value={value}
+      />
+      <p className="text-muted-foreground text-sm">{description}</p>
+      <FieldError>{error}</FieldError>
+    </Field>
   )
 }
 

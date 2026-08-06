@@ -140,6 +140,8 @@ async def test_prepare_claimed_run_keeps_prompt_clean_and_copies_required_comple
     contract = {
         "required": True,
         "criteria": ["A report was created", "Every account was reviewed"],
+        "max_requests": 4,
+        "max_total_tokens": 12000,
     }
     _user, _workspace, _agent, _schedule, schedule_run = await _schedule_context(
         db_session,

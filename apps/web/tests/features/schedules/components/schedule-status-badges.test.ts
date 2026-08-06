@@ -33,4 +33,19 @@ describe("ScheduleRunStatusBadge", () => {
 
     expect(markup).toContain("Awaiting approval")
   })
+
+  it("surfaces the precise tripped schedule budget", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ScheduleRunStatusBadge, {
+        completionJson: {
+          error_code: "usage_limit_exceeded",
+          tripped_budget: { kind: "total_tokens", limit: 12000 },
+        },
+        outcome: "budget_exhausted",
+        status: "terminal_failed",
+      })
+    )
+
+    expect(markup).toContain("Token budget reached (12,000)")
+  })
 })

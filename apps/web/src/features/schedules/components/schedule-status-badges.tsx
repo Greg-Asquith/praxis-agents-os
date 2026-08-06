@@ -44,9 +44,11 @@ export function ScheduleHealthBadge({ health }: { health: ScheduleHealth }) {
 }
 
 export function ScheduleRunStatusBadge({
+  completionJson,
   outcome,
   status,
 }: {
+  completionJson?: Record<string, unknown> | null
   outcome: RunOutcome | null
   status: ScheduleRunStatus
 }) {
@@ -57,7 +59,11 @@ export function ScheduleRunStatusBadge({
         : outcome === "blocked" || outcome === "budget_exhausted"
           ? "warning"
           : "destructive"
-    return <Badge variant={variant}>{RUN_OUTCOME_LABELS[outcome]}</Badge>
+    const label =
+      outcome === "budget_exhausted"
+        ? (trippedBudgetLabel(completionJson) ?? RUN_OUTCOME_LABELS[outcome])
+        : RUN_OUTCOME_LABELS[outcome]
+    return <Badge variant={variant}>{label}</Badge>
   }
 
   if (status === "awaiting_approval") {
@@ -82,6 +88,26 @@ export function ScheduleRunStatusBadge({
   }
 
   return <Badge variant="secondary">{scheduleRunStatusLabel(status)}</Badge>
+}
+
+function trippedBudgetLabel(completionJson: Record<string, unknown> | null | undefined) {
+  const budget = completionJson?.["tripped_budget"]
+  if (!budget || typeof budget !== "object" || Array.isArray(budget)) {
+    return null
+  }
+  const kind = "kind" in budget ? budget.kind : null
+  const limit = "limit" in budget ? budget.limit : null
+  if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1) {
+    return null
+  }
+  const formattedLimit = new Intl.NumberFormat().format(limit)
+  if (kind === "requests") {
+    return `Request budget reached (${formattedLimit})`
+  }
+  if (kind === "total_tokens") {
+    return `Token budget reached (${formattedLimit})`
+  }
+  return null
 }
 
 function scheduleRunStatusLabel(status: ScheduleRunStatus) {

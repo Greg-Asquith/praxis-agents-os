@@ -20,6 +20,7 @@ REPORT_COMPLETION_TOOL_NAME = "report_completion"
 MAX_COMPLETION_CRITERIA = 20
 MAX_COMPLETION_CRITERION_LENGTH = 500
 MAX_COMPLETION_JSON_BYTES = 72 * 1024
+MAX_SCHEDULE_BUDGET = (2**53) - 1
 
 CompletionCriterion = Annotated[
     str,
@@ -30,13 +31,15 @@ CompletionCriterion = Annotated[
 
 
 class ScheduleCompletionContract(BaseModel):
-    """Operator-declared completion criteria with room for later budget keys."""
+    """Operator-declared completion criteria and tighter per-run budgets."""
 
     required: bool
     criteria: list[CompletionCriterion] = Field(
         default_factory=list,
         max_length=MAX_COMPLETION_CRITERIA,
     )
+    max_requests: int | None = Field(default=None, strict=True, ge=1, le=MAX_SCHEDULE_BUDGET)
+    max_total_tokens: int | None = Field(default=None, strict=True, ge=1, le=MAX_SCHEDULE_BUDGET)
 
     model_config = ConfigDict(extra="allow")
 
@@ -76,7 +79,12 @@ def completion_contract_from_run_metadata(
 
 def serialized_completion_contract(contract: ScheduleCompletionContract) -> dict[str, Any]:
     """Return a JSON-compatible declaration while retaining future extra keys."""
-    return contract.model_dump(mode="json")
+    serialized = contract.model_dump(mode="json")
+    if contract.max_requests is None:
+        serialized.pop("max_requests", None)
+    if contract.max_total_tokens is None:
+        serialized.pop("max_total_tokens", None)
+    return serialized
 
 
 def validate_completion_json(value: dict[str, Any] | None) -> dict[str, Any] | None:

@@ -29,6 +29,7 @@ from services.agent_runs.domain import (
 )
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
+from services.agents.runtime.run_persistence import restored_run_usage
 from services.agents.runtime.sinks import EventSink
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,13 @@ async def run_resume_worker(
             workspace_id=workspace_id,
             user_id=user_id,
         )
+        run = await session.get(AgentRun, run_id)
+        if run is None:
+            raise ConflictError(
+                "Agent run no longer exists",
+                conflicting_resource="agent_run",
+                details={"run_id": str(run_id)},
+            )
         await execute_run(
             session,
             conversation_id=conversation_id,
@@ -151,6 +159,7 @@ async def run_resume_worker(
             expected_status=expected_status,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
+            usage=restored_run_usage(run),
         )
     except Exception:
         await session.rollback()
