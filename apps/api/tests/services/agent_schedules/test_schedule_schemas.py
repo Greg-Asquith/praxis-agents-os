@@ -5,7 +5,17 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from models.agent import AgentScheduleRun
+from services.agent_schedules.runs import schedule_health_from_run
 from services.agent_schedules.schemas import AgentScheduleCreateRequest
+
+
+def test_completion_outcomes_drive_schedule_health() -> None:
+    run = AgentScheduleRun(status="completed")
+
+    assert schedule_health_from_run(run, outcome="success") == "healthy"
+    assert schedule_health_from_run(run, outcome="gate_failed") == "needs_attention"
+    assert schedule_health_from_run(run, outcome="budget_exhausted") == "needs_attention"
 
 
 def _valid_payload(**overrides: object) -> dict[str, object]:

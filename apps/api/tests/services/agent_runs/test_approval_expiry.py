@@ -200,6 +200,8 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
     await db_session.refresh(surviving.run)
     assert expired.run.status == "failed"
     assert expired.run.error_code == APPROVAL_EXPIRED_ERROR_CODE
+    assert expired.run.outcome == "blocked"
+    assert expired.run.completion_json == {"error_code": APPROVAL_EXPIRED_ERROR_CODE}
     assert "after 7 days" in (expired.run.error_message or "")
     assert APPROVAL_STATE_METADATA_KEY not in (expired.run.metadata_json or {})
     assert surviving.run.status == "awaiting_approval"

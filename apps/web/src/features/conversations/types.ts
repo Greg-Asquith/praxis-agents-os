@@ -5,6 +5,9 @@ import type { ActiveContextTargets } from "@/features/integrations/types"
 export type AgentRunStatus =
   "pending" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled"
 
+export type RunOutcome =
+  "success" | "gate_failed" | "budget_exhausted" | "blocked" | "error" | "cancelled"
+
 type ConversationSource = "direct" | "scheduled" | "delegated" | "event"
 type AgentRunTrigger = "interactive" | "scheduled" | "delegated" | "event"
 
@@ -74,6 +77,8 @@ export type AgentRun = {
   lease_expires_at: string | null
   error_code: string | null
   error_message: string | null
+  outcome: RunOutcome | null
+  completion_json: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

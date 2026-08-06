@@ -926,6 +926,28 @@ async def test_schedule_run_history_exposes_approval_links_and_filters(
     )
     db_session.add(agent_run)
     await db_session.flush()
+    completed_conversation = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        source="scheduled",
+        schedule_id=schedule.id,
+        active_agent_id=agent.id,
+    )
+    db_session.add(completed_conversation)
+    await db_session.flush()
+    completed_agent_run = AgentRun(
+        conversation_id=completed_conversation.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger=RUN_TRIGGER_SCHEDULED,
+        status="completed",
+        outcome="success",
+        completion_json={"summary": "Scheduled work finished."},
+    )
+    db_session.add(completed_agent_run)
+    await db_session.flush()
     awaiting = AgentScheduleRun(
         schedule_id=schedule.id,
         workspace_id=workspace.id,
@@ -942,6 +964,8 @@ async def test_schedule_run_history_exposes_approval_links_and_filters(
         workspace_id=workspace.id,
         user_id=user.id,
         agent_id=agent.id,
+        conversation_id=completed_conversation.id,
+        agent_run_id=completed_agent_run.id,
         scheduled_for=datetime.now(UTC) - timedelta(minutes=5),
         status=RUN_STATUS_COMPLETED,
         attempt_count=1,
@@ -962,6 +986,10 @@ async def test_schedule_run_history_exposes_approval_links_and_filters(
     )
     assert awaiting_item["conversation_id"] == str(conversation.id)
     assert awaiting_item["agent_run_id"] == str(agent_run.id)
+    assert awaiting_item["outcome"] is None
+    completed_item = next(item for item in body["items"] if item["status"] == RUN_STATUS_COMPLETED)
+    assert completed_item["outcome"] == "success"
+    assert completed_item["completion_json"] == {"summary": "Scheduled work finished."}
 
     filtered = await db_async_client.get(
         f"/api/v1/schedules/{schedule.id}/runs?status={RUN_STATUS_AWAITING_APPROVAL}",

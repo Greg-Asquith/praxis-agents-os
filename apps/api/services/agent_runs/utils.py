@@ -2,7 +2,9 @@
 
 """Helpers specific to the agent_runs service."""
 
+import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,12 +15,20 @@ from models.agent import Agent, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.domain import (
+    ALL_RUN_OUTCOMES,
+    RUN_OUTCOME_BLOCKED,
+    RUN_OUTCOME_BUDGET_EXHAUSTED,
+    RUN_OUTCOME_CANCELLED,
+    RUN_OUTCOME_ERROR,
+    RUN_OUTCOME_SUCCESS,
     RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_SCHEDULED,
     TERMINAL_RUN_STATUSES,
+    RunOutcome,
     can_transition,
 )
 from services.agents.delegation_approval import (
@@ -28,6 +38,14 @@ from services.agents.delegation_approval import (
 )
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
+MAX_COMPLETION_JSON_BYTES = 16 * 1024
+
+BLOCKED_ERROR_CODES = frozenset(
+    {
+        "approval_expired",
+        "schedule_execution_abandoned",
+    }
+)
 
 
 def sanitize_error_message(message: str | None) -> str | None:
@@ -40,6 +58,46 @@ def sanitize_error_message(message: str | None) -> str | None:
     return normalized[:MAX_ERROR_MESSAGE_LENGTH]
 
 
+def validate_completion_json(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Validate that completion evidence is JSON-compatible and within its byte budget."""
+    if value is None:
+        return None
+    try:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("completion_json must contain JSON-compatible values") from exc
+    if len(encoded) > MAX_COMPLETION_JSON_BYTES:
+        raise ValueError(
+            f"completion_json must not exceed {MAX_COMPLETION_JSON_BYTES} serialized bytes"
+        )
+    return value
+
+
+def terminal_run_outcome(target: str, *, error_code: str | None = None) -> RunOutcome:
+    """Map a terminal execution state and failure code to its operator verdict."""
+    if target == RUN_STATUS_COMPLETED:
+        return RUN_OUTCOME_SUCCESS
+    if target == RUN_STATUS_CANCELLED:
+        return RUN_OUTCOME_CANCELLED
+    if target != RUN_STATUS_FAILED:
+        raise ValueError(f"Cannot derive an outcome for non-terminal status {target!r}")
+    if error_code == "usage_limit_exceeded":
+        return RUN_OUTCOME_BUDGET_EXHAUSTED
+    if error_code in BLOCKED_ERROR_CODES:
+        return RUN_OUTCOME_BLOCKED
+    return RUN_OUTCOME_ERROR
+
+
+def failure_completion_json(error_code: str | None) -> dict[str, str]:
+    """Return bounded failure taxonomy without copying exception or provider payloads."""
+    return {"error_code": error_code or "agent_run_failed"}
+
+
 async def transition_run_status(
     db: AsyncSession,
     run: AgentRun,
@@ -47,12 +105,21 @@ async def transition_run_status(
     *,
     error_code: str | None = None,
     error_message: str | None = None,
+    outcome: RunOutcome | None = None,
+    completion_json: dict[str, Any] | None = None,
 ) -> AgentRun:
     """Validate and apply a status change, stamping the matching timestamp.
 
     Shared by every lifecycle operation. A no-op when already at target; raises
     ConflictError for any edge not permitted by domain.ALLOWED_TRANSITIONS.
     """
+    # Serialize every transition against the durable row. Callers can hold stale
+    # ORM objects while cancellation, reaping, or runtime finalization commits in
+    # another session; refreshing under a row lock keeps the first terminal
+    # transition authoritative.
+    await db.flush()
+    await db.refresh(run, with_for_update=True)
+
     if run.status == target:
         return run
     if not can_transition(run.status, target):
@@ -60,6 +127,21 @@ async def transition_run_status(
             f"Cannot move agent run from {run.status!r} to {target!r}",
             conflicting_resource="agent_run",
             details={"run_id": str(run.id), "from": run.status, "to": target},
+        )
+
+    if target not in TERMINAL_RUN_STATUSES and (outcome is not None or completion_json is not None):
+        raise ValueError("outcome and completion_json can only be set on a terminal transition")
+    if outcome is not None and outcome not in ALL_RUN_OUTCOMES:
+        raise ValueError(f"Unknown agent run outcome {outcome!r}")
+
+    resolved_outcome: RunOutcome | None = None
+    validated_completion_json: dict[str, Any] | None = None
+    if target in TERMINAL_RUN_STATUSES:
+        resolved_outcome = outcome or terminal_run_outcome(target, error_code=error_code)
+        validated_completion_json = validate_completion_json(
+            completion_json
+            if completion_json is not None
+            else (failure_completion_json(error_code) if target == RUN_STATUS_FAILED else None)
         )
 
     now = datetime.now(UTC)
@@ -72,7 +154,11 @@ async def transition_run_status(
         run.failed_at = now
         run.error_code = error_code
         run.error_message = sanitize_error_message(error_message)
-    if target in TERMINAL_RUN_STATUSES or target == RUN_STATUS_AWAITING_APPROVAL:
+    if target in TERMINAL_RUN_STATUSES:
+        run.outcome = resolved_outcome
+        run.completion_json = validated_completion_json
+        run.lease_expires_at = None
+    elif target == RUN_STATUS_AWAITING_APPROVAL:
         run.lease_expires_at = None
 
     await db.flush()

@@ -78,6 +78,11 @@ class AgentRun(BaseModel):
     error_code = Column(String(64), nullable=True)
     error_message = Column(Text, nullable=True)
 
+    # Terminal verdict and bounded, machine-readable evidence. Lifecycle status
+    # remains the execution state machine; outcome describes what the run achieved.
+    outcome = Column(String(32), nullable=True)
+    completion_json = Column(JSONB, nullable=True)
+
     metadata_json = Column("metadata", JSONB, nullable=True)
 
     conversation = relationship("Conversation", foreign_keys=[conversation_id])
@@ -108,6 +113,17 @@ class AgentRun(BaseModel):
             "'completed', 'failed', 'cancelled'"
             ")",
             name="agent_runs_status_check",
+        ),
+        CheckConstraint(
+            "outcome IS NULL OR outcome IN ("
+            "'success', 'gate_failed', 'budget_exhausted', "
+            "'blocked', 'error', 'cancelled'"
+            ")",
+            name="agent_runs_outcome_check",
+        ),
+        CheckConstraint(
+            "completion_json IS NULL OR octet_length(completion_json::text) <= 16384",
+            name="agent_runs_completion_json_size_check",
         ),
         Index("ix_agent_runs_conversation_created", "conversation_id", "created_at"),
         Index(

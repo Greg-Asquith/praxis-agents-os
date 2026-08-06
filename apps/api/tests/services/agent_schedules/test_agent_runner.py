@@ -158,6 +158,7 @@ async def test_run_once_executes_due_once_schedule(
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "completed"
+        assert agent_run.outcome == "success"
         conversation = await db.get(Conversation, schedule_run.conversation_id)
         assert conversation is not None
         assert conversation.unread is True
@@ -295,6 +296,7 @@ async def test_worker_external_write_pauses_resumes_and_finalizes_schedule(
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "completed"
+        assert agent_run.outcome == "success"
 
 
 async def test_run_once_provider_failure_disables_schedule_and_prunes_conversation(
@@ -325,6 +327,7 @@ async def test_run_once_provider_failure_disables_schedule_and_prunes_conversati
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "failed"
+        assert agent_run.outcome == "error"
 
         conversation = await db.get(Conversation, schedule_run.conversation_id)
         assert conversation is not None
@@ -372,6 +375,7 @@ async def test_run_once_finalizes_cooperatively_cancelled_schedule(
         agent_run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert agent_run is not None
         assert agent_run.status == "cancelled"
+        assert agent_run.outcome == "cancelled"
 
 
 async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(

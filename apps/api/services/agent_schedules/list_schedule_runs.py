@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.exceptions.general import AppValidationError
 from models.agent import AgentScheduleRun
@@ -69,7 +70,7 @@ async def list_schedule_runs(
 
     runs, total = await paginate(
         db,
-        select(AgentScheduleRun).where(*filters),
+        select(AgentScheduleRun).options(selectinload(AgentScheduleRun.agent_run)).where(*filters),
         AgentScheduleRun.scheduled_for.desc(),
         AgentScheduleRun.created_at.desc(),
         limit=limit,

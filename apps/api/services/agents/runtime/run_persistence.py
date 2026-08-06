@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic_ai import DeferredToolRequests
 from pydantic_core import to_jsonable_python
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
@@ -23,6 +24,9 @@ from services.agent_runs.await_approval import mark_run_awaiting_approval
 from services.agent_runs.cancel import cancel_agent_run
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
+    RUN_OUTCOME_CANCELLED,
+    RUN_OUTCOME_SUCCESS,
+    RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_EVENT,
     RUN_TRIGGER_SCHEDULED,
@@ -31,6 +35,7 @@ from services.agent_runs.domain import (
 )
 from services.agent_runs.fail import fail_agent_run
 from services.agent_runs.record_usage import record_run_usage
+from services.agent_runs.utils import failure_completion_json, terminal_run_outcome
 from services.agents.runtime.approval_state import (
     build_suspended_run_metadata,
     clear_suspended_run_metadata,
@@ -63,6 +68,7 @@ async def persist_suspended_run(
         conversation_id=conversation_id,
         run_id=run_id,
         populate_existing=True,
+        lock_run=True,
     )
     if is_terminal(run.status):
         await db.commit()
@@ -131,6 +137,7 @@ async def persist_successful_run(
         conversation_id=conversation_id,
         run_id=run_id,
         populate_existing=True,
+        lock_run=True,
     )
     if is_terminal(run.status):
         await db.commit()
@@ -165,7 +172,7 @@ async def persist_successful_run(
     )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
     run.metadata_json = clear_suspended_run_metadata(run)
-    await complete_agent_run(db, run)
+    await complete_agent_run(db, run, outcome=RUN_OUTCOME_SUCCESS)
     await db.commit()
     return run, len(persisted_messages)
 
@@ -178,7 +185,12 @@ async def persist_failed_run(
     error_message: str,
 ) -> AgentRun | None:
     """Mark a started run failed without losing diagnostic state."""
-    run = await db.get(AgentRun, run_id, populate_existing=True)
+    run = await db.scalar(
+        select(AgentRun)
+        .where(AgentRun.id == run_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if run is None:
         await db.commit()
         return None
@@ -192,6 +204,8 @@ async def persist_failed_run(
         run,
         error_code=error_code,
         error_message=error_message,
+        outcome=terminal_run_outcome(RUN_STATUS_FAILED, error_code=error_code),
+        completion_json=failure_completion_json(error_code),
     )
     await db.commit()
     return run
@@ -213,7 +227,12 @@ async def persist_cancelled_run(
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
-            run = await db.get(AgentRun, run_id, populate_existing=True)
+            run = await db.scalar(
+                select(AgentRun)
+                .where(AgentRun.id == run_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
             if run is None:
                 await db.commit()
                 return None
@@ -222,7 +241,7 @@ async def persist_cancelled_run(
                 return run
 
             run.metadata_json = clear_suspended_run_metadata(run)
-            await cancel_agent_run(db, run)
+            await cancel_agent_run(db, run, outcome=RUN_OUTCOME_CANCELLED)
             await db.commit()
             return run
     except Exception:

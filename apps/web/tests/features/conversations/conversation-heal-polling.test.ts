@@ -30,6 +30,8 @@ function activeRunResponse(
       lease_expires_at: null,
       error_code: null,
       error_message: null,
+      outcome: null,
+      completion_json: null,
       created_at: "2026-08-04T12:00:00Z",
       updated_at: "2026-08-04T12:00:00Z",
     },

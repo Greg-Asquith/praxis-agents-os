@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from models.agent import AgentSchedule, AgentScheduleRun
+from services.agent_runs.domain import RunOutcome
 from services.agent_schedules.domain import ScheduleConfig, calculate_next_run
 from services.audit_events import (
     AuditAction,
@@ -67,11 +68,17 @@ class ClaimedScheduleRun:
     run: AgentScheduleRun
 
 
-def schedule_health_from_run(run: AgentScheduleRun | None) -> str:
+def schedule_health_from_run(
+    run: AgentScheduleRun | None,
+    *,
+    outcome: RunOutcome | None = None,
+) -> str:
     """Return a compact health label for schedule list/detail responses."""
 
     if run is None:
         return "healthy"
+    if outcome in {"gate_failed", "budget_exhausted"}:
+        return "needs_attention"
     if run.status == RUN_STATUS_RETRYABLE_FAILED:
         return "retrying"
     if run.status == RUN_STATUS_TERMINAL_FAILED:
@@ -103,6 +110,7 @@ async def get_latest_runs_by_schedule_ids(
 
     result = await db.execute(
         select(AgentScheduleRun)
+        .options(selectinload(AgentScheduleRun.agent_run))
         .distinct(AgentScheduleRun.schedule_id)
         .where(
             AgentScheduleRun.schedule_id.in_(schedule_ids),

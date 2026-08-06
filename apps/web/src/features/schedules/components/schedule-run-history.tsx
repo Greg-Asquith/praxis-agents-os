@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table"
 import { useScheduleRunsQuery } from "@/features/schedules/api/list-schedule-runs"
 import { ScheduleRunStatusBadge } from "@/features/schedules/components/schedule-status-badges"
+import { hasActionableScheduleApproval } from "@/features/schedules/format"
 import type { AgentScheduleRun } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime, pluralize, truncateText } from "@/lib/format"
@@ -83,7 +84,7 @@ export function ScheduleRunHistory({ scheduleId }: { scheduleId: string }) {
               <TableRow key={run.id}>
                 <TableCell>{formatDateTime(run.scheduled_for)}</TableCell>
                 <TableCell>
-                  <ScheduleRunStatusBadge status={run.status} />
+                  <ScheduleRunStatusBadge outcome={run.outcome} status={run.status} />
                 </TableCell>
                 <TableCell>
                   {run.attempt_count} {pluralize(run.attempt_count, "attempt")}
@@ -114,7 +115,7 @@ function ScheduleRunMobileRow({ run }: { run: AgentScheduleRun }) {
               {run.attempt_count} {pluralize(run.attempt_count, "attempt")}
             </p>
           </div>
-          <ScheduleRunStatusBadge status={run.status} />
+          <ScheduleRunStatusBadge outcome={run.outcome} status={run.status} />
         </div>
 
         <dl className="grid gap-3">
@@ -153,7 +154,7 @@ function ConversationLink({
     return <span className="text-muted-foreground text-sm">No conversation</span>
   }
 
-  const awaitingApproval = run.status === "awaiting_approval"
+  const awaitingApproval = hasActionableScheduleApproval(run)
 
   return (
     <Button

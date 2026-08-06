@@ -24,6 +24,8 @@ function failedRun(errorCode: string): AgentRun {
     lease_expires_at: null,
     error_code: errorCode,
     error_message: "This approval expired after 7 days, so the action wasn't taken.",
+    outcome: "blocked",
+    completion_json: { error_code: errorCode },
     created_at: "2026-07-28T12:00:00Z",
     updated_at: "2026-08-04T12:00:00Z",
   }

@@ -4,7 +4,17 @@ import { ShieldAlertIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import type { AgentSchedule, ScheduleHealth, ScheduleRunStatus } from "@/features/schedules/types"
+import type { RunOutcome } from "@/features/conversations/types"
 import { titleCaseToken } from "@/lib/format"
+
+const RUN_OUTCOME_LABELS = {
+  success: "Succeeded",
+  gate_failed: "Checks failed",
+  budget_exhausted: "Token limit reached",
+  blocked: "Blocked",
+  error: "Failed",
+  cancelled: "Cancelled",
+} satisfies Record<RunOutcome, string>
 
 export function ScheduleStatusBadges({ schedule }: { schedule: AgentSchedule }) {
   return (
@@ -33,7 +43,23 @@ export function ScheduleHealthBadge({ health }: { health: ScheduleHealth }) {
   return <Badge variant="outline">Healthy</Badge>
 }
 
-export function ScheduleRunStatusBadge({ status }: { status: ScheduleRunStatus }) {
+export function ScheduleRunStatusBadge({
+  outcome,
+  status,
+}: {
+  outcome: RunOutcome | null
+  status: ScheduleRunStatus
+}) {
+  if (outcome) {
+    const variant =
+      outcome === "success"
+        ? "success"
+        : outcome === "blocked" || outcome === "budget_exhausted"
+          ? "warning"
+          : "destructive"
+    return <Badge variant={variant}>{RUN_OUTCOME_LABELS[outcome]}</Badge>
+  }
+
   if (status === "awaiting_approval") {
     return (
       <Badge variant="warning">

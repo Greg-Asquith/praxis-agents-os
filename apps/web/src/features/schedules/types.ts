@@ -1,6 +1,7 @@
 // apps/web/src/features/schedules/types.ts
 
 import type { ActiveContextTargets } from "@/features/integrations/types"
+import type { RunOutcome } from "@/features/conversations/types"
 
 export type ScheduleType = "cron" | "interval" | "once"
 
@@ -38,6 +39,8 @@ export type AgentScheduleRun = {
   failed_at: string | null
   last_error_code: string | null
   last_error_message: string | null
+  outcome: RunOutcome | null
+  completion_json: Record<string, unknown> | null
   created_at: string
   health: ScheduleHealth
 }

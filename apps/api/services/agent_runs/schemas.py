@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from models.agent_run import AgentRun
+from services.agent_runs.domain import RunOutcome
 from utils.validation import normalize_optional_text
 
 ResumeDecision = Literal["approved", "denied"]
@@ -101,6 +102,8 @@ class AgentRunRead(BaseModel):
     lease_expires_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
+    outcome: RunOutcome | None = None
+    completion_json: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 

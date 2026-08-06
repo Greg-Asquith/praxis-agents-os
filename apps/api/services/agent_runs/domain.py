@@ -9,6 +9,7 @@ on agent_schedule_runs.
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 RUN_STATUS_PENDING = "pending"
 RUN_STATUS_RUNNING = "running"
@@ -16,6 +17,33 @@ RUN_STATUS_AWAITING_APPROVAL = "awaiting_approval"
 RUN_STATUS_COMPLETED = "completed"
 RUN_STATUS_FAILED = "failed"
 RUN_STATUS_CANCELLED = "cancelled"
+
+RUN_OUTCOME_SUCCESS = "success"
+RUN_OUTCOME_GATE_FAILED = "gate_failed"
+RUN_OUTCOME_BUDGET_EXHAUSTED = "budget_exhausted"
+RUN_OUTCOME_BLOCKED = "blocked"
+RUN_OUTCOME_ERROR = "error"
+RUN_OUTCOME_CANCELLED = "cancelled"
+
+RunOutcome = Literal[
+    "success",
+    "gate_failed",
+    "budget_exhausted",
+    "blocked",
+    "error",
+    "cancelled",
+]
+
+ALL_RUN_OUTCOMES = frozenset(
+    {
+        RUN_OUTCOME_SUCCESS,
+        RUN_OUTCOME_GATE_FAILED,
+        RUN_OUTCOME_BUDGET_EXHAUSTED,
+        RUN_OUTCOME_BLOCKED,
+        RUN_OUTCOME_ERROR,
+        RUN_OUTCOME_CANCELLED,
+    }
+)
 
 ALL_RUN_STATUSES = frozenset(
     {

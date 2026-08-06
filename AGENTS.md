@@ -26,6 +26,10 @@ behind good defaults and progressive disclosure, not in their face.
   scheduled-agent runner and the generic jobs runner. It polls continuously by
   default; `WORKER_MODE=drain` processes available work until both queues are
   empty or the drain budget expires, then exits for run-to-completion platforms.
+  Terminal agent runs retain their existing lifecycle status and separately
+  record a structured outcome plus bounded completion evidence. Terminal
+  transitions serialize on the generic run row so the first verdict remains
+  authoritative under cancellation/finalization races.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router +
   TanStack Query). It talks to the API over REST and consumes agent turns over
   SSE.

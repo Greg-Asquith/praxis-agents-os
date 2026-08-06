@@ -95,6 +95,8 @@ async def test_reap_abandoned_runs_fails_expired_running_lease(
     assert result.failed_run_ids == [run.id]
     assert run.status == RUN_STATUS_FAILED
     assert run.error_code == RUN_ABANDONED_ERROR_CODE
+    assert run.outcome == "error"
+    assert run.completion_json == {"error_code": RUN_ABANDONED_ERROR_CODE}
     assert "lease expired" in (run.error_message or "")
 
 

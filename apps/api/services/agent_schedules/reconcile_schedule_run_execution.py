@@ -15,6 +15,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL as AGENT_RUN_STATUS_AWAITING_APPROVAL,
     TERMINAL_RUN_STATUSES,
 )
+from services.agent_schedules.domain import SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE
 from services.agent_schedules.finalize_schedule_run_execution import (
     finalize_schedule_run_execution,
 )
@@ -135,7 +136,7 @@ async def _mark_stale_pre_execution_failure(
     exhausted = mark_run_retryable_failure(
         schedule_run,
         now=now,
-        code="schedule_execution_abandoned",
+        code=SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE,
         message="Schedule run was abandoned before an agent run was linked.",
         max_attempts=settings.AGENT_SCHEDULE_RUN_MAX_ATTEMPTS,
     )
@@ -145,6 +146,6 @@ async def _mark_stale_pre_execution_failure(
             schedule,
             schedule_run,
             now=now,
-            code="schedule_execution_abandoned",
+            code=SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE,
             message="Schedule run exceeded setup retry attempts before execution.",
         )

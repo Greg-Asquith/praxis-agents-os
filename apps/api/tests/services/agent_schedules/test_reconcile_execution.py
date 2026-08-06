@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.conversation import Conversation
 from services.agent_runs import (
@@ -27,6 +28,7 @@ from services.agent_schedules.runs import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
 )
+from services.agent_schedules.schemas import AgentScheduleRunRead
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
@@ -103,13 +105,14 @@ async def test_reconcile_running_schedule_with_failed_generic_run(
 ) -> None:
     schedule, schedule_run, run = await _running_schedule_with_run(db_session)
     await start_agent_run(db_session, run)
-    await fail_agent_run(db_session, run, error_code="abandoned", error_message="stale")
+    await fail_agent_run(db_session, run, error_code="run_abandoned", error_message="stale")
 
     reconciled = await reconcile_schedule_run_execution(db_session)
 
     assert reconciled == 1
     assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
     assert schedule.is_active is False
+    assert run.outcome == "error"
 
 
 async def test_reconcile_running_schedule_with_completed_generic_run(
@@ -173,14 +176,15 @@ async def test_reconcile_excludes_still_paused_awaiting_schedule_run(
     assert schedule.is_active is True
 
 
-async def test_reconcile_expired_accepted_run_without_generic_run(
-    db_session: AsyncSession,
-) -> None:
-    now = datetime.now(UTC)
+async def _expired_accepted_run_without_generic_run(
+    db: AsyncSession,
+    *,
+    now: datetime,
+) -> AgentScheduleRun:
     user = build_user(email=f"reconcile-stale-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"reconcile-stale-{uuid4().hex[:8]}")
-    db_session.add_all([user, workspace])
-    await db_session.flush()
+    db.add_all([user, workspace])
+    await db.flush()
     agent = Agent(
         name="Reconcile Stale Agent",
         slug=f"reconcile-stale-agent-{uuid4().hex[:8]}",
@@ -188,8 +192,8 @@ async def test_reconcile_expired_accepted_run_without_generic_run(
         workspace_id=workspace.id,
         created_by=user.id,
     )
-    db_session.add(agent)
-    await db_session.flush()
+    db.add(agent)
+    await db.flush()
     schedule = AgentSchedule(
         agent_id=agent.id,
         user_id=user.id,
@@ -199,8 +203,8 @@ async def test_reconcile_expired_accepted_run_without_generic_run(
         next_run_at=now - timedelta(minutes=1),
         default_prompt="Run scheduled work",
     )
-    db_session.add(schedule)
-    await db_session.flush()
+    db.add(schedule)
+    await db.flush()
     schedule_run = AgentScheduleRun(
         schedule_id=schedule.id,
         workspace_id=workspace.id,
@@ -211,11 +215,35 @@ async def test_reconcile_expired_accepted_run_without_generic_run(
         accepted_at=now - timedelta(minutes=10),
         attempt_count=1,
     )
-    db_session.add(schedule_run)
-    await db_session.flush()
+    db.add(schedule_run)
+    await db.flush()
+    return schedule_run
+
+
+async def test_reconcile_expired_accepted_run_without_generic_run(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime.now(UTC)
+    schedule_run = await _expired_accepted_run_without_generic_run(db_session, now=now)
 
     reconciled = await reconcile_schedule_run_execution(db_session, now=now)
 
     assert reconciled == 1
     assert schedule_run.status == RUN_STATUS_RETRYABLE_FAILED
     assert schedule_run.last_error_code == "schedule_execution_abandoned"
+
+
+async def test_reconcile_exhausted_run_without_generic_run_reports_blocked(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(UTC)
+    monkeypatch.setattr(settings, "AGENT_SCHEDULE_RUN_MAX_ATTEMPTS", 1)
+    schedule_run = await _expired_accepted_run_without_generic_run(db_session, now=now)
+
+    assert await reconcile_schedule_run_execution(db_session, now=now) == 1
+
+    response = AgentScheduleRunRead.from_run(schedule_run)
+    assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+    assert response.outcome == "blocked"
+    assert response.completion_json == {"error_code": "schedule_execution_abandoned"}

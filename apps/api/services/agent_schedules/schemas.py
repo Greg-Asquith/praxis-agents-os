@@ -9,7 +9,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from models.agent import AgentSchedule, AgentScheduleRun
-from services.agent_schedules.runs import schedule_health_from_run
+from services.agent_runs.domain import RUN_OUTCOME_BLOCKED, RunOutcome
+from services.agent_schedules.domain import SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE
+from services.agent_schedules.runs import RUN_STATUS_TERMINAL_FAILED, schedule_health_from_run
 from services.integrations.context.schemas import ActiveContextTargets
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
@@ -46,6 +48,8 @@ class AgentScheduleRunRead(BaseModel):
     failed_at: datetime | None = None
     last_error_code: str | None = None
     last_error_message: str | None = None
+    outcome: RunOutcome | None = None
+    completion_json: dict[str, Any] | None = None
     created_at: datetime
     health: str
 
@@ -53,6 +57,7 @@ class AgentScheduleRunRead(BaseModel):
 
     @classmethod
     def from_run(cls, run: AgentScheduleRun) -> "AgentScheduleRunRead":
+        outcome, completion_json = _schedule_run_completion(run)
         return cls.model_validate(
             {
                 "id": run.id,
@@ -67,10 +72,26 @@ class AgentScheduleRunRead(BaseModel):
                 "failed_at": run.failed_at,
                 "last_error_code": run.last_error_code,
                 "last_error_message": run.last_error_message,
+                "outcome": outcome,
+                "completion_json": completion_json,
                 "created_at": run.created_at,
-                "health": schedule_health_from_run(run),
+                "health": schedule_health_from_run(run, outcome=outcome),
             }
         )
+
+
+def _schedule_run_completion(
+    run: AgentScheduleRun,
+) -> tuple[RunOutcome | None, dict[str, Any] | None]:
+    """Return linked run evidence or the terminal pre-execution verdict."""
+    if run.agent_run is not None:
+        return run.agent_run.outcome, run.agent_run.completion_json
+    if (
+        run.status == RUN_STATUS_TERMINAL_FAILED
+        and run.last_error_code == SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE
+    ):
+        return RUN_OUTCOME_BLOCKED, {"error_code": SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE}
+    return None, None
 
 
 class AgentScheduleRead(BaseModel):
@@ -104,6 +125,8 @@ class AgentScheduleRead(BaseModel):
         *,
         latest_run: AgentScheduleRun | None = None,
     ) -> "AgentScheduleRead":
+        latest_agent_run = latest_run.agent_run if latest_run is not None else None
+        latest_outcome = latest_agent_run.outcome if latest_agent_run is not None else None
         return cls.model_validate(
             {
                 "id": schedule.id,
@@ -124,7 +147,7 @@ class AgentScheduleRead(BaseModel):
                 "next_run_at": schedule.next_run_at if schedule.is_active else None,
                 "created_at": schedule.created_at,
                 "updated_at": schedule.updated_at,
-                "health": schedule_health_from_run(latest_run),
+                "health": schedule_health_from_run(latest_run, outcome=latest_outcome),
                 "latest_run": (
                     AgentScheduleRunRead.from_run(latest_run) if latest_run is not None else None
                 ),

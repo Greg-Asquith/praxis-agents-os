@@ -1024,6 +1024,8 @@ async def test_get_active_run_lazily_reaps_expired_run(
     assert body["active_run"] is None
     assert body["latest_run"]["id"] == str(run.id)
     assert body["latest_run"]["status"] == "failed"
+    assert body["latest_run"]["outcome"] == "error"
+    assert body["latest_run"]["completion_json"] == {"error_code": "run_abandoned"}
 
     stored = await db_session.get(AgentRun, run.id)
     assert stored is not None

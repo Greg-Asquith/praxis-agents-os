@@ -113,6 +113,8 @@ function schedule(health: ScheduleHealth, name: string): AgentSchedule {
       failed_at: "2026-07-28T08:01:00Z",
       last_error_code: "provider_error",
       last_error_message: "Provider request failed.",
+      outcome: health === "needs_attention" ? "error" : null,
+      completion_json: health === "needs_attention" ? { error_code: "provider_error" } : null,
       created_at: "2026-07-28T08:00:00Z",
       health,
     },

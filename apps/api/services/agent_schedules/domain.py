@@ -13,6 +13,7 @@ from utils.dates import normalize_utc_datetime
 
 VALID_SCHEDULE_TYPES = frozenset({"cron", "interval", "once"})
 DEFAULT_TIMEZONE = "UTC"
+SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE = "schedule_execution_abandoned"
 # Upper bound on preview iterations to avoid unbounded croniter loops in-request.
 _MAX_PREVIEW_COUNT = 100
 _TIMING_FIELDS_BY_TYPE = {

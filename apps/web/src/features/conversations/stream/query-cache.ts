@@ -156,6 +156,8 @@ function buildStreamAgentRun(
     failed_at: null,
     lease_expires_at: null,
     error_code: null,
+    outcome: null,
+    completion_json: null,
     error_message: null,
     created_at: conversation.created_at,
     updated_at: conversation.updated_at,

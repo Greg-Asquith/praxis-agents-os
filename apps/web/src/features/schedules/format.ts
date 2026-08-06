@@ -2,7 +2,7 @@
 
 import cronstrue from "cronstrue"
 
-import type { AgentSchedule, ScheduleType } from "@/features/schedules/types"
+import type { AgentSchedule, AgentScheduleRun, ScheduleType } from "@/features/schedules/types"
 import { formatDateTime, formatDateTimeInTimeZone } from "@/lib/format"
 
 import {
@@ -16,6 +16,10 @@ export function scheduleTitle(schedule: AgentSchedule) {
     return "Unnamed schedule"
   }
   return name
+}
+
+export function hasActionableScheduleApproval(run: Pick<AgentScheduleRun, "outcome" | "status">) {
+  return run.status === "awaiting_approval" && run.outcome === null
 }
 
 export function formatScheduleCadence(schedule: AgentSchedule) {

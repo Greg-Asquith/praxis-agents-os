@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { formatScheduleCadence, scheduleTitle } from "@/features/schedules/format"
+import {
+  formatScheduleCadence,
+  hasActionableScheduleApproval,
+  scheduleTitle,
+} from "@/features/schedules/format"
 import type { AgentSchedule } from "@/features/schedules/types"
 
 function schedule(overrides: Partial<AgentSchedule> = {}): AgentSchedule {
@@ -39,5 +43,12 @@ describe("schedule display formatting", () => {
 
   it("labels legacy unnamed rows honestly", () => {
     expect(scheduleTitle(schedule({ name: null }))).toBe("Unnamed schedule")
+  })
+
+  it("offers approval review only while the linked run is still active", () => {
+    expect(hasActionableScheduleApproval({ outcome: null, status: "awaiting_approval" })).toBe(true)
+    expect(hasActionableScheduleApproval({ outcome: "blocked", status: "awaiting_approval" })).toBe(
+      false
+    )
   })
 })

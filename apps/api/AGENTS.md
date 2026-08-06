@@ -56,6 +56,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   versioned event protocol, run persistence, approval state
   (`DeferredToolRequests`/`DeferredToolResults`), capabilities, cooperative
   cancellation, and agent-to-agent delegation under `runtime/delegation/`.
+  Terminal lifecycle transitions stamp a separate six-value `outcome` and
+  bounded `completion_json` at the shared agent-run transition choke point;
+  the transition refreshes under a row lock so the first terminal verdict is
+  authoritative. Do not widen the six run statuses to represent completion
+  verdicts.
   Parked approvals expire through the generic jobs harness after
   `AGENT_RUN_APPROVAL_EXPIRY_DAYS` (default 7; 0 disables), which fails the run,
   clears durable approval state, and transactionally enqueues retryable staged
