@@ -30,6 +30,8 @@ type ScheduleTimingPayload = Omit<SchedulePreviewRequest, "preview_count">
 export type ScheduleFormState = {
   activeContext: ActiveContextTargets | null
   agentId: string
+  completionCriteria: string
+  completionReportRequired: boolean
   cronExpression: string
   defaultPrompt: string
   executionParams: ScheduleExecutionParams | null
@@ -53,6 +55,8 @@ export function initialScheduleFormState(schedule: AgentSchedule | null): Schedu
   return {
     activeContext: schedule?.active_context ?? null,
     agentId: schedule?.agent_id ?? "",
+    completionCriteria: scheduleCompletionCriteria(schedule?.execution_params).join("\n"),
+    completionReportRequired: schedule?.execution_params?.completion_contract?.required === true,
     cronExpression: schedule?.cron_expression ?? DEFAULT_CRON_EXPRESSION,
     defaultPrompt: schedule?.default_prompt ?? "",
     executionParams: schedule?.execution_params ?? null,
@@ -99,6 +103,29 @@ export function validateScheduleFormState(state: ScheduleFormState): ScheduleFor
       label: "Prompt",
       message: "Prompt is required.",
     })
+  }
+
+  if (state.completionReportRequired) {
+    const criteria = parseCompletionCriteria(state.completionCriteria)
+    if (criteria.length === 0) {
+      entries.push({
+        fieldId: "schedule-completion-criteria",
+        label: "Completion checks",
+        message: "Add at least one completion check.",
+      })
+    } else if (criteria.length > 20) {
+      entries.push({
+        fieldId: "schedule-completion-criteria",
+        label: "Completion checks",
+        message: "Use 20 completion checks or fewer.",
+      })
+    } else if (criteria.some((criterion) => criterion.length > 500)) {
+      entries.push({
+        fieldId: "schedule-completion-criteria",
+        label: "Completion checks",
+        message: "Each completion check must be 500 characters or fewer.",
+      })
+    }
   }
 
   if (!state.timezone.trim()) {
@@ -229,6 +256,8 @@ export function isScheduleFormDirty(current: ScheduleFormState, initial: Schedul
     activeContextTargetsKey(current.activeContext?.targets ?? []) !==
       activeContextTargetsKey(initial.activeContext?.targets ?? []) ||
     current.agentId !== initial.agentId ||
+    current.completionCriteria !== initial.completionCriteria ||
+    current.completionReportRequired !== initial.completionReportRequired ||
     current.cronExpression !== initial.cronExpression ||
     current.defaultPrompt !== initial.defaultPrompt ||
     current.externalWritesAllowed !== initial.externalWritesAllowed ||
@@ -249,6 +278,28 @@ function buildExecutionParams(state: ScheduleFormState): ScheduleExecutionParams
   const envelope = {
     ...(state.executionParams?.envelope ?? {}),
   }
+  const existingContract = state.executionParams?.completion_contract
+
+  if (state.completionReportRequired) {
+    params.completion_contract = {
+      ...(existingContract ?? {}),
+      required: true,
+      criteria: parseCompletionCriteria(state.completionCriteria),
+    }
+  } else if (existingContract?.required === true) {
+    const contractExtensions = Object.fromEntries(
+      Object.entries(existingContract).filter(([key]) => key !== "required" && key !== "criteria")
+    )
+    if (Object.keys(contractExtensions).length > 0) {
+      params.completion_contract = {
+        ...contractExtensions,
+        required: false,
+        criteria: [],
+      }
+    } else {
+      delete params.completion_contract
+    }
+  }
 
   if (state.externalWritesAllowed) {
     envelope.side_effect_policy = "allow"
@@ -267,6 +318,22 @@ function buildExecutionParams(state: ScheduleFormState): ScheduleExecutionParams
 
 function scheduleSideEffectPolicy(executionParams: ScheduleExecutionParams | null | undefined) {
   return executionParams?.envelope?.side_effect_policy
+}
+
+function scheduleCompletionCriteria(
+  executionParams: ScheduleExecutionParams | null | undefined
+): string[] {
+  const criteria = executionParams?.completion_contract?.criteria
+  return Array.isArray(criteria)
+    ? criteria.filter((value): value is string => typeof value === "string")
+    : []
+}
+
+function parseCompletionCriteria(value: string): string[] {
+  return value
+    .split("\n")
+    .map((criterion) => criterion.trim())
+    .filter(Boolean)
 }
 
 function buildScheduleTimingPayload(state: ScheduleFormState): ScheduleTimingPayload | string {

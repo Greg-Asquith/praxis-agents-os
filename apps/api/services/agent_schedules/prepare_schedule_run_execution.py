@@ -22,6 +22,11 @@ from services.agent_schedules.runs import (
     mark_run_terminal_failure_and_disable_schedule,
 )
 from services.agent_schedules.schemas import schedule_side_effect_policy
+from services.completion_contract import (
+    COMPLETION_CONTRACT_KEY,
+    completion_contract_from_execution_params,
+    serialized_completion_contract,
+)
 from services.conversations.naming import fallback_conversation_title
 from services.workspaces.utils import get_active_membership
 from utils.dates import normalize_utc_datetime
@@ -129,7 +134,6 @@ async def prepare_schedule_run_execution(
         schedule_run=schedule_run,
         conversation=conversation,
     )
-
     schedule_run.status = RUN_STATUS_RUNNING
     schedule_run.accepted_at = now_utc
     schedule_run.claim_expires_at = None
@@ -271,6 +275,21 @@ async def _ensure_agent_run(
             )
         return run
 
+    contract = completion_contract_from_execution_params(schedule.execution_params)
+    metadata = {
+        "schedule_id": str(schedule.id),
+        "schedule_run_id": str(schedule_run.id),
+        "scheduled_for": schedule_run.scheduled_for.isoformat(),
+        "envelope": {
+            "side_effect_policy": schedule_side_effect_policy(
+                schedule.execution_params,
+                default=settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY,
+            ),
+        },
+    }
+    if contract is not None:
+        metadata[COMPLETION_CONTRACT_KEY] = serialized_completion_contract(contract)
+
     run = await create_agent_run(
         db,
         conversation_id=conversation.id,
@@ -278,17 +297,7 @@ async def _ensure_agent_run(
         workspace_id=schedule.workspace_id,
         user_id=schedule.user_id,
         trigger=RUN_TRIGGER_SCHEDULED,
-        metadata={
-            "schedule_id": str(schedule.id),
-            "schedule_run_id": str(schedule_run.id),
-            "scheduled_for": schedule_run.scheduled_for.isoformat(),
-            "envelope": {
-                "side_effect_policy": schedule_side_effect_policy(
-                    schedule.execution_params,
-                    default=settings.AGENT_SCHEDULED_SIDE_EFFECT_POLICY,
-                ),
-            },
-        },
+        metadata=metadata,
     )
     await link_schedule_run(db, schedule_run, run)
     return run

@@ -2,7 +2,6 @@
 
 """Helpers specific to the agent_runs service."""
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -36,10 +35,9 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND,
     DELEGATED_APPROVAL_KIND_KEY,
 )
+from services.completion_contract import validate_completion_json
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
-MAX_COMPLETION_JSON_BYTES = 16 * 1024
-
 BLOCKED_ERROR_CODES = frozenset(
     {
         "approval_expired",
@@ -56,26 +54,6 @@ def sanitize_error_message(message: str | None) -> str | None:
     if not normalized:
         return None
     return normalized[:MAX_ERROR_MESSAGE_LENGTH]
-
-
-def validate_completion_json(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Validate that completion evidence is JSON-compatible and within its byte budget."""
-    if value is None:
-        return None
-    try:
-        encoded = json.dumps(
-            value,
-            ensure_ascii=False,
-            allow_nan=False,
-            sort_keys=True,
-        ).encode("utf-8")
-    except (TypeError, ValueError) as exc:
-        raise ValueError("completion_json must contain JSON-compatible values") from exc
-    if len(encoded) > MAX_COMPLETION_JSON_BYTES:
-        raise ValueError(
-            f"completion_json must not exceed {MAX_COMPLETION_JSON_BYTES} serialized bytes"
-        )
-    return value
 
 
 def terminal_run_outcome(target: str, *, error_code: str | None = None) -> RunOutcome:

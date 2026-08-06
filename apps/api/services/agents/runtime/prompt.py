@@ -95,6 +95,7 @@ def runtime_prompt_blocks(
     core_memory_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context_block: str = "",
+    completion_contract_block: str = "",
 ) -> list[PromptBlock]:
     """Return the canonical ordered prompt blocks for one runtime agent."""
     return [
@@ -145,6 +146,10 @@ def runtime_prompt_blocks(
             "untrusted_content_policy",
             UNTRUSTED_CONTENT_INSTRUCTIONS,
             budget=settings.AGENT_PROMPT_UNTRUSTED_POLICY_BUDGET,
+        ),
+        PromptBlock(
+            "completion_contract",
+            completion_contract_block,
         ),
     ]
 

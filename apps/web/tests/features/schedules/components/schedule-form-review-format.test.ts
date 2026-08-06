@@ -10,6 +10,8 @@ function formState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormStat
   return {
     activeContext: null,
     agentId: "agent-1",
+    completionCriteria: "",
+    completionReportRequired: false,
     cronExpression: DEFAULT_CRON_EXPRESSION,
     defaultPrompt: "Run the report.",
     executionParams: null,

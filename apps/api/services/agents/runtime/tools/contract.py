@@ -183,6 +183,7 @@ class RuntimeToolDefinition:
     """Optional free-text result bound overriding the runtime default."""
     configurable: bool = True
     auto_mount: bool = False
+    always_allowed_when_mounted: bool = False
     integration_binding: IntegrationToolBinding | None = None
     availability_check: Callable[[], bool] | None = None
     presentation: ToolPresentation = ToolPresentation()
@@ -301,10 +302,21 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool default policy must be supported by the tool")
     if definition.auto_mount and definition.configurable:
         raise RuntimeError("Auto-mounted runtime tools cannot be configurable")
+    if definition.always_allowed_when_mounted and (
+        definition.configurable
+        or definition.effect_scope != TOOL_EFFECT_SCOPE_INTERNAL
+        or definition.default_policy != TOOL_POLICY_AUTO
+        or not definition.supports_auto
+        or definition.supports_approval
+    ):
+        raise RuntimeError(
+            "Always-allowed runtime tools must be non-configurable, internal, and auto-only"
+        )
     if (
         definition.effect == TOOL_EFFECT_WRITE
         and not definition.supports_approval
         and not definition.auto_mount
+        and not definition.always_allowed_when_mounted
     ):
         raise RuntimeError("Write runtime tools must support approval policy")
 

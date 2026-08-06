@@ -51,6 +51,7 @@ from services.agent_runs.domain import (
     RUN_TRIGGER_DELEGATED,
     RunUsageSnapshot,
 )
+from services.completion_contract import MAX_COMPLETION_JSON_BYTES
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
@@ -552,7 +553,7 @@ async def test_completion_json_rejects_oversized_evidence_before_transition(
         await complete_agent_run(
             db_session,
             run,
-            completion_json={"summary": "x" * (16 * 1024)},
+            completion_json={"summary": "x" * MAX_COMPLETION_JSON_BYTES},
         )
 
     assert run.status == RUN_STATUS_RUNNING

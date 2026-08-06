@@ -67,6 +67,7 @@ from services.agents.runtime.tools.registry import (
 )
 from services.agents.runtime.tools.schemas import ToolPresentationRead
 from services.agents.utils import validate_tool_configuration
+from services.completion_contract import REPORT_COMPLETION_TOOL_NAME
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.memories.domain import MemoryKind, MemoryScope, MemoryType
 
@@ -362,6 +363,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "read_document": "none",
         "read_file": "none",
         "read_todos": "none",
+        "report_completion": "none",
         "save_memory": "none",
         "search_knowledge": "none",
         "search_memory": "none",
@@ -1005,3 +1007,20 @@ def test_workspace_disabled_tools_are_skipped_in_runtime_and_catalog() -> None:
 
     assert "test_add_numbers" not in {tool.name for tool in tools}
     assert "test_add_numbers" not in {definition.name for definition in catalog}
+
+
+def test_always_allowed_tool_is_mounted_when_workspace_disabled() -> None:
+    definition = get_runtime_tool_definition(REPORT_COMPLETION_TOOL_NAME)
+    assert definition is not None
+    assert definition.always_allowed_when_mounted is True
+    assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO})
+
+    tools = build_runtime_tools(
+        _agent(),
+        workspace=object(),
+        disabled_tool_names=frozenset({REPORT_COMPLETION_TOOL_NAME}),
+        additional_tool_names=(REPORT_COMPLETION_TOOL_NAME,),
+    )
+
+    [completion_tool] = [tool for tool in tools if tool.name == REPORT_COMPLETION_TOOL_NAME]
+    assert completion_tool.requires_approval is False

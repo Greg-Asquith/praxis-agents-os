@@ -6,6 +6,7 @@ import {
 } from "@/features/conversations/components/delegation-tool-row"
 import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
 import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
+import { CompletionReportRow } from "@/features/conversations/components/completion-report-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
 import { MemoryToolRow } from "@/features/conversations/components/memory-tool-row"
@@ -40,6 +41,10 @@ import {
   skillIdFromCapabilityArgs,
 } from "@/features/conversations/skills/skill-activation"
 import { BUILD_CHART_TOOL_NAME } from "@/features/conversations/native-tools/chart-tool"
+import {
+  REPORT_COMPLETION_TOOL_NAME,
+  completionReport,
+} from "@/features/conversations/native-tools/completion-tool"
 import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skills/skill-document-read"
 import {
   READ_DOCUMENT_TOOL_NAME,
@@ -78,6 +83,16 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 // runtime_tool definition.
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  {
+    key: "completion-report",
+    matches: (activity) =>
+      activity.name === REPORT_COMPLETION_TOOL_NAME &&
+      (activity.status === "running" ||
+        (activity.status === "completed" && completionReport(activity.result) !== null)),
+    render: ({ activity, defaultOpen }) => (
+      <CompletionReportRow activity={activity} defaultOpen={defaultOpen} />
+    ),
+  },
   {
     key: "artifact-tools",
     matches: artifactToolRowMatches,

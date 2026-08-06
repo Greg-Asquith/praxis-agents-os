@@ -23,7 +23,7 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.skills import Skill
 from models.workspace import Workspace
-from services.agent_runs.domain import RUN_TRIGGER_DELEGATED
+from services.agent_runs.domain import RUN_TRIGGER_DELEGATED, RUN_TRIGGER_SCHEDULED
 from services.agent_runs.start_with_lease import start_agent_run_with_lease
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND,
@@ -48,6 +48,11 @@ from services.agents.runtime.persistence import (
 )
 from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
+from services.completion_contract import (
+    REPORT_COMPLETION_TOOL_NAME,
+    completion_contract_from_run_metadata,
+    render_completion_contract_instructions,
+)
 from services.conversation_summaries.load_history_summary import load_history_summary
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
@@ -72,11 +77,13 @@ class RuntimeAgentBuilder(Protocol):
         skills: Sequence[Skill] = (),
         conversation_context_block: str = "",
         core_memory_block: str = "",
+        completion_contract_block: str = "",
         available_files: Sequence[AvailableFile] = (),
         active_context: ResolvedActiveContext | None = None,
         skipped_tool_names: list[str] | None = None,
         workspace: object | None = None,
         disabled_tool_names: frozenset[str] = frozenset(),
+        additional_tool_names: Sequence[str] = (),
         history_compaction: HistoryCompaction | None = None,
     ) -> RuntimeAgent: ...
 
@@ -185,6 +192,17 @@ async def prepare_runtime(
         user_prompt=user_prompt,
         attachment_file_ids=attachment_file_ids,
     )
+    completion_contract = (
+        completion_contract_from_run_metadata(run.metadata_json)
+        if run.trigger == RUN_TRIGGER_SCHEDULED
+        else None
+    )
+    completion_contract_block = render_completion_contract_instructions(completion_contract)
+    completion_tool_names = (
+        (REPORT_COMPLETION_TOOL_NAME,)
+        if completion_contract is not None and completion_contract.required
+        else ()
+    )
     built_agent = await build_agent_for_run(
         db,
         run=run,
@@ -197,6 +215,8 @@ async def prepare_runtime(
         skills=skills,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
+        completion_contract_block=completion_contract_block,
+        completion_tool_names=completion_tool_names,
         available_files=available_files,
         active_context=active_context,
         runtime_agent_builder=runtime_agent_builder,
@@ -268,6 +288,8 @@ async def build_agent_for_run(
     skills: Sequence[Skill],
     conversation_context_block: str,
     core_memory_block: str,
+    completion_contract_block: str,
+    completion_tool_names: Sequence[str],
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     runtime_agent_builder: RuntimeAgentBuilder,
@@ -295,6 +317,7 @@ async def build_agent_for_run(
         include_delegation=enable_delegation,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
+        completion_contract_block=completion_contract_block,
         available_files=available_files,
         active_context=active_context,
         exclude_run_id=run.id if message_history is not None else None,
@@ -308,11 +331,13 @@ async def build_agent_for_run(
         skills=skills,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
+        completion_contract_block=completion_contract_block,
         available_files=available_files,
         active_context=active_context,
         skipped_tool_names=skipped_tool_names,
         workspace=workspace,
         disabled_tool_names=disabled_tool_names,
+        additional_tool_names=completion_tool_names,
         history_compaction=history_compaction,
     )
     _record_skipped_runtime_tools(run, skipped_tool_names)
@@ -332,6 +357,7 @@ async def _prepare_history_compaction(
     include_delegation: bool,
     conversation_context_block: str,
     core_memory_block: str,
+    completion_contract_block: str,
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     exclude_run_id: UUID | None,
@@ -347,6 +373,7 @@ async def _prepare_history_compaction(
         include_delegation=include_delegation,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
+        completion_contract_block=completion_contract_block,
         available_files=available_files,
         active_context=active_context,
         chars_per_token=model_context.chars_per_token,

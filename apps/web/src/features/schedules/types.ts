@@ -9,7 +9,13 @@ export type ScheduleHealth = "healthy" | "retrying" | "needs_attention" | "cance
 
 type ScheduleSideEffectPolicy = "allow" | "require_approval"
 
+type ScheduleCompletionContract = Record<string, unknown> & {
+  required: boolean
+  criteria: string[]
+}
+
 export type ScheduleExecutionParams = Record<string, unknown> & {
+  completion_contract?: ScheduleCompletionContract
   envelope?: Record<string, unknown> & {
     side_effect_policy?: ScheduleSideEffectPolicy
   }

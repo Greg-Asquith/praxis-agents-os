@@ -29,7 +29,9 @@ behind good defaults and progressive disclosure, not in their face.
   Terminal agent runs retain their existing lifecycle status and separately
   record a structured outcome plus bounded completion evidence. Terminal
   transitions serialize on the generic run row so the first verdict remains
-  authoritative under cancellation/finalization races.
+  authoritative under cancellation/finalization races. Schedules may also
+  require a bounded completion report against operator-authored criteria;
+  pass, fail, and missing-report verdicts remain separate from lifecycle status.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router +
   TanStack Query). It talks to the API over REST and consumes agent turns over
   SSE.

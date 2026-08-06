@@ -24,6 +24,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import ConversationMessage
+from models.workspace import WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_PENDING
 from services.agents.runtime.execute.types import ExecuteRunResult
@@ -96,6 +97,7 @@ async def build_scenario_agent(
     allowed_agent_ids: Sequence[UUID] = (),
     trigger: Literal["interactive", "scheduled", "delegated"] = "interactive",
     metadata: dict[str, Any] | None = None,
+    role: WorkspaceRole = WorkspaceRole.MEMBER,
 ) -> ScenarioContext:
     """Persist the minimum real workspace graph needed by ``execute_run``."""
     async with session_factory() as db:
@@ -104,7 +106,13 @@ async def build_scenario_agent(
         workspace = build_workspace(slug=f"scenario-{suffix[:12]}")
         db.add_all([user, workspace])
         await db.flush()
-        db.add(build_workspace_membership(workspace_id=workspace.id, user_id=user.id))
+        db.add(
+            build_workspace_membership(
+                workspace_id=workspace.id,
+                user_id=user.id,
+                role=role,
+            )
+        )
         agent = Agent(
             name="Scenario Agent",
             slug=f"scenario-agent-{suffix[:12]}",

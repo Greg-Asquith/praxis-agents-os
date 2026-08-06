@@ -57,11 +57,13 @@ def build_runtime_agent(
     skills: Sequence[Skill] = (),
     conversation_context_block: str = "",
     core_memory_block: str = "",
+    completion_contract_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
     skipped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
+    additional_tool_names: Sequence[str] = (),
     history_compaction: HistoryCompaction | None = None,
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
@@ -75,6 +77,7 @@ def build_runtime_agent(
         include_delegation=include_delegation,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
+        completion_contract_block=completion_contract_block,
         available_files=available_files,
         active_context=active_context,
         chars_per_token=model_context.chars_per_token,
@@ -94,6 +97,7 @@ def build_runtime_agent(
                 skipped_tool_names=skipped_tool_names,
                 workspace=workspace,
                 disabled_tool_names=disabled_tool_names,
+                additional_tool_names=additional_tool_names,
             ),
             capabilities=[
                 *build_runtime_capabilities(
@@ -125,6 +129,7 @@ def _runtime_instructions(
     include_delegation: bool,
     conversation_context_block: str = "",
     core_memory_block: str = "",
+    completion_contract_block: str = "",
     available_files: Sequence[AvailableFile] = (),
     active_context: ResolvedActiveContext | None = None,
     chars_per_token: float = 4.0,
@@ -137,6 +142,7 @@ def _runtime_instructions(
             include_delegation=include_delegation,
             conversation_context_block=conversation_context_block,
             core_memory_block=core_memory_block,
+            completion_contract_block=completion_contract_block,
             available_files=available_files,
             active_context_block=(
                 render_active_context_block(active_context) if active_context is not None else ""

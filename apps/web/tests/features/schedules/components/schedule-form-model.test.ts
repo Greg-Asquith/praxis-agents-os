@@ -15,6 +15,8 @@ function validState(overrides: Partial<ScheduleFormState> = {}): ScheduleFormSta
   return {
     activeContext: null,
     agentId: "agent-1",
+    completionCriteria: "",
+    completionReportRequired: false,
     cronExpression: DEFAULT_CRON_EXPRESSION,
     defaultPrompt: "  Run the launch report.  ",
     executionParams: null,
@@ -64,6 +66,8 @@ describe("initialScheduleFormState", () => {
     expect(initialScheduleFormState(null)).toEqual({
       activeContext: null,
       agentId: "",
+      completionCriteria: "",
+      completionReportRequired: false,
       cronExpression: DEFAULT_CRON_EXPRESSION,
       defaultPrompt: "",
       executionParams: null,
@@ -81,6 +85,8 @@ describe("initialScheduleFormState", () => {
     expect(initialScheduleFormState(schedule)).toEqual({
       activeContext: null,
       agentId: "agent-1",
+      completionCriteria: "",
+      completionReportRequired: false,
       cronExpression: DEFAULT_CRON_EXPRESSION,
       defaultPrompt: "Run once.",
       executionParams: null,
@@ -156,6 +162,27 @@ describe("validateScheduleFormState", () => {
   it("accepts valid state", () => {
     expect(validateScheduleFormState(validState())).toEqual([])
   })
+
+  it("requires bounded completion checks when reporting is enabled", () => {
+    expect(
+      validateScheduleFormState(
+        validState({ completionCriteria: "  ", completionReportRequired: true })
+      )
+    ).toContainEqual({
+      fieldId: "schedule-completion-criteria",
+      label: "Completion checks",
+      message: "Add at least one completion check.",
+    })
+    expect(
+      validateScheduleFormState(
+        validState({ completionCriteria: "x".repeat(501), completionReportRequired: true })
+      )
+    ).toContainEqual({
+      fieldId: "schedule-completion-criteria",
+      label: "Completion checks",
+      message: "Each completion check must be 500 characters or fewer.",
+    })
+  })
 })
 
 describe("buildSchedulePayload", () => {
@@ -192,6 +219,67 @@ describe("buildSchedulePayload", () => {
     ).toMatchObject({
       execution_params: { envelope: { side_effect_policy: "allow" } },
     })
+  })
+
+  it("builds and removes a completion contract without dropping unrelated params", () => {
+    expect(
+      buildSchedulePayload(
+        validState({
+          completionCriteria: "  A report was created  \n\nEvery account was reviewed",
+          completionReportRequired: true,
+          executionParams: { temperature: 0 },
+        }),
+        "create"
+      )
+    ).toMatchObject({
+      execution_params: {
+        completion_contract: {
+          required: true,
+          criteria: ["A report was created", "Every account was reviewed"],
+        },
+        temperature: 0,
+      },
+    })
+
+    expect(
+      buildEditPayload(
+        validState({
+          completionReportRequired: false,
+          executionParams: {
+            completion_contract: {
+              required: true,
+              criteria: ["A report was created"],
+              max_requests: 5,
+            },
+            temperature: 0,
+          },
+        })
+      )
+    ).toMatchObject({
+      execution_params: {
+        completion_contract: {
+          required: false,
+          criteria: [],
+          max_requests: 5,
+        },
+        temperature: 0,
+      },
+    })
+
+    expect(
+      buildEditPayload(
+        validState({
+          completionReportRequired: false,
+          executionParams: {
+            completion_contract: {
+              required: true,
+              criteria: ["A report was created"],
+            },
+            temperature: 0,
+          },
+        })
+      )
+    ).toMatchObject({ execution_params: { temperature: 0 } })
   })
 
   it("round-trips an active context selection and explicit clear", () => {

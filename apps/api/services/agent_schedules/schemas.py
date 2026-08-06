@@ -12,6 +12,10 @@ from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_runs.domain import RUN_OUTCOME_BLOCKED, RunOutcome
 from services.agent_schedules.domain import SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE
 from services.agent_schedules.runs import RUN_STATUS_TERMINAL_FAILED, schedule_health_from_run
+from services.completion_contract import (
+    ScheduleCompletionContract,
+    serialized_completion_contract,
+)
 from services.integrations.context.schemas import ActiveContextTargets
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
@@ -31,6 +35,7 @@ class ScheduleExecutionParams(BaseModel):
     """Typed fields nested inside otherwise extensible execution params."""
 
     envelope: ScheduleExecutionEnvelope | None = None
+    completion_contract: ScheduleCompletionContract | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -274,8 +279,13 @@ def validate_schedule_execution_params(
 ) -> dict[str, Any] | None:
     if value is None:
         return None
-    ScheduleExecutionParams.model_validate(value)
-    return value
+    execution_params = ScheduleExecutionParams.model_validate(value)
+    contract = execution_params.completion_contract
+    if contract is None:
+        return value
+    normalized = dict(value)
+    normalized["completion_contract"] = serialized_completion_contract(contract)
+    return normalized
 
 
 def schedule_side_effect_policy(

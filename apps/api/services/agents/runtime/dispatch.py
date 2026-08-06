@@ -150,6 +150,8 @@ def check_envelope(
     if definition is None:
         return EnvelopeVerdict()
     effect_scope = resolve_effect_scope(definition, args)
+    if definition.always_allowed_when_mounted:
+        return EnvelopeVerdict(effect_scope=effect_scope)
     if definition.effect == TOOL_EFFECT_WRITE and deps.envelope.side_effect_policy == "deny":
         return EnvelopeVerdict(
             denied_message=ENVELOPE_DENIAL_MESSAGE,
@@ -297,6 +299,7 @@ async def dispatch_tool_execution(
     if (
         definition is not None
         and definition.effect == TOOL_EFFECT_WRITE
+        and not definition.always_allowed_when_mounted
         and active_role not in EDITOR_ROLES
     ):
         await record_invocation(

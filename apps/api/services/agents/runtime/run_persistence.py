@@ -25,11 +25,13 @@ from services.agent_runs.cancel import cancel_agent_run
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
     RUN_OUTCOME_CANCELLED,
+    RUN_OUTCOME_GATE_FAILED,
     RUN_OUTCOME_SUCCESS,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_EVENT,
     RUN_TRIGGER_SCHEDULED,
+    RunOutcome,
     RunUsageSnapshot,
     is_terminal,
 )
@@ -47,6 +49,7 @@ from services.agents.runtime.persistence import (
     without_tool_returns,
 )
 from services.agents.runtime.staged_tool_content import stage_write_file_approval_content
+from services.completion_contract import completion_contract_from_run_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +175,13 @@ async def persist_successful_run(
     )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
     run.metadata_json = clear_suspended_run_metadata(run)
-    await complete_agent_run(db, run, outcome=RUN_OUTCOME_SUCCESS)
+    outcome, completion_json = _successful_run_completion(run)
+    await complete_agent_run(
+        db,
+        run,
+        outcome=outcome,
+        completion_json=completion_json,
+    )
     await db.commit()
     return run, len(persisted_messages)
 
@@ -264,6 +273,20 @@ def usage_snapshot(usage: Any) -> RunUsageSnapshot:
         tool_calls=getattr(usage, "tool_calls", None),
         raw_json=raw if isinstance(raw, dict) else {"usage": raw},
     )
+
+
+def _successful_run_completion(run: AgentRun) -> tuple[RunOutcome, dict[str, Any] | None]:
+    if run.trigger != RUN_TRIGGER_SCHEDULED:
+        return RUN_OUTCOME_SUCCESS, None
+    contract = completion_contract_from_run_metadata(run.metadata_json)
+    if contract is None or not contract.required:
+        return RUN_OUTCOME_SUCCESS, None
+    report = run.completion_json
+    if report is None:
+        return RUN_OUTCOME_GATE_FAILED, {"error_code": "missing_completion_report"}
+    if report.get("status") == "pass":
+        return RUN_OUTCOME_SUCCESS, report
+    return RUN_OUTCOME_GATE_FAILED, report
 
 
 def _mark_background_output_unread(

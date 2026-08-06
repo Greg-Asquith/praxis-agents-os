@@ -134,6 +134,29 @@ async def test_prepare_claimed_run_stamps_explicit_side_effect_grant(
     assert run.metadata_json["envelope"] == {"side_effect_policy": "allow"}
 
 
+async def test_prepare_claimed_run_keeps_prompt_clean_and_copies_required_completion_contract(
+    db_session: AsyncSession,
+) -> None:
+    contract = {
+        "required": True,
+        "criteria": ["A report was created", "Every account was reviewed"],
+    }
+    _user, _workspace, _agent, _schedule, schedule_run = await _schedule_context(
+        db_session,
+        execution_params={"completion_contract": contract},
+    )
+
+    prepared = await prepare_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+    )
+
+    assert prepared.user_prompt == "Run the scheduled task"
+    run = await db_session.get(AgentRun, prepared.agent_run_id)
+    assert run is not None
+    assert run.metadata_json["completion_contract"] == contract
+
+
 @pytest.mark.parametrize("policy", ["allow", "deny"])
 async def test_prepare_claimed_run_uses_scheduled_policy_setting(
     db_session: AsyncSession,

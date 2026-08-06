@@ -60,7 +60,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   bounded `completion_json` at the shared agent-run transition choke point;
   the transition refreshes under a row lock so the first terminal verdict is
   authoritative. Do not widen the six run statuses to represent completion
-  verdicts.
+  verdicts. Required schedule completion contracts are copied into server-owned
+  run metadata, inject their bounded criteria as a dedicated runtime system-
+  instruction block (never into the visible user prompt), and
+  mount the non-configurable internal `report_completion` tool only for that
+  run; its pass/fail/missing-report verdict is resolved during successful
+  finalization. Once mounted, the tool is always available and auto-executed
+  regardless of workspace tool settings, role write policy, or the run
+  side-effect envelope. The first accepted report is authoritative; later
+  report attempts fail without replacing its evidence.
   Parked approvals expire through the generic jobs harness after
   `AGENT_RUN_APPROVAL_EXPIRY_DAYS` (default 7; 0 disables), which fails the run,
   clears durable approval state, and transactionally enqueues retryable staged

@@ -18,7 +18,7 @@ export const SCHEDULE_CREATE_STEPS = SCHEDULE_FORM_STEPS
 export const SCHEDULE_EDIT_STEPS = SCHEDULE_FORM_STEPS
 
 const SCHEDULE_STEP_FIELDS: Record<ScheduleWizardStepId, ReadonlySet<string>> = {
-  review: new Set(),
+  review: new Set(["schedule-completion-criteria"]),
   run: new Set(["schedule-name", "schedule-agent", "schedule-prompt"]),
   timing: new Set(["schedule-timezone", "schedule-cron", "schedule-interval", "schedule-once"]),
 }
@@ -32,6 +32,9 @@ export function scheduleValidationEntriesForStep(
 }
 
 export function stepForScheduleField(fieldId: string | undefined): ScheduleWizardStepId {
+  if (fieldId && SCHEDULE_STEP_FIELDS.review.has(fieldId)) {
+    return "review"
+  }
   if (fieldId && SCHEDULE_STEP_FIELDS.timing.has(fieldId)) {
     return "timing"
   }

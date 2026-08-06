@@ -1,11 +1,12 @@
 // apps/web/src/features/schedules/components/schedule-review-section.tsx
 
 import type { ReactNode } from "react"
-import { ClipboardCheckIcon } from "lucide-react"
+import { ChevronDownIcon, ClipboardCheckIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Textarea } from "@/components/ui/textarea"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import type { Agent } from "@/features/agents/types"
 import { formatScheduleFormCadence } from "@/features/schedules/format"
@@ -18,12 +19,14 @@ import type { SchedulePreviewView } from "@/features/schedules/components/use-sc
 
 export function ScheduleReviewSection({
   activeContextLabel,
+  completionCriteriaError,
   preview,
   selectedAgent,
   setField,
   state,
 }: {
   activeContextLabel: string
+  completionCriteriaError: string | undefined
   preview: SchedulePreviewView
   selectedAgent: Agent | null
   setField: ScheduleFormFieldSetter
@@ -60,6 +63,11 @@ export function ScheduleReviewSection({
           <ReviewRow label="Cadence">{formatScheduleFormCadence(state)}</ReviewRow>
           <ReviewRow label="Timezone">{state.timezone}</ReviewRow>
           <ReviewRow label="Active context">{activeContextLabel}</ReviewRow>
+          <ReviewRow label="Completion check">
+            {state.completionReportRequired
+              ? `${String(completionCriteriaCount(state.completionCriteria))} required`
+              : "Not required"}
+          </ReviewRow>
         </dl>
 
         <div className="flex flex-col gap-2">
@@ -94,10 +102,61 @@ export function ScheduleReviewSection({
               }}
             />
           </FieldGroup>
+
+          <details
+            className="group rounded-md border"
+            open={completionCriteriaError ? true : undefined}
+          >
+            <summary className="focus-visible:ring-ring flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+              <span>
+                <span className="font-medium">Advanced</span>
+                <span className="text-muted-foreground ml-2">Completion checks</span>
+              </span>
+              <ChevronDownIcon
+                aria-hidden="true"
+                className="text-muted-foreground size-4 transition-transform group-open:rotate-180"
+              />
+            </summary>
+            <div className="flex flex-col gap-4 border-t p-4">
+              <ScheduleOptionField
+                checked={state.completionReportRequired}
+                description="Ask the agent to report whether every check passed before the run finishes."
+                id="schedule-completion-required"
+                label="Require a completion report"
+                onCheckedChange={(checked) => {
+                  setField("completionReportRequired", checked)
+                }}
+              />
+              {state.completionReportRequired ? (
+                <Field data-invalid={completionCriteriaError ? true : undefined}>
+                  <FieldLabel htmlFor="schedule-completion-criteria">Completion checks</FieldLabel>
+                  <Textarea
+                    aria-invalid={completionCriteriaError ? true : undefined}
+                    className="min-h-28"
+                    id="schedule-completion-criteria"
+                    onChange={(event) => {
+                      setField("completionCriteria", event.currentTarget.value)
+                    }}
+                    placeholder={"A report was created\nEvery account was reviewed"}
+                    value={state.completionCriteria}
+                  />
+                  <p className="text-muted-foreground text-sm">
+                    Add one plain-language check per line. The run needs attention if any check
+                    fails or the agent does not report.
+                  </p>
+                  <FieldError>{completionCriteriaError}</FieldError>
+                </Field>
+              ) : null}
+            </div>
+          </details>
         </div>
       </div>
     </FormSection>
   )
+}
+
+function completionCriteriaCount(value: string) {
+  return value.split("\n").filter((criterion) => criterion.trim()).length
 }
 
 function ScheduleOptionField({

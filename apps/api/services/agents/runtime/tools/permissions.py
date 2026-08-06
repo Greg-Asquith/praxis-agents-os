@@ -13,6 +13,8 @@ def is_tool_allowed(
     disabled_tool_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Return whether a runtime tool is available in this context."""
+    if definition.always_allowed_when_mounted:
+        return True
     if workspace is not None and definition.name in disabled_tool_names:
         return False
     return definition.availability_check is None or definition.availability_check()

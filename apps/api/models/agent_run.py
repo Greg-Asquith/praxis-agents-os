@@ -122,7 +122,7 @@ class AgentRun(BaseModel):
             name="agent_runs_outcome_check",
         ),
         CheckConstraint(
-            "completion_json IS NULL OR octet_length(completion_json::text) <= 16384",
+            "completion_json IS NULL OR octet_length(completion_json::text) <= 73728",
             name="agent_runs_completion_json_size_check",
         ),
         Index("ix_agent_runs_conversation_created", "conversation_id", "created_at"),

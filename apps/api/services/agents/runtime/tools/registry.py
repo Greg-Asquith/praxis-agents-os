@@ -4,7 +4,7 @@
 """Python-owned catalog of built-in runtime tools."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -86,6 +86,7 @@ def runtime_tool(
     max_result_chars: int | None = None,
     configurable: bool = True,
     auto_mount: bool = False,
+    always_allowed_when_mounted: bool = False,
     integration_binding: IntegrationToolBinding | None = None,
     availability_check: Callable[[], bool] | None = None,
     presentation: ToolPresentation | None = None,
@@ -116,6 +117,7 @@ def runtime_tool(
             max_result_chars=max_result_chars,
             configurable=configurable,
             auto_mount=auto_mount,
+            always_allowed_when_mounted=always_allowed_when_mounted,
             integration_binding=integration_binding,
             availability_check=availability_check,
             presentation=presentation or ToolPresentation(),
@@ -134,6 +136,7 @@ def build_runtime_tools(
     skipped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
+    additional_tool_names: Sequence[str] = (),
 ):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     tool_names = [
@@ -145,6 +148,7 @@ def build_runtime_tools(
             )
             if definition.auto_mount
         ),
+        *additional_tool_names,
         *_normalize_tool_names(agent.tool_names or []),
     ]
     policies = _normalize_tool_policies(agent.tool_policies or {})
@@ -290,6 +294,7 @@ def _derive_label(name: str) -> str:
 from services.agents.runtime.tools import (
     artifacts as _artifacts,  # noqa: F401
     charting as _charting,  # noqa: F401
+    completion as _completion,  # noqa: F401
     files as _files,  # noqa: F401
     kb as _kb,  # noqa: F401
     memory as _memory,  # noqa: F401
