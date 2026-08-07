@@ -478,7 +478,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
                 <span className="text-muted-foreground px-0.5 text-xs font-medium">
                   Active context
                 </span>
-                <div className="[&_[data-slot=popover-trigger]]:w-full [&_[data-slot=popover-trigger]]:max-w-none [&>div]:w-full">
+                <div className="**:data-[slot=popover-trigger]:max-w-none [&>div]:w-full">
                   {props.mode === "create" ? (
                     <NewConversationContextPicker
                       disabled={isCurrentStreamBlocking}
