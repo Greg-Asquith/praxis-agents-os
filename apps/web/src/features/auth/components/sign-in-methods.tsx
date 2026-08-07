@@ -23,7 +23,7 @@ function providerLabel(provider: string) {
   return provider.charAt(0).toUpperCase() + provider.slice(1)
 }
 
-export function SignInMethods() {
+export function SignInMethods({ emailAuthEnabled }: { emailAuthEnabled: boolean }) {
   const { data } = useSuspenseQuery(identitiesQueryOptions())
   const providersQuery = useQuery(oauthProvidersQueryOptions())
   const startLinkMutation = useStartOauthLinkMutation()
@@ -93,20 +93,22 @@ export function SignInMethods() {
         )}
 
         <ul className="flex flex-col divide-y rounded-lg border">
-          <li className="flex items-center justify-between gap-3 px-4 py-3">
-            <span className="flex items-center gap-2 text-sm font-medium">
-              <KeyRoundIcon className="size-4" />
-              Password
-            </span>
-            {data.has_password ? (
-              <Badge variant="secondary">
-                <CheckIcon data-icon="inline-start" />
-                Set
-              </Badge>
-            ) : (
-              <Badge variant="outline">Not set</Badge>
-            )}
-          </li>
+          {emailAuthEnabled && (
+            <li className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <KeyRoundIcon className="size-4" />
+                Password
+              </span>
+              {data.has_password ? (
+                <Badge variant="secondary">
+                  <CheckIcon data-icon="inline-start" />
+                  Set
+                </Badge>
+              ) : (
+                <Badge variant="outline">Not set</Badge>
+              )}
+            </li>
+          )}
 
           {data.identities.map((identity) => (
             <li

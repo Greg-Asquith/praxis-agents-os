@@ -30,7 +30,7 @@ import type { TotpSetupResponse } from "@/features/auth/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
 
-export function TwoFactorSection() {
+export function TwoFactorSection({ emailAuthEnabled }: { emailAuthEnabled: boolean }) {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const { data: identities } = useSuspenseQuery(identitiesQueryOptions())
   const setupMutation = useSetupTotpMutation()
@@ -197,7 +197,7 @@ export function TwoFactorSection() {
 
           {!user.totp_enabled && !setup && (
             <form id="totp-setup-form" onSubmit={startSetup}>
-              {identities.has_password ? (
+              {emailAuthEnabled && identities.has_password ? (
                 <Field>
                   <FieldLabel htmlFor="totp-current-password">Current password</FieldLabel>
                   <Input
