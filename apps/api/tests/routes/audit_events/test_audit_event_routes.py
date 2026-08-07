@@ -53,6 +53,8 @@ async def _seed_audit_event(
     status: AuditStatus = AuditStatus.SUCCESS,
     occurred_at: datetime | None = None,
     details: dict[str, object] | None = None,
+    tool_name: str | None = None,
+    tool_provider: str | None = None,
 ) -> AuditEvent:
     event = AuditEvent(
         workspace_id=workspace.id if workspace else None,
@@ -64,6 +66,8 @@ async def _seed_audit_event(
         resource_id=resource_id or str(uuid4()),
         status=status.value,
         summary=f"{action.value} audit event",
+        tool_name=tool_name,
+        tool_provider=tool_provider,
         actor_type=AuditActorType.USER.value if actor else AuditActorType.SYSTEM.value,
         actor_id=str(actor.id) if actor else None,
         actor_user_id=actor.id if actor else None,
@@ -236,6 +240,135 @@ async def test_audit_event_filter_rejects_unknown_action(
     body = response.json()
     assert body["field"] == "action"
     assert "create" in body["allowed_values"]
+
+
+async def test_audit_event_tool_filters_are_exact_combined_and_workspace_scoped(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    other_workspace = build_workspace(slug=f"audit-tool-other-{uuid4().hex[:8]}")
+    db_session.add(other_workspace)
+    await db_session.flush()
+    base_time = datetime(2026, 2, 10, 12, 0, tzinfo=UTC)
+    matching = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        status=AuditStatus.SUCCESS,
+        occurred_at=base_time,
+        tool_name="gmail_search_messages",
+        tool_provider="gmail",
+    )
+    other_tool = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        status=AuditStatus.SUCCESS,
+        occurred_at=base_time,
+        tool_name="gmail_search_messages_extended",
+        tool_provider="gmail",
+    )
+    other_provider = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        status=AuditStatus.SUCCESS,
+        occurred_at=base_time,
+        tool_name="gmail_search_messages",
+        tool_provider="custom_gmail",
+    )
+    hidden = await _seed_audit_event(
+        db_session,
+        workspace=other_workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        status=AuditStatus.SUCCESS,
+        occurred_at=base_time,
+        tool_name="gmail_search_messages",
+        tool_provider="gmail",
+    )
+    await db_session.commit()
+
+    tool_response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={"tool_name": "gmail_search_messages"},
+    )
+    assert tool_response.status_code == 200
+    assert {event["id"] for event in tool_response.json()["events"]} == {
+        str(matching.id),
+        str(other_provider.id),
+    }
+
+    provider_response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={"tool_provider": "gmail"},
+    )
+    assert provider_response.status_code == 200
+    assert {event["id"] for event in provider_response.json()["events"]} == {
+        str(matching.id),
+        str(other_tool.id),
+    }
+
+    combined_response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={
+            "action": "execute",
+            "status": "success",
+            "occurred_after": (base_time - timedelta(minutes=1)).isoformat(),
+            "occurred_before": (base_time + timedelta(minutes=1)).isoformat(),
+            "tool_name": "gmail_search_messages",
+            "tool_provider": "gmail",
+        },
+    )
+    assert combined_response.status_code == 200
+    body = combined_response.json()
+    assert body["total"] == 1
+    assert body["events"][0]["id"] == str(matching.id)
+    assert body["events"][0]["id"] != str(hidden.id)
+
+    unmatched_response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={"tool_name": "gmail_search_message"},
+    )
+    assert unmatched_response.status_code == 200
+    assert unmatched_response.json()["events"] == []
+    assert unmatched_response.json()["total"] == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tool_name", "t" * 101),
+        ("tool_provider", "p" * 51),
+    ],
+)
+async def test_audit_event_tool_filters_reject_overlong_values(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    field: str,
+    value: str,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+
+    response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={field: value},
+    )
+
+    assert response.status_code == 422
 
 
 async def test_audit_event_detail_scoping_and_system_visibility(

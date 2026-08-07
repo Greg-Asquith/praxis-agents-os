@@ -292,20 +292,16 @@ async def test_history_trimmer_does_not_pollute_new_messages(
     assert _boundary_texts(result.new_messages()) == ["current prompt"]
 
 
-async def test_cache_sensitive_prefix_inputs_are_deterministic() -> None:
+async def test_cache_sensitive_static_prefix_inputs_are_deterministic() -> None:
     agent = _agent(
         instructions="Reply plainly.",
         tool_names=["test_runtime_context", "test_add_numbers"],
     )
 
-    assert _runtime_instructions(agent, include_delegation=False) == (
+    assert _runtime_instructions(agent, include_delegation=False).startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
         f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
-    )
-    assert _runtime_instructions(agent, include_delegation=False) == _runtime_instructions(
-        agent,
-        include_delegation=False,
     )
     assert [tool.name for tool in build_runtime_tools(agent)] == [
         tool.name for tool in build_runtime_tools(agent)

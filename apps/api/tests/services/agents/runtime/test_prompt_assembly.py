@@ -2,8 +2,13 @@
 
 """Tests for runtime system prompt assembly."""
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
+
+from core.settings import Settings, settings
 from models.agent import Agent
 from services.agents.runtime import prompt as prompt_module
 from services.agents.runtime.load_context import AvailableFile
@@ -17,6 +22,7 @@ from services.agents.runtime.prompt import (
     PromptBlock,
     build_system_prompt,
     render_conversation_context_block,
+    render_current_datetime_block,
 )
 from tests.factories.users import build_user
 from tests.factories.workspaces import build_workspace
@@ -52,15 +58,13 @@ def test_build_system_prompt_truncates_budgeted_blocks(monkeypatch) -> None:
 def test_runtime_instructions_match_canonical_spacing() -> None:
     agent = _agent(instructions="Reply plainly.")
 
-    assert (
-        _runtime_instructions(agent, include_delegation=False)
-        == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+    assert _runtime_instructions(agent, include_delegation=False).startswith(
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
         f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
-    assert (
-        _runtime_instructions(agent, include_delegation=True)
-        == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+    assert _runtime_instructions(agent, include_delegation=True).startswith(
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
         f"{DELEGATION_INSTRUCTIONS.rstrip()}\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n"
         f"{MEMORY_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
@@ -69,12 +73,38 @@ def test_runtime_instructions_match_canonical_spacing() -> None:
 def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
     agent = _agent(instructions="Reply plainly.", tool_names=[])
 
-    assert (
-        _runtime_instructions(agent, include_delegation=False)
-        == f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+    assert _runtime_instructions(agent, include_delegation=False).startswith(
+        f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
         f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
+
+
+def test_current_datetime_instructions_use_configured_timezone(monkeypatch) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 7, 1, 12, 34, 56, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(settings, "TIMEZONE", "Europe/London")
+    monkeypatch.setattr(prompt_module, "datetime", FrozenDateTime)
+
+    instructions = render_current_datetime_block()
+
+    assert "2026-07-01T13:34:56+01:00" in instructions
+    assert "Europe/London" in instructions
+    assert "relative dates" in instructions
+
+
+def test_timezone_setting_accepts_iana_name_and_strips_whitespace() -> None:
+    resolved = Settings(_env_file=None, TIMEZONE=" Europe/London ")
+
+    assert resolved.TIMEZONE == "Europe/London"
+
+
+def test_timezone_setting_rejects_unknown_name() -> None:
+    with pytest.raises(ValidationError, match="valid IANA timezone"):
+        Settings(_env_file=None, TIMEZONE="Europe/Not_A_Place")
 
 
 def test_conversation_context_block_names_the_user_and_workspace() -> None:
@@ -157,7 +187,7 @@ def test_runtime_instructions_always_include_knowledge_guidance() -> None:
     assert MEMORY_INSTRUCTIONS in prompt
     assert prompt.index(KNOWLEDGE_INSTRUCTIONS) < prompt.index(UNTRUSTED_CONTENT_INSTRUCTIONS)
     assert prompt.index(MEMORY_INSTRUCTIONS) < prompt.index(UNTRUSTED_CONTENT_INSTRUCTIONS)
-    assert prompt == (
+    assert prompt.startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}"
         f"\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"

@@ -23,6 +23,11 @@ import { SecurityEventsTable } from "@/features/audit/components/security-events
 import { useWorkspaceMembershipsQuery } from "@/features/workspaces/api/list-memberships"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { getErrorMessage } from "@/lib/api/errors"
+import {
+  auditProviderFilterOptions,
+  auditToolFilterOptions,
+} from "@/features/audit/audit-filter-options"
+import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
 
 const PAGE_SIZE = 50
 const EMPTY_AUDIT_FILTERS: AuditFilters = {
@@ -32,6 +37,8 @@ const EMPTY_AUDIT_FILTERS: AuditFilters = {
   occurredBefore: "",
   resourceType: "",
   status: "",
+  toolName: "",
+  toolProvider: "",
 }
 const EMPTY_SECURITY_FILTERS: SecurityFilters = {
   endpoint: "",
@@ -81,11 +88,22 @@ function AuditEventsPanel() {
       occurredBefore: filters.occurredBefore || undefined,
       resourceType: filters.resourceType || undefined,
       status: filters.status || undefined,
+      toolName: filters.toolName || undefined,
+      toolProvider: filters.toolProvider || undefined,
     }),
     [filters, offset]
   )
   const eventsQuery = useAuditEventsQuery(queryParams)
+  const { data: toolCatalog } = useToolCatalogQuery()
   const eventsData = eventsQuery.data
+  const toolOptions = useMemo(
+    () => auditToolFilterOptions(toolCatalog.tools),
+    [toolCatalog.tools]
+  )
+  const providerOptions = useMemo(
+    () => auditProviderFilterOptions(toolCatalog.tools),
+    [toolCatalog.tools]
+  )
 
   function updateFilters(nextFilters: AuditFilters) {
     setOffset(0)
@@ -105,6 +123,8 @@ function AuditEventsPanel() {
           filters={filters}
           memberships={membershipsQuery.data.memberships}
           onFiltersChange={updateFilters}
+          providerOptions={providerOptions}
+          toolOptions={toolOptions}
         />
         {eventsQuery.isError ? (
           <EmptyState

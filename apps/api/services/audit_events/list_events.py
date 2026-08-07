@@ -26,6 +26,8 @@ async def list_audit_events_for_workspace(
     resource_id: str | None = None,
     actor_user_id: UUID | None = None,
     status: str | None = None,
+    tool_name: str | None = None,
+    tool_provider: str | None = None,
     occurred_after: datetime | None = None,
     occurred_before: datetime | None = None,
 ) -> AuditEventsListResponse:
@@ -46,6 +48,8 @@ async def list_audit_events_for_workspace(
         actor_user_id=actor_user_id,
         action=parsed_action,
         status=parsed_status,
+        tool_name=tool_name,
+        tool_provider=tool_provider,
         occurred_after=occurred_after,
         occurred_before=occurred_before,
         limit=limit,

@@ -16,6 +16,8 @@ export type ListAuditEventsParams = {
   resourceId?: string | undefined
   resourceType?: string | undefined
   status?: string | undefined
+  toolName?: string | undefined
+  toolProvider?: string | undefined
 }
 
 export const auditEventsQueryKeys = createWorkspaceScopedQueryKeys("audit-events")
@@ -30,6 +32,8 @@ async function listAuditEvents({
   resourceId,
   resourceType,
   status,
+  toolName,
+  toolProvider,
 }: ListAuditEventsParams = {}) {
   return apiRequest<AuditEventsListResponse>("/audit-events/", {
     query: {
@@ -42,11 +46,13 @@ async function listAuditEvents({
       resource_id: resourceId,
       resource_type: resourceType,
       status,
+      tool_name: toolName,
+      tool_provider: toolProvider,
     },
   })
 }
 
-function auditEventsQueryOptions(params: ListAuditEventsParams = {}) {
+export function auditEventsQueryOptions(params: ListAuditEventsParams = {}) {
   return queryOptions({
     queryKey: auditEventsQueryKeys.list(params),
     queryFn: () => listAuditEvents(params),

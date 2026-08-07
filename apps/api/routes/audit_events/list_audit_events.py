@@ -26,6 +26,8 @@ async def list_audit_events(
     resource_id: Annotated[str | None, Query(max_length=255)] = None,
     actor_user_id: Annotated[UUID | None, Query()] = None,
     status: Annotated[str | None, Query(max_length=32)] = None,
+    tool_name: Annotated[str | None, Query(max_length=100)] = None,
+    tool_provider: Annotated[str | None, Query(max_length=50)] = None,
     occurred_after: Annotated[datetime | None, Query()] = None,
     occurred_before: Annotated[datetime | None, Query()] = None,
 ) -> AuditEventsListResponse:
@@ -40,6 +42,8 @@ async def list_audit_events(
         resource_id=resource_id,
         actor_user_id=actor_user_id,
         status=status,
+        tool_name=tool_name,
+        tool_provider=tool_provider,
         occurred_after=occurred_after,
         occurred_before=occurred_before,
     )

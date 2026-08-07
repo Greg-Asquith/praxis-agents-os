@@ -22,6 +22,8 @@ def _filtered_select(
     actor_user_id: UUID | str | None,
     action: AuditAction | None,
     status: AuditStatus | None,
+    tool_name: str | None,
+    tool_provider: str | None,
     occurred_after: datetime | None,
     occurred_before: datetime | None,
 ):
@@ -38,6 +40,10 @@ def _filtered_select(
         base = base.where(AuditEvent.action == action)
     if status is not None:
         base = base.where(AuditEvent.status == status)
+    if tool_name is not None:
+        base = base.where(AuditEvent.tool_name == tool_name)
+    if tool_provider is not None:
+        base = base.where(AuditEvent.tool_provider == tool_provider)
     if occurred_after is not None:
         base = base.where(AuditEvent.occurred_at >= occurred_after)
     if occurred_before is not None:
@@ -54,6 +60,8 @@ async def list_audit_events(
     actor_user_id: UUID | str | None = None,
     action: AuditAction | None = None,
     status: AuditStatus | None = None,
+    tool_name: str | None = None,
+    tool_provider: str | None = None,
     occurred_after: datetime | None = None,
     occurred_before: datetime | None = None,
     limit: int = 50,
@@ -68,6 +76,8 @@ async def list_audit_events(
         actor_user_id=actor_user_id,
         action=action,
         status=status,
+        tool_name=tool_name,
+        tool_provider=tool_provider,
         occurred_after=occurred_after,
         occurred_before=occurred_before,
         limit=limit,
@@ -85,6 +95,8 @@ async def list_audit_events_page(
     actor_user_id: UUID | str | None = None,
     action: AuditAction | None = None,
     status: AuditStatus | None = None,
+    tool_name: str | None = None,
+    tool_provider: str | None = None,
     occurred_after: datetime | None = None,
     occurred_before: datetime | None = None,
     limit: int = 50,
@@ -99,6 +111,8 @@ async def list_audit_events_page(
         actor_user_id=actor_user_id,
         action=action,
         status=status,
+        tool_name=tool_name,
+        tool_provider=tool_provider,
         occurred_after=occurred_after,
         occurred_before=occurred_before,
     )

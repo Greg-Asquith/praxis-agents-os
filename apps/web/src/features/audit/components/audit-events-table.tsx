@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PaginationControls } from "@/components/ui/pagination-controls"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   ResponsiveList,
   ResponsiveListItem,
@@ -67,81 +68,94 @@ export function AuditEventsTable({
       </ResponsiveList>
 
       <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Occurred</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Tool</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead>Actor</TableHead>
-              <TableHead>Summary</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {events.map((event) => (
-              <TableRow
-                key={event.id}
-                className="cursor-pointer"
-                tabIndex={0}
-                onClick={() => {
-                  onSelectEvent(event.id)
-                }}
-                onKeyDown={(keyboardEvent) => {
-                  if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                    keyboardEvent.preventDefault()
-                    onSelectEvent(event.id)
-                  }
-                }}
-              >
-                <TableCell>{formatDateTime(event.occurred_at)}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <span>{titleCaseToken(event.action, event.action)}</span>
-                    <StatusBadge status={event.status} />
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex max-w-64 flex-col gap-1">
-                    <span>{resourceLabel(event, toolLabelFor)}</span>
-                    {resourceMeta(event) ? (
-                      <span className="text-muted-foreground truncate text-xs">
-                        {resourceMeta(event)}
-                      </span>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {event.tool_name ? (
-                    <span className="block max-w-48 truncate">{toolLabelFor(event.tool_name)}</span>
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {event.tool_provider ? (
-                    titleCaseToken(event.tool_provider, event.tool_provider)
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {event.actor_display ?? titleCaseToken(event.actor_type, "Actor")}
-                </TableCell>
-                <TableCell>
-                  <span className="block max-w-72 truncate">
-                    {truncateText(event.summary, 120)}
-                  </span>
-                </TableCell>
+        <TooltipProvider>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Occurred</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Resource</TableHead>
+                <TableHead>Tool</TableHead>
+                <TableHead>Provider</TableHead>
+                <TableHead>Actor</TableHead>
+                <TableHead>Summary</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {events.map((event) => (
+                <TableRow
+                  key={event.id}
+                  className="cursor-pointer"
+                  tabIndex={0}
+                  onClick={() => {
+                    onSelectEvent(event.id)
+                  }}
+                  onKeyDown={(keyboardEvent) => {
+                    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                      keyboardEvent.preventDefault()
+                      onSelectEvent(event.id)
+                    }
+                  }}
+                >
+                  <TableCell>{formatDateTime(event.occurred_at)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span>{titleCaseToken(event.action, event.action)}</span>
+                      <StatusBadge status={event.status} />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex max-w-64 flex-col gap-1">
+                      <span>{resourceLabel(event, toolLabelFor)}</span>
+                      {resourceMeta(event) ? (
+                        <span className="text-muted-foreground truncate text-xs">
+                          {resourceMeta(event)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {event.tool_name ? (
+                      <ToolName value={toolLabelFor(event.tool_name)} />
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {event.tool_provider ? (
+                      titleCaseToken(event.tool_provider, event.tool_provider)
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {event.actor_display ?? titleCaseToken(event.actor_type, "Actor")}
+                  </TableCell>
+                  <TableCell>
+                    <span className="block max-w-72 truncate">
+                      {truncateText(event.summary, 120)}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TooltipProvider>
       </div>
 
       <PaginationControls limit={limit} offset={offset} onPageChange={onPageChange} total={total} />
     </div>
+  )
+}
+
+function ToolName({ value }: { value: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger className="block max-w-48 truncate text-left" render={<span />}>
+        {value}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm wrap-break-word">{value}</TooltipContent>
+    </Tooltip>
   )
 }
 

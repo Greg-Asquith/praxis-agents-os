@@ -19,6 +19,7 @@ import {
   AUDIT_STATUSES,
   SECURITY_EVENT_TYPES,
 } from "@/features/audit/types"
+import type { AuditFilterOption } from "@/features/audit/audit-filter-options"
 import type { WorkspaceMembershipsListResponse } from "@/features/workspaces/types"
 import { titleCaseToken } from "@/lib/format"
 
@@ -31,6 +32,8 @@ export type AuditFilters = {
   occurredBefore: string
   resourceType: string
   status: string
+  toolName: string
+  toolProvider: string
 }
 
 export type SecurityFilters = {
@@ -48,17 +51,21 @@ export function AuditFilterBar({
   filters,
   memberships,
   onFiltersChange,
+  providerOptions,
+  toolOptions,
 }: {
   filters: AuditFilters
   memberships: WorkspaceMembership[]
   onFiltersChange: (filters: AuditFilters) => void
+  providerOptions: AuditFilterOption[]
+  toolOptions: AuditFilterOption[]
 }) {
   function updateFilter(field: keyof AuditFilters, value: string) {
     onFiltersChange({ ...filters, [field]: value })
   }
 
   return (
-    <div className="grid gap-3 lg:grid-cols-6">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
       <FilterSelect
         label="Action"
         options={AUDIT_ACTIONS}
@@ -75,6 +82,24 @@ export function AuditFilterBar({
         value={filters.resourceType}
         onChange={(value) => {
           updateFilter("resourceType", value)
+        }}
+      />
+      <FilterSelect
+        label="Tool"
+        options={toolOptions}
+        placeholder="All tools"
+        value={filters.toolName}
+        onChange={(value) => {
+          updateFilter("toolName", value)
+        }}
+      />
+      <FilterSelect
+        label="Provider"
+        options={providerOptions}
+        placeholder="All providers"
+        value={filters.toolProvider}
+        onChange={(value) => {
+          updateFilter("toolProvider", value)
         }}
       />
       <FilterSelect
@@ -107,7 +132,7 @@ export function AuditFilterBar({
           updateFilter("occurredBefore", value)
         }}
       />
-      <div className="lg:col-span-6">
+      <div className="sm:col-span-2 lg:col-span-4 2xl:col-span-8">
         <Button
           disabled={isAuditFilterEmpty(filters)}
           onClick={() => {
@@ -118,6 +143,8 @@ export function AuditFilterBar({
               occurredBefore: "",
               resourceType: "",
               status: "",
+              toolName: "",
+              toolProvider: "",
             })
           }}
           size="sm"
@@ -226,7 +253,7 @@ function FilterSelect({
 }: {
   label: string
   onChange: (value: string) => void
-  options: readonly string[]
+  options: readonly (string | AuditFilterOption)[]
   placeholder: string
   value: string
 }) {
@@ -247,8 +274,8 @@ function FilterSelect({
             <SelectLabel>{label}</SelectLabel>
             <SelectItem value={ALL_FILTER_VALUE}>{placeholder}</SelectItem>
             {options.map((option) => (
-              <SelectItem key={option} value={option}>
-                {titleCaseToken(option, option)}
+              <SelectItem key={filterOptionValue(option)} value={filterOptionValue(option)}>
+                {filterOptionLabel(option)}
               </SelectItem>
             ))}
           </SelectGroup>
@@ -256,6 +283,14 @@ function FilterSelect({
       </Select>
     </div>
   )
+}
+
+function filterOptionValue(option: string | AuditFilterOption) {
+  return typeof option === "string" ? option : option.value
+}
+
+function filterOptionLabel(option: string | AuditFilterOption) {
+  return typeof option === "string" ? titleCaseToken(option, option) : option.label
 }
 
 function ActorSelect({
