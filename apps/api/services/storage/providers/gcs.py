@@ -49,6 +49,7 @@ GCS_BROWSER_CORS_RESPONSE_HEADERS = (
     "x-goog-if-generation-match",
 )
 GCS_BROWSER_CORS_MAX_AGE_SECONDS = 3600
+GCS_ADC_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,11 @@ except ImportError:  # pragma: no cover - base install intentionally omits SDKs
     gcs_exceptions = None
 
 try:  # pragma: no cover - exercised through provider-specific extras
+    import google.auth as google_auth
     from google.auth import credentials as google_auth_credentials
     from google.auth.transport.requests import Request as GoogleAuthRequest
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
+    google_auth = None
     google_auth_credentials = None
     GoogleAuthRequest = None
 
@@ -612,14 +615,18 @@ class GcsStorageProvider:
             self._ensured_workspace_ids.discard(evicted_workspace_id)
 
     def _create_client(self, *, project_id: str | None):
-        if gcs_storage is None:
+        if gcs_storage is None or google_auth is None:
             raise StorageProviderUnavailableError(
                 "GCS storage requires the google-cloud-storage extra",
                 provider_key=self.provider_key,
                 operation="create_client",
             )
         try:
-            return gcs_storage.Client(project=project_id)
+            credentials, detected_project_id = google_auth.default(scopes=GCS_ADC_SCOPES)
+            return gcs_storage.Client(
+                project=project_id or detected_project_id,
+                credentials=credentials,
+            )
         except Exception as exc:
             raise StorageProviderUnavailableError(
                 "Failed to initialize GCS storage client",

@@ -20,6 +20,7 @@ from services.storage.errors import (
     StoragePreconditionError,
     StorageProviderUnavailableError,
 )
+from services.storage.providers import gcs as gcs_provider_module
 from services.storage.providers.gcs import GcsStorageProvider
 
 pytestmark = pytest.mark.asyncio
@@ -284,6 +285,47 @@ async def test_gcs_signed_urls_use_iam_signing_for_metadata_credentials() -> Non
     assert signed_calls[0]["access_token"] == credentials.token
     assert signed_calls[1]["service_account_email"] == credentials.service_account_email
     assert signed_calls[1]["access_token"] == credentials.token
+
+
+async def test_gcs_client_requests_cloud_platform_adc_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credentials = object()
+    client = _FakeGcsClient()
+    captured: dict[str, object] = {}
+
+    def fake_default(*, scopes: tuple[str, ...]):
+        captured["scopes"] = scopes
+        return credentials, "detected-project"
+
+    def fake_client(*, project: str, credentials: object):
+        captured["project"] = project
+        captured["credentials"] = credentials
+        return client
+
+    monkeypatch.setattr(
+        gcs_provider_module,
+        "google_auth",
+        SimpleNamespace(default=fake_default),
+    )
+    monkeypatch.setattr(
+        gcs_provider_module,
+        "gcs_storage",
+        SimpleNamespace(Client=fake_client),
+    )
+
+    GcsStorageProvider(
+        public_bucket_name="public-bucket",
+        workspace_bucket_prefix="praxis-test",
+        workspace_bucket_location="europe-west2",
+        project_id="configured-project",
+    )
+
+    assert captured == {
+        "scopes": ("https://www.googleapis.com/auth/cloud-platform",),
+        "project": "configured-project",
+        "credentials": credentials,
+    }
 
 
 async def test_gcs_signed_url_failure_logs_underlying_google_error_type(

@@ -181,7 +181,10 @@ Repo-wide expectations are in the root `AGENTS.md`.
   object versioning and a 30-day soft-delete policy alongside uniform access
   and public-access prevention. Their signed-upload CORS policy is converged
   from the explicit `ALLOWED_CORS_ORIGINS` allowlist; GCP bootstrap applies the
-  same policy to the shared public-assets bucket. S3 workspace buckets use the
+  same policy to the shared public-assets bucket. GCS client ADC must explicitly
+  request the `cloud-platform` OAuth scope so metadata-server credentials can
+  call IAM `signBlob`; the runtime service account must also retain Service
+  Account Token Creator on itself. S3 workspace buckets use the
   account-regional
   namespace and derive their physical name from the configured prefix, compact
   workspace UUID, `AWS_ACCOUNT_ID`, and `AWS_REGION`; retain ownership controls,
