@@ -3,8 +3,9 @@
 """Server-side enforcement for governed tool argument overrides."""
 
 import json
+import math
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,11 @@ from core.exceptions.general import AppValidationError
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+
+if TYPE_CHECKING:
+    from services.agents.runtime.tools.contract import ToolFieldColumn
+
+RECORDS_FIELD_MAX_ROWS = 500
 
 
 async def validate_and_canonicalize_override_args(
@@ -71,6 +77,15 @@ async def validate_and_canonicalize_override_args(
             details={"tool_name": tool_name, "locked_fields": locked_changes},
         )
 
+    if override_args is not None:
+        for field in definition.presentation.arg_fields:
+            if field.format == "records" and field.editable:
+                _validate_records_override(
+                    field_key=field.key,
+                    value=effective_args.get(field.key),
+                    columns=field.columns,
+                )
+
     for field in definition.presentation.arg_fields:
         if field.format not in {"entity", "entity_list"}:
             continue
@@ -110,3 +125,53 @@ async def validate_and_canonicalize_override_args(
         effective_args[field.key] = canonical if field.format == "entity_list" else canonical[0]
 
     return effective_args if override_args is not None or effective_args != original_args else None
+
+
+def _validate_records_override(
+    *,
+    field_key: str,
+    value: Any,
+    columns: tuple["ToolFieldColumn", ...],
+) -> None:
+    if not isinstance(value, list):
+        raise AppValidationError(
+            "Record fields must be a list of rows",
+            field=field_key,
+        )
+    if len(value) > RECORDS_FIELD_MAX_ROWS:
+        raise AppValidationError(
+            f"Record fields cannot contain more than {RECORDS_FIELD_MAX_ROWS} rows",
+            field=field_key,
+        )
+
+    declared_keys = {column.key for column in columns}
+    constrained_options = {
+        column.key: frozenset(column.options) for column in columns if column.options
+    }
+    for row_index, row in enumerate(value):
+        if not isinstance(row, Mapping) or set(row) != declared_keys:
+            raise AppValidationError(
+                "Every record row must contain exactly the declared columns",
+                field=field_key,
+                details={"row": row_index},
+            )
+        for column_key, item in row.items():
+            if isinstance(item, bool) or not isinstance(item, str | int | float):
+                raise AppValidationError(
+                    "Record cells must be text or numbers",
+                    field=field_key,
+                    details={"column": column_key, "row": row_index},
+                )
+            if isinstance(item, float) and not math.isfinite(item):
+                raise AppValidationError(
+                    "Record numbers must be finite",
+                    field=field_key,
+                    details={"column": column_key, "row": row_index},
+                )
+            options = constrained_options.get(column_key)
+            if options is not None and item not in options:
+                raise AppValidationError(
+                    "A record cell is not one of the allowed options",
+                    field=field_key,
+                    details={"column": column_key, "row": row_index},
+                )

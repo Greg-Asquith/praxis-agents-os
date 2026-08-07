@@ -3,7 +3,8 @@
 import { ExternalLinkIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
-import type { ResolvedToolField } from "@/components/tool-ui/field-resolution"
+import type { ResolvedRecordRow, ResolvedToolField } from "@/components/tool-ui/field-resolution"
+import { uniqueRowKeys } from "@/components/tool-ui/records-field-values"
 import { buttonVariants } from "@/components/ui/button"
 import { truncateText } from "@/lib/format"
 
@@ -76,11 +77,56 @@ export function ToolFieldValue({
     )
   }
 
+  if (field.format === "records" && field.records) {
+    if (field.records.length === 0) {
+      return field.value
+    }
+    const columns = field.records[0]?.cells ?? []
+    const rows = keyedResolvedRows(field.records)
+    return (
+      <div className="-mx-2.5 -my-1 max-h-80 overflow-auto">
+        <div className="text-muted-foreground border-border/60 border-b px-2.5 py-1.5 text-xs font-medium">
+          {field.value}
+        </div>
+        <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
+          <thead className="bg-muted/80 text-muted-foreground sticky top-0">
+            <tr>
+              {columns.map((cell) => (
+                <th className="border-border/60 border-b px-2.5 py-1.5 font-medium" key={cell.key}>
+                  {cell.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ key, row }) => (
+              <tr className="[&:not(:last-child)>td]:border-b" key={key}>
+                {row.cells.map((cell) => (
+                  <td
+                    className="border-border/60 min-w-32 px-2.5 py-2 wrap-break-word"
+                    key={cell.key}
+                  >
+                    {cell.value}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
   if (field.format === "markdown" && renderMarkdown) {
     return renderMarkdown(field.value)
   }
 
   return field.value
+}
+
+function keyedResolvedRows(records: ResolvedRecordRow[]) {
+  const keys = uniqueRowKeys(records.map((row) => row.cells.map((cell) => cell.value)))
+  return records.map((row, index) => ({ key: keys[index] ?? "", row }))
 }
 
 function toolUrlLabel(value: string): string {

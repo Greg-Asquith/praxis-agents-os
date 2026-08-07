@@ -10,12 +10,18 @@ import type {
   ApprovalFallbackField,
   ApprovalField,
 } from "@/components/tool-ui/approval-types"
-import type { EditedKeyValue, EditedValue, EditedValues } from "@/components/tool-ui/edited-values"
+import type {
+  EditedKeyValue,
+  EditedRecords,
+  EditedValue,
+  EditedValues,
+} from "@/components/tool-ui/edited-values"
 import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
 import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
 import { HtmlFieldInput } from "@/components/tool-ui/html-field-input"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
 import { ListFieldInput } from "@/components/tool-ui/list-field-input"
+import { RecordsFieldInput } from "@/components/tool-ui/records-field-input"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -100,7 +106,7 @@ export function ApprovalRequestFields({
     <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-2">
       {fields.map((field) => {
         const rawValue = args[field.key]
-        const originalValue = editableValue(field.format, rawValue)
+        const originalValue = editableValue(field, rawValue)
         const editable = field.editable && originalValue !== null
         const value = clearedEntityFields.has(field.key)
           ? field.format === "entity_list"
@@ -173,7 +179,11 @@ export function ApprovalRequestFields({
             key={field.key}
           >
             <div className="flex items-center justify-between gap-2">
-              <FieldLabel className={fieldLabelClass} htmlFor={id}>
+              <FieldLabel
+                className={fieldLabelClass}
+                htmlFor={field.format === "records" ? undefined : id}
+                id={`${id}-label`}
+              >
                 {field.label}
               </FieldLabel>
               {field.secondary && isRevealed ? (
@@ -254,6 +264,17 @@ export function ApprovalRequestFields({
                 disabled={disabled}
                 id={id}
                 lockedEntries={lockedKeyValueEntries(rawValue)}
+                onChange={(nextValue) => {
+                  applyFieldEdit(field.key, nextValue)
+                }}
+                value={value}
+              />
+            ) : field.format === "records" && isEditedRecords(value, field) ? (
+              <RecordsFieldInput
+                columns={field.columns ?? []}
+                disabled={disabled}
+                id={id}
+                labelId={`${id}-label`}
                 onChange={(nextValue) => {
                   applyFieldEdit(field.key, nextValue)
                 }}
@@ -372,14 +393,22 @@ function UnavailableEntityField({
 }
 
 function fieldSpanClass(format: ToolFieldFormat): string | undefined {
-  return ["multiline", "markdown", "html", "list", "keyvalue", "entity", "entity_list"].includes(
-    format
-  )
+  return [
+    "multiline",
+    "markdown",
+    "html",
+    "list",
+    "keyvalue",
+    "records",
+    "entity",
+    "entity_list",
+  ].includes(format)
     ? "sm:col-span-2"
     : undefined
 }
 
-function editableValue(format: ToolFieldFormat, value: unknown): EditedValue | null {
+function editableValue(field: ApprovalField, value: unknown): EditedValue | null {
+  const { format } = field
   if (format === "text" || format === "multiline" || format === "markdown" || format === "html") {
     return typeof value === "string" ? value : null
   }
@@ -397,6 +426,9 @@ function editableValue(format: ToolFieldFormat, value: unknown): EditedValue | n
         isEditedScalar(entry[1])
       )
     )
+  }
+  if (format === "records" && isEditedRecords(value, field)) {
+    return value.map((row) => ({ ...row }))
   }
   if (format === "entity" && isRecord(value)) {
     return value
@@ -441,6 +473,23 @@ function isEditedScalar(value: unknown): value is string | number | boolean {
 
 function isEditedKeyValue(value: unknown): value is EditedKeyValue {
   return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function isEditedRecords(value: unknown, field: ApprovalField): value is EditedRecords {
+  if (!Array.isArray(value) || !field.columns || field.columns.length === 0) {
+    return false
+  }
+  const columnKeys = new Set(field.columns.map((column) => column.key))
+  return value.every(
+    (row) =>
+      isRecord(row) &&
+      Object.keys(row).length === columnKeys.size &&
+      Object.entries(row).every(
+        ([key, item]) =>
+          columnKeys.has(key) &&
+          (typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
+      )
+  )
 }
 
 function lockedKeyValueEntries(value: unknown): string[] {

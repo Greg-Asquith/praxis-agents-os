@@ -30,6 +30,7 @@ ToolFieldFormat = Literal[
     "list",
     "number",
     "keyvalue",
+    "records",
     "entity",
     "entity_list",
 ]
@@ -83,12 +84,24 @@ VALID_TOOL_FIELD_FORMATS = frozenset(
         "list",
         "number",
         "keyvalue",
+        "records",
         "entity",
         "entity_list",
     }
 )
 EDITABLE_TOOL_FIELD_FORMATS = frozenset(
-    {"text", "multiline", "markdown", "html", "number", "list", "keyvalue", "entity", "entity_list"}
+    {
+        "text",
+        "multiline",
+        "markdown",
+        "html",
+        "number",
+        "list",
+        "keyvalue",
+        "records",
+        "entity",
+        "entity_list",
+    }
 )
 STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
 # Semantic icon tokens the web client maps to concrete icons.
@@ -117,6 +130,16 @@ VALID_TOOL_ICONS = frozenset(
 
 
 @dataclass(frozen=True)
+class ToolFieldColumn:
+    """One declared scalar column in a records argument field."""
+
+    key: str
+    label: str
+    options: tuple[str, ...] = ()
+    placeholder: str = ""
+
+
+@dataclass(frozen=True)
 class ToolFieldPresentation:
     """One argument or result key rendered as a labelled field in the web client."""
 
@@ -129,6 +152,7 @@ class ToolFieldPresentation:
     secondary: bool = False
     entity_kind: str | None = None
     depends_on: tuple[str, ...] = ()
+    columns: tuple[ToolFieldColumn, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -430,6 +454,29 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             raise RuntimeError("Runtime tool presentation field options must not be blank")
         if len(normalized_options) != len(set(normalized_options)):
             raise RuntimeError("Runtime tool presentation field options must be unique")
+        if field.columns and field.format != "records":
+            raise RuntimeError("Runtime tool presentation field columns require the records format")
+        if field.format == "records" and not field.columns:
+            raise RuntimeError("Records runtime tool presentation fields require columns")
+        column_keys = [column.key for column in field.columns]
+        if len(column_keys) != len(set(column_keys)):
+            raise RuntimeError("Runtime tool presentation record column keys must be unique")
+        for column in field.columns:
+            if not _TOOL_NAME_PATTERN.fullmatch(column.key):
+                raise RuntimeError(
+                    "Runtime tool presentation record column keys must be lowercase snake_case"
+                )
+            if not column.label.strip():
+                raise RuntimeError(
+                    "Runtime tool presentation record column labels must not be blank"
+                )
+            normalized_column_options = [option.strip() for option in column.options]
+            if any(not option for option in normalized_column_options):
+                raise RuntimeError(
+                    "Runtime tool presentation record column options must not be blank"
+                )
+            if len(normalized_column_options) != len(set(normalized_column_options)):
+                raise RuntimeError("Runtime tool presentation record column options must be unique")
         is_entity = field.format in {"entity", "entity_list"}
         if is_entity and field.entity_kind is None:
             raise RuntimeError("Entity runtime tool presentation fields require an entity kind")
@@ -446,6 +493,8 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
         if field.key in field.depends_on:
             raise RuntimeError("Runtime tool presentation fields cannot depend on themselves")
     for field in presentation.result_fields:
+        if field.format == "records":
+            raise RuntimeError("Runtime tool result presentation fields cannot use records")
         if field.editable:
             raise RuntimeError("Runtime tool result presentation fields cannot be editable")
         if field.secondary:

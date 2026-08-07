@@ -85,6 +85,13 @@ Goals, in priority order:
 | Active-context resolution + fan-out | `services/integrations/context/` | one place that decides what agents operate on |
 | SSE protocol, `ToolActivity` shape, presentation schema | stream/protocol + tool contract | stale-client safety; closed vocabularies |
 
+The presentation field-format vocabulary is closed:
+`text`, `multiline`, `markdown`, `html`, `bytes`, `datetime`, `boolean`,
+`url`, `list`, `number`, `keyvalue`, `records`, `entity`, and
+`entity_list`. The platform-owned `records` format is argument-only and uses
+server-declared scalar columns; providers may consume it but cannot extend its
+row shape, column types, or rendering contract inside a provider package.
+
 A provider package supplies: manifest data, a discovery function,
 operation clients, one-module-per-tool definitions (with bindings and presentations),
 optional preview definitions, tests — and optionally a small web UI module.

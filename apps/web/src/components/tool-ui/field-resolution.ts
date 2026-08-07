@@ -15,13 +15,22 @@ export type ToolFieldFormat =
   | "list"
   | "number"
   | "keyvalue"
+  | "records"
   | "entity"
   | "entity_list"
 
 export type ToolFieldDefinition = {
+  columns?: ToolFieldColumn[]
   format: ToolFieldFormat
   key: string
   label: string
+}
+
+export type ToolFieldColumn = {
+  key: string
+  label: string
+  options: string[]
+  placeholder: string
 }
 
 export type ResolvedToolField = {
@@ -30,6 +39,7 @@ export type ResolvedToolField = {
   items?: string[]
   key: string
   label: string
+  records?: ResolvedRecordRow[]
   value: string
 }
 
@@ -38,10 +48,24 @@ type ResolvedKeyValueEntry = {
   value: string
 }
 
+export type ResolvedRecordRow = {
+  cells: ResolvedRecordCell[]
+}
+
+type ResolvedRecordCell = {
+  key: string
+  label: string
+  value: string
+}
+
 export function resolveToolField(
   field: ToolFieldDefinition,
   value: unknown
 ): ResolvedToolField | null {
+  const records = field.format === "records" ? toolFieldRecordRows(value, field.columns) : null
+  if (field.format === "records" && records === null) {
+    return null
+  }
   const resolved = toolFieldDisplayValue(value, field.format)
   if (resolved === null) {
     return null
@@ -58,7 +82,10 @@ export function resolveToolField(
     return { ...baseField, items }
   }
   const entries = field.format === "keyvalue" ? toolFieldKeyValueEntries(value) : null
-  return entries === null ? baseField : { ...baseField, entries }
+  if (entries !== null) {
+    return { ...baseField, entries }
+  }
+  return records === null ? baseField : { ...baseField, records }
 }
 
 export function resolveToolFields(
@@ -113,6 +140,9 @@ function toolFieldDisplayValue(value: unknown, format: ToolFieldFormat): string 
   if (format === "keyvalue") {
     const entries = toolFieldKeyValueEntries(value)
     return entries && entries.length > 0 ? `${String(entries.length)} fields` : null
+  }
+  if (format === "records") {
+    return Array.isArray(value) ? `${String(value.length)} rows` : null
   }
   if (format === "entity") {
     return entityLabel(value)
@@ -181,6 +211,36 @@ function toolFieldKeyValueEntries(value: unknown): ResolvedKeyValueEntry[] | nul
     key,
     value: keyValueDisplayValue(item),
   }))
+}
+
+function toolFieldRecordRows(
+  value: unknown,
+  columns: ToolFieldColumn[] | undefined
+): ResolvedRecordRow[] | null {
+  if (!Array.isArray(value) || !columns || columns.length === 0) {
+    return null
+  }
+  const columnKeys = new Set(columns.map((column) => column.key))
+  const rows: ResolvedRecordRow[] = []
+  for (const row of value) {
+    if (
+      !isPlainRecord(row) ||
+      Object.keys(row).length !== columnKeys.size ||
+      Object.keys(row).some((key) => !columnKeys.has(key))
+    ) {
+      return null
+    }
+    const cells: ResolvedRecordCell[] = []
+    for (const column of columns) {
+      const item = row[column.key]
+      if (typeof item !== "string" && !(typeof item === "number" && Number.isFinite(item))) {
+        return null
+      }
+      cells.push({ key: column.key, label: column.label, value: String(item) })
+    }
+    rows.push({ cells })
+  }
+  return rows
 }
 
 function keyValueDisplayValue(value: unknown): string {

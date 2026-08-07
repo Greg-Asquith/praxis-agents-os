@@ -1,7 +1,13 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
 import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
-import type { EditedKeyValue, EditedValue, EditedValues } from "@/components/tool-ui/edited-values"
+import type {
+  EditedKeyValue,
+  EditedRecord,
+  EditedRecords,
+  EditedValue,
+  EditedValues,
+} from "@/components/tool-ui/edited-values"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import { normalizeOptionalText } from "@/lib/format"
@@ -147,6 +153,13 @@ function mergeEditedValue(original: unknown, edit: EditedValue): unknown {
     return structurallyEqual(edit, original) ? NO_CHANGE : edit
   }
 
+  if (isEditedRecords(edit)) {
+    if (!Array.isArray(original) || !original.every(isEditedRecord)) {
+      return INVALID_EDIT
+    }
+    return structurallyEqual(edit, original) ? NO_CHANGE : edit
+  }
+
   if (typeof edit === "string") {
     if (typeof original !== "string") {
       return INVALID_EDIT
@@ -208,6 +221,19 @@ function dropEmptyAddedRows(
 
 function isEditedKeyValue(value: EditedValue): value is EditedKeyValue {
   return isRecord(value) && Object.values(value).every((item) => isEditedScalar(item))
+}
+
+function isEditedRecords(value: EditedValue): value is EditedRecords {
+  return Array.isArray(value) && value.length > 0 && value.every(isEditedRecord)
+}
+
+function isEditedRecord(value: unknown): value is EditedRecord {
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (item) => typeof item === "string" || (typeof item === "number" && Number.isFinite(item))
+    )
+  )
 }
 
 function isEditedScalar(value: unknown): value is string | number | boolean {
