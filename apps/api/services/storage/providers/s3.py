@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from services.storage.domain import (
@@ -39,14 +41,24 @@ from services.storage.workspace_buckets import s3_workspace_bucket_name, workspa
 if TYPE_CHECKING:
     from core.settings import Settings
 
+S3_BROWSER_CORS_RULE_ID = "PraxisBrowserSignedUploads"
+S3_BROWSER_CORS_METHODS = ("GET", "HEAD", "PUT")
+S3_BROWSER_CORS_ALLOWED_HEADERS = ("Content-Length", "Content-Type", "If-None-Match")
+S3_BROWSER_CORS_EXPOSE_HEADERS = ("Content-Length", "Content-Type", "ETag")
+S3_BROWSER_CORS_MAX_AGE_SECONDS = 3600
+
+logger = logging.getLogger(__name__)
+
 try:  # pragma: no cover - exercised through provider-specific extras
     import boto3
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
     boto3 = None
 
 try:  # pragma: no cover - exercised through provider-specific extras
+    from botocore.config import Config as BotoConfig
     from botocore.exceptions import ClientError
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
+    BotoConfig = None
     ClientError = None
 
 
@@ -63,6 +75,7 @@ class S3StorageProvider:
         region_name: str,
         account_id: str,
         public_assets_base_url: str,
+        cors_origins: tuple[str, ...] = (),
         public_cache_control: str | None = None,
         access_key_id: str | None = None,
         secret_access_key: str | None = None,
@@ -89,6 +102,7 @@ class S3StorageProvider:
             "PUBLIC_ASSETS_BASE_URL",
             provider_key=self.provider_key,
         ).rstrip("/")
+        self.cors_origins = _normalize_s3_cors_origins(cors_origins)
         self.public_cache_control = public_cache_control
         self.client = (
             client
@@ -100,6 +114,8 @@ class S3StorageProvider:
         )
         self._ensured_workspace_ids: OrderedDict[UUID, None] = OrderedDict()
         self._ensured_workspace_ids_lock = threading.Lock()
+        self._public_bucket_cors_ensured = False
+        self._public_bucket_cors_lock = threading.Lock()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> S3StorageProvider:
@@ -109,6 +125,7 @@ class S3StorageProvider:
             region_name=settings.AWS_REGION,
             account_id=settings.AWS_ACCOUNT_ID,
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL or "",
+            cors_origins=tuple(settings.cors_origins_list),
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
             access_key_id=settings.AWS_ACCESS_KEY_ID,
             secret_access_key=settings.AWS_SECRET_ACCESS_KEY.get_secret_value(),
@@ -189,6 +206,7 @@ class S3StorageProvider:
                 Bucket=bucket_name,
                 VersioningConfiguration={"Status": "Enabled"},
             )
+            await self._ensure_browser_cors(bucket_name)
             await self._ensure_https_only_policy(bucket_name)
             try:
                 tag_response = await asyncio.to_thread(
@@ -519,6 +537,8 @@ class S3StorageProvider:
         workspace_id = workspace_id_for_ref(ref)
         if workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
+        else:
+            await self._ensure_public_bucket_cors()
         normalized_content_type = _require_content_type(
             content_type, provider_key=self.provider_key, ref=ref
         )
@@ -538,6 +558,10 @@ class S3StorageProvider:
                 HttpMethod="PUT",
             )
         except Exception as exc:
+            logger.exception(
+                "S3 signed upload URL generation failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
                 "Failed to create S3 signed upload URL",
                 provider_key=self.provider_key,
@@ -583,6 +607,10 @@ class S3StorageProvider:
                 HttpMethod="GET",
             )
         except Exception as exc:
+            logger.exception(
+                "S3 signed download URL generation failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
                 "Failed to create S3 signed download URL",
                 provider_key=self.provider_key,
@@ -679,8 +707,60 @@ class S3StorageProvider:
             Policy=json.dumps(policy, separators=(",", ":"), sort_keys=True),
         )
 
+    async def _ensure_public_bucket_cors(self) -> None:
+        with self._public_bucket_cors_lock:
+            if self._public_bucket_cors_ensured:
+                return
+        await self._ensure_browser_cors(self.public_bucket_name)
+        with self._public_bucket_cors_lock:
+            self._public_bucket_cors_ensured = True
+
+    async def _ensure_browser_cors(self, bucket_name: str) -> None:
+        if not self.cors_origins:
+            raise StorageProviderUnavailableError(
+                "S3 browser uploads require explicit ALLOWED_CORS_ORIGINS",
+                provider_key=self.provider_key,
+                operation="configure_bucket_cors",
+                bucket=bucket_name,
+            )
+        try:
+            try:
+                response = await asyncio.to_thread(
+                    self.client.get_bucket_cors,
+                    Bucket=bucket_name,
+                )
+            except Exception as exc:
+                if not _is_no_such_cors_configuration_error(exc):
+                    raise
+                existing_rules = []
+            else:
+                existing_rules = response.get("CORSRules", [])
+            rules = [
+                rule
+                for rule in existing_rules
+                if not isinstance(rule, dict) or rule.get("ID") != S3_BROWSER_CORS_RULE_ID
+            ]
+            rules.append(_s3_browser_cors_rule(self.cors_origins))
+            await asyncio.to_thread(
+                self.client.put_bucket_cors,
+                Bucket=bucket_name,
+                CORSConfiguration={"CORSRules": rules},
+            )
+        except Exception as exc:
+            logger.exception(
+                "S3 browser upload CORS convergence failed",
+                extra={"error_type": type(exc).__name__},
+            )
+            raise StorageError(
+                "Failed to configure S3 browser upload CORS",
+                provider_key=self.provider_key,
+                operation="configure_bucket_cors",
+                bucket=bucket_name,
+                original_error=exc,
+            ) from exc
+
     def _create_client(self, *, access_key_id: str | None, secret_access_key: str | None):
-        if boto3 is None:
+        if boto3 is None or BotoConfig is None:
             raise StorageProviderUnavailableError(
                 "S3 storage requires the boto3 extra",
                 provider_key=self.provider_key,
@@ -695,7 +775,13 @@ class S3StorageProvider:
                 operation="create_client",
             )
 
-        kwargs: dict[str, Any] = {"region_name": self.region_name}
+        kwargs: dict[str, Any] = {
+            "region_name": self.region_name,
+            "config": BotoConfig(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+            ),
+        }
         if has_access_key and has_secret_key:
             kwargs["aws_access_key_id"] = access_key_id
             kwargs["aws_secret_access_key"] = secret_access_key
@@ -761,6 +847,47 @@ def _is_no_such_bucket_policy_error(exc: Exception) -> bool:
     if not isinstance(response, dict):
         return False
     return str(response.get("Error", {}).get("Code", "")) == "NoSuchBucketPolicy"
+
+
+def _is_no_such_cors_configuration_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code", "")) == "NoSuchCORSConfiguration"
+
+
+def _normalize_s3_cors_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for origin in origins:
+        parsed = urlsplit(origin.strip())
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or "*" in (parsed.hostname or "")
+        ):
+            raise StorageProviderUnavailableError(
+                "S3 browser CORS origins must be explicit HTTP(S) origins",
+                provider_key="s3",
+                operation="configure_bucket_cors",
+            )
+        normalized.append(f"{parsed.scheme}://{parsed.netloc}")
+    return tuple(dict.fromkeys(normalized))
+
+
+def _s3_browser_cors_rule(origins: tuple[str, ...]) -> dict[str, object]:
+    return {
+        "ID": S3_BROWSER_CORS_RULE_ID,
+        "AllowedOrigins": list(origins),
+        "AllowedMethods": list(S3_BROWSER_CORS_METHODS),
+        "AllowedHeaders": list(S3_BROWSER_CORS_ALLOWED_HEADERS),
+        "ExposeHeaders": list(S3_BROWSER_CORS_EXPOSE_HEADERS),
+        "MaxAgeSeconds": S3_BROWSER_CORS_MAX_AGE_SECONDS,
+    }
 
 
 def _next_or_none(iterator):

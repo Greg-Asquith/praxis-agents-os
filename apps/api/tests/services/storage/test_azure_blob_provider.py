@@ -19,6 +19,7 @@ from services.storage.errors import (
     StorageProviderUnavailableError,
     StorageSignatureError,
 )
+from services.storage.providers import azure_blob as azure_blob_provider_module
 from services.storage.providers.azure_blob import AzureBlobStorageProvider
 
 pytestmark = pytest.mark.asyncio
@@ -356,6 +357,50 @@ async def test_azure_workspace_container_is_private_labeled_and_cached() -> None
     assert container.metadata == {"praxis_workspace": str(WORKSPACE_ID)}
     assert container.public_access is None
     assert provider._workspace_container(WORKSPACE_ID) is container
+
+
+async def test_azure_production_uses_managed_identity_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_managed_identity_credential(**kwargs):
+        captured.update(kwargs)
+        return "managed-identity"
+
+    monkeypatch.setattr(
+        azure_blob_provider_module,
+        "ManagedIdentityCredential",
+        fake_managed_identity_credential,
+    )
+    provider = AzureBlobStorageProvider.__new__(AzureBlobStorageProvider)
+    provider.use_managed_identity = True
+    provider.managed_identity_client_id = "managed-client-id"
+
+    assert provider._create_credential() == "managed-identity"
+    assert captured == {"client_id": "managed-client-id"}
+
+
+async def test_azure_local_uses_default_credential_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_default_credential(**kwargs):
+        captured.update(kwargs)
+        return "default-credential"
+
+    monkeypatch.setattr(
+        azure_blob_provider_module,
+        "DefaultAzureCredential",
+        fake_default_credential,
+    )
+    provider = AzureBlobStorageProvider.__new__(AzureBlobStorageProvider)
+    provider.use_managed_identity = False
+    provider.managed_identity_client_id = "managed-client-id"
+
+    assert provider._create_credential() == "default-credential"
+    assert captured == {"managed_identity_client_id": "managed-client-id"}
 
 
 async def test_azure_workspace_container_preserves_stored_access_policies() -> None:

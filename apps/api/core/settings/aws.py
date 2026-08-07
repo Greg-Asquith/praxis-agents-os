@@ -13,7 +13,11 @@ class AwsSettingsMixin:
     )
     AWS_REGION: str = Field(
         default="",
-        description="AWS region for S3 clients and presigned URLs. Required when STORAGE_PROVIDER=s3.",
+        description=(
+            "AWS region for S3 clients and presigned URLs. Required when STORAGE_PROVIDER=s3. "
+            "The web CSP allowlist must include the regional path-style origin "
+            "https://s3.<region>.amazonaws.com."
+        ),
     )
     AWS_ACCOUNT_ID: str = Field(
         default="",

@@ -13,10 +13,12 @@ import pytest
 
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
+    StorageError,
     StorageNotFoundError,
     StoragePreconditionError,
     StorageProviderUnavailableError,
 )
+from services.storage.providers import s3 as s3_provider_module
 from services.storage.providers.s3 import S3StorageProvider
 from services.storage.workspace_buckets import s3_workspace_bucket_name
 
@@ -63,6 +65,12 @@ class _S3NoSuchBucketPolicyError(Exception):
         self.response = {"Error": {"Code": "NoSuchBucketPolicy"}}
 
 
+class _S3NoSuchCorsConfigurationError(Exception):
+    def __init__(self) -> None:
+        super().__init__("S3 bucket has no CORS configuration")
+        self.response = {"Error": {"Code": "NoSuchCORSConfiguration"}}
+
+
 class _FakeBody(BytesIO):
     closed_by_provider = False
 
@@ -80,6 +88,7 @@ class _FakeS3Client:
         self.bucket_configuration: dict[str, dict] = {}
         self.bucket_tags: dict[str, list[dict[str, str]]] = {}
         self.bucket_policies: dict[str, dict] = {}
+        self.bucket_cors: dict[str, list[dict]] = {}
 
     def head_bucket(self, **params) -> None:
         if params["Bucket"] not in self.buckets:
@@ -100,6 +109,18 @@ class _FakeS3Client:
 
     def put_bucket_versioning(self, **params) -> None:
         self.bucket_configuration.setdefault(params["Bucket"], {}).update(params)
+
+    def get_bucket_cors(self, **params) -> dict:
+        try:
+            rules = self.bucket_cors[params["Bucket"]]
+        except KeyError as exc:
+            raise _S3NoSuchCorsConfigurationError() from exc
+        return {"CORSRules": [dict(rule) for rule in rules]}
+
+    def put_bucket_cors(self, **params) -> None:
+        rules = params["CORSConfiguration"]["CORSRules"]
+        self.bucket_configuration.setdefault(params["Bucket"], {}).update(params)
+        self.bucket_cors[params["Bucket"]] = [dict(rule) for rule in rules]
 
     def get_bucket_policy(self, **params) -> dict:
         try:
@@ -190,6 +211,7 @@ def _provider(client: _FakeS3Client) -> S3StorageProvider:
         region_name=AWS_REGION,
         account_id=AWS_ACCOUNT_ID,
         public_assets_base_url="https://cdn.example",
+        cors_origins=("https://app.example", "https://admin.example/"),
         public_cache_control="public, max-age=60",
         client=client,
     )
@@ -343,6 +365,18 @@ async def test_s3_workspace_bucket_is_hardened_and_signed_urls_are_confined() ->
     }
     assert config["OwnershipControls"] == {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}
     assert config["VersioningConfiguration"] == {"Status": "Enabled"}
+    assert config["CORSConfiguration"] == {
+        "CORSRules": [
+            {
+                "ID": "PraxisBrowserSignedUploads",
+                "AllowedOrigins": ["https://app.example", "https://admin.example"],
+                "AllowedMethods": ["GET", "HEAD", "PUT"],
+                "AllowedHeaders": ["Content-Length", "Content-Type", "If-None-Match"],
+                "ExposeHeaders": ["Content-Length", "Content-Type", "ETag"],
+                "MaxAgeSeconds": 3600,
+            }
+        ]
+    }
     assert config["Policy"]["Statement"] == [
         {
             "Sid": "DenyInsecureTransport",
@@ -376,6 +410,115 @@ async def test_s3_workspace_bucket_provisioning_preserves_existing_tags() -> Non
         {"Key": "environment", "Value": "staging"},
         {"Key": "praxis-workspace", "Value": str(WORKSPACE_ID)},
     ]
+
+
+async def test_s3_public_upload_converges_cors_once_and_preserves_other_rules() -> None:
+    client = _FakeS3Client()
+    client.bucket_cors["public-bucket"] = [
+        {
+            "ID": "OperatorManagedDownload",
+            "AllowedOrigins": ["https://reports.example"],
+            "AllowedMethods": ["GET"],
+        }
+    ]
+    provider = _provider(client)
+    first_ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/one.png")
+    second_ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/two.png")
+
+    await provider.create_signed_upload(
+        first_ref,
+        content_type="image/png",
+        expected_size_bytes=3,
+        expires_in=timedelta(minutes=5),
+    )
+    first_rules = [dict(rule) for rule in client.bucket_cors["public-bucket"]]
+    await provider.create_signed_upload(
+        second_ref,
+        content_type="image/png",
+        expected_size_bytes=3,
+        expires_in=timedelta(minutes=5),
+    )
+
+    assert client.bucket_cors["public-bucket"] == first_rules
+    assert first_rules[0]["ID"] == "OperatorManagedDownload"
+    assert first_rules[1]["ID"] == "PraxisBrowserSignedUploads"
+
+
+async def test_s3_browser_upload_rejects_missing_cors_origins() -> None:
+    provider = S3StorageProvider(
+        public_bucket_name="public-bucket",
+        workspace_bucket_prefix="praxis-test",
+        region_name=AWS_REGION,
+        account_id=AWS_ACCOUNT_ID,
+        public_assets_base_url="https://cdn.example",
+        client=_FakeS3Client(),
+    )
+    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
+
+    with pytest.raises(StorageProviderUnavailableError, match="ALLOWED_CORS_ORIGINS"):
+        await provider.create_signed_upload(
+            ref,
+            content_type="image/png",
+            expected_size_bytes=3,
+            expires_in=timedelta(minutes=5),
+        )
+
+
+async def test_s3_client_uses_stable_regional_path_style_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    client = _FakeS3Client()
+
+    def fake_config(**kwargs):
+        captured["config"] = kwargs
+        return "boto-config"
+
+    def fake_client(service_name: str, **kwargs):
+        captured["service_name"] = service_name
+        captured["client_kwargs"] = kwargs
+        return client
+
+    monkeypatch.setattr(s3_provider_module, "BotoConfig", fake_config)
+    monkeypatch.setattr(
+        s3_provider_module,
+        "boto3",
+        type("FakeBoto3", (), {"client": staticmethod(fake_client)}),
+    )
+
+    S3StorageProvider(
+        public_bucket_name="public-bucket",
+        workspace_bucket_prefix="praxis-test",
+        region_name=AWS_REGION,
+        account_id=AWS_ACCOUNT_ID,
+        public_assets_base_url="https://cdn.example",
+        cors_origins=("https://app.example",),
+    )
+
+    assert captured == {
+        "config": {"signature_version": "s3v4", "s3": {"addressing_style": "path"}},
+        "service_name": "s3",
+        "client_kwargs": {"region_name": AWS_REGION, "config": "boto-config"},
+    }
+
+
+async def test_s3_public_cors_failure_is_mapped_to_storage_error() -> None:
+    client = _FakeS3Client()
+
+    def fail_get_bucket_cors(**_params):
+        raise RuntimeError("cors denied")
+
+    client.get_bucket_cors = fail_get_bucket_cors
+    provider = _provider(client)
+    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
+
+    with pytest.raises(StorageError, match="Failed to configure S3 browser upload CORS"):
+        await provider.create_signed_upload(
+            ref,
+            content_type="image/png",
+            expected_size_bytes=3,
+            expires_in=timedelta(minutes=5),
+        )
 
 
 async def test_s3_workspace_bucket_provisioning_preserves_existing_policy_statements() -> None:

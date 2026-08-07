@@ -19,7 +19,9 @@ class AzureSettingsMixin:
         default=None,
         description=(
             "Optional Azure Blob account URL override. If not set, runtime should derive "
-            "https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net."
+            "https://<AZURE_STORAGE_ACCOUNT_NAME>.blob.core.windows.net. Include this origin "
+            "in the web CSP asset allowlist for signed downloads; browser uploads remain "
+            "relayed through the API."
         ),
     )
     AZURE_MANAGED_IDENTITY_CLIENT_ID: str = Field(

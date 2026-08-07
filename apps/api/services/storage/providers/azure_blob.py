@@ -8,6 +8,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import logging
 import threading
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
@@ -43,9 +44,10 @@ if TYPE_CHECKING:
     from core.settings import Settings
 
 try:  # pragma: no cover - exercised through provider-specific extras
-    from azure.identity import DefaultAzureCredential
+    from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 except ImportError:  # pragma: no cover - base install intentionally omits SDKs
     DefaultAzureCredential = None
+    ManagedIdentityCredential = None
 
 try:  # pragma: no cover - exercised through provider-specific extras
     from azure.core import MatchConditions
@@ -71,6 +73,8 @@ SIGNED_URL_CLOCK_SKEW_MINUTES = 5
 DELEGATION_KEY_CACHE_LIFETIME_HOURS = 6
 DELEGATION_KEY_REFRESH_BUFFER_MINUTES = 10
 
+logger = logging.getLogger(__name__)
+
 
 class AzureBlobStorageProvider:
     """Azure Blob implementation of the provider-neutral contract."""
@@ -88,6 +92,7 @@ class AzureBlobStorageProvider:
         secret_key: str,
         account_url: str | None = None,
         managed_identity_client_id: str | None = None,
+        use_managed_identity: bool = False,
         public_assets_base_url: str | None = None,
         public_cache_control: str | None = None,
         credential: Any | None = None,
@@ -119,6 +124,7 @@ class AzureBlobStorageProvider:
             account_url or f"https://{self.account_name}.blob.core.windows.net"
         ).rstrip("/")
         self.managed_identity_client_id = (managed_identity_client_id or "").strip()
+        self.use_managed_identity = use_managed_identity
         self.public_assets_base_url = (
             public_assets_base_url.rstrip("/") if public_assets_base_url else None
         )
@@ -150,6 +156,9 @@ class AzureBlobStorageProvider:
             secret_key=settings.SECRET_KEY.get_secret_value(),
             account_url=settings.AZURE_STORAGE_ACCOUNT_URL,
             managed_identity_client_id=settings.AZURE_MANAGED_IDENTITY_CLIENT_ID,
+            use_managed_identity=(
+                settings.CLOUD_PROVIDER == "azure" and settings.DEPLOYMENT_ENVIRONMENT != "local"
+            ),
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL,
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
         )
@@ -681,6 +690,10 @@ class AzureBlobStorageProvider:
                 content_type=content_type,
             )
         except Exception as exc:
+            logger.exception(
+                "Azure Blob SAS URL generation failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
                 "Failed to create Azure Blob SAS URL",
                 provider_key=self.provider_key,
@@ -710,6 +723,10 @@ class AzureBlobStorageProvider:
                 delegation_expires_on,
             )
         except Exception as exc:
+            logger.exception(
+                "Azure Blob user delegation key acquisition failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
                 "Failed to acquire Azure Blob user delegation key for signed URL generation",
                 provider_key=self.provider_key,
@@ -723,7 +740,10 @@ class AzureBlobStorageProvider:
         return delegation_key
 
     def _create_credential(self):
-        if DefaultAzureCredential is None:
+        credential_cls = (
+            ManagedIdentityCredential if self.use_managed_identity else DefaultAzureCredential
+        )
+        if credential_cls is None:
             raise StorageProviderUnavailableError(
                 "Azure Blob storage requires the azure extra",
                 provider_key=self.provider_key,
@@ -731,9 +751,10 @@ class AzureBlobStorageProvider:
             )
         kwargs = {}
         if self.managed_identity_client_id:
-            kwargs["managed_identity_client_id"] = self.managed_identity_client_id
+            key = "client_id" if self.use_managed_identity else "managed_identity_client_id"
+            kwargs[key] = self.managed_identity_client_id
         try:
-            return DefaultAzureCredential(**kwargs)
+            return credential_cls(**kwargs)
         except Exception as exc:
             raise StorageProviderUnavailableError(
                 "Failed to initialize Azure Blob credential",
