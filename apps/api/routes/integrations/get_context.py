@@ -8,7 +8,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Path
 
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep, require_read
-from services.integrations.context import get_active_context_selection
+from services.integrations.context import (
+    get_active_context_selection,
+    resolve_active_context_targets,
+)
 from services.integrations.context.schemas import ActiveContextRead, ActiveContextSelectionValue
 
 router = APIRouter(dependencies=[Depends(require_read)])
@@ -28,6 +31,11 @@ async def get_context(
         workspace=workspace,
         conversation_id=conversation_id,
     )
-    return ActiveContextRead(
-        targets=[ActiveContextSelectionValue.from_selection(selection) for selection in selections]
+    targets = [ActiveContextSelectionValue.from_selection(selection) for selection in selections]
+    resolved = await resolve_active_context_targets(
+        db,
+        selections=targets,
+        user=actor,
+        workspace=workspace,
     )
+    return ActiveContextRead.from_resolved(targets=targets, resolved=resolved)

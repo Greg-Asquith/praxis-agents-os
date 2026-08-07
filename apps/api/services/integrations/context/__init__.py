@@ -11,7 +11,10 @@ from services.integrations.context.get_active_context_selection import (
     get_active_context_selection,
 )
 from services.integrations.context.list_context_groups import list_context_groups
-from services.integrations.context.resolve_active_context import resolve_active_context
+from services.integrations.context.resolve_active_context import (
+    resolve_active_context,
+    resolve_active_context_targets,
+)
 from services.integrations.context.set_active_context_selection import (
     set_active_context_selection,
 )
@@ -24,6 +27,7 @@ __all__ = [
     "get_active_context_selection",
     "list_context_groups",
     "resolve_active_context",
+    "resolve_active_context_targets",
     "set_active_context_selection",
     "update_context_group",
 ]

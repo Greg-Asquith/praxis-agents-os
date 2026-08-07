@@ -7,6 +7,7 @@ from uuid import uuid4
 from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.integrations import IntegrationConnection
 from models.workspace import WorkspaceRole
 from tests.factories import (
     build_conversation,
@@ -30,7 +31,12 @@ async def _workspace_resource(db: AsyncSession, identity: dict[str, object]):
     )
     db.add(connection)
     await db.flush()
-    resource = build_integration_resource(connection=connection, enabled=True)
+    resource = build_integration_resource(
+        connection=connection,
+        enabled=True,
+        writable=True,
+        permissions_metadata={"role": "editor", "provider_secret": "internal-only"},
+    )
     db.add(resource)
     await db.commit()
     return conversation, resource
@@ -67,6 +73,22 @@ async def test_context_routes_round_trip_selection_and_group(
         {"type": "context_group", "context_group_id": group["id"]},
         {"type": "resource", "integration_resource_id": str(resource.id)},
     ]
+    assert selected.json()["entries"] == [
+        {
+            "integration_resource_id": str(resource.id),
+            "provider_key": "test_provider",
+            "resource_type": "test_resource",
+            "external_id": "resource-1",
+            "display_name": "Test resource",
+            "connection_id": str(resource.connection_id),
+            "connection_label": "Test connection",
+            "connection_status": "active",
+            "write_allowed": True,
+            "is_personal": False,
+        }
+    ]
+    assert selected.json()["unavailable"] == []
+    assert "permissions_metadata" not in selected.text
     other_conversation = build_conversation(
         user=integration_identity["user"],
         workspace=integration_identity["workspace"],
@@ -106,6 +128,90 @@ async def test_context_routes_round_trip_selection_and_group(
         headers=integration_identity["headers"],
     )
     assert cleared.status_code == 204
+
+
+async def test_context_route_safely_reports_degraded_saved_targets(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    conversation, resource = await _workspace_resource(db_session, integration_identity)
+    selected = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+        json={"targets": [{"type": "resource", "integration_resource_id": str(resource.id)}]},
+    )
+    assert selected.status_code == 200, selected.text
+    assert [entry["integration_resource_id"] for entry in selected.json()["entries"]] == [
+        str(resource.id)
+    ]
+
+    resource.enabled = False
+    await db_session.commit()
+    disabled = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+    )
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["entries"] == []
+    assert disabled.json()["unavailable"] == [
+        {
+            "display_name": "Test resource",
+            "provider_key": "test_provider",
+            "reason": "resource_disabled",
+        }
+    ]
+
+    resource.enabled = True
+    connection = await db_session.get(IntegrationConnection, resource.connection_id)
+    assert connection is not None
+    connection.status = "revoked"
+    await db_session.commit()
+    revoked = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["entries"] == []
+    assert revoked.json()["unavailable"] == [
+        {
+            "display_name": "Test resource",
+            "provider_key": "test_provider",
+            "reason": "connection_revoked",
+        }
+    ]
+
+    created_group = await db_async_client.post(
+        "/api/v1/integrations/context-groups",
+        headers=integration_identity["headers"],
+        json={"name": "Temporary context", "resource_ids": []},
+    )
+    assert created_group.status_code == 201, created_group.text
+    group_id = created_group.json()["id"]
+    selected_group = await db_async_client.put(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+        json={"targets": [{"type": "context_group", "context_group_id": group_id}]},
+    )
+    assert selected_group.status_code == 200, selected_group.text
+    deleted_group = await db_async_client.delete(
+        f"/api/v1/integrations/context-groups/{group_id}",
+        headers=integration_identity["headers"],
+    )
+    assert deleted_group.status_code == 204, deleted_group.text
+    dangling = await db_async_client.get(
+        f"/api/v1/integrations/conversations/{conversation.id}/context",
+        headers=integration_identity["headers"],
+    )
+    assert dangling.status_code == 200, dangling.text
+    assert dangling.json()["entries"] == []
+    assert dangling.json()["unavailable"] == [
+        {
+            "display_name": "Selected context",
+            "provider_key": "unknown",
+            "reason": "dangling",
+        }
+    ]
 
 
 async def test_context_route_allows_read_only_member_to_manage_own_selection(

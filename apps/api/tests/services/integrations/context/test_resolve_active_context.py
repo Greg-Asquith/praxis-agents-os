@@ -17,8 +17,14 @@ from services.agent_runs.domain import (
     RUN_TRIGGER_INTERACTIVE,
     RUN_TRIGGER_SCHEDULED,
 )
-from services.integrations.context.resolve_active_context import resolve_active_context
-from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
+from services.integrations.context.resolve_active_context import (
+    resolve_active_context,
+    resolve_active_context_targets,
+)
+from services.integrations.context.schemas import (
+    MAX_ACTIVE_CONTEXT_TARGETS,
+    ActiveContextSelectionValue,
+)
 from tests.factories import (
     build_active_context_selection,
     build_external_credential,
@@ -91,6 +97,52 @@ async def test_single_resource_selection_resolves_and_fails_closed_for_write(
     assert resolved.source == "conversation"
     assert [entry.display_name for entry in resolved.entries] == ["First resource"]
     assert resolved.entries[0].write_allowed is False
+
+
+async def test_direct_target_resolution_matches_runtime_ordering(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    db_session.add_all(
+        [
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=context_data["second"],
+            ),
+            build_active_context_selection(
+                workspace=context_data["workspace"],
+                conversation=context_data["conversation"],
+                resource=context_data["first"],
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    runtime = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+    direct = await resolve_active_context_targets(
+        db_session,
+        selections=[
+            ActiveContextSelectionValue.for_resource(context_data["second"].id),
+            ActiveContextSelectionValue.for_resource(context_data["first"].id),
+        ],
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+        source="conversation",
+    )
+
+    assert direct == runtime
+    assert [entry.display_name for entry in direct.entries] == [
+        "First resource",
+        "Second resource",
+    ]
 
 
 @pytest.mark.parametrize(

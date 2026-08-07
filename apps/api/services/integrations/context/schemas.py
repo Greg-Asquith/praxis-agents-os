@@ -2,13 +2,18 @@
 
 """Pydantic contracts for active integration context APIs."""
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 from models.integration_context import ActiveContextSelection, IntegrationContextGroup
+
+if TYPE_CHECKING:
+    from services.integrations.context.domain import ResolvedActiveContext
 
 MAX_ACTIVE_CONTEXT_TARGETS = 20
 
@@ -53,15 +58,15 @@ class ActiveContextSelectionValue(RootModel[_SelectionValue]):
         return None
 
     @classmethod
-    def for_resource(cls, resource_id: UUID) -> "ActiveContextSelectionValue":
+    def for_resource(cls, resource_id: UUID) -> ActiveContextSelectionValue:
         return cls(_ResourceSelectionValue(integration_resource_id=resource_id))
 
     @classmethod
-    def for_context_group(cls, group_id: UUID) -> "ActiveContextSelectionValue":
+    def for_context_group(cls, group_id: UUID) -> ActiveContextSelectionValue:
         return cls(_ContextGroupSelectionValue(context_group_id=group_id))
 
     @classmethod
-    def from_selection(cls, selection: ActiveContextSelection) -> "ActiveContextSelectionValue":
+    def from_selection(cls, selection: ActiveContextSelection) -> ActiveContextSelectionValue:
         if selection.integration_resource_id is not None:
             return cls.for_resource(selection.integration_resource_id)
         if selection.context_group_id is None:
@@ -121,6 +126,41 @@ class ActiveContextRead(BaseModel):
     entries: list[ResolvedContextEntryRead] = Field(default_factory=list)
     unavailable: list[UnavailableContextEntryRead] = Field(default_factory=list)
 
+    @classmethod
+    def from_resolved(
+        cls,
+        *,
+        targets: list[ActiveContextSelectionValue],
+        resolved: ResolvedActiveContext,
+    ) -> Self:
+        """Build the public response without exposing runtime-only context fields."""
+        return cls(
+            targets=targets,
+            entries=[
+                ResolvedContextEntryRead(
+                    integration_resource_id=entry.integration_resource_id,
+                    provider_key=entry.provider_key,
+                    resource_type=entry.resource_type,
+                    external_id=entry.external_id,
+                    display_name=entry.display_name,
+                    connection_id=entry.connection_id,
+                    connection_label=entry.connection_label,
+                    connection_status=entry.connection_status,
+                    write_allowed=entry.write_allowed,
+                    is_personal=entry.is_personal,
+                )
+                for entry in resolved.entries
+            ],
+            unavailable=[
+                UnavailableContextEntryRead(
+                    display_name=entry.display_name,
+                    provider_key=entry.provider_key,
+                    reason=entry.reason,
+                )
+                for entry in resolved.unavailable
+            ],
+        )
+
 
 class ContextGroupMemberRead(BaseModel):
     id: UUID
@@ -144,7 +184,7 @@ class ContextGroupRead(BaseModel):
     members: list[ContextGroupMemberRead]
 
     @classmethod
-    def from_group(cls, group: IntegrationContextGroup) -> "ContextGroupRead":
+    def from_group(cls, group: IntegrationContextGroup) -> ContextGroupRead:
         return cls(
             id=group.id,
             workspace_id=group.workspace_id,

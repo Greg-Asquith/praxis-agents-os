@@ -4,6 +4,7 @@
 
 import logging
 from collections.abc import Sequence
+from typing import Literal
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -61,6 +62,27 @@ async def resolve_active_context(
         return EMPTY_ACTIVE_CONTEXT
 
     selections, source = await _load_selection(db, run=root_run, workspace_id=workspace.id)
+    if not selections:
+        return EMPTY_ACTIVE_CONTEXT
+
+    return await resolve_active_context_targets(
+        db,
+        selections=selections,
+        user=user,
+        workspace=workspace,
+        source=source,
+    )
+
+
+async def resolve_active_context_targets(
+    db: AsyncSession,
+    *,
+    selections: Sequence[ActiveContextSelectionValue],
+    user: User,
+    workspace: Workspace,
+    source: Literal["conversation", "schedule"] | None = None,
+) -> ResolvedActiveContext:
+    """Resolve validated targets with the runtime visibility and degradation rules."""
     if not selections:
         return EMPTY_ACTIVE_CONTEXT
 
