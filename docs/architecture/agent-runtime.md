@@ -1,14 +1,12 @@
-# Agent Runtime Architecture (Option C.2)
+# Agent Runtime Architecture
 
-Status: **partially implemented** — the runtime foundation is now in place. The
-backend has the model registry, `agent_runs`, the Pydantic AI runtime core,
-event sinks, durable streamed interactive turns, scheduled-run worker execution,
-approval suspend/resume, and runtime delegation tools for allowlisted specialist
-agents. The Vite app has typed conversation transport, a real chat surface, agent
-management, approval controls, and delegated tool-call rendering. Remaining
-runtime work is mostly reliability and scale: provider transport retries,
-per-run token limits, live thinking streams, bounded history/context processing,
-OpenTelemetry, and the skills runtime.
+Status: **implemented end to end**. The backend has the model registry,
+`agent_runs`, the Pydantic AI runtime core, event sinks, durable streamed
+interactive turns, scheduled-run worker execution, approval suspend/resume, and
+runtime delegation tools for allowlisted specialist agents. The Vite app has
+typed conversation transport, a real chat surface, agent management, approval
+controls, and delegated tool-call rendering. This note describes the runtime as
+it runs today and the design rules that keep it that shape.
 
 ## Decision
 
@@ -17,11 +15,11 @@ talks only to FastAPI: REST for data/auth, a custom **SSE protocol** for live ag
 turns. We do **not** use the Vercel AI SDK on either side — neither its runtime nor
 its UI-message wire format. We own the loop and the wire format.
 
-Rationale (see the discussion that produced this): once the runtime moves into the
-API, Next.js's server tier has nothing left to do for an authenticated operational
-tool, so a server-side JS tier is pure overhead. One backend owns runtime,
-providers, scheduling, auth, and audit — which also makes scheduled execution a
-plain in-process function call instead of a cross-service poke.
+Rationale: with the runtime in the API, a server-side JS tier would have nothing
+left to do for an authenticated operational tool — it would be pure overhead.
+One backend owns runtime, providers, scheduling, auth, and audit, which also
+makes scheduled execution a plain in-process function call instead of a
+cross-service poke.
 
 ## Process topology
 
@@ -36,12 +34,13 @@ Three long-lived processes, one database:
 The **`agent_schedule_runs` table is the only interface between scheduling and
 execution handoff.** The scanner writes claimable rows; the worker pulls them.
 Nothing calls an executor over HTTP. (`claim_due_schedule_runs` in
-`services/agent_schedules/runs.py` already implements the claim half with
+`services/agent_schedules/runs.py` implements the claim half with
 `FOR UPDATE SKIP LOCKED`.)
 
 The worker process is wired into local Compose and `make dev` through
-`workers.agent_runner`. It shares the API image, database, provider settings, and
-storage mount so scheduled runs use the same execution path as interactive turns.
+`workers.main`, which supervises the scheduled-agent runner and the generic
+jobs runner. It shares the API image, database, provider settings, and storage
+mount so scheduled runs use the same execution path as interactive turns.
 
 ## The single execution path
 
@@ -80,11 +79,10 @@ async def execute_run(
   isolated session and shared usage accounting.
 
 Persistence is inside `execute_run`, so a scheduled run with no live client will
-produce the same `ConversationMessage` history a user can open later. In the
-current plain-turn implementation, successful runs commit final messages, usage,
-and terminal status at completion; failures commit terminal run state before
-re-raising. The sink is **only** for live streaming — a fan-out, never the source
-of truth.
+produce the same `ConversationMessage` history a user can open later. Successful
+runs commit final messages, usage, and terminal status at completion; failures
+commit terminal run state before re-raising. The sink is **only** for live
+streaming — a fan-out, never the source of truth.
 
 ### Conversation ownership and delegation
 
@@ -114,10 +112,10 @@ metadata or a delegation tool-result link.
 
 ### Run identity
 
-The generic `agent_runs` table now exists (`models/agent_run.py`) as the universal
-run identity for both interactive and scheduled turns. `agent_schedule_runs`
-requires `schedule_id` and `scheduled_for`, so it could never be that identity; it
-remains the scheduler claim table and links to `agent_runs` once a worker starts
+The generic `agent_runs` table (`models/agent_run.py`) is the universal run
+identity for both interactive and scheduled turns. `agent_schedule_runs`
+requires `schedule_id` and `scheduled_for`, so it cannot be that identity; it is
+the scheduler claim table and links to `agent_runs` once a worker starts
 execution.
 
 `agent_runs` keeps approval, resume, errors, usage, audit correlation, and stream
@@ -229,7 +227,9 @@ apps/api/
         resolution.py          # per-agent resolution + the naming use case
         utils.py               # provider credential seam
   workers/
-    agent_runner.py            # entrypoint: scan -> claim -> execute_run -> mark complete
+    main.py                    # worker entrypoint: supervises both runner loops
+    agent_runner.py            # scan -> claim -> execute_run -> mark complete
+    job_runner.py              # generic jobs queue loop
 ```
 
 ### Provider/model abstraction
@@ -240,9 +240,8 @@ apps/api/
   so delegating to an agent automatically inherits its model. Non-agent utility
   cases still resolve through the same catalog/factory seam: conversation naming
   uses settings constants, while native helper tools can take provider/model as
-  runtime tool arguments. This fixes the old system's wart of duplicating the
-  model catalog across Python and TS — the SPA reads model metadata from the API
-  and never re-encodes it.
+  runtime tool arguments. The SPA reads model metadata from the API and never
+  re-encodes it, so the catalog cannot drift between languages.
 - **Library:** build the loop on **Pydantic AI** (typed tools, structured output,
   streaming, multi-provider — fits the existing Pydantic stack). If provider breadth
   ever outgrows it, drop **LiteLLM** in as the provider layer underneath the factory
@@ -272,8 +271,8 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
 - Treat `Hooks`, `ProcessHistory`, `ToolSearch`, `Thinking`, `WebSearch`,
   `WebFetch`, `MCP`, and `HandleDeferredToolCalls` as Pydantic AI
   `AgentCapability` instances passed through `Agent(..., capabilities=[...])`.
-  The assembly seam exists in `runtime/capabilities.py`; most concrete
-  capabilities beyond the current baseline remain planned.
+  The assembly seam lives in `runtime/capabilities.py`; only the baseline
+  capability set is wired today.
 - Use `Hooks` for audit emission, stream fan-out, model-request policy,
   provider-call observability, and pre-tool validation. This keeps cross-cutting
   concerns out of route handlers and individual tools.
@@ -317,14 +316,13 @@ Use Pydantic AI Harness selectively:
 - If wrapping MCP tools with Code Mode, construct them with `native=False`; native
   provider-side tools bypass the local sandbox.
 - Install `pydantic-ai-harness[codemode]` only once a concrete Code Mode use case
-  exists. Core `pydantic-ai` should carry the first runtime slice.
+  exists.
 
 ## The SSE wire protocol (custom, owned by us)
 
-One streaming POST per turn (mirrors how AI SDK's transport works under the hood,
-without the AI SDK): the request carries the user message; the response is
-`text/event-stream`. The client reads `response.body` — not `EventSource`, so POST
-works.
+One streaming POST per turn: the request carries the user message; the response
+is `text/event-stream`. The client reads `response.body` — not `EventSource`, so
+POST works.
 
 Each event: SSE `event:` = type, `data:` = JSON carrying `run_id`,
 `conversation_id`, and a monotonic `seq`.
@@ -343,15 +341,15 @@ Each event: SSE `event:` = type, `data:` = JSON carrying `run_id`,
 | `error`                  | `{ code, message }`                             |
 | `done`                   | `{ status }` terminal — client closes           |
 
-Version the protocol from day one so client/runtime can evolve independently. The
-backend currently sends `X-Praxis-Stream-Version: 1` on turn streams and exposes
-that header through CORS for the Vite client. Keep the event set small; this table
-is the contract.
+The protocol is versioned so client and runtime can evolve independently: the
+backend sends `X-Praxis-Stream-Version: 1` on turn streams and exposes that
+header through CORS for the Vite client. Keep the event set small; this table is
+the contract.
 
 ## Frontend (Vite SPA)
 
 `apps/web` is a Vite React SPA with TanStack Router and TanStack Query. The
-runtime-facing frontend now lives mostly under `src/features/conversations` and
+runtime-facing frontend lives mostly under `src/features/conversations` and
 `src/features/agents`.
 
 The live conversation surface shows the primary conversation agent, but not an
@@ -376,9 +374,9 @@ apps/web/src/features/
     routes/                    # agents list/detail/new agent
 ```
 
-- **`useAgentStream`** does the work the AI SDK's `useChat` did: POST a
-  conversation create/turn/resume request, read the SSE body, fold events into
-  render state, and expose stream state/actions to the route shell.
+- **`useAgentStream`** owns the stream lifecycle: POST a conversation
+  create/turn/resume request, read the SSE body, fold events into render state,
+  and expose stream state/actions to the route shell.
 - **Server state:** TanStack Query for REST. **Routing:** the existing TanStack
   Router setup.
 - **`protocol.ts` mirrors `events.py`.** Generate it from the backend (e.g. an
@@ -396,56 +394,16 @@ CORS/cookie/CSRF for convenience:
 - **Local dev:** explicit allowed origin for the Vite dev server + `SameSite=Lax`/
   credentialed fetch, configured in settings — not a wildcard.
 
-## Build sequence
+## Current implementation
 
-Current status: steps 1-8 are implemented in the codebase. Step 9 is still a
-future optimization. The work tracked in `docs/plans/` has also moved beyond this
-original runtime sequence: Plans 001-008 are marked done, the current working tree
-contains the Plan 009 delegation implementation under review, and Plans 010-020
-cover the next reliability, observability, history, and skills slices.
+The production runtime includes scheduled and interactive runs, approval
+pause/resume, cooperative cancellation, bounded tool results, single-level
+delegation, provider retry and usage limits, history trimming and summaries,
+skills, files, knowledge retrieval, memory, audited tool dispatch, and opt-in
+OpenTelemetry/Logfire instrumentation. The web app exposes the corresponding
+conversation, approval, agent, schedule, tool-catalog, and audit surfaces.
 
-1. Pydantic AI spike: one provider, one simple tool, `TestModel` coverage,
-   event-stream mapping, and message-history persistence. Prove the dependency
-   and serialization shape before broad abstractions.
-2. Generic run identity: add `agent_runs`, status transitions, usage/error
-   fields, and audit correlation. Link scheduled rows to generic runs.
-3. Model registry (hard-coded, Python-owned) + factory/resolution. No
-   `ai_model_configs` table — model selection lives on the agent row. Keep model
-   strings provider-qualified for Pydantic AI.
-4. Runtime core: `execute_run`, `EventSink`/`StreamSink`/`NullSink`, Pydantic AI
-   agent construction, tool registry, capability assembly seam, message
-   persistence, usage persistence, and run lifecycle persistence.
-5. SSE conversation create/turn endpoints with explicit stream/session ownership -
-   interactive path end to end.
-6. Approval suspend/resume (`resume_run.py` + run approval-state rehydrate) using
-   `DeferredToolRequests`, `DeferredToolResults`, and `ToolDenied`.
-7. `workers/agent_runner.py` plus Docker/local process wiring — scan/claim via
-   existing `runs.py`, create/link an execution run, call `execute_run` with
-   `NullSink`, and mark schedule runs complete/retry/terminal.
-8. Add custom-agent configuration, conversation creation, `useAgentStream`, chat
-   UI, approval UI, and agent/conversation routes to the existing Vite SPA. Keep
-   the live conversation bound to one primary agent rather than adding a composer
-   agent selector.
-9. Add Pydantic AI Harness Code Mode only for toolsets where collapsing many safe
-   tool calls into sandboxed Python is demonstrably useful.
-
-### Plan progress snapshot
-
-- **Done:** scheduled runner and schedule-run finalization after approval
-  (Plans 001 and 005), provider-neutral storage plus cloud adapters and avatar/
-  workspace icon assets (Plans 002-004), frontend stream transport and chat
-  surface (Plans 006-007), agent management plus approval controls (Plan 008),
-  agent delegation (Plan 009), provider retries/token limits/live thinking
-  streams/history trimming (Plans 010-013), skills backend/runtime/UI slices
-  (Plans 016-020), schedule routes/UI (Plans 021-022), audit/security viewing
-  (Plan 023), and the first registry/tool-dispatch/catalog slices (Plans
-  025-028).
-- **Next runtime backlog:** OpenTelemetry instrumentation (Plan 014) and the
-  refreshed Pydantic AI docs digest (Plan 015).
-
-## What this explicitly drops vs the old system
-
-- The Vercel AI SDK (runtime and UI). We rebuild the loop (Pydantic AI) and the
-  chat-stream client (`useAgentStream`) ourselves — the accepted cost of C.2.
-- The Next.js server tier and its internal `schedule-runs/.../execute` route.
-- Any duplication of the model catalog across languages.
+Pydantic AI Harness Code Mode is deliberately not part of the runtime today: it
+should ship only for toolsets where collapsing many safe tool calls into
+sandboxed Python is demonstrably useful, and only where measured tool-use
+patterns justify the additional sandbox and orchestration machinery.

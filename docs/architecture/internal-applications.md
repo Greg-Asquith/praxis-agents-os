@@ -1,19 +1,14 @@
 # Internal Applications
 
-- **Status**: **adopted 2026-07-20** by maintainer decision (roadmap D13).
-  Living document in the `governance.md` / `integration-packaging.md`
-  mold; registers **Gate G7** (applications ride the platform, not beside
-  it — see `docs/plans/000_MASTER_ROADMAP.md` §3). Implemented by plans
-  **082–088** (roadmap Phase 7), with coordinating amendments to plans
-  050 and 078.
-- **Written**: 2026-07-20, from a feasibility reconciliation of the
-  internal-builders product brief against the repository at the current
-  Phase 4a state (037/038 landed, 039 Slice A in flight, 040–042 pending).
-- **Rule**: downstream plans implement slices of this note and
-  cite the section they implement. A plan that deviates records the
-  deviation back into this note in the same PR.
+- **Status**: design position; the applications capability is **not yet
+  built**. Everything below is design intent except where it names existing
+  substrate. The load-bearing rule stands regardless of how the slicing
+  evolves: applications ride the platform — its identity, dispatch, policy,
+  and audit boundaries — rather than beside it.
+- **Rule**: implementation work cites the section it implements. A change
+  that deviates records the deviation back into this note in the same PR.
 - This note contains **architecture, not product scope**. Intake flows,
-  triage policy, and catalogue UX are product-brief territory; where an
+  triage policy, and catalogue UX are product territory; where an
   application's code lives, what it may touch, and who may change what is
   this note's.
 
@@ -73,13 +68,13 @@ Consequences that fall out of this single choice:
 | Audit and incident history | existing `audit_events`, actor = user *via* app |
 | Disable/revoke | row flag checked at frame mint and token verify time |
 
-This is where the codebase already points: plans 050/051 (artifacts) build
-versioned HTML bundles served sandboxed with strict CSP, and dormant
-scaffolding exists for exactly this surface — `middleware/utils.py`
-matches `/apps/{id}/frame` paths, `middleware/security_headers.py` relaxes
-`frame-ancestors` for them, and the CORS allowlist already carries
-`X-Praxis-App-Frame-Token`. Internal applications are artifacts grown up:
-bundle + contract + scoped capabilities + audience.
+This is where the codebase already points: artifacts serve versioned HTML
+bundles sandboxed with strict CSP, and dormant scaffolding exists for exactly
+this surface — `middleware/utils.py` matches `/apps/{id}/frame` paths,
+`middleware/security_headers.py` relaxes `frame-ancestors` for them, and the
+CORS allowlist already carries `X-Praxis-App-Frame-Token`. Internal
+applications are artifacts grown up: bundle + contract + scoped capabilities +
+audience.
 
 ## 3. The three-tier change model
 
@@ -91,7 +86,7 @@ artifact, and route:
 |---|---|---|---|---|
 | **Application** — workflow, UI, config, business rules | Internal builder + their coding agent | Contract + bundle | Push/upload → validation gates → draft → publish | None |
 | **Building block** — new tool, provider operation, collection type, UI component | Platform/technical owner | In-repo package | Normal review, following the packaging law (`integration-packaging.md`) | Yes, isolated |
-| **Platform** — dispatch, identity, contracts, policy, serving | Core maintainers | Core code | Roadmap plans | Yes |
+| **Platform** — dispatch, identity, contracts, policy, serving | Core maintainers | Core code | Normal review | Yes |
 
 - Builders **cannot** reach the repository. An application that needs a
   capability no existing building block provides produces a **capability
@@ -169,8 +164,8 @@ application to bypass Praxis. The boundary is structural:
 
 ### 5.1 The sandbox
 
-The bundle is served on the artifact-style sandboxed surface (plans
-050/051's three-layer defense, extended): opaque/isolated origin,
+The bundle is served on the artifact-style sandboxed surface (the artifacts
+three-layer defense, extended): opaque/isolated origin,
 `sandbox` attributes, and a strict CSP whose `connect-src` allows **only
 the Praxis API origin** (the deliberate difference from artifacts'
 `connect-src 'none'`). Consequences, enforced by the browser rather than
@@ -242,9 +237,7 @@ project:
 
 - Vite + the approved UI component baseline;
 - a typed client for the app capability surface (generated from the
-  OpenAPI schema — currently disabled in the running app and only
-  materialized for a contract test; re-enabling it behind auth is a
-  prerequisite);
+  authenticated OpenAPI schema route);
 - a manifest/contract stub;
 - **coding-agent instructions** (`AGENTS.md`/`CLAUDE.md`) plus a
   machine-readable building-block catalogue snapshot — tool names, input/
@@ -309,13 +302,13 @@ scope-diffing contract versions at publish time.
 | Capability contract | `RuntimeToolDefinition` — effect, effect_scope, policies, output model, presentation, import-time validation | No serialized **input** JSON Schema in the catalogue; no `version` field on tools; both cheap now, migrations later |
 | One audited execution path | `dispatch.py` choke point + envelopes + audit | Agent-run-coupled; needs the headless entrypoint + app-principal envelope |
 | Approvals | Suspend/resume + approvals UI | Conversation-coupled; needs a generic primitive |
-| Per-workspace capability gating | `is_tool_allowed` seam | Stubbed `return True`; needs a real grant model |
+| Per-workspace capability gating | `is_tool_allowed` seam + per-agent tool policies | No per-workspace grant model |
 | Credentials/secrets | Integration credential engine + secrets providers | None for this note's purposes |
-| Versioned content + serving | Files/`FileRevision`; artifacts plans 050/051; `/apps/{id}/frame` middleware scaffolding | Serving route, mint/verify, and bundle conventions unbuilt |
+| Versioned content + serving | Files/`FileRevision`; the artifacts serving pipeline; `/apps/{id}/frame` middleware scaffolding | App serving route, mint/verify, and bundle conventions unbuilt |
 | App data | `app` schema + Alembic branch + `AppModel` base | Zero tables; the collection service is greenfield |
 | Background work | Generic jobs harness | App-attributed enqueue conventions only |
 | Governance/threat model | `governance.md`, `threat-model.md` | New rows/sections, same shape |
-| Working integrations to compose | 037/038 engine; 039 Slice A in flight | 039 Slice B, 040, 041, 042 — prerequisite product value |
+| Working integrations to compose | OAuth, API-key, and service-account connections with discovery and context selection | None for this note's purposes |
 
 ## 9. Non-goals
 
@@ -329,72 +322,25 @@ scope-diffing contract versions at publish time.
   are tier-2 human-owned packages).
 - Public/external-user exposure of applications.
 
-## 10. Sequencing (plan numbers assigned at adoption, 2026-07-20)
+## 10. Open decisions
 
-Nothing here preempts the current roadmap. Phase 4a/4b (039 Slice B →
-040 → 041 → 042; KB lane) comes first — applications composing
-integrations require working integrations, and the brief's Workstream H
-*is* that phase.
+Resolved before implementation starts, with these working defaults:
 
-Cheap contract prerequisites worth folding into current work before the
-catalogue hardens around their absence — **plan 082**: tool `version`
-field, serialized input schemas on the catalogue route, a real
-`is_tool_allowed` grant model, OpenAPI re-enabled behind auth (as an
-authenticated schema route; plan 078's anonymous-docs posture stands).
-
-Then, in plan-sized slices (roadmap Phase 7):
-
-1. **Plan 083** — headless dispatch + app-principal envelope + generic
-   approvals. Gate G7 registers here.
-2. **Plan 084** — token mint/verify (frame + dev paths) + scope
-   enforcement on the app capability surface.
-3. **Plan 085** — application model + contract + versioned bundle over
-   Files + sandboxed serving (sequenced after artifacts 050/051 —
-   artifacts is the serving substrate; 050 carries the D13
-   forward-compatibility amendment).
-4. **Plan 086** — app data service on the `app` schema.
-5. **Plan 087** — application kit: template, dev proxy, catalogue export,
-   push + validation gates.
-6. **Plan 088** — catalogue/audience surface + one reference application
-   through the full loop.
-
-## 11. Open decisions (distributed into the implementing plans)
-
-Resolved at adoption (2026-07-20): the two framing constraints in §1 are
-confirmed (decision 1), and sequencing relative to artifacts and the KB
-lane is fixed in the roadmap's Phase 7 section (decision 8). The rest
-carry defaults or STOPs in their owning plans and are resolved at plan
-execution:
-
-1. ~~Confirm the two framing constraints in §1~~ — confirmed by D13.
-2. First supported application shape and a first reference application
+1. First supported application shape and a first reference application
    (internal, read-mostly, recognisable to a non-technical operator) —
-   **plan 088**, maintainer STOP.
-3. Frame/dev token mechanics: lifetime, storage, revocation, and whether
-   dev tokens default read-only (§4.2 default) — **plan 084**, defaults
-   marked for review.
-4. App data service v1 scope: typed collections vs schemaless JSONB with
-   quotas — **plan 086**, default: schemaless JSONB + quotas.
-5. Whether app-owned schedules ship v1 (via a referenced agent) or
-   defer — deferred out of v1; the contract's agent/schedule references
-   (§7) reserve the seam. Revisit after 088.
-6. Validation gate set for v1 and which checks must be runtime
-   enforcement rather than publish-time validation — **plan 087**,
-   decision 6/7.
-7. Where the UI component baseline for templates comes from (shared
-   package vs copied scaffold) — **plan 087**, default: copied scaffold.
-8. ~~Sequencing relative to artifacts (050/051) and the KB lane~~ —
-   fixed in the roadmap (082 interleaves with Phase 4a; 083–088 after
-   040–042 and 050/051).
+   maintainer decision.
+2. Frame/dev token mechanics: lifetime, storage, revocation, and whether
+   dev tokens default read-only (§4.2 default).
+3. App data service v1 scope — default: schemaless JSONB + quotas.
+4. Whether app-owned schedules ship in v1 (via a referenced agent) —
+   default: not in v1; the contract's agent/schedule references (§7)
+   reserve the seam.
+5. Validation gate set for v1 and which checks must be runtime
+   enforcement rather than publish-time validation.
+6. Where the UI component baseline for templates comes from (shared
+   package vs copied scaffold) — default: copied scaffold.
 
-## 12. Source material
+## 11. Adjacent notes
 
-- Product brief: the internal-builders positioning and technical roadmap
-  brief (external marketing repository, 2026-07-20).
-- Repository reconciliation: four-subsystem capability audit (tool
-  registry/dispatch/approvals/audit; integrations; identity/authz;
-  files/schedules/jobs/data), 2026-07-20, against the working tree at
-  branch `advisor/039-integration-resource-discovery`.
-- Adjacent notes: `governance.md`, `threat-model.md`,
-  `integration-packaging.md`, `agent-runtime.md`; roadmap
-  `docs/plans/000_MASTER_ROADMAP.md` (Phase 4a/4b, plans 050/051).
+`governance.md`, `threat-model.md`, `integration-packaging.md`, and
+`agent-runtime.md`.

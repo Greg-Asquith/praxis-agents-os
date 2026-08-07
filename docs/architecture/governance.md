@@ -2,55 +2,52 @@
 
 # Governance & Lifecycle
 
-- **Status**: living document (owning gate: G3, `docs/plans/000_MASTER_ROADMAP.md` §3)
-- **Written**: 2026-07-06 at `0cbbb39` (plan 029)
-- **Rule**: downstream plans implement *slices* of this note and cite the
-  section they implement ("per `governance.md` §3 Retention"). A plan that
-  deviates records the deviation back into this note in the same PR. When a
-  slice ships, its cell moves from `[default — confirm at review]` to
-  `[implemented: plan NNN]`. A cell left unmarked after its plan ships is a
-  review failure.
+- **Status**: living policy document
+- **Rule**: implementation changes cite the relevant section (for example,
+  "per `governance.md` §3 Retention"). Any deliberate deviation is recorded
+  back into this note in the same pull request. When a policy ships, its cell
+  moves from `[default — confirm at review]` to *(enforced)*.
 - This note contains **policy, not implementation**. Enforcement mechanics
-  live in the plans and code that cite it.
+  live in the code and tests that implement it.
 
 Every default below is marked `[default — confirm at review]` unless marked
-*(enforced today)*. Flipping a default updates this note, not plan 029.
+*(enforced)*. Flipping a default updates this note alongside the code.
 
 ## 1. Role Matrix
 
 Role machinery: `WorkspaceRole` owner/admin/member/read_only
-(`models/workspace.py:26-32`); role sets `MANAGER_ROLES` (owner+admin),
+(`models/workspace.py`); role sets `MANAGER_ROLES` (owner+admin),
 `EDITOR_ROLES` (+member), `READ_ROLES` (+read_only)
-(`services/workspaces/utils.py:24-31`); gating via `require_role` and the
+(`services/workspaces/utils.py`); gating via `require_role` and the
 `require_owner`/`require_editor`/`require_read` shortcuts
-(`core/dependencies.py:243-269`). Super-admin is an email allowlist
-(`require_super_admin`, `core/dependencies.py:227`).
+(`core/dependencies.py`). Super-admin is an email allowlist
+(`require_super_admin`, `core/dependencies.py`).
 
-Legend: ✓ allowed, — denied. Plan numbers name the implementing plan.
-All non-*(enforced)* cells are `[default — confirm at review]`.
+Legend: ✓ allowed, — denied. All non-*(enforced)* cells are
+`[default — confirm at review]`.
 
 | Operation | read_only | member | admin | owner |
 |---|---|---|---|---|
 | View agents/conversations/schedules/skills/files/KB/artifacts | ✓ | ✓ | ✓ | ✓ |
-| Create/edit agents, skills *(enforced today: EDITOR)* | — | ✓ | ✓ | ✓ |
-| Create schedules *(enforced today: 021, `agent_schedules/authorisation.py`)* | — | ✓ | ✓ | ✓ |
-| Mutate others' schedules *(enforced today: 021 owner-or-admin)* | — | — | ✓ | ✓ |
-| Upload/edit/delete files (031–032) *(enforced today: 032, `services/files` access gates)* | — | ✓ | ✓ | ✓ |
-| Hard-delete / purge files (032) *(enforced today: 032, `require_file_purge_access`)* | — | — | ✓ | ✓ |
-| Connect/revoke own user-scoped integrations (037–038) *[implemented: plan 038]* | — | ✓ | ✓ | ✓ |
-| Connect/revoke workspace-scoped integrations (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Select integration resources / set conversation context / edit context groups (039–040) *[implemented: plans 039–040]* | — | ✓ | ✓ | ✓ |
-| View credential metadata — never secret values (037/042) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Enter API keys / secret references (037–038) *[implemented: plan 038]* | — | — | ✓ | ✓ |
-| Replace API keys / service-account keys on an existing connection *[implemented: plan 090]* | — | — | ✓ | ✓ |
-| Create/edit KB documents (044/046) *[implemented: plan 046]* | — | ✓ | ✓ | ✓ |
-| Delete workspace-scope memories (049) *[implemented: plan 049]* | — | — | ✓ | ✓ |
-| Edit/delete own-scope (user/agent) memories (049) *[implemented: plan 049]* | — | ✓ | ✓ | ✓ |
-| Create artifacts via agents (050) *[implemented: plan 050]* | — | ✓ | ✓ | ✓ |
-| Create/revoke artifact share links (051) *[implemented: plan 051]* | — | — | ✓ | ✓ |
-| View audit log *(enforced today: 023 MANAGER)* | — | — | ✓ | ✓ |
-| View security events *(enforced today: 023 super-admin only — `security_events` has no workspace column)* | — | — | — | — |
-| Configure agent tool policies *(enforced today: EDITOR via agents)* | — | ✓ | ✓ | ✓ |
+| Create/edit agents, skills *(enforced: EDITOR)* | — | ✓ | ✓ | ✓ |
+| Create schedules *(enforced: `agent_schedules/authorisation.py`)* | — | ✓ | ✓ | ✓ |
+| Mutate others' schedules *(enforced: owner-or-admin)* | — | — | ✓ | ✓ |
+| Upload/edit/delete files *(enforced: `services/files` access gates)* | — | ✓ | ✓ | ✓ |
+| Hard-delete / purge files *(enforced: `require_file_purge_access`)* | — | — | ✓ | ✓ |
+| Connect/revoke own user-scoped integrations *(enforced)* | — | ✓ | ✓ | ✓ |
+| Connect/revoke workspace-scoped integrations *(enforced)* | — | — | ✓ | ✓ |
+| Select integration resources / set conversation context / edit context groups *(enforced)* | — | ✓ | ✓ | ✓ |
+| View credential metadata — never secret values *(enforced)* | — | — | ✓ | ✓ |
+| Enter API keys / secret references *(enforced)* | — | — | ✓ | ✓ |
+| Replace API keys / service-account keys on an existing connection *(enforced)* | — | — | ✓ | ✓ |
+| Create/edit KB documents *(enforced)* | — | ✓ | ✓ | ✓ |
+| Delete workspace-scope memories *(enforced)* | — | — | ✓ | ✓ |
+| Edit/delete own-scope (user/agent) memories *(enforced)* | — | ✓ | ✓ | ✓ |
+| Create artifacts via agents *(enforced)* | — | ✓ | ✓ | ✓ |
+| Create/revoke artifact share links *(enforced)* | — | — | ✓ | ✓ |
+| View audit log *(enforced: MANAGER)* | — | — | ✓ | ✓ |
+| View security events *(enforced: super-admin only — `security_events` has no workspace column)* | — | — | — | — |
+| Configure agent tool policies *(enforced: EDITOR via agents)* | — | ✓ | ✓ | ✓ |
 
 Context Groups inherit the active workspace's scope. In a shared workspace,
 group members must come from connections owned by that same workspace. In a
@@ -64,39 +61,38 @@ user-scoped memory is visible and mutable only to its owning user, including
 when another workspace member is an admin or owner. Workspace-scoped memory
 edits are member+, matching KB document edits; archive and purge remain
 admin+. Agent-scoped memories are workspace-visible and member-editable.
-[implemented: plan 049]
+*(enforced)*
 
 ## 2. Approval Defaults Per Tool Effect
 
-Mechanics are plans 025/026 (registry `effect` metadata, dispatch choke
-point, per-agent `tool_policies`); this section is the policy law:
+Mechanics are the registry `effect` metadata, the dispatch choke point, and
+per-agent `tool_policies`; this section is the policy law:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
-  scratch, Praxis Files, memory notes, KB documents — D9: Praxis owns the
+  scratch, Praxis Files, memory notes, KB documents — Praxis owns the
   KB) are internal in the run envelope. Their tool-level approval policy
   can still be stricter: durable Praxis file writes require approval even
-  though they do not cross the Praxis boundary, and
-  agent-initiated KB document writes default `approval` through plan 046's
-  write-policy choke point. [implemented: plan 028 for todos; implemented:
-  plans 034/054 for scratch and Praxis Files; implemented: plan 048 for
-  auto-mounted memory notes. No agent KB write tool ships in the v1 KB slice;
-  this recorded default applies when one does.]
+  though they do not cross the Praxis boundary, and agent-initiated KB
+  document writes default `approval` through the KB write-policy choke
+  point. *(enforced for todos, scratch, Praxis Files, and auto-mounted
+  memory notes. There is deliberately no agent KB write tool; the recorded
+  default applies when one ships.)*
 - Core-memory saves and updates always require approval, even though memory is
   Praxis-internal state and the tools are auto-mounted. The conditional check
   remains inside the tool body so an agent policy cannot weaken it.
-  [implemented: plan 048]
+  *(enforced)*
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
-  and external KB writes) default `approval`. [integrations implemented:
-  plans 041 and 050; external KB targets pending]
+  and external KB writes) default `approval`. *(enforced for integration
+  writes and artifact publication; no external KB targets exist)*
 - Tool policy and human approval never grant a workspace role. Runtime
   dispatch reloads the initiating user's active membership and requires
   `EDITOR_ROLES` before every `effect="write"` invocation; read-only members
-  may continue conversations and use `effect="read"` tools.
-- Anything that **spends money** (e.g. Google Ads mutations, 041) is
+  may continue conversations and use `effect="read"` tools. *(enforced)*
+- Anything that **spends money** (e.g. Google Ads mutations) is
   `approval` with `supports_auto=False` — per-agent configuration may not
-  weaken it. [implemented: plan 041 Slice B]
+  weaken it. *(enforced)*
 - Non-interactive principals: scheduled runs stamp a server-minted
   side-effect grant at run preparation time; the default is
   `require_approval`, and schedules may explicitly opt into `allow` when
@@ -104,7 +100,7 @@ point, per-agent `tool_policies`); this section is the policy law:
   under `require_approval` pause through the normal approval flow, while
   internal writes continue automatically. Delegated runs inherit the
   parent's side-effect grant and delegation cap at child-run creation.
-  [implemented: plan 054]
+  *(enforced)*
 
 ## 3. Retention & Deletion
 
@@ -113,41 +109,42 @@ Two laws:
 1. **Deletion is symmetric** — soft-deleting a row that owns blobs
    tombstones the blobs; the sweeper hard-deletes rows AND blobs together.
 2. **Audit rows survive their subject's deletion** — audit FKs are
-   `ondelete="SET NULL"` *(enforced today: `models/audit_event.py:19,37,44`)*.
+   `ondelete="SET NULL"` *(enforced: `models/audit_event.py`)*.
 
-Sweepers ride the plan 030 jobs harness (one sweep kind per resource,
-registered by the owning plan). All values `[default — confirm at review]`.
+Sweepers ride the generic jobs harness (one sweep kind per resource,
+registered by the owning domain). Values not marked *(enforced)* are
+`[default — confirm at review]`.
 
 | Resource | Soft delete | Hard delete after | Storage cascade | Audit survives | Export |
 |---|---|---|---|---|---|
-| Files/FileRevisions (031/032) | ✓ [implemented: plan 031 schema + plan 032 lifecycle] | 30 d [implemented: plan 032] | tombstone blob; sweeper deletes both [implemented: plan 032] | ✓ [implemented: plan 032 mutation audit] | ✓ (single-file signed downloads shipped in 032; signed URL batch unplanned) [default — confirm at review] |
-| Scratch (034) | TTL expiry [implemented: plan 034] | 7 d rolling TTL; purge content on expiry; agent-visible promotion retired by plan 050 [implemented: plans 034/050] | n/a (DB text) [implemented: plan 034] | rows summarized [implemented: plan 034] | — |
-| Jobs + payloads (030) | terminal rows kept [implemented: plan 030] | 30 d [implemented: plan 030] | n/a | counters only [implemented: plan 030] | — |
-| KB documents/chunks/embeddings (044) | ✓ [implemented: plan 044] | 30 d after soft-delete; chunks/vectors cascade on hard-delete [implemented: plan 044] | n/a (canonical markdown in Postgres) [implemented: plan 044] | ✓ (audit rows have no subject FK; mutation audit lands with routes) [implemented: plan 044 retention posture] | ✓ (canonical markdown) [implemented: plan 044] |
-| Memories (048–049) *[implemented: plans 048–049]* | supersession and archive by default | archive at `expires_at`; hard-delete only by an explicit user purge [implemented: plan 049] | n/a | ✓ | ✓ |
-| Credentials (037) | revoke = soft [implemented: plan 039] | 30 d after revoke; tokens crypto-shredded at revoke [implemented: plan 039] | n/a | metadata only, never values | — |
-| Integration resources/discovery runs (039) | ✓ / plain rows [implemented: plan 039] | 90 d [implemented: plan 039] | n/a | counters [implemented: plan 039] | — |
-| Artifact shares (051) *[implemented: plan 051]* | revocable [implemented: plan 051] | at `expires_at` (default 7 d) [implemented: plan 051] | n/a | ✓ [implemented: plan 051] | — |
+| Files/FileRevisions | ✓ *(enforced)* | 30 d *(enforced)* | tombstone blob; sweeper deletes both *(enforced)* | ✓ *(enforced)* | single-file signed downloads *(enforced)*; batch export [default — confirm at review] |
+| Scratch | TTL expiry *(enforced)* | 7 d rolling TTL; content purged on expiry *(enforced)* | n/a (DB text) | rows summarized *(enforced)* | — |
+| Jobs + payloads | terminal rows kept *(enforced)* | 30 d *(enforced)* | n/a | counters only *(enforced)* | — |
+| KB documents/chunks/embeddings | ✓ *(enforced)* | 30 d after soft-delete; chunks/vectors cascade on hard-delete *(enforced)* | n/a (canonical markdown in Postgres) | ✓ (audit rows have no subject FK) *(enforced)* | ✓ (canonical markdown) *(enforced)* |
+| Memories | supersession and archive by default *(enforced)* | archive at `expires_at`; hard-delete only by an explicit user purge *(enforced)* | n/a | ✓ | ✓ |
+| Credentials | revoke = soft *(enforced)* | 30 d after revoke; tokens crypto-shredded at revoke *(enforced)* | n/a | metadata only, never values | — |
+| Integration resources/discovery runs | ✓ / plain rows *(enforced)* | 90 d *(enforced)* | n/a | counters | — |
+| Artifact shares | revocable *(enforced)* | at `expires_at` (default 7 d) *(enforced)* | n/a | ✓ *(enforced)* | — |
 | Audit events | append-only | 400 d | n/a | n/a | ✓ (super-admin) |
 | Security events | append-only | 400 d | n/a | n/a | super-admin only |
-| Conversation todos (028) | rides conversation | with conversation | n/a | digest rows | — |
-| Conversation summaries (056) | derived rows, one per trim watermark | with conversation; safe to regenerate | n/a (bounded Postgres text) | no separate audit; source messages remain canonical | — |
+| Conversation todos | rides conversation | with conversation | n/a | digest rows | — |
+| Conversation summaries | derived rows, one per trim watermark | with conversation; safe to regenerate | n/a (bounded Postgres text) | no separate audit; source messages remain canonical | — |
 
 ## 4. Quotas & Cost Controls
 
 Law: all limits are **soft in v1 — counters + admin visibility first, hard
-enforcement second**. Each counter names the plan that adds it. All values
+enforcement second**. Values not marked *(enforced)* are
 `[default — confirm at review]`.
 
-| Quota | Default | Counter added by |
-|---|---|---|
-| Per-workspace storage | 10 GB | 032 [implemented: counter + soft flag, no hard enforcement] |
-| Upload size | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (50 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB) *(enforced today; image/video keys normalized by 031 from AI-specific names for shared file use)* | — |
-| Embedding budget | 2 M tokens/month/workspace | 043 [implemented: plan 043] |
-| Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings [implemented: plan 030 counter + warning, plan 033 claim-seam enforcement and files surface] | 030 (counter implemented), 033 (first enforcement seam) |
-| Per-run token/step caps | plan 011 `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through plan 104 completion contracts *(enforced today)* | 104 (schedule-declared tightening + structured exhaustion evidence) |
-| Artifact-share creation | 10/hour/workspace [implemented: plan 051] | 051 |
-| Integration API retries | `Retry-After`-aware, bounded attempts | 037 [implemented: plan 037] |
+| Quota | Default |
+|---|---|
+| Per-workspace storage | 10 GB *(counter + soft flag enforced; no hard enforcement)* |
+| Upload size | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (50 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB) *(enforced)* |
+| Embedding budget | 2 M tokens/month/workspace *(enforced)* |
+| Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings *(counter and claim-seam enforcement in place)* |
+| Per-run token/step caps | runtime `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through schedule completion contracts *(enforced)* |
+| Artifact-share creation | 10/hour/workspace *(enforced)* |
+| Integration API retries | `Retry-After`-aware, bounded attempts *(enforced)* |
 
 ## 5. Secrets Operating Model
 
@@ -155,60 +152,42 @@ enforcement second**. Each counter names the plan that adds it. All values
   Manager, Azure Key Vault, or AWS Secrets Manager, behind a provider
   contract like storage). Dev uses an env-var/encrypted-file provider,
   **local-only** the way console email is; the production-safety
-  `model_validator` in `core/settings/__init__.py:51` must reject a missing
+  `model_validator` in `core/settings/__init__.py` rejects a missing
   or incompletely configured secret provider outside local environments.
-  [implemented: plan 037]
+  *(enforced)*
 - The API accepts **references only** (`{provider, name, version}`). A raw
   secret value in a request body is a validation error — except the
-  deliberate api-key connect flow (037–038), which immediately writes the value
-  to the manager and stores only the reference. [references-only storage
-  implemented: plan 037; api-key HTTP flow implemented: plan 038]
+  deliberate api-key connect flow, which immediately writes the value
+  to the manager and stores only the reference. *(enforced)*
 - Only OAuth tokens are stored (encrypted) in Postgres; everything else is
-  a reference resolved at call time. [implemented: plan 037]
+  a reference resolved at call time. *(enforced)*
 - Rotation = new secret version + asynchronous connection discovery; the old
   version stays readable while the new version is checked. Reference
   credentials are replaced in place on the existing connection, without
-  changing auth mode or deleting externally owned secrets. [implemented:
-  plans 038/090]
+  changing auth mode or deleting externally owned secrets. *(enforced)*
 - The local-only encrypted store has its own API-root-anchored path, separate
   from served object storage. API and worker processes coordinate through an
   OS-level lock, and same-directory atomic replacement prevents partial or
   lost writes. Secret-store availability failures are operational 503s; they
   preserve credentials and prior resources for discovery retry rather than
-  requesting reauthentication. [implemented: plan 090]
+  requesting reauthentication. *(enforced)*
 - Entry rights per §1 (admin+). [default — confirm at review]
 - Audited events: reference create/update/delete and every **resolve
   failure** — never secret values, and no audit on successful resolves (too
-  noisy). [reference create/delete and resolve-failure audit implemented:
-  plan 037; reference update lands with connection rotation in plan 038]
+  noisy). *(enforced)*
 
 ## 6. Notification Policy
 
 Target: the existing in-app substrate
-(`services/notifications/service.py:105` `create_notification`, already
-used by invites). Email stays out until a digest exists. All rows
-`[default — confirm at review]`.
+(`services/notifications/service.py` `create_notification`, used by
+invites). Email stays out until a digest exists. Rows not marked
+*(enforced)* are `[default — confirm at review]`.
 
-| Event | Notify (in-app) | Recipient | Emitting plan |
-|---|---|---|---|
-| Schedule run terminal failure / auto-disable | ✓ | schedule owner | 021-adjacent worker |
-| OAuth integration `needs_reauth` | ✓ [implemented: plans 039/090] | connecting user [implemented: plan 039] | 039/090 |
-| Reference integration `needs_credential` | ✓ [implemented: plan 090] | connecting user | 090 |
-| Integration discovery terminal failure | ✓ [implemented: plans 039/090] | connecting user [implemented: plan 039] | 039/090 |
-| Job pipeline failure — only after final retry exhausted | ✓ [implemented: plan 030] | initiator (`initiated_by_user_id`) [implemented: plan 030] | 030 |
-| Every tool invocation, successful runs, routine refreshes | — (audit only) | — | — |
-
-## Consumed By
-
-| Plan | Sections implemented |
-|---|---|
-| 030 (jobs) | §3 (jobs retention, sweep pattern), §4 (jobs counter), §6 (job failure notify) |
-| 031/032 (files) | §1, §3 (files), §4 (storage counter) |
-| 034 (scratch + file tools) | §2, §3 (scratch) |
-| 037–039 (integrations core) | §1, §3 (credentials/resources), §4 (retries), §5, §6 |
-| 090 (credential recovery) | §1 (replacement RBAC), §5 (rotation/local store), §6 |
-| 054 (run envelopes) | §2 (non-interactive side-effect grants) |
-| 041 (first providers) | §2 (spend rule) |
-| 043–046 (KB) | §1, §3 (KB), §4 (embedding budget), §2 (KB writes) |
-| 048–049 (memory) | §1, §2, §3 (memories) |
-| 050–051 (artifacts) | §1, §2, §3 (shares), §4 (share rate limit) |
+| Event | Notify (in-app) | Recipient |
+|---|---|---|
+| Schedule run terminal failure / auto-disable | ✓ | schedule owner |
+| OAuth integration `needs_reauth` | ✓ *(enforced)* | connecting user *(enforced)* |
+| Reference integration `needs_credential` | ✓ *(enforced)* | connecting user |
+| Integration discovery terminal failure | ✓ *(enforced)* | connecting user *(enforced)* |
+| Job pipeline failure — only after final retry exhausted | ✓ *(enforced)* | initiator (`initiated_by_user_id`) *(enforced)* |
+| Every tool invocation, successful runs, routine refreshes | — (audit only) | — |

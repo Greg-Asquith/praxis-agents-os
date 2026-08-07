@@ -22,12 +22,12 @@ For the non-technical version of this comparison, see
 |---|---|---|---|---|
 | Answers | "How do I do this task?" | "Work with this specific document" | "What does the workspace know?" | "What has the agent learned over time?" |
 | Content | Procedural instructions + reference docs | Arbitrary documents with revision history | Canonical markdown, chunked and embedded | Durable facts with provenance |
-| Storage | `skills` table; docs in object storage | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | Planned |
-| Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments | `knowledge` instruction prompt block + auto-mounted search tools | Planned: budgeted core-memory prompt block + tools |
-| Retrieval | None | None | Hybrid RRF: lexical + pgvector semantic + recency | Planned (shares `services/retrieval/`) |
-| Scope | Workspace rows, assigned per agent via `Agent.skill_ids` | Workspace; conversation visibility via `file_references` | Workspace-wide, with per-user private tier | Planned: per workspace/agent/user scope |
-| Agent-writable | No | Yes (`write_file`; auto by default, approval configurable) | No (read tools only) | Planned |
-| Status | Shipped end to end | Shipped end to end | Shipped end to end | Planned — not built |
+| Storage | `skills` table; docs in object storage | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings) |
+| Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments | `knowledge` instruction prompt block + auto-mounted search tools | Budgeted core-memory prompt block + auto-mounted memory tools |
+| Retrieval | None | None | Hybrid RRF: lexical + pgvector semantic + recency | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`) |
+| Scope | Workspace rows, assigned per agent via `Agent.skill_ids` | Workspace; conversation visibility via `file_references` | Workspace-wide, with per-user private tier | Per workspace/agent/user scope |
+| Agent-writable | No | Yes (`write_file`; auto by default, approval configurable) | No (read tools only) | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
+| Status | Shipped end to end | Shipped end to end | Shipped end to end | Shipped end to end |
 
 ## Skills
 
@@ -69,8 +69,7 @@ handing an agent a specific document to work on.
   2. Auto-mounted tools on every agent: `list_files`, `read_file` (returns
      images as native multimodal parts), and `write_file` (durable files;
      auto by default, approval configurable). Artifact drafting and
-     versioning use `create_artifact`/`update_artifact`; the former
-     scratch/promote tool workflow was retired with artifacts.
+     versioning use `create_artifact`/`update_artifact`.
   3. Turn attachments: attached file content is spliced directly into the
      user prompt (`services/files/resolve_chat_attachments.py`).
 - **Management.** `/files` routes, `services/files/`, web UI at `/files` with
@@ -126,16 +125,29 @@ Use the KB when the content is *reference information any agent might need*
 and the access pattern is "find the relevant part", not "process this
 document".
 
-## Memories (planned)
+## Memories
 
-Durable, cross-conversation facts an agent accumulates. **Not built** — no
-model, routes, tools, or UI exist yet. The planned design (see
-`docs/plans/`): scoped `agent_memories` with backend-minted provenance,
-dedup/reinforcement, read-time confidence decay and supersession, agent-facing
-memory tools through the existing registry, and a budgeted core-memory block
-rendered through the same prompt assembler. Until it ships, document
-memory-like behavior as pending — do not imply agents remember anything
-across conversations.
+Durable, cross-conversation facts associated with a user, agent, or workspace.
+
+- **Model.** `apps/api/models/agent_memories.py`: scoped `agent_memories` rows
+  (`scope ∈ {agent, user, workspace}`, `kind ∈ {core, note}`) with
+  backend-minted provenance (source conversation/run, creator), reinforcement
+  counters, expiry, and supersession links. Content is markdown in Postgres
+  with `HALFVEC` embeddings.
+- **Runtime.** The backend deduplicates and reinforces matching facts, applies
+  confidence decay and supersession at read time, and renders a budgeted
+  core-memory block through the shared prompt assembler. Search is hybrid RRF
+  (lexical + semantic + recency) through the shared `services/retrieval/`
+  seam.
+- **Tools.** Auto-mounted `save_memory`, `search_memory`, `update_memory`, and
+  `forget_memory` go through the audited tool registry; core-memory writes
+  always require approval, and an agent policy cannot weaken that.
+- **Management.** `/memories` routes, `services/memories/`, web UI where
+  operators review, correct, archive, and purge memories.
+
+Use memory when an agent *learns something during a conversation* that should
+shape later conversations — not for reference documents (KB) or working
+material (files).
 
 ## Conversation summaries (compaction — not memory)
 
@@ -154,6 +166,4 @@ should never be described as memory.
 - A versioned agent-authored report, page, diagram, or table the user will
   view, present, or share → **Artifact**.
 - Reference material found by search, shared workspace-wide → **KB document**.
-- Something learned that should persist across conversations → **Memory**
-  (blocked until the memory vertical ships; do not bolt lookalikes onto the
-  other three in the meantime).
+- Something learned that should persist across conversations → **Memory**.

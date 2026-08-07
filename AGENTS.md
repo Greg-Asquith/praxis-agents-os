@@ -126,10 +126,10 @@ the application default remains disabled for other environments;
 servers. In that workflow only Postgres runs in Docker; the API, worker, and
 web processes run locally, and `make dev-kill` stops all three. PostgreSQL 18
 uses the major-aware `/var/lib/postgresql` mount and a dedicated
-`praxis-postgres-18-data` volum. `makecompose-dev` runs the complete development
-stack in Docker using `docker-compose.dev.yml`, while `make quickstart` runs the 
-default production-image stack and prompts for an LLM provider key if none is
-configured.
+`praxis-postgres-18-data` volume. `make compose-dev` runs the complete
+development stack in Docker using `docker-compose.dev.yml`, while
+`make quickstart` runs the default production-image stack and prompts for an
+LLM provider key if none is configured.
 Make detects both `docker compose` and legacy `docker-compose`. When changing Docker
 behavior: keep local services bound to
 `127.0.0.1`, keep production images small and non-root, and do not bake

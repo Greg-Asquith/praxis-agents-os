@@ -1,18 +1,17 @@
 # Inbound Integration Events
 
 - **Status**: living document (receipt spine implemented; subscriptions pending)
-- **Written**: 2026-07-10 (plan 077)
-- **Rule**: implementing plans cite the section they implement and record any
+- **Rule**: implementation work cites the section it implements and records any
   deviation back into this note in the same PR. Defaults stay visibly marked
-  `[default — confirm at review]` until an implementing plan lands and replaces
-  the marker with `[implemented: plan NNN]`.
-- Plan 079 implements the receipt, registration, provider-lifecycle, processing,
-  retention, and event-principal substrate. Subscription matching and run
-  creation remain reserved for a later plan.
+  `[default — confirm at review]` until an implementation lands and replaces
+  the marker with `*(implemented)*`.
+- The receipt, registration, provider-lifecycle, processing, retention, and
+  event-principal substrate is implemented. Subscription matching and run
+  creation are not built yet.
 
 ## 1. Problem and non-goals
 
-The Phase 4a integration design is pull-first: Praxis discovers resources and
+The integration engine is pull-first: Praxis discovers resources and
 calls provider APIs, but providers cannot notify Praxis that something changed.
 That leaves reactive workflows such as “triage a new email” without an honest
 receipt, verification, deduplication, or unattended-run model.
@@ -22,7 +21,7 @@ foundations. They do not create a second integration engine or policy path.
 
 Non-goals:
 
-- MCP transport or MCP notifications. Roadmap decision D7 remains unchanged.
+- MCP transport or MCP notifications.
 - Outbound events, a general activity feed, or changes to notification policy.
 - Reusing cron schedules as event subscriptions. Schedules remain
   `next_run_at`/croniter-driven.
@@ -65,7 +64,7 @@ Receipt uses the existing Postgres-backed rate limiter with a fail-closed
 posture. Its key is bounded to provider key plus trusted source IP; it must not
 include attacker-controlled webhook ids or event ids. The first implementation
 adds an `integration_webhook_receipts` limit type and limit of 120 requests per
-minute per provider/source-IP pair `[implemented: plan 079]`. Rejected
+minute per provider/source-IP pair *(implemented)*. Rejected
 requests, including verification failures, consume the same budget so invalid
 traffic cannot become unbounded cryptographic or audit work.
 
@@ -121,9 +120,9 @@ verification so rejected floods cannot create an unbounded audit-table flood.
 
 ## 4. Event persistence and deduplication
 
-`integration_events` is a reserved core-branch table name. It is append-mostly
-and uses plain `Base + UUIDMixin + TimestampMixin` rows without soft-delete
-columns. The first event implementation owns the migration.
+`integration_events` is a core-branch table (`models/integrations.py`). It is
+append-mostly and uses plain `Base + UUIDMixin + TimestampMixin` rows without
+soft-delete columns.
 
 `integration_webhooks` is the durable registration registry. It maps the
 server-minted receipt id to provider key, connection/resource, provider webhook
@@ -146,8 +145,8 @@ lifecycle status. Secret values never enter the row.
 | `processed_at`         | Nullable terminal-processing timestamp                       |
 
 Payload persistence is capped by `INTEGRATIONS_EVENT_PAYLOAD_MAX_BYTES`, 64 KiB
-`[implemented: plan 079]`. The HTTP layer also rejects bodies beyond a
-separate hard receipt cap of 1 MiB `[implemented: plan 079]`, preventing
+*(implemented)*. The HTTP layer also rejects bodies beyond a
+separate hard receipt cap of 1 MiB *(implemented)*, preventing
 unbounded reads. An authenticated body above the persistence cap stores only its
 digest and normalized envelope; processing re-pulls authoritative data from the
 provider. Payloads are untrusted external data even after transport
@@ -164,9 +163,9 @@ Receipt uses insert-or-ignore. A duplicate returns 2xx and creates neither a
 second row nor a second job. `integrations.process_event` remains idempotent under
 job retry and checks the row status before effects.
 
-Terminal event rows are retained for 30 days `[implemented: plan 079]`.
-Plan 039's `integrations.sweep_stale` job gains one deletion clause; receipt does
-not introduce a second sweeper.
+Terminal event rows are retained for 30 days *(implemented)*. The existing
+`integrations.sweep_stale` job owns the deletion clause; receipt does not
+introduce a second sweeper.
 
 ## 5. Processing pipeline
 
@@ -195,7 +194,7 @@ may not create agent runs directly.
 Event subscriptions are a new object, not a schedule mode. The reserved
 `integration_event_subscriptions` shape maps an enabled connection, optional
 resource, and event type to an agent and prompt template. The exact schema and
-RBAC land with a later numbered plan. Filters, batching/debounce, and
+RBAC land with the implementing change. Filters, batching/debounce, and
 per-subscription side-effect overrides are explicit revisit triggers.
 
 The processor creates an `AgentRun` through the existing run-creation seam with
@@ -205,26 +204,26 @@ together in the implementing migration.
 
 The safety law is non-negotiable: an `event` run is unattended and receives the
 same side-effect posture as a scheduled run. Its server-minted envelope is
-hard-coded to `require_approval` `[implemented: plan 079]`; therefore an
+hard-coded to `require_approval` *(implemented)*; therefore an
 event-triggered run cannot execute an unapproved external write. Internal Praxis
 writes remain available, and tools that always require approval remain stricter.
 No client or prompt field can widen the envelope. There is no event-specific
-policy setting in v1 `[implemented: plan 079]`; any future divergence requires a
-product decision and its own plan.
+policy setting in v1 *(implemented)*; any future divergence requires a
+product decision.
 
 ## 7. Provider posture
 
 | Provider   | Manifest `event_delivery`                                             | Verification and lifecycle                                                                                | First implementation posture                                                       |
 | ---------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Gmail      | `pubsub_push`                                                         | Google Pub/Sub OIDC push; `users.watch`; watches renew before their roughly seven-day expiry              | First reactive-email provider after the receipt spine                              |
-| Airtable   | `webhook`                                                             | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice, implemented by plan 079                                  |
+| Airtable   | `webhook`                                                             | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice *(implemented)*                                  |
 | Google Ads | `none`                                                                | Google Ads has no push surface                                                                            | Poll-only; do not create a webhook placeholder                                     |
 
 Gmail watch renewal and Airtable webhook refresh ride registered job kinds, not
 API-process timers. Gmail renewal runs daily `[default — confirm at review]`,
 matching Google's current recommendation while remaining inside the seven-day
 maximum. Airtable refresh follows the provider-reported expiry with a 24-hour
-safety margin where supported `[implemented: plan 079]`. Failures use the
+safety margin where supported *(implemented)*. Failures use the
 existing connection status and notification policy rather than a
 provider-specific alert path.
 
@@ -232,20 +231,19 @@ Provider facts were re-verified on 2026-07-10 against the official
 [Gmail push guide](https://developers.google.com/workspace/gmail/api/guides/push),
 [Pub/Sub authenticated-push guide](https://cloud.google.com/pubsub/docs/authenticate-push-subscriptions),
 and [Airtable Webhooks overview](https://support.airtable.com/docs/airtable-webhooks-api-overview).
-Re-check them when the implementing provider plan starts; the manifest's
+Re-check them when provider implementation starts; the manifest's
 `google_ads="none"` value remains the explicit product posture until an official
 Google Ads push surface is documented.
 
 ## 8. Rollout order and revisit triggers
 
-Rollout order:
+The central receipt spine plus Airtable webhooks — route, verification
+contract, persistence/dedup, processing job, security audit, retention, and
+synthetic-provider coverage — is implemented. Remaining rollout order:
 
-1. Plan 079 (DONE 2026-07-24): central receipt spine plus Airtable webhooks — route,
-   verification contract, persistence/dedup, processing job, security audit,
-   retention, and synthetic-provider coverage.
-2. Gmail `users.watch` + Pub/Sub verification, renewal, and reactive-email
+1. Gmail `users.watch` + Pub/Sub verification, renewal, and reactive-email
    subscription path.
-3. Subscription management routes and UI after the trigger contract has proven
+2. Subscription management routes and UI after the trigger contract has proven
    safe operationally.
 
 Revisit only with observed need:

@@ -1,9 +1,11 @@
-# Agent behavior evals
+# Agent Behavior Evaluations
 
-These opt-in evaluations use live provider models through the production
-`build_runtime_agent` seam and begin by calibrating memory deduplication through
-the configured live embedding provider. They are deliberately outside pytest
-and never run as part of `make check`.
+These optional evaluations exercise the same agent runtime used by the system,
+using live provider models and the configured embedding provider. They check
+behavior that deterministic tests cannot judge well, including instruction
+following, tool choice, and resistance to hostile external content. Because
+they use paid model APIs, they stay outside pytest and never run as part of
+`make check`.
 
 Run from the repository root:
 

@@ -1,6 +1,6 @@
 # Security Policy
 
-## Supported versions
+## Supported Versions
 
 Praxis Agents OS is currently in the `0.x` release series. Security fixes are
 provided for the latest `0.x` minor release only.
@@ -10,7 +10,7 @@ provided for the latest `0.x` minor release only.
 | 0.1.x   | Yes       |
 | < 0.1   | No        |
 
-## Reporting a vulnerability
+## Reporting a Vulnerability
 
 Please do not open a public issue for a suspected vulnerability.
 
@@ -23,7 +23,7 @@ The maintainer aims to acknowledge reports within five working days. This is a
 target, not a service-level agreement. Updates will follow as the issue is
 validated and a remediation path is established.
 
-## Dependency audit policy
+## Dependency Audit Policy
 
 CI audits the locked production dependency sets for both applications. The API
 audit exports hashed requirements from `apps/api/uv.lock` without development
@@ -48,7 +48,7 @@ python3 .github/scripts/dependency_audit.py api
 python3 .github/scripts/dependency_audit.py web
 ```
 
-## Deployment hardening
+## Deployment Hardening
 
 Do not leave registration open while claiming the first super-admin identity.
 For a new deployment:
@@ -61,6 +61,7 @@ For a new deployment:
 
 Never use the public `.env.example` secret values outside
 `ENVIRONMENT=local`. Production deployments must use secure cookies,
-cloud-backed storage, and a cloud secret manager. See the
-[completed deployment security review](docs/plans/complete/deployment-000-security-review.md)
-for the deployment-hardening decisions and accepted-risk process.
+cloud-backed storage, and a cloud secret manager. The
+[GCP deployment runbook](deploy/gcp/README.md) shows the supported production
+setup, and the [threat model](docs/architecture/threat-model.md) records the
+security boundaries maintainers must preserve.

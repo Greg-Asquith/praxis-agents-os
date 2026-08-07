@@ -1,13 +1,11 @@
 # Integration Provider Packaging
 
-- **Status**: living document (binds Phase 4a and every later provider)
-- **Written**: 2026-07-07 at `71ef591` (plan 061)
-- **Rule**: plans 037–042 implement slices of this note; a plan that
-  deviates records the deviation back into this note in the same PR. Every
-  provider added after Phase 4a follows the checklist in §8 — a provider
-  that needs edits outside its own package (beyond the two one-line
-  registration points named in §8) is an architecture regression and a
-  review failure.
+- **Status**: living document (binds every provider)
+- **Rule**: implementation work follows this note; a change that deviates
+  records the deviation back into this note in the same PR. Every new
+  provider follows the checklist in §8 — a provider that needs edits
+  outside its own package (beyond the two one-line registration points
+  named in §8) is an architecture regression and a review failure.
 - This note contains **structure, not product scope**. What each provider
   does is its plan's business; where its code lives and what it may touch
   is this note's.
@@ -19,8 +17,8 @@ credentials, and UI were woven through shared modules, so every deployment
 carried every provider, and touching one provider meant regression-testing
 all of them. Praxis will accumulate many providers (Google Ads, Meta,
 Gmail, Drive, Microsoft variants, Airtable, …) and different customers
-want disjoint subsets. Without a packaging law, Phase 4a's registry
-becomes the same monolith with better naming.
+want disjoint subsets. Without a packaging law, the registry becomes
+the same monolith with better naming.
 
 Goals, in priority order:
 
@@ -32,7 +30,7 @@ Goals, in priority order:
 3. **Blast-radius isolation**: a provider's bugs, dependencies, and tests
    are contained in its package. Provider→provider imports are forbidden.
 4. **No governance regression**: policy, approvals, audit, and credential
-   handling stay centralized (roadmap Target 1). Packaging distributes
+   handling stay centralized. Packaging distributes
    *contribution*, never *enforcement*.
 
 ## 2. Principles
@@ -78,13 +76,13 @@ Goals, in priority order:
 
 | Concern | Owner | Why it must not fragment |
 |---|---|---|
-| Tool contract, registry, dispatch, audit, approvals, envelopes | `services/agents/runtime/tools/` + `dispatch.py` (025/026) | one policy/audit surface — Gate G1 |
-| Provider manifest contract + registration | `services/integrations/manifest.py` (037) | one catalog the routes/UI read |
-| Credential storage, encryption, refresh locking, crypto-shred | `services/integrations/credentials/` (037) | security-critical, identical per provider |
-| Secrets provider abstraction | `services/secrets/` (037) | governance §5 |
-| OAuth connect flows, api-key connect, state signing | `routes/integrations/` + engine services (038) | one hardened flow, parameterized by manifest |
-| Discovery job harness, status machine, sweeps | 039 | one lifecycle; providers supply only `discover_resources` |
-| Active-context resolution + fan-out | 040 | one place that decides what agents operate on |
+| Tool contract, registry, dispatch, audit, approvals, envelopes | `services/agents/runtime/tools/` + `dispatch.py` | one policy/audit surface |
+| Provider manifest contract + registration | `services/integrations/manifest.py` | one catalog the routes/UI read |
+| Credential storage, encryption, refresh locking, crypto-shred | `services/integrations/credentials/` | security-critical, identical per provider |
+| Secrets provider abstraction | `services/secrets/` | governance §5 |
+| OAuth connect flows, api-key connect, state signing | `routes/integrations/` + engine services | one hardened flow, parameterized by manifest |
+| Discovery job harness, status machine, sweeps | `services/integrations/discovery/` | one lifecycle; providers supply only `discover_resources` |
+| Active-context resolution + fan-out | `services/integrations/context/` | one place that decides what agents operate on |
 | SSE protocol, `ToolActivity` shape, presentation schema | stream/protocol + tool contract | stale-client safety; closed vocabularies |
 
 A provider package supplies: manifest data, a discovery function,
@@ -98,7 +96,6 @@ optional preview definitions, tests — and optionally a small web UI module.
 ```
 apps/api/integrations/
   __init__.py            # namespace only — no imports of provider packages
-  fake/                  # the 037 contract-fake, first package (local-only) — superseded, see §10 (decision D11): removed; the first packages are 041's real providers
   gmail/
     __init__.py          # exports PROVIDER: IntegrationProviderPlugin
     manifest.py          # the IntegrationProviderManifest entry (data)
@@ -117,6 +114,7 @@ apps/api/integrations/
       send_message.py
   google_ads/            # same shape
   airtable/              # same shape
+  bigquery/              # same shape
 ```
 
 `integrations/` is a top-level package beside `services/`, `routes/`,
@@ -126,16 +124,19 @@ are a package boundary, not a subdirectory convention. Tests mirror it at
 
 ### 4.2 The plugin contract
 
-`services/integrations/plugin.py` (part of the 037 engine):
+`services/integrations/plugin.py`:
 
 ```python
 @dataclass(frozen=True)
 class IntegrationProviderPlugin:
-    manifest: IntegrationProviderManifest          # 037 shape, unchanged
-    discover_resources: DiscoverResourcesFn | None # required iff manifest.requires_discovery
+    manifest: IntegrationProviderManifest
+    discover_resources: DiscoverResourcesFn | None  # required iff manifest.requires_discovery
     metadata_sync_job_kind: str | None = None       # provider-owned metadata handler
-    tool_definitions: tuple[RuntimeToolDefinition, ...]
+    oauth_config: OAuthConfigFn | None = None
+    tool_definitions: tuple[RuntimeToolDefinition, ...] = ()
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
+    entity_resolvers: tuple[EntityResolverDefinition, ...] = ()
+    event_definition: IntegrationEventDefinition | None = None
 ```
 
 Each provider package's `__init__.py` exports exactly one
@@ -145,11 +146,9 @@ contain a kind, audit operation name, and raw-content fetch function; the
 engine retains connection scoping, response bounds, HTML sanitization, and
 audit. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
-don't grow the contract ad hoc. The optional metadata job kind was added by
-the first warehouse provider so discovery and selection can trigger
-provider-owned cache refresh without an engine branch. (Addendum §9 adds one optional
-attribute: `oauth_operations`, default `None`.) *(superseded — see §10
-(decision D11): §9 is withdrawn; no OAuth-operations field exists.)*
+don't grow the contract ad hoc. The optional metadata job kind lets a
+warehouse-style provider trigger provider-owned cache refresh from discovery
+and selection without an engine branch.
 
 ### 4.3 The loader
 
@@ -172,8 +171,7 @@ def load_enabled_providers() -> None:
 - **Fail-fast at boot**: an unknown key (module missing), a package without
   `PROVIDER`, or a plugin failing validation raises at startup. A
   misconfigured deployment must not come up half-integrated.
-- Import-time invariants (extends the 037 manifest checks and the 025
-  registry checks): `manifest.provider_key == key == package name`; every
+- Import-time invariants (extending the manifest and registry checks): `manifest.provider_key == key == package name`; every
   tool's `provider == key`; every tool name starts with `f"{key}_"`; oauth
   mode ⇒ scopes, api_key mode ⇒ form fields; `requires_discovery` ⇒
   `discover_resources` is not None; every tool carries a complete
@@ -187,10 +185,6 @@ def load_enabled_providers() -> None:
 
 - `INTEGRATIONS_ENABLED_PROVIDERS: list[str] = []` — the boot-time
   enablement list. Empty default: integrations are opt-in per deployment.
-- Settings validator: `"fake"` in the list is rejected outside
-  `ENVIRONMENT=local` (same law as local_fs storage / console email).
-  *(superseded — see §10 (decision D11): no `"fake"` key exists to gate;
-  the clause is not built)*
 - Per-provider operational settings (OAuth client ids, developer tokens)
   stay in the core settings mixins as today — settings are deployment
   config, not provider code. They are prerequisites for loading the provider,
@@ -202,8 +196,8 @@ Per-provider extras in `apps/api/pyproject.toml` when (and only when) a
 provider needs an SDK, following the storage precedent exactly: extra
 `integration-<key>`, guarded import inside the module
 (`try: import x / except ImportError: x = None`), instantiation-time
-failure with a clear error naming the extra. REST-only providers (all of
-v1, per 041 decision 3) declare no extra.
+failure with a clear error naming the extra. REST-only providers (all
+current providers) declare no extra.
 
 ### 4.6 Import laws (enforced)
 
@@ -224,8 +218,8 @@ v1, per 041 decision 3) declare no extra.
 
 ### 4.7 Graceful degradation
 
-Disabling a provider must degrade agents, not brick them. Two changes to
-the engine (landing with the 037/041 slices):
+Disabling a provider must degrade agents, not brick them. Two engine
+behaviors guarantee this:
 
 - **Write-time stays strict**: saving an agent with a tool name absent
   from the live catalog is still rejected (`validate_tool_configuration`).
@@ -233,8 +227,8 @@ the engine (landing with the 037/041 slices):
   saved `tool_names` entry that is missing from the catalog — logging a
   warning and recording the skipped names in run metadata — instead of
   raising `ModelConfigurationError`. An agent that had Gmail tools keeps
-  running (without them) when Gmail is disabled; the 027 tool selector
-  already renders unavailable saved tools, so the UI story is consistent.
+  running (without them) when Gmail is disabled; the tool selector
+  renders unavailable saved tools, so the UI story is consistent.
   Unknown *policies* and other config corruption still raise — leniency
   applies only to catalog absence.
 
@@ -362,83 +356,30 @@ It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,
 or any `features/` code. Reviewers hold the line here.
 
-## 9. Addendum (2026-07-10, plan 080): optional OAuth-operations seam *(superseded — see §10 (decision D11))*
+## 9. Current provider set
 
-*(This entire section is superseded — see §10 (decision D11): the seam
-is withdrawn with its only consumer.)*
+The shipped providers are Gmail, Google Ads, and Airtable, plus BigQuery
+through the §8 N+1 checklist. There is no fake or sample provider in product
+code: contract and loader tests use a suite-local test provider registered
+through the loader in test code — fixtures under the test tree — with provider
+HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
+Manual QA connects real dev credentials (Airtable's API key is the cheapest
+connect). The engine's generic manifest-driven OAuth flow is the only token
+path; revisit only if a real provider cannot use it.
 
-Recorded from plan 080 decision 1 (amends §4.2; 037 implements):
-
-- `IntegrationProviderPlugin` gains one optional attribute —
-  `oauth_operations`, default `None` — for providers that cannot use the
-  engine's generic manifest-driven OAuth HTTP flow (038). The generic
-  flow remains the default; a provider supplies `oauth_operations` only
-  when its token issuance/refresh/revoke cannot be expressed as
-  manifest-driven HTTP against provider endpoints.
-- The fake provider is the first consumer: its in-process token
-  issuance/refresh/revoke back the 037/038 credential state machine
-  without real OAuth, resolving the gap between the 037 amendment (the
-  fake moves wholly into `integrations/fake/`) and a plugin contract
-  that previously had no token seam.
-- Resolution is loader-only: the engine (credential service refresh,
-  038's connect-flow short-circuits) reaches a provider's
-  `oauth_operations` through the loaded plugin, never by importing
-  `integrations.*` directly — the §4.6 import laws are unchanged.
-- The registry/dispatch singularity (§2 principle 1, §3) is unaffected:
-  this distributes contribution of an auth *implementation*, not
-  policy, audit, credential storage, or dispatch.
-
-## 10. Addendum (2026-07-10, decision D11): the fake provider is removed
-
-Recorded from roadmap decision D11 (2026-07-10): "**The fake integration
-provider is removed entirely.** The shipped provider set is exactly D4 —
-Gmail, Google Ads, Airtable." Where this section conflicts with anything
-above (including §9), this section wins.
-
-- **The fake provider is removed from the design.** The §4.1 package
-  tree's `fake/` first-package entry and the §4.4 settings-validator
-  rejection of `"fake"` in `INTEGRATIONS_ENABLED_PROVIDERS` no longer
-  apply — no fake provider package, no fake manifest entry, and no
-  fake-specific validator clause ships. The first packages under
-  `apps/api/integrations/` are 041's real providers (`gmail/`,
-  `google_ads/`, `airtable/`).
-- **§9's `oauth_operations` seam is withdrawn with its only consumer.**
-  The plugin contract stays
-  `manifest + discover_resources + tool_definitions` (§4.2 as originally
-  written); the engine's generic manifest-driven OAuth flow (038) is the
-  only token path. Revisit only if a real provider cannot use the
-  generic flow.
-- **Contract/loader tests use a suite-local test provider registered
-  through the loader in test code** — fixtures under the test tree,
-  never product code — with provider HTTP (token/userinfo/discovery
-  endpoints) mocked at the transport layer. Manual QA connects real dev
-  credentials (Airtable's API key is the cheapest connect). The import
-  laws (§4.6), loader invariants (§4.3), and enablement layers (§4.4,
-  §6) are otherwise unchanged.
-
-## 11. Addendum (2026-07-28, decision D14): BigQuery extends the provider set
-
-Decision D14 supersedes only D11's statement that the shipped provider set is
-exactly the first three providers. The fake provider remains removed and all
-packaging, loader, and test laws remain binding.
-
-BigQuery is the first provider added through the N+1 checklist. Its first
-slice contributes a tool-free, discoverable package under
-`integrations/bigquery/`: a workspace-owned service-account manifest, bounded
-REST client, and dataset discovery. It needs no SDK extra, provider-specific
-engine branch, frontend module, or registration edit. The shared Google
-service-account helper now receives the provider key from each caller so
-validation and token errors remain correctly attributed without coupling the
-credential layer to either Google Ads or BigQuery. The schema-cache plugin
-seam and provider-owned sync job landed next: the plugin declares only its
-metadata job kind, the generic discovery and selection paths enqueue it, and
-the provider registers the handler through the narrow jobs-registry seam
-listed in §4.6. The provider now registers three read tools through the same
-package surface: cache-backed table listing and schema lookup plus a
-dry-run-gated SELECT query bounded by active datasets, reference count, bytes,
-rows, and location. Warehouse values remain plain typed data under the
-operator-controlled database exception recorded in the threat model. The
-final slice adds a separate lazy frontend module with a BigQuery icon,
+BigQuery demonstrates the checklist end to end. Its package under
+`integrations/bigquery/` contributes a workspace-owned service-account
+manifest, a bounded REST client, dataset discovery, a schema-cache metadata
+sync job declared through the plugin's job kind and registered via the narrow
+jobs-registry seam (§4.6), and three read tools: cache-backed table listing
+and schema lookup plus a dry-run-gated SELECT query bounded by active
+datasets, reference count, bytes, rows, and location. It needs no SDK extra,
+provider-specific engine branch, or registration edit. The shared Google
+service-account helper receives the provider key from each caller so
+validation and token errors stay correctly attributed without coupling the
+credential layer to any one Google provider. Warehouse values remain plain
+typed data under the operator-controlled database exception recorded in the
+threat model. Its lazy frontend module supplies a BigQuery icon,
 plain-language connection guidance, and guarded table, schema, and query
-presenters. The shared service-account form stays manifest-driven and
-write-only; provider-specific UI remains inside `src/integrations/bigquery/`.
+presenters; the shared service-account form stays manifest-driven and
+write-only.

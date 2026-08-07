@@ -5,26 +5,28 @@
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg)](https://www.python.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24-5FA04E.svg)](https://nodejs.org/)
 
-Open source foundations for the system behind
-[Praxis Agents](https://www.praxis-agents.ai/).
+Praxis Agents OS is the open source platform behind
+[Praxis Agents](https://www.praxis-agents.ai/). It gives teams one place to
+create agents, talk with them, approve sensitive actions in the tools they
+use, schedule work, connect data, and audit what happened afterwards.
 
-Praxis Agents OS is a platform for creating, operating, and governing AI
-agents: workspaces and identity, agent conversations with tool calls and
-approvals, schedules, files, skills, integrations, and audit trails — built as
-a small, clean codebase that a small team can run and maintain.
+The codebase is intentionally compact enough for a small team to understand,
+run, and maintain. The complexity stays in the platform so users get clear
+defaults, visible controls, and a useful audit trail.
 
-Praxis is not an orchestration framework like LangGraph or a visual workflow
-builder in the Dify/n8n class. It is a self-hosted operating environment for
-teams that need workspace boundaries, role-based access, audited tool
-dispatch, and approval-gated side effects around the agents they run.
+Praxis is not an agent orchestration framework like LangGraph or a visual
+workflow builder in the Dify/n8n class. It is a self-hosted operating
+environment for teams that need workspace boundaries, role-based access,
+audited tool dispatch, and approval-gated side effects around the agents they
+run.
 
 <!-- Screenshot: seeded Home action surface -->
 <!-- Demo GIF: conversation with a tool approval and rich result -->
 
 ## Quickstart (Docker only)
 
-You need Docker and an API key for OpenAI, Anthropic, or Google.
-Python, Node.js; `uv`, and `pnpm` are not required on the host machine when running via Docker.
+You need Docker and an API key for OpenAI, Anthropic, or Google. The Docker
+quickstart does not require Python, Node.js, `uv`, or `pnpm` on your machine.
 
 ```bash
 git clone https://github.com/Greg-Asquith/praxis-agents-os.git
@@ -32,14 +34,14 @@ cd praxis-agents-os
 make quickstart
 ```
 
-`make quickstart` checks Docker, asks for an LLM API key without echoing it (any
+`make quickstart` checks Docker, asks for an LLM API key (any
 of the three providers — it recognizes the key by its prefix), creates the
-uncommitted local configuration, runs migrations, builds the production
+local configuration, runs database migrations, builds the production
 images, and starts Praxis at `http://localhost:3000`. Sign up, then create a
 workspace and your first agent.
 
-To run without Make (ie using Windows PowerShell or Command Prompt), put the key in
-the process environment and run Compose directly:
+To run without Make — for example from Windows PowerShell or Command Prompt —
+put the key in the process environment and run Compose directly:
 
 ```bash
 OPENAI_API_KEY=sk-your-key docker compose up --build
@@ -51,18 +53,18 @@ In PowerShell, set the variable first with
 `.local/` and `apps/api/.env`, both ignored by Git. Stop the stack with
 `Ctrl+C`; the local database is preserved as a Docker Volume.
 
-## Status
+## What's Included
 
 The core platform is wired end to end (API, worker, and UI):
 
 - Auth and identity: password, OAuth, and TOTP sign-in, sessions, users, and
   workspaces with memberships and invitations.
 - Agents and conversations: configurable agents, SSE chat with live tool
-  calls, approval workflows with resume, delegation between agents, and run
+  calls, approval workflows with resumption, delegation between agents, and run
   cancellation, plus provenance-tracked memory with core-memory prompt
   injection and operator review, correction, archive, and purge.
 - Tooling: a typed tool registry with a single audited dispatch choke point,
-  a tool catalog surface, per-agent tool policies, and a behavior evaluation
+  a tool catalog surface, per-agent tool policies, and a basic behavior evaluation
   harness (`make evals`, intentionally outside `make check`).
 - Files, skills, and Knowledge Base: signed two-phase uploads, immutable
   revisions, background markdown extraction, agent file tools, skill
@@ -82,7 +84,7 @@ The core platform is wired end to end (API, worker, and UI):
 
 Notifications exist as a backend service without routes or UI yet.
 
-### No telemetry
+### No Telemetry
 
 Praxis sends no analytics or phone-home data. Observability is opt-in and runs
 in infrastructure you configure.
@@ -96,17 +98,20 @@ in infrastructure you configure.
 |   +-- web/      # Vite + React frontend
 +-- docs/
 |   +-- architecture/ # Stable runtime, governance, context, and threat-model notes
+|   +-- guides/   # Operator-facing guides
 +-- deploy/
 |   +-- gcp/      # GCP deployment and security runbooks
 +-- makefiles/    # Focused local-development and verification targets
 +-- docker-compose.yml
 +-- AGENTS.md     # Contributor and coding-agent guidance (per-app files in apps/)
++-- CONTRIBUTING.md
 +-- LICENSE       # Apache License 2.0
 +-- REVIEW.md     # Code-review focus areas
 +-- README.md
 ```
 
 Stable design references cover the [agent runtime](docs/architecture/agent-runtime.md),
+[turn streaming and run durability](docs/architecture/agent-turn-streaming.md),
 [governance](docs/architecture/governance.md),
 [agent context](docs/architecture/agent-context.md),
 [integration packaging](docs/architecture/integration-packaging.md),
@@ -140,7 +145,7 @@ Local infrastructure:
 - Postgres 18 with pgvector available; pgvector is enabled by Alembic migration
 - Docker Compose for local service orchestration
 
-## Contributor prerequisites
+## Contributor Prerequisites
 
 Install these before running the apps locally:
 
@@ -161,8 +166,7 @@ Create missing local env files and install dependencies:
 make bootstrap
 ```
 
-`make bootstrap` runs `make doctor` first. The doctor accepts both the modern
-`docker compose` plugin and legacy `docker-compose`, and checks the contributor
+`make bootstrap` runs `make doctor` first. The doctor checks the contributor
 toolchain with install hints when a version is missing.
 
 Start the local database, apply migrations, and run the API, worker, and web
@@ -247,9 +251,9 @@ GCS deployments must set `GCP_PROJECT_ID` and the immutable
 account/region suffix reduces the permitted prefix length, which settings
 validation reports before startup.
 
-### Cloud storage provisioning
+### Cloud Storage Provisioning
 
-Praxis creates and hardens one private bucket or container for each workspace.
+Praxis creates one private bucket or container for each workspace.
 Workspace creation queues this work; the first private write or signed upload
 also provisions synchronously as a race-safe backstop. The shared public
 bucket/container is different: create it before deployment, configure its
@@ -282,11 +286,10 @@ degrading.
 Important notes:
 
 - The local API runs at `http://localhost:8000` with the command above.
-- Anonymous OpenAPI, Swagger, and ReDoc routes are disabled. Authenticated
-  users can fetch the schema from `GET /api/v1/meta/openapi.json`, and CI
-  publishes the same schema as an `openapi-spec` build artifact.
+- Anonymous OpenAPI, Swagger UI, and ReDoc routes are disabled. Authenticated
+  users can fetch the schema from `GET /api/v1/meta/openapi.json`, and each
+  successful CI run uploads it as an `openapi-spec` workflow artifact.
 - The app verifies database connectivity at startup.
-- Migrations are explicit. The API does not apply migrations automatically.
 
 Backend checks:
 
@@ -410,21 +413,15 @@ for every production deployment.
 
 ## Project Direction
 
-The platform core is in place; active work is expanding what agents can reach
-and remember, and hardening how they behave:
-
-- Harness hardening: sandboxed code execution, model failover, and durable
-  run-event replay.
-- Launch and deployment: a foolproof Docker-only quickstart and production
-  deployment guidance.
-- Product follow-ups: notification delivery and evaluation-led refinements to
-  retrieval and memory behavior.
+The core platform is in place. Current work is focused on what agents can do
+next: sandboxed code execution (Code Mode) and user-developed apps that live
+inside Praxis under the same identity, approval, and audit boundaries.
 
 ## Contributing
 
-Read `AGENTS.md` before making changes (plus `apps/api/AGENTS.md` or
-`apps/web/AGENTS.md` for the app you are touching). `REVIEW.md` lists what
-code review focuses on.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), then read
+[AGENTS.md](AGENTS.md) and the app-specific guidance for the area you are
+changing. [REVIEW.md](REVIEW.md) explains what code review focuses on.
 
 In short:
 

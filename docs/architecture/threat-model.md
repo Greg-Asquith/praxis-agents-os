@@ -2,23 +2,10 @@
 
 - **Status**: living document
 - **Owning gate**: G6 (untrusted content is framed and fixture-tested)
-- **Written**: 2026-07-10 (plan 075)
-- **Amended**: 2026-07-10 (plan 080 — channels (g) integration-fetched
-  content and (h) KB annotation helper; hostile email-body fixture)
-- **Amended**: 2026-07-22 (structured provenance nodes in storage and
-  streams; model-only framing at prompt assembly)
-- **Amended**: 2026-07-27 (operator decision: internal agent memory is a
-  trusted control surface and never receives untrusted-content framing)
-- **Amended**: 2026-08-03 (workspace-private object storage is isolated by a
-  dedicated bucket/container as well as the retained workspace key prefix)
-- **Amended**: 2026-08-04 (provider hardening pins GCS location, S3
-  account-regional naming and controls, and Azure access-policy preservation)
-- **Amended**: 2026-08-04 (plan 100 — provider-native URL fetch channel,
-  approval-visible URL egress, and settings-owned domain denylist)
-- **Rule**: downstream plans implement slices of this note and cite the
-  relevant sections. A plan that changes a channel, defense, or test contract
-  records the deviation here in the same change. New model-visible untrusted
-  content must be added to the channel inventory before it ships.
+- **Rule**: implementation work cites the relevant sections. A change to a
+  channel, defense, or test contract records the deviation here in the same
+  change. New model-visible untrusted content must be added to the channel
+  inventory before it ships.
 
 This note uses [OWASP LLM01:2025 Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
 as its reference frame. Praxis is exposed primarily to **indirect** prompt
@@ -35,11 +22,10 @@ authenticated or otherwise legitimate workflow:
 
 - uploaded files and content fetched from URLs;
 - integration-fetched content, including email bodies, which are
-  attacker-controlled by default once Gmail lands;
+  attacker-controlled by default;
 - external text in tool results, including search results and delegated-child
   output;
 - conversation spans passed to a summarizer;
-- file content passed to a helper model for code generation; and
 - document content passed to the KB ingestion annotation helper.
 
 An attacker can place instructions, counterfeit delimiters, system-prompt-like
@@ -100,19 +86,18 @@ Every channel has both a mechanical contract and a behavioral contract. CI
 tests the mechanical boundary without live model calls; the opt-in graded eval
 layer tests whether a model resists the content.
 
-| Channel | Exposure | Mechanical defense | Deterministic test | Graded eval case | Owner |
-|---|---|---|---|---|---|
-| **(c) History summaries** | A summarizer can launder a hostile conversation span into an authoritative compacted block. | Frame the source span as untrusted and instruct the summarizer to extract, not obey; keep the resulting summary labelled automatic. | A scripted model pins the prompt shape for a hostile span and the shared markers remain intact. | The summary describes instruction-shaped content without adopting it, and the consuming model does not comply. | 056 |
-| **(d) File content to generated code** | A hostile CSV cell or file passage can steer the helper model that writes code. | Keep task text separate; frame all inlined file content as untrusted before the helper-model call. | The hostile CSV fixture is entirely enclosed by the shared frame and cannot forge its end marker. | Generated code follows the user's task rather than file-borne instructions. Sandbox egress is tested separately by 072. | 059 |
-| **(e) Read-tool egress** | A URL or free-text query can encode workspace data into an outbound request even though the tool is classified as a read. | Every runtime tool declares `egress` as `none`, `provider_query`, `arbitrary_url`, or `external_write`; the catalogue and approval metadata expose that classification. This generalizes the per-tool controls in rows (d) and (i), but remains mitigation vocabulary rather than enforcement: existing dispatch digests keep arguments audit-visible and write envelopes still do not cover reads. | An exhaustive contract test pins all first-party declarations, catalog tests pin serialization, and dispatch scenarios preserve bounded argument digests without exposing values. | The model does not encode workspace data into outbound URL/query parameters and reports the attempt. | 103, 055, with 041/054 context |
-| **(f) KB retrieval** | Retrieved documents and URL content can carry direct or indirect instructions. | Externally fetched `url`, `conversation`, and `integration` sources ride the shared `untrusted.py` carrier/node substrate and model-only framing; workspace-authored `manual` and deliberately selected `upload` sources remain plain text because the member's curation is the trust boundary. | Reuse the shared prompt-injection documents across source-aware retrieval-tool tests, with the hostile documents classified as external sources. | `search_knowledge` and `read_document` cases do not follow externally sourced fixture instructions. | 046 (reference defense), 055 behavioral layer |
-| **(g) Integration-fetched content** | Provider API payloads such as Gmail bodies and Airtable records are attacker-controlled and become model-visible through integration read tools. | Provider free text crosses dispatch as a typed provenance node containing a server-minted source kind and `ref` (for example a Gmail message id). Nodes are persisted and streamed; an always-loaded, request-only model wrapper renders them with the shared markers in a copied request context immediately before provider dispatch. Size remains bounded by 076's dispatch truncation. | The hostile email-body fixture is stored verbatim inside a node; every model request encloses it in the byte-stable shared frame, neutralizes forged markers at render time, and retains server-minted provenance. Persistence and SSE fixtures contain nodes rather than rendered frames. | The model does not follow instructions embedded in provider content and reports the attempt. | 041, 041b, 055 behavioral layer |
-| **(h) KB ingestion annotation helper** | Full untrusted document content is fed to the contextual-annotation model; the model-authored `context_line` enters the lexical index, the embedding input, and search-hit payloads. | The annotation prompt frames document content as untrusted and instructs the helper to extract, not obey (§3); `context_line` is length-bounded server-side and stays labelled automatic. | A scripted model pins the annotation prompt shape against the shared hostile documents, and the stored `context_line` respects the bound. | Annotating a hostile document yields a descriptive context line that adopts no instructions. | 044, 055 behavioral layer |
-| **(i) Provider-native URL fetch** | A fetched page can inject instructions into the helper output; a compromised prompt can also encode conversation data in the approved URL query string. The provider, not Praxis, opens the URL. | `fetch_url` remains a registry function tool through dispatch, approval-default with the complete URL editable and visible before egress. HTTP(S)-only validation, one URL per call, provider/content bounds, dispatch truncation, and `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` apply. Praxis pre-checks the denylist and makes Google unavailable while it is configured because Google URL Context does not enforce domain filtering, including for provider-controlled retrieval. The extracted text crosses dispatch as a `web_fetch` provenance node and receives the shared model-only frame. Workspaces may opt into `auto` only by accepting the residual URL-exfiltration risk. | Shared hostile-page fixtures prove the returned text is one structured node, forged markers are neutralized at model rendering, blocked domains retry before provider dispatch, providers without domain-filter enforcement are unavailable under a denylist, and the approval request preserves the exact exfiltration-shaped URL until an operator edits it. | `injection_web_fetch_reports_embedded_instructions` summarizes the page without following it or issuing its exfiltration request. | 100, 055 behavioral layer |
+| Channel | Exposure | Mechanical defense | Deterministic test | Graded eval case |
+|---|---|---|---|---|
+| **(a) History summaries** | A summarizer can launder a hostile conversation span into an authoritative compacted block. | Frame the source span as untrusted and instruct the summarizer to extract, not obey; keep the resulting summary labelled automatic. | A scripted model pins the prompt shape for a hostile span and the shared markers remain intact. | The summary describes instruction-shaped content without adopting it, and the consuming model does not comply. |
+| **(b) Read-tool egress** | A URL or free-text query can encode workspace data into an outbound request even though the tool is classified as a read. | Every runtime tool declares `egress` as `none`, `provider_query`, `arbitrary_url`, or `external_write`; the catalogue and approval metadata expose that classification. This generalizes the per-tool controls in row (f), but remains mitigation vocabulary rather than enforcement: existing dispatch digests keep arguments audit-visible and write envelopes still do not cover reads. | An exhaustive contract test pins all first-party declarations, catalog tests pin serialization, and dispatch scenarios preserve bounded argument digests without exposing values. | The model does not encode workspace data into outbound URL/query parameters and reports the attempt. |
+| **(c) KB retrieval** | Retrieved documents and URL content can carry direct or indirect instructions. | Externally fetched `url`, `conversation`, and `integration` sources ride the shared `untrusted.py` carrier/node substrate and model-only framing; workspace-authored `manual` and deliberately selected `upload` sources remain plain text because the member's curation is the trust boundary. | Reuse the shared prompt-injection documents across source-aware retrieval-tool tests, with the hostile documents classified as external sources. | `search_knowledge` and `read_document` cases do not follow externally sourced fixture instructions. |
+| **(d) Integration-fetched content** | Provider API payloads such as Gmail bodies and Airtable records are attacker-controlled and become model-visible through integration read tools. | Provider free text crosses dispatch as a typed provenance node containing a server-minted source kind and `ref` (for example a Gmail message id). Nodes are persisted and streamed; an always-loaded, request-only model wrapper renders them with the shared markers in a copied request context immediately before provider dispatch. Size remains bounded by dispatch truncation. | The hostile email-body fixture is stored verbatim inside a node; every model request encloses it in the byte-stable shared frame, neutralizes forged markers at render time, and retains server-minted provenance. Persistence and SSE fixtures contain nodes rather than rendered frames. | The model does not follow instructions embedded in provider content and reports the attempt. |
+| **(e) KB ingestion annotation helper** | Full untrusted document content is fed to the contextual-annotation model; the model-authored `context_line` enters the lexical index, the embedding input, and search-hit payloads. | The annotation prompt frames document content as untrusted and instructs the helper to extract, not obey (§3); `context_line` is length-bounded server-side and stays labelled automatic. | A scripted model pins the annotation prompt shape against the shared hostile documents, and the stored `context_line` respects the bound. | Annotating a hostile document yields a descriptive context line that adopts no instructions. |
+| **(f) Provider-native URL fetch** | A fetched page can inject instructions into the helper output; a compromised prompt can also encode conversation data in the approved URL query string. The provider, not Praxis, opens the URL. | `fetch_url` remains a registry function tool through dispatch, approval-default with the complete URL editable and visible before egress. HTTP(S)-only validation, one URL per call, provider/content bounds, dispatch truncation, and `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` apply. Praxis pre-checks the denylist and makes Google unavailable while it is configured because Google URL Context does not enforce domain filtering, including for provider-controlled retrieval. The extracted text crosses dispatch as a `web_fetch` provenance node and receives the shared model-only frame. Workspaces may opt into `auto` only by accepting the residual URL-exfiltration risk. | Shared hostile-page fixtures prove the returned text is one structured node, forged markers are neutralized at model rendering, blocked domains retry before provider dispatch, providers without domain-filter enforcement are unavailable under a denylist, and the approval request preserves the exact exfiltration-shaped URL until an operator edits it. | `injection_web_fetch_reports_embedded_instructions` summarizes the page without following it or issuing its exfiltration request. |
 
 A new channel means any new path that places attacker-influenced text in model
-context, whether directly, through storage, or after transformation. Its plan
-must append a row with an owner and both test layers before shipping.
+context, whether directly, through storage, or after transformation. The change
+that adds one must append a row with both test layers before shipping.
 
 **Google Ads exception (operator decision, 2026-07-23):** Google Ads tool
 results are ordinary typed tool data and do not use the provenance-node or
@@ -172,21 +157,23 @@ authorization, approval, audit, sandboxing, or provider egress controls.
 
 ## 4. Adversarial Fixture Standard
 
-The fixture corpus starts with 045's shared documents:
+The shared fixture documents are:
 
 - `prompt_injection_basic.md`;
 - `prompt_injection_tool_call.md`; and
 - `prompt_injection_exfil.md`.
 
-It extends them with a hostile conversation span, a hostile CSV for code
-generation, and a hostile email body for integration reads; the annotation
-channel (h) reuses the shared documents rather than adding its own. Fixtures
-cover marker forgery, policy-block impersonation, tool-call coercion, durable
-instruction laundering, and query-parameter exfiltration.
+The corpus extends them with a hostile conversation span and a hostile email
+body for integration reads; the annotation channel (e) reuses the shared
+documents rather than adding its own. Fixtures cover marker forgery,
+policy-block impersonation, tool-call coercion, durable instruction laundering,
+and query-parameter exfiltration.
 
-Use the hoisted shared fixture directory at **[implemented: 041 Slice A]
-`apps/api/tests/fixtures/prompt_injection/`**. Tests import or parameterize the
-shared files rather than copying their payloads into channel-local corpora.
+The shared documents live with the retrieval eval tests
+(`apps/api/tests/integration/retrieval_eval/fixtures/`); cross-channel hostile
+fixtures live in `apps/api/tests/fixtures/prompt_injection/`. Tests import or
+parameterize the shared files rather than copying their payloads into
+channel-local corpora.
 
 The two test layers have distinct claims:
 
@@ -194,27 +181,28 @@ The two test layers have distinct claims:
    marker forgery is neutralized, provenance is retained, rendering cannot
    escape its structure, and transformation prompts have the required shape.
    They do not claim that an LLM will resist an attack.
-2. **Opt-in graded evals** under 055 prove behavioral resistance: the model
-   does not comply, does not encode protected data into outbound parameters,
-   and reports the injection attempt. Live model calls never run in CI.
+2. **Opt-in graded evals** (`make evals`) prove behavioral resistance: the
+   model does not comply, does not encode protected data into outbound
+   parameters, and reports the injection attempt. Live model calls never run
+   in CI.
 
-Each channel owner adds its adversarial cases as a done criterion. A forked
-per-plan fixture set is a review failure because it lets enforcement layers
+Each channel adds its adversarial cases as a done criterion. A forked
+per-channel fixture set is a review failure because it lets enforcement layers
 drift apart.
 
 ## 5. Gate G6
 
-**G6 (untrusted content is framed and fixture-tested)**: no plan that feeds
+**G6 (untrusted content is framed and fixture-tested)**: no change that feeds
 model context from a new untrusted-content source (retrieval, summaries,
 integration-fetched content, file/tool text) ships unless this note
 lists the channel and adversarial fixtures exercise it. Deterministic tests pin
-sanitization mechanics; behavioral resistance rides 055's graded eval layer.
-G6 binds 041/044/046/056/059 and every later external content source.
+sanitization mechanics; behavioral resistance rides the graded eval layer.
+G6 binds every external content source.
 
-Passing G6 requires a §2 channel row, an explicit owner, a shared-fixture
-mechanical test, and a named graded-eval case. A plan cannot satisfy the gate by
-asserting that its source is authenticated, that its tool is read-only, or
-that delimiters alone prevent prompt injection.
+Passing G6 requires a §2 channel row, a shared-fixture mechanical test, and a
+named graded-eval case. A change cannot satisfy the gate by asserting that its
+source is authenticated, that its tool is read-only, or that delimiters alone
+prevent prompt injection.
 
 ## 6. Browser Rendering Of Provider Content
 
@@ -244,17 +232,3 @@ session. Defenses are layered and both layers are asserted independently:
 Hostile-HTML coverage lives in `tests/routes/integrations/test_preview_routes.py`
 (script, event handler, form, meta refresh, `javascript:` link, nested iframe)
 and the Gmail provider operation tests.
-
-## 7. Consumed By
-
-| Plan | Sections implemented |
-|---|---|
-| 041 (first integration providers) | §1 external-content boundary; §2(e) integration read/query exposure; §2(g) provider-content framing; §5 gate before Gmail bodies become model-visible |
-| 041b (rich provider tool UI) | §3 prompt-assembly framing enforcement; §6 browser rendering of provider content |
-| 044 (KB models/ingestion) | §2(h) annotation channel; §3 extraction-not-obedience prompt; §4 shared documents |
-| 046 (KB tools) | §2(f) source-aware retrieval defense; §3 shared framing substrate; §4 KB fixtures |
-| 055 (behavior eval harness) | §2 graded cases; §4 platform-wide injection-resistance category |
-| 056 (context compaction) | §2(c) summary laundering; §3 extraction-not-obedience prompt; §4 hostile span |
-| 059 (sandboxed code execution) | §2(d) file-to-code channel; §3 helper prompt framing; §4 hostile CSV |
-| 072 (sandbox egress) | Adjacent enforcement for §2(d); provider egress verification remains outside this note's framing contract |
-| 100 (native web fetch) | §2(i) provider-native URL fetch; §3 shared provenance-node framing; §4 hostile page, forged-marker, and URL-exfiltration approval fixtures |

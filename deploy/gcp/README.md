@@ -1,4 +1,4 @@
-# GCP deployment runbook
+# GCP Deployment Runbook
 
 Checklist for standing up and deploying one Praxis environment on Cloud Run.
 Every command is explicit about project and region; nothing selects a project
@@ -17,7 +17,7 @@ PROJECT=praxis-example-staging   # = GCP_PROJECT_ID in the env file
 REGION=europe-west2              # = GCP_REGION
 ```
 
-## One-time per machine
+## One-time per Machine
 
 - [ ] Install Docker, `gcloud`, and Python 3.12+.
 - [ ] `gcloud auth login` as a human operator. Never download a
@@ -26,7 +26,7 @@ REGION=europe-west2              # = GCP_REGION
       SDK, spot-check the leaf commands you are about to run with
       `gcloud help <command>` first.
 
-## New environment (once per GCP project)
+## New Environment (once per GCP project)
 
 ### 1. Project and env file
 
@@ -66,8 +66,8 @@ printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versio
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-anthropic-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-oauth-client-secret --data-file=- --project=$PROJECT --quiet; unset KEY; echo
-# repeat for praxis-anthropic-api-key, praxis-google-api-key, ...
-# also seed each enabled login provider's OAuth client-secret binding
+# seed only the secrets bound in RUNTIME_SECRET_BINDINGS, including each
+# enabled login provider's OAuth client-secret binding
 ```
 
 - [ ] The two application key rings live under hashed secret ids the
@@ -84,7 +84,7 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
       At rotation time the payload becomes a newest-first, comma-separated
       key list (`new,old`) — see the rotation section below.
 
-### 4. First deploy
+### 4. First Deploy
 
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
@@ -93,14 +93,14 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
       minute with NOT_FOUND (the `praxis-worker` job does not exist yet).
       That is expected and stops on its own.
 
-### 4a. First super admin
+### 4a. First Super Admin
 
 With `ALLOW_SIGNUP=false`, sign in using the configured Google or Microsoft
 provider and the exact verified email in `SUPER_ADMIN_EMAILS`. That OAuth login
 creates the first user and personal workspace; every other unknown OAuth user
 remains rejected. No password or temporary public-signup window is required.
 
-### 5. Public access, domains, external platforms
+### 5. Public Access, Domains, and External Platforms
 
 None of this is automated; the scripts stop at private Cloud Run services.
 
@@ -138,7 +138,7 @@ machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
       application-owned avatars/icons under `users/` and `workspaces/`;
       workspace buckets are separate and private.)
 
-## Every deploy
+## Every Deploy
 
 - [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes both images
       tagged with the git SHA (override via `GIT_SHA=...`), replaces and
@@ -162,7 +162,7 @@ gcloud run services update-traffic praxis-web --to-revisions=PREVIOUS_REVISION=1
 gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="praxis-api"' --limit=20 --project=$PROJECT --format=json --quiet
 ```
 
-## Rotation schedule
+## Rotation Schedule
 
 Application and credential root keys annually, provider credentials at least
 every 90 days where supported, anything suspected exposed immediately.
@@ -180,10 +180,11 @@ convergence path:
   `python -m bin.application_encryption check` until `stale` and
   `undecryptable` are both zero. Remove `old`, redeploy, check again.
   OAuth browser-binding cookies are not rewritten; let their normal expiry
-  pass before removing the old key. Full procedure:
-  `docs/plans/deployment/002.4-encryption-key-ring.md`.
+  pass before removing the old key. The
+  [backend rotation guide](../../apps/api/README.md#application-encryption-rotation)
+  explains the complete converge, check, remove, and re-check sequence.
 
-## Backup restore rehearsal (quarterly and before production)
+## Backup Restore (quarterly and before production)
 
 Restore into an isolated, already-approved rehearsal instance — the
 backup-enabled flag is not proof of recoverability:
@@ -194,11 +195,11 @@ gcloud sql backups restore BACKUP_ID --backup-instance=praxis-postgres --restore
 ```
 
 Record the backup id/time, achieved RPO/RTO, migration result, and a
-representative conversation/file flow. Customer offboarding is a separately
-approved two-person operation — follow D11 in the deployment plan; it is
-intentionally not automated.
+representative conversation/file flow. Customer offboarding is intentionally
+not automated: require a separately approved, two-person procedure before
+destroying an environment or its backups.
 
-## Local verification of these helpers
+## Local Helper Verification
 
 ```bash
 make gcp-check

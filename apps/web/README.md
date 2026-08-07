@@ -1,6 +1,9 @@
-# Praxis Agents OS Web
+# Praxis Agents OS Web App
 
-Vite SPA for the Praxis Agents OS control plane.
+This React app is the user-facing side of Praxis Agents OS: conversations,
+approvals, schedules, agents, integrations, files, knowledge, and audit views.
+For the Docker quickstart and full-project setup, start with the
+[repository README](../../README.md).
 
 ## Stack
 
@@ -34,6 +37,7 @@ keep `ALLOWED_CORS_ORIGINS` / `FRONTEND_URL` explicit in the API environment.
 ```bash
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm format:check
 pnpm deadcode
 pnpm arch

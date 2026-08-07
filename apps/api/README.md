@@ -1,8 +1,11 @@
-# Praxis Agents OS — Backend API
+# Praxis Agents OS API
 
-FastAPI backend for the Praxis Agents OS platform.
+This service is the backend and worker runtime for Praxis Agents OS. It owns
+identity, workspaces, agent runs, tool dispatch, integrations, durable jobs,
+and the platform's audit trail. For the quickest way to run the whole product,
+start with the [repository README](../../README.md#quickstart-docker-only).
 
-## Dev setup
+## Development Setup
 
 ```bash
 # Install all dependencies (including dev group)
@@ -11,10 +14,13 @@ uv sync
 # Run locally
 uv run python main.py
 # or directly via uvicorn
-uv run uvicorn main:app --reload --port 8080 --no-access-log
+uv run uvicorn main:app --reload --port 8000 --no-access-log
+
+# Run the background worker (agent schedules and the generic jobs queue)
+uv run python -m workers.main
 ```
 
-## Notes
+## Runtime Notes
 
 - The API binds to `0.0.0.0:8080` in Docker; locally it defaults to port `8000` when run via `python main.py`.
 - Environment variables are loaded from `.env` (see `.env.example` for required keys).
@@ -23,7 +29,7 @@ uv run uvicorn main:app --reload --port 8080 --no-access-log
   - `/api/v1/users/*` handles super-admin user CRUD and admin password setting.
   - OAuth routes never redirect. The frontend owns provider redirects and calls the API only for server-to-server provider work.
 
-## API module layout
+## API Module Layout
 
 - Every FastAPI route operation lives in its own route file. Package
   `__init__.py` files compose those route modules into routers.
@@ -34,7 +40,7 @@ uv run uvicorn main:app --reload --port 8080 --no-access-log
 - Route files should stay thin: validate HTTP boundary concerns, call one service
   operation, and return its response model.
 
-## Test layout
+## Test Layout
 
 Tests live under `tests/` and are grouped by what they prove:
 
@@ -60,7 +66,7 @@ Run the suite:
 uv run pytest
 ```
 
-## Database migrations
+## Database Migrations
 
 Alembic owns database schema changes for this service. Migrations are run
 explicitly from `apps/api`; the API does not apply migrations at startup.
@@ -76,7 +82,31 @@ Apply all migration heads:
 uv run alembic upgrade heads
 ```
 
-## Application encryption rotation
+Create a core-schema migration:
+
+```bash
+uv run alembic revision --autogenerate \
+  --head core@head \
+  --version-path alembic/versions/core \
+  -m "describe core schema change"
+```
+
+Create an app-schema migration:
+
+```bash
+uv run alembic revision --autogenerate \
+  --head app@head \
+  --version-path alembic/versions/app \
+  -m "describe app schema change"
+```
+
+Check that the current models match the migration state:
+
+```bash
+uv run alembic check
+```
+
+## Application Encryption Rotation
 
 `ENCRYPTION_KEYS` is a newest-first comma-separated list or JSON array of
 Fernet keys. Non-local environments can set `ENCRYPTION_KEYS_SECRET_NAME`; the
@@ -105,27 +135,3 @@ global audit log without recording key material.
 This is separate from `SECRET_KEY` rotation, which invalidates signed transient
 tokens, and credential-vault root rotation, which uses
 `integrations.rotate_credential_encryption` and its `encryption_key_id` proof.
-
-Create a public/core-schema migration:
-
-```bash
-uv run alembic revision --autogenerate \
-  --head core@head \
-  --version-path alembic/versions/core \
-  -m "describe core schema change"
-```
-
-Create an app-schema migration:
-
-```bash
-uv run alembic revision --autogenerate \
-  --head app@head \
-  --version-path alembic/versions/app \
-  -m "describe app schema change"
-```
-
-Check that the current models match the migration state:
-
-```bash
-uv run alembic check
-```
