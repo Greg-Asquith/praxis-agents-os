@@ -25,7 +25,7 @@ describe("production nginx security headers", () => {
 
     expect(headers).toContain("default-src 'self'")
     expect(headers).toContain("script-src 'self'")
-    expect(headers).toContain("connect-src 'self' http://localhost:8000")
+    expect(headers).toContain("connect-src 'self' http://localhost:8000 https://files.example.com")
     expect(headers).toContain(
       "img-src 'self' data: blob: http://localhost:8000 https://files.example.com"
     )

@@ -38,7 +38,7 @@ export function renderSecurityHeaders({ apiBaseUrl, assetOrigins = "", httpsOnly
     "form-action 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    `connect-src 'self' ${apiOrigin}`,
+    `connect-src 'self' ${mediaOrigins.join(" ")}`,
     `frame-src 'self' ${apiOrigin}`,
     `img-src 'self' data: blob: ${mediaOrigins.join(" ")}`,
     `media-src 'self' data: blob: ${mediaOrigins.join(" ")}`,

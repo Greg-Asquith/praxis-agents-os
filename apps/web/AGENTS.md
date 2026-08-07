@@ -102,7 +102,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - Keep frontend environment values explicit with `VITE_*` only — every such
   value is inlined into the browser bundle. Currently the only one is
   `VITE_API_BASE_URL`; there is no Vite dev proxy, the browser calls the API
-  origin directly.
+  origin directly. Production nginx CSP permits browser connections to the API
+  and the explicit `WEB_PUBLIC_ASSET_ORIGINS` allowlist so direct cloud-storage
+  uploads work without widening `connect-src` to wildcard origins.
 
 ## Checks
 
