@@ -5,6 +5,8 @@
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from core.settings import settings
 from models.agent import Agent
@@ -87,6 +89,17 @@ def render_conversation_context_block(*, user: User, workspace: Workspace) -> st
     )
 
 
+def render_current_datetime_block() -> str:
+    """Render the current local datetime for the runtime system prompt."""
+    current = datetime.now(ZoneInfo(settings.TIMEZONE))
+    return (
+        "## Current Date and Time\n\n"
+        f"The current date and time is {current.isoformat(timespec='seconds')} "
+        f"in the {settings.TIMEZONE} timezone. Use this value when interpreting "
+        "relative dates such as today, tomorrow, recently, or next week."
+    )
+
+
 def runtime_prompt_blocks(
     agent: Agent,
     *,
@@ -151,6 +164,7 @@ def runtime_prompt_blocks(
             "completion_contract",
             completion_contract_block,
         ),
+        PromptBlock("current_datetime", render_current_datetime_block()),
     ]
 
 
