@@ -86,6 +86,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
         "memory_policy",
         "untrusted_content_policy",
         "completion_contract",
+        "current_datetime",
     ]
     rendered = build_system_prompt([PromptBlock("context", content, budget=2000)])
     assert ACTIVE_CONTEXT_LAW in rendered

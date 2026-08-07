@@ -96,10 +96,7 @@ function AuditEventsPanel() {
   const eventsQuery = useAuditEventsQuery(queryParams)
   const { data: toolCatalog } = useToolCatalogQuery()
   const eventsData = eventsQuery.data
-  const toolOptions = useMemo(
-    () => auditToolFilterOptions(toolCatalog.tools),
-    [toolCatalog.tools]
-  )
+  const toolOptions = useMemo(() => auditToolFilterOptions(toolCatalog.tools), [toolCatalog.tools])
   const providerOptions = useMemo(
     () => auditProviderFilterOptions(toolCatalog.tools),
     [toolCatalog.tools]

@@ -57,6 +57,7 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
         "memory_policy",
         "untrusted_content_policy",
         "completion_contract",
+        "current_datetime",
     ]
     assert rendered.index("Identity first.") < rendered.index("conversation todo list")
     assert rendered.index("conversation todo list") < rendered.index("You may delegate")
