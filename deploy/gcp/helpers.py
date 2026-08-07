@@ -11,6 +11,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 AUDIT_SERVICES = (
     "secretmanager.googleapis.com",
@@ -19,6 +20,15 @@ AUDIT_SERVICES = (
 )
 AUDIT_LOG_TYPES = ("ADMIN_READ", "DATA_READ", "DATA_WRITE")
 PRIVILEGED_ROLES = ("roles/owner", "roles/editor")
+GCS_BROWSER_CORS_METHODS = ("GET", "HEAD", "PUT")
+GCS_BROWSER_CORS_RESPONSE_HEADERS = (
+    "Content-Length",
+    "Content-Type",
+    "ETag",
+    "x-goog-generation",
+    "x-goog-if-generation-match",
+)
+GCS_BROWSER_CORS_MAX_AGE_SECONDS = 3600
 
 
 _LOGICAL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_/-]{1,255}$")
@@ -61,6 +71,38 @@ def privileged_members(policy: dict[str, Any], members: list[str]) -> list[str]:
     return [member for member in members if member in held]
 
 
+def gcs_browser_cors_config(origins_csv: str) -> list[dict[str, object]]:
+    """Build the explicit-origin CORS policy used by browser signed URLs."""
+    origins = list(
+        dict.fromkeys(
+            origin.strip() for origin in origins_csv.split(",") if origin.strip()
+        )
+    )
+    if not origins:
+        raise ValueError("at least one GCS browser CORS origin is required")
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        ):
+            raise ValueError(f"invalid GCS browser CORS origin: {origin!r}")
+    normalized_origins = list(dict.fromkeys(origin.rstrip("/") for origin in origins))
+    return [
+        {
+            "origin": normalized_origins,
+            "method": list(GCS_BROWSER_CORS_METHODS),
+            "responseHeader": list(GCS_BROWSER_CORS_RESPONSE_HEADERS),
+            "maxAgeSeconds": GCS_BROWSER_CORS_MAX_AGE_SECONDS,
+        }
+    ]
+
+
 def render_template(template: str, values: dict[str, str], allowed: list[str]) -> str:
     """Substitute only allowlisted ${VAR} references; every allowed value is required."""
     missing = [name for name in allowed if not values.get(name)]
@@ -90,6 +132,10 @@ def _build_parser() -> argparse.ArgumentParser:
     privileged_parser.add_argument("input", type=Path)
     privileged_parser.add_argument("members", nargs="+")
 
+    cors_parser = subparsers.add_parser("storage-cors")
+    cors_parser.add_argument("origins")
+    cors_parser.add_argument("output", type=Path)
+
     render_parser = subparsers.add_parser("render-template")
     render_parser.add_argument("input", type=Path)
     render_parser.add_argument("output", type=Path)
@@ -111,6 +157,14 @@ def main() -> None:
         except ValueError as exc:
             raise SystemExit(f"error: {exc}") from exc
         args.output.write_text(rendered, encoding="utf-8")
+        return
+
+    if args.command == "storage-cors":
+        try:
+            config = gcs_browser_cors_config(args.origins)
+        except ValueError as exc:
+            raise SystemExit(f"error: {exc}") from exc
+        args.output.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         return
 
     policy = json.loads(args.input.read_text(encoding="utf-8"))

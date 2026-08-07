@@ -179,7 +179,10 @@ Repo-wide expectations are in the root `AGENTS.md`.
   GCS bucket creation must pass the configured immutable
   `GCS_WORKSPACE_BUCKET_LOCATION`; provisioned GCS workspace buckets retain
   object versioning and a 30-day soft-delete policy alongside uniform access
-  and public-access prevention. S3 workspace buckets use the account-regional
+  and public-access prevention. Their signed-upload CORS policy is converged
+  from the explicit `ALLOWED_CORS_ORIGINS` allowlist; GCP bootstrap applies the
+  same policy to the shared public-assets bucket. S3 workspace buckets use the
+  account-regional
   namespace and derive their physical name from the configured prefix, compact
   workspace UUID, `AWS_ACCOUNT_ID`, and `AWS_REGION`; retain ownership controls,
   versioning, HTTPS-only policy, blocked public access, and the encryption

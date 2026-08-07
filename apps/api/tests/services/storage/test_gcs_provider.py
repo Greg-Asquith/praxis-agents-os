@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ import pytest
 
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
+    StorageError,
     StorageNotFoundError,
     StoragePreconditionError,
     StorageProviderUnavailableError,
@@ -92,6 +94,8 @@ class _FakeGcsBlob:
         self.bucket.objects.pop(self.key, None)
 
     def generate_signed_url(self, **kwargs) -> str:
+        if self.bucket.signed_error is not None:
+            raise self.bucket.signed_error
         self.bucket.signed_calls.append({"key": self.key, **kwargs})
         return f"https://gcs-signed.example/{self.key}"
 
@@ -102,9 +106,11 @@ class _FakeGcsBucket:
         self.name = name
         self.objects: dict[str, dict] = {}
         self.signed_calls: list[dict] = []
+        self.signed_error: Exception | None = None
         self.copy_calls: list[dict] = []
         self.next_generation = 1
         self.labels: dict[str, str] = {}
+        self.cors: list[dict[str, object]] = []
         self.iam_configuration = SimpleNamespace(
             uniform_bucket_level_access_enabled=False,
             public_access_prevention=None,
@@ -179,6 +185,11 @@ def _provider(client: _FakeGcsClient) -> GcsStorageProvider:
         public_assets_base_url="https://cdn.example",
         public_cache_control="public, max-age=60",
         project_id="praxis-test-project",
+        cors_origins=(
+            "https://app.example",
+            "https://admin.example/",
+            "https://app.example/",
+        ),
         client=client,
     )
 
@@ -275,6 +286,32 @@ async def test_gcs_signed_urls_use_iam_signing_for_metadata_credentials() -> Non
     assert signed_calls[1]["access_token"] == credentials.token
 
 
+async def test_gcs_signed_url_failure_logs_underlying_google_error_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+    bucket = client.bucket(WORKSPACE_BUCKET)
+    bucket.signed_error = RuntimeError("IAM signBlob denied")
+    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("output.txt"))
+
+    with caplog.at_level(logging.ERROR), pytest.raises(StorageError):
+        await provider.create_signed_upload(
+            ref,
+            content_type="text/plain",
+            expected_size_bytes=4,
+            expires_in=timedelta(minutes=5),
+        )
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.message == "GCS signed upload URL generation failed"
+    )
+    assert record.error_type == "RuntimeError"
+    assert record.exc_info is not None
+
+
 async def test_gcs_native_public_url_is_used_without_cdn_base() -> None:
     provider = GcsStorageProvider(
         public_bucket_name="public-bucket",
@@ -341,6 +378,20 @@ async def test_gcs_workspace_bucket_is_hardened_and_handle_is_cached() -> None:
     assert bucket.versioning_enabled is True
     assert bucket.soft_delete_policy.retention_duration_seconds == 30 * 24 * 60 * 60
     assert bucket.labels == {"praxis-workspace": str(WORKSPACE_ID)}
+    assert bucket.cors == [
+        {
+            "origin": ["https://app.example", "https://admin.example"],
+            "method": ["GET", "HEAD", "PUT"],
+            "responseHeader": [
+                "Content-Length",
+                "Content-Type",
+                "ETag",
+                "x-goog-generation",
+                "x-goog-if-generation-match",
+            ],
+            "maxAgeSeconds": 3600,
+        }
+    ]
     assert client.create_calls == [
         {
             "bucket": WORKSPACE_BUCKET,

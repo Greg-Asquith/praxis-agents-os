@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
@@ -39,6 +40,17 @@ if TYPE_CHECKING:
     from core.settings import Settings
 
 GCS_WORKSPACE_SOFT_DELETE_SECONDS = 30 * 24 * 60 * 60
+GCS_BROWSER_CORS_METHODS = ("GET", "HEAD", "PUT")
+GCS_BROWSER_CORS_RESPONSE_HEADERS = (
+    "Content-Length",
+    "Content-Type",
+    "ETag",
+    "x-goog-generation",
+    "x-goog-if-generation-match",
+)
+GCS_BROWSER_CORS_MAX_AGE_SECONDS = 3600
+
+logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - exercised through provider-specific extras
     from google.cloud import storage as gcs_storage
@@ -72,6 +84,7 @@ class GcsStorageProvider:
         public_assets_base_url: str | None = None,
         public_cache_control: str | None = None,
         project_id: str | None = None,
+        cors_origins: tuple[str, ...] = (),
         client: Any | None = None,
     ) -> None:
         self.public_bucket_name = _require_setting(
@@ -98,6 +111,7 @@ class GcsStorageProvider:
             "GCS_WORKSPACE_BUCKET_LOCATION",
             provider_key=self.provider_key,
         )
+        self.cors_origins = tuple(dict.fromkeys(origin.rstrip("/") for origin in cors_origins))
         self.client = client if client is not None else self._create_client(project_id=project_id)
         self.public_bucket = self.client.bucket(self.public_bucket_name)
         self._workspace_buckets: OrderedDict[UUID, Any] = OrderedDict()
@@ -114,6 +128,7 @@ class GcsStorageProvider:
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
             project_id=settings.GCP_PROJECT_ID,
             workspace_bucket_location=settings.GCS_WORKSPACE_BUCKET_LOCATION,
+            cors_origins=tuple(settings.cors_origins_list),
         )
 
     async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
@@ -158,6 +173,7 @@ class GcsStorageProvider:
             bucket.versioning_enabled = True
             bucket.soft_delete_policy.retention_duration_seconds = GCS_WORKSPACE_SOFT_DELETE_SECONDS
             bucket.labels = {**(bucket.labels or {}), "praxis-workspace": str(workspace_id)}
+            bucket.cors = _browser_cors_rules(self.cors_origins)
             await asyncio.to_thread(bucket.patch)
         except Exception as exc:
             raise StorageError(
@@ -462,6 +478,10 @@ class GcsStorageProvider:
         except StorageError:
             raise
         except Exception as exc:
+            logger.exception(
+                "GCS signed upload URL generation failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
                 "Failed to create GCS signed upload URL",
                 provider_key=self.provider_key,
@@ -508,6 +528,10 @@ class GcsStorageProvider:
         except StorageError:
             raise
         except Exception as exc:
+            logger.exception(
+                "GCS signed download URL generation failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
                 "Failed to create GCS signed download URL",
                 provider_key=self.provider_key,
@@ -668,3 +692,16 @@ def _is_gcs_precondition_failed(exc: Exception) -> bool:
 
 def _is_gcs_conflict(exc: Exception) -> bool:
     return getattr(exc, "code", None) == 409
+
+
+def _browser_cors_rules(origins: tuple[str, ...]) -> list[dict[str, object]]:
+    if not origins:
+        return []
+    return [
+        {
+            "origin": list(origins),
+            "method": list(GCS_BROWSER_CORS_METHODS),
+            "responseHeader": list(GCS_BROWSER_CORS_RESPONSE_HEADERS),
+            "maxAgeSeconds": GCS_BROWSER_CORS_MAX_AGE_SECONDS,
+        }
+    ]

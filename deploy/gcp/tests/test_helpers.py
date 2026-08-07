@@ -75,6 +75,40 @@ class GcpDeploymentHelperTests(unittest.TestCase):
         self.assertEqual(helpers.privileged_members(policy, members), members[:2])
         self.assertEqual(helpers.privileged_members({"bindings": []}, members), [])
 
+    def test_gcs_browser_cors_config_is_explicit_and_covers_signed_upload_headers(
+        self,
+    ) -> None:
+        config = helpers.gcs_browser_cors_config(
+            "https://app.example.invalid, https://admin.example.invalid/,"
+            "https://app.example.invalid/"
+        )
+
+        self.assertEqual(
+            config,
+            [
+                {
+                    "origin": [
+                        "https://app.example.invalid",
+                        "https://admin.example.invalid",
+                    ],
+                    "method": ["GET", "HEAD", "PUT"],
+                    "responseHeader": [
+                        "Content-Length",
+                        "Content-Type",
+                        "ETag",
+                        "x-goog-generation",
+                        "x-goog-if-generation-match",
+                    ],
+                    "maxAgeSeconds": 3600,
+                }
+            ],
+        )
+
+    def test_gcs_browser_cors_config_rejects_wildcards_and_non_origins(self) -> None:
+        for origins in ("", "*", "https://app.example.invalid/path", "file://local"):
+            with self.subTest(origins=origins), self.assertRaises(ValueError):
+                helpers.gcs_browser_cors_config(origins)
+
     def test_render_template_substitutes_only_allowlisted_variables(self) -> None:
         template = "image: ${API_IMAGE}\nother: ${NOT_ALLOWED}\n"
         rendered = helpers.render_template(

@@ -42,7 +42,11 @@ behind good defaults and progressive disclosure, not in their face.
   service/job templates, and the build/migrate/deploy path. Real environment
   files stay outside git (or under `.local/`); the GCP bootstrap and deploy
   Make targets require an explicit `ENV_FILE`, and bootstrap keeps
-  API/IAM/billable mutations behind a typed interactive approval gate.
+  API/IAM/billable mutations behind a typed interactive approval gate. It
+  generates initial Cloud SQL credentials and core Secret Manager payloads in
+  memory, redacts them from previews, and seeds them without writing them to
+  disk. Deployments run manually from an authenticated operator machine; the
+  bootstrap does not provision GitHub Actions deployment identity federation.
 
 Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations

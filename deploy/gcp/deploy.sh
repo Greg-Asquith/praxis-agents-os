@@ -75,6 +75,24 @@ done
 (( WORKER_TASK_TIMEOUT_SECONDS > WORKER_DRAIN_MAX_SECONDS )) \
   || die "WORKER_TASK_TIMEOUT_SECONDS must exceed WORKER_DRAIN_MAX_SECONDS to leave shutdown headroom"
 
+memory_to_mib() {
+  local variable_name=$1
+  local value=${!variable_name}
+  if [[ "$value" =~ ^([0-9]+)Mi$ ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  elif [[ "$value" =~ ^([0-9]+)Gi$ ]]; then
+    printf '%s' "$(( BASH_REMATCH[1] * 1024 ))"
+  else
+    die "$variable_name must use a whole-number Mi or Gi value"
+  fi
+}
+
+for memory_variable in API_MEMORY WEB_MEMORY JOB_MEMORY; do
+  memory_mib=$(memory_to_mib "$memory_variable")
+  (( memory_mib >= 512 )) \
+    || die "$memory_variable must be at least 512Mi for the Cloud Run gen2 execution environment"
+done
+
 API_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${API_IMAGE_NAME}:${GIT_SHA}"
 WEB_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${WEB_IMAGE_NAME}:${GIT_SHA}"
 CLOUD_SQL_CONNECTION_NAME="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUD_SQL_INSTANCE}"

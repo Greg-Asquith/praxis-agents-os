@@ -9,6 +9,55 @@ TEST_TMP=$(mktemp -d "${TMPDIR:-/tmp}/praxis-gcp-test.XXXXXX")
 trap 'rm -rf "$TEST_TMP"' EXIT
 
 bash -n "$GCP_DIR/bootstrap.sh" "$GCP_DIR/deploy.sh" "$SCRIPT_DIR/test.sh"
+if grep -Eq 'declare[[:space:]]+-A' "$GCP_DIR/bootstrap.sh"; then
+  echo "bootstrap must remain compatible with macOS Bash 3.2" >&2
+  exit 1
+fi
+
+if grep -R -E -i \
+  'workload.identity|WIF_POOL|WIF_PROVIDER|GITHUB_ALLOWED|DEPLOY_SERVICE_ACCOUNT' \
+  "$GCP_DIR/bootstrap.sh" "$GCP_DIR/.env.example" "$GCP_DIR/README.md"; then
+  echo "GCP deployment must remain operator-driven without GitHub Actions WIF" >&2
+  exit 1
+fi
+
+# Cloud Run replacement resolves project resources through Cloud Resource
+# Manager, so bootstrap must enable it before the first deployment.
+grep -Fq -- 'cloudresourcemanager.googleapis.com' "$GCP_DIR/bootstrap.sh"
+
+# Workspace bucket hardening changes IAM-governed settings such as Public
+# Access Prevention. The runtime storage role therefore needs both sides of
+# bucket IAM policy access in addition to bucket metadata updates.
+grep -Fq -- 'storage.buckets.getIamPolicy' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- 'storage.buckets.setIamPolicy' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- '--role=roles/iam.serviceAccountTokenCreator' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- 'helpers.py" storage-cors "$ALLOWED_CORS_ORIGINS"' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- '--cors-file="$public_assets_cors_file"' "$GCP_DIR/bootstrap.sh"
+if grep -Fq -- '"origin": ["*"]' "$GCP_DIR/bootstrap.sh"; then
+  echo "public-assets bucket CORS must not allow wildcard origins" >&2
+  exit 1
+fi
+
+# PostgreSQL built-in users require a password at creation time. Keep generated
+# credentials redacted from previews and ensure the matching database URLs are
+# written directly to Secret Manager rather than left as a manual runbook step.
+grep -Fq -- '--type=BUILT_IN --password="$maintenance_password"' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- '--type=BUILT_IN --password="$runtime_password"' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- "'postgresql+asyncpg://%s:%s@/%s?host=/cloudsql/%s:%s:%s'" \
+  "$GCP_DIR/bootstrap.sh"
+grep -Fq -- 'add_secret_version "$database_url_secret_id" "$runtime_database_url"' \
+  "$GCP_DIR/bootstrap.sh"
+grep -Fq -- 'add_secret_version "$maintenance_url_secret_id" "$maintenance_database_url"' \
+  "$GCP_DIR/bootstrap.sh"
+if grep -Fq -- '--password="$ADMIN_PW"' "$GCP_DIR/README.md"; then
+  echo "database credential generation must not remain a manual runbook step" >&2
+  exit 1
+fi
+if grep -Fq -- 'from cryptography.fernet import Fernet' "$GCP_DIR/README.md"; then
+  echo "GCP bootstrap follow-up commands must not require the API virtualenv" >&2
+  exit 1
+fi
+grep -Fq -- 'base64.urlsafe_b64encode(secrets.token_bytes(32))' "$GCP_DIR/README.md"
 
 cd "$REPO_ROOT/apps/api"
 if [[ -x .venv/bin/python ]]; then
@@ -56,6 +105,16 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/missing-render" "$TEST_TMP/miss
   exit 1
 fi
 grep -q 'required variable GCP_PROJECT_ID is unset or empty' "$TEST_TMP/missing.out"
+
+sed 's/^WEB_MEMORY=512Mi$/WEB_MEMORY=256Mi/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/undersized-web.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/undersized-web-render" \
+  "$TEST_TMP/undersized-web.env" abcdef0123456789 \
+  >"$TEST_TMP/undersized-web.out" 2>&1; then
+  echo "render unexpectedly accepted unsupported Cloud Run gen2 memory" >&2
+  exit 1
+fi
+grep -q 'WEB_MEMORY must be at least 512Mi' "$TEST_TMP/undersized-web.out"
 
 sed -e 's/^DEPLOYMENT_ENVIRONMENT=staging$/DEPLOYMENT_ENVIRONMENT=production/' \
   -e 's/^LOG_RETENTION_DAYS=90$/LOG_RETENTION_DAYS=400/' \

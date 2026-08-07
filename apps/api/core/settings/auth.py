@@ -20,7 +20,7 @@ class AuthSettingsMixin:
         description="Exponential backoff factor for OAuth retries",
     )
 
-    EMAIL_AUTH_ENABLED: bool = Field(default=False, description="Enable email/password auth flows")
+    EMAIL_AUTH_ENABLED: bool = Field(default=True, description="Enable email/password auth flows")
 
     # OAuth Login Providers Configuration (Auth)
 

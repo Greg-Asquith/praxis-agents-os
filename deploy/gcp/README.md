@@ -5,7 +5,9 @@ Every command is explicit about project and region; nothing selects a project
 implicitly. Real env files and secret payloads stay outside git (`.local/` is
 gitignored and suitable). `bootstrap.sh` is interactive by design: it prints
 each mutation and requires a typed `yes`; never run it from CI. It never
-generates, accepts, or prints secret values.
+accepts or prints secret values. It generates database credentials and core
+application secrets in memory and writes them directly to Cloud SQL and Secret
+Manager without storing them on disk.
 
 Set these once per shell session; the commands below use them:
 
@@ -43,37 +45,17 @@ REGION=europe-west2              # = GCP_REGION
 ### 2. Bootstrap
 
 - [ ] `make gcp-bootstrap ENV_FILE=$ENV_FILE` — creates Artifact Registry,
-      Cloud SQL (instance, database, passwordless users), the public-assets
-      bucket, empty Secret Manager secrets, service accounts and custom
-      roles, GitHub WIF, the Scheduler trigger, and log/audit config.
+      Cloud SQL (instance, database, and password-backed users), the
+      public-assets bucket with explicit-origin browser-upload CORS, Secret
+      Manager resources, service accounts and custom roles, the Scheduler
+      trigger, and log/audit config.
+      It generates and stores the database credentials, database URLs,
+      `SECRET_KEY`, and `METRICS_TOKEN`; generated values are redacted from
+      previews and never written to disk. Provider and application key-ring
+      secrets remain empty for the next step.
       Re-running is safe: unchanged sections are skipped without a prompt.
 
-### 3. Database passwords
-
-Generate URL-safe passwords so the database URLs need no encoding, set them,
-and keep them in shell variables for the next step (nothing echoes or lands
-in history):
-
-```bash
-ADMIN_PW=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-APP_PW=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
-gcloud sql users set-password praxis_admin --instance=praxis-postgres --password="$ADMIN_PW" --project=$PROJECT --quiet
-gcloud sql users set-password praxis_app --instance=praxis-postgres --password="$APP_PW" --project=$PROJECT --quiet
-```
-
-### 4. Secret versions
-
-Bootstrap created the secrets empty; a secret with no version is not
-deployable. Pipe each payload straight to `--data-file=-` — no temp files,
-nothing printed:
-
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(64))" | gcloud secrets versions add praxis-secret-key --data-file=- --project=$PROJECT --quiet
-python3 -c "import secrets; print(secrets.token_urlsafe(32))" | gcloud secrets versions add praxis-metrics-token --data-file=- --project=$PROJECT --quiet
-printf 'postgresql+asyncpg://praxis_app:%s@/praxis?host=/cloudsql/%s:%s:praxis-postgres' "$APP_PW" "$PROJECT" "$REGION" | gcloud secrets versions add praxis-database-url --data-file=- --project=$PROJECT --quiet
-printf 'postgresql+asyncpg://praxis_admin:%s@/praxis?host=/cloudsql/%s:%s:praxis-postgres' "$ADMIN_PW" "$PROJECT" "$REGION" | gcloud secrets versions add praxis-database-maintenance-url --data-file=- --project=$PROJECT --quiet
-unset ADMIN_PW APP_PW
-```
+### 3. Remaining secret versions
 
 - [ ] LLM provider keys (created in the provider consoles) for every
       provider bound in `RUNTIME_SECRET_BINDINGS` — paste the key at the
@@ -81,24 +63,28 @@ unset ADMIN_PW APP_PW
 
 ```bash
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-openai-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
+printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-anthropic-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
+printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
+printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-oauth-client-secret --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 # repeat for praxis-anthropic-api-key, praxis-google-api-key, ...
 # also seed each enabled login provider's OAuth client-secret binding
 ```
 
 - [ ] The two application key rings live under hashed secret ids the
       application derives from their logical names (`helpers.py secret-id`
-      mirrors that mapping). Seed each with one fresh Fernet key — these
-      commands are complete, one per ring:
+      mirrors that mapping). From anywhere inside the repository, return to
+      its root and seed each with one fresh Fernet key. Key generation uses
+      only the Python standard library, so the API virtualenv is not required:
 
 ```bash
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" | gcloud secrets versions add "$(python3 deploy/gcp/helpers.py secret-id application-encryption-keys)" --data-file=- --project=$PROJECT --quiet
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" | gcloud secrets versions add "$(python3 deploy/gcp/helpers.py secret-id credential-master-key)" --data-file=- --project=$PROJECT --quiet
+FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())') && printf '%s' "$FERNET_KEY" | gcloud secrets versions add "$(python3 deploy/gcp/helpers.py secret-id application-encryption-keys)" --data-file=- --project=$PROJECT --quiet; unset FERNET_KEY
+FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())') && printf '%s' "$FERNET_KEY" | gcloud secrets versions add "$(python3 deploy/gcp/helpers.py secret-id credential-master-key)" --data-file=- --project=$PROJECT --quiet; unset FERNET_KEY
 ```
 
       At rotation time the payload becomes a newest-first, comma-separated
       key list (`new,old`) — see the rotation section below.
 
-### 5. First deploy
+### 4. First deploy
 
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
@@ -107,14 +93,14 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
       minute with NOT_FOUND (the `praxis-worker` job does not exist yet).
       That is expected and stops on its own.
 
-### 5a. First super admin
+### 4a. First super admin
 
 With `ALLOW_SIGNUP=false`, sign in using the configured Google or Microsoft
 provider and the exact verified email in `SUPER_ADMIN_EMAILS`. That OAuth login
 creates the first user and personal workspace; every other unknown OAuth user
 remains rejected. No password or temporary public-signup window is required.
 
-### 6. Public access, domains, external platforms
+### 5. Public access, domains, external platforms
 
 None of this is automated; the scripts stop at private Cloud Run services.
 
@@ -137,11 +123,10 @@ gcloud beta run domain-mappings create --service=praxis-web --domain=app.<your-d
       and integration redirect URI (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in each
       enabled provider's console.
       
-There is no CI deploy workflow yet; deploys run from an operator machine.
-Bootstrap already provisioned keyless GitHub Actions auth (WIF impersonating
-`DEPLOY_SERVICE_ACCOUNT`) for whenever one is added.
+There is no CI deploy workflow; deploys run from an authenticated operator
+machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
 
-### 7. Verify
+### 6. Verify
 
 - [ ] API healthy: `curl -fsS https://api.<your-domain>/healthz`
       (`/readyz` checks the database; never wire it as a Cloud Run probe).
