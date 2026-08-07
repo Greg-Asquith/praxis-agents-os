@@ -20,7 +20,7 @@ class AuthSettingsMixin:
         description="Exponential backoff factor for OAuth retries",
     )
 
-    EMAIL_AUTH_ENABLED: bool = Field(default=True, description="Enable email/password auth flows")
+    EMAIL_AUTH_ENABLED: bool = Field(default=False, description="Enable email/password auth flows")
 
     # OAuth Login Providers Configuration (Auth)
 
@@ -87,4 +87,6 @@ class AuthSettingsMixin:
                 missing.append("redirect URI")
             if missing:
                 raise ValueError(f"{name} OAuth is enabled but missing: {', '.join(missing)}")
+        if not self.EMAIL_AUTH_ENABLED and not any(enabled for _, enabled, *_ in providers):
+            raise ValueError("At least one sign-in method must be enabled")
         return self

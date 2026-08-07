@@ -14,7 +14,7 @@ import {
 import { OAuthProviderIcon } from "@/features/auth/components/oauth-provider-icon"
 import { getErrorMessage } from "@/lib/api/errors"
 
-export function OAuthLoginProviders() {
+export function OAuthLoginProviders({ showSeparator = true }: { showSeparator?: boolean }) {
   const providersQuery = useQuery(oauthProvidersQueryOptions())
   const startLoginMutation = useStartOauthLoginMutation()
   const startInFlightRef = useRef(false)
@@ -86,7 +86,7 @@ export function OAuthLoginProviders() {
         })}
       </div>
 
-      <FieldSeparator className="my-0">or</FieldSeparator>
+      {showSeparator ? <FieldSeparator className="my-0">or</FieldSeparator> : null}
     </div>
   )
 }

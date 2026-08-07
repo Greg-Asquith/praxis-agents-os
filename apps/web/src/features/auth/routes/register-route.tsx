@@ -2,6 +2,7 @@
 
 import { useState, type SyntheticEvent } from "react"
 import { useNavigate } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
 import { UserPlusIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useRegisterMutation } from "@/features/auth/api/register"
+import { oauthProvidersQueryOptions } from "@/features/auth/api/get-oauth-providers"
 import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
 import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-providers"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -17,7 +19,10 @@ import { formString } from "@/lib/forms"
 export function RegisterRoute() {
   const navigate = useNavigate()
   const registerMutation = useRegisterMutation()
+  const providersQuery = useQuery(oauthProvidersQueryOptions())
   const [formError, setFormError] = useState<string | null>(null)
+  const emailAuthEnabled =
+    providersQuery.isError || providersQuery.data?.email_auth_enabled === true
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -54,9 +59,9 @@ export function RegisterRoute() {
       }
     >
       <div className="flex flex-col gap-6">
-        <OAuthLoginProviders />
+        <OAuthLoginProviders showSeparator={emailAuthEnabled} />
 
-        <form onSubmit={handleSubmit}>
+        <form hidden={!emailAuthEnabled} onSubmit={handleSubmit}>
           <FieldGroup>
             {formError && (
               <Alert variant="destructive">

@@ -52,6 +52,7 @@ class AuthProvider(BaseModel):
 
 
 class AuthProvidersResponse(BaseModel):
+    email_auth_enabled: bool
     providers: list[AuthProvider]
 
 

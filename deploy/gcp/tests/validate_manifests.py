@@ -59,6 +59,10 @@ def main() -> None:
     for name in ("api", "web"):
         if "PORT" in _service_env_names(manifests[name]):
             raise ValueError(f"{name} sets PORT, a reserved Cloud Run env name")
+    if "SUPER_ADMIN_EMAILS" not in _service_env_names(manifests["api"]):
+        raise ValueError("API manifest does not configure the super-admin allowlist")
+    if "EMAIL_AUTH_ENABLED" not in _service_env_names(manifests["api"]):
+        raise ValueError("API manifest does not configure email authentication")
 
 
 if __name__ == "__main__":

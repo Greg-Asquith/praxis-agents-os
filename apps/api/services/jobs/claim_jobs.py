@@ -96,6 +96,8 @@ async def claim_jobs(
         select(Job)
         .join(ranked_pending_jobs, Job.id == ranked_pending_jobs.c.job_id)
         .where(
+            Job.status == JOB_STATUS_PENDING,
+            Job.run_after <= now_utc,
             or_(
                 and_(
                     Job.workspace_id.is_(None),

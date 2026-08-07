@@ -33,6 +33,12 @@ REGION=europe-west2              # = GCP_REGION
 - [ ] `cp deploy/gcp/.env.example $ENV_FILE` and fill **every** value. The
       example file documents each variable, including the model/provider
       settings and public URLs the manifests are rendered from.
+- [ ] Keep `ALLOW_SIGNUP=false` for a closed environment and set
+      `SUPER_ADMIN_EMAILS` to the email address of the first operator.
+- [ ] For OAuth-only access, set `EMAIL_AUTH_ENABLED=false`, enable at least
+      one login provider, and fill its client ID and `/oauth/callback` redirect
+      URI. Add its client secret to `RUNTIME_SECRET_BINDINGS`; for example,
+      `GOOGLE_OAUTH_CLIENT_SECRET=praxis-google-oauth-client-secret`.
 
 ### 2. Bootstrap
 
@@ -76,6 +82,7 @@ unset ADMIN_PW APP_PW
 ```bash
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-openai-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 # repeat for praxis-anthropic-api-key, praxis-google-api-key, ...
+# also seed each enabled login provider's OAuth client-secret binding
 ```
 
 - [ ] The two application key rings live under hashed secret ids the
@@ -100,6 +107,13 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
       minute with NOT_FOUND (the `praxis-worker` job does not exist yet).
       That is expected and stops on its own.
 
+### 5a. First super admin
+
+With `ALLOW_SIGNUP=false`, sign in using the configured Google or Microsoft
+provider and the exact verified email in `SUPER_ADMIN_EMAILS`. That OAuth login
+creates the first user and personal workspace; every other unknown OAuth user
+remains rejected. No password or temporary public-signup window is required.
+
 ### 6. Public access, domains, external platforms
 
 None of this is automated; the scripts stop at private Cloud Run services.
@@ -119,8 +133,9 @@ gcloud beta run domain-mappings create --service=praxis-api --domain=api.<your-d
 gcloud beta run domain-mappings create --service=praxis-web --domain=app.<your-domain> --project=$PROJECT --region=$REGION
 ```
 
-- [ ] Register OAuth redirect URIs (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in
-      each enabled provider's console.
+- [ ] Register the login OAuth redirect URI (`https://app.<your-domain>/oauth/callback`)
+      and integration redirect URI (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in each
+      enabled provider's console.
       
 There is no CI deploy workflow yet; deploys run from an operator machine.
 Bootstrap already provisioned keyless GitHub Actions auth (WIF impersonating

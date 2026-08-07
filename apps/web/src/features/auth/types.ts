@@ -43,6 +43,7 @@ type AuthProvider = {
 }
 
 export type AuthProvidersResponse = {
+  email_auth_enabled: boolean
   providers: AuthProvider[]
 }
 

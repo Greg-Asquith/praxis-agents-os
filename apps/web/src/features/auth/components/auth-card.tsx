@@ -27,7 +27,9 @@ export function AuthCard({ title, description, footer, children }: AuthCardProps
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>{children}</CardContent>
-      <CardFooter className="text-muted-foreground justify-center text-sm">{footer}</CardFooter>
+      {footer ? (
+        <CardFooter className="text-muted-foreground justify-center text-sm">{footer}</CardFooter>
+      ) : null}
     </Card>
   )
 }

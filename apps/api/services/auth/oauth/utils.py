@@ -82,7 +82,11 @@ async def upsert_oauth_user(
 
     created_user = False
     if user is None:
-        if not settings.ALLOW_SIGNUP:
+        verified_super_admin_bootstrap = (
+            provider_email_verified(provider_name, profile)
+            and email in settings.super_admin_emails_list
+        )
+        if not settings.ALLOW_SIGNUP and not verified_super_admin_bootstrap:
             raise AuthorizationError("Signup is disabled")
         user = User(
             email=email,
@@ -100,7 +104,11 @@ async def upsert_oauth_user(
             user=user,
             actor=user,
             workspace_id=workspace.id,
-            details={"source": "oauth", "provider": provider_name},
+            details={
+                "source": "oauth",
+                "provider": provider_name,
+                "super_admin_bootstrap": verified_super_admin_bootstrap,
+            },
             request=request,
         )
 

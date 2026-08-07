@@ -2,6 +2,7 @@
 
 import { useState, type SyntheticEvent } from "react"
 import { useNavigate } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
 import { LogInIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useLoginMutation } from "@/features/auth/api/login"
+import { oauthProvidersQueryOptions } from "@/features/auth/api/get-oauth-providers"
 import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
 import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-providers"
 import { TwoFactorVerificationForm } from "@/features/auth/components/two-factor-verification-form"
@@ -18,8 +20,11 @@ import { formString } from "@/lib/forms"
 export function LoginRoute() {
   const navigate = useNavigate()
   const loginMutation = useLoginMutation()
+  const providersQuery = useQuery(oauthProvidersQueryOptions())
   const [formError, setFormError] = useState<string | null>(null)
   const [twoFactorPending, setTwoFactorPending] = useState(false)
+  const emailAuthEnabled =
+    providersQuery.isError || providersQuery.data?.email_auth_enabled === true
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -65,11 +70,11 @@ export function LoginRoute() {
           >
             Back to Sign In
           </Button>
-        ) : (
+        ) : emailAuthEnabled ? (
           <span>
             <AuthLink to="/register">Create a New Account</AuthLink>
           </span>
-        )
+        ) : null
       }
     >
       {twoFactorPending ? (
@@ -80,9 +85,9 @@ export function LoginRoute() {
         />
       ) : (
         <div className="flex flex-col gap-6">
-          <OAuthLoginProviders />
+          <OAuthLoginProviders showSeparator={emailAuthEnabled} />
 
-          <form onSubmit={handleSubmit}>
+          <form hidden={!emailAuthEnabled} onSubmit={handleSubmit}>
             <FieldGroup>
               {formError && (
                 <Alert variant="destructive">

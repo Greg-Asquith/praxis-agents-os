@@ -9,12 +9,63 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import ConflictError
-from models.user import UserAuth
+from core.settings import settings
+from models.user import User, UserAuth
 from services.auth.oauth.complete_oauth_link import complete_oauth_link
+from services.auth.oauth.list_oauth_providers import list_oauth_providers
 from services.auth.oauth.utils import create_oauth_link_state, upsert_oauth_user
 from services.auth.schemas import OAuthCallbackRequest
 from tests.factories import build_user
+
+
+def test_auth_provider_contract_exposes_email_auth_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EMAIL_AUTH_ENABLED", False)
+
+    assert list_oauth_providers().email_auth_enabled is False
+
+
+async def test_verified_configured_super_admin_can_bootstrap_with_oauth(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"oauth-bootstrap-{uuid4()}@example.com"
+    monkeypatch.setattr(settings, "ALLOW_SIGNUP", False)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", email)
+
+    user = await upsert_oauth_user(
+        db_session,
+        provider_name="google",
+        token_payload={"access_token": "bootstrap-oauth-token"},
+        profile={"sub": "bootstrap-google-id", "email": email, "email_verified": True},
+        request=SimpleNamespace(),
+    )
+
+    assert user.email == email
+    assert await db_session.scalar(select(User).where(User.email == email)) is user
+
+
+async def test_unverified_email_cannot_bootstrap_super_admin_with_oauth(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"oauth-bootstrap-unverified-{uuid4()}@example.com"
+    monkeypatch.setattr(settings, "ALLOW_SIGNUP", False)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", email)
+
+    with pytest.raises(AuthorizationError, match="Signup is disabled"):
+        await upsert_oauth_user(
+            db_session,
+            provider_name="google",
+            token_payload={"access_token": "unverified-oauth-token"},
+            profile={"sub": "unverified-google-id", "email": email},
+            request=SimpleNamespace(),
+        )
+
+    assert await db_session.scalar(select(User).where(User.email == email)) is None
 
 
 async def test_oauth_login_does_not_merge_an_existing_password_account_by_email(
