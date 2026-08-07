@@ -5,7 +5,7 @@
 from typing import Any, Literal
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .utils import operation_index
+from .utils import partial_failure_errors
 
 
 async def update_campaign_status(
@@ -42,41 +42,10 @@ async def update_campaign_status(
     ]
     return {
         "resource_names": resource_names,
-        "campaign_errors": _partial_failure_errors(payload, normalized_campaign_ids),
+        "campaign_errors": partial_failure_errors(
+            payload,
+            normalized_campaign_ids,
+            value_key="campaign_id",
+            default_message="Campaign update failed",
+        ),
     }
-
-
-def _partial_failure_errors(payload: Any, campaign_ids: list[str]) -> list[dict[str, str]]:
-    if not isinstance(payload, dict):
-        return []
-    partial = payload.get("partialFailureError")
-    if not isinstance(partial, dict):
-        return []
-    errors: list[dict[str, str]] = []
-    for detail in partial.get("details", []):
-        if not isinstance(detail, dict):
-            continue
-        for item in detail.get("errors", []):
-            if not isinstance(item, dict):
-                continue
-            location = item.get("location", {})
-            index = operation_index(location)
-            campaign_id = (
-                campaign_ids[index] if index is not None and index < len(campaign_ids) else ""
-            )
-            errors.append(
-                {
-                    "campaign_id": campaign_id,
-                    "message": str(item.get("message", "Campaign update failed")),
-                    "error_code": str(item.get("errorCode", "unknown")),
-                }
-            )
-    if not errors and partial.get("message"):
-        errors.append(
-            {
-                "campaign_id": "",
-                "message": str(partial["message"]),
-                "error_code": str(partial.get("code", "unknown")),
-            }
-        )
-    return errors

@@ -120,3 +120,58 @@ def operation_index(location: Any) -> int | None:
             except (TypeError, ValueError):
                 return None
     return None
+
+
+def partial_failure_errors(
+    payload: Any,
+    operation_values: list[str],
+    *,
+    value_key: str,
+    default_message: str,
+) -> list[dict[str, str]]:
+    """Map Google Ads partial failures back to their operation values."""
+    if not isinstance(payload, dict):
+        return []
+    partial = payload.get("partialFailureError")
+    if not isinstance(partial, dict):
+        return []
+    errors: list[dict[str, str]] = []
+    for detail in partial.get("details", []):
+        if not isinstance(detail, dict):
+            continue
+        for item in detail.get("errors", []):
+            if not isinstance(item, dict):
+                continue
+            index = operation_index(item.get("location", {}))
+            operation_value = (
+                operation_values[index]
+                if index is not None and 0 <= index < len(operation_values)
+                else ""
+            )
+            errors.append(
+                {
+                    value_key: operation_value,
+                    "message": str(item.get("message", default_message)),
+                    "error_code": _error_code(item.get("errorCode")),
+                }
+            )
+    if not errors and partial.get("message"):
+        errors.append(
+            {
+                value_key: "",
+                "message": str(partial["message"]),
+                "error_code": _error_code(partial.get("code")),
+            }
+        )
+    return errors
+
+
+def _error_code(value: Any) -> str:
+    if isinstance(value, dict):
+        for code in value.values():
+            if isinstance(code, str) and code:
+                return code
+        return "unknown"
+    if value is None:
+        return "unknown"
+    return str(value)

@@ -49,6 +49,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
         "google_ads_list_accounts": ("read", "internal", "auto", False),
+        "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
         "google_ads_update_campaign_status": ("write", "external", "approval", True),
         "airtable_list_records": ("read", "internal", "auto", False),
@@ -123,20 +124,29 @@ def test_gmail_tool_contract_matrix_and_schemas() -> None:
 def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
     assert set(definitions) == {
+        "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
     }
     assert definitions["google_ads_list_accounts"].effect == "read"
     assert definitions["google_ads_run_report"].effect == "read"
-    spend = definitions["google_ads_update_campaign_status"]
-    assert spend.effect == "write"
-    assert spend.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-    assert spend.default_policy == "approval"
-    assert spend.supports_auto is False
-    assert spend.allowed_policies() == frozenset({"approval"})
-    assert spend.integration_binding is not None
-    assert spend.integration_binding.requires_write is True
+    for name in (
+        "google_ads_create_negative_keyword_list",
+        "google_ads_update_campaign_status",
+    ):
+        spend = definitions[name]
+        assert spend.effect == "write"
+        assert spend.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
+        assert spend.default_policy == "approval"
+        assert spend.supports_auto is False
+        assert spend.allowed_policies() == frozenset({"approval"})
+        assert spend.integration_binding is not None
+        assert spend.integration_binding.requires_write is True
+
+    create = definitions["google_ads_create_negative_keyword_list"]
+    editable_fields = {field.key for field in create.presentation.arg_fields if field.editable}
+    assert editable_fields == {"names"}
 
     denylisted = {
         "account_id",

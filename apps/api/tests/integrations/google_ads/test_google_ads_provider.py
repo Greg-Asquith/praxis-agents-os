@@ -27,11 +27,17 @@ from integrations.google_ads.entity_resolvers.campaign import (
     resolve_google_ads_campaigns,
     search_google_ads_campaigns,
 )
+from integrations.google_ads.operations.create_negative_keyword_list import (
+    create_negative_keyword_list,
+)
 from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
 from integrations.google_ads.operations.utils import bounded_query, stream_rows
 from integrations.google_ads.references import GoogleAdsCampaignReference
+from integrations.google_ads.tools.create_negative_keyword_list import (
+    google_ads_create_negative_keyword_list,
+)
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.run_report import google_ads_run_report
 from integrations.google_ads.tools.update_campaign_status import google_ads_update_campaign_status
@@ -349,6 +355,209 @@ async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None
     assert client.last_login_customer_id == "111"
     assert result["resource_names"] == ["customers/333/campaigns/10"]
     assert result["campaign_errors"][0]["campaign_id"] == "20"
+    assert result["campaign_errors"][0]["error_code"] == "CANNOT_MODIFY_REMOVED_CAMPAIGN"
+
+
+async def test_create_negative_keyword_list_skips_existing_and_maps_partial_failure() -> None:
+    client = _NegativeKeywordListClient(
+        search_payload=[
+            {
+                "results": [
+                    {"sharedSet": {"id": "1", "name": "Existing List"}},
+                ]
+            }
+        ],
+        mutate_payload={
+            "results": [{"resourceName": "customers/333/sharedSets/10"}, {}],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "A list with this name is not allowed",
+                                "errorCode": {"sharedSetError": "INVALID_NAME"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await create_negative_keyword_list(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111-111-1111",
+        names=["existing list", "Created List", "Rejected List"],
+    )
+
+    assert client.calls[0] == {
+        "path": "customers/3333333333/googleAds:searchStream",
+        "operation": "list_negative_keyword_lists",
+        "login_customer_id": "111-111-1111",
+        "json": {
+            "query": (
+                "SELECT shared_set.id, shared_set.name FROM shared_set "
+                "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' "
+                "AND shared_set.status != 'REMOVED'"
+            )
+        },
+    }
+    assert client.calls[1]["path"] == "customers/3333333333/sharedSets:mutate"
+    assert client.calls[1]["json"] == {
+        "operations": [
+            {"create": {"name": "Created List", "type": "NEGATIVE_KEYWORDS"}},
+            {"create": {"name": "Rejected List", "type": "NEGATIVE_KEYWORDS"}},
+        ],
+        "partialFailure": True,
+    }
+    assert result == {
+        "created_names": ["Created List"],
+        "resource_names": ["customers/333/sharedSets/10"],
+        "skipped_existing": ["existing list"],
+        "list_errors": [
+            {
+                "name": "Rejected List",
+                "message": "A list with this name is not allowed",
+                "error_code": "INVALID_NAME",
+            }
+        ],
+    }
+
+
+async def test_create_negative_keyword_list_avoids_mutate_when_every_name_exists() -> None:
+    client = _NegativeKeywordListClient(
+        search_payload={
+            "results": [
+                {"sharedSet": {"id": "1", "name": "Existing List"}},
+            ]
+        },
+        mutate_payload={"results": []},
+    )
+
+    result = await create_negative_keyword_list(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        names=["EXISTING LIST"],
+    )
+
+    assert len(client.calls) == 1
+    assert result == {
+        "created_names": [],
+        "resource_names": [],
+        "skipped_existing": ["EXISTING LIST"],
+        "list_errors": [],
+    }
+
+
+async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
+    monkeypatch,
+) -> None:
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=uuid4(),
+            provider_key="google_ads",
+            resource_type="google_ads_account",
+            external_id=customer_id,
+            display_name=f"Account {customer_id}",
+            connection_id=uuid4(),
+            connection_label="Agency",
+            connection_status="active",
+            write_allowed=True,
+            permissions_metadata={"login_customer_id": "999"},
+        )
+        for customer_id in ("111", "222")
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    )
+    provider_create = AsyncMock(
+        side_effect=lambda _client, **kwargs: {
+            "created_names": ["Alpha List", "Beta List"],
+            "resource_names": [f"customers/{kwargs['customer_id']}/sharedSets/1"],
+            "skipped_existing": [],
+            "list_errors": [],
+        }
+    )
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.google_ads_client",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.create_negative_keyword_list",
+        provider_create,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_create_negative_keyword_list(
+        ctx,
+        ["  Alpha   List  ", "", "alpha list", " Beta List "],
+    )
+
+    assert [item["status"] for item in result["results"]] == ["success", "success"]
+    assert [call.kwargs["customer_id"] for call in provider_create.await_args_list] == [
+        "111",
+        "222",
+    ]
+    assert all(
+        call.kwargs["names"] == ["Alpha List", "Beta List"]
+        for call in provider_create.await_args_list
+    )
+
+
+@pytest.mark.parametrize("names", [[], ["  ", "\t"], ["x" * 256], ["é" * 128]])
+async def test_create_negative_keyword_list_retries_invalid_names(names: list[str]) -> None:
+    with pytest.raises(ModelRetry):
+        await google_ads_create_negative_keyword_list(None, names)  # type: ignore[arg-type]
+
+
+async def test_create_negative_keyword_list_write_denial_is_audited_before_provider_call(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="333",
+        display_name="Read-only account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=False,
+        permissions_metadata={"login_customer_id": "111"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.record_google_ads_operation_audit",
+        audit,
+    )
+
+    result = await google_ads_create_negative_keyword_list(ctx, ["New List"])
+
+    assert result["results"][0]["error_code"] == "write_not_permitted"
+    provider_client.assert_not_awaited()
+    audit.assert_awaited_once()
+    assert audit.await_args.kwargs["status"].value == "failure"
+    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
 
 
 def test_campaign_reference_truncates_long_name() -> None:
@@ -751,6 +960,21 @@ class _OperationClient:
         self.last_json = kwargs["json"]
         self.last_login_customer_id = kwargs["login_customer_id"]
         return self.payload
+
+
+class _NegativeKeywordListClient:
+    def __init__(self, *, search_payload, mutate_payload):
+        self.search_payload = search_payload
+        self.mutate_payload = mutate_payload
+        self.calls: list[dict] = []
+
+    async def post(self, path: str, **kwargs):
+        self.calls.append({"path": path, **kwargs})
+        if path.endswith("googleAds:searchStream"):
+            return self.search_payload
+        if path.endswith("sharedSets:mutate"):
+            return self.mutate_payload
+        raise AssertionError(f"Unexpected Google Ads operation path: {path}")
 
 
 def _hierarchy_page(*customers: tuple[str, int, bool]) -> dict:

@@ -29,6 +29,9 @@ from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSA
 from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
+from integrations.google_ads.tools.create_negative_keyword_list import (
+    DEFINITION as GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
+)
 from integrations.google_ads.tools.run_report import (
     DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
 )
@@ -357,6 +360,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "gmail_search_messages": "provider_query",
         "gmail_send_message": "external_write",
         "google_ads_list_accounts": "provider_query",
+        "google_ads_create_negative_keyword_list": "external_write",
         "google_ads_run_report": "provider_query",
         "google_ads_update_campaign_status": "external_write",
         "list_delegate_agents": "none",
@@ -831,6 +835,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         GMAIL_SEARCH_MESSAGES_DEFINITION,
         GMAIL_SEND_MESSAGE_DEFINITION,
         GOOGLE_ADS_RUN_REPORT_DEFINITION,
+        GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
         GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
     )
     definitions = {definition.name: definition for definition in integration_definitions}
@@ -868,6 +873,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         "gmail_search_messages": {"limit", "query"},
         "gmail_send_message": {"bcc", "body_html", "cc", "subject", "to"},
         "google_ads_run_report": {"query"},
+        "google_ads_create_negative_keyword_list": {"names"},
         "google_ads_update_campaign_status": {"campaign_ids", "status"},
         "save_memory": {
             "content",
@@ -921,6 +927,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         ("delegate_to_agent", "agent_id"): "entity",
         ("gmail_read_message", "message_id"): "entity",
         ("google_ads_update_campaign_status", "campaign_ids"): "entity_list",
+        ("google_ads_create_negative_keyword_list", "names"): "list",
         ("read_document", "document_id"): "entity",
         ("read_file", "file_id"): "entity",
         ("save_memory", "content"): "markdown",

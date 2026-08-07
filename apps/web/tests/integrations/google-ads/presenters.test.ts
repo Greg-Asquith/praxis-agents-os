@@ -9,6 +9,7 @@ import type { ToolActivity } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
@@ -321,6 +322,91 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Updated")
   })
 
+  it("renders created, existing, and failed negative keyword lists per account", () => {
+    const html = render(
+      googleAdsNegativeKeywordListsPresenter.render(
+        props({
+          id: "negative-lists-1",
+          kind: "result",
+          name: "google_ads_create_negative_keyword_list",
+          status: "completed",
+          args: {
+            names: ["New exclusions", "Existing exclusions", "Rejected exclusions"],
+          },
+          result: {
+            results: [
+              entry({
+                created_names: ["New exclusions"],
+                resource_names: ["customers/1234567890/sharedSets/10"],
+                skipped_existing: ["Existing exclusions"],
+                list_errors: [
+                  {
+                    name: "Rejected exclusions",
+                    message: "This list name is not allowed.",
+                    error_code: "INVALID_NAME",
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads negative keyword list results"')
+    expect(html).toContain("New exclusions")
+    expect(html).toContain("Existing exclusions")
+    expect(html).toContain("Rejected exclusions")
+    expect(html).toContain("Already existed")
+    expect(html).toContain("This list name is not allowed.")
+    expect(html).toContain("Created")
+    expect(html).toContain("Failed")
+  })
+
+  it("renders explicit created names instead of inferring them from tool arguments", () => {
+    const html = render(
+      googleAdsNegativeKeywordListsPresenter.render(
+        props({
+          id: "negative-lists-unicode",
+          kind: "result",
+          name: "google_ads_create_negative_keyword_list",
+          status: "completed",
+          args: { names: ["Straße", "STRASSE", "Other"] },
+          result: {
+            results: [
+              entry({
+                created_names: ["Straße", "Other"],
+                resource_names: [
+                  "customers/1234567890/sharedSets/10",
+                  "customers/1234567890/sharedSets/11",
+                ],
+                skipped_existing: [],
+                list_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Straße")
+    expect(html).toContain("Other")
+    expect(html).not.toContain("STRASSE")
+  })
+
+  it("keeps negative keyword list approvals on the server-declared default card", () => {
+    expect(googleAdsNegativeKeywordListsPresenter.handlesApprovals).toBeUndefined()
+    expect(
+      googleAdsNegativeKeywordListsPresenter.matches({
+        id: "negative-lists-approval",
+        kind: "approval",
+        name: "google_ads_create_negative_keyword_list",
+        status: "awaiting_approval",
+        args: { names: ["New exclusions"] },
+      })
+    ).toBe(false)
+  })
+
   it.each([
     ["running", "Updating Google Ads campaigns…"],
     ["awaiting_approval", "Waiting for campaign approval…"],
@@ -357,6 +443,7 @@ describe("Google Ads tool presenters", () => {
     expect(googleAdsModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
       "google-ads-run-report",
       "google-ads-list-accounts",
+      "google-ads-create-negative-keyword-list",
       "google-ads-update-campaign-status",
     ])
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)
