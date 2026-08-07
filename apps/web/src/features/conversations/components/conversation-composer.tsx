@@ -9,9 +9,25 @@ import {
   type SyntheticEvent,
 } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { ArrowUpIcon, CircleStopIcon, Loader2Icon, PlusIcon, UploadCloudIcon } from "lucide-react"
+import {
+  ArrowUpIcon,
+  CircleStopIcon,
+  Loader2Icon,
+  PaperclipIcon,
+  PlusIcon,
+  SlidersHorizontalIcon,
+  UploadCloudIcon,
+} from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -384,8 +400,109 @@ export function ConversationComposer(props: ConversationComposerProps) {
             ref={attachmentInputRef}
             type="file"
           />
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  aria-label="Message options"
+                  className="sm:hidden"
+                  size="icon"
+                  title="Message options"
+                  type="button"
+                  variant="ghost"
+                />
+              }
+            >
+              <SlidersHorizontalIcon className="size-4" />
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-[min(22rem,calc(100vw-2rem))] gap-3 p-3"
+              side="top"
+              sideOffset={8}
+            >
+              <PopoverHeader>
+                <PopoverTitle>Message options</PopoverTitle>
+                <PopoverDescription>
+                  Choose files, agent, and context for this message.
+                </PopoverDescription>
+              </PopoverHeader>
+
+              <Button
+                className="w-full justify-start"
+                disabled={
+                  Boolean(inputDisabledReason) || attachments.length >= MAX_CHAT_ATTACHMENTS
+                }
+                onClick={() => {
+                  attachmentInputRef.current?.click()
+                }}
+                type="button"
+                variant="outline"
+              >
+                <PaperclipIcon data-icon="inline-start" />
+                Attach files
+                {attachments.length > 0 ? (
+                  <span className="text-muted-foreground ml-auto text-xs">
+                    {attachments.length} of {MAX_CHAT_ATTACHMENTS}
+                  </span>
+                ) : null}
+              </Button>
+
+              <div className="grid gap-1.5">
+                <span className="text-muted-foreground px-0.5 text-xs font-medium">Agent</span>
+                {props.mode === "create" ? (
+                  <ComposerAgentSelect
+                    activeAgents={activeAgents}
+                    disabled={activeAgents.length === 0 || isCurrentStreamBlocking}
+                    id="conversation-agent-mobile"
+                    modelCatalog={props.modelCatalog}
+                    onValueChange={setSelectedAgentId}
+                    selectedAgent={selectedAgent}
+                    value={effectiveSelectedAgentId}
+                    wide
+                  />
+                ) : (
+                  <div className="bg-muted/50 flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-sm">
+                    <AgentIdentityIcon
+                      agentId={props.agent.id}
+                      decorative
+                      name={props.agent.name}
+                      size="sm"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{props.agent.name}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-1.5">
+                <span className="text-muted-foreground px-0.5 text-xs font-medium">
+                  Active context
+                </span>
+                <div className="[&_[data-slot=popover-trigger]]:w-full [&_[data-slot=popover-trigger]]:max-w-none [&>div]:w-full">
+                  {props.mode === "create" ? (
+                    <NewConversationContextPicker
+                      disabled={isCurrentStreamBlocking}
+                      onChange={setActiveContext}
+                      value={activeContext}
+                    />
+                  ) : (
+                    <ConversationContextPicker conversationId={props.conversationId} />
+                  )}
+                </div>
+              </div>
+
+              {selectedModelLabel ? (
+                <div className="flex min-w-0 items-center justify-between gap-3 border-t pt-2 text-xs">
+                  <span className="text-muted-foreground">Model</span>
+                  <span className="truncate">{selectedModelLabel}</span>
+                </div>
+              ) : null}
+            </PopoverContent>
+          </Popover>
+
           <Button
             aria-label="Attach Files"
+            className="hidden sm:inline-flex"
             disabled={Boolean(inputDisabledReason) || attachments.length >= MAX_CHAT_ATTACHMENTS}
             onClick={() => {
               attachmentInputRef.current?.click()
@@ -398,63 +515,17 @@ export function ConversationComposer(props: ConversationComposerProps) {
           </Button>
 
           {props.mode === "create" ? (
-            <Select
+            <ComposerAgentSelect
+              activeAgents={activeAgents}
               disabled={activeAgents.length === 0 || isCurrentStreamBlocking}
-              onValueChange={(value) => {
-                setSelectedAgentId(value)
-              }}
+              id="conversation-agent"
+              modelCatalog={props.modelCatalog}
+              onValueChange={setSelectedAgentId}
+              selectedAgent={selectedAgent}
               value={effectiveSelectedAgentId}
-            >
-              <SelectTrigger
-                aria-label="Agent"
-                className="hover:bg-muted max-w-48 gap-1.5 border-0 px-2 shadow-none focus-visible:border-transparent"
-                id="conversation-agent"
-                size="sm"
-              >
-                <SelectValue placeholder="Select an agent">
-                  {() =>
-                    selectedAgent ? (
-                      <>
-                        <AgentIdentityIcon
-                          agentId={selectedAgent.id}
-                          decorative
-                          name={selectedAgent.name}
-                          size="sm"
-                        />
-                        <span className="truncate">{selectedAgent.name}</span>
-                      </>
-                    ) : (
-                      "No active agents"
-                    )
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className="max-w-[calc(100vw-2rem)] min-w-72">
-                <SelectGroup>
-                  {activeAgents.length === 0 ? (
-                    <SelectItem value="" disabled>
-                      No active agents
-                    </SelectItem>
-                  ) : (
-                    activeAgents.map((agent) => {
-                      const secondary = formatAgentModel(agent, props.modelCatalog)
-                      return (
-                        <SelectItem
-                          className="cursor-pointer"
-                          key={agent.id}
-                          label={agentSelectLabel(agent, secondary)}
-                          value={agent.id}
-                        >
-                          <AgentSelectItem agent={agent} secondary={secondary} />
-                        </SelectItem>
-                      )
-                    })
-                  )}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            />
           ) : (
-            <div className="flex min-w-0 items-center gap-1.5 px-2 text-sm">
+            <div className="hidden min-w-0 items-center gap-1.5 px-2 text-sm sm:flex">
               <AgentIdentityIcon
                 agentId={props.agent.id}
                 decorative
@@ -465,19 +536,37 @@ export function ConversationComposer(props: ConversationComposerProps) {
             </div>
           )}
 
-          {props.mode === "create" ? (
-            <NewConversationContextPicker
-              disabled={isCurrentStreamBlocking}
-              onChange={setActiveContext}
-              value={activeContext}
-            />
-          ) : (
-            <ConversationContextPicker conversationId={props.conversationId} />
-          )}
+          <div className="hidden min-w-0 items-center sm:flex">
+            {props.mode === "create" ? (
+              <NewConversationContextPicker
+                disabled={isCurrentStreamBlocking}
+                onChange={setActiveContext}
+                value={activeContext}
+              />
+            ) : (
+              <ConversationContextPicker conversationId={props.conversationId} />
+            )}
+          </div>
+
+          <div className="flex min-w-0 items-center gap-1.5 px-1 text-sm sm:hidden">
+            {composerAgent ? (
+              <>
+                <AgentIdentityIcon
+                  agentId={composerAgent.id}
+                  decorative
+                  name={composerAgent.name}
+                  size="sm"
+                />
+                <span className="max-w-32 truncate">{composerAgent.name}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground truncate">No active agents</span>
+            )}
+          </div>
 
           <span className="min-w-0 flex-1" />
           {selectedModelLabel ? (
-            <span className="text-muted-foreground mr-2 max-w-[40%] truncate text-xs">
+            <span className="text-muted-foreground mr-2 hidden max-w-[40%] truncate text-xs sm:inline">
               {selectedModelLabel}
             </span>
           ) : null}
@@ -532,6 +621,83 @@ export function ConversationComposer(props: ConversationComposerProps) {
         Agents can make mistakes. Review important results.
       </p>
     </form>
+  )
+}
+
+function ComposerAgentSelect({
+  activeAgents,
+  disabled,
+  id,
+  modelCatalog,
+  onValueChange,
+  selectedAgent,
+  value,
+  wide = false,
+}: {
+  activeAgents: Agent[]
+  disabled: boolean
+  id: string
+  modelCatalog: ModelCatalogResponse
+  onValueChange: (value: string | null) => void
+  selectedAgent: Agent | undefined
+  value: string
+  wide?: boolean
+}) {
+  return (
+    <Select disabled={disabled} onValueChange={onValueChange} value={value}>
+      <SelectTrigger
+        aria-label="Agent"
+        className={cn(
+          "gap-1.5 px-2",
+          wide
+            ? "w-full justify-between"
+            : "hover:bg-muted hidden max-w-48 border-0 shadow-none focus-visible:border-transparent sm:flex"
+        )}
+        id={id}
+        size={wide ? "default" : "sm"}
+      >
+        <SelectValue placeholder="Select an agent">
+          {() =>
+            selectedAgent ? (
+              <>
+                <AgentIdentityIcon
+                  agentId={selectedAgent.id}
+                  decorative
+                  name={selectedAgent.name}
+                  size="sm"
+                />
+                <span className="truncate">{selectedAgent.name}</span>
+              </>
+            ) : (
+              "No active agents"
+            )
+          }
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent align="start" className="max-w-[calc(100vw-2rem)] min-w-72">
+        <SelectGroup>
+          {activeAgents.length === 0 ? (
+            <SelectItem value="" disabled>
+              No active agents
+            </SelectItem>
+          ) : (
+            activeAgents.map((agent) => {
+              const secondary = formatAgentModel(agent, modelCatalog)
+              return (
+                <SelectItem
+                  className="cursor-pointer"
+                  key={agent.id}
+                  label={agentSelectLabel(agent, secondary)}
+                  value={agent.id}
+                >
+                  <AgentSelectItem agent={agent} secondary={secondary} />
+                </SelectItem>
+              )
+            })
+          )}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   )
 }
 
