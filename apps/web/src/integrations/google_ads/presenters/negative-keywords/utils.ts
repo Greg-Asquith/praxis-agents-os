@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/utils.tsx
 
 import type {
+  AdGroupNegativeKeywordResult,
   CampaignNegativeKeywordResult,
   NegativeKeyword,
   NegativeKeywordError,
@@ -167,6 +168,135 @@ export function campaignNegativeKeywordResult(
   return {
     campaigns,
     campaignsTruncated: value["campaigns_truncated"],
+    totals: {
+      applied: value["counts"][appliedKey],
+      failed: value["counts"]["failed"],
+      skipped: value["counts"][skippedKey],
+    },
+  }
+}
+
+export function adGroupNegativeKeywordArgs(
+  value: unknown,
+  allowAny: boolean
+): { adGroupCount: number; keywordCount: number; selectionLabels: string[] } | null {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value["ad_group_ids"]) ||
+    value["ad_group_ids"].length === 0 ||
+    !Array.isArray(value["keywords"]) ||
+    value["keywords"].length === 0 ||
+    !value["keywords"].every((keyword) => parseKeyword(keyword, allowAny) !== null)
+  ) {
+    return null
+  }
+  const selectionLabels: string[] = []
+  for (const adGroup of value["ad_group_ids"]) {
+    if (!isRecord(adGroup) || typeof adGroup["external_id"] !== "string") {
+      return null
+    }
+    const label = typeof adGroup["label"] === "string" ? adGroup["label"].trim() : ""
+    const scopeLabel =
+      typeof adGroup["scope_label"] === "string" ? adGroup["scope_label"].trim() : ""
+    selectionLabels.push(
+      [label || `Ad group ${adGroup["external_id"]}`, scopeLabel].filter(Boolean).join(" — ")
+    )
+  }
+  return {
+    adGroupCount: value["ad_group_ids"].length,
+    keywordCount: value["keywords"].length,
+    selectionLabels,
+  }
+}
+
+export function adGroupNegativeKeywordSummary(
+  value: unknown,
+  fallback: { adGroupCount: number; keywordCount: number; selectionLabels: string[] }
+) {
+  const parsed = adGroupNegativeKeywordArgs(value, true)
+  if (parsed) {
+    return parsed
+  }
+  if (!isRecord(value)) {
+    return fallback
+  }
+  return {
+    adGroupCount: Array.isArray(value["ad_group_ids"])
+      ? value["ad_group_ids"].length
+      : fallback.adGroupCount,
+    keywordCount: Array.isArray(value["keywords"])
+      ? value["keywords"].length
+      : fallback.keywordCount,
+    selectionLabels: fallback.selectionLabels,
+  }
+}
+
+export function adGroupNegativeKeywordResult(
+  value: unknown,
+  removing: boolean
+): AdGroupNegativeKeywordResult | null {
+  const appliedKey = removing ? "removed" : "added"
+  const skippedKey = removing ? "not_found" : "skipped_existing"
+  if (
+    !isRecord(value) ||
+    !isRecord(value["counts"]) ||
+    !isOutcomeCount(value["counts"][appliedKey]) ||
+    !isOutcomeCount(value["counts"][skippedKey]) ||
+    !isOutcomeCount(value["counts"]["failed"]) ||
+    !Array.isArray(value["ad_groups"]) ||
+    typeof value["ad_groups_truncated"] !== "boolean"
+  ) {
+    return null
+  }
+  const adGroups = []
+  for (const item of value["ad_groups"]) {
+    if (
+      !isRecord(item) ||
+      typeof item["ad_group_id"] !== "string" ||
+      typeof item["ad_group_name"] !== "string" ||
+      typeof item["campaign_name"] !== "string" ||
+      !isRecord(item["counts"]) ||
+      !isOutcomeCount(item["counts"][appliedKey]) ||
+      !isOutcomeCount(item["counts"][skippedKey]) ||
+      !isOutcomeCount(item["counts"]["failed"]) ||
+      !Array.isArray(item["ad_group_errors"]) ||
+      typeof item["errors_truncated"] !== "boolean"
+    ) {
+      return null
+    }
+    const errors = []
+    for (const error of item["ad_group_errors"]) {
+      const keyword = parseKeyword(error, true)
+      if (
+        !keyword ||
+        !isRecord(error) ||
+        typeof error["message"] !== "string" ||
+        typeof error["error_code"] !== "string"
+      ) {
+        return null
+      }
+      errors.push({
+        ...keyword,
+        errorCode: error["error_code"],
+        message: error["message"],
+      })
+    }
+    adGroups.push({
+      adGroupId: item["ad_group_id"],
+      adGroupName: item["ad_group_name"],
+      campaignName: item["campaign_name"],
+      counts: {
+        applied: item["counts"][appliedKey],
+        failed: item["counts"]["failed"],
+        skipped: item["counts"][skippedKey],
+      },
+      errors,
+      errorsTruncated: item["errors_truncated"],
+    })
+  }
+  return {
+    adGroups,
+    adGroupsTruncated: value["ad_groups_truncated"],
     totals: {
       applied: value["counts"][appliedKey],
       failed: value["counts"]["failed"],

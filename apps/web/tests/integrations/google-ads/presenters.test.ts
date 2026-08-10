@@ -18,6 +18,7 @@ import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/prese
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import {
+  googleAdsAdGroupNegativeKeywordsPresenter,
   googleAdsCampaignNegativeKeywordsPresenter,
   googleAdsListNegativeKeywordsPresenter,
 } from "@/integrations/google_ads/presenters/negative-keywords"
@@ -948,6 +949,83 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("This campaign type rejected the criterion.")
   })
 
+  it("renders ad group approval scope labels across campaigns", () => {
+    const html = render(
+      googleAdsAdGroupNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "ad-group-negative-keywords-approval",
+            kind: "approval",
+            name: "google_ads_add_ad_group_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              ad_group_ids: [
+                adGroupReference("10", "Exact", "Brand"),
+                adGroupReference("20", "Broad", "Prospecting"),
+              ],
+              keywords: [
+                { text: "free", match_type: "EXACT" },
+                { text: "jobs", match_type: "PHRASE" },
+              ],
+            },
+          },
+          approvalControls(),
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("2 keywords")
+    expect(html).toContain("× 2 ad groups")
+    expect(html).toContain("4 proposed changes")
+    expect(html).toContain("Exact — Brand")
+    expect(html).toContain("Broad — Prospecting")
+  })
+
+  it("renders per-ad-group negative keyword removal rollups", () => {
+    const html = render(
+      googleAdsAdGroupNegativeKeywordsPresenter.render(
+        props({
+          id: "ad-group-negative-keywords-result",
+          kind: "result",
+          name: "google_ads_remove_ad_group_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { removed: 1, not_found: 1, failed: 1 },
+                ad_groups: [
+                  {
+                    ad_group_id: "10",
+                    ad_group_name: "Exact",
+                    campaign_name: "Brand",
+                    counts: { removed: 1, not_found: 1, failed: 1 },
+                    ad_group_errors: [
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        message: "This criterion could not be removed.",
+                        error_code: "CANNOT_REMOVE_CRITERION",
+                      },
+                    ],
+                    errors_truncated: false,
+                  },
+                ],
+                ad_groups_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads ad group negative keyword results"')
+    expect(html).toContain("Exact")
+    expect(html).toContain("Brand")
+    expect(html).toContain("Not found")
+    expect(html).toContain("This criterion could not be removed.")
+  })
+
   it.each([
     ["running", "Adding Google Ads negative keywords…"],
     ["awaiting_approval", "Waiting for negative keyword approval…"],
@@ -1011,6 +1089,7 @@ describe("Google Ads tool presenters", () => {
       "google-ads-create-negative-keyword-list",
       "google-ads-list-negative-keywords",
       "google-ads-campaign-negative-keywords",
+      "google-ads-ad-group-negative-keywords",
       "google-ads-negative-list-campaign-links",
       "google-ads-update-campaign-status",
     ])
@@ -1100,6 +1179,17 @@ function campaignReference(externalId: string, label: string) {
     integration_resource_id: "resource-1",
     external_id: externalId,
     label,
+  }
+}
+
+function adGroupReference(externalId: string, label: string, campaign: string) {
+  return {
+    version: 1,
+    entity_kind: "google_ads_ad_group",
+    integration_resource_id: "resource-1",
+    external_id: externalId,
+    label,
+    scope_label: campaign,
   }
 }
 

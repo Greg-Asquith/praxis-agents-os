@@ -6,7 +6,11 @@ from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
 
 from .discover_resources import discover_resources
-from .entity_resolvers import GOOGLE_ADS_CAMPAIGN_RESOLVER, GOOGLE_ADS_SHARED_SET_RESOLVER
+from .entity_resolvers import (
+    GOOGLE_ADS_AD_GROUP_RESOLVER,
+    GOOGLE_ADS_CAMPAIGN_RESOLVER,
+    GOOGLE_ADS_SHARED_SET_RESOLVER,
+)
 from .settings import google_ads_settings
 from .tools import TOOL_DEFINITIONS
 
@@ -44,5 +48,9 @@ PROVIDER = IntegrationProviderPlugin(
     discover_resources=discover_resources,
     oauth_config=oauth_config,
     tool_definitions=TOOL_DEFINITIONS,
-    entity_resolvers=(GOOGLE_ADS_CAMPAIGN_RESOLVER, GOOGLE_ADS_SHARED_SET_RESOLVER),
+    entity_resolvers=(
+        GOOGLE_ADS_AD_GROUP_RESOLVER,
+        GOOGLE_ADS_CAMPAIGN_RESOLVER,
+        GOOGLE_ADS_SHARED_SET_RESOLVER,
+    ),
 )

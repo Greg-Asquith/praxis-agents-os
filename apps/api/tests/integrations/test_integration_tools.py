@@ -48,11 +48,18 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_search_messages": ("read", "internal", "auto", False),
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
+        "google_ads_add_ad_group_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_campaign_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_negative_keywords": ("write", "external", "approval", True),
         "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
         "google_ads_remove_campaign_negative_keywords": (
+            "write",
+            "external",
+            "approval",
+            True,
+        ),
+        "google_ads_remove_ad_group_negative_keywords": (
             "write",
             "external",
             "approval",
@@ -134,12 +141,14 @@ def test_gmail_tool_contract_matrix_and_schemas() -> None:
 def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
     assert set(definitions) == {
+        "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
+        "google_ads_remove_ad_group_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
@@ -147,10 +156,12 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     assert definitions["google_ads_list_accounts"].effect == "read"
     assert definitions["google_ads_run_report"].effect == "read"
     for name in (
+        "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
+        "google_ads_remove_ad_group_negative_keywords",
         "google_ads_remove_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_update_campaign_status",
@@ -211,6 +222,32 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     )
     assert campaign_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
     assert campaign_remove_keywords.columns[1].options == (
+        "EXACT",
+        "PHRASE",
+        "BROAD",
+        "ANY",
+    )
+    ad_group_add = definitions["google_ads_add_ad_group_negative_keywords"]
+    ad_group_remove = definitions["google_ads_remove_ad_group_negative_keywords"]
+    for ad_group_tool in (ad_group_add, ad_group_remove):
+        assert {field.key for field in ad_group_tool.presentation.arg_fields if field.editable} == {
+            "ad_group_ids",
+            "keywords",
+        }
+        ad_group_field = next(
+            field for field in ad_group_tool.presentation.arg_fields if field.key == "ad_group_ids"
+        )
+        assert ad_group_field.format == "entity_list"
+        assert ad_group_field.entity_kind == "google_ads_ad_group"
+        assert ad_group_tool.max_public_result_chars is not None
+    ad_group_add_keywords = next(
+        field for field in ad_group_add.presentation.arg_fields if field.key == "keywords"
+    )
+    ad_group_remove_keywords = next(
+        field for field in ad_group_remove.presentation.arg_fields if field.key == "keywords"
+    )
+    assert ad_group_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
+    assert ad_group_remove_keywords.columns[1].options == (
         "EXACT",
         "PHRASE",
         "BROAD",
