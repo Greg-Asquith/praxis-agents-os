@@ -33,8 +33,8 @@ from .utils import (
     login_customer_id,
     record_google_ads_operation_audit,
     run_audited_operation,
-    verify_campaigns,
 )
+from .verifiers import verify_campaigns
 
 
 async def google_ads_update_campaign_status(

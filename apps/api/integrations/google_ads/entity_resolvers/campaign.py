@@ -3,11 +3,10 @@
 """Google Ads campaign lookup for shared runtime entity selectors."""
 
 import asyncio
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from integrations.google_ads.operations.utils import escape_gaql_like_literal, stream_rows
+from integrations.google_ads.operations.list_campaigns import list_campaigns
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
@@ -20,7 +19,7 @@ from services.integrations.entity_references import (
     EntityResolverPage,
 )
 
-from .utils import bounded_offset
+from .utils import bounded_offset, group_scoped_references
 
 MAX_SEARCH_CHOICES = 101
 
@@ -44,42 +43,44 @@ def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
     )
 
 
-async def _query(ctx, entry, query: str) -> list[Mapping[str, Any]]:
+async def _query(
+    ctx,
+    entry,
+    *,
+    campaign_ids: Sequence[str] = (),
+    search: str | None = None,
+    limit: int,
+    exclude_removed: bool,
+) -> list[Mapping[str, Any]]:
     client = await google_ads_client_for_principal(
         ctx.db,
         actor=ctx.actor,
         workspace=ctx.workspace,
         entry=entry,
     )
-    payload = await client.post(
-        f"customers/{entry.external_id}/googleAds:searchStream",
-        operation="resolve_campaign_references",
+    return await list_campaigns(
+        client,
+        customer_id=entry.external_id,
         login_customer_id=login_customer_id(entry),
-        json={"query": query},
+        campaign_ids=campaign_ids,
+        search=search,
+        limit=limit,
+        exclude_removed=exclude_removed,
     )
-    return [
-        campaign
-        for row in stream_rows(payload)
-        if isinstance((campaign := row.get("campaign")), Mapping)
-    ]
 
 
 async def search_google_ads_campaigns(ctx, search, _dependent_args, page_size, cursor):
     offset = bounded_offset(cursor, upper_bound=MAX_SEARCH_CHOICES - 1)
     request_limit = min(offset + page_size + 1, MAX_SEARCH_CHOICES)
-    name_filter = (
-        f" AND campaign.name LIKE '%{escape_gaql_like_literal(search.strip())}%'"
-        if search.strip()
-        else ""
-    )
-    query = (
-        "SELECT campaign.id, campaign.name, campaign.status FROM campaign"  # noqa: S608 -- escaped literal
-        " WHERE campaign.status != 'REMOVED'"
-        f"{name_filter} ORDER BY campaign.name LIMIT {request_limit}"
-    )
 
     async def search_entry(entry) -> list[EntityChoice]:
-        campaigns = await _query(ctx, entry, query)
+        campaigns = await _query(
+            ctx,
+            entry,
+            search=search.strip() or None,
+            limit=request_limit,
+            exclude_removed=True,
+        )
         return [
             choice for campaign in campaigns if (choice := _choice(entry, campaign)) is not None
         ]
@@ -101,29 +102,17 @@ async def search_google_ads_campaigns(ctx, search, _dependent_args, page_size, c
 
 
 async def resolve_google_ads_campaigns(ctx, values: Sequence[Any], _dependent_args):
-    entries = {
-        entry.integration_resource_id: entry
-        for entry in ctx.active_context.compatible_entries(GOOGLE_ADS_BINDING)
-    }
-    grouped: dict[Any, list[GoogleAdsCampaignReference]] = defaultdict(list)
-    for value in values:
-        try:
-            reference = GoogleAdsCampaignReference.model_validate(value)
-        except ValueError:
-            continue
-        if reference.integration_resource_id in entries and reference.external_id.isdigit():
-            grouped[reference.integration_resource_id].append(reference)
-
     choices: list[EntityChoice] = []
-    for resource_id, references in grouped.items():
-        entry = entries[resource_id]
-        ids = sorted({reference.external_id for reference in references})[:50]
-        query = (
-            "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
-            f"WHERE campaign.id IN ({', '.join(ids)}) "
-            f"AND campaign.status != 'REMOVED' LIMIT {len(ids)}"
+    grouped = group_scoped_references(ctx, GOOGLE_ADS_BINDING, values, GoogleAdsCampaignReference)
+    for entry, references in grouped:
+        ids = [reference.external_id for reference in references]
+        campaigns = await _query(
+            ctx,
+            entry,
+            campaign_ids=ids,
+            limit=len(ids),
+            exclude_removed=True,
         )
-        campaigns = await _query(ctx, entry, query)
         choices.extend(
             choice for campaign in campaigns if (choice := _choice(entry, campaign)) is not None
         )

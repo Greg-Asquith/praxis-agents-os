@@ -29,9 +29,9 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
 
+from ..verifiers import verify_campaigns
 from .audit import record_google_ads_operation_audit, run_audited_operation
 from .bindings import GOOGLE_ADS_WRITE_BINDING
-from .campaigns import verify_campaigns
 from .client import google_ads_client
 from .fan_out import fan_out_tool_return
 from .negative_keywords import normalize_negative_keywords

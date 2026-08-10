@@ -34,7 +34,6 @@ from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
 
 from ..operations.link_negative_keyword_list import link_negative_keyword_list
-from ..operations.list_shared_sets import list_shared_sets
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
@@ -45,8 +44,8 @@ from .utils import (
     login_customer_id,
     record_google_ads_operation_audit,
     run_audited_operation,
-    verify_campaigns,
 )
+from .verifiers import verify_campaigns, verify_shared_sets
 
 
 async def google_ads_link_negative_keyword_list(
@@ -105,22 +104,11 @@ async def google_ads_link_negative_keyword_list(
             ):
                 raise ModelRetry("A selected Google Ads reference is invalid.")
             client = await google_ads_client(ctx, entry)
-            shared_sets = await list_shared_sets(
+            await verify_shared_sets(
                 client,
-                customer_id=entry.external_id,
-                login_customer_id=login_customer_id(entry),
-                shared_set_type="NEGATIVE_KEYWORDS",
+                entry=entry,
                 shared_set_ids=(list_reference.external_id,),
-                limit=1,
             )
-            if not any(
-                str(shared_set.get("id", "")) == list_reference.external_id
-                for shared_set in shared_sets
-            ):
-                raise ModelRetry(
-                    "The selected negative keyword list is unavailable. "
-                    "Ask the user to choose it again."
-                )
             await verify_campaigns(
                 client,
                 entry=entry,

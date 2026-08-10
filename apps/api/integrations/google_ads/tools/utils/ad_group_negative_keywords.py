@@ -29,7 +29,7 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
 
-from .ad_groups import verify_ad_groups
+from ..verifiers import verify_ad_groups
 from .audit import record_google_ads_operation_audit, run_audited_operation
 from .bindings import GOOGLE_ADS_WRITE_BINDING
 from .client import google_ads_client

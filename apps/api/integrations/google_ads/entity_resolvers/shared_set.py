@@ -3,7 +3,6 @@
 """Google Ads negative keyword list lookup for runtime entity selectors."""
 
 import asyncio
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -20,7 +19,7 @@ from services.integrations.entity_references import (
     EntityResolverPage,
 )
 
-from .utils import round_robin_window, unbounded_offset
+from .utils import group_scoped_references, round_robin_window, unbounded_offset
 
 
 def _choice(entry, shared_set: Mapping[str, Any]) -> EntityChoice | None:
@@ -104,23 +103,10 @@ async def search_google_ads_shared_sets(ctx, search, _dependent_args, page_size,
 
 
 async def resolve_google_ads_shared_sets(ctx, values: Sequence[Any], _dependent_args):
-    entries = {
-        entry.integration_resource_id: entry
-        for entry in ctx.active_context.compatible_entries(GOOGLE_ADS_BINDING)
-    }
-    grouped: dict[Any, list[GoogleAdsSharedSetReference]] = defaultdict(list)
-    for value in values:
-        try:
-            reference = GoogleAdsSharedSetReference.model_validate(value)
-        except ValueError:
-            continue
-        if reference.integration_resource_id in entries and reference.external_id.isdigit():
-            grouped[reference.integration_resource_id].append(reference)
-
     choices: list[EntityChoice] = []
-    for resource_id, references in grouped.items():
-        entry = entries[resource_id]
-        ids = sorted({reference.external_id for reference in references})[:50]
+    grouped = group_scoped_references(ctx, GOOGLE_ADS_BINDING, values, GoogleAdsSharedSetReference)
+    for entry, references in grouped:
+        ids = [reference.external_id for reference in references]
         shared_sets = await _query(ctx, entry, shared_set_ids=ids, limit=len(ids))
         choices.extend(
             choice

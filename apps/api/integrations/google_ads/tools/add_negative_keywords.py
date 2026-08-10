@@ -30,7 +30,6 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
 
 from ..operations.add_negative_keywords import add_negative_keywords
-from ..operations.list_shared_sets import list_shared_sets
 from .schemas import GoogleAdsOutput
 from .schemas.negative_keyword import NegativeKeywordEntry
 from .utils import (
@@ -47,6 +46,7 @@ from .utils import (
     record_google_ads_operation_audit,
     run_audited_operation,
 )
+from .verifiers import verify_shared_sets
 
 
 async def google_ads_add_negative_keywords(
@@ -78,21 +78,11 @@ async def google_ads_add_negative_keywords(
             if not reference.external_id.isdigit():
                 raise ModelRetry("The selected negative keyword list reference is invalid.")
             client = await google_ads_client(ctx, entry)
-            shared_sets = await list_shared_sets(
+            await verify_shared_sets(
                 client,
-                customer_id=entry.external_id,
-                login_customer_id=login_customer_id(entry),
-                shared_set_type="NEGATIVE_KEYWORDS",
+                entry=entry,
                 shared_set_ids=(reference.external_id,),
-                limit=1,
             )
-            if not any(
-                str(shared_set.get("id", "")) == reference.external_id for shared_set in shared_sets
-            ):
-                raise ModelRetry(
-                    "The selected negative keyword list is unavailable. "
-                    "Ask the user to choose it again."
-                )
             return await add_negative_keywords(
                 client,
                 customer_id=entry.external_id,

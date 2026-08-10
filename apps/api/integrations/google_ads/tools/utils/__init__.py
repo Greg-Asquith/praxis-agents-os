@@ -8,7 +8,6 @@ from .campaign_negative_keywords import (
     MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
     run_campaign_negative_keyword_tool,
 )
-from .campaigns import verify_campaigns
 from .client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .fan_out import fan_out_dict, fan_out_tool_return
 from .negative_keyword_results import (
@@ -43,5 +42,4 @@ __all__ = [
     "record_google_ads_operation_audit",
     "run_audited_operation",
     "run_campaign_negative_keyword_tool",
-    "verify_campaigns",
 ]

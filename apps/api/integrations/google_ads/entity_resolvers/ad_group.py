@@ -3,11 +3,10 @@
 """Google Ads ad-group lookup for shared runtime entity selectors."""
 
 import asyncio
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from integrations.google_ads.operations.utils import escape_gaql_like_literal, stream_rows
+from integrations.google_ads.operations.list_ad_groups import list_ad_groups
 from integrations.google_ads.references import GoogleAdsAdGroupReference
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
@@ -20,7 +19,7 @@ from services.integrations.entity_references import (
     EntityResolverPage,
 )
 
-from .utils import bounded_offset
+from .utils import bounded_offset, group_scoped_references
 
 MAX_SEARCH_CHOICES = 101
 
@@ -49,38 +48,44 @@ def _choice(entry, row: Mapping[str, Any]) -> EntityChoice | None:
     )
 
 
-async def _query(ctx, entry, query: str) -> list[Mapping[str, Any]]:
+async def _query(
+    ctx,
+    entry,
+    *,
+    ad_group_ids: Sequence[str] = (),
+    search: str | None = None,
+    limit: int,
+    exclude_removed: bool,
+) -> list[Mapping[str, Any]]:
     client = await google_ads_client_for_principal(
         ctx.db,
         actor=ctx.actor,
         workspace=ctx.workspace,
         entry=entry,
     )
-    payload = await client.post(
-        f"customers/{entry.external_id}/googleAds:searchStream",
-        operation="resolve_ad_group_references",
+    return await list_ad_groups(
+        client,
+        customer_id=entry.external_id,
         login_customer_id=login_customer_id(entry),
-        json={"query": query},
+        ad_group_ids=ad_group_ids,
+        search=search,
+        limit=limit,
+        exclude_removed=exclude_removed,
     )
-    return [row for row in stream_rows(payload) if isinstance(row, Mapping)]
 
 
 async def search_google_ads_ad_groups(ctx, search, _dependent_args, page_size, cursor):
     offset = bounded_offset(cursor, upper_bound=MAX_SEARCH_CHOICES - 1)
     request_limit = min(offset + page_size + 1, MAX_SEARCH_CHOICES)
-    name_filter = (
-        f" AND ad_group.name LIKE '%{escape_gaql_like_literal(search.strip())}%'"
-        if search.strip()
-        else ""
-    )
-    query = (
-        "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.name "  # noqa: S608 -- escaped literal
-        "FROM ad_group WHERE ad_group.status != 'REMOVED'"
-        f"{name_filter} ORDER BY ad_group.name LIMIT {request_limit}"
-    )
 
     async def search_entry(entry) -> list[EntityChoice]:
-        rows = await _query(ctx, entry, query)
+        rows = await _query(
+            ctx,
+            entry,
+            search=search.strip() or None,
+            limit=request_limit,
+            exclude_removed=True,
+        )
         return [choice for row in rows if (choice := _choice(entry, row)) is not None]
 
     entries = ctx.active_context.compatible_entries(GOOGLE_ADS_BINDING)
@@ -100,31 +105,17 @@ async def search_google_ads_ad_groups(ctx, search, _dependent_args, page_size, c
 
 
 async def resolve_google_ads_ad_groups(ctx, values: Sequence[Any], _dependent_args):
-    entries = {
-        entry.integration_resource_id: entry
-        for entry in ctx.active_context.compatible_entries(GOOGLE_ADS_BINDING)
-    }
-    grouped: dict[Any, list[GoogleAdsAdGroupReference]] = defaultdict(list)
-    for value in values:
-        try:
-            reference = GoogleAdsAdGroupReference.model_validate(value)
-        except ValueError:
-            continue
-        if reference.integration_resource_id in entries and reference.external_id.isdigit():
-            grouped[reference.integration_resource_id].append(reference)
-
     choices: list[EntityChoice] = []
-    for resource_id, references in grouped.items():
-        entry = entries[resource_id]
-        ids = sorted({reference.external_id for reference in references})[:50]
-        query = (
-            "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.name "  # noqa: S608 -- digit-only ids
-            "FROM ad_group "
-            f"WHERE ad_group.id IN ({', '.join(ids)}) "
-            "AND ad_group.status != 'REMOVED' "
-            f"LIMIT {len(ids)}"
+    grouped = group_scoped_references(ctx, GOOGLE_ADS_BINDING, values, GoogleAdsAdGroupReference)
+    for entry, references in grouped:
+        ids = [reference.external_id for reference in references]
+        rows = await _query(
+            ctx,
+            entry,
+            ad_group_ids=ids,
+            limit=len(ids),
+            exclude_removed=True,
         )
-        rows = await _query(ctx, entry, query)
         choices.extend(choice for row in rows if (choice := _choice(entry, row)) is not None)
     return tuple(choices)
 

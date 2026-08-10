@@ -29,6 +29,7 @@ from pydantic_ai import (
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from core.exceptions.general import AppValidationError
 from core.exceptions.integration import IntegrationValidationError
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.discover_resources import discover_google_ads_resources
@@ -37,6 +38,7 @@ from integrations.google_ads.entity_resolvers.ad_group import (
     search_google_ads_ad_groups,
 )
 from integrations.google_ads.entity_resolvers.campaign import (
+    GOOGLE_ADS_CAMPAIGN_RESOLVER,
     _choice as campaign_choice,
     resolve_google_ads_campaigns,
     search_google_ads_campaigns,
@@ -46,6 +48,7 @@ from integrations.google_ads.entity_resolvers.shared_set import (
     resolve_google_ads_shared_sets,
     search_google_ads_shared_sets,
 )
+from integrations.google_ads.entity_resolvers.utils import group_scoped_references
 from integrations.google_ads.operations.ad_group_negative_keywords import (
     add_ad_group_negative_keywords,
     remove_ad_group_negative_keywords,
@@ -62,6 +65,8 @@ from integrations.google_ads.operations.link_negative_keyword_list import (
     link_negative_keyword_list,
 )
 from integrations.google_ads.operations.list_accounts import list_accounts
+from integrations.google_ads.operations.list_ad_groups import list_ad_groups
+from integrations.google_ads.operations.list_campaigns import list_campaigns
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
 from integrations.google_ads.operations.remove_negative_keywords import (
     remove_negative_keywords,
@@ -110,8 +115,12 @@ from integrations.google_ads.tools.schemas.negative_keyword import (
     NegativeKeywordEntry,
     NegativeKeywordRemovalEntry,
 )
-from integrations.google_ads.tools.update_campaign_status import google_ads_update_campaign_status
+from integrations.google_ads.tools.update_campaign_status import (
+    DEFINITION as GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+    google_ads_update_campaign_status,
+)
 from integrations.google_ads.tools.utils import (
+    GOOGLE_ADS_BINDING,
     MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS,
     MAX_NEGATIVE_KEYWORD_RESULT_CHARS,
     bounded_negative_keyword_removal_result,
@@ -120,8 +129,13 @@ from integrations.google_ads.tools.utils import (
     complete_negative_keyword_result,
     normalize_negative_keywords,
     run_audited_operation,
-    verify_campaigns,
 )
+from integrations.google_ads.tools.verifiers import (
+    verify_ad_groups,
+    verify_campaigns,
+    verify_shared_sets,
+)
+from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.credentials.google_service_account import (
@@ -1370,6 +1384,77 @@ async def test_list_shared_sets_filters_enabled_negative_keyword_lists_and_escap
     assert "ORDER BY shared_set.name, shared_set.id LIMIT 1" in client.last_json["query"]
 
 
+async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
+    client = _OperationClient(
+        {
+            "results": [
+                {"campaign": {"id": "10", "name": "Brand", "status": "ENABLED"}},
+                {"notCampaign": {"id": "20"}},
+            ]
+        }
+    )
+
+    campaigns = await list_campaigns(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        campaign_ids=("20", "10", "20"),
+        search="Brand's \\ sale%_[]",
+        limit=101,
+        exclude_removed=True,
+    )
+
+    assert campaigns == [{"id": "10", "name": "Brand", "status": "ENABLED"}]
+    assert "campaign.status != 'REMOVED'" in client.last_json["query"]
+    assert "campaign.id IN (10, 20)" in client.last_json["query"]
+    assert "LIKE '%Brand\\'s \\\\ sale[%][_][[][]]%'" in client.last_json["query"]
+    assert "ORDER BY campaign.name, campaign.id LIMIT 101" in client.last_json["query"]
+
+
+async def test_list_ad_groups_validates_exact_ids_and_returns_campaign_rows() -> None:
+    row = {
+        "adGroup": {"id": "10", "name": "Exact", "status": "ENABLED"},
+        "campaign": {"name": "Brand"},
+    }
+    client = _OperationClient({"results": [row]})
+
+    assert await list_ad_groups(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        ad_group_ids=("20", "10", "20"),
+        search="Group's \\ sale",
+        limit=101,
+        exclude_removed=True,
+    ) == [row]
+    assert "ad_group.status != 'REMOVED'" in client.last_json["query"]
+    assert "ad_group.id IN (10, 20)" in client.last_json["query"]
+    assert "ad_group.name LIKE '%Group\\'s \\\\ sale%'" in client.last_json["query"]
+    assert "ORDER BY ad_group.name, ad_group.id LIMIT 101" in client.last_json["query"]
+
+
+@pytest.mark.parametrize(
+    ("operation", "id_name"),
+    [(list_campaigns, "campaign_ids"), (list_ad_groups, "ad_group_ids")],
+)
+async def test_google_ads_entity_operations_reject_malformed_ids_and_bounds(
+    operation,
+    id_name: str,
+) -> None:
+    client = _OperationClient({"results": []})
+    common = {
+        "customer_id": "333",
+        "login_customer_id": "111",
+        "limit": 1,
+        "exclude_removed": True,
+    }
+
+    with pytest.raises(ValueError, match="ids must contain only digits"):
+        await operation(client, **common, **{id_name: ("10 OR 1=1",)})
+    with pytest.raises(ValueError, match="between 1 and 101"):
+        await operation(client, **{**common, "limit": 102})
+
+
 @pytest.mark.parametrize(
     ("search", "escaped"),
     [
@@ -1743,6 +1828,45 @@ def test_campaign_reference_rejects_removed_campaign() -> None:
     assert choice is None
 
 
+def test_scoped_reference_grouping_is_context_ordered_deduplicated_and_bounded() -> None:
+    first = _writable_google_ads_entry()
+    second = _writable_google_ads_entry()
+    incompatible = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+        external_id="owner@example.com",
+        display_name="Mailbox",
+        connection_id=uuid4(),
+        connection_label="Gmail",
+        connection_status="active",
+        write_allowed=True,
+    )
+    ctx = SimpleNamespace(
+        active_context=ResolvedActiveContext(entries=(first, incompatible, second))
+    )
+    values = [
+        _campaign_reference(second, "900"),
+        *(_campaign_reference(first, str(index)) for index in range(60, 0, -1)),
+        _campaign_reference(first, "10"),
+        _campaign_reference(incompatible, "800"),
+        {"not": "a reference"},
+    ]
+
+    grouped = group_scoped_references(
+        ctx,
+        GOOGLE_ADS_BINDING,
+        values,
+        GoogleAdsCampaignReference,
+    )
+
+    assert [entry for entry, _references in grouped] == [first, second]
+    assert [reference.external_id for reference in grouped[0][1]] == sorted(
+        {str(index) for index in range(1, 61)}
+    )[:50]
+    assert [reference.external_id for reference in grouped[1][1]] == ["900"]
+
+
 def test_shared_set_choice_carries_member_count() -> None:
     choice = shared_set_choice(
         SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
@@ -1961,10 +2085,12 @@ async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkey
     assert page.next_cursor is None
     assert [call.args[1] for call in query.await_args_list] == [active, second_active]
     assert all(
-        call.args[2] == "SELECT campaign.id, campaign.name, campaign.status FROM campaign "
-        "WHERE campaign.status != 'REMOVED' "
-        "AND campaign.name LIKE '%Campaign\\'s \\\\ list%' "
-        "ORDER BY campaign.name LIMIT 101"
+        call.kwargs
+        == {
+            "search": "Campaign's \\ list",
+            "limit": 101,
+            "exclude_removed": True,
+        }
         for call in query.await_args_list
     )
 
@@ -2015,8 +2141,11 @@ async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) 
 
     assert [choice.value["external_id"] for choice in choices] == ["10"]
     query.assert_awaited_once()
-    assert "campaign.id IN (10, 20)" in query.await_args.args[2]
-    assert "campaign.status != 'REMOVED'" in query.await_args.args[2]
+    assert query.await_args.kwargs == {
+        "campaign_ids": ["10", "20"],
+        "limit": 2,
+        "exclude_removed": True,
+    }
 
 
 async def test_ad_group_search_fans_out_and_labels_campaign_scope(monkeypatch) -> None:
@@ -2055,7 +2184,12 @@ async def test_ad_group_search_fans_out_and_labels_campaign_scope(monkeypatch) -
     assert [choice.value["scope_label"] for choice in page.choices] == ["Brand", "Brand"]
     assert [call.args[1] for call in query.await_args_list] == [active, second_active]
     assert all(
-        "ad_group.name LIKE '%Group\\'s \\\\ name%'" in call.args[2] and "LIMIT 26" in call.args[2]
+        call.kwargs
+        == {
+            "search": "Group's \\ name",
+            "limit": 26,
+            "exclude_removed": True,
+        }
         for call in query.await_args_list
     )
 
@@ -2094,7 +2228,115 @@ async def test_ad_group_hydration_drops_stale_and_out_of_context_values(monkeypa
 
     assert [choice.value["external_id"] for choice in choices] == ["10"]
     assert choices[0].value["scope_label"] == "Brand"
-    assert "ad_group.id IN (10, 20)" in query.await_args.args[2]
+    assert query.await_args.kwargs == {
+        "ad_group_ids": ["10", "20"],
+        "limit": 2,
+        "exclude_removed": True,
+    }
+
+
+async def test_campaign_and_ad_group_resolvers_call_canonical_operations(monkeypatch) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(entry,)),
+    )
+    client = object()
+    campaign_operation = AsyncMock(
+        return_value=[{"id": "10", "name": "Search", "status": "ENABLED"}]
+    )
+    ad_group_operation = AsyncMock(
+        return_value=[
+            {
+                "adGroup": {"id": "20", "name": "Exact", "status": "ENABLED"},
+                "campaign": {"name": "Brand"},
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.campaign.google_ads_client_for_principal",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.campaign.list_campaigns",
+        campaign_operation,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.ad_group.google_ads_client_for_principal",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.ad_group.list_ad_groups",
+        ad_group_operation,
+    )
+
+    await resolve_google_ads_campaigns(ctx, [_campaign_reference(entry, "10")], {})
+    await resolve_google_ads_ad_groups(ctx, [_ad_group_reference(entry, "20")], {})
+
+    campaign_operation.assert_awaited_once_with(
+        client,
+        customer_id="111",
+        login_customer_id="999",
+        campaign_ids=["10"],
+        search=None,
+        limit=1,
+        exclude_removed=True,
+    )
+    ad_group_operation.assert_awaited_once_with(
+        client,
+        customer_id="111",
+        login_customer_id="999",
+        ad_group_ids=["20"],
+        search=None,
+        limit=1,
+        exclude_removed=True,
+    )
+
+
+async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeypatch) -> None:
+    entry = _writable_google_ads_entry()
+    resolver_context = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(entry,)),
+    )
+    reference = _campaign_reference(entry, "10").model_dump(mode="json")
+    authorized = SimpleNamespace(
+        context=resolver_context,
+        resolver=GOOGLE_ADS_CAMPAIGN_RESOLVER,
+        field_key="campaign_ids",
+        entity_kind="google_ads_campaign",
+        depends_on=(),
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.authorize_entity_field",
+        AsyncMock(return_value=authorized),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.campaign._query",
+        AsyncMock(return_value=[]),
+    )
+
+    with pytest.raises(AppValidationError, match="unavailable or no longer accessible"):
+        await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(conversation_id=uuid4()),
+            tool_call=SimpleNamespace(
+                tool_name="google_ads_update_campaign_status",
+                args={"campaign_ids": [reference], "status": "PAUSED"},
+            ),
+            override_args=None,
+        )
 
 
 async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) -> None:
@@ -2203,6 +2445,69 @@ async def test_campaign_verification_can_ignore_removed_campaigns() -> None:
     )
 
     assert "campaign.status != 'REMOVED'" not in client.post.await_args.kwargs["json"]["query"]
+
+
+async def test_execution_verifiers_share_canonical_operation_layer(monkeypatch) -> None:
+    entry = _writable_google_ads_entry()
+    client = AsyncMock()
+    campaign_operation = AsyncMock(
+        return_value=[
+            {"id": "10", "status": "ENABLED"},
+            {"id": "20", "status": "ENABLED"},
+        ]
+    )
+    ad_group_operation = AsyncMock(
+        return_value=[
+            {"adGroup": {"id": "30"}, "campaign": {"name": "Brand"}},
+        ]
+    )
+    shared_set_operation = AsyncMock(return_value=[{"id": "50"}])
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.verifiers.campaign.list_campaigns",
+        campaign_operation,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.verifiers.ad_group.list_ad_groups",
+        ad_group_operation,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.verifiers.shared_set.list_shared_sets",
+        shared_set_operation,
+    )
+
+    await verify_campaigns(
+        client,
+        entry=entry,
+        campaign_ids=["20", "10", "20"],
+        ignore_removed=True,
+    )
+    await verify_ad_groups(client, entry=entry, ad_group_ids=["30"])
+    await verify_shared_sets(client, entry=entry, shared_set_ids=["50"])
+
+    assert campaign_operation.await_args.kwargs["campaign_ids"] == ("10", "20")
+    assert campaign_operation.await_args.kwargs["exclude_removed"] is True
+    assert ad_group_operation.await_args.kwargs["ad_group_ids"] == ("30",)
+    assert shared_set_operation.await_args.kwargs == {
+        "customer_id": "111",
+        "login_customer_id": "999",
+        "shared_set_type": "NEGATIVE_KEYWORDS",
+        "shared_set_ids": ("50",),
+        "limit": 1,
+    }
+
+    campaign_operation.return_value = [{"id": "10", "status": "ENABLED"}]
+    with pytest.raises(ModelRetry, match="campaign is unavailable"):
+        await verify_campaigns(
+            client,
+            entry=entry,
+            campaign_ids=["10", "20"],
+            ignore_removed=True,
+        )
+
+    calls_before_invalid = shared_set_operation.await_count
+    with pytest.raises(ModelRetry, match="list is unavailable"):
+        await verify_shared_sets(client, entry=entry, shared_set_ids=["not-digits"])
+    assert shared_set_operation.await_count == calls_before_invalid
 
 
 async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
@@ -2345,7 +2650,7 @@ async def test_negative_list_campaign_links_fail_closed_for_stale_references(
         AsyncMock(return_value=client),
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.link_negative_keyword_list.list_shared_sets",
+        "integrations.google_ads.tools.verifiers.shared_set.list_shared_sets",
         AsyncMock(return_value=shared_sets),
     )
     monkeypatch.setattr(
@@ -2417,7 +2722,7 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
         AsyncMock(return_value=client),
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.link_negative_keyword_list.list_shared_sets",
+        "integrations.google_ads.tools.verifiers.shared_set.list_shared_sets",
         AsyncMock(return_value=[{"id": "50"}]),
     )
     monkeypatch.setattr(
