@@ -114,4 +114,29 @@ describe("EntityFieldInput", () => {
     expect(html).toContain('value="Quarterly plan.pdf"')
     expect(html).not.toContain("Target unavailable")
   })
+
+  it("uses a canonical server-hydrated identity for a model-issued reference", () => {
+    const value = {
+      integration_resource_id: "resource-1",
+      external_id: "customers/123/sharedSets/456",
+      label: "Testing 2",
+    }
+    const html = renderEntityInput(value, [
+      {
+        value: {
+          version: 1,
+          entity_kind: "google_ads_shared_set",
+          integration_resource_id: "resource-1",
+          external_id: "456",
+          label: "Testing 2",
+        },
+        label: "Testing 2",
+        description: "0 negative keywords",
+        scope_label: "Ads account",
+      },
+    ])
+
+    expect(html).toContain('value="Testing 2"')
+    expect(html).not.toContain("Target unavailable")
+  })
 })

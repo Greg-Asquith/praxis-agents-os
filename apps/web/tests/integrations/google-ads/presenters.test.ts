@@ -3,6 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
+import type { EditedRecords } from "@/components/tool-ui/edited-values"
+import {
+  addRecordRow,
+  removeRecordRow,
+  updateRecordCell,
+} from "@/components/tool-ui/records-field-values"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
@@ -10,6 +16,7 @@ import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
+import { googleAdsNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/negative-keywords"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
@@ -407,6 +414,268 @@ describe("Google Ads tool presenters", () => {
     ).toBe(false)
   })
 
+  it("renders an editable negative keyword approval with a match-type summary", () => {
+    const controls = approvalControls()
+    const declaredFields: ToolUiField[] = [
+      {
+        ...field("negative_list", "Negative Keyword List", "entity", true),
+        entity_kind: "google_ads_shared_set",
+      },
+      {
+        ...field("keywords", "Keywords", "records", true),
+        columns: [
+          { key: "text", label: "Keyword", options: [], placeholder: "" },
+          {
+            key: "match_type",
+            label: "Match Type",
+            options: ["EXACT", "PHRASE", "BROAD"],
+            placeholder: "",
+          },
+        ],
+      },
+    ]
+    const rendered = googleAdsNegativeKeywordsPresenter.render(
+      props(
+        {
+          id: "negative-keywords-approval",
+          kind: "approval",
+          name: "google_ads_add_negative_keywords",
+          status: "awaiting_approval",
+          args: {
+            negative_list: sharedSetReference("50", "Brand Protection"),
+            keywords: [
+              { text: "free", match_type: "EXACT" },
+              { text: "jobs", match_type: "PHRASE" },
+              { text: "cheap", match_type: "BROAD" },
+            ],
+          },
+        },
+        controls,
+        toolUi(declaredFields)
+      )
+    )
+
+    expect(isValidElement(rendered)).toBe(true)
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
+      expect(rendered.type).toBe(ToolApprovalDecisionCard)
+      expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
+    }
+    const html = render(rendered)
+    expect(html).toContain("3 keywords")
+    expect(html).toContain("Brand Protection")
+    expect(html).toContain("Exact 1 · Phrase 1 · Broad 1")
+    expect(html).toContain("Approve &amp; Add")
+  })
+
+  it("renders added, existing, and failed keyword rows per account", () => {
+    const html = render(
+      googleAdsNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-result",
+          kind: "result",
+          name: "google_ads_add_negative_keywords",
+          status: "completed",
+          args: {
+            negative_list: sharedSetReference("50", "Brand Protection"),
+            keywords: [
+              { text: "free", match_type: "EXACT" },
+              { text: "jobs", match_type: "PHRASE" },
+              { text: "cheap", match_type: "BROAD" },
+            ],
+          },
+          result: {
+            results: [
+              entry({
+                counts: { added: 1, skipped_existing: 1, failed: 1 },
+                samples: {
+                  added: [
+                    {
+                      text: "free",
+                      match_type: "EXACT",
+                      resource_name: "customers/1234567890/sharedCriteria/50~1",
+                    },
+                  ],
+                  skipped_existing: [{ text: "jobs", match_type: "PHRASE" }],
+                  failed: [
+                    {
+                      scope: "keyword",
+                      text: "cheap",
+                      match_type: "BROAD",
+                      message: "Keyword is not permitted.",
+                      error_code: "INVALID_KEYWORD_TEXT",
+                    },
+                  ],
+                },
+                samples_truncated: false,
+                audit_note: "Full applied-change details are retained in the audit trail.",
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads negative keyword results"')
+    expect(html).toContain("Added")
+    expect(html).toContain("Already existed")
+    expect(html).toContain("Failed")
+    expect(html).toContain("free")
+    expect(html).toContain("jobs")
+    expect(html).toContain("cheap")
+    expect(html).toContain("Keyword is not permitted.")
+  })
+
+  it("keeps valid keyword outcomes when a provider failure has no operation index", () => {
+    const html = render(
+      googleAdsNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-unattributed-error",
+          kind: "result",
+          name: "google_ads_add_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { added: 401, skipped_existing: 73, failed: 26 },
+                samples: {
+                  added: [
+                    {
+                      text: "free",
+                      match_type: "EXACT",
+                      resource_name: "customers/1234567890/sharedCriteria/50~1",
+                    },
+                  ],
+                  skipped_existing: [{ text: "jobs", match_type: "PHRASE" }],
+                  failed: [
+                    {
+                      scope: "account",
+                      message: "The account rejected part of the request.",
+                      error_code: "INVALID_INPUT",
+                    },
+                  ],
+                },
+                samples_truncated: true,
+                audit_note: "Full applied-change details are retained in the audit trail.",
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("free")
+    expect(html).toContain("jobs")
+    expect(html).toContain("Added")
+    expect(html).toContain("Already existed")
+    expect(html).toContain("Failed")
+    expect(html).toContain("Account-level error")
+    expect(html).toContain("The account rejected part of the request.")
+    expect(html).toContain("401")
+    expect(html).toContain("73")
+    expect(html).toContain("26")
+    expect(html).toContain("Showing representative rows")
+  })
+
+  it("updates the approval summary from edited keyword rows", () => {
+    const controls = approvalControls()
+    controls.decision.edits = {
+      keywords: [
+        { text: "one", match_type: "EXACT" },
+        { text: "two", match_type: "EXACT" },
+      ],
+    }
+    const html = render(
+      googleAdsNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "negative-keywords-edited",
+            kind: "approval",
+            name: "google_ads_add_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              negative_list: sharedSetReference("50", "Brand Protection"),
+              keywords: [{ text: "old", match_type: "BROAD" }],
+            },
+          },
+          controls,
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("2 keywords")
+    expect(html).toContain("Exact 2 · Phrase 0 · Broad 0")
+  })
+
+  it("derives the custom approval summary across incomplete keyword row states", () => {
+    const controls = approvalControls()
+    const activity: ToolActivity = {
+      id: "negative-keywords-incomplete-edits",
+      kind: "approval",
+      name: "google_ads_add_negative_keywords",
+      status: "awaiting_approval",
+      args: {
+        negative_list: sharedSetReference("50", "Brand Protection"),
+        keywords: [{ text: "jobs", match_type: "EXACT" }],
+      },
+    }
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "" },
+      {
+        key: "match_type",
+        label: "Match Type",
+        options: ["EXACT", "PHRASE", "BROAD"],
+        placeholder: "",
+      },
+    ]
+    let rows: EditedRecords = [{ text: "jobs", match_type: "EXACT" }]
+
+    assertCustomApproval(activity, controls, rows, "1 keyword", "Exact 1")
+
+    rows = addRecordRow(rows, columns)
+    assertCustomApproval(activity, controls, rows, "2 keywords", "Exact 1")
+
+    rows = updateRecordCell(rows, 0, "text", "")
+    assertCustomApproval(activity, controls, rows, "2 keywords", "Exact 1")
+
+    rows = updateRecordCell(rows, 0, "text", "new jobs")
+    rows = updateRecordCell(rows, 1, "match_type", "PHRASE")
+    assertCustomApproval(activity, controls, rows, "2 keywords", "Phrase 1")
+
+    rows = removeRecordRow(removeRecordRow(rows, 1), 0)
+    assertCustomApproval(activity, controls, rows, "0 keywords", "Exact 0")
+
+    rows = addRecordRow(rows, columns)
+    rows = updateRecordCell(rows, 0, "text", "careers")
+    rows = updateRecordCell(rows, 0, "match_type", "BROAD")
+    assertCustomApproval(activity, controls, rows, "1 keyword", "Broad 1")
+  })
+
+  it.each([
+    ["running", "Adding Google Ads negative keywords…"],
+    ["awaiting_approval", "Waiting for negative keyword approval…"],
+    ["denied", "Nothing was added."],
+    ["failed", "No negative keyword change was confirmed."],
+    ["unknown", "No negative keyword change was confirmed."],
+  ] as const)("renders an honest negative-keyword %s state", (status, expected) => {
+    const html = render(
+      googleAdsNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-state",
+          kind: "call",
+          name: "google_ads_add_negative_keywords",
+          status,
+          args: {
+            negative_list: sharedSetReference("50", "Brand Protection"),
+            keywords: [{ text: "free", match_type: "EXACT" }],
+          },
+        })
+      )
+    )
+    expect(html).toContain(expected)
+  })
+
   it.each([
     ["running", "Updating Google Ads campaigns…"],
     ["awaiting_approval", "Waiting for campaign approval…"],
@@ -444,9 +713,11 @@ describe("Google Ads tool presenters", () => {
       "google-ads-run-report",
       "google-ads-list-accounts",
       "google-ads-create-negative-keyword-list",
+      "google-ads-add-negative-keywords",
       "google-ads-update-campaign-status",
     ])
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)
+    expect(googleAdsNegativeKeywordsPresenter.handlesApprovals).toBe(true)
   })
 
   it("loads and renders the report presenter through the production registry seam", async () => {
@@ -532,6 +803,16 @@ function campaignReference(externalId: string, label: string) {
   }
 }
 
+function sharedSetReference(externalId: string, label: string) {
+  return {
+    version: 1,
+    entity_kind: "google_ads_shared_set",
+    integration_resource_id: "resource-1",
+    external_id: externalId,
+    label,
+  }
+}
+
 function entry(data: unknown) {
   return {
     connection_id: "connection-1",
@@ -552,6 +833,28 @@ function approvalControls() {
     pendingCount: 1,
     submitting: false,
   }
+}
+
+function assertCustomApproval(
+  activity: ToolActivity,
+  controls: ReturnType<typeof approvalControls>,
+  rows: Record<string, string | number>[],
+  expectedTotal: string,
+  expectedCount: string
+) {
+  controls.decision.edits = { keywords: rows }
+  const rendered = googleAdsNegativeKeywordsPresenter.render(props(activity, controls, toolUi([])))
+
+  expect(isValidElement(rendered)).toBe(true)
+  if (isValidElement<{ controls: unknown }>(rendered)) {
+    expect(rendered.type).toBe(ToolApprovalDecisionCard)
+    expect(rendered.props.controls).toBe(controls)
+  }
+  const html = render(rendered)
+  expect(html).toContain(expectedTotal)
+  expect(html).toContain(expectedCount)
+  expect(html).toContain("Approve &amp; Add")
+  expect(html).toContain("Decline")
 }
 
 function render(node: ReactNode) {

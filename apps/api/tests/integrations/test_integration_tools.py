@@ -48,6 +48,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_search_messages": ("read", "internal", "auto", False),
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
+        "google_ads_add_negative_keywords": ("write", "external", "approval", True),
         "google_ads_list_accounts": ("read", "internal", "auto", False),
         "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
@@ -124,6 +125,7 @@ def test_gmail_tool_contract_matrix_and_schemas() -> None:
 def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
     assert set(definitions) == {
+        "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
         "google_ads_run_report",
@@ -132,6 +134,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     assert definitions["google_ads_list_accounts"].effect == "read"
     assert definitions["google_ads_run_report"].effect == "read"
     for name in (
+        "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_update_campaign_status",
     ):
@@ -147,6 +150,15 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     create = definitions["google_ads_create_negative_keyword_list"]
     editable_fields = {field.key for field in create.presentation.arg_fields if field.editable}
     assert editable_fields == {"names"}
+    add = definitions["google_ads_add_negative_keywords"]
+    assert {field.key for field in add.presentation.arg_fields if field.editable} == {
+        "negative_list",
+        "keywords",
+    }
+    keyword_field = next(field for field in add.presentation.arg_fields if field.key == "keywords")
+    assert keyword_field.format == "records"
+    assert [column.key for column in keyword_field.columns] == ["text", "match_type"]
+    assert keyword_field.columns[1].options == ("EXACT", "PHRASE", "BROAD")
 
     denylisted = {
         "account_id",

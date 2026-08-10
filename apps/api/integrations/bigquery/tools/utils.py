@@ -156,6 +156,7 @@ async def _record_operation_for_entries(
             workspace_id=ctx.deps.workspace.id,
             agent=ctx.deps.agent,
             run=ctx.deps.run,
+            tool_call_id=getattr(ctx, "tool_call_id", None),
             tool_name=tool_name,
             provider_key="bigquery",
             connection_id=entry.connection_id,

@@ -73,7 +73,8 @@ async def create_negative_keyword_list(
         "list_errors": partial_failure_errors(
             payload,
             create_names,
-            value_key="name",
+            value_to_error_fields=lambda name: {"name": name},
+            unattributed_error_fields={"name": ""},
             default_message="Negative keyword list creation failed",
         ),
     }

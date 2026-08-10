@@ -45,7 +45,8 @@ async def update_campaign_status(
         "campaign_errors": partial_failure_errors(
             payload,
             normalized_campaign_ids,
-            value_key="campaign_id",
+            value_to_error_fields=lambda campaign_id: {"campaign_id": campaign_id},
+            unattributed_error_fields={"campaign_id": ""},
             default_message="Campaign update failed",
         ),
     }

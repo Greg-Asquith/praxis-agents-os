@@ -17,8 +17,16 @@ from cryptography.hazmat.primitives.serialization import (
     NoEncryption,
     PrivateFormat,
 )
-from pydantic import SecretStr
-from pydantic_ai import ModelRetry
+from pydantic import SecretStr, ValidationError
+from pydantic_ai import (
+    Agent,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ModelRetry,
+    ToolApproved,
+)
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.discover_resources import discover_google_ads_resources
@@ -27,20 +35,46 @@ from integrations.google_ads.entity_resolvers.campaign import (
     resolve_google_ads_campaigns,
     search_google_ads_campaigns,
 )
+from integrations.google_ads.entity_resolvers.shared_set import (
+    _choice as shared_set_choice,
+    resolve_google_ads_shared_sets,
+    search_google_ads_shared_sets,
+)
+from integrations.google_ads.operations.add_negative_keywords import add_negative_keywords
 from integrations.google_ads.operations.create_negative_keyword_list import (
     create_negative_keyword_list,
 )
 from integrations.google_ads.operations.list_accounts import list_accounts
+from integrations.google_ads.operations.list_shared_sets import list_shared_sets
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
-from integrations.google_ads.operations.utils import bounded_query, stream_rows
-from integrations.google_ads.references import GoogleAdsCampaignReference
+from integrations.google_ads.operations.utils import (
+    bounded_query,
+    escape_gaql_like_literal,
+    stream_rows,
+)
+from integrations.google_ads.references import (
+    GoogleAdsCampaignReference,
+    GoogleAdsSharedSetReference,
+)
+from integrations.google_ads.tools.add_negative_keywords import (
+    _negative_keyword_operation_detail,
+    google_ads_add_negative_keywords,
+)
 from integrations.google_ads.tools.create_negative_keyword_list import (
     google_ads_create_negative_keyword_list,
 )
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.run_report import google_ads_run_report
+from integrations.google_ads.tools.schemas.negative_keyword import NegativeKeywordEntry
 from integrations.google_ads.tools.update_campaign_status import google_ads_update_campaign_status
+from integrations.google_ads.tools.utils import (
+    MAX_NEGATIVE_KEYWORD_RESULT_CHARS,
+    bounded_negative_keyword_result,
+    normalize_negative_keywords,
+    run_audited_operation,
+)
+from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.credentials.google_service_account import (
     GOOGLE_TOKEN_URL,
@@ -221,7 +255,7 @@ async def test_report_tool_uses_discovered_account_currency(monkeypatch) -> None
     )
     monkeypatch.setattr("integrations.google_ads.tools.run_report.run_report", provider_report)
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.record_integration_operation_audit_event",
+        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
@@ -309,7 +343,7 @@ async def test_list_accounts_tool_scopes_each_result_to_its_context_entry(monkey
     )
     monkeypatch.setattr("integrations.google_ads.tools.list_accounts.list_accounts", operation)
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.record_integration_operation_audit_event",
+        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
@@ -454,6 +488,622 @@ async def test_create_negative_keyword_list_avoids_mutate_when_every_name_exists
     }
 
 
+async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> None:
+    client = _NegativeKeywordClient(
+        search_payload={
+            "results": [
+                {
+                    "sharedCriterion": {
+                        "criterionId": "1",
+                        "keyword": {"text": "Existing Term", "matchType": "EXACT"},
+                    }
+                }
+            ]
+        },
+        mutate_payload={
+            "results": [{"resourceName": "customers/333/sharedCriteria/10~20"}, {}],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Keyword is not permitted",
+                                "errorCode": {"criterionError": "INVALID_KEYWORD_TEXT"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await add_negative_keywords(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111-111-1111",
+        shared_set_id="50",
+        keywords=[
+            {"text": "existing term", "match_type": "EXACT"},
+            {"text": "Created phrase", "match_type": "PHRASE"},
+            {"text": "Rejected broad", "match_type": "BROAD"},
+        ],
+    )
+
+    assert (
+        "shared_criterion.shared_set = 'customers/3333333333/sharedSets/50'"
+        in client.calls[0]["json"]["query"]
+    )
+    assert client.calls[1]["path"] == "customers/3333333333/sharedCriteria:mutate"
+    assert client.calls[1]["json"] == {
+        "operations": [
+            {
+                "create": {
+                    "sharedSet": "customers/3333333333/sharedSets/50",
+                    "keyword": {"text": "Created phrase", "matchType": "PHRASE"},
+                }
+            },
+            {
+                "create": {
+                    "sharedSet": "customers/3333333333/sharedSets/50",
+                    "keyword": {"text": "Rejected broad", "matchType": "BROAD"},
+                }
+            },
+        ],
+        "partialFailure": True,
+    }
+    assert result == {
+        "added": [
+            {
+                "text": "Created phrase",
+                "match_type": "PHRASE",
+                "resource_name": "customers/333/sharedCriteria/10~20",
+            }
+        ],
+        "skipped_existing": [{"text": "existing term", "match_type": "EXACT"}],
+        "keyword_errors": [
+            {
+                "scope": "keyword",
+                "text": "Rejected broad",
+                "match_type": "BROAD",
+                "message": "Keyword is not permitted",
+                "error_code": "INVALID_KEYWORD_TEXT",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        {},
+        {"fieldPathElements": [{"fieldName": "operations"}]},
+        {"fieldPathElements": [{"fieldName": "operations", "index": "invalid"}]},
+        {"fieldPathElements": [{"fieldName": "operations", "index": 9}]},
+    ],
+)
+async def test_add_negative_keywords_fails_closed_for_unattributed_partial_failures(
+    location: dict[str, object],
+) -> None:
+    client = _NegativeKeywordClient(
+        search_payload={"results": []},
+        mutate_payload={
+            "results": [{"resourceName": "customers/333/sharedCriteria/50~1"}],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "The account rejected part of the request",
+                                "errorCode": {"requestError": "INVALID_INPUT"},
+                                "location": location,
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await add_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[{"text": "Created phrase", "match_type": "PHRASE"}],
+    )
+
+    assert result["added"] == []
+    assert result["keyword_errors"] == [
+        {
+            "scope": "keyword",
+            "text": "Created phrase",
+            "match_type": "PHRASE",
+            "message": "The account rejected part of the request",
+            "error_code": "INVALID_INPUT",
+        }
+    ]
+
+
+async def test_add_negative_keywords_preserves_message_only_partial_failure() -> None:
+    client = _NegativeKeywordClient(
+        search_payload={"results": []},
+        mutate_payload={
+            "results": [],
+            "partialFailureError": {
+                "code": 3,
+                "message": "The request contained an unattributed failure",
+            },
+        },
+    )
+
+    result = await add_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[{"text": "Rejected phrase", "match_type": "PHRASE"}],
+    )
+
+    assert result["keyword_errors"] == [
+        {
+            "scope": "keyword",
+            "text": "Rejected phrase",
+            "match_type": "PHRASE",
+            "message": "The request contained an unattributed failure",
+            "error_code": "3",
+        }
+    ]
+
+
+async def test_add_negative_keywords_groups_diagnostics_by_operation() -> None:
+    location = {"fieldPathElements": [{"fieldName": "operations", "index": 0}]}
+    client = _NegativeKeywordClient(
+        search_payload={"results": []},
+        mutate_payload={
+            "results": [{}],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Keyword is not permitted",
+                                "errorCode": {"criterionError": "INVALID_KEYWORD_TEXT"},
+                                "location": location,
+                            },
+                            {
+                                "message": "Remove punctuation",
+                                "errorCode": {"requestError": "INVALID_INPUT"},
+                                "location": location,
+                            },
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await add_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[{"text": "Rejected phrase", "match_type": "PHRASE"}],
+    )
+
+    assert len(result["keyword_errors"]) == 1
+    assert result["keyword_errors"][0]["message"] == (
+        "Keyword is not permitted | Remove punctuation"
+    )
+    assert result["keyword_errors"][0]["error_code"] == ("INVALID_KEYWORD_TEXT | INVALID_INPUT")
+
+
+async def test_add_negative_keywords_fails_closed_for_unaccounted_results() -> None:
+    client = _NegativeKeywordClient(
+        search_payload={"results": []},
+        mutate_payload={"results": []},
+    )
+
+    result = await add_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[{"text": "Unaccounted", "match_type": "EXACT"}],
+    )
+
+    assert result["added"] == []
+    assert result["keyword_errors"] == [
+        {
+            "scope": "keyword",
+            "text": "Unaccounted",
+            "match_type": "EXACT",
+            "message": "Google Ads did not account for this submitted operation",
+            "error_code": "UNACCOUNTED_OPERATION",
+        }
+    ]
+
+
+async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkeypatch) -> None:
+    pending_event_id = uuid4()
+    audit = AsyncMock(side_effect=[pending_event_id, RuntimeError("database unavailable")])
+    execute = AsyncMock(return_value={"ok": True})
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        )
+    )
+    entry = SimpleNamespace()
+    detail = _negative_keyword_operation_detail(
+        GoogleAdsSharedSetReference(
+            integration_resource_id=uuid4(),
+            external_id="50",
+            label="Brand Protection",
+        ),
+        {"added": [], "skipped_existing": [], "keyword_errors": []},
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.audit.record_google_ads_operation_audit",
+        audit,
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await run_audited_operation(
+            ctx,
+            entry,
+            tool_name="google_ads_add_negative_keywords",
+            operation="add_negative_keywords",
+            execute=execute,
+            operation_detail_from_result=lambda _result: detail,
+            pending_operation_detail=detail,
+            require_durable_audit=True,
+        )
+
+    execute.assert_awaited_once()
+    assert [call.kwargs["status"] for call in audit.await_args_list] == [
+        AuditStatus.PENDING,
+        AuditStatus.SUCCESS,
+    ]
+    assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
+
+
+@pytest.mark.parametrize("outcome", ["added", "skipped_existing", "failed"])
+def test_negative_keyword_model_result_is_bounded_with_accurate_counts(outcome: str) -> None:
+    keyword = {"text": "x" * 80, "match_type": "PHRASE"}
+    provider_result = {
+        "added": [],
+        "skipped_existing": [],
+        "keyword_errors": [],
+    }
+    if outcome == "added":
+        provider_result["added"] = [
+            {
+                **keyword,
+                "resource_name": f"customers/333/sharedCriteria/{'9' * 900}~{index}",
+            }
+            for index in range(500)
+        ]
+    elif outcome == "skipped_existing":
+        provider_result["skipped_existing"] = [keyword.copy() for _ in range(500)]
+    else:
+        provider_result["keyword_errors"] = [
+            {
+                "scope": "keyword",
+                **keyword,
+                "message": "provider failure " + "y" * 2_000,
+                "error_code": "INVALID_KEYWORD_TEXT",
+            }
+            for _ in range(500)
+        ]
+
+    result = bounded_negative_keyword_result(provider_result)
+    serialized = json.dumps(
+        result,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+    assert len(serialized) <= MAX_NEGATIVE_KEYWORD_RESULT_CHARS
+    assert result["counts"] == {
+        "added": 500 if outcome == "added" else 0,
+        "skipped_existing": 500 if outcome == "skipped_existing" else 0,
+        "failed": 500 if outcome == "failed" else 0,
+    }
+    assert result["samples_truncated"] is True
+    assert 0 < len(result["samples"][outcome]) <= 10
+    assert "added_keywords" not in result
+    assert "resource_names" not in result
+    if outcome == "added":
+        assert set(result["samples"]["added"][0]) == {
+            "text",
+            "match_type",
+            "resource_name",
+        }
+
+
+def test_negative_keyword_audit_detail_retains_all_applied_rows() -> None:
+    reference = GoogleAdsSharedSetReference(
+        integration_resource_id=uuid4(),
+        external_id="50",
+        label="Brand Protection",
+    )
+    provider_result = {
+        "added": [
+            {
+                "text": f"keyword {index}",
+                "match_type": "EXACT",
+                "resource_name": f"customers/333/sharedCriteria/50~{index}",
+            }
+            for index in range(500)
+        ],
+        "skipped_existing": [],
+        "keyword_errors": [],
+    }
+
+    detail = _negative_keyword_operation_detail(reference, provider_result)
+
+    assert detail.counts.applied == 500
+    assert len(detail.changes) == 500
+    assert detail.changes[0].fields["text"] == "keyword 0"
+    assert detail.changes[-1].fields["text"] == "keyword 499"
+    assert detail.changes[-1].external_ref == "customers/333/sharedCriteria/50~499"
+
+
+async def test_list_shared_sets_filters_enabled_negative_keyword_lists_and_escapes_search() -> None:
+    client = _OperationClient({"results": [{"sharedSet": {"id": "50"}}]})
+
+    assert await list_shared_sets(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        shared_set_type="NEGATIVE_KEYWORDS",
+        shared_set_ids=("50",),
+        search="Brand's \\ list",
+        limit=1,
+    )
+    assert "shared_set.status = 'ENABLED'" in client.last_json["query"]
+    assert "shared_set.type = 'NEGATIVE_KEYWORDS'" in client.last_json["query"]
+    assert "shared_set.id IN (50)" in client.last_json["query"]
+    assert "LIKE '%Brand\\'s \\\\ list%'" in client.last_json["query"]
+    assert "ORDER BY shared_set.name, shared_set.id LIMIT 1" in client.last_json["query"]
+
+
+@pytest.mark.parametrize(
+    ("search", "escaped"),
+    [
+        ("[", "[[]"),
+        ("]", "[]]"),
+        ("%", "[%]"),
+        ("_", "[_]"),
+        ("[Brand] 100%_off", "[[]Brand[]] 100[%][_]off"),
+    ],
+)
+async def test_list_shared_sets_treats_gaql_like_metacharacters_literally(
+    search: str,
+    escaped: str,
+) -> None:
+    client = _OperationClient({"results": []})
+
+    await list_shared_sets(
+        client,
+        customer_id="3333333333",
+        login_customer_id="111",
+        shared_set_type="NEGATIVE_KEYWORDS",
+        search=search,
+        limit=1,
+    )
+
+    expected_query = (
+        "SELECT shared_set.id, shared_set.name, shared_set.member_count FROM shared_set "
+        "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' AND shared_set.status = 'ENABLED' "
+        "AND shared_set.name LIKE '%SEARCH_LITERAL%' "
+        "ORDER BY shared_set.name, shared_set.id LIMIT 1"
+    ).replace("SEARCH_LITERAL", escaped)
+    assert client.last_json["query"] == expected_query
+
+
+def test_gaql_like_literal_length_bound_never_splits_an_escape_sequence() -> None:
+    assert escape_gaql_like_literal("ab%", max_length=5) == "ab[%]"
+    assert escape_gaql_like_literal("abc%", max_length=5) == "abc"
+    assert escape_gaql_like_literal(f"{'a' * 199}%") == "a" * 199
+
+
+async def test_list_shared_sets_search_bound_never_splits_an_escape_sequence() -> None:
+    client = _OperationClient({"results": []})
+
+    await list_shared_sets(
+        client,
+        customer_id="3333333333",
+        login_customer_id="111",
+        shared_set_type="NEGATIVE_KEYWORDS",
+        search=f"{'a' * 199}%",
+        limit=1,
+    )
+
+    expected_query = (
+        "SELECT shared_set.id, shared_set.name, shared_set.member_count FROM shared_set "
+        "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' AND shared_set.status = 'ENABLED' "
+        "AND shared_set.name LIKE '%SEARCH_LITERAL%' "
+        "ORDER BY shared_set.name, shared_set.id LIMIT 1"
+    ).replace("SEARCH_LITERAL", "a" * 199)
+    assert client.last_json["query"] == expected_query
+
+
+async def test_list_shared_sets_can_return_the_complete_ordered_result() -> None:
+    client = _OperationClient({"results": []})
+
+    await list_shared_sets(
+        client,
+        customer_id="3333333333",
+        login_customer_id="111",
+        shared_set_type="NEGATIVE_KEYWORDS",
+        limit=None,
+    )
+
+    assert "ORDER BY shared_set.name, shared_set.id" in client.last_json["query"]
+    assert " LIMIT " not in client.last_json["query"]
+
+
+async def test_list_shared_sets_uses_the_requested_validated_type() -> None:
+    client = _OperationClient({"results": []})
+
+    await list_shared_sets(
+        client,
+        customer_id="3333333333",
+        login_customer_id="111",
+        shared_set_type="FUTURE_SHARED_SET_TYPE",
+        limit=1,
+    )
+
+    assert "shared_set.type = 'FUTURE_SHARED_SET_TYPE'" in client.last_json["query"]
+
+
+@pytest.mark.parametrize("shared_set_type", ["", "negative_keywords", "TYPE' OR 1=1"])
+async def test_list_shared_sets_rejects_invalid_type_identifiers(
+    shared_set_type: str,
+) -> None:
+    client = _OperationClient({"results": []})
+
+    with pytest.raises(ValueError, match="uppercase provider enum identifier"):
+        await list_shared_sets(
+            client,
+            customer_id="3333333333",
+            login_customer_id="111",
+            shared_set_type=shared_set_type,
+            limit=1,
+        )
+
+
+def test_negative_keyword_normalization_is_pairwise_and_bounded() -> None:
+    normalized = normalize_negative_keywords(
+        [
+            NegativeKeywordEntry(text="  Brand   Term ", match_type="EXACT"),
+            NegativeKeywordEntry(text="brand term", match_type="EXACT"),
+            NegativeKeywordEntry(text="brand term", match_type="PHRASE"),
+        ]
+    )
+
+    assert [item.model_dump() for item in normalized] == [
+        {"text": "Brand Term", "match_type": "EXACT"},
+        {"text": "brand term", "match_type": "PHRASE"},
+    ]
+
+
+def test_negative_keyword_entry_normalizes_whitespace_before_length_validation() -> None:
+    entry = NegativeKeywordEntry(
+        text=f"   Brand{' ' * 81}Term   ",
+        match_type="EXACT",
+    )
+
+    assert entry.text == "Brand Term"
+
+
+def test_negative_keyword_entry_accepts_exactly_80_normalized_characters() -> None:
+    entry = NegativeKeywordEntry(
+        text=f"  {'x' * 80}  ",
+        match_type="EXACT",
+    )
+
+    assert entry.text == "x" * 80
+
+
+def test_negative_keyword_entry_rejects_81_normalized_characters() -> None:
+    with pytest.raises(ValidationError, match="at most 80 characters"):
+        NegativeKeywordEntry(text=f"  {'x' * 81}  ", match_type="EXACT")
+
+
+@pytest.mark.parametrize("text", ["one two three four five six seven eight nine ten eleven"])
+def test_negative_keyword_normalization_retries_invalid_text(text: str) -> None:
+    with pytest.raises(ModelRetry):
+        normalize_negative_keywords([NegativeKeywordEntry(text=text, match_type="EXACT")])
+
+
+def test_negative_keyword_entry_rejects_empty_normalized_text() -> None:
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        NegativeKeywordEntry(text="   ", match_type="EXACT")
+
+
+async def test_negative_keyword_approval_resume_validates_canonical_override_text() -> None:
+    executed: list[NegativeKeywordEntry] = []
+
+    def model(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if not any(message.kind == "request" for message in messages[1:]):
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name="add_keywords",
+                        args={"keywords": [{"text": "original", "match_type": "EXACT"}]},
+                        tool_call_id="approval-call",
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart(content="done")])
+
+    agent = Agent(
+        FunctionModel(model),
+        output_type=[str, DeferredToolRequests],
+    )
+
+    @agent.tool_plain(requires_approval=True)
+    def add_keywords(keywords: list[NegativeKeywordEntry]) -> str:
+        executed.extend(keywords)
+        return "added"
+
+    suspended = await agent.run("Add a keyword")
+    assert isinstance(suspended.output, DeferredToolRequests)
+
+    resumed = await agent.run(
+        message_history=suspended.all_messages(),
+        deferred_tool_results=DeferredToolResults(
+            approvals={
+                "approval-call": ToolApproved(
+                    override_args={
+                        "keywords": [
+                            {
+                                "text": f"   Edited{' ' * 81}Brand   ",
+                                "match_type": "PHRASE",
+                            }
+                        ]
+                    }
+                )
+            }
+        ),
+    )
+
+    assert resumed.output == "done"
+    assert [entry.model_dump() for entry in executed] == [
+        {"text": "Edited Brand", "match_type": "PHRASE"}
+    ]
+
+
+def test_negative_keyword_entry_forbids_extra_keys() -> None:
+    with pytest.raises(ValidationError):
+        NegativeKeywordEntry.model_validate(
+            {"text": "term", "match_type": "EXACT", "provider_id": "unsafe"}
+        )
+
+
+async def test_add_negative_keywords_retries_above_bulk_bound() -> None:
+    with pytest.raises(ModelRetry, match="at most 500"):
+        await google_ads_add_negative_keywords(
+            None,  # type: ignore[arg-type]
+            GoogleAdsSharedSetReference(
+                integration_resource_id=uuid4(),
+                external_id="50",
+                label="Brand Protection",
+            ),
+            [
+                NegativeKeywordEntry(text=f"term {index}", match_type="EXACT")
+                for index in range(501)
+            ],
+        )
+
+
 async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
     monkeypatch,
 ) -> None:
@@ -571,6 +1221,168 @@ def test_campaign_reference_truncates_long_name() -> None:
     assert choice.value["label"] == "x" * 500
 
 
+def test_shared_set_choice_carries_member_count() -> None:
+    choice = shared_set_choice(
+        SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
+        {"id": "50", "name": "Brand Protection", "memberCount": "312"},
+    )
+
+    assert choice is not None
+    assert choice.value["entity_kind"] == "google_ads_shared_set"
+    assert choice.value["member_count"] == 312
+    assert choice.description == "312 negative keywords"
+
+
+def test_shared_set_reference_canonicalizes_google_resource_name() -> None:
+    resource_id = uuid4()
+
+    reference = GoogleAdsSharedSetReference.model_validate(
+        {
+            "entity_kind": "google_ads_shared_set",
+            "integration_resource_id": resource_id,
+            "external_id": "customers/9308708411/sharedSets/12186751748",
+            "entity_id": "12186751748",
+            "label": "Testing 2",
+        }
+    )
+
+    assert reference.external_id == "12186751748"
+    assert "entity_id" not in reference.model_dump()
+
+
+def test_shared_set_reference_rejects_conflicting_redundant_id() -> None:
+    with pytest.raises(ValidationError, match="entity_id"):
+        GoogleAdsSharedSetReference.model_validate(
+            {
+                "integration_resource_id": uuid4(),
+                "external_id": "customers/9308708411/sharedSets/12186751748",
+                "entity_id": "999",
+                "label": "Testing 2",
+            }
+        )
+
+
+async def test_shared_set_search_pages_every_account_without_truncation(monkeypatch) -> None:
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=uuid4(),
+            provider_key="google_ads",
+            resource_type="google_ads_account",
+            external_id=customer_id,
+            display_name=f"Account {customer_id}",
+            connection_id=uuid4(),
+            connection_label="Agency",
+            connection_status="active",
+            write_allowed=True,
+            permissions_metadata={"login_customer_id": "999"},
+        )
+        for customer_id in ("111", "222")
+    )
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=entries),
+    )
+    query_calls = []
+
+    async def query(_ctx, entry, **kwargs):
+        query_calls.append((entry, kwargs))
+        if entry == entries[1]:
+            return [{"id": "900", "name": "Only in second", "memberCount": 1}]
+        return [
+            {
+                "id": str(index),
+                "name": f"List {index:03d}",
+                "memberCount": index,
+            }
+            for index in range(150)
+        ]
+
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.shared_set._query", query)
+
+    pages = []
+    cursors = []
+    cursor = None
+    while True:
+        page = await search_google_ads_shared_sets(ctx, "Brand's \\ list", {}, 25, cursor)
+        pages.append(page)
+        if page.next_cursor is None:
+            break
+        assert page.next_cursor not in cursors
+        cursors.append(page.next_cursor)
+        cursor = page.next_cursor
+
+    choices = [choice for page in pages for choice in page.choices]
+    identities = [
+        (choice.value["integration_resource_id"], choice.value["external_id"]) for choice in choices
+    ]
+    assert len(choices) == 151
+    assert len(identities) == len(set(identities))
+    assert identities[1] == (str(entries[1].integration_resource_id), "900")
+    assert all(len(page.choices) <= 25 for page in pages)
+    assert pages[-1].next_cursor is None
+    assert cursors == ["25", "50", "75", "100", "125", "150"]
+    assert all(kwargs["search"] == "Brand's \\ list" for _, kwargs in query_calls)
+    assert all(kwargs["limit"] is None for _, kwargs in query_calls)
+
+    invalid_cursor_page = await search_google_ads_shared_sets(
+        ctx, "Brand's \\ list", {}, 25, "invalid"
+    )
+    assert invalid_cursor_page.choices == pages[0].choices
+
+
+async def test_shared_set_hydration_drops_invalid_and_inactive_ids(monkeypatch) -> None:
+    active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(active,)),
+    )
+    query = AsyncMock(return_value=[{"id": "50", "name": "Current list", "memberCount": 4}])
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.shared_set._query", query)
+
+    choices = await resolve_google_ads_shared_sets(
+        ctx,
+        [
+            {
+                "entity_kind": "google_ads_shared_set",
+                "integration_resource_id": str(active.integration_resource_id),
+                "external_id": "customers/111/sharedSets/50",
+                "entity_id": "50",
+                "label": "Current list",
+            },
+            GoogleAdsSharedSetReference(
+                integration_resource_id=active.integration_resource_id,
+                external_id="not-digits",
+                label="Invalid list",
+            ),
+            GoogleAdsSharedSetReference(
+                integration_resource_id=uuid4(),
+                external_id="60",
+                label="Inactive list",
+            ),
+        ],
+        {},
+    )
+
+    assert [choice.value["external_id"] for choice in choices] == ["50"]
+    assert query.await_args.kwargs["shared_set_ids"] == ["50"]
+    assert query.await_args.kwargs["limit"] == 1
+
+
 async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkeypatch) -> None:
     active = ResolvedContextEntry(
         integration_resource_id=uuid4(),
@@ -621,13 +1433,17 @@ async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkey
     )
     monkeypatch.setattr("integrations.google_ads.entity_resolvers.campaign._query", query)
 
-    page = await search_google_ads_campaigns(ctx, "Campaign", {}, 25, "100")
+    page = await search_google_ads_campaigns(ctx, "Campaign's \\ list", {}, 25, "100")
 
     assert [choice.value["external_id"] for choice in page.choices] == ["100"]
     assert page.next_cursor is None
     assert [call.args[1] for call in query.await_args_list] == [active, second_active]
-    assert all("LIKE '%Campaign%'" in call.args[2] for call in query.await_args_list)
-    assert all("LIMIT 101" in call.args[2] for call in query.await_args_list)
+    assert all(
+        call.args[2] == "SELECT campaign.id, campaign.name, campaign.status FROM campaign "
+        "WHERE campaign.name LIKE '%Campaign\\'s \\\\ list%' "
+        "ORDER BY campaign.name LIMIT 101"
+        for call in query.await_args_list
+    )
 
 
 async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) -> None:
@@ -823,6 +1639,445 @@ async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
     provider_update.assert_not_awaited()
 
 
+async def test_add_negative_keywords_targets_one_account_and_uses_normalized_rows(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
+    provider_add = AsyncMock(
+        return_value={
+            "added": [
+                {
+                    "text": "Brand Term",
+                    "match_type": "EXACT",
+                    "resource_name": "criteria/1",
+                }
+            ],
+            "skipped_existing": [],
+            "keyword_errors": [],
+        }
+    )
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.add_negative_keywords",
+        provider_add,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_add_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            NegativeKeywordEntry(text="  Brand   Term ", match_type="EXACT"),
+            NegativeKeywordEntry(text="brand term", match_type="EXACT"),
+            NegativeKeywordEntry(text="brand term", match_type="PHRASE"),
+        ],
+    )
+
+    assert result["results"][0]["status"] == "success"
+    assert provider_add.await_args.kwargs["shared_set_id"] == "50"
+    assert provider_add.await_args.kwargs["keywords"] == [
+        {"text": "Brand Term", "match_type": "EXACT"},
+        {"text": "brand term", "match_type": "PHRASE"},
+    ]
+
+
+async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypatch) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        )
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
+    provider_add = AsyncMock(
+        return_value={
+            "added": [
+                {
+                    "text": "Edited Brand",
+                    "match_type": "PHRASE",
+                    "resource_name": "customers/111/sharedCriteria/50~1",
+                }
+            ],
+            "skipped_existing": [{"text": "existing", "match_type": "EXACT"}],
+            "keyword_errors": [
+                {
+                    "scope": "keyword",
+                    "text": "rejected",
+                    "match_type": "BROAD",
+                    "message": "provider detail must not be retained",
+                    "error_code": "INVALID_KEYWORD_TEXT",
+                }
+            ],
+        }
+    )
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.add_negative_keywords",
+        provider_add,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
+        audit,
+    )
+
+    await google_ads_add_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+            member_count=7,
+        ),
+        [
+            NegativeKeywordEntry(text="  Edited   Brand ", match_type="PHRASE"),
+            NegativeKeywordEntry(text="existing", match_type="EXACT"),
+            NegativeKeywordEntry(text="rejected", match_type="BROAD"),
+        ],
+    )
+
+    detail = audit.await_args.kwargs["operation_detail"].model_dump(mode="json")
+    assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
+    assert detail == {
+        "schema_version": 1,
+        "target": {
+            "entity_type": "google_ads_shared_set",
+            "external_id": "50",
+            "display_name": "Brand Protection",
+            "integration_resource_id": str(entry.integration_resource_id),
+            "attributes": {"member_count": 7},
+        },
+        "changes": [
+            {
+                "action": "add",
+                "entity_type": "negative_keyword",
+                "external_ref": "customers/111/sharedCriteria/50~1",
+                "fields": {"text": "Edited Brand", "match_type": "PHRASE"},
+            }
+        ],
+        "counts": {"applied": 1, "skipped": 1, "failed": 1},
+    }
+    serialized = json.dumps(detail)
+    assert "existing" not in serialized
+    assert "rejected" not in serialized
+    assert "provider detail" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("provider_result", "expected_status", "expected_counts", "expected_changes"),
+    [
+        pytest.param(
+            {
+                "added": [
+                    {
+                        "text": "accepted",
+                        "match_type": "EXACT",
+                        "resource_name": "customers/111/sharedCriteria/50~1",
+                    }
+                ],
+                "skipped_existing": [],
+                "keyword_errors": [],
+            },
+            AuditStatus.SUCCESS,
+            {"applied": 1, "skipped": 0, "failed": 0},
+            1,
+            id="all-success",
+        ),
+        pytest.param(
+            {
+                "added": [],
+                "skipped_existing": [{"text": "existing", "match_type": "EXACT"}],
+                "keyword_errors": [],
+            },
+            AuditStatus.SUCCESS,
+            {"applied": 0, "skipped": 1, "failed": 0},
+            0,
+            id="all-skipped-no-op",
+        ),
+        pytest.param(
+            {
+                "added": [
+                    {
+                        "text": "accepted",
+                        "match_type": "EXACT",
+                        "resource_name": "customers/111/sharedCriteria/50~1",
+                    }
+                ],
+                "skipped_existing": [],
+                "keyword_errors": [
+                    {
+                        "scope": "keyword",
+                        "text": "rejected",
+                        "match_type": "PHRASE",
+                        "message": "invalid",
+                        "error_code": "INVALID_KEYWORD_TEXT",
+                    }
+                ],
+            },
+            AuditStatus.SUCCESS,
+            {"applied": 1, "skipped": 0, "failed": 1},
+            1,
+            id="mixed-partial-success",
+        ),
+        pytest.param(
+            {
+                "added": [],
+                "skipped_existing": [],
+                "keyword_errors": [
+                    {
+                        "scope": "account",
+                        "message": "request rejected",
+                        "error_code": "AUTHORIZATION_ERROR",
+                    }
+                ],
+            },
+            AuditStatus.FAILURE,
+            {"applied": 0, "skipped": 0, "failed": 1},
+            0,
+            id="all-failed",
+        ),
+    ],
+)
+async def test_add_negative_keywords_classifies_audit_outcome(
+    monkeypatch,
+    provider_result,
+    expected_status: AuditStatus,
+    expected_counts: dict[str, int],
+    expected_changes: int,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        )
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.add_negative_keywords",
+        AsyncMock(return_value=provider_result),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
+        audit,
+    )
+
+    await google_ads_add_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            NegativeKeywordEntry(text="accepted", match_type="EXACT"),
+            NegativeKeywordEntry(text="rejected", match_type="PHRASE"),
+        ],
+    )
+
+    assert audit.await_count == 2
+    pending_kwargs, audit_kwargs = [call.kwargs for call in audit.await_args_list]
+    assert pending_kwargs["status"] == AuditStatus.PENDING
+    assert pending_kwargs["raise_on_error"] is True
+    assert audit_kwargs["status"] == expected_status
+    assert audit_kwargs["raise_on_error"] is True
+    detail = audit_kwargs["operation_detail"].model_dump(mode="json")
+    assert detail["counts"] == expected_counts
+    assert len(detail["changes"]) == expected_changes
+
+
+async def test_add_negative_keywords_fails_closed_when_list_is_missing(monkeypatch) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": []}
+    provider_add = AsyncMock()
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.add_negative_keywords",
+        provider_add,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_add_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Removed list",
+        ),
+        [NegativeKeywordEntry(text="term", match_type="EXACT")],
+    )
+
+    assert result["results"][0]["error_code"] == "ModelRetry"
+    assert "list is unavailable" in result["results"][0]["error_message"]
+    provider_add.assert_not_awaited()
+
+
+async def test_add_negative_keywords_rejects_target_outside_active_context() -> None:
+    active = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(active,)))
+    )
+
+    with pytest.raises(ModelRetry, match="no longer in the active integration context"):
+        await google_ads_add_negative_keywords(
+            ctx,
+            GoogleAdsSharedSetReference(
+                integration_resource_id=uuid4(),
+                external_id="50",
+                label="Other account list",
+            ),
+            [NegativeKeywordEntry(text="term", match_type="EXACT")],
+        )
+
+
+async def test_add_negative_keywords_write_denial_is_audited_before_provider_call(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Read-only account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=False,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.add_negative_keywords.record_google_ads_operation_audit",
+        audit,
+    )
+
+    result = await google_ads_add_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [NegativeKeywordEntry(text="term", match_type="EXACT")],
+    )
+
+    assert result["results"][0]["error_code"] == "write_not_permitted"
+    provider_client.assert_not_awaited()
+    assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
+    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
+
+
 async def test_service_account_assertion_claims_and_token_cache() -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_pem = private_key.private_bytes(
@@ -973,6 +2228,21 @@ class _NegativeKeywordListClient:
         if path.endswith("googleAds:searchStream"):
             return self.search_payload
         if path.endswith("sharedSets:mutate"):
+            return self.mutate_payload
+        raise AssertionError(f"Unexpected Google Ads operation path: {path}")
+
+
+class _NegativeKeywordClient:
+    def __init__(self, *, search_payload, mutate_payload):
+        self.search_payload = search_payload
+        self.mutate_payload = mutate_payload
+        self.calls: list[dict] = []
+
+    async def post(self, path: str, **kwargs):
+        self.calls.append({"path": path, **kwargs})
+        if path.endswith("googleAds:searchStream"):
+            return self.search_payload
+        if path.endswith("sharedCriteria:mutate"):
             return self.mutate_payload
         raise AssertionError(f"Unexpected Google Ads operation path: {path}")
 

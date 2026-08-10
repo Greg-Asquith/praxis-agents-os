@@ -125,6 +125,7 @@ async def record_airtable_operation_audit(
         workspace_id=ctx.deps.workspace.id,
         agent=ctx.deps.agent,
         run=ctx.deps.run,
+        tool_call_id=getattr(ctx, "tool_call_id", None),
         tool_name=tool_name,
         provider_key="airtable",
         connection_id=entry.connection_id,

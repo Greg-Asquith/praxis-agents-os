@@ -1,6 +1,6 @@
-# apps/api/integrations/google_ads/tools/schemas.py
+# apps/api/integrations/google_ads/tools/schemas/__init__.py
 
-"""Typed Google Ads tool-result contracts."""
+"""Provider-wide Google Ads tool-result contracts."""
 
 from uuid import UUID
 

@@ -83,9 +83,13 @@ export function EntityFieldInput({
     [hydration.data?.choices, results.data?.pages]
   )
   const selected = useMemo(() => {
+    const hydrated = hydration.data?.choices ?? []
+    if (hydrated.length === (exactValues ?? []).length) {
+      return hydrated
+    }
     const wanted = new Set((exactValues ?? []).map(referenceKey))
     return choices.filter((choice) => wanted.has(referenceKey(choice.value)))
-  }, [choices, exactValues])
+  }, [choices, exactValues, hydration.data?.choices])
   const unresolved =
     !invalidShape &&
     exactValues.length > 0 &&

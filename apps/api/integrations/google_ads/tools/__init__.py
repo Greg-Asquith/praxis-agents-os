@@ -2,12 +2,14 @@
 
 """Google Ads runtime-tool contributions."""
 
+from .add_negative_keywords import DEFINITION as ADD_NEGATIVE_KEYWORDS_DEFINITION
 from .create_negative_keyword_list import DEFINITION as CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION
 from .list_accounts import DEFINITION as LIST_ACCOUNTS_DEFINITION
 from .run_report import DEFINITION as RUN_REPORT_DEFINITION
 from .update_campaign_status import DEFINITION as UPDATE_CAMPAIGN_STATUS_DEFINITION
 
 TOOL_DEFINITIONS = (
+    ADD_NEGATIVE_KEYWORDS_DEFINITION,
     CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
     LIST_ACCOUNTS_DEFINITION,
     RUN_REPORT_DEFINITION,

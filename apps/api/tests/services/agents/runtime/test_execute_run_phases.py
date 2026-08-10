@@ -35,7 +35,10 @@ from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_INTERACTIVE,
 )
-from services.agents.runtime.cancellation import request_agent_run_task_cancel
+from services.agents.runtime.cancellation import (
+    AGENT_RUN_CANCEL_REQUEST,
+    request_agent_run_task_cancel,
+)
 from services.agents.runtime.events import EVENT_DONE, EVENT_ERROR, EVENT_RUN_STATUS
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
@@ -347,6 +350,51 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
     assert sink.events[1].data["status"] == RUN_STATUS_CANCELLED
     assert sink.events[2].data["status"] == RUN_STATUS_CANCELLED
     assert EVENT_ERROR not in [event.event for event in sink.events]
+    assert sink.closed
+
+
+async def test_cancelled_run_does_not_read_expired_context_after_failed_flush(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with committed_db_session_factory() as db:
+        context = await _persist_runtime_context(db)
+        await db.commit()
+        sink = ClosingCollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+
+        async def cancel_from_failed_flush(*_args, **_kwargs):
+            db.add(ConversationMessage())
+            try:
+                await db.flush()
+            except Exception:
+                raise asyncio.CancelledError(AGENT_RUN_CANCEL_REQUEST) from None
+            raise AssertionError("Invalid conversation message unexpectedly flushed")
+
+        monkeypatch.setattr(
+            execute_run_impl,
+            "persist_eager_user_prompt",
+            cancel_from_failed_flush,
+        )
+
+        with pytest.raises(asyncio.CancelledError):
+            await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Cancel during prompt persistence",
+                sink=sink,
+                model=TestModel(call_tools=[]),
+            )
+
+    async with committed_db_session_factory() as db:
+        stored_run = await db.get(AgentRun, context.run_id)
+        assert stored_run is not None
+        assert stored_run.status == RUN_STATUS_CANCELLED
+
+    assert [(event.event, event.data["status"]) for event in sink.events] == [
+        (EVENT_RUN_STATUS, RUN_STATUS_CANCELLED),
+        (EVENT_DONE, RUN_STATUS_CANCELLED),
+    ]
     assert sink.closed
 
 

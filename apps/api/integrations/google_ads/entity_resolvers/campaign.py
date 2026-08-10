@@ -7,7 +7,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from integrations.google_ads.operations.utils import stream_rows
+from integrations.google_ads.operations.utils import escape_gaql_like_literal, stream_rows
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
@@ -20,23 +20,9 @@ from services.integrations.entity_references import (
     EntityResolverPage,
 )
 
+from .utils import bounded_offset
+
 MAX_SEARCH_CHOICES = 101
-
-
-def _offset(cursor: str | None) -> int:
-    try:
-        return min(max(int(cursor or "0"), 0), MAX_SEARCH_CHOICES - 1)
-    except ValueError:
-        return 0
-
-
-def _search_literal(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("'", "\\'")[:200]
-
-
-def _campaign(row: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    value = row.get("campaign")
-    return value if isinstance(value, Mapping) else None
 
 
 def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
@@ -71,14 +57,20 @@ async def _query(ctx, entry, query: str) -> list[Mapping[str, Any]]:
         login_customer_id=login_customer_id(entry),
         json={"query": query},
     )
-    return [campaign for row in stream_rows(payload) if (campaign := _campaign(row)) is not None]
+    return [
+        campaign
+        for row in stream_rows(payload)
+        if isinstance((campaign := row.get("campaign")), Mapping)
+    ]
 
 
 async def search_google_ads_campaigns(ctx, search, _dependent_args, page_size, cursor):
-    offset = _offset(cursor)
+    offset = bounded_offset(cursor, upper_bound=MAX_SEARCH_CHOICES - 1)
     request_limit = min(offset + page_size + 1, MAX_SEARCH_CHOICES)
     where = (
-        f" WHERE campaign.name LIKE '%{_search_literal(search.strip())}%'" if search.strip() else ""
+        f" WHERE campaign.name LIKE '%{escape_gaql_like_literal(search.strip())}%'"
+        if search.strip()
+        else ""
     )
     query = (
         "SELECT campaign.id, campaign.name, campaign.status FROM campaign"  # noqa: S608 -- escaped literal

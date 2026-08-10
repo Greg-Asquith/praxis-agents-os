@@ -7,6 +7,9 @@ from uuid import uuid4
 import pytest
 
 from core.exceptions.general import AppValidationError
+from integrations.google_ads.tools.add_negative_keywords import (
+    DEFINITION as GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+)
 from services.agent_runs.validate_override_args import (
     RECORDS_FIELD_MAX_ROWS,
     validate_and_canonicalize_override_args,
@@ -176,6 +179,61 @@ async def test_records_override_preserves_the_exact_edited_rows(monkeypatch) -> 
     )
 
     assert result == {"rows": override}
+
+
+async def test_google_ads_keyword_override_reauthorizes_list_and_preserves_edited_rows(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+    )
+    original_list = {
+        "version": 1,
+        "entity_kind": "google_ads_shared_set",
+        "integration_resource_id": str(uuid4()),
+        "external_id": "50",
+        "label": "Old list",
+        "description": None,
+        "scope_label": "Account",
+        "member_count": 2,
+    }
+    selected_list = {**original_list, "external_id": "60", "label": "Browser hint"}
+    canonical_list = {**selected_list, "label": "Canonical list", "member_count": 3}
+    authorize = AsyncMock(return_value=SimpleNamespace())
+    resolve = AsyncMock(return_value=[canonical_list])
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.authorize_entity_field",
+        authorize,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.resolve_authorized_references",
+        resolve,
+    )
+    edited_rows = [
+        {"text": "replacement", "match_type": "PHRASE"},
+        {"text": "added row", "match_type": "BROAD"},
+    ]
+
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call(
+            "google_ads_add_negative_keywords",
+            {
+                "negative_list": original_list,
+                "keywords": [{"text": "remove me", "match_type": "EXACT"}],
+            },
+        ),
+        override_args={"negative_list": selected_list, "keywords": edited_rows},
+    )
+
+    assert result == {"negative_list": canonical_list, "keywords": edited_rows}
+    authorize.assert_awaited_once()
+    resolve.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

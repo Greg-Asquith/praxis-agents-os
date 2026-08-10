@@ -67,6 +67,29 @@ describe("parseConversationMessages", () => {
     })
   })
 
+  it("hides internal tool validation retries from the user-facing transcript", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "assistant", 1, [
+        {
+          part_kind: "tool-call",
+          tool_call_id: "tool-call-1",
+          tool_name: "google_ads_add_negative_keywords",
+          args: { negative_list: { entity_id: "50" } },
+        },
+      ]),
+      message("message-2", "tool", 2, [
+        {
+          part_kind: "retry-prompt",
+          tool_call_id: "tool-call-1",
+          tool_name: "google_ads_add_negative_keywords",
+          content: [{ msg: "Extra inputs are not permitted" }],
+        },
+      ]),
+    ])
+
+    expect(parsed).toEqual([])
+  })
+
   it("preserves thinking and visible parts in source order", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [
