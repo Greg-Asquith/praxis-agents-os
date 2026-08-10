@@ -33,6 +33,7 @@ from .utils import (
     login_customer_id,
     record_google_ads_operation_audit,
     run_audited_operation,
+    verify_campaigns,
 )
 
 
@@ -59,28 +60,12 @@ async def google_ads_update_campaign_status(
             normalized_ids = sorted({reference.external_id for reference in references})
             if any(not campaign_id.isdigit() for campaign_id in normalized_ids):
                 raise ModelRetry("A selected Google Ads campaign reference is invalid.")
-            lookup_query = (
-                "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
-                f"WHERE campaign.id IN ({', '.join(normalized_ids)}) "
-                f"LIMIT {len(normalized_ids)}"
+            await verify_campaigns(
+                client,
+                entry=entry,
+                campaign_ids=normalized_ids,
+                ignore_removed=True,
             )
-            lookup = await client.post(
-                f"customers/{entry.external_id}/googleAds:searchStream",
-                operation="resolve_campaign_references",
-                login_customer_id=login_customer_id(entry),
-                json={"query": lookup_query},
-            )
-            from integrations.google_ads.operations.utils import stream_rows
-
-            resolved_ids = {
-                str(campaign.get("id", ""))
-                for row in stream_rows(lookup)
-                if isinstance((campaign := row.get("campaign")), dict)
-            }
-            if resolved_ids != set(normalized_ids):
-                raise ModelRetry(
-                    "A selected Google Ads campaign is unavailable. Ask the user to choose it again."
-                )
             return await update_campaign_status(
                 client,
                 customer_id=entry.external_id,

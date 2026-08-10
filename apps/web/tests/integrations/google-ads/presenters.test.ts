@@ -17,7 +17,10 @@ import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
-import { googleAdsNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/negative-keywords"
+import {
+  googleAdsCampaignNegativeKeywordsPresenter,
+  googleAdsListNegativeKeywordsPresenter,
+} from "@/integrations/google_ads/presenters/negative-keywords"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
@@ -560,7 +563,7 @@ describe("Google Ads tool presenters", () => {
         ],
       },
     ]
-    const rendered = googleAdsNegativeKeywordsPresenter.render(
+    const rendered = googleAdsListNegativeKeywordsPresenter.render(
       props(
         {
           id: "negative-keywords-approval",
@@ -596,7 +599,7 @@ describe("Google Ads tool presenters", () => {
 
   it("renders added, existing, and failed keyword rows per account", () => {
     const html = render(
-      googleAdsNegativeKeywordsPresenter.render(
+      googleAdsListNegativeKeywordsPresenter.render(
         props({
           id: "negative-keywords-result",
           kind: "result",
@@ -654,7 +657,7 @@ describe("Google Ads tool presenters", () => {
 
   it("keeps valid keyword outcomes when a provider failure has no operation index", () => {
     const html = render(
-      googleAdsNegativeKeywordsPresenter.render(
+      googleAdsListNegativeKeywordsPresenter.render(
         props({
           id: "negative-keywords-unattributed-error",
           kind: "result",
@@ -712,7 +715,7 @@ describe("Google Ads tool presenters", () => {
       ],
     }
     const html = render(
-      googleAdsNegativeKeywordsPresenter.render(
+      googleAdsListNegativeKeywordsPresenter.render(
         props(
           {
             id: "negative-keywords-edited",
@@ -737,7 +740,7 @@ describe("Google Ads tool presenters", () => {
   it("renders editable ANY removals and every settled removal outcome", () => {
     const controls = approvalControls()
     const approval = render(
-      googleAdsNegativeKeywordsPresenter.render(
+      googleAdsListNegativeKeywordsPresenter.render(
         props(
           {
             id: "negative-keywords-remove-approval",
@@ -762,7 +765,7 @@ describe("Google Ads tool presenters", () => {
     expect(approval).toContain("Removing them re-enables matching traffic")
 
     const settled = render(
-      googleAdsNegativeKeywordsPresenter.render(
+      googleAdsListNegativeKeywordsPresenter.render(
         props({
           id: "negative-keywords-remove-result",
           kind: "result",
@@ -859,6 +862,92 @@ describe("Google Ads tool presenters", () => {
     assertCustomApproval(activity, controls, rows, "1 keyword", "Broad 1")
   })
 
+  it("renders the campaign negative keyword approval fan-out summary", () => {
+    const controls = approvalControls()
+    const html = render(
+      googleAdsCampaignNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "campaign-negative-keywords-approval",
+            kind: "approval",
+            name: "google_ads_add_campaign_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              campaign_ids: [
+                campaignReference("10", "Brand"),
+                campaignReference("20", "Prospecting"),
+              ],
+              keywords: [
+                { text: "free", match_type: "EXACT" },
+                { text: "jobs", match_type: "PHRASE" },
+                { text: "cheap", match_type: "BROAD" },
+              ],
+            },
+          },
+          controls,
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("3 keywords")
+    expect(html).toContain("× 2 campaigns")
+    expect(html).toContain("6 proposed changes")
+    expect(html).toContain("blocking matching traffic")
+    expect(html).toContain("Approve &amp; Add")
+  })
+
+  it("renders per-campaign negative keyword removal rollups and provider errors", () => {
+    const html = render(
+      googleAdsCampaignNegativeKeywordsPresenter.render(
+        props({
+          id: "campaign-negative-keywords-result",
+          kind: "result",
+          name: "google_ads_remove_campaign_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { removed: 3, not_found: 1, failed: 1 },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Brand",
+                    counts: { removed: 2, not_found: 0, failed: 0 },
+                    campaign_errors: [],
+                    errors_truncated: false,
+                  },
+                  {
+                    campaign_id: "20",
+                    campaign_name: "Prospecting",
+                    counts: { removed: 1, not_found: 1, failed: 1 },
+                    campaign_errors: [
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        message: "This campaign type rejected the criterion.",
+                        error_code: "CANNOT_ADD_CRITERION",
+                      },
+                    ],
+                    errors_truncated: false,
+                  },
+                ],
+                campaigns_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads campaign negative keyword results"')
+    expect(html).toContain("Brand")
+    expect(html).toContain("Prospecting")
+    expect(html).toContain("Removed")
+    expect(html).toContain("Not found")
+    expect(html).toContain("This campaign type rejected the criterion.")
+  })
+
   it.each([
     ["running", "Adding Google Ads negative keywords…"],
     ["awaiting_approval", "Waiting for negative keyword approval…"],
@@ -867,7 +956,7 @@ describe("Google Ads tool presenters", () => {
     ["unknown", "No negative keyword change was confirmed."],
   ] as const)("renders an honest negative-keyword %s state", (status, expected) => {
     const html = render(
-      googleAdsNegativeKeywordsPresenter.render(
+      googleAdsListNegativeKeywordsPresenter.render(
         props({
           id: "negative-keywords-state",
           kind: "call",
@@ -920,13 +1009,15 @@ describe("Google Ads tool presenters", () => {
       "google-ads-run-report",
       "google-ads-list-accounts",
       "google-ads-create-negative-keyword-list",
-      "google-ads-negative-keywords",
+      "google-ads-list-negative-keywords",
+      "google-ads-campaign-negative-keywords",
       "google-ads-negative-list-campaign-links",
       "google-ads-update-campaign-status",
     ])
     expect(googleAdsCampaignLinksPresenter.handlesApprovals).toBe(true)
+    expect(googleAdsCampaignNegativeKeywordsPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)
-    expect(googleAdsNegativeKeywordsPresenter.handlesApprovals).toBe(true)
+    expect(googleAdsListNegativeKeywordsPresenter.handlesApprovals).toBe(true)
   })
 
   it("loads and renders the report presenter through the production registry seam", async () => {
@@ -1052,7 +1143,9 @@ function assertCustomApproval(
   expectedCount: string
 ) {
   controls.decision.edits = { keywords: rows }
-  const rendered = googleAdsNegativeKeywordsPresenter.render(props(activity, controls, toolUi([])))
+  const rendered = googleAdsListNegativeKeywordsPresenter.render(
+    props(activity, controls, toolUi([]))
+  )
 
   expect(isValidElement(rendered)).toBe(true)
   if (isValidElement<{ controls: unknown }>(rendered)) {

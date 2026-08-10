@@ -48,9 +48,16 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_search_messages": ("read", "internal", "auto", False),
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
+        "google_ads_add_campaign_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_negative_keywords": ("write", "external", "approval", True),
         "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_remove_campaign_negative_keywords": (
+            "write",
+            "external",
+            "approval",
+            True,
+        ),
         "google_ads_list_accounts": ("read", "internal", "auto", False),
         "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
@@ -127,21 +134,25 @@ def test_gmail_tool_contract_matrix_and_schemas() -> None:
 def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
     assert set(definitions) == {
+        "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
     }
     assert definitions["google_ads_list_accounts"].effect == "read"
     assert definitions["google_ads_run_report"].effect == "read"
     for name in (
+        "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
         "google_ads_update_campaign_status",
     ):
         spend = definitions[name]
@@ -179,6 +190,32 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     )
     assert removal_field.format == "records"
     assert removal_field.columns[1].options == ("EXACT", "PHRASE", "BROAD", "ANY")
+    campaign_add = definitions["google_ads_add_campaign_negative_keywords"]
+    campaign_remove = definitions["google_ads_remove_campaign_negative_keywords"]
+    for campaign_tool in (campaign_add, campaign_remove):
+        assert {field.key for field in campaign_tool.presentation.arg_fields if field.editable} == {
+            "campaign_ids",
+            "keywords",
+        }
+        campaign_field = next(
+            field for field in campaign_tool.presentation.arg_fields if field.key == "campaign_ids"
+        )
+        assert campaign_field.format == "entity_list"
+        assert campaign_field.entity_kind == "google_ads_campaign"
+        assert campaign_tool.max_public_result_chars is not None
+    campaign_add_keywords = next(
+        field for field in campaign_add.presentation.arg_fields if field.key == "keywords"
+    )
+    campaign_remove_keywords = next(
+        field for field in campaign_remove.presentation.arg_fields if field.key == "keywords"
+    )
+    assert campaign_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
+    assert campaign_remove_keywords.columns[1].options == (
+        "EXACT",
+        "PHRASE",
+        "BROAD",
+        "ANY",
+    )
     campaign_links = definitions["google_ads_link_negative_keyword_list"]
     assert {field.key for field in campaign_links.presentation.arg_fields if field.editable} == {
         "negative_list",

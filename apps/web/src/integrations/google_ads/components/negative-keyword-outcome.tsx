@@ -39,6 +39,30 @@ export type NegativeKeywordRemovalResult = {
 
 export type MatchType = "ANY" | "BROAD" | "EXACT" | "PHRASE"
 
+type CampaignNegativeKeywordError = NegativeKeywordErrorBase & NegativeKeyword
+
+type CampaignNegativeKeywordRow = {
+  campaignId: string
+  campaignName: string
+  counts: {
+    applied: number
+    failed: number
+    skipped: number
+  }
+  errors: CampaignNegativeKeywordError[]
+  errorsTruncated: boolean
+}
+
+export type CampaignNegativeKeywordResult = {
+  campaigns: CampaignNegativeKeywordRow[]
+  campaignsTruncated: boolean
+  totals: {
+    applied: number
+    failed: number
+    skipped: number
+  }
+}
+
 const COLUMNS: DataColumn[] = [
   { key: "text", kind: "text", label: "Keyword" },
   { key: "matchType", kind: "badge", label: "Match Type" },
@@ -75,6 +99,91 @@ export function NegativeKeywordApprovalSummary({
         {includeAny ? ` · Any ${String(counts.ANY)}` : null}
       </p>
     </div>
+  )
+}
+
+export function CampaignNegativeKeywordApprovalSummary({
+  campaignCount,
+  keywordCount,
+}: {
+  campaignCount: number
+  keywordCount: number
+}) {
+  const operationCount = campaignCount * keywordCount
+  return (
+    <div className="bg-muted/50 grid gap-1 rounded-lg px-3 py-2.5">
+      <p className="text-sm font-medium">
+        {String(keywordCount)} {keywordCount === 1 ? "keyword" : "keywords"}
+        <span className="text-muted-foreground">
+          {" "}
+          × {String(campaignCount)} {campaignCount === 1 ? "campaign" : "campaigns"}
+        </span>
+      </p>
+      <p className="text-muted-foreground text-xs">
+        {String(operationCount)} proposed {operationCount === 1 ? "change" : "changes"}
+      </p>
+    </div>
+  )
+}
+
+export function CampaignNegativeKeywordOutcome({
+  action,
+  result,
+}: {
+  action: "add" | "remove"
+  result: CampaignNegativeKeywordResult
+}) {
+  const appliedLabel = action === "add" ? "Added" : "Removed"
+  const skippedLabel = action === "add" ? "Already existed" : "Not found"
+  const rows: DataRow[] = result.campaigns.map((campaign) => ({
+    applied: campaign.counts.applied,
+    campaign: campaign.campaignName || campaign.campaignId,
+    campaignId: campaign.campaignId,
+    details: campaign.errors.map((error) => error.message).join(" · "),
+    failed: campaign.counts.failed,
+    skipped: campaign.counts.skipped,
+  }))
+  const columns: DataColumn[] = [
+    { key: "campaign", kind: "text", label: "Campaign" },
+    { key: "campaignId", kind: "text", label: "Campaign ID" },
+    { key: "applied", kind: "text", label: appliedLabel },
+    { key: "skipped", kind: "text", label: skippedLabel },
+    { key: "failed", kind: "text", label: "Failed" },
+    ...(result.totals.failed > 0
+      ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
+      : []),
+  ]
+  return (
+    <DataTable
+      columns={columns}
+      exportFilename={`${action === "add" ? "added" : "removed"}-campaign-negative-keywords.csv`}
+      header={
+        <StatGroup className="px-3 pt-2">
+          <Stat
+            label={appliedLabel}
+            tone={result.totals.applied > 0 ? "success" : undefined}
+            value={result.totals.applied}
+          />
+          <Stat
+            label={skippedLabel}
+            tone={result.totals.skipped > 0 ? "warning" : undefined}
+            value={result.totals.skipped}
+          />
+          <Stat
+            label="Failed"
+            tone={result.totals.failed > 0 ? "danger" : undefined}
+            value={result.totals.failed}
+          />
+        </StatGroup>
+      }
+      pageSize={25}
+      rows={rows}
+      truncationNote={
+        result.campaignsTruncated || result.campaigns.some((campaign) => campaign.errorsTruncated)
+          ? TRUNCATION_NOTE
+          : null
+      }
+    />
   )
 }
 

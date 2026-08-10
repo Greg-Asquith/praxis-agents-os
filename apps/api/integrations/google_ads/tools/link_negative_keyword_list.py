@@ -35,7 +35,6 @@ from services.integrations.entity_references import ScopedEntityReference
 
 from ..operations.link_negative_keyword_list import link_negative_keyword_list
 from ..operations.list_shared_sets import list_shared_sets
-from ..operations.utils import stream_rows
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
@@ -46,6 +45,7 @@ from .utils import (
     login_customer_id,
     record_google_ads_operation_audit,
     run_audited_operation,
+    verify_campaigns,
 )
 
 
@@ -121,29 +121,12 @@ async def google_ads_link_negative_keyword_list(
                     "The selected negative keyword list is unavailable. "
                     "Ask the user to choose it again."
                 )
-            lookup_query = (
-                "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
-                f"WHERE campaign.id IN ({', '.join(normalized_campaign_ids)}) "
-                "AND campaign.status != 'REMOVED' "
-                f"LIMIT {len(normalized_campaign_ids)}"
+            await verify_campaigns(
+                client,
+                entry=entry,
+                campaign_ids=normalized_campaign_ids,
+                ignore_removed=True,
             )
-            lookup = await client.post(
-                f"customers/{entry.external_id}/googleAds:searchStream",
-                operation="resolve_campaign_references",
-                login_customer_id=login_customer_id(entry),
-                json={"query": lookup_query},
-            )
-            resolved_ids = {
-                str(campaign.get("id", ""))
-                for row in stream_rows(lookup)
-                if isinstance((campaign := row.get("campaign")), dict)
-                and campaign.get("status") != "REMOVED"
-            }
-            if resolved_ids != set(normalized_campaign_ids):
-                raise ModelRetry(
-                    "A selected Google Ads campaign is unavailable. "
-                    "Ask the user to choose it again."
-                )
             return await link_negative_keyword_list(
                 client,
                 customer_id=entry.external_id,

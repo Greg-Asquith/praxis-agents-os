@@ -43,6 +43,10 @@ from integrations.google_ads.entity_resolvers.shared_set import (
     search_google_ads_shared_sets,
 )
 from integrations.google_ads.operations.add_negative_keywords import add_negative_keywords
+from integrations.google_ads.operations.campaign_negative_keywords import (
+    add_campaign_negative_keywords,
+    remove_campaign_negative_keywords,
+)
 from integrations.google_ads.operations.create_negative_keyword_list import (
     create_negative_keyword_list,
 )
@@ -65,6 +69,9 @@ from integrations.google_ads.references import (
     GoogleAdsCampaignReference,
     GoogleAdsSharedSetReference,
 )
+from integrations.google_ads.tools.add_campaign_negative_keywords import (
+    google_ads_add_campaign_negative_keywords,
+)
 from integrations.google_ads.tools.add_negative_keywords import (
     _negative_keyword_operation_detail,
     google_ads_add_negative_keywords,
@@ -76,6 +83,9 @@ from integrations.google_ads.tools.link_negative_keyword_list import (
     google_ads_link_negative_keyword_list,
 )
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
+from integrations.google_ads.tools.remove_campaign_negative_keywords import (
+    google_ads_remove_campaign_negative_keywords,
+)
 from integrations.google_ads.tools.remove_negative_keywords import (
     _operation_detail as removal_operation_detail,
     google_ads_remove_negative_keywords,
@@ -95,6 +105,7 @@ from integrations.google_ads.tools.utils import (
     complete_negative_keyword_result,
     normalize_negative_keywords,
     run_audited_operation,
+    verify_campaigns,
 )
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
@@ -2076,6 +2087,31 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
     ]
 
 
+async def test_campaign_verification_can_ignore_removed_campaigns() -> None:
+    entry = _writable_google_ads_entry()
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"campaign": {"id": "10", "status": "REMOVED"}}]}
+
+    with pytest.raises(ModelRetry, match="campaign is unavailable"):
+        await verify_campaigns(
+            client,
+            entry=entry,
+            campaign_ids=["10"],
+            ignore_removed=True,
+        )
+
+    assert "campaign.status != 'REMOVED'" in client.post.await_args.kwargs["json"]["query"]
+
+    await verify_campaigns(
+        client,
+        entry=entry,
+        campaign_ids=["10"],
+        ignore_removed=False,
+    )
+
+    assert "campaign.status != 'REMOVED'" not in client.post.await_args.kwargs["json"]["query"]
+
+
 async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
     monkeypatch,
 ) -> None:
@@ -3003,6 +3039,324 @@ async def test_remove_negative_keywords_write_denial_is_audited_before_provider_
     assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
 
 
+async def test_add_campaign_negative_keywords_skips_per_campaign_and_maps_errors() -> None:
+    client = _CampaignNegativeKeywordClient(
+        search_payload={
+            "results": [
+                {
+                    "campaign": {"id": "10"},
+                    "campaignCriterion": {
+                        "resourceName": "customers/333/campaignCriteria/10~1",
+                        "keyword": {"text": "existing", "matchType": "EXACT"},
+                    },
+                }
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/333/campaignCriteria/10~2"},
+                {"resourceName": "customers/333/campaignCriteria/20~3"},
+                {},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Keyword is not permitted",
+                                "errorCode": {"criterionError": "INVALID_KEYWORD_TEXT"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 2}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await add_campaign_negative_keywords(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        campaign_ids=["10", "20"],
+        keywords=[
+            {"text": "existing", "match_type": "EXACT"},
+            {"text": "phrase", "match_type": "PHRASE"},
+        ],
+    )
+
+    assert "campaign_criterion.negative = TRUE" in client.calls[0]["json"]["query"]
+    assert "campaign.id IN (10, 20)" in client.calls[0]["json"]["query"]
+    assert client.calls[1]["path"] == "customers/3333333333/campaignCriteria:mutate"
+    assert client.calls[1]["json"]["operations"] == [
+        {
+            "create": {
+                "campaign": "customers/3333333333/campaigns/10",
+                "negative": True,
+                "keyword": {"text": "phrase", "matchType": "PHRASE"},
+            }
+        },
+        {
+            "create": {
+                "campaign": "customers/3333333333/campaigns/20",
+                "negative": True,
+                "keyword": {"text": "existing", "matchType": "EXACT"},
+            }
+        },
+        {
+            "create": {
+                "campaign": "customers/3333333333/campaigns/20",
+                "negative": True,
+                "keyword": {"text": "phrase", "matchType": "PHRASE"},
+            }
+        },
+    ]
+    assert client.calls[1]["json"]["partialFailure"] is True
+    assert result["skipped_existing"] == [
+        {"campaign_id": "10", "text": "existing", "match_type": "EXACT"}
+    ]
+    assert [(item["campaign_id"], item["match_type"]) for item in result["added"]] == [
+        ("10", "PHRASE"),
+        ("20", "EXACT"),
+    ]
+    assert result["campaign_errors"] == [
+        {
+            "campaign_id": "20",
+            "text": "phrase",
+            "match_type": "PHRASE",
+            "message": "Keyword is not permitted",
+            "error_code": "INVALID_KEYWORD_TEXT",
+        }
+    ]
+
+
+async def test_remove_campaign_negative_keywords_resolves_each_campaign_and_any() -> None:
+    rows = [
+        ("10", "1", "term", "EXACT"),
+        ("10", "2", "term", "BROAD"),
+        ("20", "3", "Term", "PHRASE"),
+    ]
+    client = _CampaignNegativeKeywordClient(
+        search_payload={
+            "results": [
+                {
+                    "campaign": {"id": campaign_id},
+                    "campaignCriterion": {
+                        "resourceName": f"customers/333/campaignCriteria/{campaign_id}~{criterion_id}",
+                        "keyword": {"text": text, "matchType": match_type},
+                    },
+                }
+                for campaign_id, criterion_id, text, match_type in rows
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/333/campaignCriteria/10~1"},
+                {},
+                {"resourceName": "customers/333/campaignCriteria/20~3"},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Criterion cannot be removed",
+                                "errorCode": {"criterionError": "CANNOT_REMOVE_CRITERION"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await remove_campaign_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        campaign_ids=["10", "20"],
+        keywords=[
+            {"text": "TERM", "match_type": "ANY"},
+            {"text": "missing", "match_type": "EXACT"},
+        ],
+    )
+
+    assert client.calls[1]["json"] == {
+        "operations": [
+            {"remove": "customers/333/campaignCriteria/10~1"},
+            {"remove": "customers/333/campaignCriteria/10~2"},
+            {"remove": "customers/333/campaignCriteria/20~3"},
+        ],
+        "partialFailure": True,
+    }
+    assert [(item["campaign_id"], item["match_type"]) for item in result["removed"]] == [
+        ("10", "EXACT"),
+        ("20", "PHRASE"),
+    ]
+    assert result["not_found"] == [
+        {"campaign_id": "10", "text": "missing", "match_type": "EXACT"},
+        {"campaign_id": "20", "text": "missing", "match_type": "EXACT"},
+    ]
+    assert result["campaign_errors"][0]["campaign_id"] == "10"
+    assert result["campaign_errors"][0]["match_type"] == "BROAD"
+
+
+async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {
+        "results": [{"campaign": {"id": str(index), "status": "ENABLED"}} for index in range(1, 51)]
+    }
+    provider_add = AsyncMock(
+        return_value={
+            "added": [],
+            "resource_names": [],
+            "skipped_existing": [],
+            "campaign_errors": [],
+        }
+    )
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.add_campaign_negative_keywords",
+        provider_add,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_add_campaign_negative_keywords(
+        ctx,
+        [_campaign_reference(entry, str(index)) for index in range(1, 51)],
+        [NegativeKeywordEntry(text=f"term {index}", match_type="EXACT") for index in range(50)],
+    )
+
+    assert result.return_value["results"][0]["status"] == "success"
+    assert len(provider_add.await_args.kwargs["campaign_ids"]) == 50
+    assert len(provider_add.await_args.kwargs["keywords"]) == 50
+
+
+async def test_campaign_negative_keyword_fan_out_bound_rejects_3000_before_provider(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        provider_client,
+    )
+
+    result = await google_ads_remove_campaign_negative_keywords(
+        ctx,
+        [_campaign_reference(entry, str(index)) for index in range(1, 7)],
+        [
+            NegativeKeywordRemovalEntry(text=f"term {index}", match_type="ANY")
+            for index in range(500)
+        ],
+    )
+
+    assert result.return_value["results"][0]["error_code"] == "ModelRetry"
+    assert "2,500" in result.return_value["results"][0]["error_message"]
+    provider_client.assert_not_awaited()
+
+
+async def test_campaign_negative_keywords_fail_closed_when_campaign_is_missing(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": []}
+    provider_add = AsyncMock()
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.add_campaign_negative_keywords",
+        provider_add,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_add_campaign_negative_keywords(
+        ctx,
+        [_campaign_reference(entry, "10")],
+        [NegativeKeywordEntry(text="term", match_type="EXACT")],
+    )
+
+    assert result.return_value["results"][0]["error_code"] == "ModelRetry"
+    assert "campaign is unavailable" in result.return_value["results"][0]["error_message"]
+    provider_add.assert_not_awaited()
+
+
+async def test_campaign_negative_keyword_write_denial_is_audited_before_provider(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry(write_allowed=False)
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.campaign_negative_keywords.record_google_ads_operation_audit",
+        audit,
+    )
+
+    add_result = await google_ads_add_campaign_negative_keywords(
+        ctx,
+        [_campaign_reference(entry, "10")],
+        [NegativeKeywordEntry(text="term", match_type="EXACT")],
+    )
+    remove_result = await google_ads_remove_campaign_negative_keywords(
+        ctx,
+        [_campaign_reference(entry, "10")],
+        [NegativeKeywordRemovalEntry(text="term", match_type="EXACT")],
+    )
+
+    assert add_result.return_value["results"][0]["error_code"] == "write_not_permitted"
+    assert remove_result.return_value["results"][0]["error_code"] == "write_not_permitted"
+    provider_client.assert_not_awaited()
+    assert [call.kwargs["operation"] for call in audit.await_args_list] == [
+        "add_campaign_negative_keywords",
+        "remove_campaign_negative_keywords",
+    ]
+    assert all(call.kwargs["status"] == AuditStatus.FAILURE for call in audit.await_args_list)
+
+
 async def test_service_account_assertion_claims_and_token_cache() -> None:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_pem = private_key.private_bytes(
@@ -3185,6 +3539,47 @@ class _CampaignSharedSetClient:
         if path.endswith("campaignSharedSets:mutate"):
             return self.mutate_payload
         raise AssertionError(f"Unexpected Google Ads operation path: {path}")
+
+
+class _CampaignNegativeKeywordClient:
+    def __init__(self, *, search_payload, mutate_payload):
+        self.search_payload = search_payload
+        self.mutate_payload = mutate_payload
+        self.calls: list[dict] = []
+
+    async def post(self, path: str, **kwargs):
+        self.calls.append({"path": path, **kwargs})
+        if path.endswith("googleAds:searchStream"):
+            return self.search_payload
+        if path.endswith("campaignCriteria:mutate"):
+            return self.mutate_payload
+        raise AssertionError(f"Unexpected Google Ads operation path: {path}")
+
+
+def _writable_google_ads_entry(*, write_allowed: bool = True) -> ResolvedContextEntry:
+    return ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=write_allowed,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+
+
+def _campaign_reference(
+    entry: ResolvedContextEntry,
+    campaign_id: str,
+) -> GoogleAdsCampaignReference:
+    return GoogleAdsCampaignReference(
+        integration_resource_id=entry.integration_resource_id,
+        external_id=campaign_id,
+        label=f"Campaign {campaign_id}",
+    )
 
 
 def _hierarchy_page(*customers: tuple[str, int, bool]) -> dict:
