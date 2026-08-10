@@ -61,7 +61,9 @@ export function AuditEventsTable({
           <AuditEventMobileRow
             key={event.id}
             event={event}
-            onSelectEvent={onSelectEvent}
+            onSelectEvent={() => {
+              onSelectEvent(event.detail_event_id)
+            }}
             toolLabelFor={toolLabelFor}
           />
         ))}
@@ -88,12 +90,12 @@ export function AuditEventsTable({
                   className="cursor-pointer"
                   tabIndex={0}
                   onClick={() => {
-                    onSelectEvent(event.id)
+                    onSelectEvent(event.detail_event_id)
                   }}
                   onKeyDown={(keyboardEvent) => {
                     if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
                       keyboardEvent.preventDefault()
-                      onSelectEvent(event.id)
+                      onSelectEvent(event.detail_event_id)
                     }
                   }}
                 >
@@ -105,14 +107,7 @@ export function AuditEventsTable({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex max-w-64 flex-col gap-1">
-                      <span>{resourceLabel(event, toolLabelFor)}</span>
-                      {resourceMeta(event) ? (
-                        <span className="text-muted-foreground truncate text-xs">
-                          {resourceMeta(event)}
-                        </span>
-                      ) : null}
-                    </div>
+                    <ResourceName event={event} toolLabelFor={toolLabelFor} />
                   </TableCell>
                   <TableCell>
                     {event.tool_name ? (
@@ -159,13 +154,37 @@ function ToolName({ value }: { value: string }) {
   )
 }
 
+function ResourceName({
+  event,
+  toolLabelFor,
+}: {
+  event: AuditEvent
+  toolLabelFor: (toolName: string) => string
+}) {
+  const label = resourceLabel(event, toolLabelFor)
+  const meta = resourceMeta(event)
+  const fullValue = meta ? `${label}\n${meta}` : label
+
+  return (
+    <Tooltip>
+      <TooltipTrigger className="flex max-w-64 min-w-0 flex-col gap-1 text-left" render={<div />}>
+        <span className="truncate">{label}</span>
+        {meta ? <span className="text-muted-foreground truncate text-xs">{meta}</span> : null}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm wrap-break-word whitespace-pre-line">
+        {fullValue}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function AuditEventMobileRow({
   event,
   onSelectEvent,
   toolLabelFor,
 }: {
   event: AuditEvent
-  onSelectEvent: (eventId: string) => void
+  onSelectEvent: () => void
   toolLabelFor: (toolName: string) => string
 }) {
   return (
@@ -204,7 +223,7 @@ function AuditEventMobileRow({
         <Button
           className="w-full"
           onClick={() => {
-            onSelectEvent(event.id)
+            onSelectEvent()
           }}
           type="button"
           variant="outline"

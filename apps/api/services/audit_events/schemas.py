@@ -14,6 +14,7 @@ from utils.pagination import OffsetPage
 
 class AuditEventRead(BaseModel):
     id: UUID
+    detail_event_id: UUID
     workspace_id: UUID | None
     occurred_at: datetime
     action: str
@@ -41,6 +42,7 @@ class AuditEventRead(BaseModel):
         return cls.model_validate(
             {
                 "id": event.id,
+                "detail_event_id": event.id,
                 "workspace_id": event.workspace_id,
                 "occurred_at": event.occurred_at,
                 "action": event.action,

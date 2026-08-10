@@ -51,7 +51,7 @@ export function parseConversationMessages(
   liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
-  const { consumedResultKeys, resultsByCallKey } = pairToolResults(parsed)
+  const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
   const pendingDelegationsByParentCallId = new Map(
     pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
   )
@@ -135,6 +135,10 @@ export function parseConversationMessages(
       resolvedActivities.forEach((activity, activityIndex) => {
         const originalActivity = message.toolActivities[activityIndex]
         if (!originalActivity) {
+          return
+        }
+        if (retryCallKeys.has(toolActivityKey(messageIndex, activityIndex))) {
+          resolvedActivitiesByOriginal.set(originalActivity, null)
           return
         }
         if (

@@ -116,6 +116,7 @@ export const SECURITY_EVENT_TYPES = [
 
 export type AuditEvent = {
   id: string
+  detail_event_id: string
   workspace_id: string | null
   occurred_at: string
   action: string

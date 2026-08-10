@@ -14,6 +14,7 @@ export function pairToolResults(messages: ParsedConversationMessage[]) {
   const consumedResultKeys = new Set<string>()
   const pendingCallsById = new Map<string, ToolActivityPointer[]>()
   const resultsByCallKey = new Map<string, ToolActivity>()
+  const retryCallKeys = new Set<string>()
 
   messages.forEach((message, messageIndex) => {
     message.toolActivities.forEach((activity, activityIndex) => {
@@ -38,12 +39,16 @@ export function pairToolResults(messages: ParsedConversationMessage[]) {
         return
       }
 
-      resultsByCallKey.set(toolActivityKey(call.messageIndex, call.activityIndex), activity)
+      const callKey = toolActivityKey(call.messageIndex, call.activityIndex)
+      resultsByCallKey.set(callKey, activity)
+      if (activity.kind === "retry") {
+        retryCallKeys.add(callKey)
+      }
       consumedResultKeys.add(toolActivityKey(messageIndex, activityIndex))
     })
   })
 
-  return { consumedResultKeys, resultsByCallKey }
+  return { consumedResultKeys, resultsByCallKey, retryCallKeys }
 }
 
 export function toolActivityKey(messageIndex: number, activityIndex: number) {

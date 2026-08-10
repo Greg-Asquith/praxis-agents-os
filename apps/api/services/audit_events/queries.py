@@ -5,8 +5,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import String, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from models.audit_event import AuditEvent
 from services.audit_events.enums import AuditAction, AuditResourceType, AuditStatus
@@ -26,28 +27,29 @@ def _filtered_select(
     tool_provider: str | None,
     occurred_after: datetime | None,
     occurred_before: datetime | None,
+    event_type=AuditEvent,
 ):
     """Apply the shared audit-log filters to a select() statement."""
     if workspace_id is not None:
-        base = base.where(AuditEvent.workspace_id == workspace_id)
+        base = base.where(event_type.workspace_id == workspace_id)
     if resource_type is not None:
-        base = base.where(AuditEvent.resource_type == resource_type)
+        base = base.where(event_type.resource_type == resource_type)
     if resource_id is not None:
-        base = base.where(AuditEvent.resource_id == resource_id)
+        base = base.where(event_type.resource_id == resource_id)
     if actor_user_id is not None:
-        base = base.where(AuditEvent.actor_user_id == actor_user_id)
+        base = base.where(event_type.actor_user_id == actor_user_id)
     if action is not None:
-        base = base.where(AuditEvent.action == action)
+        base = base.where(event_type.action == action)
     if status is not None:
-        base = base.where(AuditEvent.status == status)
+        base = base.where(event_type.status == status)
     if tool_name is not None:
-        base = base.where(AuditEvent.tool_name == tool_name)
+        base = base.where(event_type.tool_name == tool_name)
     if tool_provider is not None:
-        base = base.where(AuditEvent.tool_provider == tool_provider)
+        base = base.where(event_type.tool_provider == tool_provider)
     if occurred_after is not None:
-        base = base.where(AuditEvent.occurred_at >= occurred_after)
+        base = base.where(event_type.occurred_at >= occurred_after)
     if occurred_before is not None:
-        base = base.where(AuditEvent.occurred_at < occurred_before)
+        base = base.where(event_type.occurred_at < occurred_before)
     return base
 
 
@@ -117,6 +119,161 @@ async def list_audit_events_page(
         occurred_before=occurred_before,
     )
     return await paginate(db, stmt, AuditEvent.occurred_at.desc(), limit=limit, offset=offset)
+
+
+async def list_rolled_up_audit_events_page(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID | str,
+    resource_type: AuditResourceType | None = None,
+    resource_id: str | None = None,
+    actor_user_id: UUID | str | None = None,
+    action: AuditAction | None = None,
+    status: AuditStatus | None = None,
+    tool_name: str | None = None,
+    tool_provider: str | None = None,
+    occurred_after: datetime | None = None,
+    occurred_before: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[tuple[AuditEvent, UUID, str, str]], int]:
+    """Page logical tool invocations after provider-event roll-up."""
+    tool_call_id = AuditEvent.details["tool_call_id"].as_string()
+    integration_with_tool_call = (
+        AuditEvent.resource_type == AuditResourceType.INTEGRATION_RESOURCE
+    ) & tool_call_id.is_not(None)
+    group_key = case(
+        (
+            AuditEvent.resource_type == AuditResourceType.TOOL_CALL,
+            func.concat("tool:", AuditEvent.resource_id),
+        ),
+        (integration_with_tool_call, func.concat("tool:", tool_call_id)),
+        else_=func.concat("event:", cast(AuditEvent.id, String)),
+    )
+    is_pending = AuditEvent.status == AuditStatus.PENDING
+    display_priority = case(
+        (
+            (AuditEvent.resource_type == AuditResourceType.TOOL_CALL) & ~is_pending,
+            4,
+        ),
+        (AuditEvent.resource_type == AuditResourceType.TOOL_CALL, 3),
+        (integration_with_tool_call & ~is_pending, 2),
+        else_=1,
+    )
+    outcome_priority = case(
+        (integration_with_tool_call & ~is_pending, 4),
+        (
+            (AuditEvent.resource_type == AuditResourceType.TOOL_CALL) & ~is_pending,
+            3,
+        ),
+        (integration_with_tool_call, 2),
+        else_=1,
+    )
+    detail_priority = case(
+        (integration_with_tool_call & ~is_pending, 4),
+        (integration_with_tool_call, 3),
+        (
+            (AuditEvent.resource_type == AuditResourceType.TOOL_CALL) & ~is_pending,
+            2,
+        ),
+        else_=1,
+    )
+    ranked = (
+        select(
+            AuditEvent,
+            group_key.label("group_key"),
+            func.row_number()
+            .over(
+                partition_by=group_key,
+                order_by=(
+                    display_priority.desc(),
+                    AuditEvent.occurred_at.desc(),
+                    AuditEvent.id.desc(),
+                ),
+            )
+            .label("display_rank"),
+            func.row_number()
+            .over(
+                partition_by=group_key,
+                order_by=(
+                    outcome_priority.desc(),
+                    AuditEvent.occurred_at.desc(),
+                    AuditEvent.id.desc(),
+                ),
+            )
+            .label("outcome_rank"),
+            func.row_number()
+            .over(
+                partition_by=group_key,
+                order_by=(
+                    detail_priority.desc(),
+                    AuditEvent.occurred_at.desc(),
+                    AuditEvent.id.desc(),
+                ),
+            )
+            .label("detail_rank"),
+        )
+        .where(AuditEvent.workspace_id == workspace_id)
+        .cte("ranked_audit_events")
+    )
+    display_rows = select(ranked).where(ranked.c.display_rank == 1).subquery()
+    detail_rows = (
+        select(
+            ranked.c.group_key,
+            ranked.c.id.label("detail_event_id"),
+        )
+        .where(ranked.c.detail_rank == 1)
+        .subquery()
+    )
+    outcome_rows = (
+        select(
+            ranked.c.group_key,
+            ranked.c.status.label("effective_status"),
+            ranked.c.summary.label("effective_summary"),
+        )
+        .where(ranked.c.outcome_rank == 1)
+        .subquery()
+    )
+    display_event = aliased(AuditEvent, display_rows)
+    stmt = select(
+        display_event,
+        detail_rows.c.detail_event_id,
+        outcome_rows.c.effective_status,
+        outcome_rows.c.effective_summary,
+    ).join(detail_rows, detail_rows.c.group_key == display_rows.c.group_key)
+    stmt = stmt.join(outcome_rows, outcome_rows.c.group_key == display_rows.c.group_key)
+    stmt = _filtered_select(
+        stmt,
+        workspace_id=None,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        status=None,
+        tool_name=tool_name,
+        tool_provider=tool_provider,
+        occurred_after=occurred_after,
+        occurred_before=occurred_before,
+        event_type=display_event,
+    )
+    if status is not None:
+        stmt = stmt.where(outcome_rows.c.effective_status == status)
+    total = int(
+        (
+            await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
+        ).scalar_one()
+    )
+    rows = (
+        await db.execute(
+            stmt.order_by(display_event.occurred_at.desc(), display_event.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    return [
+        (event, detail_event_id, effective_status, effective_summary)
+        for event, detail_event_id, effective_status, effective_summary in rows
+    ], total
 
 
 async def get_audit_event(
