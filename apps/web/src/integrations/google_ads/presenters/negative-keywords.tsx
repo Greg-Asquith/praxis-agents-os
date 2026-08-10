@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords.tsx
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
+import { mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
@@ -381,10 +382,6 @@ function negativeKeywordRemovalResult(value: unknown): NegativeKeywordRemovalRes
 
 function isOutcomeCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
-}
-
-function mergeApprovalArgs(args: unknown, edits: Record<string, unknown>): unknown {
-  return isRecord(args) ? { ...args, ...edits } : args
 }
 
 function parseKeyword(value: unknown, allowAny = false): NegativeKeyword | null {

@@ -3,6 +3,7 @@
 import type { IntegrationUiModule } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/negative-keywords"
@@ -17,6 +18,7 @@ export default {
     googleAdsAccountsPresenter,
     googleAdsNegativeKeywordListsPresenter,
     googleAdsNegativeKeywordsPresenter,
+    googleAdsCampaignLinksPresenter,
     googleAdsCampaignStatusPresenter,
   ],
 } satisfies IntegrationUiModule

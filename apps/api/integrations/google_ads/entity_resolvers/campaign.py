@@ -27,10 +27,10 @@ MAX_SEARCH_CHOICES = 101
 
 def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
     campaign_id = str(campaign.get("id", "")).strip()
-    if not campaign_id.isdigit():
+    status = str(campaign.get("status", "")).strip()
+    if not campaign_id.isdigit() or status == "REMOVED":
         return None
     name = str(campaign.get("name", "")).strip() or "(unnamed campaign)"
-    status = str(campaign.get("status", "")).strip()
     return EntityChoice.from_reference(
         GoogleAdsCampaignReference(
             integration_resource_id=entry.integration_resource_id,
@@ -67,14 +67,15 @@ async def _query(ctx, entry, query: str) -> list[Mapping[str, Any]]:
 async def search_google_ads_campaigns(ctx, search, _dependent_args, page_size, cursor):
     offset = bounded_offset(cursor, upper_bound=MAX_SEARCH_CHOICES - 1)
     request_limit = min(offset + page_size + 1, MAX_SEARCH_CHOICES)
-    where = (
-        f" WHERE campaign.name LIKE '%{escape_gaql_like_literal(search.strip())}%'"
+    name_filter = (
+        f" AND campaign.name LIKE '%{escape_gaql_like_literal(search.strip())}%'"
         if search.strip()
         else ""
     )
     query = (
         "SELECT campaign.id, campaign.name, campaign.status FROM campaign"  # noqa: S608 -- escaped literal
-        f"{where} ORDER BY campaign.name LIMIT {request_limit}"
+        " WHERE campaign.status != 'REMOVED'"
+        f"{name_filter} ORDER BY campaign.name LIMIT {request_limit}"
     )
 
     async def search_entry(entry) -> list[EntityChoice]:
@@ -119,7 +120,8 @@ async def resolve_google_ads_campaigns(ctx, values: Sequence[Any], _dependent_ar
         ids = sorted({reference.external_id for reference in references})[:50]
         query = (
             "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
-            f"WHERE campaign.id IN ({', '.join(ids)}) LIMIT {len(ids)}"
+            f"WHERE campaign.id IN ({', '.join(ids)}) "
+            f"AND campaign.status != 'REMOVED' LIMIT {len(ids)}"
         )
         campaigns = await _query(ctx, entry, query)
         choices.extend(

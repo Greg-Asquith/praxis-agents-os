@@ -4,6 +4,7 @@
 
 import json
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs
 from uuid import uuid4
@@ -45,6 +46,9 @@ from integrations.google_ads.operations.add_negative_keywords import add_negativ
 from integrations.google_ads.operations.create_negative_keyword_list import (
     create_negative_keyword_list,
 )
+from integrations.google_ads.operations.link_negative_keyword_list import (
+    link_negative_keyword_list,
+)
 from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
 from integrations.google_ads.operations.remove_negative_keywords import (
@@ -67,6 +71,9 @@ from integrations.google_ads.tools.add_negative_keywords import (
 )
 from integrations.google_ads.tools.create_negative_keyword_list import (
     google_ads_create_negative_keyword_list,
+)
+from integrations.google_ads.tools.link_negative_keyword_list import (
+    google_ads_link_negative_keyword_list,
 )
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.remove_negative_keywords import (
@@ -405,6 +412,187 @@ async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None
     assert result["resource_names"] == ["customers/333/campaigns/10"]
     assert result["campaign_errors"][0]["campaign_id"] == "20"
     assert result["campaign_errors"][0]["error_code"] == "CANNOT_MODIFY_REMOVED_CAMPAIGN"
+
+
+async def test_link_negative_keyword_list_skips_existing_and_maps_failures() -> None:
+    client = _CampaignSharedSetClient(
+        search_payload={
+            "results": [
+                {
+                    "campaignSharedSet": {
+                        "campaign": "customers/3333333333/campaigns/10",
+                        "sharedSet": "customers/3333333333/sharedSets/50",
+                        "status": "ENABLED",
+                    }
+                }
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/3333333333/campaignSharedSets/20~50"},
+                {},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Campaign is removed",
+                                "errorCode": {"campaignSharedSetError": "CAMPAIGN_REMOVED"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await link_negative_keyword_list(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111-111-1111",
+        shared_set_id="50",
+        campaign_ids=["10", "20", "30"],
+        action="LINK",
+    )
+
+    assert client.calls[0]["json"]["query"] == (
+        "SELECT campaign_shared_set.campaign, campaign_shared_set.shared_set, "
+        "campaign_shared_set.status "
+        "FROM campaign_shared_set WHERE campaign_shared_set.shared_set = "
+        "'customers/3333333333/sharedSets/50' AND campaign_shared_set.status = 'ENABLED'"
+    )
+    assert client.calls[1] == {
+        "path": "customers/3333333333/campaignSharedSets:mutate",
+        "operation": "link_negative_keyword_list",
+        "login_customer_id": "111-111-1111",
+        "json": {
+            "operations": [
+                {
+                    "create": {
+                        "campaign": "customers/3333333333/campaigns/20",
+                        "sharedSet": "customers/3333333333/sharedSets/50",
+                    }
+                },
+                {
+                    "create": {
+                        "campaign": "customers/3333333333/campaigns/30",
+                        "sharedSet": "customers/3333333333/sharedSets/50",
+                    }
+                },
+            ],
+            "partialFailure": True,
+        },
+    }
+    assert result == {
+        "resource_names": ["customers/3333333333/campaignSharedSets/20~50"],
+        "skipped_existing": ["10"],
+        "campaign_errors": [
+            {
+                "campaign_id": "30",
+                "message": "Campaign is removed",
+                "error_code": "CAMPAIGN_REMOVED",
+            }
+        ],
+    }
+
+
+async def test_unlink_negative_keyword_list_reports_not_found_and_composes_names() -> None:
+    client = _CampaignSharedSetClient(
+        search_payload={
+            "results": [
+                {
+                    "campaignSharedSet": {
+                        "campaign": "customers/333/campaigns/10",
+                        "sharedSet": "customers/333/sharedSets/50",
+                        "status": "ENABLED",
+                    }
+                }
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/333/campaignSharedSets/10~50"},
+            ]
+        },
+    )
+
+    result = await link_negative_keyword_list(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        campaign_ids=["10", "20"],
+        action="UNLINK",
+    )
+
+    assert client.calls[1]["json"] == {
+        "operations": [
+            {"remove": "customers/333/campaignSharedSets/10~50"},
+        ],
+        "partialFailure": True,
+    }
+    assert result == {
+        "resource_names": ["customers/333/campaignSharedSets/10~50"],
+        "not_found": ["20"],
+        "campaign_errors": [],
+    }
+
+
+async def test_link_negative_keyword_list_avoids_noop_mutate() -> None:
+    client = _CampaignSharedSetClient(search_payload={"results": []}, mutate_payload={})
+
+    result = await link_negative_keyword_list(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        campaign_ids=["10"],
+        action="UNLINK",
+    )
+
+    assert len(client.calls) == 1
+    assert result == {
+        "resource_names": [],
+        "not_found": ["10"],
+        "campaign_errors": [],
+    }
+
+
+async def test_link_negative_keyword_list_does_not_treat_removed_link_as_existing() -> None:
+    client = _CampaignSharedSetClient(
+        search_payload={
+            "results": [
+                {
+                    "campaignSharedSet": {
+                        "campaign": "customers/333/campaigns/10",
+                        "sharedSet": "customers/333/sharedSets/50",
+                        "status": "REMOVED",
+                    }
+                }
+            ]
+        },
+        mutate_payload={"results": [{"resourceName": "customers/333/campaignSharedSets/10~50"}]},
+    )
+
+    result = await link_negative_keyword_list(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        campaign_ids=["10"],
+        action="LINK",
+    )
+
+    assert len(client.calls) == 2
+    assert result == {
+        "resource_names": ["customers/333/campaignSharedSets/10~50"],
+        "skipped_existing": [],
+        "campaign_errors": [],
+    }
 
 
 async def test_create_negative_keyword_list_skips_existing_and_maps_partial_failure() -> None:
@@ -1520,6 +1708,15 @@ def test_campaign_reference_truncates_long_name() -> None:
     assert choice.value["label"] == "x" * 500
 
 
+def test_campaign_reference_rejects_removed_campaign() -> None:
+    choice = campaign_choice(
+        SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
+        {"id": "10", "name": "Removed campaign", "status": "REMOVED"},
+    )
+
+    assert choice is None
+
+
 def test_shared_set_choice_carries_member_count() -> None:
     choice = shared_set_choice(
         SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
@@ -1739,7 +1936,8 @@ async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkey
     assert [call.args[1] for call in query.await_args_list] == [active, second_active]
     assert all(
         call.args[2] == "SELECT campaign.id, campaign.name, campaign.status FROM campaign "
-        "WHERE campaign.name LIKE '%Campaign\\'s \\\\ list%' "
+        "WHERE campaign.status != 'REMOVED' "
+        "AND campaign.name LIKE '%Campaign\\'s \\\\ list%' "
         "ORDER BY campaign.name LIMIT 101"
         for call in query.await_args_list
     )
@@ -1792,6 +1990,7 @@ async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) 
     assert [choice.value["external_id"] for choice in choices] == ["10"]
     query.assert_awaited_once()
     assert "campaign.id IN (10, 20)" in query.await_args.args[2]
+    assert "campaign.status != 'REMOVED'" in query.await_args.args[2]
 
 
 async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) -> None:
@@ -1936,6 +2135,260 @@ async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
     assert result["results"][0]["error_code"] == "ModelRetry"
     assert "campaign is unavailable" in result["results"][0]["error_message"]
     provider_update.assert_not_awaited()
+
+
+async def test_negative_list_campaign_links_reject_cross_account_references(
+    monkeypatch,
+) -> None:
+    list_resource_id = uuid4()
+    campaign_resource_id = uuid4()
+    ctx = SimpleNamespace(deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=())))
+    provider_client = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.google_ads_client",
+        provider_client,
+    )
+
+    with pytest.raises(ModelRetry, match="must belong to the same Google Ads account"):
+        await google_ads_link_negative_keyword_list(
+            ctx,
+            GoogleAdsSharedSetReference(
+                integration_resource_id=list_resource_id,
+                external_id="50",
+                label="Brand Protection",
+            ),
+            [
+                GoogleAdsCampaignReference(
+                    integration_resource_id=campaign_resource_id,
+                    external_id="10",
+                    label="Search",
+                )
+            ],
+            "LINK",
+        )
+
+    provider_client.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("shared_sets", "campaign_payload", "message"),
+    [
+        ([], None, "list is unavailable"),
+        ([{"id": "50"}], {"results": []}, "campaign is unavailable"),
+        (
+            [{"id": "50"}],
+            {"results": [{"campaign": {"id": "10", "status": "REMOVED"}}]},
+            "campaign is unavailable",
+        ),
+    ],
+)
+async def test_negative_list_campaign_links_fail_closed_for_stale_references(
+    monkeypatch,
+    shared_sets,
+    campaign_payload,
+    message,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    if campaign_payload is not None:
+        client.post.return_value = campaign_payload
+    provider_link = AsyncMock()
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.list_shared_sets",
+        AsyncMock(return_value=shared_sets),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.link_negative_keyword_list",
+        provider_link,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_link_negative_keyword_list(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="10",
+                label="Search",
+            )
+        ],
+        "LINK",
+    )
+
+    assert result["results"][0]["error_code"] == "ModelRetry"
+    assert message in result["results"][0]["error_message"]
+    provider_link.assert_not_awaited()
+
+
+async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"campaign": {"id": "10"}}, {"campaign": {"id": "20"}}]}
+    provider_link = AsyncMock(
+        return_value={
+            "resource_names": ["customers/111/campaignSharedSets/10~50"],
+            "skipped_existing": ["20"],
+            "campaign_errors": [],
+        }
+    )
+    audited_kwargs: dict[str, Any] = {}
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        audited_kwargs.update(kwargs)
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.list_shared_sets",
+        AsyncMock(return_value=[{"id": "50"}]),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.link_negative_keyword_list",
+        provider_link,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_link_negative_keyword_list(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="20",
+                label="Shopping",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="10",
+                label="Search",
+            ),
+        ],
+        "LINK",
+    )
+
+    assert result["results"][0]["status"] == "success"
+    assert provider_link.await_args.kwargs == {
+        "customer_id": "111",
+        "login_customer_id": "999",
+        "shared_set_id": "50",
+        "campaign_ids": ["10", "20"],
+        "action": "LINK",
+    }
+    provider_result = provider_link.return_value
+    assert audited_kwargs["external_ref_from_result"](provider_result) == (
+        "customers/111/campaignSharedSets/10~50"
+    )
+    detail = audited_kwargs["operation_detail_from_result"](provider_result)
+    assert detail.changes[0].external_ref == "customers/111/campaignSharedSets/10~50"
+    assert audited_kwargs["require_durable_audit"] is True
+
+
+async def test_negative_list_campaign_links_audit_write_denial_before_provider(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Read-only account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=False,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.link_negative_keyword_list.record_google_ads_operation_audit",
+        audit,
+    )
+
+    result = await google_ads_link_negative_keyword_list(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="10",
+                label="Search",
+            )
+        ],
+        "UNLINK",
+    )
+
+    assert result["results"][0]["error_code"] == "write_not_permitted"
+    provider_client.assert_not_awaited()
+    assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
+    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
 
 
 async def test_add_negative_keywords_targets_one_account_and_uses_normalized_rows(
@@ -2715,6 +3168,21 @@ class _NegativeKeywordClient:
         if path.endswith("googleAds:searchStream"):
             return self.search_payload
         if path.endswith("sharedCriteria:mutate"):
+            return self.mutate_payload
+        raise AssertionError(f"Unexpected Google Ads operation path: {path}")
+
+
+class _CampaignSharedSetClient:
+    def __init__(self, *, search_payload, mutate_payload):
+        self.search_payload = search_payload
+        self.mutate_payload = mutate_payload
+        self.calls: list[dict] = []
+
+    async def post(self, path: str, **kwargs):
+        self.calls.append({"path": path, **kwargs})
+        if path.endswith("googleAds:searchStream"):
+            return self.search_payload
+        if path.endswith("campaignSharedSets:mutate"):
             return self.mutate_payload
         raise AssertionError(f"Unexpected Google Ads operation path: {path}")
 

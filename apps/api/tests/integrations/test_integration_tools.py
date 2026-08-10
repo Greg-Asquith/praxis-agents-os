@@ -49,6 +49,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
         "google_ads_add_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
         "google_ads_list_accounts": ("read", "internal", "auto", False),
         "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
@@ -129,6 +130,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
+        "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
@@ -138,6 +140,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     for name in (
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
+        "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
         "google_ads_update_campaign_status",
     ):
@@ -176,6 +179,16 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     )
     assert removal_field.format == "records"
     assert removal_field.columns[1].options == ("EXACT", "PHRASE", "BROAD", "ANY")
+    campaign_links = definitions["google_ads_link_negative_keyword_list"]
+    assert {field.key for field in campaign_links.presentation.arg_fields if field.editable} == {
+        "negative_list",
+        "campaign_ids",
+        "action",
+    }
+    link_action = next(
+        field for field in campaign_links.presentation.arg_fields if field.key == "action"
+    )
+    assert link_action.options == ("LINK", "UNLINK")
 
     denylisted = {
         "account_id",

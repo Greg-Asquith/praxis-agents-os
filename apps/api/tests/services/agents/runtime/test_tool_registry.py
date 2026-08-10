@@ -374,6 +374,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_list_accounts": "provider_query",
         "google_ads_add_negative_keywords": "external_write",
         "google_ads_create_negative_keyword_list": "external_write",
+        "google_ads_link_negative_keyword_list": "external_write",
         "google_ads_remove_negative_keywords": "external_write",
         "google_ads_run_report": "provider_query",
         "google_ads_update_campaign_status": "external_write",

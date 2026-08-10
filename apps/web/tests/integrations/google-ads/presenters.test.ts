@@ -14,6 +14,7 @@ import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
+import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/negative-keywords"
@@ -327,6 +328,131 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("20")
     expect(html).toContain("Campaign is removed.")
     expect(html).toContain("Updated")
+  })
+
+  it("reviews the edited negative-list campaign selection in the approval card", () => {
+    const controls = approvalControls()
+    controls.decision.edits = {
+      action: "UNLINK",
+      campaign_ids: [campaignReference("20", "Brand Awareness")],
+      negative_list: sharedSetReference("50", "Edited exclusions"),
+    }
+    const declaredFields = [
+      field("negative_list", "Negative Keyword List", "entity", true),
+      field("campaign_ids", "Campaigns", "entity_list", true),
+      {
+        ...field("action", "Action", "text", true),
+        options: ["LINK", "UNLINK"],
+      },
+    ]
+    const rendered = googleAdsCampaignLinksPresenter.render(
+      props(
+        {
+          id: "campaign-links-approval",
+          kind: "approval",
+          name: "google_ads_link_negative_keyword_list",
+          status: "awaiting_approval",
+          args: {
+            action: "LINK",
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+            ],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+        },
+        controls,
+        toolUi(declaredFields)
+      )
+    )
+
+    expect(isValidElement(rendered)).toBe(true)
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
+      expect(rendered.type).toBe(ToolApprovalDecisionCard)
+      expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
+    }
+    const html = render(rendered)
+    expect(html).toContain("Remove negative keyword list")
+    expect(html).toContain("Edited exclusions")
+    expect(html).toContain("1 campaign selected")
+    expect(html).toContain("Approve &amp; Apply")
+  })
+
+  it("renders linked, already-linked, and failed campaigns per account", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-links-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+              campaignReference("30", "Shopping"),
+            ],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                skipped_existing: ["20"],
+                campaign_errors: [
+                  {
+                    campaign_id: "30",
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads campaign list results"')
+    expect(html).toContain("Brand Protection")
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Linked")
+    expect(html).toContain("Already linked")
+    expect(html).toContain("Campaign is removed.")
+    expect(html).toContain("30")
+  })
+
+  it("renders unlinked and not-linked campaign outcomes", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-unlinks-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "UNLINK",
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                resource_names: [],
+                not_found: ["10"],
+                campaign_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Unlinked")
+    expect(html).toContain("Not linked")
+    expect(html).toContain("10")
   })
 
   it("renders created, existing, and failed negative keyword lists per account", () => {
@@ -795,8 +921,10 @@ describe("Google Ads tool presenters", () => {
       "google-ads-list-accounts",
       "google-ads-create-negative-keyword-list",
       "google-ads-negative-keywords",
+      "google-ads-negative-list-campaign-links",
       "google-ads-update-campaign-status",
     ])
+    expect(googleAdsCampaignLinksPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)
     expect(googleAdsNegativeKeywordsPresenter.handlesApprovals).toBe(true)
   })
