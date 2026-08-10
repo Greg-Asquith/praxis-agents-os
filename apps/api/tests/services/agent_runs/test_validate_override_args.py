@@ -10,6 +10,9 @@ from core.exceptions.general import AppValidationError
 from integrations.google_ads.tools.add_negative_keywords import (
     DEFINITION as GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
 )
+from integrations.google_ads.tools.remove_negative_keywords import (
+    DEFINITION as GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
+)
 from services.agent_runs.validate_override_args import (
     RECORDS_FIELD_MAX_ROWS,
     validate_and_canonicalize_override_args,
@@ -181,12 +184,33 @@ async def test_records_override_preserves_the_exact_edited_rows(monkeypatch) -> 
     assert result == {"rows": override}
 
 
+@pytest.mark.parametrize(
+    ("definition", "tool_name", "edited_rows"),
+    [
+        (
+            GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+            "google_ads_add_negative_keywords",
+            [
+                {"text": "replacement", "match_type": "PHRASE"},
+                {"text": "added row", "match_type": "BROAD"},
+            ],
+        ),
+        (
+            GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
+            "google_ads_remove_negative_keywords",
+            [
+                {"text": "replacement", "match_type": "PHRASE"},
+                {"text": "all variants", "match_type": "ANY"},
+            ],
+        ),
+    ],
+)
 async def test_google_ads_keyword_override_reauthorizes_list_and_preserves_edited_rows(
-    monkeypatch,
+    monkeypatch, definition, tool_name: str, edited_rows
 ) -> None:
     monkeypatch.setattr(
         "services.agents.runtime.tools.registry.get_runtime_tool_definition",
-        lambda _tool_name: GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+        lambda _tool_name: definition,
     )
     original_list = {
         "version": 1,
@@ -210,11 +234,6 @@ async def test_google_ads_keyword_override_reauthorizes_list_and_preserves_edite
         "services.agents.runtime.entity_references.service.resolve_authorized_references",
         resolve,
     )
-    edited_rows = [
-        {"text": "replacement", "match_type": "PHRASE"},
-        {"text": "added row", "match_type": "BROAD"},
-    ]
-
     result = await validate_and_canonicalize_override_args(
         AsyncMock(),
         actor=SimpleNamespace(),
@@ -222,7 +241,7 @@ async def test_google_ads_keyword_override_reauthorizes_list_and_preserves_edite
         membership=SimpleNamespace(),
         run=SimpleNamespace(conversation_id=uuid4()),
         tool_call=_call(
-            "google_ads_add_negative_keywords",
+            tool_name,
             {
                 "negative_list": original_list,
                 "keywords": [{"text": "remove me", "match_type": "EXACT"}],

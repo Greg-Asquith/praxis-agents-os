@@ -1,6 +1,6 @@
-# apps/api/integrations/google_ads/tools/add_negative_keywords.py
+# apps/api/integrations/google_ads/tools/remove_negative_keywords.py
 
-"""Approval-only Google Ads negative keyword list mutation tool."""
+"""Approval-only Google Ads negative keyword removal tool."""
 
 from typing import Annotated, Any
 
@@ -29,16 +29,16 @@ from services.audit_events import (
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
 
-from ..operations.add_negative_keywords import add_negative_keywords
 from ..operations.list_shared_sets import list_shared_sets
+from ..operations.remove_negative_keywords import remove_negative_keywords
 from .schemas import GoogleAdsOutput
-from .schemas.negative_keyword import NegativeKeywordEntry
+from .schemas.negative_keyword import NegativeKeywordRemovalEntry
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS,
     RESULTS_FIELD,
-    bounded_negative_keyword_result,
-    complete_negative_keyword_result,
+    bounded_negative_keyword_removal_result,
+    complete_negative_keyword_removal_result,
     fan_out_tool_return,
     google_ads_available,
     google_ads_client,
@@ -49,20 +49,20 @@ from .utils import (
 )
 
 
-async def google_ads_add_negative_keywords(
+async def google_ads_remove_negative_keywords(
     ctx: RunContext[RuntimeDeps],
     negative_list: Annotated[
         GoogleAdsSharedSetReference,
         Field(description="Negative keyword list to update."),
     ],
     keywords: Annotated[
-        list[NegativeKeywordEntry],
-        Field(min_length=1, max_length=500, description="Negative keywords to add."),
+        list[NegativeKeywordRemovalEntry],
+        Field(min_length=1, max_length=500, description="Negative keywords to remove."),
     ],
 ) -> ToolReturn[dict[str, Any]]:
     if len(keywords) > 500:
         raise ModelRetry(
-            "Add at most 500 negative keywords per call. Split larger sets into chunks."
+            "Remove at most 500 negative keywords per call. Split larger sets into chunks."
         )
     normalized_keywords = normalize_negative_keywords(keywords)
 
@@ -93,7 +93,7 @@ async def google_ads_add_negative_keywords(
                     "The selected negative keyword list is unavailable. "
                     "Ask the user to choose it again."
                 )
-            return await add_negative_keywords(
+            return await remove_negative_keywords(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
@@ -104,33 +104,29 @@ async def google_ads_add_negative_keywords(
         full_result = await run_audited_operation(
             ctx,
             entry,
-            tool_name="google_ads_add_negative_keywords",
-            operation="add_negative_keywords",
+            tool_name="google_ads_remove_negative_keywords",
+            operation="remove_negative_keywords",
             execute=execute,
-            external_ref_from_result=lambda value: (
-                ",".join(item["resource_name"] for item in value["added"]) or None
-            ),
-            operation_detail_from_result=lambda value: _negative_keyword_operation_detail(
-                reference, value
-            ),
-            status_from_result=_negative_keyword_audit_status,
-            pending_operation_detail=_pending_negative_keyword_operation_detail(
+            external_ref_from_result=lambda value: ",".join(value["resource_names"]) or None,
+            operation_detail_from_result=lambda value: _operation_detail(reference, value),
+            status_from_result=_audit_status,
+            pending_operation_detail=_pending_operation_detail(
                 reference,
                 [keyword.model_dump() for keyword in normalized_keywords],
             ),
             require_durable_audit=True,
         )
         return {
-            "model_result": bounded_negative_keyword_result(full_result),
-            "display_result": complete_negative_keyword_result(full_result),
+            "model_result": bounded_negative_keyword_removal_result(full_result),
+            "display_result": complete_negative_keyword_removal_result(full_result),
         }
 
     async def audit_write_denied(entry: ResolvedContextEntry) -> None:
         await record_google_ads_operation_audit(
             ctx,
             entry,
-            tool_name="google_ads_add_negative_keywords",
-            operation="add_negative_keywords",
+            tool_name="google_ads_remove_negative_keywords",
+            operation="remove_negative_keywords",
             status=AuditStatus.FAILURE,
             error_code="write_not_permitted",
         )
@@ -146,66 +142,46 @@ async def google_ads_add_negative_keywords(
     return fan_out_tool_return(results)
 
 
-def _negative_keyword_audit_status(result: dict[str, Any]) -> AuditStatus:
-    """Fail only zero-apply provider errors; mixed and error-free no-ops succeed."""
-    if result["keyword_errors"] and not result["added"]:
+def _audit_status(result: dict[str, Any]) -> AuditStatus:
+    if result["keyword_errors"] and not result["removed"]:
         return AuditStatus.FAILURE
     return AuditStatus.SUCCESS
 
 
-def _negative_keyword_operation_detail(
+def _operation_detail(
     reference: GoogleAdsSharedSetReference,
     result: dict[str, Any],
 ) -> IntegrationOperationDetail:
     return IntegrationOperationDetail(
-        target=IntegrationOperationTarget(
-            entity_type=reference.entity_kind,
-            external_id=reference.external_id,
-            display_name=reference.label,
-            integration_resource_id=str(reference.integration_resource_id),
-            attributes={"member_count": reference.member_count},
-        ),
+        target=_operation_target(reference),
         changes=[
             IntegrationOperationChange(
-                action="add",
+                action="remove",
                 entity_type="negative_keyword",
                 external_ref=item["resource_name"],
-                fields={
-                    "text": item["text"],
-                    "match_type": item["match_type"],
-                },
+                fields={"text": item["text"], "match_type": item["match_type"]},
             )
-            for item in result["added"]
+            for item in result["removed"]
         ],
         counts=IntegrationOperationCounts(
-            applied=len(result["added"]),
-            skipped=len(result["skipped_existing"]),
+            applied=len(result["removed"]),
+            skipped=len(result["not_found"]),
             failed=len(result["keyword_errors"]),
         ),
     )
 
 
-def _pending_negative_keyword_operation_detail(
+def _pending_operation_detail(
     reference: GoogleAdsSharedSetReference,
     keywords: list[dict[str, str]],
 ) -> IntegrationOperationDetail:
-    """Persist the complete intended write before contacting Google Ads."""
     return IntegrationOperationDetail(
-        target=IntegrationOperationTarget(
-            entity_type=reference.entity_kind,
-            external_id=reference.external_id,
-            display_name=reference.label,
-            integration_resource_id=str(reference.integration_resource_id),
-            attributes={"member_count": reference.member_count},
-        ),
+        target=_operation_target(reference),
         changes=[
             IntegrationOperationChange(
-                action="add",
+                action="remove",
                 entity_type="negative_keyword",
-                fields={
-                    "text": keyword["text"],
-                    "match_type": keyword["match_type"],
-                },
+                fields={"text": keyword["text"], "match_type": keyword["match_type"]},
             )
             for keyword in keywords
         ],
@@ -213,12 +189,24 @@ def _pending_negative_keyword_operation_detail(
     )
 
 
+def _operation_target(
+    reference: GoogleAdsSharedSetReference,
+) -> IntegrationOperationTarget:
+    return IntegrationOperationTarget(
+        entity_type=reference.entity_kind,
+        external_id=reference.external_id,
+        display_name=reference.label,
+        integration_resource_id=str(reference.integration_resource_id),
+        attributes={"member_count": reference.member_count},
+    )
+
+
 DEFINITION = RuntimeToolDefinition(
-    name="google_ads_add_negative_keywords",
-    function=google_ads_add_negative_keywords,
-    description="Add negative keywords to a selected Google Ads negative keyword list.",
+    name="google_ads_remove_negative_keywords",
+    function=google_ads_remove_negative_keywords,
+    description="Remove negative keywords from a selected Google Ads negative keyword list.",
     provider="google_ads",
-    label="Add Google Ads Negative Keywords",
+    label="Remove Google Ads Negative Keywords",
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
@@ -232,15 +220,15 @@ DEFINITION = RuntimeToolDefinition(
     availability_check=google_ads_available,
     presentation=ToolPresentation(
         icon="google_ads",
-        running_label="Adding Negative Keywords",
-        completed_label="Added Negative Keywords",
-        failed_label="Couldn't Add Negative Keywords",
-        approval_title="Add Negative Keywords",
+        running_label="Removing Negative Keywords",
+        completed_label="Removed Negative Keywords",
+        failed_label="Couldn't Remove Negative Keywords",
+        approval_title="Remove Negative Keywords",
         approval_prompt=(
-            "The agent wants to add negative keywords to a shared list. "
-            "Review and edit the rows before approving."
+            "The agent wants to remove negative keywords from a shared list, "
+            "which re-enables matching traffic."
         ),
-        approve_label="Approve & Add",
+        approve_label="Approve & Remove",
         arg_fields=(
             ToolFieldPresentation(
                 key="negative_list",
@@ -259,7 +247,7 @@ DEFINITION = RuntimeToolDefinition(
                     ToolFieldColumn(
                         key="match_type",
                         label="Match Type",
-                        options=("EXACT", "PHRASE", "BROAD"),
+                        options=("EXACT", "PHRASE", "BROAD", "ANY"),
                     ),
                 ),
             ),

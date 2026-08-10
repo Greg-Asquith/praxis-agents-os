@@ -608,6 +608,87 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Exact 2 · Phrase 0 · Broad 0")
   })
 
+  it("renders editable ANY removals and every settled removal outcome", () => {
+    const controls = approvalControls()
+    const approval = render(
+      googleAdsNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "negative-keywords-remove-approval",
+            kind: "approval",
+            name: "google_ads_remove_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              negative_list: sharedSetReference("50", "Brand Protection"),
+              keywords: [
+                { text: "free", match_type: "ANY" },
+                { text: "jobs", match_type: "PHRASE" },
+              ],
+            },
+          },
+          controls,
+          toolUi([])
+        )
+      )
+    )
+    expect(approval).toContain("Approve &amp; Remove")
+    expect(approval).toContain("Any 1")
+    expect(approval).toContain("Removing them re-enables matching traffic")
+
+    const settled = render(
+      googleAdsNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-remove-result",
+          kind: "result",
+          name: "google_ads_remove_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { removed: 2, not_found: 1, failed: 1 },
+                samples: {
+                  removed: [
+                    {
+                      text: "free",
+                      match_type: "EXACT",
+                      resource_name: "customers/123/sharedCriteria/50~1",
+                    },
+                    {
+                      text: "free",
+                      match_type: "BROAD",
+                      resource_name: "customers/123/sharedCriteria/50~2",
+                    },
+                  ],
+                  not_found: [{ text: "jobs", match_type: "ANY" }],
+                  failed: [
+                    {
+                      scope: "keyword",
+                      text: "cheap",
+                      match_type: "PHRASE",
+                      message: "Removal failed.",
+                      error_code: "INVALID_INPUT",
+                    },
+                  ],
+                },
+                samples_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+    expect(settled).toContain("Removed")
+    expect(settled).toContain("Success")
+    expect(settled).toContain("bg-success/10")
+    expect(settled).toContain("Not found")
+    expect(settled).toContain("free")
+    expect(settled).toContain("jobs")
+    expect(settled).toContain("cheap")
+    expect(settled).toContain("Removal failed.")
+    expect(settled).toContain("Invalid Input")
+    expect(settled).toContain("Error Code")
+  })
+
   it("derives the custom approval summary across incomplete keyword row states", () => {
     const controls = approvalControls()
     const activity: ToolActivity = {
@@ -713,7 +794,7 @@ describe("Google Ads tool presenters", () => {
       "google-ads-run-report",
       "google-ads-list-accounts",
       "google-ads-create-negative-keyword-list",
-      "google-ads-add-negative-keywords",
+      "google-ads-negative-keywords",
       "google-ads-update-campaign-status",
     ])
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)

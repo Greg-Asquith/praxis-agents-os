@@ -28,6 +28,7 @@ from pydantic_ai import (
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from core.exceptions.integration import IntegrationValidationError
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.discover_resources import discover_google_ads_resources
 from integrations.google_ads.entity_resolvers.campaign import (
@@ -46,6 +47,9 @@ from integrations.google_ads.operations.create_negative_keyword_list import (
 )
 from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
+from integrations.google_ads.operations.remove_negative_keywords import (
+    remove_negative_keywords,
+)
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
 from integrations.google_ads.operations.utils import (
@@ -65,12 +69,23 @@ from integrations.google_ads.tools.create_negative_keyword_list import (
     google_ads_create_negative_keyword_list,
 )
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
+from integrations.google_ads.tools.remove_negative_keywords import (
+    _operation_detail as removal_operation_detail,
+    google_ads_remove_negative_keywords,
+)
 from integrations.google_ads.tools.run_report import google_ads_run_report
-from integrations.google_ads.tools.schemas.negative_keyword import NegativeKeywordEntry
+from integrations.google_ads.tools.schemas.negative_keyword import (
+    NegativeKeywordEntry,
+    NegativeKeywordRemovalEntry,
+)
 from integrations.google_ads.tools.update_campaign_status import google_ads_update_campaign_status
 from integrations.google_ads.tools.utils import (
+    MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS,
     MAX_NEGATIVE_KEYWORD_RESULT_CHARS,
+    bounded_negative_keyword_removal_result,
     bounded_negative_keyword_result,
+    complete_negative_keyword_removal_result,
+    complete_negative_keyword_result,
     normalize_negative_keywords,
     run_audited_operation,
 )
@@ -726,6 +741,219 @@ async def test_add_negative_keywords_fails_closed_for_unaccounted_results() -> N
     ]
 
 
+async def test_remove_negative_keywords_resolves_precise_and_any_rows() -> None:
+    client = _NegativeKeywordClient(
+        search_payload={
+            "results": [
+                {
+                    "sharedCriterion": {
+                        "criterionId": "1",
+                        "keyword": {"text": "Brand Term", "matchType": "EXACT"},
+                    }
+                },
+                {
+                    "sharedCriterion": {
+                        "criterionId": "2",
+                        "keyword": {"text": "Generic Term", "matchType": "PHRASE"},
+                    }
+                },
+                {
+                    "sharedCriterion": {
+                        "criterionId": "3",
+                        "keyword": {"text": "generic term", "matchType": "BROAD"},
+                    }
+                },
+                {
+                    "sharedCriterion": {
+                        "criterionId": "4",
+                        "keyword": {"text": "Keep Me", "matchType": "BROAD"},
+                    }
+                },
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/3333333333/sharedCriteria/50~1"},
+                {"resourceName": "customers/3333333333/sharedCriteria/50~2"},
+                {"resourceName": "customers/3333333333/sharedCriteria/50~3"},
+            ]
+        },
+    )
+
+    result = await remove_negative_keywords(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[
+            {"text": "brand term", "match_type": "EXACT"},
+            {"text": "GENERIC TERM", "match_type": "ANY"},
+            {"text": "missing", "match_type": "PHRASE"},
+        ],
+    )
+
+    assert "shared_criterion.criterion_id" in client.calls[0]["json"]["query"]
+    assert client.calls[1]["json"] == {
+        "operations": [
+            {"remove": "customers/3333333333/sharedCriteria/50~1"},
+            {"remove": "customers/3333333333/sharedCriteria/50~2"},
+            {"remove": "customers/3333333333/sharedCriteria/50~3"},
+        ],
+        "partialFailure": True,
+    }
+    assert result["resource_names"] == [
+        "customers/3333333333/sharedCriteria/50~1",
+        "customers/3333333333/sharedCriteria/50~2",
+        "customers/3333333333/sharedCriteria/50~3",
+    ]
+    assert [(item["text"], item["match_type"]) for item in result["removed"]] == [
+        ("Brand Term", "EXACT"),
+        ("Generic Term", "PHRASE"),
+        ("generic term", "BROAD"),
+    ]
+    assert result["not_found"] == [{"text": "missing", "match_type": "PHRASE"}]
+    assert result["keyword_errors"] == []
+
+
+async def test_remove_negative_keywords_never_mutates_not_found_rows() -> None:
+    client = _NegativeKeywordClient(search_payload={"results": []}, mutate_payload={})
+
+    result = await remove_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[{"text": "absent", "match_type": "ANY"}],
+    )
+
+    assert len(client.calls) == 1
+    assert result == {
+        "removed": [],
+        "resource_names": [],
+        "not_found": [{"text": "absent", "match_type": "ANY"}],
+        "keyword_errors": [],
+    }
+
+
+async def test_remove_negative_keywords_rejects_any_expansion_above_audit_limit() -> None:
+    search_rows = [
+        {
+            "sharedCriterion": {
+                "criterionId": str(index * 3 + variant),
+                "keyword": {"text": f"term {index}", "matchType": match_type},
+            }
+        }
+        for index in range(167)
+        for variant, match_type in enumerate(("EXACT", "PHRASE", "BROAD"), start=1)
+    ]
+    client = _NegativeKeywordClient(
+        search_payload={"results": search_rows},
+        mutate_payload={"results": []},
+    )
+
+    with pytest.raises(IntegrationValidationError, match="more than 500"):
+        await remove_negative_keywords(
+            client,
+            customer_id="333",
+            login_customer_id="111",
+            shared_set_id="50",
+            keywords=[{"text": f"term {index}", "match_type": "ANY"} for index in range(167)],
+        )
+
+    assert len(client.calls) == 1
+
+
+async def test_remove_negative_keywords_maps_partial_failures_to_resolved_rows() -> None:
+    client = _NegativeKeywordClient(
+        search_payload={
+            "results": [
+                {
+                    "sharedCriterion": {
+                        "criterionId": "1",
+                        "keyword": {"text": "accepted", "matchType": "EXACT"},
+                    }
+                },
+                {
+                    "sharedCriterion": {
+                        "criterionId": "2",
+                        "keyword": {"text": "rejected", "matchType": "PHRASE"},
+                    }
+                },
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/333/sharedCriteria/50~1"},
+                {},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Criterion cannot be removed",
+                                "errorCode": {"criterionError": "CANNOT_REMOVE_CRITERION"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await remove_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[
+            {"text": "accepted", "match_type": "EXACT"},
+            {"text": "rejected", "match_type": "PHRASE"},
+        ],
+    )
+
+    assert result["resource_names"] == ["customers/333/sharedCriteria/50~1"]
+    assert result["keyword_errors"] == [
+        {
+            "scope": "keyword",
+            "text": "rejected",
+            "match_type": "PHRASE",
+            "message": "Criterion cannot be removed",
+            "error_code": "CANNOT_REMOVE_CRITERION",
+        }
+    ]
+
+
+def test_remove_negative_keyword_audit_detail_retains_removed_resource_names() -> None:
+    reference = GoogleAdsSharedSetReference(
+        integration_resource_id=uuid4(),
+        external_id="50",
+        label="Brand Protection",
+    )
+
+    detail = removal_operation_detail(
+        reference,
+        {
+            "removed": [
+                {
+                    "text": "brand term",
+                    "match_type": "EXACT",
+                    "resource_name": "customers/333/sharedCriteria/50~1",
+                }
+            ],
+            "not_found": [{"text": "missing", "match_type": "ANY"}],
+            "keyword_errors": [],
+        },
+    )
+
+    assert detail.changes[0].action == "remove"
+    assert detail.changes[0].external_ref == "customers/333/sharedCriteria/50~1"
+    assert detail.counts.model_dump() == {"applied": 1, "skipped": 1, "failed": 0}
+
+
 async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkeypatch) -> None:
     pending_event_id = uuid4()
     audit = AsyncMock(side_effect=[pending_event_id, RuntimeError("database unavailable")])
@@ -824,6 +1052,61 @@ def test_negative_keyword_model_result_is_bounded_with_accurate_counts(outcome: 
             "match_type",
             "resource_name",
         }
+
+
+def test_negative_keyword_display_result_retains_every_row() -> None:
+    added = [
+        {
+            "text": f"term {index}",
+            "match_type": "EXACT",
+            "resource_name": f"customers/333/sharedCriteria/50~{index}",
+        }
+        for index in range(500)
+    ]
+
+    result = complete_negative_keyword_result(
+        {"added": added, "skipped_existing": [], "keyword_errors": []}
+    )
+
+    assert result["counts"]["added"] == 500
+    assert result["samples"]["added"] == added
+    assert result["samples_truncated"] is False
+
+
+def test_negative_keyword_removal_results_bound_model_data_and_keep_safe_display_rows() -> None:
+    provider_result = {
+        "removed": [
+            {
+                "text": f"term {index}",
+                "match_type": "EXACT",
+                "resource_name": f"customers/333/sharedCriteria/50~{index}",
+            }
+            for index in range(500)
+        ],
+        "not_found": [{"text": "missing", "match_type": "ANY"}],
+        "keyword_errors": [
+            {
+                "scope": "keyword",
+                "text": "failed",
+                "match_type": "PHRASE",
+                "message": "provider failure " + "y" * 2_000,
+                "error_code": "E" * 200,
+            }
+        ],
+    }
+
+    model_result = bounded_negative_keyword_removal_result(provider_result)
+    display_result = complete_negative_keyword_removal_result(provider_result)
+
+    assert len(json.dumps(model_result, ensure_ascii=False)) <= MAX_NEGATIVE_KEYWORD_RESULT_CHARS
+    assert model_result["counts"] == {"removed": 500, "not_found": 1, "failed": 1}
+    assert model_result["samples_truncated"] is True
+    assert len(display_result["samples"]["removed"]) == 500
+    assert len(display_result["samples"]["failed"][0]["message"]) == 500
+    assert len(display_result["samples"]["failed"][0]["error_code"]) == 100
+    assert len(json.dumps(display_result, ensure_ascii=False)) < (
+        MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS
+    )
 
 
 def test_negative_keyword_audit_detail_retains_all_applied_rows() -> None:
@@ -991,6 +1274,22 @@ def test_negative_keyword_normalization_is_pairwise_and_bounded() -> None:
     assert [item.model_dump() for item in normalized] == [
         {"text": "Brand Term", "match_type": "EXACT"},
         {"text": "brand term", "match_type": "PHRASE"},
+    ]
+
+
+def test_negative_keyword_removal_any_absorbs_same_text_precise_rows() -> None:
+    normalized = normalize_negative_keywords(
+        [
+            NegativeKeywordRemovalEntry(text="Brand Term", match_type="EXACT"),
+            NegativeKeywordRemovalEntry(text="brand term", match_type="ANY"),
+            NegativeKeywordRemovalEntry(text="BRAND TERM", match_type="PHRASE"),
+            NegativeKeywordRemovalEntry(text="other", match_type="BROAD"),
+        ]
+    )
+
+    assert [item.model_dump() for item in normalized] == [
+        {"text": "brand term", "match_type": "ANY"},
+        {"text": "other", "match_type": "BROAD"},
     ]
 
 
@@ -1703,7 +2002,18 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
         ],
     )
 
-    assert result["results"][0]["status"] == "success"
+    assert result.return_value["results"][0]["status"] == "success"
+    assert result.metadata["public_result"]["results"][0]["data"]["samples"] == {
+        "added": [
+            {
+                "text": "Brand Term",
+                "match_type": "EXACT",
+                "resource_name": "criteria/1",
+            }
+        ],
+        "skipped_existing": [],
+        "failed": [],
+    }
     assert provider_add.await_args.kwargs["shared_set_id"] == "50"
     assert provider_add.await_args.kwargs["keywords"] == [
         {"text": "Brand Term", "match_type": "EXACT"},
@@ -1999,8 +2309,8 @@ async def test_add_negative_keywords_fails_closed_when_list_is_missing(monkeypat
         [NegativeKeywordEntry(text="term", match_type="EXACT")],
     )
 
-    assert result["results"][0]["error_code"] == "ModelRetry"
-    assert "list is unavailable" in result["results"][0]["error_message"]
+    assert result.return_value["results"][0]["error_code"] == "ModelRetry"
+    assert "list is unavailable" in result.return_value["results"][0]["error_message"]
     provider_add.assert_not_awaited()
 
 
@@ -2072,7 +2382,169 @@ async def test_add_negative_keywords_write_denial_is_audited_before_provider_cal
         [NegativeKeywordEntry(text="term", match_type="EXACT")],
     )
 
-    assert result["results"][0]["error_code"] == "write_not_permitted"
+    assert result.return_value["results"][0]["error_code"] == "write_not_permitted"
+    provider_client.assert_not_awaited()
+    assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
+    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
+
+
+async def test_remove_negative_keywords_normalizes_any_and_targets_one_account(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
+    provider_remove = AsyncMock(
+        return_value={
+            "removed": [],
+            "resource_names": [],
+            "not_found": [{"text": "Brand Term", "match_type": "ANY"}],
+            "keyword_errors": [],
+        }
+    )
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.remove_negative_keywords",
+        provider_remove,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.run_audited_operation",
+        passthrough_audit,
+    )
+
+    await google_ads_remove_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            NegativeKeywordRemovalEntry(text="Brand Term", match_type="EXACT"),
+            NegativeKeywordRemovalEntry(text=" brand   term ", match_type="ANY"),
+            NegativeKeywordRemovalEntry(text="brand term", match_type="PHRASE"),
+        ],
+    )
+
+    assert provider_remove.await_args.kwargs["keywords"] == [
+        {"text": "brand term", "match_type": "ANY"}
+    ]
+
+
+async def test_remove_negative_keywords_fails_closed_when_list_is_missing(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Ads account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    client = AsyncMock()
+    client.post.return_value = {"results": []}
+    provider_remove = AsyncMock()
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.remove_negative_keywords",
+        provider_remove,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.run_audited_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_remove_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Removed list",
+        ),
+        [NegativeKeywordRemovalEntry(text="term", match_type="ANY")],
+    )
+
+    assert result.return_value["results"][0]["error_code"] == "ModelRetry"
+    assert "list is unavailable" in result.return_value["results"][0]["error_message"]
+    provider_remove.assert_not_awaited()
+
+
+async def test_remove_negative_keywords_write_denial_is_audited_before_provider_call(
+    monkeypatch,
+) -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="111",
+        display_name="Read-only account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=False,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_negative_keywords.record_google_ads_operation_audit",
+        audit,
+    )
+
+    result = await google_ads_remove_negative_keywords(
+        ctx,
+        GoogleAdsSharedSetReference(
+            integration_resource_id=entry.integration_resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [NegativeKeywordRemovalEntry(text="term", match_type="EXACT")],
+    )
+
+    assert result.return_value["results"][0]["error_code"] == "write_not_permitted"
     provider_client.assert_not_awaited()
     assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
     assert audit.await_args.kwargs["error_code"] == "write_not_permitted"

@@ -38,8 +38,10 @@ from pydantic_ai import (
     DeferredToolResults,
     ModelRetry,
     ToolDenied,
+    ToolReturn,
 )
 from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
+from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 
 from core.settings import settings
@@ -73,6 +75,7 @@ from services.audit_events.tool_events import (
     record_tool_invocation_audit_event,
 )
 from services.workspaces.utils import EDITOR_ROLES
+from utils.json_safe import json_safe_value
 from utils.tokens import estimate_tokens
 
 Handler = Callable[[Mapping[str, Any]], Awaitable[Any]]
@@ -85,6 +88,7 @@ READ_OUTPUT_WARNING = "Tool output did not match the declared schema."
 ENVELOPE_DENIAL_MESSAGE = "Tool execution denied by this run's side-effect policy."
 ROLE_DENIAL_MESSAGE = "Tool execution denied because your workspace role is read-only."
 MEMBERSHIP_DENIAL_MESSAGE = "Tool execution denied because workspace access was revoked."
+PUBLIC_RESULT_METADATA_KEY = "public_result"
 logger = logging.getLogger(__name__)
 
 
@@ -193,15 +197,50 @@ def validate_output(
     try:
         definition.output_model.model_validate(result)
     except ValidationError as exc:
-        if definition.effect == TOOL_EFFECT_WRITE:
-            raise OutputContractError(
-                retry_message=f"{MUTATION_OUTPUT_WARNING}: {exc}",
-                outcome="unverified_mutation",
-            ) from exc
-        raise OutputContractError(
-            retry_message=f"{READ_OUTPUT_WARNING} {exc}",
-            outcome="failed",
-        ) from exc
+        raise _output_contract_error(definition, str(exc)) from exc
+
+
+def prepare_public_result(
+    definition: RuntimeToolDefinition | None,
+    result: ToolReturn,
+) -> int | None:
+    """Validate and bound explicitly public transcript data before persistence."""
+    metadata = result.metadata
+    if not isinstance(metadata, dict) or PUBLIC_RESULT_METADATA_KEY not in metadata:
+        return None
+    if definition is None or definition.max_public_result_chars is None:
+        raise _output_contract_error(
+            definition,
+            "public_result metadata requires an explicit max_public_result_chars declaration",
+        )
+    try:
+        public_result = json_safe_value(to_jsonable_python(metadata[PUBLIC_RESULT_METADATA_KEY]))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise _output_contract_error(definition, "public_result metadata is not JSON-safe") from exc
+    validate_output(definition, public_result)
+    result_chars = _measure_result_chars(public_result)
+    if result_chars is None or result_chars > definition.max_public_result_chars:
+        raise _output_contract_error(
+            definition,
+            "public_result metadata exceeds the declared serialized size limit",
+        )
+    metadata[PUBLIC_RESULT_METADATA_KEY] = public_result
+    return result_chars
+
+
+def _output_contract_error(
+    definition: RuntimeToolDefinition | None,
+    detail: str,
+) -> OutputContractError:
+    if definition is not None and definition.effect == TOOL_EFFECT_WRITE:
+        return OutputContractError(
+            retry_message=f"{MUTATION_OUTPUT_WARNING}: {detail}",
+            outcome="unverified_mutation",
+        )
+    return OutputContractError(
+        retry_message=f"{READ_OUTPUT_WARNING} {detail}",
+        outcome="failed",
+    )
 
 
 def truncate_result(
@@ -413,9 +452,16 @@ async def dispatch_tool_execution(
         )
         raise
 
-    result = serialize_untrusted_content(result)
+    if isinstance(result, ToolReturn):
+        result.return_value = serialize_untrusted_content(result.return_value)
+        validation_result = result.return_value
+    else:
+        result = serialize_untrusted_content(result)
+        validation_result = result
     try:
-        validate_output(definition, result)
+        validate_output(definition, validation_result)
+        if isinstance(result, ToolReturn):
+            prepare_public_result(definition, result)
     except OutputContractError as exc:
         await record_invocation(
             deps=ctx.deps,
@@ -433,11 +479,15 @@ async def dispatch_tool_execution(
         )
         raise ModelRetry(exc.retry_message) from exc
 
-    result, result_size = truncate_result(
+    bounded_result, result_size = truncate_result(
         definition,
-        result,
+        validation_result,
         default_limit=settings.AGENT_TOOL_RESULT_MAX_CHARS,
     )
+    if isinstance(result, ToolReturn):
+        result.return_value = bounded_result
+    else:
+        result = bounded_result
     if result_size.truncated:
         logger.warning(
             "Truncated oversized tool result",

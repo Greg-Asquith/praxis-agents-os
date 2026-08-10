@@ -71,6 +71,15 @@ Goals, in priority order:
    and the existing presentation schema. Adding SSE event types or
    presentation field formats is a platform change with its own review,
    never something a provider does in passing.
+6. **Model output and transcript evidence may differ only through the governed
+   public-result seam.** A tool may return Pydantic AI `ToolReturn` metadata
+   named `public_result` when an operator needs complete bounded evidence that
+   would be too large for model context. The tool must declare
+   `max_public_result_chars`; dispatch converts the value to JSON-safe data,
+   redacts sensitive-key values, validates it against the tool's output model,
+   and rejects it above the declared budget before Pydantic AI persists or
+   streams it. The ordinary `return_value` remains the only model-visible
+   result. Provider code owns safe row construction; core owns enforcement.
 
 ## 3. What stays centralized (deliberately)
 
@@ -83,7 +92,7 @@ Goals, in priority order:
 | OAuth connect flows, api-key connect, state signing | `routes/integrations/` + engine services | one hardened flow, parameterized by manifest |
 | Discovery job harness, status machine, sweeps | `services/integrations/discovery/` | one lifecycle; providers supply only `discover_resources` |
 | Active-context resolution + fan-out | `services/integrations/context/` | one place that decides what agents operate on |
-| SSE protocol, `ToolActivity` shape, presentation schema | stream/protocol + tool contract | stale-client safety; closed vocabularies |
+| SSE protocol, `ToolActivity` shape, presentation schema, public-result enforcement | stream/protocol + tool contract | stale-client safety; closed vocabularies; bounded transcript evidence |
 
 The presentation field-format vocabulary is closed:
 `text`, `multiline`, `markdown`, `html`, `bytes`, `datetime`, `boolean`,

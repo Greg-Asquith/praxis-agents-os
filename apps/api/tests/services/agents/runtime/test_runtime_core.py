@@ -18,6 +18,7 @@ from pydantic_ai import (
     DeferredToolResults,
     ToolApproved,
     ToolDenied,
+    ToolReturn,
     UsageLimitExceeded,
 )
 from pydantic_ai.messages import (
@@ -75,10 +76,13 @@ from services.agents.runtime.events import (
     EVENT_TOOL_RESULT,
     EventTranslationState,
     emit_agent_stream_event,
+    public_function_tool_result,
 )
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.sinks import CollectingSink, StreamSink
+from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, register_tool_definition
 from services.agents.runtime.worker import run_turn_worker
 from services.completion_contract import ScheduleCompletionContract
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -86,6 +90,81 @@ from tests.factories import build_user, build_workspace, build_workspace_members
 pytestmark = pytest.mark.asyncio
 
 execute_run_module = importlib.import_module("services.agents.runtime.execute_run")
+
+
+async def test_public_function_tool_result_prefers_explicit_public_result() -> None:
+    part = ToolReturnPart(
+        tool_name="test_tool",
+        tool_call_id="call-1",
+        content={"bounded": True},
+        metadata={"public_result": {"rows": [{"id": index} for index in range(500)]}},
+    )
+
+    result = public_function_tool_result(part)
+
+    assert result["rows"][0] == {"id": 0}
+    assert result["rows"][-1] == {"id": 499}
+
+
+async def test_public_result_round_trips_dispatch_stream_and_persistence(
+    db_session: AsyncSession,
+    runtime_context: "RuntimeContext",
+) -> None:
+    tool_name = "test_public_result_round_trip"
+
+    def public_result_tool() -> ToolReturn[dict[str, object]]:
+        return ToolReturn(
+            return_value={"summary": "bounded for model"},
+            metadata={"public_result": {"rows": [{"id": 1}, {"id": 2}]}},
+        )
+
+    register_tool_definition(
+        RuntimeToolDefinition(
+            name=tool_name,
+            function=public_result_tool,
+            description="Return separate model and transcript results in tests.",
+            configurable=False,
+            max_public_result_chars=1_000,
+        )
+    )
+    try:
+        await _configure_agent_tools(
+            db_session,
+            agent_id=runtime_context.agent_id,
+            tool_names=[tool_name],
+            tool_policies={},
+        )
+        sink = CollectingSink(
+            run_id=runtime_context.run_id,
+            conversation_id=runtime_context.conversation_id,
+        )
+
+        await execute_run(
+            db_session,
+            conversation_id=runtime_context.conversation_id,
+            run_id=runtime_context.run_id,
+            user_prompt="Show the public result",
+            sink=sink,
+            model=TestModel(call_tools=[tool_name]),
+        )
+
+        [tool_event] = [event for event in sink.events if event.event == EVENT_TOOL_RESULT]
+        assert tool_event.data["result"] == {"rows": [{"id": 1}, {"id": 2}]}
+        messages = (
+            await db_session.scalars(
+                select(ConversationMessage)
+                .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
+                .order_by(ConversationMessage.sequence)
+            )
+        ).all()
+        [tool_message] = [message for message in messages if message.role == "tool"]
+        [tool_part] = [
+            part for part in tool_message.parts["parts"] if part.get("part_kind") == "tool-return"
+        ]
+        assert tool_part["content"] == {"summary": "bounded for model"}
+        assert tool_part["metadata"]["public_result"] == {"rows": [{"id": 1}, {"id": 2}]}
+    finally:
+        RUNTIME_TOOL_CATALOG.pop(tool_name, None)
 
 
 @dataclass(frozen=True)

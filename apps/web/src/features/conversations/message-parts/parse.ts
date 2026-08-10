@@ -270,13 +270,15 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const approvalMetadata = approvalMetadataForTool(message.metadata, toolCallId)
       const name = stringValue(part["tool_name"]) ?? "tool"
       const toolKind = stringValue(part["tool_kind"])
+      const partMetadata = isRecord(part["metadata"]) ? part["metadata"] : null
+      const publicResult = partMetadata?.["public_result"]
       const activity: ToolActivity = {
         id: toolCallId,
         agentRunId,
         kind: "result",
         status: approvalMetadata?.decision === "denied" ? "denied" : statusFromOutcome(outcome),
         name,
-        result: part["content"],
+        result: publicResult ?? part["content"],
         outcome,
         ...(toolKind ? { toolKind } : {}),
       }

@@ -129,4 +129,27 @@ describe("DataTable", () => {
     expect(html).toContain("text-right")
     expect(html).not.toContain("<code")
   })
+
+  it("paginates large row sets while exporting the complete table", () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      "campaign.id": `campaign-${String(index + 1).padStart(2, "0")}`,
+    }))
+    const html = renderToStaticMarkup(
+      createElement(DataTable, {
+        columns: [ID_COLUMN],
+        pageSize: 25,
+        rows,
+      })
+    )
+    const exported = dataTableExport([ID_COLUMN], rows)
+
+    expect(html).toContain("campaign-01")
+    expect(html).toContain("campaign-25")
+    expect(html).not.toContain("campaign-26")
+    expect(html).toContain("Showing 1-25 of 30")
+    expect(html).toContain("Previous")
+    expect(html).toContain("Next")
+    expect(exported.rows).toHaveLength(30)
+    expect(exported.rows.at(-1)).toEqual(["campaign-30"])
+  })
 })

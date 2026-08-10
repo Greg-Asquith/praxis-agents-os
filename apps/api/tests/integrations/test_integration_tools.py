@@ -49,6 +49,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
         "google_ads_add_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
         "google_ads_list_accounts": ("read", "internal", "auto", False),
         "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
@@ -128,6 +129,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
+        "google_ads_remove_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
     }
@@ -136,6 +138,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     for name in (
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
+        "google_ads_remove_negative_keywords",
         "google_ads_update_campaign_status",
     ):
         spend = definitions[name]
@@ -159,6 +162,20 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     assert keyword_field.format == "records"
     assert [column.key for column in keyword_field.columns] == ["text", "match_type"]
     assert keyword_field.columns[1].options == ("EXACT", "PHRASE", "BROAD")
+    remove = definitions["google_ads_remove_negative_keywords"]
+    assert remove.max_public_result_chars is not None
+    assert definitions["google_ads_add_negative_keywords"].max_public_result_chars == (
+        remove.max_public_result_chars
+    )
+    assert {field.key for field in remove.presentation.arg_fields if field.editable} == {
+        "negative_list",
+        "keywords",
+    }
+    removal_field = next(
+        field for field in remove.presentation.arg_fields if field.key == "keywords"
+    )
+    assert removal_field.format == "records"
+    assert removal_field.columns[1].options == ("EXACT", "PHRASE", "BROAD", "ANY")
 
     denylisted = {
         "account_id",

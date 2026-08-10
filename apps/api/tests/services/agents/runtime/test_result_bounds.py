@@ -2,15 +2,27 @@
 
 """Unit tests for dispatch-level tool-result bounds."""
 
+from uuid import uuid4
+
+import pytest
 from pydantic import BaseModel
 from pydantic_ai import ToolReturn
 
-from services.agents.runtime.dispatch import truncate_result
+from services.agents.runtime.dispatch import (
+    OutputContractError,
+    prepare_public_result,
+    truncate_result,
+)
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from utils.json_safe import REDACTED_VALUE
 
 
 class StructuredOutput(BaseModel):
     content: str
+
+
+class PublicOutput(BaseModel):
+    rows: list[dict[str, str]]
 
 
 def _definition(**overrides) -> RuntimeToolDefinition:
@@ -110,3 +122,36 @@ def test_truncation_is_deterministic() -> None:
 
     assert first == second
     assert first_size == second_size
+
+
+def test_public_result_is_json_safe_redacted_validated_and_measured() -> None:
+    result = ToolReturn(
+        return_value={"rows": []},
+        metadata={"public_result": {"rows": [{"id": uuid4(), "api_token": "must-not-persist"}]}},
+    )
+
+    chars = prepare_public_result(
+        _definition(output_model=PublicOutput, max_public_result_chars=1_000),
+        result,
+    )
+
+    row = result.metadata["public_result"]["rows"][0]
+    assert isinstance(row["id"], str)
+    assert row["api_token"] == REDACTED_VALUE
+    assert chars is not None and chars > 0
+
+
+@pytest.mark.parametrize("max_public_result_chars", [None, 10])
+def test_public_result_requires_an_explicit_sufficient_bound(
+    max_public_result_chars: int | None,
+) -> None:
+    result = ToolReturn(
+        return_value={"rows": []},
+        metadata={"public_result": {"rows": [{"content": "x" * 100}]}},
+    )
+
+    with pytest.raises(OutputContractError):
+        prepare_public_result(
+            _definition(max_public_result_chars=max_public_result_chars),
+            result,
+        )

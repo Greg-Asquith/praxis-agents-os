@@ -14,6 +14,7 @@ import {
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PaginationControls } from "@/components/ui/pagination-controls"
 import {
   Sheet,
   SheetContent,
@@ -46,23 +47,33 @@ export {
 export function DataTable({
   columns,
   exportFilename = "report.csv",
+  pageSize,
   rows,
   showTotals = false,
   truncationNote,
 }: {
   columns: DataColumn[]
   exportFilename?: string
+  pageSize?: number
   rows: DataRow[]
   showTotals?: boolean
   truncationNote?: string | null
 }) {
   const [copied, setCopied] = useState(false)
+  const [pageOffset, setPageOffset] = useState(0)
   const [selectedRow, setSelectedRow] = useState<DataRow | null>(null)
   const exported = useMemo(() => dataTableExport(columns, rows), [columns, rows])
   const totals = useMemo(
     () => (showTotals ? dataTableTotals(columns, rows) : null),
     [columns, rows, showTotals]
   )
+  const effectivePageSize = pageSize && pageSize > 0 ? pageSize : rows.length || 1
+  const maximumOffset = Math.max(
+    0,
+    Math.floor(Math.max(0, rows.length - 1) / effectivePageSize) * effectivePageSize
+  )
+  const effectivePageOffset = Math.min(pageOffset, maximumOffset)
+  const visibleRows = rows.slice(effectivePageOffset, effectivePageOffset + effectivePageSize)
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -119,11 +130,11 @@ export function DataTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row, index) => (
+              {visibleRows.map((row, index) => (
                 <TableRow
-                  aria-label={`Open row ${String(index + 1)} details`}
+                  aria-label={`Open row ${String(effectivePageOffset + index + 1)} details`}
                   className="even:bg-muted/20 cursor-pointer"
-                  key={index}
+                  key={effectivePageOffset + index}
                   onClick={() => {
                     setSelectedRow(row)
                   }}
@@ -167,6 +178,14 @@ export function DataTable({
           <span className="text-warning-foreground max-w-xl">{truncationNote}</span>
         ) : null}
       </div>
+      {pageSize && rows.length > pageSize ? (
+        <PaginationControls
+          limit={pageSize}
+          offset={effectivePageOffset}
+          onPageChange={setPageOffset}
+          total={rows.length}
+        />
+      ) : null}
       <RowDetailSheet
         columns={columns}
         onOpenChange={(open) => {

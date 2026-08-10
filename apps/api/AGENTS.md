@@ -100,6 +100,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
   not execute tool logic around it.
+- Tools that need richer transcript evidence than the model should receive may
+  return `ToolReturn` with the bounded, output-model-validated payload in
+  `return_value` and an explicitly safe `public_result` in metadata. The
+  metadata is persisted and streamed to the application but is never sent to
+  the model. Such tools must declare `max_public_result_chars`; dispatch makes
+  the public value JSON-safe, redacts sensitive-key values, applies the same
+  output model, and enforces that serialized budget. Keep provider-side fields
+  bounded by the tool's product limits and exclude credentials or other
+  application-only metadata at the source.
 - Opaque tool targets use the runtime entity-reference contract. Internal
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and

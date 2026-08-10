@@ -27,19 +27,38 @@ export type NegativeKeywordResult = {
   skippedExisting: NegativeKeyword[]
 }
 
-type MatchType = "BROAD" | "EXACT" | "PHRASE"
+export type NegativeKeywordRemovalResult = {
+  errors: NegativeKeywordError[]
+  failedCount: number
+  notFound: NegativeKeyword[]
+  notFoundCount: number
+  removedCount: number
+  removedKeywords: NegativeKeyword[]
+  samplesTruncated: boolean
+}
+
+export type MatchType = "ANY" | "BROAD" | "EXACT" | "PHRASE"
 
 const COLUMNS: DataColumn[] = [
   { key: "text", kind: "text", label: "Keyword" },
   { key: "matchType", kind: "badge", label: "Match Type" },
   { key: "outcome", kind: "status", label: "Outcome" },
 ]
+const DIAGNOSTIC_COLUMNS: DataColumn[] = [
+  ...COLUMNS,
+  { key: "message", kind: "text", label: "Details" },
+  { key: "errorCode", kind: "badge", label: "Error Code" },
+]
+const TRUNCATION_NOTE =
+  "Showing representative rows. Full applied-change details are available in the audit trail."
 
 export function NegativeKeywordApprovalSummary({
+  includeAny = false,
   listName,
   keywords,
   total = keywords.length,
 }: {
+  includeAny?: boolean
   listName: string
   keywords: NegativeKeyword[]
   total?: number
@@ -53,7 +72,54 @@ export function NegativeKeywordApprovalSummary({
       </p>
       <p className="text-muted-foreground text-xs">
         Exact {String(counts.EXACT)} · Phrase {String(counts.PHRASE)} · Broad {String(counts.BROAD)}
+        {includeAny ? ` · Any ${String(counts.ANY)}` : null}
       </p>
+    </div>
+  )
+}
+
+export function NegativeKeywordRemovalOutcome({
+  result,
+}: {
+  result: NegativeKeywordRemovalResult
+}) {
+  const rows: DataRow[] = [
+    ...result.removedKeywords.map((keyword) => ({
+      matchType: keyword.matchType,
+      outcome: "Success",
+      text: keyword.text,
+    })),
+    ...result.notFound.map((keyword) => ({
+      matchType: keyword.matchType,
+      outcome: "Not found",
+      text: keyword.text,
+    })),
+    ...errorRows(result.errors),
+  ]
+  return (
+    <div className="grid min-w-0 gap-3">
+      <KpiStrip
+        items={[
+          { label: "Removed", tone: "success", value: result.removedCount },
+          {
+            label: "Not found",
+            tone: result.notFoundCount > 0 ? "warning" : "neutral",
+            value: result.notFoundCount,
+          },
+          {
+            label: "Failed",
+            tone: result.failedCount > 0 ? "danger" : "neutral",
+            value: result.failedCount,
+          },
+        ]}
+      />
+      <DataTable
+        columns={result.errors.length > 0 ? DIAGNOSTIC_COLUMNS : COLUMNS}
+        exportFilename="removed-negative-keywords.csv"
+        pageSize={25}
+        rows={rows}
+        truncationNote={result.samplesTruncated ? TRUNCATION_NOTE : null}
+      />
     </div>
   )
 }
@@ -77,21 +143,13 @@ export function NegativeKeywordOutcome({ result }: { result: NegativeKeywordResu
           },
         ]}
       />
-      <DataTable columns={COLUMNS} exportFilename="negative-keywords.csv" rows={rows} />
-      {result.samplesTruncated ? (
-        <p className="text-muted-foreground text-xs">
-          Showing representative rows. Full applied-change details are available in the audit trail.
-        </p>
-      ) : null}
-      {result.errors.length > 0 ? (
-        <div className="grid gap-1">
-          {result.errors.map((error, index) => (
-            <p className="text-destructive text-xs" key={errorKey(error, index)}>
-              {error.scope === "keyword" ? error.text : "Account-level error"}: {error.message}
-            </p>
-          ))}
-        </div>
-      ) : null}
+      <DataTable
+        columns={result.errors.length > 0 ? DIAGNOSTIC_COLUMNS : COLUMNS}
+        exportFilename="negative-keywords.csv"
+        pageSize={25}
+        rows={rows}
+        truncationNote={result.samplesTruncated ? TRUNCATION_NOTE : null}
+      />
     </div>
   )
 }
@@ -108,22 +166,22 @@ function outcomeRows(result: NegativeKeywordResult): DataRow[] {
       outcome: "Already existed",
       text: keyword.text,
     })),
-    ...result.errors.flatMap((error) =>
-      error.scope === "keyword"
-        ? [{ matchType: error.matchType, outcome: "Failed", text: error.text }]
-        : []
-    ),
+    ...errorRows(result.errors),
   ]
 }
 
-function errorKey(error: NegativeKeywordError, index: number): string {
-  return error.scope === "keyword"
-    ? `${error.text}:${error.matchType}:${String(index)}`
-    : `account:${error.errorCode}:${String(index)}`
+function errorRows(errors: NegativeKeywordError[]): DataRow[] {
+  return errors.map((error) => ({
+    errorCode: error.errorCode,
+    matchType: error.scope === "keyword" ? error.matchType : "—",
+    message: error.message,
+    outcome: "Failed",
+    text: error.scope === "keyword" ? error.text : "Account-level error",
+  }))
 }
 
 function matchTypeCounts(keywords: NegativeKeyword[]): Record<MatchType, number> {
-  const counts: Record<MatchType, number> = { BROAD: 0, EXACT: 0, PHRASE: 0 }
+  const counts: Record<MatchType, number> = { ANY: 0, BROAD: 0, EXACT: 0, PHRASE: 0 }
   for (const keyword of keywords) {
     counts[keyword.matchType] += 1
   }

@@ -205,6 +205,8 @@ class RuntimeToolDefinition:
     """Declared output contract, enforced by the tool dispatch layer."""
     max_result_chars: int | None = None
     """Optional free-text result bound overriding the runtime default."""
+    max_public_result_chars: int | None = None
+    """Maximum serialized characters allowed in explicit transcript-only output."""
     configurable: bool = True
     auto_mount: bool = False
     always_allowed_when_mounted: bool = False
@@ -295,6 +297,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool egress must be a known classification")
     if definition.max_result_chars is not None and definition.max_result_chars < 1:
         raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
+    if definition.max_public_result_chars is not None and definition.max_public_result_chars < 1:
+        raise RuntimeError("Runtime tool max_public_result_chars must be greater than zero")
     if (
         definition.effect == TOOL_EFFECT_READ
         and definition.effect_scope != TOOL_EFFECT_SCOPE_INTERNAL
