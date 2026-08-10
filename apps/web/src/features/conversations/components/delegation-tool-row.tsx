@@ -9,7 +9,7 @@ import {
 } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { resolveToolField, type ResolvedToolField } from "@/components/tool-ui/field-resolution"
-import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import { fieldLabelClass, readOnlyFieldWellClass } from "@/components/tool-ui/field-styles"
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
@@ -283,8 +283,7 @@ function DelegationField({ field }: { field: ResolvedToolField | null }) {
       <p className={fieldLabelClass}>{field.label}</p>
       <div
         className={cn(
-          fieldWellClass,
-          "bg-muted/20",
+          readOnlyFieldWellClass,
           field.format === "markdown" ? "whitespace-normal" : "whitespace-pre-wrap"
         )}
       >

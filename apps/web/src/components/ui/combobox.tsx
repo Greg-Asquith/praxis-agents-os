@@ -54,7 +54,7 @@ function ComboboxContent({ className, children, ...props }: ComboboxPrimitive.Po
       <ComboboxPrimitive.Positioner align="start" className="isolate z-50" sideOffset={4}>
         <ComboboxPrimitive.Popup
           className={cn(
-            "bg-popover text-popover-foreground ring-foreground/10 max-h-72 w-(--anchor-width) min-w-64 overflow-y-auto rounded-lg p-1.5 shadow-md ring-1 outline-none",
+            "bg-popover text-popover-foreground ring-border max-h-72 w-(--anchor-width) min-w-64 overflow-y-auto rounded-lg p-1.5 shadow-md ring-1 outline-none",
             className
           )}
           data-slot="combobox-content"

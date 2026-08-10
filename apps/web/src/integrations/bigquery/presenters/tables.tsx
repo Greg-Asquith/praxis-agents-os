@@ -17,7 +17,7 @@ export const bigQueryTablesPresenter: ToolRowPresenter = {
         <section
           aria-busy="true"
           aria-label="Listing BigQuery tables"
-          className="border-border/70 grid gap-3 rounded-lg border p-3"
+          className="border-border grid gap-3 rounded-lg border p-3"
         >
           <BigQueryToolHeading>List BigQuery Tables</BigQueryToolHeading>
           <Skeleton className="h-12 w-full" />

@@ -101,7 +101,7 @@ export function DataChart({ spec }: { spec: ChartSpec }) {
         </Button>
       </div>
       <div
-        className="bg-card border-border/70 min-w-0 overflow-hidden rounded-lg border p-2"
+        className="bg-card border-border min-w-0 overflow-hidden rounded-lg border p-2"
         data-chart-surface
         ref={surfaceRef}
         style={{
@@ -134,7 +134,7 @@ function renderChart(spec: ChartSpec, width: number, height: number) {
         <CartesianGrid
           horizontal
           stroke={spec.options.theme.grid_color ?? "var(--border)"}
-          strokeOpacity={0.6}
+          strokeDasharray="4 4"
           vertical={false}
         />
       ) : null}
@@ -230,7 +230,7 @@ function renderChart(spec: ChartSpec, width: number, height: number) {
             dataKey={item.data_key}
             dot={item.show_points ? { r: 4 } : false}
             fill={item.color}
-            fillOpacity={0.18}
+            fillOpacity={0.1}
             isAnimationActive={false}
             key={item.data_key}
             name={item.label}
@@ -312,7 +312,7 @@ function ComposedSeries({ item }: { item: RenderSeries }) {
         dataKey={item.data_key}
         dot={item.show_points ? { r: 4 } : false}
         fill={item.color}
-        fillOpacity={0.18}
+        fillOpacity={0.1}
         isAnimationActive={false}
         name={item.label}
         {...(item.stack_id ? { stackId: item.stack_id } : {})}
@@ -588,7 +588,7 @@ function tickStyle(spec: ChartSpec, angle = 0, orientation?: "left" | "right") {
 }
 
 function axisLine(spec: ChartSpec) {
-  return { stroke: spec.options.theme.grid_color ?? "var(--border)" }
+  return spec.options.theme.grid_color ? { stroke: spec.options.theme.grid_color } : false
 }
 
 function chartMargin(spec: ChartSpec) {

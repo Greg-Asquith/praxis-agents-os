@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/components/negative-keyword-outcome.tsx
 
-import { KpiStrip } from "@/components/tool-ui/kpi"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
+import { Stat, StatGroup } from "@/components/ui/stat"
 
 export type NegativeKeyword = {
   matchType: MatchType
@@ -65,7 +65,7 @@ export function NegativeKeywordApprovalSummary({
 }) {
   const counts = matchTypeCounts(keywords)
   return (
-    <div className="bg-muted/20 grid gap-2 rounded-lg border px-3 py-2.5">
+    <div className="bg-muted/50 grid gap-2 rounded-lg px-3 py-2.5">
       <p className="text-sm font-medium">
         {String(total)} {total === 1 ? "keyword" : "keywords"}
         <span className="text-muted-foreground"> · {listName}</span>
@@ -98,24 +98,28 @@ export function NegativeKeywordRemovalOutcome({
   ]
   return (
     <div className="grid min-w-0 gap-3">
-      <KpiStrip
-        items={[
-          { label: "Removed", tone: "success", value: result.removedCount },
-          {
-            label: "Not found",
-            tone: result.notFoundCount > 0 ? "warning" : "neutral",
-            value: result.notFoundCount,
-          },
-          {
-            label: "Failed",
-            tone: result.failedCount > 0 ? "danger" : "neutral",
-            value: result.failedCount,
-          },
-        ]}
-      />
       <DataTable
         columns={result.errors.length > 0 ? DIAGNOSTIC_COLUMNS : COLUMNS}
         exportFilename="removed-negative-keywords.csv"
+        header={
+          <StatGroup className="px-3 pt-2">
+            <Stat
+              label="Removed"
+              tone={result.removedCount > 0 ? "success" : undefined}
+              value={result.removedCount}
+            />
+            <Stat
+              label="Not found"
+              tone={result.notFoundCount > 0 ? "warning" : undefined}
+              value={result.notFoundCount}
+            />
+            <Stat
+              label="Failed"
+              tone={result.failedCount > 0 ? "danger" : undefined}
+              value={result.failedCount}
+            />
+          </StatGroup>
+        }
         pageSize={25}
         rows={rows}
         truncationNote={result.samplesTruncated ? TRUNCATION_NOTE : null}
@@ -128,24 +132,28 @@ export function NegativeKeywordOutcome({ result }: { result: NegativeKeywordResu
   const rows = outcomeRows(result)
   return (
     <div className="grid min-w-0 gap-3">
-      <KpiStrip
-        items={[
-          { label: "Added", tone: "success", value: result.addedCount },
-          {
-            label: "Already existed",
-            tone: result.skippedCount > 0 ? "warning" : "neutral",
-            value: result.skippedCount,
-          },
-          {
-            label: "Failed",
-            tone: result.failedCount > 0 ? "danger" : "neutral",
-            value: result.failedCount,
-          },
-        ]}
-      />
       <DataTable
         columns={result.errors.length > 0 ? DIAGNOSTIC_COLUMNS : COLUMNS}
         exportFilename="negative-keywords.csv"
+        header={
+          <StatGroup className="px-3 pt-2">
+            <Stat
+              label="Added"
+              tone={result.addedCount > 0 ? "success" : undefined}
+              value={result.addedCount}
+            />
+            <Stat
+              label="Already existed"
+              tone={result.skippedCount > 0 ? "warning" : undefined}
+              value={result.skippedCount}
+            />
+            <Stat
+              label="Failed"
+              tone={result.failedCount > 0 ? "danger" : undefined}
+              value={result.failedCount}
+            />
+          </StatGroup>
+        }
         pageSize={25}
         rows={rows}
         truncationNote={result.samplesTruncated ? TRUNCATION_NOTE : null}

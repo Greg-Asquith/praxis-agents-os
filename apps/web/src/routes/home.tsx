@@ -8,6 +8,7 @@ import { useConversationsQuery } from "@/features/conversations/api/list-convers
 import { sortConversations } from "@/features/conversations/sort"
 import { AgentLauncher } from "@/features/home/components/agent-launcher"
 import { ApprovalsInbox } from "@/features/home/components/approvals-inbox"
+import { HomeStats } from "@/features/home/components/home-stats"
 import { RecentConversations } from "@/features/home/components/recent-conversations"
 import { ScheduleAttention } from "@/features/home/components/schedule-attention"
 import { UnreadResults } from "@/features/home/components/unread-results"
@@ -26,7 +27,11 @@ export function HomeRoute() {
     <div className="flex flex-col gap-6">
       <PageHeader
         actions={
-          <Button variant="outline" render={<Link to="/conversations/new" />}>
+          <Button
+            variant="outline"
+            className={`rounded-sm`}
+            render={<Link to="/conversations/new" />}
+          >
             <MessageSquarePlusIcon data-icon="inline-start" />
             New Conversation
           </Button>
@@ -35,7 +40,8 @@ export function HomeRoute() {
         title="Home"
       />
 
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="divide-border flex min-w-0 flex-col divide-y [&>*]:py-7 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+        <HomeStats conversations={conversations} />
         {hasHistory ? null : <AgentLauncher />}
         <ApprovalsInbox />
         <ScheduleAttention />

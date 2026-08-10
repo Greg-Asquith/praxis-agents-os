@@ -64,7 +64,7 @@ export function RecordsFieldInput({
       className="border-input min-w-0 overflow-hidden rounded-lg border"
       role="group"
     >
-      <div className="bg-muted/30 flex items-center justify-between gap-3 border-b px-2.5 py-1.5">
+      <div className="flex items-center justify-between gap-3 border-b px-2.5 py-1.5">
         <span className="text-muted-foreground text-xs font-medium">
           {String(value.length)} {value.length === 1 ? "row" : "rows"}
         </span>
@@ -81,17 +81,14 @@ export function RecordsFieldInput({
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
-          <thead className="bg-muted/50 text-muted-foreground sticky top-0 z-10">
+          <thead className="bg-card text-muted-foreground sticky top-0 z-10">
             <tr>
               {columns.map((column) => (
-                <th
-                  className="border-border/60 border-b px-2.5 py-1.5 font-medium"
-                  key={column.key}
-                >
+                <th className="border-border border-b px-2.5 py-1.5 font-medium" key={column.key}>
                   {column.label}
                 </th>
               ))}
-              <th className="border-border/60 w-9 border-b px-1.5 py-1.5">
+              <th className="border-border w-9 border-b px-1.5 py-1.5">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
@@ -100,7 +97,7 @@ export function RecordsFieldInput({
             {rows.map(({ key, row, rowIndex }) => (
               <tr className="[&:not(:last-child)>td]:border-b" key={key}>
                 {columns.map((column) => (
-                  <td className="border-border/60 min-w-40 px-2.5 py-2" key={column.key}>
+                  <td className="border-border min-w-40 px-2.5 py-2" key={column.key}>
                     <RecordCellInput
                       column={column}
                       disabled={disabled}
@@ -112,7 +109,7 @@ export function RecordsFieldInput({
                     />
                   </td>
                 ))}
-                <td className="border-border/60 px-1.5 py-2 text-right">
+                <td className="border-border px-1.5 py-2 text-right">
                   <Button
                     aria-label={`Remove row ${String(rowIndex + 1)}`}
                     disabled={disabled}

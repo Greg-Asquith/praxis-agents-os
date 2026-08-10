@@ -1,7 +1,7 @@
 // apps/web/src/features/home/components/approvals-inbox.tsx
 
 import { Link } from "@tanstack/react-router"
-import { CheckIcon, Clock3Icon, ShieldCheckIcon } from "lucide-react"
+import { CheckIcon, Clock3Icon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { usePendingApprovalsQuery } from "@/features/conversations/api/list-pending-approvals"
@@ -15,7 +15,6 @@ export function ApprovalsInbox() {
   return (
     <HomeSection
       description="Runs paused until you review their next action."
-      icon={<ShieldCheckIcon aria-hidden="true" className="size-4" />}
       title="Waiting for Approval"
     >
       {data.items.length === 0 ? (
@@ -59,7 +58,7 @@ export function ApprovalsInbox() {
             </Link>
           ))}
           {remaining > 0 ? (
-            <p className="text-muted-foreground border-t px-3 pt-2 pb-1 text-xs">
+            <p className="text-muted-foreground px-3 pt-2 pb-1 text-xs">
               and {String(remaining)} more
             </p>
           ) : null}

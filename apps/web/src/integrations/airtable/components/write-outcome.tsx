@@ -36,11 +36,7 @@ export function AirtableWriteFailure({
   return (
     <div className="grid min-w-0 gap-3">
       <p className="text-destructive text-sm">{description}</p>
-      {fields ? (
-        <div className="border-border/70 overflow-hidden rounded-lg border">
-          <AirtableFieldGrid fields={fields} />
-        </div>
-      ) : null}
+      {fields ? <AirtableFieldGrid fields={fields} /> : null}
     </div>
   )
 }

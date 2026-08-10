@@ -385,7 +385,7 @@ function FileContentBlock({
   value: string
 }) {
   return (
-    <div className="border-border/70 overflow-hidden rounded-lg border">
+    <div className="border-border overflow-hidden rounded-lg border">
       <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Content</p>
       <FileContentView content={value} mediaType={mediaType ?? null} name={name ?? null} />
     </div>

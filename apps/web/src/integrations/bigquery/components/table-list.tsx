@@ -24,7 +24,7 @@ export function BigQueryTableList({ datasets }: { datasets: BigQueryDataset[] })
             </Badge>
           </div>
           {dataset.tables.length > 0 ? (
-            <div className="border-border/70 divide-border/70 divide-y overflow-hidden rounded-lg border">
+            <div className="divide-border divide-y">
               {dataset.tables.map((table) => (
                 <div
                   className="hover:bg-muted/25 flex min-w-0 flex-wrap items-start gap-2 px-3 py-2.5"
@@ -53,7 +53,7 @@ export function BigQueryTableList({ datasets }: { datasets: BigQueryDataset[] })
               ))}
             </div>
           ) : (
-            <p className="border-border/70 text-muted-foreground rounded-lg border border-dashed px-3 py-4 text-center text-sm">
+            <p className="border-border text-muted-foreground rounded-lg border border-dashed px-3 py-4 text-center text-sm">
               No cached tables in this dataset.
             </p>
           )}

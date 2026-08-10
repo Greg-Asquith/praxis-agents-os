@@ -4,7 +4,7 @@ import { CalendarClockIcon } from "lucide-react"
 
 import { ExternalContent } from "@/components/tool-ui/external-content"
 import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
-import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import { fieldLabelClass, readOnlyFieldWellClass } from "@/components/tool-ui/field-styles"
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
 import { isUntrustedNode, nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
@@ -28,11 +28,11 @@ export function AirtableRecordList({ records }: { records: AirtableRecord[] }) {
       {records.map((record) => (
         <article
           aria-label={`Airtable record ${record.recordId}`}
-          className="border-border/70 min-w-0 overflow-hidden rounded-lg border"
+          className="border-border min-w-0 overflow-hidden rounded-lg border"
           key={record.recordId}
           role="listitem"
         >
-          <header className="bg-muted/25 flex min-w-0 flex-wrap items-center gap-2 border-b px-3 py-2">
+          <header className="flex min-w-0 flex-wrap items-center gap-2 border-b px-3 py-2">
             <code className="min-w-0 flex-1 truncate text-xs">{record.recordId}</code>
             {record.createdTime ? (
               <Badge variant="outline">
@@ -54,7 +54,7 @@ export function AirtableFieldGrid({ fields }: { fields: Record<string, unknown> 
     return <p className="text-muted-foreground p-3 text-sm">No field values were returned.</p>
   }
   return (
-    <dl className="divide-border/60 grid min-w-0 divide-y">
+    <dl className="divide-border grid min-w-0 divide-y">
       {entries.map(([label, value]) => (
         <div
           className="grid min-w-0 gap-1.5 px-3 py-2.5 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)] sm:gap-4"
@@ -85,7 +85,7 @@ function AirtableFieldValue({ label, value }: { label: string; value: unknown })
   const field = format ? resolveToolField({ format, key: label, label }, value) : null
   if (field) {
     return (
-      <div className={cn(fieldWellClass, "border-input bg-muted/25 wrap-break-word")}>
+      <div className={cn(readOnlyFieldWellClass, "wrap-break-word")}>
         <ToolFieldValue field={field} />
       </div>
     )

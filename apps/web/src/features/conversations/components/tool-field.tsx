@@ -2,7 +2,7 @@
 
 import { useId, type ReactNode } from "react"
 
-import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import { fieldLabelClass, readOnlyFieldWellClass } from "@/components/tool-ui/field-styles"
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
 import { MarkdownContent } from "@/components/markdown/markdown-content"
 import type { ResolvedToolField } from "@/features/conversations/tool-ui"
@@ -26,8 +26,14 @@ export function ToolField({
 }) {
   const labelId = useId()
   const hasCustomContent = children !== undefined
+  // Records render their own bordered surface, so they skip the well fill.
+  const rendersOwnSurface =
+    field.format === "records" && field.records !== undefined && field.records.length > 0
   const spansFullWidth =
-    hasCustomContent || FULL_WIDTH_FORMATS.has(field.format) || field.value.length > 120
+    hasCustomContent ||
+    rendersOwnSurface ||
+    FULL_WIDTH_FORMATS.has(field.format) ||
+    field.value.length > 120
   const scrolls =
     field.format === "markdown" || field.format === "multiline" || field.value.length > 120
 
@@ -39,10 +45,14 @@ export function ToolField({
       <div
         aria-labelledby={labelId}
         className={cn(
-          fieldWellClass,
-          "border-input bg-muted/40 text-foreground",
-          scrolls && "max-h-80 overflow-auto",
-          field.format !== "markdown" && "wrap-break-word whitespace-pre-wrap"
+          rendersOwnSurface
+            ? "min-w-0"
+            : [
+                readOnlyFieldWellClass,
+                "text-foreground",
+                scrolls && "max-h-80 overflow-auto",
+                field.format !== "markdown" && "wrap-break-word whitespace-pre-wrap",
+              ]
         )}
         data-slot="tool-field-well"
       >

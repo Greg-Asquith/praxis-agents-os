@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { MessageSquarePlusIcon, MessageSquareTextIcon, ShieldAlertIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { microLabelClass } from "@/components/ui/stat"
 import { conversationAgentLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
 import { formatCompactDate, formatDateTime } from "@/lib/format"
@@ -20,10 +21,7 @@ export function SidebarConversations({ conversations, pathname }: SidebarConvers
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2" aria-labelledby="sidebar-conversations">
       <div className="flex shrink-0 items-center justify-between gap-2 px-1">
-        <h2
-          id="sidebar-conversations"
-          className="text-muted-foreground text-xs font-medium tracking-normal"
-        >
+        <h2 id="sidebar-conversations" className={microLabelClass}>
           Conversations
         </h2>
         <Button
@@ -72,13 +70,13 @@ function ConversationRow({
       to="/conversations/$conversationId"
       params={{ conversationId: conversation.id }}
       className={cn(
-        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex min-w-0 items-start gap-2 rounded-sm px-2 py-2 text-left transition-colors",
         isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
       )}
     >
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          <span className="min-w-0 flex-1 truncate text-sm">
             {conversation.title ?? "Untitled conversation"}
           </span>
           <span className="flex shrink-0 items-center gap-1">
@@ -99,7 +97,7 @@ function ConversationRow({
             {conversationAgentLabel(conversation)}
           </span>
           <span
-            className="text-muted-foreground shrink-0 text-[0.7rem] leading-4 whitespace-nowrap"
+            className="text-muted-foreground shrink-0 text-xs whitespace-nowrap"
             title={formatDateTime(lastActivityAt)}
           >
             {formatCompactDate(lastActivityAt)}

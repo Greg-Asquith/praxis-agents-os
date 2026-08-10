@@ -13,17 +13,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Separator } from "@/components/ui/separator"
 import type { AuthUser } from "@/features/auth/types"
 import { initials } from "@/lib/format"
 
 export function SidebarFooter({ onSignOut, user }: { onSignOut: () => void; user: AuthUser }) {
   return (
-    <div className="shrink-0">
-      <Separator />
-      <div className="p-1">
-        <UserMenu user={user} onSignOut={onSignOut} />
-      </div>
+    <div className="shrink-0 p-2">
+      <UserMenu user={user} onSignOut={onSignOut} />
     </div>
   )
 }

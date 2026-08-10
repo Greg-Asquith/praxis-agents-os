@@ -32,7 +32,7 @@ export function ScheduleIntervalFields({
               className={cn(
                 "focus-visible:ring-ring/50 min-h-16 rounded-md border px-3 py-2 text-sm transition-colors focus-visible:ring-3 focus-visible:outline-none",
                 String(minutes) === intervalMinutes
-                  ? "border-foreground/30 bg-muted text-foreground"
+                  ? "border-border bg-muted text-foreground"
                   : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               )}
               key={minutes}

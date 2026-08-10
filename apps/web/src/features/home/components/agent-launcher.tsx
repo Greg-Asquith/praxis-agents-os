@@ -1,7 +1,7 @@
 // apps/web/src/features/home/components/agent-launcher.tsx
 
 import { Link } from "@tanstack/react-router"
-import { ArrowRightIcon, BotIcon } from "lucide-react"
+import { ArrowRightIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
@@ -43,7 +43,6 @@ export function AgentLauncher() {
         </Button>
       }
       description="Choose an agent and tell it what you need."
-      icon={<BotIcon aria-hidden="true" className="size-4" />}
       title="Start with an Agent"
     >
       <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-4">

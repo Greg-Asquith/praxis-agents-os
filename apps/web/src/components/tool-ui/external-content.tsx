@@ -27,7 +27,7 @@ export function ExternalContent({
   return (
     <section
       aria-label={label}
-      className="border-border/80 bg-muted/35 min-w-0 rounded-lg border px-3 py-2.5"
+      className="border-border bg-muted/35 min-w-0 rounded-lg border px-3 py-2.5"
       data-slot="external-content"
     >
       <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">

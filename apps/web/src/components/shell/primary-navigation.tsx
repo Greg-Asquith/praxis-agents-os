@@ -27,8 +27,8 @@ export function PrimaryNavigation({
             <span
               key={item.label}
               className={cn(
-                "text-muted-foreground flex items-center gap-2 rounded-lg px-2 text-sm opacity-60",
-                density === "comfortable" ? "h-11" : "h-8"
+                "text-muted-foreground flex items-center gap-2.5 rounded-sm px-2.5 text-sm opacity-60",
+                density === "comfortable" ? "h-11" : "h-9"
               )}
             >
               <Icon className="size-4" />
@@ -44,12 +44,17 @@ export function PrimaryNavigation({
             key={item.label}
             to={item.to}
             className={cn(
-              "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex items-center gap-2 rounded-lg px-2 text-sm transition-colors",
-              density === "comfortable" ? "h-11" : "h-8",
+              "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex items-center gap-2.5 rounded-sm px-2.5 text-sm transition-colors",
+              density === "comfortable" ? "h-11" : "h-9",
               isActive && "bg-sidebar-accent text-sidebar-accent-foreground"
             )}
           >
-            <Icon className="size-4" />
+            <Icon
+              className={cn(
+                "text-muted-foreground size-4",
+                isActive && "text-sidebar-accent-foreground"
+              )}
+            />
             {item.label}
           </Link>
         )

@@ -4,6 +4,7 @@ import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import { microLabelClass } from "@/components/ui/stat"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import { AirtableLogo } from "@/integrations/airtable/components/logo"
 import { isAirtableJson } from "@/integrations/airtable/lib/record-data"
@@ -66,8 +67,8 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
             title={`Review Airtable record ${config.action}`}
             toolName={activity.name}
           >
-            <div className="border-border/70 overflow-hidden rounded-lg border">
-              <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Fields to write</p>
+            <div className="grid min-w-0 gap-1">
+              <p className={microLabelClass}>Fields to write</p>
               <AirtableFieldGrid fields={args.fields} />
             </div>
           </ToolApprovalDecisionCard>

@@ -17,7 +17,11 @@ import type {
   EditedValues,
 } from "@/components/tool-ui/edited-values"
 import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
-import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import {
+  fieldLabelClass,
+  fieldWellClass,
+  readOnlyFieldWellClass,
+} from "@/components/tool-ui/field-styles"
 import { HtmlFieldInput } from "@/components/tool-ui/html-field-input"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
 import { ListFieldInput } from "@/components/tool-ui/list-field-input"
@@ -382,7 +386,7 @@ function UnavailableEntityField({
   return (
     <Field className={cn("gap-1", fieldSpanClass(field.format))} data-disabled>
       <FieldLabel className={fieldLabelClass}>{field.label}</FieldLabel>
-      <div className={cn(fieldWellClass, "text-muted-foreground flex items-center")}>
+      <div className={cn(readOnlyFieldWellClass, "text-muted-foreground flex items-center")}>
         Target unavailable
       </div>
       <p className="text-destructive text-xs">

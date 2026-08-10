@@ -1,6 +1,6 @@
 // apps/web/src/components/ui/data-table.tsx
 
-import { useMemo, useState, type KeyboardEvent } from "react"
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react"
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
@@ -47,6 +47,7 @@ export {
 export function DataTable({
   columns,
   exportFilename = "report.csv",
+  header,
   pageSize,
   rows,
   showTotals = false,
@@ -54,6 +55,7 @@ export function DataTable({
 }: {
   columns: DataColumn[]
   exportFilename?: string
+  header?: ReactNode
   pageSize?: number
   rows: DataRow[]
   showTotals?: boolean
@@ -77,31 +79,34 @@ export function DataTable({
 
   return (
     <div className="grid min-w-0 gap-2">
-      <div className="flex items-center justify-end gap-1">
-        <Button
-          aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
-          onClick={() => {
-            void copyTable(tableToTsv(exported), setCopied)
-          }}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-        </Button>
-        <Button
-          aria-label="Download Report CSV"
-          onClick={() => {
-            downloadTableCsv(exported, exportFilename)
-          }}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <DownloadIcon />
-        </Button>
+      <div className={cn("flex gap-3", header ? "items-end justify-between" : "justify-end")}>
+        {header ? <div className="min-w-0 flex-1">{header}</div> : null}
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
+            onClick={() => {
+              void copyTable(tableToTsv(exported), setCopied)
+            }}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </Button>
+          <Button
+            aria-label="Download Report CSV"
+            onClick={() => {
+              downloadTableCsv(exported, exportFilename)
+            }}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <DownloadIcon />
+          </Button>
+        </div>
       </div>
-      <div className="border-border/70 min-w-0 overflow-hidden rounded-lg border">
+      <div className="min-w-0">
         <TooltipProvider>
           <Table className="table-fixed" style={{ minWidth: tableMinWidth(columns) }}>
             <colgroup>
@@ -109,7 +114,7 @@ export function DataTable({
                 <col key={column.key} style={{ width: columnWidth(column) }} />
               ))}
             </colgroup>
-            <TableHeader className="bg-muted/55">
+            <TableHeader>
               <TableRow>
                 {columns.map((column) => (
                   <TableHead className={columnClass(column)} key={column.key}>
@@ -133,7 +138,7 @@ export function DataTable({
               {visibleRows.map((row, index) => (
                 <TableRow
                   aria-label={`Open row ${String(effectivePageOffset + index + 1)} details`}
-                  className="even:bg-muted/20 cursor-pointer"
+                  className="cursor-pointer"
                   key={effectivePageOffset + index}
                   onClick={() => {
                     setSelectedRow(row)

@@ -63,7 +63,7 @@ export function ToolFieldValue({
 
   if (field.format === "keyvalue" && field.entries && field.entries.length > 0) {
     return (
-      <dl className="divide-border/60 -mx-2.5 -my-1 divide-y">
+      <dl className="divide-border -mx-2.5 -my-1 divide-y">
         {field.entries.map((entry) => (
           <div
             className="grid min-w-0 gap-1 px-2.5 py-2 sm:grid-cols-[minmax(7rem,0.4fr)_minmax(0,1fr)] sm:gap-3"
@@ -84,35 +84,37 @@ export function ToolFieldValue({
     const columns = field.records[0]?.cells ?? []
     const rows = keyedResolvedRows(field.records)
     return (
-      <div className="-mx-2.5 -my-1 max-h-80 overflow-auto">
-        <div className="text-muted-foreground border-border/60 border-b px-2.5 py-1.5 text-xs font-medium">
+      <div className="border-input min-w-0 overflow-hidden rounded-lg border">
+        <div className="text-muted-foreground border-border border-b px-2.5 py-1.5 text-xs font-medium">
           {field.value}
         </div>
-        <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
-          <thead className="bg-muted/80 text-muted-foreground sticky top-0">
-            <tr>
-              {columns.map((cell) => (
-                <th className="border-border/60 border-b px-2.5 py-1.5 font-medium" key={cell.key}>
-                  {cell.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ key, row }) => (
-              <tr className="[&:not(:last-child)>td]:border-b" key={key}>
-                {row.cells.map((cell) => (
-                  <td
-                    className="border-border/60 min-w-32 px-2.5 py-2 wrap-break-word"
-                    key={cell.key}
-                  >
-                    {cell.value}
-                  </td>
+        <div className="max-h-80 overflow-auto">
+          <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
+            <thead className="bg-card text-muted-foreground sticky top-0">
+              <tr>
+                {columns.map((cell) => (
+                  <th className="border-border border-b px-2.5 py-1.5 font-medium" key={cell.key}>
+                    {cell.label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map(({ key, row }) => (
+                <tr className="[&:not(:last-child)>td]:border-b" key={key}>
+                  {row.cells.map((cell) => (
+                    <td
+                      className="border-border min-w-32 px-2.5 py-2 wrap-break-word"
+                      key={cell.key}
+                    >
+                      {cell.value}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     )
   }

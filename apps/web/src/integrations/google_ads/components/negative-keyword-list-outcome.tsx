@@ -3,8 +3,8 @@
 import type { ReactNode } from "react"
 import { AlertCircleIcon, CircleCheckIcon, CircleMinusIcon } from "lucide-react"
 
-import { KpiStrip } from "@/components/tool-ui/kpi"
 import { Badge } from "@/components/ui/badge"
+import { Stat, StatGroup } from "@/components/ui/stat"
 import { titleCaseToken } from "@/lib/format"
 
 export type NegativeKeywordListError = {
@@ -22,17 +22,19 @@ export type NegativeKeywordListResult = {
 export function NegativeKeywordListOutcome({ result }: { result: NegativeKeywordListResult }) {
   return (
     <div className="grid min-w-0 gap-3">
-      <KpiStrip
-        items={[
-          { label: "Created", tone: "success", value: result.createdNames.length },
-          { label: "Already existed", tone: "neutral", value: result.skippedNames.length },
-          {
-            label: "Failed",
-            tone: result.errors.length > 0 ? "danger" : "neutral",
-            value: result.errors.length,
-          },
-        ]}
-      />
+      <StatGroup className="px-3 pt-2">
+        <Stat
+          label="Created"
+          tone={result.createdNames.length > 0 ? "success" : undefined}
+          value={result.createdNames.length}
+        />
+        <Stat label="Already existed" value={result.skippedNames.length} />
+        <Stat
+          label="Failed"
+          tone={result.errors.length > 0 ? "danger" : undefined}
+          value={result.errors.length}
+        />
+      </StatGroup>
       <div className="grid gap-1" role="list">
         {result.createdNames.map((name) => (
           <OutcomeRow

@@ -15,7 +15,7 @@ export function SchedulePreviewPanel({ preview }: { preview: SchedulePreviewView
     <div className="bg-card flex flex-col gap-4 rounded-md border p-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="font-heading flex items-center gap-2 text-lg font-semibold tracking-normal">
+          <h2 className="font-heading flex items-center gap-2 text-lg font-medium tracking-normal">
             <ListChecksIcon className="size-4" />
             Run-time preview
           </h2>
