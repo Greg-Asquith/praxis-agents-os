@@ -175,10 +175,12 @@ async def emit_agent_stream_event(
 
 def public_function_tool_result(part: ToolReturnPart | RetryPromptPart) -> Any:
     """Return a stream-safe tool result without multimodal transport bytes."""
-    if isinstance(part, ToolReturnPart) and isinstance(part.metadata, dict):
-        public_result = part.metadata.get("public_result")
-        if public_result is not None:
-            return to_jsonable_python(public_result)
+    if (
+        isinstance(part, ToolReturnPart)
+        and isinstance(part.metadata, dict)
+        and "public_result" in part.metadata
+    ):
+        return to_jsonable_python(part.metadata["public_result"])
     if isinstance(part, ToolReturnPart) and part.files:
         return part.model_response_object()
     return to_jsonable_python(part.content)

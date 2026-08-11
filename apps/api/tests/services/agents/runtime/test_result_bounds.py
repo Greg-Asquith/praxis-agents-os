@@ -141,6 +141,36 @@ def test_public_result_is_json_safe_redacted_validated_and_measured() -> None:
     assert chars is not None and chars > 0
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"public_result": None}, id="null"),
+        pytest.param({"public_result": False}, id="false"),
+        pytest.param({"public_result": 0}, id="zero"),
+        pytest.param({"public_result": ""}, id="empty-string"),
+        pytest.param({"public_result": {"rows": []}}, id="object"),
+        pytest.param({"public_result": []}, id="list"),
+    ],
+)
+def test_public_result_validation_honors_key_presence(metadata: dict[str, object]) -> None:
+    result = ToolReturn(return_value={"model_only": "must-not-leak"}, metadata=metadata.copy())
+
+    chars = prepare_public_result(
+        _definition(max_public_result_chars=1_000),
+        result,
+    )
+
+    if "public_result" not in metadata:
+        assert chars is None
+        assert "public_result" not in result.metadata
+    else:
+        assert chars is not None
+        assert "public_result" in result.metadata
+        assert result.metadata["public_result"] == metadata["public_result"]
+        assert type(result.metadata["public_result"]) is type(metadata["public_result"])
+
+
 @pytest.mark.parametrize("max_public_result_chars", [None, 10])
 def test_public_result_requires_an_explicit_sufficient_bound(
     max_public_result_chars: int | None,

@@ -91,31 +91,54 @@ pytestmark = pytest.mark.asyncio
 
 execute_run_module = importlib.import_module("services.agents.runtime.execute_run")
 
+PUBLIC_RESULT_PRESENCE_CASES = [
+    pytest.param({}, {"model_only": "must-not-leak"}, id="absent"),
+    pytest.param({"public_result": None}, None, id="null"),
+    pytest.param({"public_result": False}, False, id="false"),
+    pytest.param({"public_result": 0}, 0, id="zero"),
+    pytest.param({"public_result": ""}, "", id="empty-string"),
+    pytest.param({"public_result": {"rows": []}}, {"rows": []}, id="object"),
+    pytest.param({"public_result": []}, [], id="list"),
+]
 
-async def test_public_function_tool_result_prefers_explicit_public_result() -> None:
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    PUBLIC_RESULT_PRESENCE_CASES,
+)
+async def test_public_function_tool_result_honors_key_presence(
+    metadata: dict[str, object],
+    expected: object,
+) -> None:
     part = ToolReturnPart(
         tool_name="test_tool",
         tool_call_id="call-1",
-        content={"bounded": True},
-        metadata={"public_result": {"rows": [{"id": index} for index in range(500)]}},
+        content={"model_only": "must-not-leak"},
+        metadata=metadata,
     )
 
     result = public_function_tool_result(part)
 
-    assert result["rows"][0] == {"id": 0}
-    assert result["rows"][-1] == {"id": 499}
+    assert result == expected
+    assert type(result) is type(expected)
 
 
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    PUBLIC_RESULT_PRESENCE_CASES,
+)
 async def test_public_result_round_trips_dispatch_stream_and_persistence(
     db_session: AsyncSession,
     runtime_context: "RuntimeContext",
+    metadata: dict[str, object],
+    expected: object,
 ) -> None:
     tool_name = "test_public_result_round_trip"
 
     def public_result_tool() -> ToolReturn[dict[str, object]]:
         return ToolReturn(
-            return_value={"summary": "bounded for model"},
-            metadata={"public_result": {"rows": [{"id": 1}, {"id": 2}]}},
+            return_value={"model_only": "must-not-leak"},
+            metadata=metadata.copy(),
         )
 
     register_tool_definition(
@@ -149,7 +172,8 @@ async def test_public_result_round_trips_dispatch_stream_and_persistence(
         )
 
         [tool_event] = [event for event in sink.events if event.event == EVENT_TOOL_RESULT]
-        assert tool_event.data["result"] == {"rows": [{"id": 1}, {"id": 2}]}
+        assert tool_event.data["result"] == expected
+        assert type(tool_event.data["result"]) is type(expected)
         messages = (
             await db_session.scalars(
                 select(ConversationMessage)
@@ -161,8 +185,18 @@ async def test_public_result_round_trips_dispatch_stream_and_persistence(
         [tool_part] = [
             part for part in tool_message.parts["parts"] if part.get("part_kind") == "tool-return"
         ]
-        assert tool_part["content"] == {"summary": "bounded for model"}
-        assert tool_part["metadata"]["public_result"] == {"rows": [{"id": 1}, {"id": 2}]}
+        assert tool_part["content"] == {"model_only": "must-not-leak"}
+        persisted_metadata = tool_part.get("metadata")
+        if "public_result" in metadata:
+            assert isinstance(persisted_metadata, dict)
+            assert "public_result" in persisted_metadata
+            assert persisted_metadata["public_result"] == metadata["public_result"]
+            assert type(persisted_metadata["public_result"]) is type(metadata["public_result"])
+        else:
+            assert (
+                not isinstance(persisted_metadata, dict)
+                or "public_result" not in persisted_metadata
+            )
     finally:
         RUNTIME_TOOL_CATALOG.pop(tool_name, None)
 

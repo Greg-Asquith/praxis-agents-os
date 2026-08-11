@@ -254,6 +254,31 @@ describe("parseConversationMessages", () => {
     )
   })
 
+  it.each([
+    { name: "absent", metadata: {}, expected: { model_only: "must-not-leak" } },
+    { name: "null", metadata: { public_result: null }, expected: null },
+    { name: "false", metadata: { public_result: false }, expected: false },
+    { name: "zero", metadata: { public_result: 0 }, expected: 0 },
+    { name: "empty string", metadata: { public_result: "" }, expected: "" },
+    { name: "object", metadata: { public_result: { rows: [] } }, expected: { rows: [] } },
+    { name: "list", metadata: { public_result: [] }, expected: [] },
+  ])("honors $name public-result presence in persisted messages", ({ metadata, expected }) => {
+    const parsed = parseConversationMessages([
+      message("message-1", "tool", 1, [
+        {
+          part_kind: "tool-return",
+          tool_call_id: "tool-call-1",
+          tool_name: "test_tool",
+          outcome: "success",
+          content: { model_only: "must-not-leak" },
+          metadata,
+        },
+      ]),
+    ])
+
+    expect(parsed[0]?.toolActivities[0]?.result).toEqual(expected)
+  })
+
   it("groups delegation call and return details under one activity", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [
