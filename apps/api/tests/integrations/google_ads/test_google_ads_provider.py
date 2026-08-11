@@ -3673,6 +3673,167 @@ async def test_remove_negative_keywords_write_denial_is_audited_before_provider_
     assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
 
 
+@pytest.mark.parametrize(
+    (
+        "entity_kind",
+        "add_operation",
+        "remove_operation",
+        "id_argument",
+        "id_key",
+        "errors_key",
+        "response_entity_key",
+        "response_criterion_key",
+        "criterion_path",
+    ),
+    [
+        (
+            "campaign",
+            add_campaign_negative_keywords,
+            remove_campaign_negative_keywords,
+            "campaign_ids",
+            "campaign_id",
+            "campaign_errors",
+            "campaign",
+            "campaignCriterion",
+            "campaignCriteria",
+        ),
+        (
+            "ad_group",
+            add_ad_group_negative_keywords,
+            remove_ad_group_negative_keywords,
+            "ad_group_ids",
+            "ad_group_id",
+            "ad_group_errors",
+            "adGroup",
+            "adGroupCriterion",
+            "adGroupCriteria",
+        ),
+    ],
+)
+async def test_scoped_negative_keyword_operation_parity_matrix(
+    entity_kind,
+    add_operation,
+    remove_operation,
+    id_argument,
+    id_key,
+    errors_key,
+    response_entity_key,
+    response_criterion_key,
+    criterion_path,
+) -> None:
+    client_type = (
+        _CampaignNegativeKeywordClient
+        if entity_kind == "campaign"
+        else _AdGroupNegativeKeywordClient
+    )
+    existing_resource = f"customers/333/{criterion_path}/20~1"
+    add_client = client_type(
+        search_payload={
+            "results": [
+                {
+                    response_entity_key: {"id": "20"},
+                    response_criterion_key: {
+                        "resourceName": existing_resource,
+                        "keyword": {"text": "existing", "matchType": "EXACT"},
+                    },
+                }
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": f"customers/333/{criterion_path}/20~2"},
+                {},
+                {"resourceName": f"customers/333/{criterion_path}/10~3"},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Keyword is not permitted",
+                                "errorCode": {"criterionError": "INVALID_KEYWORD_TEXT"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            }
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+    call_arguments = {
+        "customer_id": "333-333-3333",
+        "login_customer_id": "111",
+        id_argument: ["20", "10", "20"],
+        "keywords": [
+            {"text": "existing", "match_type": "EXACT"},
+            {"text": "phrase", "match_type": "PHRASE"},
+        ],
+    }
+
+    added = await add_operation(add_client, **call_arguments)
+
+    assert added["skipped_existing"] == [{id_key: "20", "text": "existing", "match_type": "EXACT"}]
+    assert [(row[id_key], row["text"]) for row in added["added"]] == [
+        ("20", "phrase"),
+        ("10", "phrase"),
+    ]
+    assert added[errors_key] == [
+        {
+            id_key: "10",
+            "text": "existing",
+            "match_type": "EXACT",
+            "message": "Keyword is not permitted",
+            "error_code": "INVALID_KEYWORD_TEXT",
+        }
+    ]
+    assert add_client.calls[1]["json"]["partialFailure"] is True
+
+    removal_client = client_type(
+        search_payload={
+            "results": [
+                {
+                    response_entity_key: {"id": "20"},
+                    response_criterion_key: {
+                        "resourceName": f"customers/333/{criterion_path}/20~{index}",
+                        "keyword": {"text": "TERM", "matchType": match_type},
+                    },
+                }
+                for index, match_type in enumerate(("EXACT", "BROAD"), start=1)
+            ]
+        },
+        mutate_payload={
+            "results": [
+                {"resourceName": f"customers/333/{criterion_path}/20~1"},
+                {"resourceName": f"customers/333/{criterion_path}/20~2"},
+            ]
+        },
+    )
+    removed = await remove_operation(
+        removal_client,
+        customer_id="333",
+        login_customer_id="111",
+        **{id_argument: ["20", "10"]},
+        keywords=[{"text": "term", "match_type": "ANY"}],
+    )
+
+    assert [(row[id_key], row["match_type"]) for row in removed["removed"]] == [
+        ("20", "EXACT"),
+        ("20", "BROAD"),
+    ]
+    assert removed["not_found"] == [{id_key: "10", "text": "term", "match_type": "ANY"}]
+    assert removed[errors_key] == []
+    with pytest.raises(IntegrationValidationError, match="2,500"):
+        await add_operation(
+            add_client,
+            customer_id="333",
+            login_customer_id="111",
+            **{id_argument: [str(index) for index in range(51)]},
+            keywords=[{"text": str(index), "match_type": "EXACT"} for index in range(50)],
+        )
+
+
 async def test_add_campaign_negative_keywords_skips_per_campaign_and_maps_errors() -> None:
     client = _CampaignNegativeKeywordClient(
         search_payload={
@@ -3872,7 +4033,7 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
         return await kwargs["execute"]()
 
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         AsyncMock(return_value=client),
     )
     monkeypatch.setattr(
@@ -3880,7 +4041,7 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
         passthrough_audit,
     )
 
@@ -3907,7 +4068,7 @@ async def test_campaign_negative_keyword_fan_out_bound_rejects_3000_before_provi
     )
     provider_client = AsyncMock()
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         provider_client,
     )
 
@@ -3940,7 +4101,7 @@ async def test_campaign_negative_keywords_fail_closed_when_campaign_is_missing(
         return await kwargs["execute"]()
 
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         AsyncMock(return_value=client),
     )
     monkeypatch.setattr(
@@ -3948,7 +4109,7 @@ async def test_campaign_negative_keywords_fail_closed_when_campaign_is_missing(
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
         passthrough_audit,
     )
 
@@ -3973,11 +4134,11 @@ async def test_campaign_negative_keyword_write_denial_is_audited_before_provider
     provider_client = AsyncMock()
     audit = AsyncMock()
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         provider_client,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.campaign_negative_keywords.record_google_ads_operation_audit",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.record_google_ads_operation_audit",
         audit,
     )
 
@@ -4142,7 +4303,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         return await kwargs["execute"]()
 
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         AsyncMock(return_value=accepted_client),
     )
     monkeypatch.setattr(
@@ -4150,7 +4311,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
         passthrough_audit,
     )
     accepted = await google_ads_add_ad_group_negative_keywords(
@@ -4164,7 +4325,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
 
     provider_client = AsyncMock()
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         provider_client,
     )
 
@@ -4186,7 +4347,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
     provider_add = AsyncMock()
 
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         AsyncMock(return_value=client),
     )
     monkeypatch.setattr(
@@ -4194,7 +4355,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
         passthrough_audit,
     )
     missing = await google_ads_add_ad_group_negative_keywords(
@@ -4217,11 +4378,11 @@ async def test_ad_group_negative_keyword_write_denial_is_audited_before_provider
     provider_client = AsyncMock()
     audit = AsyncMock()
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.google_ads_client",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
         provider_client,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.ad_group_negative_keywords.record_google_ads_operation_audit",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.record_google_ads_operation_audit",
         audit,
     )
 

@@ -106,6 +106,7 @@ const DIAGNOSTIC_COLUMNS: DataColumn[] = [
 ]
 const TRUNCATION_NOTE =
   "Showing representative rows. Full applied-change details are available in the audit trail."
+const NO_SELECTION_LABELS: string[] = []
 
 export function NegativeKeywordApprovalSummary({
   includeAny = false,
@@ -120,7 +121,7 @@ export function NegativeKeywordApprovalSummary({
 }) {
   const counts = matchTypeCounts(keywords)
   return (
-    <div className="bg-muted/50 grid gap-2 rounded-lg px-3 py-2.5">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
       <p className="text-sm font-medium">
         {String(total)} {total === 1 ? "keyword" : "keywords"}
         <span className="text-muted-foreground"> · {listName}</span>
@@ -140,20 +141,12 @@ export function CampaignNegativeKeywordApprovalSummary({
   campaignCount: number
   keywordCount: number
 }) {
-  const operationCount = campaignCount * keywordCount
   return (
-    <div className="bg-muted/50 grid gap-1 rounded-lg px-3 py-2.5">
-      <p className="text-sm font-medium">
-        {String(keywordCount)} {keywordCount === 1 ? "keyword" : "keywords"}
-        <span className="text-muted-foreground">
-          {" "}
-          × {String(campaignCount)} {campaignCount === 1 ? "campaign" : "campaigns"}
-        </span>
-      </p>
-      <p className="text-muted-foreground text-xs">
-        {String(operationCount)} proposed {operationCount === 1 ? "change" : "changes"}
-      </p>
-    </div>
+    <ScopedNegativeKeywordApprovalSummary
+      entityCount={campaignCount}
+      entityLabel="campaign"
+      keywordCount={keywordCount}
+    />
   )
 }
 
@@ -166,21 +159,44 @@ export function AdGroupNegativeKeywordApprovalSummary({
   keywordCount: number
   selectionLabels: string[]
 }) {
-  const operationCount = adGroupCount * keywordCount
   return (
-    <div className="bg-muted/50 grid gap-1 rounded-lg px-3 py-2.5">
+    <ScopedNegativeKeywordApprovalSummary
+      entityCount={adGroupCount}
+      entityLabel="ad group"
+      keywordCount={keywordCount}
+      selectionLabels={selectionLabels}
+    />
+  )
+}
+
+function ScopedNegativeKeywordApprovalSummary({
+  entityCount,
+  entityLabel,
+  keywordCount,
+  selectionLabels = NO_SELECTION_LABELS,
+}: {
+  entityCount: number
+  entityLabel: "ad group" | "campaign"
+  keywordCount: number
+  selectionLabels?: string[]
+}) {
+  const operationCount = entityCount * keywordCount
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
       <p className="text-sm font-medium">
         {String(keywordCount)} {keywordCount === 1 ? "keyword" : "keywords"}
         <span className="text-muted-foreground">
           {" "}
-          × {String(adGroupCount)} {adGroupCount === 1 ? "ad group" : "ad groups"}
+          × {String(entityCount)} {entityCount === 1 ? entityLabel : `${entityLabel}s`}
         </span>
       </p>
       <p className="text-muted-foreground text-xs">
         {String(operationCount)} proposed {operationCount === 1 ? "change" : "changes"}
       </p>
       {selectionLabels.length > 0 ? (
-        <p className="text-muted-foreground truncate text-xs">{selectionLabels.join(" · ")}</p>
+        <p className="text-muted-foreground w-full truncate text-xs">
+          {selectionLabels.join(" · ")}
+        </p>
       ) : null}
     </div>
   )

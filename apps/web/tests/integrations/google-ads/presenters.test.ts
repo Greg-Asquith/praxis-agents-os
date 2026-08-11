@@ -1013,6 +1013,60 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Broad — Prospecting")
   })
 
+  it.each([
+    {
+      addName: "google_ads_add_campaign_negative_keywords",
+      adding: "Adding campaign negative keywords…",
+      denied: "This campaign negative keyword change was declined. Nothing was removed.",
+      presenter: googleAdsCampaignNegativeKeywordsPresenter,
+      removeName: "google_ads_remove_campaign_negative_keywords",
+      waiting: "Waiting for campaign negative keyword approval…",
+    },
+    {
+      addName: "google_ads_add_ad_group_negative_keywords",
+      adding: "Adding ad group negative keywords…",
+      denied: "This ad group negative keyword change was declined. Nothing was removed.",
+      presenter: googleAdsAdGroupNegativeKeywordsPresenter,
+      removeName: "google_ads_remove_ad_group_negative_keywords",
+      waiting: "Waiting for ad group negative keyword approval…",
+    },
+  ])("preserves $presenter.key running, waiting, and denied copy", (testCase) => {
+    const runningHtml = render(
+      testCase.presenter.render(
+        props({
+          id: `${testCase.presenter.key}-running`,
+          kind: "call",
+          name: testCase.addName,
+          status: "running",
+        })
+      )
+    )
+    const waitingHtml = render(
+      testCase.presenter.render(
+        props({
+          id: `${testCase.presenter.key}-waiting`,
+          kind: "call",
+          name: testCase.addName,
+          status: "awaiting_approval",
+        })
+      )
+    )
+    const deniedHtml = render(
+      testCase.presenter.render(
+        props({
+          id: `${testCase.presenter.key}-denied`,
+          kind: "result",
+          name: testCase.removeName,
+          status: "denied",
+        })
+      )
+    )
+
+    expect(runningHtml).toContain(testCase.adding)
+    expect(waitingHtml).toContain(testCase.waiting)
+    expect(deniedHtml).toContain(testCase.denied)
+  })
+
   it("renders per-ad-group negative keyword removal rollups", () => {
     const html = render(
       googleAdsAdGroupNegativeKeywordsPresenter.render(

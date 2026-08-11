@@ -60,12 +60,8 @@ export function RecordsFieldInput({
   }
 
   return (
-    <div
-      aria-labelledby={labelId}
-      className="border-input min-w-0 overflow-hidden rounded-lg border"
-      role="group"
-    >
-      <div className="flex items-center justify-between gap-3 border-b px-2.5 py-1.5">
+    <div aria-labelledby={labelId} className="min-w-0 overflow-hidden" role="group">
+      <div className="border-border/70 flex items-center justify-between gap-3 border-b py-1">
         <span className="text-muted-foreground text-xs font-medium">
           {String(value.length)} {value.length === 1 ? "row" : "rows"}
         </span>
@@ -82,7 +78,7 @@ export function RecordsFieldInput({
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
-          <thead className="bg-card text-muted-foreground sticky top-0 z-10">
+          <thead className="bg-muted/30 text-muted-foreground sticky top-0 z-10">
             <tr>
               {columns.map((column) => (
                 <th className="border-border border-b px-2.5 py-1.5 font-medium" key={column.key}>
