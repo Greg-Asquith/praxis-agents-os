@@ -95,6 +95,11 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum free-text tool-result characters; None disables the bound.",
     )
+    NATIVE_IMAGE_GENERATION_MAX_STEPS: int = Field(
+        default=3,
+        gt=0,
+        description="Maximum helper-model requests for one native image generation call.",
+    )
     AGENT_SCHEDULED_SIDE_EFFECT_POLICY: Literal["allow", "require_approval", "deny"] = Field(
         default="require_approval",
         description="Side-effect policy minted for scheduled agent runs.",

@@ -339,6 +339,87 @@ describe("skill tool rows", () => {
 })
 
 describe("file tool rows", () => {
+  it("renders generated images through the existing file outcome row", () => {
+    const html = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          name: "generate_image",
+          result: {
+            file_id: "generated-file-1",
+            height: 1024,
+            media_type: "image/png",
+            name: "paper-cut-fox.png",
+            revision_id: "generated-revision-1",
+            size_bytes: 2048,
+            width: 1536,
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain("Generate Image")
+    expect(html).toContain("paper-cut-fox.png")
+    expect(html).toContain("1536 x 1024")
+    expect(html).toContain("2.0 KB")
+    expect(html).toContain("mx-auto")
+  })
+
+  it("renders the editable generate-image approval instead of a loading skeleton", () => {
+    const html = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          args: { prompt: "A cute red panda", aspect_ratio: "1:1", model_provider: "google" },
+          kind: "approval",
+          name: "generate_image",
+          status: "awaiting_approval",
+          result: undefined,
+        }),
+        approvalDecision: approvalControls(),
+        defaultOpen: true,
+        label: "Generate Image",
+        ui: {
+          approval_prompt: "Review the image prompt before approving.",
+          approval_title: "Generate an Image",
+          approve_label: "Approve & Generate",
+          arg_fields: [
+            {
+              editable: true,
+              format: "multiline",
+              key: "prompt",
+              label: "Prompt",
+              options: [],
+              placeholder: "Describe the image to generate",
+              secondary: false,
+            },
+            {
+              editable: true,
+              format: "text",
+              key: "model_provider",
+              label: "Image Provider",
+              options: ["google", "openai"],
+              placeholder: "",
+              secondary: false,
+            },
+          ],
+          completed_label: "Generated {name}",
+          failed_label: "Couldn't Generate the Image",
+          icon: "image",
+          result_fields: [],
+          running_label: "Generating an Image",
+        },
+      })
+    )
+
+    expect(html).toContain("Generate an Image")
+    expect(html).toContain("A cute red panda")
+    expect(html).toContain("Creates New Image")
+    expect(html).toContain("Image Provider")
+    expect(html).toContain("Google")
+    expect(html).toContain("Approve &amp; Generate")
+    expect(html).not.toContain('aria-busy="true"')
+  })
+
   it("renders file lists with details and preserves file entities", () => {
     const html = render(
       createElement(FileToolRow, {

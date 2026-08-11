@@ -139,6 +139,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   denylist is configured because URL Context cannot enforce domain filtering.
   Keep the full URL editable and visible under the default approval policy;
   never enable the local fetch fallback.
+- Native image generation uses the governed `generate_image` helper-tool path
+  for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
+  helper run. The tool generates exactly one image, preserves provider-returned
+  PNG, WebP, or JPEG bytes in an audited workspace File, and defaults to
+  approval; image editing and input images are not part of this contract.
 - Background work runs in the worker process (`python -m workers.main`),
   which supervises the scheduled-agent runner (croniter schedules, TTL leases
   with heartbeats, terminal failure states) and the generic jobs runner over

@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
+import { MessageAttachmentCard } from "@/features/conversations/components/message-attachment-card"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
@@ -24,12 +25,14 @@ import {
   type ReadFileImageToolResult,
   type ReadFileStatusToolResult,
   type ReadFileUrlToolResult,
+  IMAGE_TOOL_NAME,
   fileEntityFromReadContentResult,
   fileEntityFromReadImageResult,
   fileEntityFromReadStatusResult,
   fileEntityFromReadUrlResult,
   fileEntityFromRuntimeFile,
   fileEntityFromWriteResult,
+  generateImageResult,
   listFilesResult,
   LIST_FILES_TOOL_NAME,
   readFileContentResult,
@@ -92,6 +95,30 @@ export function FileToolRow({
       </ApprovalDecisionBlock>
     )
   }
+  if (
+    activity.status === "awaiting_approval" &&
+    activity.name === IMAGE_TOOL_NAME &&
+    approvalDecision
+  ) {
+    const fields = ui?.arg_fields ?? []
+    return (
+      <ApprovalDecisionBlock
+        activity={activity}
+        approveLabel={ui?.approve_label ?? "Approve & Generate"}
+        controls={approvalDecision}
+        fallbackFields={approvalFallbackFields(activity.args, fields)}
+        fields={fields}
+        iconToken={ui?.icon ?? "image"}
+        label={label}
+        prompt="The agent wants to generate a new image and save it to workspace Files. Review the prompt before approving."
+        title={ui?.approval_title ?? "Generate an Image"}
+      >
+        <Badge className="w-fit" variant="secondary">
+          Creates New Image
+        </Badge>
+      </ApprovalDecisionBlock>
+    )
+  }
   if (activity.status === "running" || activity.status === "awaiting_approval") {
     const state = filePendingState(activity.name)
     return state ? (
@@ -110,6 +137,9 @@ export function FileToolRow({
   }
   if (activity.name === LIST_FILES_TOOL_NAME) {
     return <ListFilesRow activity={activity} defaultOpen={defaultOpen} />
+  }
+  if (activity.name === IMAGE_TOOL_NAME) {
+    return <GenerateImageRow activity={activity} />
   }
   if (activity.name === WRITE_FILE_TOOL_NAME) {
     return <WriteFileRow activity={activity} defaultOpen={defaultOpen} />
@@ -179,6 +209,35 @@ function WriteFileRow({
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <FileEntityRow file={file} />
+    </ToolResultCard>
+  )
+}
+
+function GenerateImageRow({ activity }: Pick<FileToolRowProps, "activity">) {
+  const result = generateImageResult(activity.result)
+  if (!result) {
+    return null
+  }
+  return (
+    <ToolResultCard
+      ariaLabel={`Generated image ${result.name}`}
+      defaultOpen
+      details={[
+        { label: "Image", value: result.name },
+        { label: "Dimensions", value: `${String(result.width)} x ${String(result.height)}` },
+        { label: "Size", value: formatBytes(result.size_bytes) },
+      ]}
+      heading={<FileToolHeading icon={ImageIcon}>Generate Image</FileToolHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      <MessageAttachmentCard
+        attachment={{
+          fileId: result.file_id,
+          mediaType: result.media_type,
+          name: result.name,
+          sizeBytes: result.size_bytes,
+        }}
+      />
     </ToolResultCard>
   )
 }
@@ -424,6 +483,14 @@ function filePendingState(name: string) {
       icon: SearchIcon,
       runningLabel: "Reading file…",
       waitingLabel: "Waiting to read file…",
+    }
+  }
+  if (name === IMAGE_TOOL_NAME) {
+    return {
+      heading: "Generate Image",
+      icon: ImageIcon,
+      runningLabel: "Generating image…",
+      waitingLabel: "Waiting to generate image…",
     }
   }
   return null

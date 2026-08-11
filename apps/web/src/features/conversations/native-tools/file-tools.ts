@@ -6,12 +6,23 @@ import { isRecord } from "@/lib/guards"
 export const WRITE_FILE_TOOL_NAME = "write_file"
 export const READ_FILE_TOOL_NAME = "read_file"
 export const LIST_FILES_TOOL_NAME = "list_files"
+export const IMAGE_TOOL_NAME = "generate_image"
 
 export type WriteFileToolResult = {
   name: string
   bytes_written: number
   file_id: string
   revision_id: string
+}
+
+export type GenerateImageToolResult = {
+  file_id: string
+  height: number
+  media_type: string
+  name: string
+  revision_id: string
+  size_bytes: number
+  width: number
 }
 
 export type ReadFileUrlToolResult = {
@@ -112,6 +123,32 @@ export function writeFileResult(value: unknown): WriteFileToolResult | null {
     bytes_written: value["bytes_written"],
     file_id: value["file_id"],
     revision_id: value["revision_id"],
+  }
+}
+
+export function generateImageResult(value: unknown): GenerateImageToolResult | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  if (
+    typeof value["file_id"] !== "string" ||
+    typeof value["height"] !== "number" ||
+    typeof value["media_type"] !== "string" ||
+    typeof value["name"] !== "string" ||
+    typeof value["revision_id"] !== "string" ||
+    typeof value["size_bytes"] !== "number" ||
+    typeof value["width"] !== "number"
+  ) {
+    return null
+  }
+  return {
+    file_id: value["file_id"],
+    height: value["height"],
+    media_type: value["media_type"],
+    name: value["name"],
+    revision_id: value["revision_id"],
+    size_bytes: value["size_bytes"],
+    width: value["width"],
   }
 }
 
@@ -264,6 +301,17 @@ export function fileEntityFromWriteResult(result: WriteFileToolResult): FileEnti
     fileId: result.file_id,
     name: result.name,
     sizeBytes: result.bytes_written,
+  }
+}
+
+export function fileEntityFromGeneratedImage(result: GenerateImageToolResult): FileEntitySnapshot {
+  return {
+    category: "image",
+    contentType: result.media_type,
+    fileId: result.file_id,
+    name: result.name,
+    processingStatus: "ready",
+    sizeBytes: result.size_bytes,
   }
 }
 

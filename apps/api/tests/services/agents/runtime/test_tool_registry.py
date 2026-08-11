@@ -99,7 +99,7 @@ def _external_scope(_args: dict[str, object]) -> ToolEffectScope:
 
 @pytest.mark.parametrize(
     "tool_name",
-    ["delegate_to_agent", "fetch_url", "web_search"],
+    ["delegate_to_agent", "fetch_url", "generate_image", "web_search"],
 )
 def test_long_running_tools_have_no_outer_execution_deadline(tool_name: str) -> None:
     definition = get_runtime_tool_definition(tool_name)
@@ -351,6 +351,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "create_artifact": "external_write",
         "delegate_to_agent": "none",
         "fetch_url": "arbitrary_url",
+        "generate_image": "none",
         "forget_memory": "none",
         "gmail_read_message": "provider_query",
         "gmail_search_messages": "provider_query",

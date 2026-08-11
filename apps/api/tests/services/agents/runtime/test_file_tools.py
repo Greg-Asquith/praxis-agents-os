@@ -2,6 +2,7 @@
 
 """Tests for runtime file tools."""
 
+import base64
 import importlib
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -27,14 +28,16 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RunUsage
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
+from models.audit_event import AuditEvent
 from models.conversation import Conversation
-from models.files import FileRevision
+from models.files import File, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
@@ -61,7 +64,7 @@ from services.agents.runtime.tools.files import (
 )
 from services.agents.runtime.tools.files.utils import slice_text
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
-from services.files import write_agent_file
+from services.files import create_file_preview, write_agent_file, write_generated_image
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key, sha256_hex
 from services.storage.factory import get_storage_provider
@@ -224,6 +227,115 @@ async def test_durable_write_requires_approval_and_records_agent_revision(
     assert revision.created_by_system is False
     stored = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
     assert stored == b"approved content"
+
+
+async def test_generated_png_uses_file_limits_revision_provenance_audit_and_preview(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+
+    result = await write_generated_image(
+        db_session,
+        workspace=context.workspace,
+        agent=context.agent,
+        prompt="A small red square",
+        content=png,
+        media_type="image/png",
+    )
+
+    file = await db_session.get(File, result.file_id)
+    revision = await db_session.get(FileRevision, result.revision_id)
+    audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == context.workspace.id,
+            AuditEvent.resource_type == "file",
+            AuditEvent.resource_id == str(result.file_id),
+        )
+    )
+    assert file is not None
+    assert revision is not None
+    assert result.width == 1
+    assert result.height == 1
+    assert result.name.startswith("a-small-red-square-")
+    assert result.name.endswith(".png")
+    assert file.category == "image"
+    assert file.processing_status == "ready"
+    assert revision.created_by_agent_id == context.agent.id
+    assert audit is not None
+    assert audit.actor_type == "agent"
+    assert audit.details["source"] == "native_image_generation"
+    preview = await create_file_preview(
+        db_session,
+        workspace=context.workspace,
+        file_id=file.id,
+    )
+    assert preview.preview.url.startswith("http://testserver/")
+
+
+async def test_generated_webp_preserves_provider_format(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    webp = (
+        b"RIFF"
+        + (22).to_bytes(4, "little")
+        + b"WEBPVP8X"
+        + (10).to_bytes(4, "little")
+        + b"\x00\x00\x00\x00"
+        + (639).to_bytes(3, "little")
+        + (479).to_bytes(3, "little")
+    )
+
+    result = await write_generated_image(
+        db_session,
+        workspace=context.workspace,
+        agent=context.agent,
+        prompt="A WebP landscape",
+        content=webp,
+        media_type="image/webp",
+    )
+
+    file = await db_session.get(File, result.file_id)
+    assert file is not None
+    assert result.content_type == "image/webp"
+    assert result.name.endswith(".webp")
+    assert (result.width, result.height) == (640, 480)
+    assert file.content_type == "image/webp"
+    assert file.extension == ".webp"
+
+
+async def test_generated_image_rejects_invalid_or_oversized_content(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _runtime_file_context(db_session)
+
+    with pytest.raises(AppValidationError, match="unsupported or invalid image format"):
+        await write_generated_image(
+            db_session,
+            workspace=context.workspace,
+            agent=context.agent,
+            prompt="Not actually an image",
+            content=b"fake-png",
+            media_type="image/png",
+        )
+
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_IMAGE", 8)
+    with pytest.raises(AppValidationError, match="too large"):
+        await write_generated_image(
+            db_session,
+            workspace=context.workspace,
+            agent=context.agent,
+            prompt="Too large",
+            content=b"\x89PNG\r\n\x1a\n" + b"x" * 20,
+            media_type="image/png",
+        )
 
 
 async def test_edited_write_file_approval_uses_staged_content(

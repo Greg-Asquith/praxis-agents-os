@@ -98,3 +98,15 @@ def has_provider_api_key(provider: str) -> bool:
 
     secret = getattr(settings, setting_name, None)
     return secret is not None and bool(secret.get_secret_value().strip())
+
+
+def is_provider_configured(provider: str) -> bool:
+    """Return whether the provider has the runtime configuration needed to build a model."""
+    if provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
+        project = settings.GOOGLE_VERTEX_PROJECT or settings.GCP_PROJECT_ID
+        return bool((project or "").strip())
+    if provider == PROVIDER_AZURE:
+        return has_provider_api_key(provider) and bool(
+            (settings.AZURE_OPENAI_ENDPOINT or "").strip()
+        )
+    return has_provider_api_key(provider)

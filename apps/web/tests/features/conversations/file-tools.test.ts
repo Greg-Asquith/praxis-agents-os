@@ -3,15 +3,42 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  fileEntityFromGeneratedImage,
   fileEntityFromReadUrlResult,
   fileEntityFromRuntimeFile,
   fileEntityFromWriteResult,
+  generateImageResult,
   listFilesResult,
   readFileImageResult,
   readFileUrlResult,
 } from "@/features/conversations/native-tools/file-tools"
 
 describe("file tool entities", () => {
+  it("preserves generated image metadata for the thumbnail path", () => {
+    const result = generateImageResult({
+      file_id: "image-1",
+      height: 1024,
+      media_type: "image/webp",
+      name: "paper-cut-fox.webp",
+      revision_id: "revision-1",
+      size_bytes: 2048,
+      width: 1536,
+    })
+
+    expect(result).not.toBeNull()
+    if (!result) {
+      throw new Error("Expected a parsed generated image")
+    }
+    expect(fileEntityFromGeneratedImage(result)).toEqual({
+      category: "image",
+      contentType: "image/webp",
+      fileId: "image-1",
+      name: "paper-cut-fox.webp",
+      processingStatus: "ready",
+      sizeBytes: 2048,
+    })
+  })
+
   it("preserves the runtime file snapshot used by interactive transcript rows", () => {
     const result = listFilesResult({
       files: [
