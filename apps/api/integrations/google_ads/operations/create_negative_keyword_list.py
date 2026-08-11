@@ -78,6 +78,7 @@ async def create_negative_keyword_list(
         )
     if not _valid_results(
         results,
+        expected_customer_id=normalized_customer_id,
         operation_count=len(create_names),
         indexed_errors=indexed_errors,
     ):
@@ -107,6 +108,7 @@ async def create_negative_keyword_list(
 def _valid_results(
     results: Any,
     *,
+    expected_customer_id: str,
     operation_count: int,
     indexed_errors: Mapping[int, dict[str, str]],
 ) -> bool:
@@ -124,6 +126,7 @@ def _valid_results(
         if (
             not isinstance(resource_name, str)
             or _SHARED_SET_RESOURCE_PATTERN.fullmatch(resource_name) is None
+            or not resource_name.startswith(f"customers/{expected_customer_id}/sharedSets/")
             or resource_name in seen
         ):
             return False

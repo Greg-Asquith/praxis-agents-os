@@ -297,7 +297,7 @@ async def test_create_negative_keyword_list_skips_existing_and_maps_partial_fail
             }
         ],
         mutate_payload={
-            "results": [{"resourceName": "customers/333/sharedSets/10"}, {}],
+            "results": [{"resourceName": "customers/3333333333/sharedSets/10"}, {}],
             "partialFailureError": {
                 "details": [
                     {
@@ -345,7 +345,7 @@ async def test_create_negative_keyword_list_skips_existing_and_maps_partial_fail
     }
     assert result == {
         "created_names": ["Created List"],
-        "resource_names": ["customers/333/sharedSets/10"],
+        "resource_names": ["customers/3333333333/sharedSets/10"],
         "skipped_existing": ["existing list"],
         "list_errors": [
             {
@@ -411,8 +411,15 @@ async def test_create_negative_keyword_list_avoids_mutate_when_every_name_exists
             ],
             [],
         ),
+        (
+            [
+                {"resourceName": "customers/999/sharedSets/10"},
+                {"resourceName": "customers/333/sharedSets/20"},
+            ],
+            [],
+        ),
     ],
-    ids=["exact", "short", "long", "malformed", "empty", "duplicate"],
+    ids=["exact", "short", "long", "malformed", "empty", "duplicate", "foreign"],
 )
 async def test_create_negative_keyword_list_accounts_for_every_result_slot(
     results: list[object],
