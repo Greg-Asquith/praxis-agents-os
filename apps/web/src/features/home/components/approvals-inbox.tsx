@@ -6,7 +6,7 @@ import { CheckIcon, Clock3Icon, ShieldCheckIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { usePendingApprovalsQuery } from "@/features/conversations/api/list-pending-approvals"
 import { HomeSection } from "@/features/home/components/home-section"
-import { relativeDateTime } from "@/lib/format"
+import { relativeDateTime, titleCaseToken } from "@/lib/format"
 
 export function ApprovalsInbox() {
   const { data } = usePendingApprovalsQuery()
@@ -34,23 +34,29 @@ export function ApprovalsInbox() {
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
+                  {item.pending_tool_names.map((name, index) => (
+                    <Badge
+                      className="mr-2 rounded-md"
+                      key={`${name}-${String(index)}`}
+                      variant="outline"
+                    >
+                      {titleCaseToken(name, "Tool")}
+                    </Badge>
+                  ))}
                   {item.agent_name ?? "Agent"}{" "}
                   <span className="text-muted-foreground font-normal">
                     in {item.conversation_title ?? "Untitled conversation"}
                   </span>
-                </p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {item.pending_tool_names.map((name, index) => (
-                    <Badge key={`${name}-${String(index)}`} variant="warning">
-                      {name}
-                    </Badge>
-                  ))}
                   {item.delegated_agent_names.map((name, index) => (
-                    <Badge key={`${name}-${String(index)}`} variant="outline">
+                    <Badge
+                      className="ml-2 rounded-md"
+                      key={`${name}-${String(index)}`}
+                      variant="outline"
+                    >
                       via {name}
                     </Badge>
                   ))}
-                </div>
+                </p>
               </div>
               <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
                 <Clock3Icon aria-hidden="true" className="size-3" />

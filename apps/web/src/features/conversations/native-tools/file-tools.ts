@@ -6,7 +6,15 @@ import { isRecord } from "@/lib/guards"
 export const WRITE_FILE_TOOL_NAME = "write_file"
 export const READ_FILE_TOOL_NAME = "read_file"
 export const LIST_FILES_TOOL_NAME = "list_files"
-export const IMAGE_TOOL_NAME = "generate_image"
+const IMAGE_TOOL_NAME = "generate_image"
+export const EDIT_IMAGE_TOOL_NAME = "edit_image"
+export const VIDEO_TO_IMAGE_TOOL_NAME = "generate_image_from_video"
+
+export function isImageOutputTool(name: string) {
+  return (
+    name === IMAGE_TOOL_NAME || name === EDIT_IMAGE_TOOL_NAME || name === VIDEO_TO_IMAGE_TOOL_NAME
+  )
+}
 
 export type WriteFileToolResult = {
   name: string

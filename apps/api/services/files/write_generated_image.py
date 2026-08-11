@@ -5,6 +5,7 @@
 import logging
 import re
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -51,8 +52,13 @@ async def write_generated_image(
     prompt: str,
     content: bytes,
     media_type: str,
+    source: str = "native_image_generation",
+    input_file_ids: Sequence[UUID] = (),
+    input_revision_ids: Sequence[UUID] = (),
 ) -> GeneratedImageWriteResult:
     """Validate and store a supported generated image with agent provenance and audit."""
+    if len(input_file_ids) != len(input_revision_ids):
+        raise ValueError("Generated-image input provenance requires paired file and revision ids")
     if len(content) > settings.MAX_FILE_SIZE_IMAGE:
         raise AppValidationError(
             "Generated image is too large",
@@ -111,9 +117,17 @@ async def write_generated_image(
             "size_bytes": stored.bytes_written,
             "revision_kind": stored.revision.revision_kind,
             "content_hash": stored.revision.content_hash,
-            "source": "native_image_generation",
+            "source": source,
             "width": width,
             "height": height,
+            **(
+                {
+                    "input_file_ids": [str(value) for value in input_file_ids],
+                    "input_revision_ids": [str(value) for value in input_revision_ids],
+                }
+                if input_file_ids
+                else {}
+            ),
         },
     )
     return GeneratedImageWriteResult(

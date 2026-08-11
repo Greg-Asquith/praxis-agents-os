@@ -160,6 +160,14 @@ async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
     assert entry["default_policy"] == "approval"
     assert entry["input_schema"]["required"] == ["prompt", "model_provider"]
     assert "input_image" not in entry["input_schema"]["properties"]
+    tools = {tool["name"]: tool for tool in response.json()["tools"]}
+    edit_entry = tools["edit_image"]
+    assert edit_entry["input_schema"]["required"] == ["prompt", "file_ids"]
+    assert edit_entry["input_schema"]["properties"]["file_ids"]["maxItems"] == 14
+    if provider == "google":
+        assert "generate_image_from_video" in tools
+    else:
+        assert "generate_image_from_video" not in tools
 
 
 async def test_tool_catalog_route_hides_generate_image_without_supported_provider(
@@ -176,6 +184,8 @@ async def test_tool_catalog_route_hides_generate_image_without_supported_provide
 
     assert response.status_code == 200
     assert "generate_image" not in {tool["name"] for tool in response.json()["tools"]}
+    assert "edit_image" not in {tool["name"] for tool in response.json()["tools"]}
+    assert "generate_image_from_video" not in {tool["name"] for tool in response.json()["tools"]}
 
 
 async def test_tool_catalog_route_requires_authentication(

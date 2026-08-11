@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
 import { MessageAttachmentCard } from "@/features/conversations/components/message-attachment-card"
+import { MediaInputPreview } from "@/features/conversations/components/media-input-preview"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
@@ -25,7 +26,7 @@ import {
   type ReadFileImageToolResult,
   type ReadFileStatusToolResult,
   type ReadFileUrlToolResult,
-  IMAGE_TOOL_NAME,
+  EDIT_IMAGE_TOOL_NAME,
   fileEntityFromReadContentResult,
   fileEntityFromReadImageResult,
   fileEntityFromReadStatusResult,
@@ -33,6 +34,7 @@ import {
   fileEntityFromRuntimeFile,
   fileEntityFromWriteResult,
   generateImageResult,
+  isImageOutputTool,
   listFilesResult,
   LIST_FILES_TOOL_NAME,
   readFileContentResult,
@@ -42,6 +44,7 @@ import {
   readFileUrlResult,
   writeFileResult,
   WRITE_FILE_TOOL_NAME,
+  VIDEO_TO_IMAGE_TOOL_NAME,
 } from "@/features/conversations/native-tools/file-tools"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { FileContentView } from "@/features/files/components/file-content-view"
@@ -97,25 +100,32 @@ export function FileToolRow({
   }
   if (
     activity.status === "awaiting_approval" &&
-    activity.name === IMAGE_TOOL_NAME &&
+    isImageOutputTool(activity.name) &&
     approvalDecision
   ) {
     const fields = ui?.arg_fields ?? []
+    const mediaKind = activity.name === EDIT_IMAGE_TOOL_NAME ? "image" : "video"
+    const visibleFields = fields.filter((field) =>
+      mediaKind === "image" ? field.key !== "file_ids" : field.key !== "file_id"
+    )
     return (
       <ApprovalDecisionBlock
         activity={activity}
         approveLabel={ui?.approve_label ?? "Approve & Generate"}
         controls={approvalDecision}
         fallbackFields={approvalFallbackFields(activity.args, fields)}
-        fields={fields}
+        fields={visibleFields}
         iconToken={ui?.icon ?? "image"}
         label={label}
-        prompt="The agent wants to generate a new image and save it to workspace Files. Review the prompt before approving."
-        title={ui?.approval_title ?? "Generate an Image"}
+        prompt={imageApprovalPrompt(activity.name)}
+        title={ui?.approval_title ?? imageToolHeading(activity.name)}
       >
-        <Badge className="w-fit" variant="secondary">
-          Creates New Image
-        </Badge>
+        <div className="flex min-w-0 flex-col gap-3">
+          <MediaInputPreview args={activity.args} kind={mediaKind} />
+          <Badge className="w-fit" variant="secondary">
+            {activity.name === EDIT_IMAGE_TOOL_NAME ? "Creates Edited Image" : "Creates New Image"}
+          </Badge>
+        </div>
       </ApprovalDecisionBlock>
     )
   }
@@ -138,7 +148,7 @@ export function FileToolRow({
   if (activity.name === LIST_FILES_TOOL_NAME) {
     return <ListFilesRow activity={activity} defaultOpen={defaultOpen} />
   }
-  if (activity.name === IMAGE_TOOL_NAME) {
+  if (isImageOutputTool(activity.name)) {
     return <GenerateImageRow activity={activity} />
   }
   if (activity.name === WRITE_FILE_TOOL_NAME) {
@@ -227,7 +237,9 @@ function GenerateImageRow({ activity }: Pick<FileToolRowProps, "activity">) {
         { label: "Dimensions", value: `${String(result.width)} x ${String(result.height)}` },
         { label: "Size", value: formatBytes(result.size_bytes) },
       ]}
-      heading={<FileToolHeading icon={ImageIcon}>Generate Image</FileToolHeading>}
+      heading={
+        <FileToolHeading icon={ImageIcon}>{imageToolHeading(activity.name)}</FileToolHeading>
+      }
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <MessageAttachmentCard
@@ -485,13 +497,34 @@ function filePendingState(name: string) {
       waitingLabel: "Waiting to read file…",
     }
   }
-  if (name === IMAGE_TOOL_NAME) {
+  if (isImageOutputTool(name)) {
     return {
-      heading: "Generate Image",
+      heading: imageToolHeading(name),
       icon: ImageIcon,
-      runningLabel: "Generating image…",
-      waitingLabel: "Waiting to generate image…",
+      runningLabel: name === EDIT_IMAGE_TOOL_NAME ? "Editing image…" : "Generating image…",
+      waitingLabel:
+        name === EDIT_IMAGE_TOOL_NAME ? "Waiting to edit image…" : "Waiting to generate image…",
     }
   }
   return null
+}
+
+function imageToolHeading(name: string) {
+  if (name === EDIT_IMAGE_TOOL_NAME) {
+    return "Edit Image"
+  }
+  if (name === VIDEO_TO_IMAGE_TOOL_NAME) {
+    return "Generate Image from Video"
+  }
+  return "Generate Image"
+}
+
+function imageApprovalPrompt(name: string) {
+  if (name === EDIT_IMAGE_TOOL_NAME) {
+    return "The agent wants to edit a workspace image and save the result to workspace Files. Review the source image and prompt before approving."
+  }
+  if (name === VIDEO_TO_IMAGE_TOOL_NAME) {
+    return "The agent wants to create an image from a workspace video and save it to workspace Files. Review the source video and prompt before approving."
+  }
+  return "The agent wants to generate a new image and save it to workspace Files. Review the prompt before approving."
 }

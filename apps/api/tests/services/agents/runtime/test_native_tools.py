@@ -9,6 +9,7 @@ import pytest
 from pydantic import SecretStr
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import (
+    BinaryContent,
     BinaryImage,
     FilePart,
     ModelRequest,
@@ -44,6 +45,7 @@ from services.agents.runtime.dispatch import (
     digest_args,
     record_native_tool_invocation_audit_event,
 )
+from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.events import (
     EVENT_TOOL_CALL,
@@ -53,7 +55,9 @@ from services.agents.runtime.events import (
 )
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.native import (
+    image_editing as image_editing_tools,
     image_generation as image_generation_tools,
+    video_to_image as video_to_image_tools,
     web_fetch as web_fetch_tools,
     web_search as web_search_tools,
 )
@@ -226,6 +230,90 @@ def test_generate_image_catalog_entry_is_approval_default_internal_write() -> No
     assert definition.presentation.result_fields[0].format == "entity"
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "output_model", "approve_label", "file_format"),
+    [
+        (
+            "edit_image",
+            image_editing_tools.EditImageOutput,
+            "Approve & Edit",
+            "entity_list",
+        ),
+        (
+            "generate_image_from_video",
+            video_to_image_tools.VideoToImageOutput,
+            "Approve & Generate",
+            "entity",
+        ),
+    ],
+)
+def test_input_media_image_tools_are_approval_default_internal_writes(
+    tool_name: str,
+    output_model: type,
+    approve_label: str,
+    file_format: str,
+) -> None:
+    definition = RUNTIME_TOOL_CATALOG[tool_name]
+    entry = ToolCatalogEntry.from_definition(definition)
+
+    assert entry.provider == "native"
+    assert entry.effect == "write"
+    assert entry.effect_scope == "internal"
+    assert entry.egress == "none"
+    assert entry.default_policy == "approval"
+    assert entry.supported_policies == ["approval", "auto"]
+    assert definition.output_model is output_model
+    assert definition.presentation.approve_label == approve_label
+    prompt_field = next(
+        field for field in definition.presentation.arg_fields if field.key == "prompt"
+    )
+    file_field = next(
+        field
+        for field in definition.presentation.arg_fields
+        if field.key in {"file_id", "file_ids"}
+    )
+    assert prompt_field.editable is True
+    assert file_field.editable is False
+    assert file_field.format == file_format
+    assert file_field.entity_kind == "file"
+
+
+def test_input_media_image_tool_schemas_stay_bounded() -> None:
+    agent = _agent(tool_names=["edit_image", "generate_image_from_video"])
+    tools = {tool.name: tool for tool in build_runtime_tools(agent)}
+
+    edit_schema = tools["edit_image"].function_schema.json_schema
+    assert edit_schema["required"] == ["prompt", "file_ids"]
+    assert edit_schema["properties"]["file_ids"]["minItems"] == 1
+    assert edit_schema["properties"]["file_ids"]["maxItems"] == 14
+    assert edit_schema["properties"]["model_provider"]["anyOf"][0]["enum"] == [
+        "google",
+        "openai",
+    ]
+    assert "input_fidelity" not in edit_schema["properties"]
+    assert "quality" not in edit_schema["properties"]
+
+    video_schema = tools["generate_image_from_video"].function_schema.json_schema
+    assert video_schema["required"] == ["prompt", "file_id"]
+    assert set(video_schema["properties"]) == {"file_id", "model", "prompt"}
+
+
+def test_input_media_tool_availability_is_provider_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["edit_image", "generate_image_from_video"])
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    assert "edit_image" in {tool.name for tool in build_runtime_tools(agent)}
+    assert "generate_image_from_video" not in {tool.name for tool in build_runtime_tools(agent)}
+
+    _set_native_provider_keys(monkeypatch, google="google-test")
+
+    assert {"edit_image", "generate_image_from_video"}.issubset(
+        {tool.name for tool in build_runtime_tools(agent)}
+    )
+
+
 def test_generate_image_mounts_with_bounded_generation_only_schema() -> None:
     agent = _agent(tool_names=["generate_image"])
     tool = next(tool for tool in build_runtime_tools(agent) if tool.name == "generate_image")
@@ -325,12 +413,178 @@ async def test_native_image_generation_probe_extracts_normalized_provider_image(
     )
 
     [capability] = captured["capabilities"]
+    assert captured["output_type"] is BinaryImage
     assert capability.local is False
     assert capability.native.action == "generate"
     assert capability.native.output_format is None
     assert capability.native.aspect_ratio == "3:2"
     assert capability.native.moderation == "auto"
     assert capability.native.model == ("gpt-image-2" if provider == PROVIDER_OPENAI else None)
+    assert result is image
+
+
+@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE, PROVIDER_OPENAI])
+async def test_native_image_editing_probe_sends_input_image_and_edit_action(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    captured: dict[str, object] = {}
+    source = BinaryContent(data=b"source-image", media_type="image/png")
+    sources = (
+        (source, BinaryContent(data=b"second-image", media_type="image/jpeg"))
+        if provider == PROVIDER_GOOGLE
+        else (source,)
+    )
+    image = BinaryImage(data=b"edited-png", media_type="image/png")
+
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [ModelResponse(parts=[FilePart(content=image)], provider_name=provider)]
+
+    class FakeHelper:
+        def __init__(self, model, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+
+        async def run(self, prompt, *, usage_limits):
+            captured["prompt"] = prompt
+            captured["usage_limits"] = usage_limits
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+
+    result = await image_generation_tools.run_native_image_generation(
+        prompt="Make the fox red",
+        aspect_ratio=None,
+        model_spec=ResolvedModel(
+            provider=provider,
+            model="probe-model",
+            settings={},
+            max_steps=3,
+        ),
+        action="edit",
+        input_media=sources,
+        output_format="png",
+    )
+
+    [capability] = captured["capabilities"]
+    assert capability.native.action == "edit"
+    assert capability.native.output_format == "png"
+    assert "untrusted content" in captured["instructions"]
+    assert captured["prompt"] == [
+        "Edit the supplied image using this prompt:\n\nMake the fox red",
+        *sources,
+    ]
+    assert result is image
+
+
+async def test_edit_image_limits_openai_to_one_source_before_loading_media(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["edit_image"])
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    @dataclass
+    class FakeDeps:
+        agent: Agent
+
+    class FakeContext:
+        deps = FakeDeps(agent=agent)
+
+    references = [
+        FileReference(entity_id=uuid4(), label="first.png"),
+        FileReference(entity_id=uuid4(), label="second.png"),
+    ]
+    with pytest.raises(ModelRetry, match="requires exactly one source image"):
+        await image_editing_tools.edit_image(
+            FakeContext(),
+            "Combine these",
+            references,
+            model_provider=PROVIDER_OPENAI,
+        )
+
+
+async def test_edit_image_applies_combined_input_byte_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["edit_image"])
+    _set_native_provider_keys(monkeypatch, google="google-test")
+    captured: dict[str, object] = {}
+
+    async def fake_load(*_args, **kwargs):
+        captured.update(kwargs)
+        raise ModelRetry("aggregate bound probe")
+
+    @dataclass
+    class FakeDeps:
+        agent: Agent
+
+    class FakeContext:
+        deps = FakeDeps(agent=agent)
+
+    monkeypatch.setattr(settings, "NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES", 1_234)
+    monkeypatch.setattr(image_editing_tools, "load_workspace_media_inputs", fake_load)
+
+    with pytest.raises(ModelRetry, match="aggregate bound probe"):
+        await image_editing_tools.edit_image(
+            FakeContext(),
+            "Adjust the palette",
+            [FileReference(entity_id=uuid4(), label="source.png")],
+            model_provider=PROVIDER_GOOGLE,
+        )
+
+    assert captured["max_total_bytes"] == 1_234
+
+
+async def test_native_video_to_image_probe_sends_inline_video_to_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    source = BinaryContent(data=b"source-video", media_type="video/quicktime")
+    image = BinaryImage(data=b"still-png", media_type="image/png")
+
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [ModelResponse(parts=[FilePart(content=image)], provider_name=PROVIDER_GOOGLE)]
+
+    class FakeHelper:
+        def __init__(self, model, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+
+        async def run(self, prompt, *, usage_limits):
+            captured["prompt"] = prompt
+            captured["usage_limits"] = usage_limits
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+
+    result = await image_generation_tools.run_native_image_generation(
+        prompt="Create a thumbnail of the main scene",
+        aspect_ratio=None,
+        model_spec=ResolvedModel(
+            provider=PROVIDER_GOOGLE,
+            model="gemini-3.1-flash-image",
+            settings={},
+            max_steps=3,
+        ),
+        input_media=(source,),
+        output_format="png",
+    )
+
+    [capability] = captured["capabilities"]
+    assert capability.native.action == "generate"
+    assert capability.native.output_format == "png"
+    assert "untrusted content" in captured["instructions"]
+    assert captured["prompt"] == [
+        "Generate one image from the supplied video using this prompt:\n\n"
+        "Create a thumbnail of the main scene",
+        source,
+    ]
     assert result is image
 
 

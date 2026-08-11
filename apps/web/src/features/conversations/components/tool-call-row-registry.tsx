@@ -21,7 +21,7 @@ import {
 } from "@/features/conversations/components/web-search-result"
 import { WebSearchToolRow } from "@/features/conversations/components/web-search-tool-row"
 import {
-  IMAGE_TOOL_NAME,
+  isImageOutputTool,
   LIST_FILES_TOOL_NAME,
   READ_FILE_TOOL_NAME,
   WRITE_FILE_TOOL_NAME,
@@ -295,7 +295,7 @@ function memoryToolRowMatches(activity: ToolActivity) {
 function fileToolRowMatches(activity: ToolActivity) {
   if (
     (activity.name === LIST_FILES_TOOL_NAME ||
-      activity.name === IMAGE_TOOL_NAME ||
+      isImageOutputTool(activity.name) ||
       activity.name === WRITE_FILE_TOOL_NAME ||
       activity.name === READ_FILE_TOOL_NAME) &&
     activity.status !== "completed"
@@ -305,7 +305,7 @@ function fileToolRowMatches(activity: ToolActivity) {
   if (activity.name === LIST_FILES_TOOL_NAME) {
     return listFilesResult(activity.result) !== null
   }
-  if (activity.name === IMAGE_TOOL_NAME) {
+  if (isImageOutputTool(activity.name)) {
     return generateImageResult(activity.result) !== null
   }
   if (activity.name === WRITE_FILE_TOOL_NAME) {
