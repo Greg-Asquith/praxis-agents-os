@@ -41,6 +41,12 @@ export type MatchType = "ANY" | "BROAD" | "EXACT" | "PHRASE"
 
 type CampaignNegativeKeywordError = NegativeKeywordErrorBase & NegativeKeyword
 
+export type TargetNegativeKeywordOutcome = NegativeKeyword & {
+  errorCode?: string
+  externalRef?: string
+  outcome: "added" | "failed" | "not_found" | "removed" | "skipped_existing"
+}
+
 type CampaignNegativeKeywordRow = {
   campaignId: string
   campaignName: string
@@ -51,6 +57,7 @@ type CampaignNegativeKeywordRow = {
   }
   errors: CampaignNegativeKeywordError[]
   errorsTruncated: boolean
+  keywordOutcomes: TargetNegativeKeywordOutcome[] | null
 }
 
 export type CampaignNegativeKeywordResult = {
@@ -74,6 +81,7 @@ type AdGroupNegativeKeywordRow = {
   }
   errors: CampaignNegativeKeywordError[]
   errorsTruncated: boolean
+  keywordOutcomes: TargetNegativeKeywordOutcome[] | null
 }
 
 export type AdGroupNegativeKeywordResult = {
@@ -187,24 +195,44 @@ export function CampaignNegativeKeywordOutcome({
 }) {
   const appliedLabel = action === "add" ? "Added" : "Removed"
   const skippedLabel = action === "add" ? "Already existed" : "Not found"
-  const rows: DataRow[] = result.campaigns.map((campaign) => ({
-    applied: campaign.counts.applied,
-    campaign: campaign.campaignName || campaign.campaignId,
-    campaignId: campaign.campaignId,
-    details: campaign.errors.map((error) => error.message).join(" · "),
-    failed: campaign.counts.failed,
-    skipped: campaign.counts.skipped,
-  }))
-  const columns: DataColumn[] = [
-    { key: "campaign", kind: "text", label: "Campaign" },
-    { key: "campaignId", kind: "text", label: "Campaign ID" },
-    { key: "applied", kind: "text", label: appliedLabel },
-    { key: "skipped", kind: "text", label: skippedLabel },
-    { key: "failed", kind: "text", label: "Failed" },
-    ...(result.totals.failed > 0
-      ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
-      : []),
-  ]
+  const hasExactEvidence = result.campaigns.every((campaign) => campaign.keywordOutcomes !== null)
+  const exactOutcomes = result.campaigns.flatMap((campaign) => campaign.keywordOutcomes ?? [])
+  const rows: DataRow[] = hasExactEvidence
+    ? result.campaigns.flatMap((campaign) =>
+        (campaign.keywordOutcomes ?? []).map((outcome) => ({
+          campaign: campaign.campaignName || campaign.campaignId,
+          campaignId: campaign.campaignId,
+          details: outcomeDetail(outcome, campaign.errors),
+          errorCode: outcome.errorCode ?? "",
+          externalRef: outcome.externalRef ?? "",
+          keyword: outcome.text,
+          matchType: outcome.matchType,
+          outcome: outcomeLabel(outcome.outcome),
+        }))
+      )
+    : result.campaigns.map((campaign) => ({
+        applied: campaign.counts.applied,
+        campaign: campaign.campaignName || campaign.campaignId,
+        campaignId: campaign.campaignId,
+        details: campaign.errors.map((error) => error.message).join(" · "),
+        failed: campaign.counts.failed,
+        skipped: campaign.counts.skipped,
+      }))
+  const columns: DataColumn[] = hasExactEvidence
+    ? exactOutcomeColumns("campaign", {
+        includeDiagnostics: result.totals.failed > 0,
+        includeExternalReferences: exactOutcomes.some((outcome) => outcome.externalRef),
+      })
+    : [
+        { key: "campaign", kind: "text", label: "Campaign" },
+        { key: "campaignId", kind: "text", label: "Campaign ID" },
+        { key: "applied", kind: "text", label: appliedLabel },
+        { key: "skipped", kind: "text", label: skippedLabel },
+        { key: "failed", kind: "text", label: "Failed" },
+        ...(result.totals.failed > 0
+          ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
+          : []),
+      ]
   return (
     <DataTable
       columns={columns}
@@ -248,26 +276,47 @@ export function AdGroupNegativeKeywordOutcome({
 }) {
   const appliedLabel = action === "add" ? "Added" : "Removed"
   const skippedLabel = action === "add" ? "Already existed" : "Not found"
-  const rows: DataRow[] = result.adGroups.map((adGroup) => ({
-    adGroup: adGroup.adGroupName || adGroup.adGroupId,
-    adGroupId: adGroup.adGroupId,
-    applied: adGroup.counts.applied,
-    campaign: adGroup.campaignName,
-    details: adGroup.errors.map((error) => error.message).join(" · "),
-    failed: adGroup.counts.failed,
-    skipped: adGroup.counts.skipped,
-  }))
-  const columns: DataColumn[] = [
-    { key: "adGroup", kind: "text", label: "Ad Group" },
-    { key: "campaign", kind: "text", label: "Campaign" },
-    { key: "adGroupId", kind: "text", label: "Ad Group ID" },
-    { key: "applied", kind: "text", label: appliedLabel },
-    { key: "skipped", kind: "text", label: skippedLabel },
-    { key: "failed", kind: "text", label: "Failed" },
-    ...(result.totals.failed > 0
-      ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
-      : []),
-  ]
+  const hasExactEvidence = result.adGroups.every((adGroup) => adGroup.keywordOutcomes !== null)
+  const exactOutcomes = result.adGroups.flatMap((adGroup) => adGroup.keywordOutcomes ?? [])
+  const rows: DataRow[] = hasExactEvidence
+    ? result.adGroups.flatMap((adGroup) =>
+        (adGroup.keywordOutcomes ?? []).map((outcome) => ({
+          adGroup: adGroup.adGroupName || adGroup.adGroupId,
+          adGroupId: adGroup.adGroupId,
+          campaign: adGroup.campaignName,
+          details: outcomeDetail(outcome, adGroup.errors),
+          errorCode: outcome.errorCode ?? "",
+          externalRef: outcome.externalRef ?? "",
+          keyword: outcome.text,
+          matchType: outcome.matchType,
+          outcome: outcomeLabel(outcome.outcome),
+        }))
+      )
+    : result.adGroups.map((adGroup) => ({
+        adGroup: adGroup.adGroupName || adGroup.adGroupId,
+        adGroupId: adGroup.adGroupId,
+        applied: adGroup.counts.applied,
+        campaign: adGroup.campaignName,
+        details: adGroup.errors.map((error) => error.message).join(" · "),
+        failed: adGroup.counts.failed,
+        skipped: adGroup.counts.skipped,
+      }))
+  const columns: DataColumn[] = hasExactEvidence
+    ? exactOutcomeColumns("ad_group", {
+        includeDiagnostics: result.totals.failed > 0,
+        includeExternalReferences: exactOutcomes.some((outcome) => outcome.externalRef),
+      })
+    : [
+        { key: "adGroup", kind: "text", label: "Ad Group" },
+        { key: "campaign", kind: "text", label: "Campaign" },
+        { key: "adGroupId", kind: "text", label: "Ad Group ID" },
+        { key: "applied", kind: "text", label: appliedLabel },
+        { key: "skipped", kind: "text", label: skippedLabel },
+        { key: "failed", kind: "text", label: "Failed" },
+        ...(result.totals.failed > 0
+          ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
+          : []),
+      ]
   return (
     <DataTable
       columns={columns}
@@ -418,4 +467,60 @@ function matchTypeCounts(keywords: NegativeKeyword[]): Record<MatchType, number>
     counts[keyword.matchType] += 1
   }
   return counts
+}
+
+function exactOutcomeColumns(
+  target: "ad_group" | "campaign",
+  options: { includeDiagnostics: boolean; includeExternalReferences: boolean }
+): DataColumn[] {
+  return [
+    ...(target === "ad_group"
+      ? ([
+          { key: "adGroup", kind: "text", label: "Ad Group" },
+          { key: "adGroupId", kind: "text", label: "Ad Group ID" },
+          { key: "campaign", kind: "text", label: "Campaign" },
+        ] satisfies DataColumn[])
+      : ([
+          { key: "campaign", kind: "text", label: "Campaign" },
+          { key: "campaignId", kind: "text", label: "Campaign ID" },
+        ] satisfies DataColumn[])),
+    { key: "keyword", kind: "text", label: "Keyword" },
+    { key: "matchType", kind: "badge", label: "Match Type" },
+    { key: "outcome", kind: "status", label: "Outcome" },
+    ...(options.includeDiagnostics
+      ? ([
+          { key: "details", kind: "text", label: "Details" },
+          { key: "errorCode", kind: "text", label: "Error Code" },
+        ] satisfies DataColumn[])
+      : []),
+    ...(options.includeExternalReferences
+      ? ([{ key: "externalRef", kind: "text", label: "External Reference" }] satisfies DataColumn[])
+      : []),
+  ]
+}
+
+function outcomeLabel(outcome: TargetNegativeKeywordOutcome["outcome"]): string {
+  switch (outcome) {
+    case "added":
+      return "Added"
+    case "removed":
+      return "Removed"
+    case "skipped_existing":
+      return "Already existed"
+    case "not_found":
+      return "Not found"
+    case "failed":
+      return "Failed"
+  }
+}
+
+function outcomeDetail(
+  outcome: TargetNegativeKeywordOutcome,
+  errors: CampaignNegativeKeywordError[]
+): string {
+  if (outcome.outcome !== "failed") return ""
+  return (
+    errors.find((error) => error.text === outcome.text && error.matchType === outcome.matchType)
+      ?.message ?? ""
+  )
 }

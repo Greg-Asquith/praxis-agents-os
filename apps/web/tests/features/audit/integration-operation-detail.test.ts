@@ -28,6 +28,20 @@ describe("IntegrationOperationDetail", () => {
                 text: "Brand Term",
                 match_type: "EXACT",
                 settings: { close_variants: false, labels: ["brand", "reviewed"] },
+                keyword_outcomes: [
+                  {
+                    text: "free",
+                    match_type: "EXACT",
+                    outcome: "added",
+                    external_ref: "customers/123/campaignCriteria/10~1",
+                  },
+                  {
+                    text: "jobs",
+                    match_type: "PHRASE",
+                    outcome: "failed",
+                    error_code: "INVALID_KEYWORD_TEXT",
+                  },
+                ],
               },
             },
           ],
@@ -46,8 +60,63 @@ describe("IntegrationOperationDetail", () => {
     expect(html).toContain("Brand Term")
     expect(html).toContain("EXACT")
     expect(html).toContain("close_variants")
+    expect(html).toContain("Keyword Outcomes")
+    expect(html).toContain("Match Type")
+    expect(html).toContain("External Ref")
+    expect(html).toContain("Error Code")
+    expect(html).toContain("free")
+    expect(html).toContain("jobs")
+    expect(html).toContain("INVALID_KEYWORD…")
+    expect(html).toContain("sm:col-span-2")
+    expect(html).toContain('aria-label="Structured details"')
+    expect(html).not.toContain('class="divide-y"')
+    expect(html).not.toContain("max-h-64")
+    expect(html.indexOf(">Text</th>")).toBeLessThan(html.indexOf(">Match Type</th>"))
+    expect(html.indexOf(">Match Type</th>")).toBeLessThan(html.indexOf(">Outcome</th>"))
+    expect(html.indexOf(">Outcome</th>")).toBeLessThan(html.indexOf(">External Ref</th>"))
+    expect(html).toContain(">added</span>")
     expect(html).toContain("brand")
     expect(html).toContain("customers/123/sharedCriteria/50~1")
+  })
+
+  it("preserves record field order without provider-specific column rules", () => {
+    const html = renderToStaticMarkup(
+      createElement(IntegrationOperationDetail, {
+        value: {
+          schema_version: 1,
+          target: {
+            entity_type: "generic_resource",
+            external_id: "resource-1",
+            display_name: null,
+            integration_resource_id: "resource-1",
+            attributes: {},
+          },
+          changes: [
+            {
+              action: "update",
+              entity_type: "generic_record",
+              external_ref: null,
+              fields: {
+                rows: [
+                  {
+                    zeta_field: "123456789012345",
+                    text: "1234567890123456",
+                    alpha_field: "third",
+                  },
+                ],
+              },
+            },
+          ],
+          counts: { applied: 1, skipped: 0, failed: 0 },
+        },
+      })
+    )
+
+    expect(html.indexOf(">Zeta Field</th>")).toBeLessThan(html.indexOf(">Text</th>"))
+    expect(html.indexOf(">Text</th>")).toBeLessThan(html.indexOf(">Alpha Field</th>"))
+    expect(html).toContain(">123456789012345</span>")
+    expect(html).toContain(">123456789012345…</span>")
+    expect(html).toContain('data-slot="tooltip-trigger"')
   })
 
   it("fails closed for malformed operation detail", () => {

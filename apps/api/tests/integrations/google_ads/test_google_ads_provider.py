@@ -134,6 +134,17 @@ from integrations.google_ads.tools.utils import (
     normalize_negative_keywords,
     run_audited_operation,
 )
+from integrations.google_ads.tools.utils.ad_group_negative_keywords import (
+    _ad_group_result,
+    _operation_detail as ad_group_negative_operation_detail,
+    _pending_operation_detail as ad_group_negative_pending_detail,
+)
+from integrations.google_ads.tools.utils.campaign_negative_keywords import (
+    MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
+    _campaign_result,
+    _operation_detail as campaign_negative_operation_detail,
+    _pending_operation_detail as campaign_negative_pending_detail,
+)
 from integrations.google_ads.tools.verifiers import (
     verify_ad_groups,
     verify_campaigns,
@@ -141,6 +152,9 @@ from integrations.google_ads.tools.verifiers import (
 )
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.audit_events import AuditStatus
+from services.audit_events.integration_operation_detail import (
+    MAX_INTEGRATION_OPERATION_DETAIL_BYTES,
+)
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.credentials.google_service_account import (
     GOOGLE_TOKEN_URL,
@@ -3841,7 +3855,15 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
         return_value={
             "added": [],
             "resource_names": [],
-            "skipped_existing": [],
+            "skipped_existing": [
+                {
+                    "campaign_id": str(campaign_index),
+                    "text": f"term {keyword_index}",
+                    "match_type": "EXACT",
+                }
+                for campaign_index in range(1, 51)
+                for keyword_index in range(50)
+            ],
             "campaign_errors": [],
         }
     )
@@ -3871,6 +3893,9 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
     assert result.return_value["results"][0]["status"] == "success"
     assert len(provider_add.await_args.kwargs["campaign_ids"]) == 50
     assert len(provider_add.await_args.kwargs["keywords"]) == 50
+    assert "keyword_outcomes" not in result.return_value["results"][0]["data"]["campaigns"][0]
+    public_campaigns = result.metadata["public_result"]["results"][0]["data"]["campaigns"]
+    assert sum(len(campaign["keyword_outcomes"]) for campaign in public_campaigns) == 2_500
 
 
 async def test_campaign_negative_keyword_fan_out_bound_rejects_3000_before_provider(
@@ -4100,7 +4125,15 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         return_value={
             "added": [],
             "resource_names": [],
-            "skipped_existing": [],
+            "skipped_existing": [
+                {
+                    "ad_group_id": str(ad_group_index),
+                    "text": f"term {keyword_index}",
+                    "match_type": "EXACT",
+                }
+                for ad_group_index in range(1, 51)
+                for keyword_index in range(50)
+            ],
             "ad_group_errors": [],
         }
     )
@@ -4211,6 +4244,231 @@ async def test_ad_group_negative_keyword_write_denial_is_audited_before_provider
         "remove_ad_group_negative_keywords",
     ]
     assert all(call.kwargs["status"] == AuditStatus.FAILURE for call in audit.await_args_list)
+
+
+def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() -> None:
+    entry = _writable_google_ads_entry()
+    campaigns = [_campaign_reference(entry, "10"), _campaign_reference(entry, "20")]
+    keywords = [
+        {"text": "free", "match_type": "EXACT"},
+        {"text": "jobs", "match_type": "PHRASE"},
+    ]
+    result = {
+        "added": [
+            {
+                "campaign_id": "20",
+                "text": "jobs",
+                "match_type": "PHRASE",
+                "resource_name": "customers/111/campaignCriteria/20~4",
+            },
+            {
+                "campaign_id": "10",
+                "text": "free",
+                "match_type": "EXACT",
+                "resource_name": "customers/111/campaignCriteria/10~1",
+            },
+        ],
+        "resource_names": [
+            "customers/111/campaignCriteria/20~4",
+            "customers/111/campaignCriteria/10~1",
+        ],
+        "skipped_existing": [{"campaign_id": "10", "text": "jobs", "match_type": "PHRASE"}],
+        "campaign_errors": [
+            {
+                "campaign_id": "20",
+                "text": "free",
+                "match_type": "EXACT",
+                "message": "Keyword is restricted",
+                "error_code": "INVALID_KEYWORD_TEXT",
+            }
+        ],
+    }
+
+    display = _campaign_result(
+        "add",
+        campaigns,
+        result,
+        max_campaigns=2,
+        keywords=keywords,
+        include_keyword_outcomes=True,
+    )
+    model = _campaign_result(
+        "add", campaigns, result, max_campaigns=2, include_keyword_outcomes=False
+    )
+    detail = campaign_negative_operation_detail(entry, campaigns, keywords, "add", result)
+    pending = campaign_negative_pending_detail(entry, campaigns, "add", keywords)
+
+    expected = [
+        {
+            "text": "free",
+            "match_type": "EXACT",
+            "outcome": "added",
+            "external_ref": "customers/111/campaignCriteria/10~1",
+        },
+        {"text": "jobs", "match_type": "PHRASE", "outcome": "skipped_existing"},
+    ]
+    assert display["campaigns"][0]["keyword_outcomes"] == expected
+    assert display["campaigns"][1]["keyword_outcomes"] == [
+        {
+            "text": "free",
+            "match_type": "EXACT",
+            "outcome": "failed",
+            "error_code": "INVALID_KEYWORD_TEXT",
+        },
+        {
+            "text": "jobs",
+            "match_type": "PHRASE",
+            "outcome": "added",
+            "external_ref": "customers/111/campaignCriteria/20~4",
+        },
+    ]
+    assert "keyword_outcomes" not in model["campaigns"][0]
+    assert detail.changes[0].fields["keyword_outcomes"] == expected
+    assert detail.counts.model_dump() == {"applied": 2, "skipped": 1, "failed": 1}
+    assert pending.target.attributes["requested_keywords"] == keywords
+    assert [change.fields["keyword_count"] for change in pending.changes] == [2, 2]
+
+
+def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -> None:
+    entry = _writable_google_ads_entry()
+    ad_groups = [_ad_group_reference(entry, "10"), _ad_group_reference(entry, "20")]
+    keywords = [
+        {"text": "term", "match_type": "ANY"},
+        {"text": "missing", "match_type": "EXACT"},
+    ]
+    result = {
+        "removed": [
+            {
+                "ad_group_id": "20",
+                "text": "Term",
+                "match_type": "PHRASE",
+                "resource_name": "customers/111/adGroupCriteria/20~3",
+            },
+            {
+                "ad_group_id": "10",
+                "text": "term",
+                "match_type": "BROAD",
+                "resource_name": "customers/111/adGroupCriteria/10~2",
+            },
+        ],
+        "resource_names": [
+            "customers/111/adGroupCriteria/20~3",
+            "customers/111/adGroupCriteria/10~2",
+        ],
+        "not_found": [
+            {"ad_group_id": "10", "text": "missing", "match_type": "EXACT"},
+            {"ad_group_id": "20", "text": "missing", "match_type": "EXACT"},
+        ],
+        "ad_group_errors": [
+            {
+                "ad_group_id": "10",
+                "text": "term",
+                "match_type": "EXACT",
+                "message": "Criterion could not be removed",
+                "error_code": "CANNOT_REMOVE_CRITERION",
+            }
+        ],
+    }
+
+    display = _ad_group_result(
+        "remove",
+        ad_groups,
+        result,
+        max_ad_groups=2,
+        keywords=keywords,
+        include_keyword_outcomes=True,
+    )
+    detail = ad_group_negative_operation_detail(entry, ad_groups, keywords, "remove", result)
+    pending = ad_group_negative_pending_detail(entry, ad_groups, "remove", keywords)
+
+    assert display["ad_groups"][0]["keyword_outcomes"] == [
+        {
+            "text": "term",
+            "match_type": "EXACT",
+            "outcome": "failed",
+            "error_code": "CANNOT_REMOVE_CRITERION",
+        },
+        {
+            "text": "term",
+            "match_type": "BROAD",
+            "outcome": "removed",
+            "external_ref": "customers/111/adGroupCriteria/10~2",
+        },
+        {"text": "missing", "match_type": "EXACT", "outcome": "not_found"},
+    ]
+    assert (
+        detail.changes[0].fields["keyword_outcomes"] == display["ad_groups"][0]["keyword_outcomes"]
+    )
+    assert detail.counts.model_dump() == {"applied": 2, "skipped": 2, "failed": 1}
+    assert pending.target.attributes["requested_keywords"] == keywords
+
+
+def test_campaign_negative_keyword_evidence_rejects_inconsistent_resource_attribution() -> None:
+    entry = _writable_google_ads_entry()
+    campaigns = [_campaign_reference(entry, "10")]
+    keywords = [{"text": "free", "match_type": "EXACT"}]
+    result = {
+        "added": [
+            {
+                "campaign_id": "10",
+                "text": "free",
+                "match_type": "EXACT",
+                "resource_name": "customers/111/campaignCriteria/10~1",
+            }
+        ],
+        "resource_names": ["customers/111/campaignCriteria/10~wrong"],
+        "skipped_existing": [],
+        "campaign_errors": [],
+    }
+
+    with pytest.raises(ValueError, match="resource attribution"):
+        campaign_negative_operation_detail(entry, campaigns, keywords, "add", result)
+
+
+def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> None:
+    entry = _writable_google_ads_entry()
+    campaigns = [_campaign_reference(entry, str(index)) for index in range(1, 51)]
+    keywords = [
+        {"text": f"keyword-{index}-".ljust(80, "x"), "match_type": "EXACT"} for index in range(50)
+    ]
+    added = [
+        {
+            "campaign_id": campaign.external_id,
+            **keyword,
+            "resource_name": (
+                f"customers/111/campaignCriteria/{campaign.external_id}~{keyword_index}"
+            ),
+        }
+        for campaign in campaigns
+        for keyword_index, keyword in enumerate(keywords)
+    ]
+    result = {
+        "added": added,
+        "resource_names": [item["resource_name"] for item in added],
+        "skipped_existing": [],
+        "campaign_errors": [],
+    }
+
+    display = _campaign_result(
+        "add",
+        campaigns,
+        result,
+        max_campaigns=50,
+        keywords=keywords,
+        include_keyword_outcomes=True,
+    )
+    detail = campaign_negative_operation_detail(entry, campaigns, keywords, "add", result)
+    display_bytes = len(json.dumps(display, ensure_ascii=False, separators=(",", ":")).encode())
+    detail_bytes = len(
+        json.dumps(
+            detail.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")
+        ).encode()
+    )
+
+    assert sum(len(row["keyword_outcomes"]) for row in display["campaigns"]) == 2_500
+    assert sum(len(change.fields["keyword_outcomes"]) for change in detail.changes) == 2_500
+    assert display_bytes < MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS
+    assert detail_bytes < MAX_INTEGRATION_OPERATION_DETAIL_BYTES
 
 
 async def test_service_account_assertion_claims_and_token_cache() -> None:

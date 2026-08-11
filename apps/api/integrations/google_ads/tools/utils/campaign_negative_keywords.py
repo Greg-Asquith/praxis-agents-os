@@ -34,6 +34,7 @@ from .audit import record_google_ads_operation_audit, run_audited_operation
 from .bindings import GOOGLE_ADS_WRITE_BINDING
 from .client import google_ads_client
 from .fan_out import fan_out_tool_return
+from .negative_keyword_evidence import exact_negative_keyword_outcomes
 from .negative_keywords import normalize_negative_keywords
 from .routing import login_customer_id
 
@@ -109,6 +110,7 @@ async def run_campaign_negative_keyword_tool(
             operation_detail_from_result=lambda value: _operation_detail(
                 entry,
                 campaign_references,
+                [keyword.model_dump() for keyword in normalized_keywords],
                 action,
                 value,
             ),
@@ -117,7 +119,7 @@ async def run_campaign_negative_keyword_tool(
                 entry,
                 campaign_references,
                 action,
-                len(normalized_keywords),
+                [keyword.model_dump() for keyword in normalized_keywords],
             ),
             require_durable_audit=True,
         )
@@ -127,12 +129,15 @@ async def run_campaign_negative_keyword_tool(
                 campaign_references,
                 full_result,
                 max_campaigns=_MAX_MODEL_CAMPAIGNS,
+                include_keyword_outcomes=False,
             ),
             "display_result": _campaign_result(
                 action,
                 campaign_references,
                 full_result,
                 max_campaigns=len(campaign_references),
+                keywords=[keyword.model_dump() for keyword in normalized_keywords],
+                include_keyword_outcomes=True,
             ),
         }
 
@@ -183,10 +188,10 @@ def _pending_operation_detail(
     entry: ResolvedContextEntry,
     campaigns: Sequence[GoogleAdsCampaignReference],
     action: CampaignNegativeAction,
-    keyword_count: int,
+    keywords: Sequence[Mapping[str, str]],
 ) -> IntegrationOperationDetail:
     return IntegrationOperationDetail(
-        target=_account_target(entry),
+        target=_account_target(entry, requested_keywords=keywords),
         changes=[
             IntegrationOperationChange(
                 action=action,
@@ -194,7 +199,7 @@ def _pending_operation_detail(
                 fields={
                     "campaign_id": campaign.external_id,
                     "campaign_name": campaign.label,
-                    "keyword_count": keyword_count,
+                    "keyword_count": len(keywords),
                 },
             )
             for campaign in campaigns
@@ -206,12 +211,21 @@ def _pending_operation_detail(
 def _operation_detail(
     entry: ResolvedContextEntry,
     campaigns: Sequence[GoogleAdsCampaignReference],
+    keywords: Sequence[Mapping[str, str]],
     action: CampaignNegativeAction,
     result: Mapping[str, Any],
 ) -> IntegrationOperationDetail:
     applied_key = "added" if action == "add" else "removed"
     skipped_key = "skipped_existing" if action == "add" else "not_found"
     by_campaign = _campaign_counts(action, campaigns, result)
+    outcomes = exact_negative_keyword_outcomes(
+        action=action,
+        entity_id_key="campaign_id",
+        entity_ids=[campaign.external_id for campaign in campaigns],
+        keywords=keywords,
+        result=result,
+        errors_key="campaign_errors",
+    )
     return IntegrationOperationDetail(
         target=_account_target(entry),
         changes=[
@@ -222,6 +236,7 @@ def _operation_detail(
                     "campaign_id": campaign.external_id,
                     "campaign_name": campaign.label,
                     **by_campaign[campaign.external_id],
+                    "keyword_outcomes": outcomes[campaign.external_id],
                 },
             )
             for campaign in campaigns
@@ -234,12 +249,17 @@ def _operation_detail(
     )
 
 
-def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
+def _account_target(
+    entry: ResolvedContextEntry,
+    *,
+    requested_keywords: Sequence[Mapping[str, str]] = (),
+) -> IntegrationOperationTarget:
     return IntegrationOperationTarget(
         entity_type="google_ads_account",
         external_id=entry.external_id,
         display_name=entry.display_name,
         integration_resource_id=str(entry.integration_resource_id),
+        attributes={"requested_keywords": [dict(keyword) for keyword in requested_keywords]},
     )
 
 
@@ -249,10 +269,24 @@ def _campaign_result(
     result: Mapping[str, Any],
     *,
     max_campaigns: int,
+    keywords: Sequence[Mapping[str, str]] = (),
+    include_keyword_outcomes: bool,
 ) -> dict[str, Any]:
     applied_key = "added" if action == "add" else "removed"
     skipped_key = "skipped_existing" if action == "add" else "not_found"
     counts = _campaign_counts(action, campaigns, result)
+    outcomes = (
+        exact_negative_keyword_outcomes(
+            action=action,
+            entity_id_key="campaign_id",
+            entity_ids=[campaign.external_id for campaign in campaigns],
+            keywords=keywords,
+            result=result,
+            errors_key="campaign_errors",
+        )
+        if include_keyword_outcomes
+        else {}
+    )
     errors_by_campaign: dict[str, list[dict[str, str]]] = {}
     for error in result.get("campaign_errors", []):
         if not isinstance(error, Mapping):
@@ -269,15 +303,16 @@ def _campaign_result(
     campaign_rows = []
     for campaign in campaigns[:max_campaigns]:
         errors = errors_by_campaign.get(campaign.external_id, [])
-        campaign_rows.append(
-            {
-                "campaign_id": campaign.external_id,
-                "campaign_name": campaign.label,
-                "counts": counts[campaign.external_id],
-                "campaign_errors": errors[:_MAX_ERRORS_PER_CAMPAIGN],
-                "errors_truncated": len(errors) > _MAX_ERRORS_PER_CAMPAIGN,
-            }
-        )
+        campaign_row = {
+            "campaign_id": campaign.external_id,
+            "campaign_name": campaign.label,
+            "counts": counts[campaign.external_id],
+            "campaign_errors": errors[:_MAX_ERRORS_PER_CAMPAIGN],
+            "errors_truncated": len(errors) > _MAX_ERRORS_PER_CAMPAIGN,
+        }
+        if include_keyword_outcomes:
+            campaign_row["keyword_outcomes"] = outcomes[campaign.external_id]
+        campaign_rows.append(campaign_row)
     return {
         "counts": {
             applied_key: len(result.get(applied_key, [])),

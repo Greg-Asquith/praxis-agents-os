@@ -34,6 +34,7 @@ from .audit import record_google_ads_operation_audit, run_audited_operation
 from .bindings import GOOGLE_ADS_WRITE_BINDING
 from .client import google_ads_client
 from .fan_out import fan_out_tool_return
+from .negative_keyword_evidence import exact_negative_keyword_outcomes
 from .negative_keywords import normalize_negative_keywords
 from .routing import login_customer_id
 
@@ -102,11 +103,18 @@ async def run_ad_group_negative_keyword_tool(
             execute=execute,
             external_ref_from_result=lambda value: _single_external_ref(value),
             operation_detail_from_result=lambda value: _operation_detail(
-                entry, ad_group_references, action, value
+                entry,
+                ad_group_references,
+                [keyword.model_dump() for keyword in normalized_keywords],
+                action,
+                value,
             ),
             status_from_result=lambda value: _audit_status(action, value),
             pending_operation_detail=_pending_operation_detail(
-                entry, ad_group_references, action, len(normalized_keywords)
+                entry,
+                ad_group_references,
+                action,
+                [keyword.model_dump() for keyword in normalized_keywords],
             ),
             require_durable_audit=True,
         )
@@ -116,12 +124,15 @@ async def run_ad_group_negative_keyword_tool(
                 ad_group_references,
                 full_result,
                 max_ad_groups=_MAX_MODEL_AD_GROUPS,
+                include_keyword_outcomes=False,
             ),
             "display_result": _ad_group_result(
                 action,
                 ad_group_references,
                 full_result,
                 max_ad_groups=len(ad_group_references),
+                keywords=[keyword.model_dump() for keyword in normalized_keywords],
+                include_keyword_outcomes=True,
             ),
         }
 
@@ -172,10 +183,10 @@ def _pending_operation_detail(
     entry: ResolvedContextEntry,
     ad_groups: Sequence[GoogleAdsAdGroupReference],
     action: AdGroupNegativeAction,
-    keyword_count: int,
+    keywords: Sequence[Mapping[str, str]],
 ) -> IntegrationOperationDetail:
     return IntegrationOperationDetail(
-        target=_account_target(entry),
+        target=_account_target(entry, requested_keywords=keywords),
         changes=[
             IntegrationOperationChange(
                 action=action,
@@ -184,7 +195,7 @@ def _pending_operation_detail(
                     "ad_group_id": ad_group.external_id,
                     "ad_group_name": ad_group.label,
                     "campaign_name": ad_group.scope_label or "",
-                    "keyword_count": keyword_count,
+                    "keyword_count": len(keywords),
                 },
             )
             for ad_group in ad_groups
@@ -196,12 +207,21 @@ def _pending_operation_detail(
 def _operation_detail(
     entry: ResolvedContextEntry,
     ad_groups: Sequence[GoogleAdsAdGroupReference],
+    keywords: Sequence[Mapping[str, str]],
     action: AdGroupNegativeAction,
     result: Mapping[str, Any],
 ) -> IntegrationOperationDetail:
     applied_key = "added" if action == "add" else "removed"
     skipped_key = "skipped_existing" if action == "add" else "not_found"
     by_ad_group = _ad_group_counts(action, ad_groups, result)
+    outcomes = exact_negative_keyword_outcomes(
+        action=action,
+        entity_id_key="ad_group_id",
+        entity_ids=[ad_group.external_id for ad_group in ad_groups],
+        keywords=keywords,
+        result=result,
+        errors_key="ad_group_errors",
+    )
     return IntegrationOperationDetail(
         target=_account_target(entry),
         changes=[
@@ -213,6 +233,7 @@ def _operation_detail(
                     "ad_group_name": ad_group.label,
                     "campaign_name": ad_group.scope_label or "",
                     **by_ad_group[ad_group.external_id],
+                    "keyword_outcomes": outcomes[ad_group.external_id],
                 },
             )
             for ad_group in ad_groups
@@ -225,12 +246,17 @@ def _operation_detail(
     )
 
 
-def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
+def _account_target(
+    entry: ResolvedContextEntry,
+    *,
+    requested_keywords: Sequence[Mapping[str, str]] = (),
+) -> IntegrationOperationTarget:
     return IntegrationOperationTarget(
         entity_type="google_ads_account",
         external_id=entry.external_id,
         display_name=entry.display_name,
         integration_resource_id=str(entry.integration_resource_id),
+        attributes={"requested_keywords": [dict(keyword) for keyword in requested_keywords]},
     )
 
 
@@ -240,10 +266,24 @@ def _ad_group_result(
     result: Mapping[str, Any],
     *,
     max_ad_groups: int,
+    keywords: Sequence[Mapping[str, str]] = (),
+    include_keyword_outcomes: bool,
 ) -> dict[str, Any]:
     applied_key = "added" if action == "add" else "removed"
     skipped_key = "skipped_existing" if action == "add" else "not_found"
     counts = _ad_group_counts(action, ad_groups, result)
+    outcomes = (
+        exact_negative_keyword_outcomes(
+            action=action,
+            entity_id_key="ad_group_id",
+            entity_ids=[ad_group.external_id for ad_group in ad_groups],
+            keywords=keywords,
+            result=result,
+            errors_key="ad_group_errors",
+        )
+        if include_keyword_outcomes
+        else {}
+    )
     errors_by_ad_group: dict[str, list[dict[str, str]]] = {}
     for error in result.get("ad_group_errors", []):
         if not isinstance(error, Mapping):
@@ -260,16 +300,17 @@ def _ad_group_result(
     ad_group_rows = []
     for ad_group in ad_groups[:max_ad_groups]:
         errors = errors_by_ad_group.get(ad_group.external_id, [])
-        ad_group_rows.append(
-            {
-                "ad_group_id": ad_group.external_id,
-                "ad_group_name": ad_group.label,
-                "campaign_name": ad_group.scope_label or "",
-                "counts": counts[ad_group.external_id],
-                "ad_group_errors": errors[:_MAX_ERRORS_PER_AD_GROUP],
-                "errors_truncated": len(errors) > _MAX_ERRORS_PER_AD_GROUP,
-            }
-        )
+        ad_group_row = {
+            "ad_group_id": ad_group.external_id,
+            "ad_group_name": ad_group.label,
+            "campaign_name": ad_group.scope_label or "",
+            "counts": counts[ad_group.external_id],
+            "ad_group_errors": errors[:_MAX_ERRORS_PER_AD_GROUP],
+            "errors_truncated": len(errors) > _MAX_ERRORS_PER_AD_GROUP,
+        }
+        if include_keyword_outcomes:
+            ad_group_row["keyword_outcomes"] = outcomes[ad_group.external_id]
+        ad_group_rows.append(ad_group_row)
     return {
         "counts": {
             applied_key: len(result.get(applied_key, [])),

@@ -3,13 +3,16 @@
 import { CircleCheckIcon, CircleXIcon, MinusCircleIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   parseIntegrationOperationDetail,
   type AuditDetailValue,
   type OperationChange,
   type OperationDetail,
 } from "@/features/audit/operation-detail"
-import { titleCaseToken } from "@/lib/format"
+import { titleCaseToken, truncateText } from "@/lib/format"
+
+const STRUCTURED_VALUE_PREVIEW_LENGTH = 15
 
 export function IntegrationOperationDetail({ value }: { value: unknown }) {
   const detail = parseIntegrationOperationDetail(value)
@@ -41,9 +44,14 @@ export function IntegrationOperationDetail({ value }: { value: unknown }) {
           {targetAttributes.length > 0 ? (
             <dl className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2">
               {targetAttributes.map(([key, item]) => (
-                <div key={key} className="min-w-0">
+                <div
+                  key={key}
+                  className={isStructuredRecordArray(item) ? "min-w-0 sm:col-span-2" : "min-w-0"}
+                >
                   <dt className="text-muted-foreground text-xs">{titleCaseToken(key, key)}</dt>
-                  <dd className="mt-0.5 wrap-break-word">{formatDetailValue(item)}</dd>
+                  <dd className="mt-0.5 wrap-break-word">
+                    <DetailValue value={item} />
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -71,9 +79,16 @@ export function IntegrationOperationDetail({ value }: { value: unknown }) {
                 </div>
                 <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
                   {Object.entries(change.fields).map(([key, item]) => (
-                    <div className="min-w-0" key={key}>
+                    <div
+                      className={
+                        isStructuredRecordArray(item) ? "min-w-0 sm:col-span-2" : "min-w-0"
+                      }
+                      key={key}
+                    >
                       <dt className="text-muted-foreground text-xs">{titleCaseToken(key, key)}</dt>
-                      <dd className="mt-0.5 text-sm wrap-break-word">{formatDetailValue(item)}</dd>
+                      <dd className="mt-0.5 text-sm wrap-break-word">
+                        <DetailValue value={item} />
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -126,11 +141,87 @@ function SectionLabel({ children }: { children: string }) {
   return <h3 className="text-muted-foreground text-xs font-medium">{children}</h3>
 }
 
-function formatDetailValue(value: AuditDetailValue | undefined) {
+function DetailValue({ value }: { value: AuditDetailValue | undefined }) {
+  if (isStructuredRecordArray(value)) {
+    return <StructuredRecordTable records={value} />
+  }
+  return formatDetailValue(value)
+}
+
+function StructuredRecordTable({ records }: { records: Record<string, AuditDetailValue>[] }) {
+  const columns = recordColumns(records)
+  return (
+    <TooltipProvider>
+      <table aria-label="Structured details" className="w-full table-fixed text-left text-sm">
+        <thead>
+          <tr className="border-b">
+            {columns.map((key) => (
+              <th
+                className="text-muted-foreground pr-4 pb-2 text-[11px] font-medium last:pr-0"
+                key={key}
+                scope="col"
+              >
+                {titleCaseToken(key, key)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record, index) => (
+            <tr className="border-b last:border-b-0" key={detailRecordKey(record, index)}>
+              {columns.map((key) => (
+                <td className="py-3 pr-4 align-top last:pr-0" key={key}>
+                  <StructuredRecordValue value={record[key]} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TooltipProvider>
+  )
+}
+
+function StructuredRecordValue({ value }: { value: AuditDetailValue | undefined }) {
+  const formatted = formatDetailValue(value)
+  if (formatted.length <= STRUCTURED_VALUE_PREVIEW_LENGTH) {
+    return <span className="block max-w-full truncate">{formatted}</span>
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger className="block max-w-full truncate text-left" render={<span />}>
+        {truncateText(formatted, STRUCTURED_VALUE_PREVIEW_LENGTH, "…")}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[min(48rem,calc(100vw-2rem))] break-all">
+        {formatted}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function formatDetailValue(value: AuditDetailValue | undefined): string {
   if (value === undefined || value === null) return "None"
   if (typeof value === "boolean") return value ? "Yes" : "No"
   if (typeof value === "object") return JSON.stringify(value)
   return String(value)
+}
+
+function isDetailRecord(value: AuditDetailValue): value is Record<string, AuditDetailValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isStructuredRecordArray(
+  value: AuditDetailValue | undefined
+): value is Record<string, AuditDetailValue>[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isDetailRecord)
+}
+
+function recordColumns(records: Record<string, AuditDetailValue>[]): string[] {
+  return [...new Set(records.flatMap((record) => Object.keys(record)))]
+}
+
+function detailRecordKey(record: Record<string, AuditDetailValue>, index: number): string {
+  return `${String(index)}:${JSON.stringify(record)}`
 }
 
 function changeKey(change: OperationChange) {

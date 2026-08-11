@@ -917,6 +917,20 @@ describe("Google Ads tool presenters", () => {
                     counts: { removed: 2, not_found: 0, failed: 0 },
                     campaign_errors: [],
                     errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "free",
+                        match_type: "EXACT",
+                        outcome: "removed",
+                        external_ref: "customers/111/campaignCriteria/10~1",
+                      },
+                      {
+                        text: "jobs",
+                        match_type: "PHRASE",
+                        outcome: "removed",
+                        external_ref: "customers/111/campaignCriteria/10~2",
+                      },
+                    ],
                   },
                   {
                     campaign_id: "20",
@@ -931,6 +945,21 @@ describe("Google Ads tool presenters", () => {
                       },
                     ],
                     errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "careers",
+                        match_type: "EXACT",
+                        outcome: "removed",
+                        external_ref: "customers/111/campaignCriteria/20~3",
+                      },
+                      { text: "unavailable", match_type: "PHRASE", outcome: "not_found" },
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        outcome: "failed",
+                        error_code: "CANNOT_ADD_CRITERION",
+                      },
+                    ],
                   },
                 ],
                 campaigns_truncated: false,
@@ -946,6 +975,8 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Prospecting")
     expect(html).toContain("Removed")
     expect(html).toContain("Not found")
+    expect(html).toContain("careers")
+    expect(html).toContain("customers/111/campaignCriteria/20~3")
     expect(html).toContain("This campaign type rejected the criterion.")
   })
 
@@ -1009,6 +1040,21 @@ describe("Google Ads tool presenters", () => {
                       },
                     ],
                     errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "free",
+                        match_type: "EXACT",
+                        outcome: "removed",
+                        external_ref: "customers/111/adGroupCriteria/10~1",
+                      },
+                      { text: "jobs", match_type: "PHRASE", outcome: "not_found" },
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        outcome: "failed",
+                        error_code: "CANNOT_REMOVE_CRITERION",
+                      },
+                    ],
                   },
                 ],
                 ad_groups_truncated: false,
@@ -1023,7 +1069,94 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Exact")
     expect(html).toContain("Brand")
     expect(html).toContain("Not found")
+    expect(html).toContain("jobs")
     expect(html).toContain("This criterion could not be removed.")
+  })
+
+  it("renders exact completed campaign and ad-group keyword additions", () => {
+    const campaignHtml = render(
+      googleAdsCampaignNegativeKeywordsPresenter.render(
+        props({
+          id: "campaign-negative-keywords-add-result",
+          kind: "result",
+          name: "google_ads_add_campaign_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { added: 1, skipped_existing: 0, failed: 0 },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Brand",
+                    counts: { added: 1, skipped_existing: 0, failed: 0 },
+                    campaign_errors: [],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "free trial",
+                        match_type: "PHRASE",
+                        outcome: "added",
+                        external_ref: "customers/111/campaignCriteria/10~1",
+                      },
+                    ],
+                  },
+                ],
+                campaigns_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+    const adGroupHtml = render(
+      googleAdsAdGroupNegativeKeywordsPresenter.render(
+        props({
+          id: "ad-group-negative-keywords-add-result",
+          kind: "result",
+          name: "google_ads_add_ad_group_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { added: 1, skipped_existing: 0, failed: 0 },
+                ad_groups: [
+                  {
+                    ad_group_id: "20",
+                    ad_group_name: "Exact",
+                    campaign_name: "Brand",
+                    counts: { added: 1, skipped_existing: 0, failed: 0 },
+                    ad_group_errors: [],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "jobs near me",
+                        match_type: "EXACT",
+                        outcome: "added",
+                        external_ref: "customers/111/adGroupCriteria/20~2",
+                      },
+                    ],
+                  },
+                ],
+                ad_groups_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(campaignHtml).toContain("free trial")
+    expect(campaignHtml).toContain("Phrase")
+    expect(campaignHtml).toContain("Added")
+    expect(campaignHtml).toContain("External Reference")
+    expect(campaignHtml).not.toContain(">Details</span></th>")
+    expect(campaignHtml).not.toContain("Error Code")
+    expect(adGroupHtml).toContain("jobs near me")
+    expect(adGroupHtml).toContain("Exact")
+    expect(adGroupHtml).toContain("Added")
+    expect(adGroupHtml).not.toContain(">Details</span></th>")
+    expect(adGroupHtml).not.toContain("Error Code")
   })
 
   it.each([

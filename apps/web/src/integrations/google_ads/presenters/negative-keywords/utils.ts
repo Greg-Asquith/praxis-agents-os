@@ -7,6 +7,7 @@ import type {
   NegativeKeywordError,
   NegativeKeywordRemovalResult,
   NegativeKeywordResult,
+  TargetNegativeKeywordOutcome,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
 import { isRecord } from "@/lib/guards"
 
@@ -153,6 +154,10 @@ export function campaignNegativeKeywordResult(
         message: error["message"],
       })
     }
+    const keywordOutcomes = parseTargetKeywordOutcomes(item["keyword_outcomes"])
+    if (item["keyword_outcomes"] !== undefined && keywordOutcomes === null) {
+      return null
+    }
     campaigns.push({
       campaignId: item["campaign_id"],
       campaignName: item["campaign_name"],
@@ -163,6 +168,7 @@ export function campaignNegativeKeywordResult(
       },
       errors,
       errorsTruncated: item["errors_truncated"],
+      keywordOutcomes,
     })
   }
   return {
@@ -281,6 +287,10 @@ export function adGroupNegativeKeywordResult(
         message: error["message"],
       })
     }
+    const keywordOutcomes = parseTargetKeywordOutcomes(item["keyword_outcomes"])
+    if (item["keyword_outcomes"] !== undefined && keywordOutcomes === null) {
+      return null
+    }
     adGroups.push({
       adGroupId: item["ad_group_id"],
       adGroupName: item["ad_group_name"],
@@ -292,6 +302,7 @@ export function adGroupNegativeKeywordResult(
       },
       errors,
       errorsTruncated: item["errors_truncated"],
+      keywordOutcomes,
     })
   }
   return {
@@ -442,4 +453,33 @@ function parseKeyword(value: unknown, allowAny = false): NegativeKeyword | null 
     return null
   }
   return { matchType: value["match_type"], text: value["text"] }
+}
+
+function parseTargetKeywordOutcomes(value: unknown): TargetNegativeKeywordOutcome[] | null {
+  if (value === undefined) return null
+  if (!Array.isArray(value)) return null
+  const outcomes: TargetNegativeKeywordOutcome[] = []
+  for (const item of value) {
+    const keyword = parseKeyword(item, true)
+    if (
+      !keyword ||
+      !isRecord(item) ||
+      (item["outcome"] !== "added" &&
+        item["outcome"] !== "removed" &&
+        item["outcome"] !== "skipped_existing" &&
+        item["outcome"] !== "not_found" &&
+        item["outcome"] !== "failed") ||
+      !(item["external_ref"] === undefined || typeof item["external_ref"] === "string") ||
+      !(item["error_code"] === undefined || typeof item["error_code"] === "string")
+    ) {
+      return null
+    }
+    outcomes.push({
+      ...keyword,
+      ...(typeof item["error_code"] === "string" ? { errorCode: item["error_code"] } : {}),
+      ...(typeof item["external_ref"] === "string" ? { externalRef: item["external_ref"] } : {}),
+      outcome: item["outcome"],
+    })
+  }
+  return outcomes
 }
