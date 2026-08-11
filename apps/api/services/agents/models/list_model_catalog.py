@@ -2,8 +2,6 @@
 
 """List the model catalog entries usable with the current runtime settings."""
 
-from pydantic import SecretStr
-
 from core.settings import settings
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
@@ -19,6 +17,7 @@ from services.agents.models.schemas import (
     ModelCatalogProvider,
     ModelCatalogResponse,
 )
+from services.agents.models.utils import is_provider_configured
 
 _PROVIDER_DISPLAY_NAMES = {
     PROVIDER_OPENAI: "OpenAI",
@@ -38,7 +37,7 @@ _PROVIDER_ORDER = (
 def list_model_catalog() -> ModelCatalogResponse:
     """Return non-deprecated catalog models whose provider is configured."""
     configured_providers = {
-        provider for provider in _PROVIDER_ORDER if _provider_is_configured(provider)
+        provider for provider in _PROVIDER_ORDER if is_provider_configured(provider)
     }
     available_models = [model for model in list_models() if model.provider in configured_providers]
     available_ids = {model.qualified_id for model in available_models}
@@ -82,27 +81,3 @@ def _catalog_entry(model: ModelInfo) -> ModelCatalogEntry:
 def _default_if_available(provider: str, model: str, available_ids: set[str]) -> str | None:
     qualified_id = f"{provider}:{model}"
     return qualified_id if qualified_id in available_ids else None
-
-
-def _provider_is_configured(provider: str) -> bool:
-    if provider == PROVIDER_OPENAI:
-        return _secret_has_text(settings.OPENAI_API_KEY)
-    if provider == PROVIDER_ANTHROPIC:
-        return _secret_has_text(settings.ANTHROPIC_API_KEY)
-    if provider == PROVIDER_GOOGLE:
-        if settings.GOOGLE_VERTEX_AI:
-            return _has_text(settings.GOOGLE_VERTEX_PROJECT) or _has_text(settings.GCP_PROJECT_ID)
-        return _secret_has_text(settings.GOOGLE_API_KEY)
-    if provider == PROVIDER_AZURE:
-        return _secret_has_text(settings.AZURE_OPENAI_API_KEY) and _has_text(
-            settings.AZURE_OPENAI_ENDPOINT
-        )
-    return False
-
-
-def _secret_has_text(secret: SecretStr | None) -> bool:
-    return secret is not None and bool(secret.get_secret_value().strip())
-
-
-def _has_text(value: str | None) -> bool:
-    return bool((value or "").strip())

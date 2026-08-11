@@ -33,7 +33,8 @@ describe("ApprovalsInbox", () => {
 
     expect(html).toContain("Campaign operator")
     expect(html).toContain("Campaign review")
-    expect(html).toContain("update_campaign")
+    expect(html).toContain("Update Campaign")
+    expect(html).toContain("rounded-md")
     expect(html).toContain("via Budget specialist")
     expect(html).toContain("and 2 more")
   })

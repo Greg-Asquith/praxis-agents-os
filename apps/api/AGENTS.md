@@ -139,6 +139,17 @@ Repo-wide expectations are in the root `AGENTS.md`.
   denylist is configured because URL Context cannot enforce domain filtering.
   Keep the full URL editable and visible under the default approval policy;
   never enable the local fetch fallback.
+- Native image generation uses the governed `generate_image` helper-tool path
+  for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
+  helper run. The tool generates exactly one image, preserves provider-returned
+  PNG, WebP, or JPEG bytes in an audited workspace File, and defaults to
+  approval. `edit_image` uses the current revision of a workspace image with
+  OpenAI or Google and limits combined raw source bytes with
+  `NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES` (64 MiB by default);
+  `generate_image_from_video` uses Google only and rejects inline videos larger
+  than `NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES` (18 MiB by default). Both
+  input-media tools preserve the source file and revision ids in their result
+  and generated-file audit evidence.
 - Background work runs in the worker process (`python -m workers.main`),
   which supervises the scheduled-agent runner (croniter schedules, TTL leases
   with heartbeats, terminal failure states) and the generic jobs runner over

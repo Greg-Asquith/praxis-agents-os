@@ -17,6 +17,7 @@ import { SkillDocumentReadRow } from "@/features/conversations/components/skill-
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { skillsQueryOptions } from "@/features/skills/api/list-skills"
 import { toolPresentationsQueryOptions } from "@/features/tools/api/list-tool-presentations"
+import { filesQueryKeys } from "@/features/files/api/list-files"
 
 describe("delegation tool rows", () => {
   it("renders available agents through a result card and a running skeleton", () => {
@@ -339,6 +340,187 @@ describe("skill tool rows", () => {
 })
 
 describe("file tool rows", () => {
+  it("renders generated images through the existing file outcome row", () => {
+    const html = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          name: "generate_image",
+          result: {
+            file_id: "generated-file-1",
+            height: 1024,
+            media_type: "image/png",
+            name: "paper-cut-fox.png",
+            revision_id: "generated-revision-1",
+            size_bytes: 2048,
+            width: 1536,
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain("Generate Image")
+    expect(html).toContain("paper-cut-fox.png")
+    expect(html).toContain("1536 x 1024")
+    expect(html).toContain("2.0 KB")
+    expect(html).toContain("mx-auto")
+  })
+
+  it("renders the editable generate-image approval instead of a loading skeleton", () => {
+    const html = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          args: { prompt: "A cute red panda", aspect_ratio: "1:1", model_provider: "google" },
+          kind: "approval",
+          name: "generate_image",
+          status: "awaiting_approval",
+          result: undefined,
+        }),
+        approvalDecision: approvalControls(),
+        defaultOpen: true,
+        label: "Generate Image",
+        ui: {
+          approval_prompt: "Review the image prompt before approving.",
+          approval_title: "Generate an Image",
+          approve_label: "Approve & Generate",
+          arg_fields: [
+            {
+              editable: true,
+              format: "multiline",
+              key: "prompt",
+              label: "Prompt",
+              options: [],
+              placeholder: "Describe the image to generate",
+              secondary: false,
+            },
+            {
+              editable: true,
+              format: "text",
+              key: "model_provider",
+              label: "Image Provider",
+              options: ["google", "openai"],
+              placeholder: "",
+              secondary: false,
+            },
+          ],
+          completed_label: "Generated {name}",
+          failed_label: "Couldn't Generate the Image",
+          icon: "image",
+          result_fields: [],
+          running_label: "Generating an Image",
+        },
+      })
+    )
+
+    expect(html).toContain("Generate an Image")
+    expect(html).toContain("A cute red panda")
+    expect(html).toContain("Creates New Image")
+    expect(html).toContain("Image Provider")
+    expect(html).toContain("Google")
+    expect(html).toContain("Approve &amp; Generate")
+    expect(html).not.toContain('aria-busy="true"')
+  })
+
+  it.each([
+    ["edit_image", "Edit Image", "hero.png", "Creates Edited Image", "Approve & Edit"],
+    [
+      "generate_image_from_video",
+      "Generate Image from Video",
+      "launch.mov",
+      "Creates New Image",
+      "Approve & Generate",
+    ],
+  ])(
+    "renders governed input media for %s approvals",
+    (name, title, sourceName, badge, approveLabel) => {
+      const isEdit = name === "edit_image"
+      const sourceReference = { entity_id: "source-file-1", label: sourceName }
+      const html = render(
+        createElement(FileToolRow, {
+          activity: activity({
+            args: isEdit
+              ? { prompt: "Match our palette", file_ids: [sourceReference] }
+              : { prompt: "Create a launch thumbnail", file_id: sourceReference },
+            kind: "approval",
+            name,
+            status: "awaiting_approval",
+            result: undefined,
+          }),
+          approvalDecision: approvalControls(),
+          defaultOpen: true,
+          label: title,
+          ui: {
+            approval_prompt: "Review the source media and prompt.",
+            approval_title: title,
+            approve_label: approveLabel,
+            arg_fields: [
+              {
+                editable: true,
+                format: "multiline",
+                key: "prompt",
+                label: "Prompt",
+                options: [],
+                placeholder: "Describe the result",
+                secondary: false,
+              },
+              {
+                editable: false,
+                format: isEdit ? "entity_list" : "entity",
+                key: isEdit ? "file_ids" : "file_id",
+                label: isEdit ? "Source Images" : "Source Video",
+                options: [],
+                placeholder: "",
+                secondary: false,
+                entity_kind: "file",
+              },
+            ],
+            completed_label: "Generated {name}",
+            failed_label: "Couldn't create the image",
+            icon: "image",
+            result_fields: [],
+            running_label: title,
+          },
+        }),
+        { previews: { "source-file-1": "https://files.example/source-preview" } }
+      )
+
+      expect(html).toContain(title)
+      expect(html).toContain(sourceName)
+      expect(html).toContain(badge)
+      expect(html).toContain(approveLabel.replace("&", "&amp;"))
+      expect(html).toContain(isEdit ? "<img" : "<video")
+      expect(html).toContain("https://files.example/source-preview")
+      expect(html).not.toContain('aria-busy="true"')
+    }
+  )
+
+  it.each([
+    ["edit_image", "Edit Image"],
+    ["generate_image_from_video", "Generate Image from Video"],
+  ])("renders %s results through the existing image outcome row", (name, heading) => {
+    const html = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          name,
+          result: {
+            file_id: "generated-file-2",
+            height: 768,
+            media_type: "image/png",
+            name: "derived-image.png",
+            revision_id: "generated-revision-2",
+            size_bytes: 1024,
+            width: 1024,
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain(heading)
+    expect(html).toContain("derived-image.png")
+    expect(html).toContain("1024 x 768")
+  })
+
   it("renders file lists with details and preserves file entities", () => {
     const html = render(
       createElement(FileToolRow, {
@@ -457,10 +639,19 @@ describe("file tool rows", () => {
   })
 })
 
-function render(element: ReactElement, options: { seedSkills?: boolean } = {}) {
+function render(
+  element: ReactElement,
+  options: { previews?: Record<string, string>; seedSkills?: boolean } = {}
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  for (const [fileId, url] of Object.entries(options.previews ?? {})) {
+    queryClient.setQueryData(filesQueryKeys.preview(fileId), {
+      expires_at: "2026-08-11T21:00:00Z",
+      preview: { expires_at: "2026-08-11T21:00:00Z", url },
+    })
+  }
   queryClient.setQueryData(toolPresentationsQueryOptions().queryKey, {
     tools: [
       {

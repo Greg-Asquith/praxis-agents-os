@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from httpx2 import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
@@ -132,6 +133,59 @@ async def test_tool_catalog_route_hides_web_search_without_provider_keys(
 
     assert response.status_code == 200
     assert "web_search" not in {tool["name"] for tool in response.json()["tools"]}
+
+
+@pytest.mark.parametrize("provider", ["google", "openai"])
+async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(
+        settings,
+        "GOOGLE_API_KEY" if provider == "google" else "OPENAI_API_KEY",
+        SecretStr("provider-test"),
+    )
+
+    response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
+
+    assert response.status_code == 200
+    entry = next(tool for tool in response.json()["tools"] if tool["name"] == "generate_image")
+    assert entry["effect"] == "write"
+    assert entry["effect_scope"] == "internal"
+    assert entry["default_policy"] == "approval"
+    assert entry["input_schema"]["required"] == ["prompt", "model_provider"]
+    assert "input_image" not in entry["input_schema"]["properties"]
+    tools = {tool["name"]: tool for tool in response.json()["tools"]}
+    edit_entry = tools["edit_image"]
+    assert edit_entry["input_schema"]["required"] == ["prompt", "file_ids"]
+    assert edit_entry["input_schema"]["properties"]["file_ids"]["maxItems"] == 14
+    if provider == "google":
+        assert "generate_image_from_video" in tools
+    else:
+        assert "generate_image_from_video" not in tools
+
+
+async def test_tool_catalog_route_hides_generate_image_without_supported_provider(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("anthropic-test"))
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+
+    response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
+
+    assert response.status_code == 200
+    assert "generate_image" not in {tool["name"] for tool in response.json()["tools"]}
+    assert "edit_image" not in {tool["name"] for tool in response.json()["tools"]}
+    assert "generate_image_from_video" not in {tool["name"] for tool in response.json()["tools"]}
 
 
 async def test_tool_catalog_route_requires_authentication(

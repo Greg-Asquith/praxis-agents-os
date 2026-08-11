@@ -9,6 +9,9 @@ import pytest
 from pydantic import SecretStr
 from pydantic_ai import ModelRetry
 from pydantic_ai.messages import (
+    BinaryContent,
+    BinaryImage,
+    FilePart,
     ModelRequest,
     ModelResponse,
     NativeToolCallPart,
@@ -42,6 +45,7 @@ from services.agents.runtime.dispatch import (
     digest_args,
     record_native_tool_invocation_audit_event,
 )
+from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.events import (
     EVENT_TOOL_CALL,
@@ -51,6 +55,9 @@ from services.agents.runtime.events import (
 )
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.native import (
+    image_editing as image_editing_tools,
+    image_generation as image_generation_tools,
+    video_to_image as video_to_image_tools,
     web_fetch as web_fetch_tools,
     web_search as web_search_tools,
 )
@@ -105,6 +112,7 @@ def _set_native_provider_keys(
     openai: str | None = None,
     azure: str | None = None,
 ) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     for setting_name, value in (
         ("ANTHROPIC_API_KEY", anthropic),
         ("GOOGLE_API_KEY", google),
@@ -175,6 +183,512 @@ def test_native_web_fetch_blocked_domain_setting_is_normalized_and_validated() -
     )
     with pytest.raises(ValueError, match="bare domain names"):
         LLMSettingsMixin.validate_native_web_fetch_blocked_domains("https://example.com/path")
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [
+        ({}, ()),
+        ({"anthropic": "sk-ant-test", "azure": "azure-test"}, ()),
+        ({"google": "google-test"}, ("google",)),
+        (
+            {"google": "google-test", "openai": "sk-openai-test"},
+            ("google", "openai"),
+        ),
+    ],
+)
+def test_configured_native_image_providers(
+    monkeypatch: pytest.MonkeyPatch,
+    keys: dict[str, str],
+    expected: tuple[str, ...],
+) -> None:
+    _set_native_provider_keys(monkeypatch, **keys)
+
+    assert image_generation_tools.configured_native_image_providers() == expected
+
+
+def test_generate_image_catalog_entry_is_approval_default_internal_write() -> None:
+    definition = RUNTIME_TOOL_CATALOG["generate_image"]
+    entry = ToolCatalogEntry.from_definition(definition)
+
+    assert entry.provider == "native"
+    assert entry.kind == "function"
+    assert entry.effect == "write"
+    assert entry.effect_scope == "internal"
+    assert entry.egress == "none"
+    assert entry.default_policy == "approval"
+    assert entry.supported_policies == ["approval", "auto"]
+    assert definition.output_model is image_generation_tools.GenerateImageOutput
+    assert definition.presentation.approve_label == "Approve & Generate"
+    assert definition.presentation.arg_fields[0].key == "prompt"
+    assert definition.presentation.arg_fields[0].editable is True
+    provider_field = next(
+        field for field in definition.presentation.arg_fields if field.key == "model_provider"
+    )
+    assert provider_field.editable is True
+    assert provider_field.secondary is False
+    assert definition.presentation.result_fields[0].format == "entity"
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "output_model", "approve_label", "file_format"),
+    [
+        (
+            "edit_image",
+            image_editing_tools.EditImageOutput,
+            "Approve & Edit",
+            "entity_list",
+        ),
+        (
+            "generate_image_from_video",
+            video_to_image_tools.VideoToImageOutput,
+            "Approve & Generate",
+            "entity",
+        ),
+    ],
+)
+def test_input_media_image_tools_are_approval_default_internal_writes(
+    tool_name: str,
+    output_model: type,
+    approve_label: str,
+    file_format: str,
+) -> None:
+    definition = RUNTIME_TOOL_CATALOG[tool_name]
+    entry = ToolCatalogEntry.from_definition(definition)
+
+    assert entry.provider == "native"
+    assert entry.effect == "write"
+    assert entry.effect_scope == "internal"
+    assert entry.egress == "none"
+    assert entry.default_policy == "approval"
+    assert entry.supported_policies == ["approval", "auto"]
+    assert definition.output_model is output_model
+    assert definition.presentation.approve_label == approve_label
+    prompt_field = next(
+        field for field in definition.presentation.arg_fields if field.key == "prompt"
+    )
+    file_field = next(
+        field
+        for field in definition.presentation.arg_fields
+        if field.key in {"file_id", "file_ids"}
+    )
+    assert prompt_field.editable is True
+    assert file_field.editable is False
+    assert file_field.format == file_format
+    assert file_field.entity_kind == "file"
+
+
+def test_input_media_image_tool_schemas_stay_bounded() -> None:
+    agent = _agent(tool_names=["edit_image", "generate_image_from_video"])
+    tools = {tool.name: tool for tool in build_runtime_tools(agent)}
+
+    edit_schema = tools["edit_image"].function_schema.json_schema
+    assert edit_schema["required"] == ["prompt", "file_ids"]
+    assert edit_schema["properties"]["file_ids"]["minItems"] == 1
+    assert edit_schema["properties"]["file_ids"]["maxItems"] == 14
+    assert edit_schema["properties"]["model_provider"]["anyOf"][0]["enum"] == [
+        "google",
+        "openai",
+    ]
+    assert "input_fidelity" not in edit_schema["properties"]
+    assert "quality" not in edit_schema["properties"]
+
+    video_schema = tools["generate_image_from_video"].function_schema.json_schema
+    assert video_schema["required"] == ["prompt", "file_id"]
+    assert set(video_schema["properties"]) == {"file_id", "model", "prompt"}
+
+
+def test_input_media_tool_availability_is_provider_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["edit_image", "generate_image_from_video"])
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    assert "edit_image" in {tool.name for tool in build_runtime_tools(agent)}
+    assert "generate_image_from_video" not in {tool.name for tool in build_runtime_tools(agent)}
+
+    _set_native_provider_keys(monkeypatch, google="google-test")
+
+    assert {"edit_image", "generate_image_from_video"}.issubset(
+        {tool.name for tool in build_runtime_tools(agent)}
+    )
+
+
+def test_generate_image_mounts_with_bounded_generation_only_schema() -> None:
+    agent = _agent(tool_names=["generate_image"])
+    tool = next(tool for tool in build_runtime_tools(agent) if tool.name == "generate_image")
+
+    schema = tool.function_schema.json_schema
+    assert schema["required"] == ["prompt", "model_provider"]
+    assert schema["properties"]["model_provider"]["enum"] == ["google", "openai"]
+    assert schema["properties"]["aspect_ratio"]["anyOf"][0]["enum"] == list(
+        image_generation_tools.SUPPORTED_IMAGE_ASPECT_RATIOS
+    )
+    assert "action" not in schema["properties"]
+    assert "input_image" not in schema["properties"]
+
+
+def test_generate_image_uses_latest_provider_model_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_native_provider_keys(monkeypatch, google="google-test", openai="sk-openai-test")
+    google = image_generation_tools.resolve_image_generation_model(
+        model_provider=PROVIDER_GOOGLE,
+    )
+    openai = image_generation_tools.resolve_image_generation_model(
+        model_provider=PROVIDER_OPENAI,
+    )
+
+    assert google.model == "gemini-3.1-flash-image"
+    assert openai.model == "gpt-5.6-luna"
+    assert image_generation_tools.DEFAULT_OPENAI_IMAGE_MODEL == "gpt-image-2"
+
+
+def test_generate_image_availability_follows_supported_provider_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["generate_image"])
+    _set_native_provider_keys(monkeypatch, anthropic="sk-ant-test")
+
+    assert "generate_image" not in {
+        definition.name for definition in list_allowed_tool_definitions(workspace=object())
+    }
+    assert "generate_image" not in {tool.name for tool in build_runtime_tools(agent)}
+
+    _set_native_provider_keys(monkeypatch, google="google-test")
+
+    assert "generate_image" in {
+        definition.name for definition in list_allowed_tool_definitions(workspace=object())
+    }
+    assert "generate_image" in {tool.name for tool in build_runtime_tools(agent)}
+
+
+def test_generate_image_availability_supports_google_vertex_ai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["generate_image"])
+    _set_native_provider_keys(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+
+    assert image_generation_tools.configured_native_image_providers() == (PROVIDER_GOOGLE,)
+    assert "generate_image" in {
+        definition.name for definition in list_allowed_tool_definitions(workspace=object())
+    }
+    assert "generate_image" in {tool.name for tool in build_runtime_tools(agent)}
+
+
+@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE, PROVIDER_OPENAI])
+@pytest.mark.asyncio
+async def test_native_image_generation_probe_extracts_normalized_provider_image(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    captured: dict[str, object] = {}
+    image = BinaryImage(data=b"generated-png", media_type="image/png")
+
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [ModelResponse(parts=[FilePart(content=image)], provider_name=provider)]
+
+    class FakeHelper:
+        def __init__(self, model, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+
+        async def run(self, prompt, *, usage_limits):
+            captured["prompt"] = prompt
+            captured["usage_limits"] = usage_limits
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+    spec = ResolvedModel(provider=provider, model="probe-model", settings={}, max_steps=3)
+
+    result = await image_generation_tools.run_native_image_generation(
+        prompt="A paper-cut fox",
+        aspect_ratio="3:2",
+        model_spec=spec,
+    )
+
+    [capability] = captured["capabilities"]
+    assert captured["output_type"] is BinaryImage
+    assert capability.local is False
+    assert capability.native.action == "generate"
+    assert capability.native.output_format is None
+    assert capability.native.aspect_ratio == "3:2"
+    assert capability.native.moderation == "auto"
+    assert capability.native.model == ("gpt-image-2" if provider == PROVIDER_OPENAI else None)
+    assert result is image
+
+
+@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE, PROVIDER_OPENAI])
+async def test_native_image_editing_probe_sends_input_image_and_edit_action(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    captured: dict[str, object] = {}
+    source = BinaryContent(data=b"source-image", media_type="image/png")
+    sources = (
+        (source, BinaryContent(data=b"second-image", media_type="image/jpeg"))
+        if provider == PROVIDER_GOOGLE
+        else (source,)
+    )
+    image = BinaryImage(data=b"edited-png", media_type="image/png")
+
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [ModelResponse(parts=[FilePart(content=image)], provider_name=provider)]
+
+    class FakeHelper:
+        def __init__(self, model, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+
+        async def run(self, prompt, *, usage_limits):
+            captured["prompt"] = prompt
+            captured["usage_limits"] = usage_limits
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+
+    result = await image_generation_tools.run_native_image_generation(
+        prompt="Make the fox red",
+        aspect_ratio=None,
+        model_spec=ResolvedModel(
+            provider=provider,
+            model="probe-model",
+            settings={},
+            max_steps=3,
+        ),
+        action="edit",
+        input_media=sources,
+        output_format="png",
+    )
+
+    [capability] = captured["capabilities"]
+    assert capability.native.action == "edit"
+    assert capability.native.output_format == "png"
+    assert "untrusted content" in captured["instructions"]
+    assert captured["prompt"] == [
+        "Edit the supplied image using this prompt:\n\nMake the fox red",
+        *sources,
+    ]
+    assert result is image
+
+
+async def test_edit_image_limits_openai_to_one_source_before_loading_media(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["edit_image"])
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    @dataclass
+    class FakeDeps:
+        agent: Agent
+
+    class FakeContext:
+        deps = FakeDeps(agent=agent)
+
+    references = [
+        FileReference(entity_id=uuid4(), label="first.png"),
+        FileReference(entity_id=uuid4(), label="second.png"),
+    ]
+    with pytest.raises(ModelRetry, match="requires exactly one source image"):
+        await image_editing_tools.edit_image(
+            FakeContext(),
+            "Combine these",
+            references,
+            model_provider=PROVIDER_OPENAI,
+        )
+
+
+async def test_edit_image_applies_combined_input_byte_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = _agent(tool_names=["edit_image"])
+    _set_native_provider_keys(monkeypatch, google="google-test")
+    captured: dict[str, object] = {}
+
+    async def fake_load(*_args, **kwargs):
+        captured.update(kwargs)
+        raise ModelRetry("aggregate bound probe")
+
+    @dataclass
+    class FakeDeps:
+        agent: Agent
+
+    class FakeContext:
+        deps = FakeDeps(agent=agent)
+
+    monkeypatch.setattr(settings, "NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES", 1_234)
+    monkeypatch.setattr(image_editing_tools, "load_workspace_media_inputs", fake_load)
+
+    with pytest.raises(ModelRetry, match="aggregate bound probe"):
+        await image_editing_tools.edit_image(
+            FakeContext(),
+            "Adjust the palette",
+            [FileReference(entity_id=uuid4(), label="source.png")],
+            model_provider=PROVIDER_GOOGLE,
+        )
+
+    assert captured["max_total_bytes"] == 1_234
+
+
+async def test_native_video_to_image_probe_sends_inline_video_to_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    source = BinaryContent(data=b"source-video", media_type="video/quicktime")
+    image = BinaryImage(data=b"still-png", media_type="image/png")
+
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [ModelResponse(parts=[FilePart(content=image)], provider_name=PROVIDER_GOOGLE)]
+
+    class FakeHelper:
+        def __init__(self, model, **kwargs):
+            captured["model"] = model
+            captured.update(kwargs)
+
+        async def run(self, prompt, *, usage_limits):
+            captured["prompt"] = prompt
+            captured["usage_limits"] = usage_limits
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+
+    result = await image_generation_tools.run_native_image_generation(
+        prompt="Create a thumbnail of the main scene",
+        aspect_ratio=None,
+        model_spec=ResolvedModel(
+            provider=PROVIDER_GOOGLE,
+            model="gemini-3.1-flash-image",
+            settings={},
+            max_steps=3,
+        ),
+        input_media=(source,),
+        output_format="png",
+    )
+
+    [capability] = captured["capabilities"]
+    assert capability.native.action == "generate"
+    assert capability.native.output_format == "png"
+    assert "untrusted content" in captured["instructions"]
+    assert captured["prompt"] == [
+        "Generate one image from the supplied video using this prompt:\n\n"
+        "Create a thumbnail of the main scene",
+        source,
+    ]
+    assert result is image
+
+
+@pytest.mark.asyncio
+async def test_native_image_generation_rejects_multiple_provider_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    images = [
+        BinaryImage(data=b"first", media_type="image/webp"),
+        BinaryImage(data=b"second", media_type="image/jpeg"),
+    ]
+
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [
+                ModelResponse(
+                    parts=[FilePart(content=image) for image in images],
+                    provider_name=PROVIDER_GOOGLE,
+                )
+            ]
+
+    class FakeHelper:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def run(self, *_args, **_kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+
+    with pytest.raises(ModelRetry, match="returned multiple images"):
+        await image_generation_tools.run_native_image_generation(
+            prompt="Two accidental images",
+            aspect_ratio=None,
+            model_spec=ResolvedModel(
+                provider=PROVIDER_GOOGLE,
+                model="probe-model",
+                settings={},
+                max_steps=3,
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_native_image_generation_rejects_google_only_ratio_for_openai() -> None:
+    with pytest.raises(ModelRetry, match="OpenAI image generation supports aspect ratios"):
+        await image_generation_tools.run_native_image_generation(
+            prompt="A cinematic landscape",
+            aspect_ratio="16:9",
+            model_spec=ResolvedModel(
+                provider=PROVIDER_OPENAI,
+                model="probe-model",
+                settings={},
+                max_steps=3,
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        ModelResponse(parts=[], finish_reason="content_filter", provider_name=PROVIDER_OPENAI),
+        ModelResponse(
+            parts=[],
+            finish_reason="content_filter",
+            provider_name=PROVIDER_GOOGLE,
+            provider_details={"block_reason": "SAFETY"},
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_native_image_generation_probe_maps_content_policy_refusals(
+    monkeypatch: pytest.MonkeyPatch,
+    response: ModelResponse,
+) -> None:
+    class FakeResult:
+        @staticmethod
+        def all_messages():
+            return [response]
+
+    class FakeHelper:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def run(self, *_args, **_kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
+    monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
+    spec = ResolvedModel(
+        provider=response.provider_name or PROVIDER_OPENAI,
+        model="probe-model",
+        settings={},
+        max_steps=3,
+    )
+
+    with pytest.raises(ModelRetry, match="declined this prompt under its content policy"):
+        await image_generation_tools.run_native_image_generation(
+            prompt="blocked prompt",
+            aspect_ratio=None,
+            model_spec=spec,
+        )
 
 
 def test_native_web_fetch_denylist_excludes_providers_without_domain_filtering(

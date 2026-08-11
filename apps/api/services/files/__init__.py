@@ -23,6 +23,7 @@ from services.files.resolve_chat_attachments import resolve_chat_attachments
 from services.files.restore_file_revision import restore_file_revision
 from services.files.update_file import update_file
 from services.files.write_agent_file import write_agent_file
+from services.files.write_generated_image import write_generated_image
 
 __all__ = [
     "append_file_revision",
@@ -46,4 +47,5 @@ __all__ = [
     "restore_file_revision",
     "update_file",
     "write_agent_file",
+    "write_generated_image",
 ]

@@ -95,6 +95,23 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum free-text tool-result characters; None disables the bound.",
     )
+    NATIVE_IMAGE_GENERATION_MAX_STEPS: int = Field(
+        default=3,
+        gt=0,
+        description="Maximum helper-model requests for one native image generation call.",
+    )
+    NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES: int = Field(
+        default=64 * 1024 * 1024,
+        ge=1,
+        le=64 * 1024 * 1024,
+        description="Maximum combined raw workspace image bytes for one image-editing call.",
+    )
+    NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES: int = Field(
+        default=18 * 1024 * 1024,
+        ge=1,
+        le=20 * 1024 * 1024,
+        description="Maximum inline workspace video bytes for one video-to-image helper call.",
+    )
     AGENT_SCHEDULED_SIDE_EFFECT_POLICY: Literal["allow", "require_approval", "deny"] = Field(
         default="require_approval",
         description="Side-effect policy minted for scheduled agent runs.",
