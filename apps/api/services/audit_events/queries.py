@@ -138,32 +138,52 @@ async def list_rolled_up_audit_events_page(
     offset: int = 0,
 ) -> tuple[list[tuple[AuditEvent, UUID, str, str]], int]:
     """Page logical tool invocations after provider-event roll-up."""
-    tool_call_id = AuditEvent.details["tool_call_id"].as_string()
-    integration_with_tool_call = (
-        AuditEvent.resource_type == AuditResourceType.INTEGRATION_RESOURCE
-    ) & tool_call_id.is_not(None)
+    is_tool_call = AuditEvent.resource_type == AuditResourceType.TOOL_CALL
+    is_integration_resource = AuditEvent.resource_type == AuditResourceType.INTEGRATION_RESOURCE
+    run_id = AuditEvent.details["run_id"].as_string()
+    integration_tool_call_id = AuditEvent.details["tool_call_id"].as_string()
+    correlation_tool_call_id = case(
+        (is_tool_call, AuditEvent.resource_id),
+        (is_integration_resource, integration_tool_call_id),
+        else_=None,
+    )
+    has_tool_correlation = (
+        run_id.is_not(None)
+        & (run_id != "")
+        & correlation_tool_call_id.is_not(None)
+        & (correlation_tool_call_id != "")
+    )
+    integration_with_tool_call = is_integration_resource & has_tool_correlation
     group_key = case(
         (
-            AuditEvent.resource_type == AuditResourceType.TOOL_CALL,
-            func.concat("tool:", AuditEvent.resource_id),
+            has_tool_correlation,
+            func.concat(
+                "tool:",
+                func.length(run_id),
+                ":",
+                run_id,
+                ":",
+                func.length(correlation_tool_call_id),
+                ":",
+                correlation_tool_call_id,
+            ),
         ),
-        (integration_with_tool_call, func.concat("tool:", tool_call_id)),
         else_=func.concat("event:", cast(AuditEvent.id, String)),
     )
     is_pending = AuditEvent.status == AuditStatus.PENDING
     display_priority = case(
         (
-            (AuditEvent.resource_type == AuditResourceType.TOOL_CALL) & ~is_pending,
+            is_tool_call & ~is_pending,
             4,
         ),
-        (AuditEvent.resource_type == AuditResourceType.TOOL_CALL, 3),
+        (is_tool_call, 3),
         (integration_with_tool_call & ~is_pending, 2),
         else_=1,
     )
     outcome_priority = case(
         (integration_with_tool_call & ~is_pending, 4),
         (
-            (AuditEvent.resource_type == AuditResourceType.TOOL_CALL) & ~is_pending,
+            is_tool_call & ~is_pending,
             3,
         ),
         (integration_with_tool_call, 2),
@@ -173,7 +193,7 @@ async def list_rolled_up_audit_events_page(
         (integration_with_tool_call & ~is_pending, 4),
         (integration_with_tool_call, 3),
         (
-            (AuditEvent.resource_type == AuditResourceType.TOOL_CALL) & ~is_pending,
+            is_tool_call & ~is_pending,
             2,
         ),
         else_=1,
@@ -216,34 +236,8 @@ async def list_rolled_up_audit_events_page(
         .where(AuditEvent.workspace_id == workspace_id)
         .cte("ranked_audit_events")
     )
-    display_rows = select(ranked).where(ranked.c.display_rank == 1).subquery()
-    detail_rows = (
-        select(
-            ranked.c.group_key,
-            ranked.c.id.label("detail_event_id"),
-        )
-        .where(ranked.c.detail_rank == 1)
-        .subquery()
-    )
-    outcome_rows = (
-        select(
-            ranked.c.group_key,
-            ranked.c.status.label("effective_status"),
-            ranked.c.summary.label("effective_summary"),
-        )
-        .where(ranked.c.outcome_rank == 1)
-        .subquery()
-    )
-    display_event = aliased(AuditEvent, display_rows)
-    stmt = select(
-        display_event,
-        detail_rows.c.detail_event_id,
-        outcome_rows.c.effective_status,
-        outcome_rows.c.effective_summary,
-    ).join(detail_rows, detail_rows.c.group_key == display_rows.c.group_key)
-    stmt = stmt.join(outcome_rows, outcome_rows.c.group_key == display_rows.c.group_key)
-    stmt = _filtered_select(
-        stmt,
+    qualifying_groups = _filtered_select(
+        select(ranked.c.group_key).distinct(),
         workspace_id=None,
         resource_type=resource_type,
         resource_id=resource_id,
@@ -254,8 +248,39 @@ async def list_rolled_up_audit_events_page(
         tool_provider=tool_provider,
         occurred_after=occurred_after,
         occurred_before=occurred_before,
-        event_type=display_event,
+        event_type=ranked.c,
+    ).cte("qualifying_audit_event_groups")
+    qualified_ranked = (
+        select(ranked)
+        .join(qualifying_groups, qualifying_groups.c.group_key == ranked.c.group_key)
+        .cte("qualified_ranked_audit_events")
     )
+    display_rows = select(qualified_ranked).where(qualified_ranked.c.display_rank == 1).subquery()
+    detail_rows = (
+        select(
+            qualified_ranked.c.group_key,
+            qualified_ranked.c.id.label("detail_event_id"),
+        )
+        .where(qualified_ranked.c.detail_rank == 1)
+        .subquery()
+    )
+    outcome_rows = (
+        select(
+            qualified_ranked.c.group_key,
+            qualified_ranked.c.status.label("effective_status"),
+            qualified_ranked.c.summary.label("effective_summary"),
+        )
+        .where(qualified_ranked.c.outcome_rank == 1)
+        .subquery()
+    )
+    display_event = aliased(AuditEvent, display_rows)
+    stmt = select(
+        display_event,
+        detail_rows.c.detail_event_id,
+        outcome_rows.c.effective_status,
+        outcome_rows.c.effective_summary,
+    ).join(detail_rows, detail_rows.c.group_key == display_rows.c.group_key)
+    stmt = stmt.join(outcome_rows, outcome_rows.c.group_key == display_rows.c.group_key)
     if status is not None:
         stmt = stmt.where(outcome_rows.c.effective_status == status)
     total = int(

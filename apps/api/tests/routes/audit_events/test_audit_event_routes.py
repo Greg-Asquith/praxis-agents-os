@@ -431,6 +431,251 @@ async def test_audit_event_list_rolls_up_before_pagination_and_uses_provider_sta
     assert second_page.json()["events"][0]["id"] == str(unrelated.id)
 
 
+async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    tool_call_id = "call-filtered-negative-keywords"
+    integration_resource_id = "resource-filtered"
+    base_time = datetime(2026, 2, 12, 12, 0, tzinfo=UTC)
+    await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        resource_id=tool_call_id,
+        status=AuditStatus.PENDING,
+        occurred_at=base_time,
+        details={"run_id": "run-filtered"},
+        tool_name="google_ads_add_negative_keywords",
+        tool_provider="google_ads",
+    )
+    completed = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        resource_id=tool_call_id,
+        status=AuditStatus.SUCCESS,
+        occurred_at=base_time + timedelta(seconds=2),
+        details={"run_id": "run-filtered"},
+        tool_name="google_ads_add_negative_keywords",
+        tool_provider="google_ads",
+    )
+    provider_failure = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.INTEGRATION_RESOURCE,
+        resource_id=integration_resource_id,
+        status=AuditStatus.FAILURE,
+        occurred_at=base_time + timedelta(seconds=1),
+        details={"run_id": "run-filtered", "tool_call_id": tool_call_id},
+        tool_name="google_ads_add_negative_keywords",
+        tool_provider="google_ads",
+    )
+    await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        occurred_at=base_time - timedelta(seconds=1),
+    )
+    await db_session.commit()
+
+    async def get_events(**params: str | int) -> dict[str, object]:
+        response = await db_async_client.get(
+            "/api/v1/audit-events/",
+            headers=headers,
+            params=params,
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    expected_rollup = {
+        "display_id": str(completed.id),
+        "detail_event_id": str(provider_failure.id),
+        "status": "failure",
+    }
+
+    for params in (
+        {"resource_type": "integration_resource"},
+        {"resource_id": integration_resource_id},
+        {
+            "resource_type": "integration_resource",
+            "resource_id": integration_resource_id,
+        },
+        {"resource_type": "tool_call"},
+        {"resource_id": tool_call_id},
+        {"resource_type": "tool_call", "resource_id": tool_call_id},
+        {
+            "occurred_after": (base_time + timedelta(milliseconds=500)).isoformat(),
+            "occurred_before": (base_time + timedelta(milliseconds=1500)).isoformat(),
+        },
+        {"status": "failure"},
+    ):
+        body = await get_events(**params)
+        assert body["total"] == 1
+        event = body["events"][0]
+        assert event["id"] == expected_rollup["display_id"]
+        assert event["detail_event_id"] == expected_rollup["detail_event_id"]
+        assert event["status"] == expected_rollup["status"]
+
+    mismatched = await get_events(
+        resource_type="integration_resource",
+        resource_id=tool_call_id,
+    )
+    assert mismatched["events"] == []
+    assert mismatched["total"] == 0
+
+    display_status = await get_events(status="success", resource_id=tool_call_id)
+    assert display_status["events"] == []
+    assert display_status["total"] == 0
+
+    first_page = await get_events(resource_type="tool_call", limit=1, offset=0)
+    past_end = await get_events(resource_type="tool_call", limit=1, offset=1)
+    assert first_page["total"] == 1
+    assert first_page["events"][0]["id"] == str(completed.id)
+    assert past_end["total"] == 1
+    assert past_end["events"] == []
+
+
+async def test_audit_event_rollup_scopes_reused_tool_call_ids_to_the_run(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    tool_call_id = "call-reused-across-runs"
+    base_time = datetime(2026, 2, 13, 12, 0, tzinfo=UTC)
+    expected: dict[str, dict[str, str]] = {}
+
+    for index, (run_id, provider_status) in enumerate(
+        (("run-success", AuditStatus.SUCCESS), ("run-failure", AuditStatus.FAILURE))
+    ):
+        occurred_at = base_time + timedelta(minutes=index)
+        completed = await _seed_audit_event(
+            db_session,
+            workspace=workspace,
+            actor=actor,
+            action=AuditAction.EXECUTE,
+            resource_type=AuditResourceType.TOOL_CALL,
+            resource_id=tool_call_id,
+            status=AuditStatus.SUCCESS,
+            occurred_at=occurred_at + timedelta(seconds=1),
+            details={"run_id": run_id},
+            tool_name="google_ads_add_negative_keywords",
+            tool_provider="google_ads",
+        )
+        provider_event = await _seed_audit_event(
+            db_session,
+            workspace=workspace,
+            actor=actor,
+            action=AuditAction.EXECUTE,
+            resource_type=AuditResourceType.INTEGRATION_RESOURCE,
+            resource_id=f"resource-{run_id}",
+            status=provider_status,
+            occurred_at=occurred_at,
+            details={
+                "run_id": run_id,
+                "tool_call_id": tool_call_id,
+                "operation_detail": {"run_marker": run_id},
+            },
+            tool_name="google_ads_add_negative_keywords",
+            tool_provider="google_ads",
+        )
+        expected[str(completed.id)] = {
+            "detail_event_id": str(provider_event.id),
+            "status": provider_status.value,
+            "summary": provider_event.summary,
+            "run_marker": run_id,
+        }
+    await db_session.commit()
+
+    response = await db_async_client.get("/api/v1/audit-events/", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert {event["id"] for event in body["events"]} == set(expected)
+    for event in body["events"]:
+        expected_event = expected[event["id"]]
+        assert event["detail_event_id"] == expected_event["detail_event_id"]
+        assert event["status"] == expected_event["status"]
+        assert event["summary"] == expected_event["summary"]
+        detail_response = await db_async_client.get(
+            f"/api/v1/audit-events/{event['detail_event_id']}",
+            headers=headers,
+        )
+        assert detail_response.status_code == 200
+        assert (
+            detail_response.json()["details"]["operation_detail"]["run_marker"]
+            == (expected_event["run_marker"])
+        )
+
+
+async def test_audit_event_rollup_keeps_incomplete_legacy_correlation_standalone(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    tool_call_id = "call-legacy-collision"
+    base_time = datetime(2026, 2, 14, 12, 0, tzinfo=UTC)
+    events = [
+        await _seed_audit_event(
+            db_session,
+            workspace=workspace,
+            actor=actor,
+            action=AuditAction.EXECUTE,
+            resource_type=AuditResourceType.TOOL_CALL,
+            resource_id=tool_call_id,
+            occurred_at=base_time,
+            details={"legacy": True},
+        ),
+        await _seed_audit_event(
+            db_session,
+            workspace=workspace,
+            actor=actor,
+            action=AuditAction.EXECUTE,
+            resource_type=AuditResourceType.TOOL_CALL,
+            resource_id=tool_call_id,
+            occurred_at=base_time + timedelta(seconds=1),
+            details={"legacy": True},
+        ),
+        await _seed_audit_event(
+            db_session,
+            workspace=workspace,
+            actor=actor,
+            action=AuditAction.EXECUTE,
+            resource_type=AuditResourceType.INTEGRATION_RESOURCE,
+            resource_id="resource-without-run",
+            occurred_at=base_time + timedelta(seconds=2),
+            details={"tool_call_id": tool_call_id},
+        ),
+        await _seed_audit_event(
+            db_session,
+            workspace=workspace,
+            actor=actor,
+            action=AuditAction.EXECUTE,
+            resource_type=AuditResourceType.INTEGRATION_RESOURCE,
+            resource_id="resource-without-call",
+            occurred_at=base_time + timedelta(seconds=3),
+            details={"run_id": "run-without-call"},
+        ),
+    ]
+    await db_session.commit()
+
+    response = await db_async_client.get("/api/v1/audit-events/", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == len(events)
+    assert {event["id"] for event in body["events"]} == {str(event.id) for event in events}
+    assert all(event["id"] == event["detail_event_id"] for event in body["events"])
+
+
 async def test_integration_operation_audit_persists_and_round_trips_full_detail(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -495,7 +740,11 @@ async def test_audit_roll_up_keeps_pending_provider_evidence_when_finalization_f
         resource_id="resource-1",
         status=AuditStatus.PENDING,
         occurred_at=base_time,
-        details={"tool_call_id": tool_call_id, "operation_detail": {"schema_version": 1}},
+        details={
+            "run_id": "run-2",
+            "tool_call_id": tool_call_id,
+            "operation_detail": {"schema_version": 1},
+        },
         tool_name="google_ads_add_negative_keywords",
         tool_provider="google_ads",
     )
