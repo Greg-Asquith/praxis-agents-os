@@ -10,7 +10,7 @@ async function listPendingApprovals() {
   return apiRequest<PendingApprovalsListResponse>("/agent-runs/pending-approvals")
 }
 
-function pendingApprovalsQueryOptions() {
+export function pendingApprovalsQueryOptions() {
   return queryOptions({
     queryKey: conversationsQueryKeys.pendingApprovals(),
     queryFn: listPendingApprovals,
