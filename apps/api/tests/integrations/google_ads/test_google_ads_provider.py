@@ -94,6 +94,8 @@ from integrations.google_ads.tools.add_negative_keywords import (
     google_ads_add_negative_keywords,
 )
 from integrations.google_ads.tools.create_negative_keyword_list import (
+    _audit_status as create_list_audit_status,
+    _operation_detail as create_list_operation_detail,
     google_ads_create_negative_keyword_list,
 )
 from integrations.google_ads.tools.link_negative_keyword_list import (
@@ -117,6 +119,8 @@ from integrations.google_ads.tools.schemas.negative_keyword import (
 )
 from integrations.google_ads.tools.update_campaign_status import (
     DEFINITION as GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+    _audit_status as campaign_status_audit_status,
+    _operation_detail as campaign_status_operation_detail,
     google_ads_update_campaign_status,
 )
 from integrations.google_ads.tools.utils import (
@@ -1227,6 +1231,22 @@ async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkey
     assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
 
 
+async def test_durable_audit_requires_pending_evidence() -> None:
+    execute = AsyncMock()
+
+    with pytest.raises(ValueError, match="require pending operation detail"):
+        await run_audited_operation(
+            SimpleNamespace(),
+            SimpleNamespace(),
+            tool_name="google_ads_write",
+            operation="write",
+            execute=execute,
+            require_durable_audit=True,
+        )
+
+    execute.assert_not_awaited()
+
+
 @pytest.mark.parametrize("outcome", ["added", "skipped_existing", "failed"])
 def test_negative_keyword_model_result_is_bounded_with_accurate_counts(outcome: str) -> None:
     keyword = {"text": "x" * 80, "match_type": "PHRASE"}
@@ -1731,8 +1751,10 @@ async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
             "list_errors": [],
         }
     )
+    audited_calls: list[dict[str, Any]] = []
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
+        audited_calls.append(kwargs)
         return await kwargs["execute"]()
 
     monkeypatch.setattr(
@@ -1762,6 +1784,102 @@ async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
         call.kwargs["names"] == ["Alpha List", "Beta List"]
         for call in provider_create.await_args_list
     )
+    assert all(call["require_durable_audit"] is True for call in audited_calls)
+    pending = audited_calls[0]["pending_operation_detail"]
+    assert [change.fields["name"] for change in pending.changes] == [
+        "Alpha List",
+        "Beta List",
+    ]
+
+
+def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_results() -> None:
+    entry = _writable_google_ads_entry()
+    partial_result = {
+        "created_names": ["Created List"],
+        "resource_names": ["customers/111/sharedSets/50"],
+        "skipped_existing": ["Existing List"],
+        "list_errors": [{"name": "Rejected List", "error_code": "INVALID_NAME"}],
+    }
+
+    detail = create_list_operation_detail(entry, partial_result)
+
+    assert create_list_audit_status(partial_result) == AuditStatus.SUCCESS
+    assert detail.target.external_id == "111"
+    assert [change.action for change in detail.changes] == ["create", "create_failed"]
+    assert detail.changes[0].external_ref == "customers/111/sharedSets/50"
+    assert detail.changes[1].fields == {
+        "name": "Rejected List",
+        "error_code": "INVALID_NAME",
+    }
+    assert detail.counts.model_dump() == {"applied": 1, "skipped": 1, "failed": 1}
+
+    noop_result = {
+        "created_names": [],
+        "resource_names": [],
+        "skipped_existing": ["Existing List"],
+        "list_errors": [],
+    }
+    assert create_list_audit_status(noop_result) == AuditStatus.SUCCESS
+    assert create_list_operation_detail(entry, noop_result).counts.model_dump() == {
+        "applied": 0,
+        "skipped": 1,
+        "failed": 0,
+    }
+
+    failed_result = {**noop_result, "skipped_existing": [], "list_errors": [{}]}
+    assert create_list_audit_status(failed_result) == AuditStatus.FAILURE
+
+
+async def test_create_negative_keyword_list_durable_audit_failures_are_not_success(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    provider_client = AsyncMock(return_value=object())
+    provider_create = AsyncMock(
+        return_value={
+            "created_names": ["New List"],
+            "resource_names": ["customers/111/sharedSets/50"],
+            "skipped_existing": [],
+            "list_errors": [],
+        }
+    )
+    audit = AsyncMock(side_effect=RuntimeError("pending audit unavailable"))
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_negative_keyword_list.create_negative_keyword_list",
+        provider_create,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.audit.record_google_ads_operation_audit",
+        audit,
+    )
+
+    pending_failure = await google_ads_create_negative_keyword_list(ctx, ["New List"])
+
+    assert pending_failure["results"][0]["status"] == "error"
+    provider_client.assert_not_awaited()
+    provider_create.assert_not_awaited()
+
+    pending_event_id = uuid4()
+    audit.side_effect = [pending_event_id, RuntimeError("terminal audit unavailable")]
+    audit.reset_mock()
+
+    terminal_failure = await google_ads_create_negative_keyword_list(ctx, ["New List"])
+
+    assert terminal_failure["results"][0]["status"] == "error"
+    assert "terminal audit unavailable" in terminal_failure["results"][0]["error_message"]
+    provider_create.assert_awaited_once()
+    assert [call.kwargs["status"] for call in audit.await_args_list] == [
+        AuditStatus.PENDING,
+        AuditStatus.SUCCESS,
+    ]
+    assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
 
 
 @pytest.mark.parametrize("names", [[], ["  ", "\t"], ["x" * 256], ["é" * 128]])
@@ -2371,11 +2489,14 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
             "resource_names": [
                 f"customers/{kwargs['customer_id']}/campaigns/{campaign_id}"
                 for campaign_id in kwargs["campaign_ids"]
-            ]
+            ],
+            "campaign_errors": [],
         }
     )
+    audited_calls: list[dict[str, Any]] = []
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
+        audited_calls.append(kwargs)
         return await kwargs["execute"]()
 
     monkeypatch.setattr(
@@ -2420,6 +2541,107 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
         ["10"],
         ["20"],
     ]
+    assert all(call["require_durable_audit"] is True for call in audited_calls)
+    assert [change.fields for change in audited_calls[0]["pending_operation_detail"].changes] == [
+        {"campaign_id": "10", "campaign_name": "First campaign", "status": "PAUSED"}
+    ]
+
+
+def test_campaign_status_audit_detail_covers_partial_and_noop_results() -> None:
+    entry = _writable_google_ads_entry()
+    campaigns = [_campaign_reference(entry, "10"), _campaign_reference(entry, "20")]
+    partial_result = {
+        "resource_names": ["customers/111/campaigns/10"],
+        "campaign_errors": [{"campaign_id": "20", "error_code": "CANNOT_MODIFY_REMOVED_CAMPAIGN"}],
+    }
+
+    detail = campaign_status_operation_detail(entry, campaigns, "PAUSED", partial_result)
+
+    assert campaign_status_audit_status(partial_result) == AuditStatus.SUCCESS
+    assert [change.action for change in detail.changes] == [
+        "update_status",
+        "update_status_failed",
+    ]
+    assert detail.changes[0].external_ref == "customers/111/campaigns/10"
+    assert detail.changes[0].fields == {
+        "campaign_id": "10",
+        "campaign_name": "Campaign 10",
+        "status": "PAUSED",
+    }
+    assert detail.changes[1].fields == {
+        "campaign_id": "20",
+        "campaign_name": "Campaign 20",
+        "status": "PAUSED",
+        "error_code": "CANNOT_MODIFY_REMOVED_CAMPAIGN",
+    }
+    assert detail.counts.model_dump() == {"applied": 1, "skipped": 0, "failed": 1}
+
+    noop_result = {"resource_names": [], "campaign_errors": []}
+    assert campaign_status_audit_status(noop_result) == AuditStatus.SUCCESS
+    assert campaign_status_operation_detail(
+        entry, campaigns, "ENABLED", noop_result
+    ).counts.model_dump() == {"applied": 0, "skipped": 0, "failed": 0}
+
+    failed_result = {
+        "resource_names": [],
+        "campaign_errors": [{"campaign_id": "10", "error_code": "NOT_ALLOWED"}],
+    }
+    assert campaign_status_audit_status(failed_result) == AuditStatus.FAILURE
+
+
+async def test_campaign_status_durable_audit_failures_are_not_success(monkeypatch) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+    )
+    campaign = _campaign_reference(entry, "10")
+    provider_client = AsyncMock(return_value=object())
+    verifier = AsyncMock()
+    provider_update = AsyncMock(
+        return_value={
+            "resource_names": ["customers/111/campaigns/10"],
+            "campaign_errors": [],
+        }
+    )
+    audit = AsyncMock(side_effect=RuntimeError("pending audit unavailable"))
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.google_ads_client",
+        provider_client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.verify_campaigns",
+        verifier,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_status.update_campaign_status",
+        provider_update,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.audit.record_google_ads_operation_audit",
+        audit,
+    )
+
+    pending_failure = await google_ads_update_campaign_status(ctx, [campaign], "PAUSED")
+
+    assert pending_failure["results"][0]["status"] == "error"
+    provider_client.assert_not_awaited()
+    verifier.assert_not_awaited()
+    provider_update.assert_not_awaited()
+
+    pending_event_id = uuid4()
+    audit.side_effect = [pending_event_id, RuntimeError("terminal audit unavailable")]
+    audit.reset_mock()
+
+    terminal_failure = await google_ads_update_campaign_status(ctx, [campaign], "PAUSED")
+
+    assert terminal_failure["results"][0]["status"] == "error"
+    assert "terminal audit unavailable" in terminal_failure["results"][0]["error_message"]
+    provider_update.assert_awaited_once()
+    assert [call.kwargs["status"] for call in audit.await_args_list] == [
+        AuditStatus.PENDING,
+        AuditStatus.SUCCESS,
+    ]
+    assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
 
 
 async def test_campaign_verification_can_ignore_removed_campaigns() -> None:

@@ -30,6 +30,8 @@ async def run_audited_operation(
     pending_operation_detail: IntegrationOperationDetail | None = None,
     require_durable_audit: bool = False,
 ) -> Any:
+    if require_durable_audit and pending_operation_detail is None:
+        raise ValueError("Durable Google Ads audits require pending operation detail")
     pending_event_id = None
     if pending_operation_detail is not None:
         pending_event_id = await record_google_ads_operation_audit(

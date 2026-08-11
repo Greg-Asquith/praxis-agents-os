@@ -17,7 +17,13 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.audit_events import AuditStatus
+from services.audit_events import (
+    AuditStatus,
+    IntegrationOperationChange,
+    IntegrationOperationCounts,
+    IntegrationOperationDetail,
+    IntegrationOperationTarget,
+)
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
 
@@ -61,6 +67,10 @@ async def google_ads_create_negative_keyword_list(
             operation="create_negative_keyword_list",
             execute=execute,
             external_ref_from_result=lambda value: ",".join(value["resource_names"]) or None,
+            operation_detail_from_result=lambda value: _operation_detail(entry, value),
+            status_from_result=_audit_status,
+            pending_operation_detail=_pending_operation_detail(entry, normalized_names),
+            require_durable_audit=True,
         )
 
     async def audit_write_denied(entry: ResolvedContextEntry) -> None:
@@ -81,6 +91,76 @@ async def google_ads_create_negative_keyword_list(
         on_write_denied=audit_write_denied,
     )
     return {"results": [fan_out_dict(item) for item in results]}
+
+
+def _audit_status(result: dict[str, Any]) -> AuditStatus:
+    if result["list_errors"] and not result["resource_names"]:
+        return AuditStatus.FAILURE
+    return AuditStatus.SUCCESS
+
+
+def _operation_detail(
+    entry: ResolvedContextEntry,
+    result: dict[str, Any],
+) -> IntegrationOperationDetail:
+    created = list(zip(result["created_names"], result["resource_names"], strict=True))
+    return IntegrationOperationDetail(
+        target=_account_target(entry),
+        changes=[
+            *(
+                IntegrationOperationChange(
+                    action="create",
+                    entity_type="google_ads_negative_keyword_list",
+                    external_ref=resource_name,
+                    fields={"name": name},
+                )
+                for name, resource_name in created
+            ),
+            *(
+                IntegrationOperationChange(
+                    action="create_failed",
+                    entity_type="google_ads_negative_keyword_list",
+                    fields={
+                        "name": str(error.get("name", ""))[:255],
+                        "error_code": str(error.get("error_code", "unknown"))[:100],
+                    },
+                )
+                for error in result["list_errors"]
+            ),
+        ],
+        counts=IntegrationOperationCounts(
+            applied=len(created),
+            skipped=len(result["skipped_existing"]),
+            failed=len(result["list_errors"]),
+        ),
+    )
+
+
+def _pending_operation_detail(
+    entry: ResolvedContextEntry,
+    names: list[str],
+) -> IntegrationOperationDetail:
+    return IntegrationOperationDetail(
+        target=_account_target(entry),
+        changes=[
+            IntegrationOperationChange(
+                action="create",
+                entity_type="google_ads_negative_keyword_list",
+                fields={"name": name},
+            )
+            for name in names
+        ],
+        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
+    )
+
+
+def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
+    return IntegrationOperationTarget(
+        entity_type="google_ads_account",
+        external_id=entry.external_id,
+        display_name=entry.display_name,
+        integration_resource_id=str(entry.integration_resource_id),
+    )
 
 
 def _normalize_names(names: list[str]) -> list[str]:
