@@ -7,6 +7,7 @@ import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-f
 import {
   addRecordRow,
   keyedRecordRows,
+  normalizeRecordNumericInput,
   removeRecordRow,
   updateRecordCell,
 } from "@/components/tool-ui/records-field-values"
@@ -270,6 +271,8 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain(">PHRASE<")
     expect(html).toContain(">EXACT<")
     expect(html).toContain('type="number"')
+    expect(html).toContain('value="1.5"')
+    expect(html).toContain('value="2"')
     expect(html).toContain('aria-label="Remove row 1"')
     expect(html).toContain('aria-label="Remove row 2"')
     expect(html).toContain('id="records-1-rows-edit-label"')
@@ -294,6 +297,16 @@ describe("ApprovalRequestFields", () => {
     ])
     expect(removeRecordRow(added, 0)).toEqual([{ text: "", score: "" }])
     expect(original).toEqual([{ text: "jobs", score: 2 }])
+  })
+
+  it("accepts only finite numeric record edits", () => {
+    expect(normalizeRecordNumericInput("0")).toBe(0)
+    expect(normalizeRecordNumericInput("-2.5")).toBe(-2.5)
+    expect(normalizeRecordNumericInput("3.25")).toBe(3.25)
+
+    for (const value of ["", "   ", "not-a-number", "NaN", "Infinity", "-Infinity"]) {
+      expect(normalizeRecordNumericInput(value)).toBeNull()
+    }
   })
 
   it("keeps record row keys stable while cell values change", () => {

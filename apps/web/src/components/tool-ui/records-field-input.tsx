@@ -8,6 +8,7 @@ import type { ToolFieldColumn } from "@/components/tool-ui/field-resolution"
 import {
   addRecordRow,
   keyedRecordRows,
+  normalizeRecordNumericInput,
   removeRecordRow,
   updateRecordCell,
 } from "@/components/tool-ui/records-field-values"
@@ -175,17 +176,19 @@ function RecordCellInput({
     return (
       <Input
         className="h-7"
-        defaultValue={value}
         disabled={disabled}
         id={id}
         inputMode="decimal"
         onChange={(event) => {
-          const nextValue = Number(event.currentTarget.value)
-          if (event.currentTarget.value && Number.isFinite(nextValue)) {
-            onChange(nextValue)
+          const nextValue = normalizeRecordNumericInput(event.currentTarget.value)
+          if (nextValue === null) {
+            event.currentTarget.value = String(value)
+            return
           }
+          onChange(nextValue)
         }}
         type="number"
+        value={value}
       />
     )
   }

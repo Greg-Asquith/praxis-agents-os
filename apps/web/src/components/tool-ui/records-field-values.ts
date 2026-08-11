@@ -26,6 +26,14 @@ export function updateRecordCell(
   return value.map((row, index) => (index === rowIndex ? { ...row, [columnKey]: nextValue } : row))
 }
 
+export function normalizeRecordNumericInput(value: string): number | null {
+  if (value.trim() === "") {
+    return null
+  }
+  const normalized = Number(value)
+  return Number.isFinite(normalized) ? normalized : null
+}
+
 export function keyedRecordRows(value: EditedRecords, rowKeys: string[]): KeyedRecordRow[] {
   return value.map((row, rowIndex) => ({
     key: rowKeys[rowIndex] ?? `record-row-${String(rowIndex)}`,
