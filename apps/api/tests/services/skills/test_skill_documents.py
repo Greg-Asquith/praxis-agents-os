@@ -2,7 +2,6 @@
 
 """Unit tests for skill document conversion and validation helpers."""
 
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +15,7 @@ from services.skills.documents.utils import (
     truncate_markdown,
     validate_document_upload,
 )
+from tests.support.documents import tiny_pdf
 
 
 @pytest.mark.asyncio
@@ -52,31 +52,14 @@ async def test_convert_document_to_markdown_truncates_at_utf8_boundary(
 
 
 @pytest.mark.asyncio
-async def test_convert_document_to_markdown_uses_markitdown_for_binary_docs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeResult:
-        text_content = "# Converted"
-
-    class FakeMarkItDown:
-        def convert_stream(self, stream, *, file_extension=None, **_kwargs):
-            assert stream.read() == b"fake-pdf"
-            assert file_extension == ".pdf"
-            return FakeResult()
-
-    monkeypatch.setitem(
-        sys.modules,
-        "markitdown",
-        SimpleNamespace(MarkItDown=FakeMarkItDown),
-    )
-
+async def test_convert_document_to_markdown_converts_binary_docs() -> None:
     result = await convert_document_to_markdown(
-        b"fake-pdf",
+        tiny_pdf("Skill document marker"),
         content_type="application/pdf",
         filename="guide.pdf",
     )
 
-    assert result == "# Converted"
+    assert "Skill document marker" in result
 
 
 def test_truncate_markdown_leaves_short_content_unchanged() -> None:
