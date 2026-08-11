@@ -32,7 +32,7 @@ from tests.integrations.google_ads.support import (
 
 async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None:
     payload = {
-        "results": [{"resourceName": "customers/333/campaigns/10"}],
+        "results": [{"resourceName": "customers/333/campaigns/10"}, {}],
         "partialFailureError": {
             "details": [
                 {
@@ -62,6 +62,48 @@ async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None
     assert result["resource_names"] == ["customers/333/campaigns/10"]
     assert result["campaign_errors"][0]["campaign_id"] == "20"
     assert result["campaign_errors"][0]["error_code"] == "CANNOT_MODIFY_REMOVED_CAMPAIGN"
+
+
+@pytest.mark.parametrize(
+    "results",
+    [
+        [{"resourceName": "customers/333/campaigns/10"}],
+        [
+            {"resourceName": "customers/333/campaigns/10"},
+            {"resourceName": "customers/333/campaigns/20"},
+            {"resourceName": "customers/333/campaigns/30"},
+        ],
+        [{"resourceName": "customers/333/campaigns/10"}, "malformed"],
+        [{"resourceName": "customers/333/campaigns/10"}, {}],
+        [
+            {"resourceName": "customers/333/campaigns/10"},
+            {"resourceName": "customers/333/campaigns/10"},
+        ],
+        [
+            {"resourceName": "customers/999/campaigns/10"},
+            {"resourceName": "customers/333/campaigns/20"},
+        ],
+        [
+            {"resourceName": "customers/333/campaigns/20"},
+            {"resourceName": "customers/333/campaigns/10"},
+        ],
+    ],
+    ids=["short", "long", "malformed", "missing", "duplicate", "foreign", "swapped"],
+)
+async def test_campaign_status_fails_closed_for_invalid_result_evidence(
+    results: list[object],
+) -> None:
+    result = await update_campaign_status(
+        _OperationClient({"results": results}),
+        customer_id="333",
+        login_customer_id="111",
+        campaign_ids=["10", "20"],
+        status="PAUSED",
+    )
+
+    assert result["resource_names"] == []
+    assert [error["campaign_id"] for error in result["campaign_errors"]] == ["10", "20"]
+    assert {error["error_code"] for error in result["campaign_errors"]} == {"UNACCOUNTED_OPERATION"}
 
 
 async def test_link_negative_keyword_list_skips_existing_and_maps_failures() -> None:
@@ -341,6 +383,66 @@ async def test_create_negative_keyword_list_avoids_mutate_when_every_name_exists
     }
 
 
+@pytest.mark.parametrize(
+    ("results", "expected_resource_names"),
+    [
+        (
+            [
+                {"resourceName": "customers/333/sharedSets/10"},
+                {"resourceName": "customers/333/sharedSets/20"},
+            ],
+            ["customers/333/sharedSets/10", "customers/333/sharedSets/20"],
+        ),
+        ([{"resourceName": "customers/333/sharedSets/10"}], []),
+        (
+            [
+                {"resourceName": "customers/333/sharedSets/10"},
+                {"resourceName": "customers/333/sharedSets/20"},
+                {"resourceName": "customers/333/sharedSets/30"},
+            ],
+            [],
+        ),
+        ([{"resourceName": "customers/333/sharedSets/10"}, "malformed"], []),
+        ([{"resourceName": "customers/333/sharedSets/10"}, {}], []),
+        (
+            [
+                {"resourceName": "customers/333/sharedSets/10"},
+                {"resourceName": "customers/333/sharedSets/10"},
+            ],
+            [],
+        ),
+    ],
+    ids=["exact", "short", "long", "malformed", "empty", "duplicate"],
+)
+async def test_create_negative_keyword_list_accounts_for_every_result_slot(
+    results: list[object],
+    expected_resource_names: list[str],
+) -> None:
+    client = _NegativeKeywordListClient(
+        search_payload={"results": []},
+        mutate_payload={"results": results},
+    )
+
+    result = await create_negative_keyword_list(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        names=["First List", "Second List"],
+    )
+
+    assert result["resource_names"] == expected_resource_names
+    if expected_resource_names:
+        assert result["created_names"] == ["First List", "Second List"]
+        assert result["list_errors"] == []
+    else:
+        assert result["created_names"] == []
+        assert [error["name"] for error in result["list_errors"]] == [
+            "First List",
+            "Second List",
+        ]
+        assert {error["error_code"] for error in result["list_errors"]} == {"UNACCOUNTED_OPERATION"}
+
+
 async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> None:
     client = _NegativeKeywordClient(
         search_payload={
@@ -477,6 +579,67 @@ async def test_add_negative_keywords_fails_closed_for_unattributed_partial_failu
             "message": "The account rejected part of the request",
             "error_code": "INVALID_INPUT",
         }
+    ]
+
+
+async def test_add_negative_keywords_discards_mixed_success_with_unattributed_failure() -> None:
+    client = _NegativeKeywordClient(
+        search_payload={"results": []},
+        mutate_payload={
+            "results": [
+                {"resourceName": "customers/333/sharedCriteria/50~1"},
+                {},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Keyword is not permitted",
+                                "errorCode": {"criterionError": "INVALID_KEYWORD_TEXT"},
+                                "location": {
+                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                                },
+                            },
+                            {
+                                "message": "The account rejected part of the request",
+                                "errorCode": {"requestError": "INVALID_INPUT"},
+                                "location": {},
+                            },
+                        ]
+                    }
+                ]
+            },
+        },
+    )
+
+    result = await add_negative_keywords(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        shared_set_id="50",
+        keywords=[
+            {"text": "Apparently created", "match_type": "PHRASE"},
+            {"text": "Rejected", "match_type": "BROAD"},
+        ],
+    )
+
+    assert result["added"] == []
+    assert result["keyword_errors"] == [
+        {
+            "scope": "keyword",
+            "text": "Apparently created",
+            "match_type": "PHRASE",
+            "message": "The account rejected part of the request",
+            "error_code": "INVALID_INPUT",
+        },
+        {
+            "scope": "keyword",
+            "text": "Rejected",
+            "match_type": "BROAD",
+            "message": ("Keyword is not permitted | The account rejected part of the request"),
+            "error_code": "INVALID_KEYWORD_TEXT | INVALID_INPUT",
+        },
     ]
 
 

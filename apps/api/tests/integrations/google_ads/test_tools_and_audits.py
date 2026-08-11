@@ -514,6 +514,16 @@ def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_resul
     failed_result = {**noop_result, "skipped_existing": [], "list_errors": [{}]}
     assert create_list_audit_status(failed_result) == AuditStatus.FAILURE
 
+    malformed_result = {
+        "created_names": ["First List", "Second List"],
+        "resource_names": ["customers/111/sharedSets/50"],
+        "skipped_existing": [],
+        "list_errors": [],
+    }
+    malformed_detail = create_list_operation_detail(entry, malformed_result)
+    assert malformed_detail.counts.applied == 1
+    assert [change.fields["name"] for change in malformed_detail.changes] == ["First List"]
+
 
 async def test_create_negative_keyword_list_durable_audit_failures_are_not_success(
     monkeypatch,

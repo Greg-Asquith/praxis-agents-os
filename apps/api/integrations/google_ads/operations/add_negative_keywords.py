@@ -86,13 +86,27 @@ async def add_negative_keywords(
         unattributed_error_fields={"scope": "account"},
         default_message="Negative keyword creation failed",
     )
-    if not isinstance(results, list) or len(results) != len(create_keywords):
-        fallback_error = unattributed_errors[0] if unattributed_errors else None
+    if unattributed_errors:
+        diagnostic = unattributed_errors[0]
         return {
             "added": [],
             "skipped_existing": skipped_existing,
             "keyword_errors": [
-                _keyword_response_error(keyword, indexed_errors.get(index) or fallback_error)
+                _keyword_response_error(
+                    keyword,
+                    _merge_error_diagnostic(indexed_error, diagnostic)
+                    if (indexed_error := indexed_errors.get(index)) is not None
+                    else diagnostic,
+                )
+                for index, keyword in enumerate(create_keywords)
+            ],
+        }
+    if not isinstance(results, list) or len(results) != len(create_keywords):
+        return {
+            "added": [],
+            "skipped_existing": skipped_existing,
+            "keyword_errors": [
+                _keyword_response_error(keyword, indexed_errors.get(index))
                 for index, keyword in enumerate(create_keywords)
             ],
         }
@@ -108,22 +122,6 @@ async def add_negative_keywords(
             added.append({**keyword, "resource_name": resource_name})
         else:
             keyword_errors.append(_unaccounted_keyword_error(keyword))
-
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        if keyword_errors:
-            keyword_errors[0] = _merge_error_diagnostic(keyword_errors[0], diagnostic)
-        else:
-            keyword_errors = [
-                {
-                    "scope": "keyword",
-                    **keyword,
-                    "message": diagnostic["message"],
-                    "error_code": diagnostic["error_code"],
-                }
-                for keyword in create_keywords
-            ]
-            added = []
 
     return {
         "added": added,

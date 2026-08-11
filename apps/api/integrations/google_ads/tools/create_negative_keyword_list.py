@@ -103,7 +103,7 @@ def _operation_detail(
     entry: ResolvedContextEntry,
     result: dict[str, Any],
 ) -> IntegrationOperationDetail:
-    created = list(zip(result["created_names"], result["resource_names"], strict=True))
+    created = list(zip(result["created_names"], result["resource_names"], strict=False))
     return IntegrationOperationDetail(
         target=_account_target(entry),
         changes=[
