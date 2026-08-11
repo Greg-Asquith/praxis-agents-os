@@ -30,6 +30,7 @@ export type ToolUiField = {
   columns?: ToolFieldColumn[]
   key: string
   label: string
+  min_rows: number
   format: ToolFieldFormat
   editable: boolean
   placeholder: string

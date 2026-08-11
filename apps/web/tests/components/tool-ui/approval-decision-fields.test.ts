@@ -2,12 +2,17 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { ApprovalRequestFields, type ApprovalField } from "@/components/tool-ui/approval-card"
+import {
+  ApprovalRequestFields,
+  ToolApprovalDecisionCard,
+  type ApprovalField,
+} from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import {
   addRecordRow,
   keyedRecordRows,
   normalizeRecordNumericInput,
+  recordRowsValidity,
   removeRecordRow,
   updateRecordCell,
 } from "@/components/tool-ui/records-field-values"
@@ -64,6 +69,7 @@ describe("ApprovalRequestFields", () => {
           {
             key: "model_provider",
             label: "Search Provider",
+            min_rows: 0,
             format: "text",
             editable: true,
             placeholder: "",
@@ -247,15 +253,23 @@ describe("ApprovalRequestFields", () => {
           {
             ...approvalField("rows", "Negative Keywords", "records"),
             editable: true,
+            min_rows: 1,
             columns: [
-              { key: "text", label: "Keyword", options: [], placeholder: "Enter keyword" },
+              {
+                key: "text",
+                label: "Keyword",
+                options: [],
+                placeholder: "Enter keyword",
+                required: true,
+              },
               {
                 key: "match_type",
                 label: "Match Type",
                 options: ["EXACT", "PHRASE"],
                 placeholder: "",
+                required: true,
               },
-              { key: "score", label: "Score", options: [], placeholder: "" },
+              { key: "score", label: "Score", options: [], placeholder: "", required: false },
             ],
           },
         ],
@@ -275,14 +289,57 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain('value="2"')
     expect(html).toContain('aria-label="Remove row 1"')
     expect(html).toContain('aria-label="Remove row 2"')
+    expect(html).toContain('aria-label="Keyword, row 1"')
+    expect(html).toContain('aria-label="Match Type, row 2"')
+    expect(html.match(/scope="col"/g)).toHaveLength(4)
     expect(html).toContain('id="records-1-rows-edit-label"')
     expect(html).toContain('aria-labelledby="records-1-rows-edit-label"')
   })
 
+  it("shows record completeness errors and disables approval", () => {
+    const field: ApprovalField = {
+      ...approvalField("rows", "Negative Keywords", "records"),
+      editable: true,
+      min_rows: 1,
+      columns: [
+        { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+        {
+          key: "match_type",
+          label: "Match Type",
+          options: ["EXACT", "PHRASE"],
+          placeholder: "",
+          required: true,
+        },
+      ],
+    }
+    const html = renderToStaticMarkup(
+      createElement(ToolApprovalDecisionCard, {
+        activityId: "records-invalid",
+        args: { rows: [{ text: "", match_type: "EXACT" }] },
+        controls: {
+          decision: { decision: "pending", edits: {}, message: "" },
+          disabled: false,
+          error: null,
+          onDecisionChange: () => undefined,
+          onRetry: () => undefined,
+          pendingCount: 1,
+          submitting: false,
+        },
+        fields: [field],
+        label: "Add Negative Keywords",
+        toolName: "google_ads_add_negative_keywords",
+      })
+    )
+
+    expect(html).toContain("Keyword is required in row 1.")
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+    expect(html).toContain('aria-live="polite"')
+  })
+
   it("adds, removes, and edits record rows without coercing numeric cells", () => {
     const columns = [
-      { key: "text", label: "Keyword", options: [], placeholder: "" },
-      { key: "score", label: "Score", options: [], placeholder: "" },
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      { key: "score", label: "Score", options: [], placeholder: "", required: false },
     ]
     const original = [{ text: "jobs", score: 2 }]
 
@@ -309,6 +366,34 @@ describe("ApprovalRequestFields", () => {
     }
   })
 
+  it("validates minimum rows, required cells, options, and optional numeric values", () => {
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      {
+        key: "match_type",
+        label: "Match Type",
+        options: ["EXACT", "PHRASE"],
+        placeholder: "",
+        required: true,
+      },
+      { key: "score", label: "Score", options: [], placeholder: "", required: false },
+    ]
+
+    expect(recordRowsValidity([], columns, 1)).toEqual({
+      isRecords: true,
+      error: "Add at least 1 row before approving.",
+    })
+    expect(recordRowsValidity([{ text: "  ", match_type: "EXACT", score: 0 }], columns, 1)).toEqual(
+      { isRecords: true, error: "Keyword is required in row 1." }
+    )
+    expect(
+      recordRowsValidity([{ text: "jobs", match_type: "BROAD", score: -2.5 }], columns, 1)
+    ).toEqual({ isRecords: true, error: "Choose a valid match type in row 1." })
+    expect(
+      recordRowsValidity([{ text: "jobs", match_type: "EXACT", score: -2.5 }], columns, 1)
+    ).toEqual({ isRecords: true, error: null })
+  })
+
   it("keeps record row keys stable while cell values change", () => {
     const keys = ["row-1", "row-2"]
     const original = [
@@ -333,12 +418,13 @@ describe("ApprovalRequestFields", () => {
           {
             ...approvalField("rows", "Negative Keywords", "records"),
             columns: [
-              { key: "text", label: "Keyword", options: [], placeholder: "" },
+              { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
               {
                 key: "match_type",
                 label: "Match Type",
                 options: ["EXACT", "PHRASE"],
                 placeholder: "",
+                required: true,
               },
             ],
           },
@@ -436,6 +522,7 @@ function approvalField(key: string, label: string, format: ApprovalField["format
   return {
     key,
     label,
+    min_rows: 0,
     format,
     editable: false,
     placeholder: "",

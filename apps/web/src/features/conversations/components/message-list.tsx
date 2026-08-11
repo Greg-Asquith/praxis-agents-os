@@ -15,6 +15,7 @@ import {
 } from "@/features/conversations/components/message-row"
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
+import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 import type {
   AgentRun,
   AgentRunResumeDecision,
@@ -156,12 +157,14 @@ export function MessageList({
       liveToolActivityCount: liveToolActivities.length,
     })
   const isAwaitingApproval = activeRun?.status === "awaiting_approval"
+  const presentationFor = useToolPresentations()
   const inlineApprovals = useInlineApprovals({
     activeRunId: activeRun?.id ?? null,
     approvals,
     enabled: isAwaitingApproval,
     isSubmitting: isApprovalSubmitting,
     onSubmit: onApprovalSubmit,
+    presentationFor,
   })
   // Approvals whose tool call is not in the transcript yet (for example while the paused run's messages are still refetching) fall back to standalone rows.
   const orphanApprovalActivities = useMemo(() => {

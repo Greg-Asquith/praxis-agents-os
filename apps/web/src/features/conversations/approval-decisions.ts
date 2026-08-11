@@ -1,9 +1,9 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
-import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
+import type { ApprovalDecision, ApprovalField } from "@/components/tool-ui/approval-card"
+import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import type {
   EditedKeyValue,
-  EditedRecord,
   EditedRecords,
   EditedValue,
   EditedValues,
@@ -39,7 +39,8 @@ export function shouldSubmitDecisions(
 
 export function buildResumeDecisions(
   approvals: PendingToolApproval[],
-  decisions: ApprovalDecisionMap
+  decisions: ApprovalDecisionMap,
+  fieldsForTool: (toolName: string) => ApprovalField[] | undefined = () => undefined
 ): AgentRunResumeDecision[] | string {
   const payload: AgentRunResumeDecision[] = []
 
@@ -63,7 +64,8 @@ export function buildResumeDecisions(
     const mergedArgs = buildMergedArgs(
       approval.args,
       approval.replay_args ?? approval.args,
-      effectiveDecision.edits
+      effectiveDecision.edits,
+      fieldsForTool(approval.name)
     )
     if (typeof mergedArgs === "string") {
       return mergedArgs
@@ -109,7 +111,8 @@ export function summarizeApprovalDecisions(
 function buildMergedArgs(
   display: unknown,
   replay: unknown,
-  edits: EditedValues
+  edits: EditedValues,
+  fields?: ApprovalField[]
 ): Record<string, unknown> | null | string {
   const editEntries = Object.entries(edits)
   if (editEntries.length === 0) {
@@ -123,9 +126,10 @@ function buildMergedArgs(
   }
 
   const changedEntries: [string, unknown][] = []
+  const fieldsByKey = fields ? new Map(fields.map((field) => [field.key, field] as const)) : null
   for (const [key, edit] of editEntries) {
     const originalValue = displayArgs[key]
-    const mergedEdit = mergeEditedValue(originalValue, edit)
+    const mergedEdit = mergeEditedValue(originalValue, edit, fieldsByKey?.get(key))
     if (mergedEdit === INVALID_EDIT) {
       return "This request can no longer be edited. Refresh and try again."
     }
@@ -141,12 +145,20 @@ function buildMergedArgs(
 const NO_CHANGE = Symbol("no-change")
 const INVALID_EDIT = Symbol("invalid-edit")
 
-function mergeEditedValue(original: unknown, edit: EditedValue): unknown {
+function mergeEditedValue(original: unknown, edit: EditedValue, field?: ApprovalField): unknown {
+  if (field?.format === "records") {
+    const validity = recordRowsValidity(edit, field.columns, field.min_rows)
+    if (!validity.isRecords || validity.error !== null || !Array.isArray(original)) {
+      return INVALID_EDIT
+    }
+    return structurallyEqual(edit, original) ? NO_CHANGE : edit
+  }
+
   if (isEntityReference(edit)) {
     return structurallyEqual(edit, original) ? NO_CHANGE : edit
   }
 
-  if (Array.isArray(edit) && edit.every(isEntityReference)) {
+  if (Array.isArray(edit) && edit.length > 0 && edit.every(isEntityReference)) {
     if (!Array.isArray(original)) {
       return INVALID_EDIT
     }
@@ -154,7 +166,7 @@ function mergeEditedValue(original: unknown, edit: EditedValue): unknown {
   }
 
   if (isEditedRecords(edit)) {
-    if (!Array.isArray(original) || !original.every(isEditedRecord)) {
+    if (!recordRowsValidity(original, undefined, 1).isRecords) {
       return INVALID_EDIT
     }
     return structurallyEqual(edit, original) ? NO_CHANGE : edit
@@ -224,16 +236,7 @@ function isEditedKeyValue(value: EditedValue): value is EditedKeyValue {
 }
 
 function isEditedRecords(value: EditedValue): value is EditedRecords {
-  return Array.isArray(value) && value.length > 0 && value.every(isEditedRecord)
-}
-
-function isEditedRecord(value: unknown): value is EditedRecord {
-  return (
-    isRecord(value) &&
-    Object.values(value).every(
-      (item) => typeof item === "string" || (typeof item === "number" && Number.isFinite(item))
-    )
-  )
+  return recordRowsValidity(value, undefined, 1).isRecords
 }
 
 function isEditedScalar(value: unknown): value is string | number | boolean {

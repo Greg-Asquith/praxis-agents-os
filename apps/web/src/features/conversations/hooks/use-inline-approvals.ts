@@ -12,6 +12,9 @@ import {
   type ApprovalDecisionMap,
 } from "@/features/conversations/approval-decisions"
 import type { AgentRunResumeDecision, PendingToolApproval } from "@/features/conversations/types"
+import type { ToolPresentationEntry } from "@/features/tools/types"
+
+const NO_PRESENTATION = () => null
 
 type UseInlineApprovalsParams = {
   activeRunId: string | null
@@ -19,6 +22,7 @@ type UseInlineApprovalsParams = {
   enabled: boolean
   isSubmitting: boolean
   onSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
+  presentationFor?: (name: string) => ToolPresentationEntry | null
 }
 
 export function useInlineApprovals({
@@ -27,6 +31,7 @@ export function useInlineApprovals({
   enabled,
   isSubmitting,
   onSubmit,
+  presentationFor = NO_PRESENTATION,
 }: UseInlineApprovalsParams) {
   const [decisions, setDecisions] = useState<ApprovalDecisionMap>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -45,7 +50,11 @@ export function useInlineApprovals({
     }
     setFormError(null)
     setFormErrorToolCallId(null)
-    const payload = buildResumeDecisions(approvals, decisionMap)
+    const payload = buildResumeDecisions(
+      approvals,
+      decisionMap,
+      (toolName) => presentationFor(toolName)?.ui.arg_fields
+    )
     if (typeof payload === "string") {
       setFormError(payload)
       setFormErrorToolCallId(toolCallId)

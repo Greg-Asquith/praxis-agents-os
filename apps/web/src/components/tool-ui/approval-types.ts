@@ -28,6 +28,7 @@ export type ApprovalField = {
   format: ToolFieldFormat
   key: string
   label: string
+  min_rows: number
   options: string[]
   placeholder: string
   secondary: boolean

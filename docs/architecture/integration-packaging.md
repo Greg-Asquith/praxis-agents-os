@@ -100,6 +100,9 @@ The presentation field-format vocabulary is closed:
 `entity_list`. The platform-owned `records` format is argument-only and uses
 server-declared scalar columns; providers may consume it but cannot extend its
 row shape, column types, or rendering contract inside a provider package.
+Record fields may declare a platform-bounded `min_rows`, and each declared
+column may be marked `required`; approval preflight enforces those constraints
+before a deferred tool resumes.
 
 A provider package supplies: manifest data, a discovery function,
 operation clients, one-module-per-tool definitions (with bindings and presentations),

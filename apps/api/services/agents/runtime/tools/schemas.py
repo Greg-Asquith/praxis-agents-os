@@ -14,6 +14,7 @@ class ToolFieldColumnRead(BaseModel):
     label: str
     options: list[str]
     placeholder: str
+    required: bool
 
 
 class ToolFieldPresentationRead(BaseModel):
@@ -29,6 +30,7 @@ class ToolFieldPresentationRead(BaseModel):
     columns: list[ToolFieldColumnRead] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
+    min_rows: int
 
 
 class ToolPresentationRead(BaseModel):
@@ -69,9 +71,11 @@ class ToolPresentationRead(BaseModel):
                             label=column.label,
                             options=list(column.options),
                             placeholder=column.placeholder,
+                            required=column.required,
                         )
                         for column in field.columns
                     ],
+                    min_rows=field.min_rows,
                 )
                 for field in presentation.arg_fields
             ],
@@ -92,9 +96,11 @@ class ToolPresentationRead(BaseModel):
                             label=column.label,
                             options=list(column.options),
                             placeholder=column.placeholder,
+                            required=column.required,
                         )
                         for column in field.columns
                     ],
+                    min_rows=field.min_rows,
                 )
                 for field in presentation.result_fields
             ],

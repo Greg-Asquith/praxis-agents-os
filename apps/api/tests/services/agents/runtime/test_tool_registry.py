@@ -55,6 +55,7 @@ from services.agents.runtime.delegation.build_delegation_tools import (
 from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
+    RECORDS_FIELD_MAX_ROWS,
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_EXTERNAL_WRITE,
@@ -633,8 +634,14 @@ def test_validate_definition_accepts_editable_records_columns() -> None:
                     label="Rows",
                     format="records",
                     editable=True,
+                    min_rows=1,
                     columns=(
-                        ToolFieldColumn(key="text", label="Keyword", placeholder="Enter keyword"),
+                        ToolFieldColumn(
+                            key="text",
+                            label="Keyword",
+                            placeholder="Enter keyword",
+                            required=True,
+                        ),
                         ToolFieldColumn(
                             key="match_type",
                             label="Match Type",
@@ -665,6 +672,33 @@ def test_validate_definition_accepts_editable_records_columns() -> None:
             ToolFieldPresentation(key="rows", label="Rows", format="records"),
             None,
             "Records runtime tool presentation fields require columns",
+        ),
+        (
+            ToolFieldPresentation(key="value", label="Value", min_rows=1),
+            None,
+            "min_rows requires the records format",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                min_rows=-1,
+                columns=(ToolFieldColumn(key="text", label="Text"),),
+            ),
+            None,
+            "min_rows must be a non-negative integer",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                min_rows=RECORDS_FIELD_MAX_ROWS + 1,
+                columns=(ToolFieldColumn(key="text", label="Text"),),
+            ),
+            None,
+            "min_rows cannot exceed",
         ),
         (
             ToolFieldPresentation(
@@ -722,6 +756,16 @@ def test_validate_definition_accepts_editable_records_columns() -> None:
             "column options must be unique",
         ),
         (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(ToolFieldColumn(key="text", label="Text", required=1),),  # type: ignore[arg-type]
+            ),
+            None,
+            "column required must be a boolean",
+        ),
+        (
             None,
             ToolFieldPresentation(
                 key="rows",
@@ -772,8 +816,9 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
                 label="Rows",
                 format="records",
                 editable=True,
+                min_rows=1,
                 columns=(
-                    ToolFieldColumn(key="text", label="Keyword"),
+                    ToolFieldColumn(key="text", label="Keyword", required=True),
                     ToolFieldColumn(
                         key="match_type",
                         label="Match Type",
@@ -787,15 +832,23 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
     serialized = ToolPresentationRead.from_presentation(presentation)
 
     assert [field.format for field in serialized.arg_fields] == ["number", "keyvalue", "records"]
+    assert [field.min_rows for field in serialized.arg_fields] == [0, 0, 1]
     assert serialized.arg_fields[0].columns == []
     assert "columns" not in serialized.arg_fields[0].model_dump()
     assert [column.model_dump() for column in serialized.arg_fields[2].columns] == [
-        {"key": "text", "label": "Keyword", "options": [], "placeholder": ""},
+        {
+            "key": "text",
+            "label": "Keyword",
+            "options": [],
+            "placeholder": "",
+            "required": True,
+        },
         {
             "key": "match_type",
             "label": "Match Type",
             "options": ["EXACT", "PHRASE"],
             "placeholder": "",
+            "required": False,
         },
     ]
 
@@ -966,6 +1019,27 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         definition = definitions[tool_name]
         fields = {field.key: field for field in definition.presentation.arg_fields}
         assert fields[field_key].format == expected_format
+
+    google_ads_keyword_records = {
+        definition.name: field
+        for definition in GOOGLE_ADS_TOOL_DEFINITIONS
+        for field in definition.presentation.arg_fields
+        if field.format == "records"
+    }
+    assert set(google_ads_keyword_records) == {
+        "google_ads_add_ad_group_negative_keywords",
+        "google_ads_add_campaign_negative_keywords",
+        "google_ads_add_negative_keywords",
+        "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
+        "google_ads_remove_negative_keywords",
+    }
+    for tool_name, field in google_ads_keyword_records.items():
+        assert field.min_rows == 1, tool_name
+        assert {column.key: column.required for column in field.columns} == {
+            "match_type": True,
+            "text": True,
+        }, tool_name
 
     for tool_name, field_key in {
         ("airtable_list_records", "filter_by_formula"),

@@ -686,13 +686,15 @@ describe("Google Ads tool presenters", () => {
       },
       {
         ...field("keywords", "Keywords", "records", true),
+        min_rows: 1,
         columns: [
-          { key: "text", label: "Keyword", options: [], placeholder: "" },
+          { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
           {
             key: "match_type",
             label: "Match Type",
             options: ["EXACT", "PHRASE", "BROAD"],
             placeholder: "",
+            required: true,
           },
         ],
       },
@@ -965,12 +967,13 @@ describe("Google Ads tool presenters", () => {
       },
     }
     const columns = [
-      { key: "text", label: "Keyword", options: [], placeholder: "" },
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
       {
         key: "match_type",
         label: "Match Type",
         options: ["EXACT", "PHRASE", "BROAD"],
         placeholder: "",
+        required: true,
       },
     ]
     let rows: EditedRecords = [{ text: "jobs", match_type: "EXACT" }]
@@ -1475,7 +1478,16 @@ function field(
   format: ToolUiField["format"],
   editable = false
 ): ToolUiField {
-  return { key, label, format, editable, secondary: false, options: [], placeholder: "" }
+  return {
+    key,
+    label,
+    format,
+    editable,
+    min_rows: 0,
+    secondary: false,
+    options: [],
+    placeholder: "",
+  }
 }
 
 function toolUi(argFields: ToolUiField[]): ToolUi {

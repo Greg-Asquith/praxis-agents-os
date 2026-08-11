@@ -17,8 +17,6 @@ from models.workspace import Workspace, WorkspaceMembership
 if TYPE_CHECKING:
     from services.agents.runtime.tools.contract import ToolFieldColumn
 
-RECORDS_FIELD_MAX_ROWS = 500
-
 
 async def validate_and_canonicalize_override_args(
     db: AsyncSession,
@@ -77,14 +75,14 @@ async def validate_and_canonicalize_override_args(
             details={"tool_name": tool_name, "locked_fields": locked_changes},
         )
 
-    if override_args is not None:
-        for field in definition.presentation.arg_fields:
-            if field.format == "records" and field.editable:
-                _validate_records_override(
-                    field_key=field.key,
-                    value=effective_args.get(field.key),
-                    columns=field.columns,
-                )
+    for field in definition.presentation.arg_fields:
+        if field.format == "records" and field.editable:
+            _validate_records_override(
+                field_key=field.key,
+                value=effective_args.get(field.key),
+                columns=field.columns,
+                min_rows=field.min_rows,
+            )
 
     for field in definition.presentation.arg_fields:
         if field.format not in {"entity", "entity_list"}:
@@ -132,7 +130,10 @@ def _validate_records_override(
     field_key: str,
     value: Any,
     columns: tuple["ToolFieldColumn", ...],
+    min_rows: int,
 ) -> None:
+    from services.agents.runtime.tools.contract import RECORDS_FIELD_MAX_ROWS
+
     if not isinstance(value, list):
         raise AppValidationError(
             "Record fields must be a list of rows",
@@ -143,11 +144,17 @@ def _validate_records_override(
             f"Record fields cannot contain more than {RECORDS_FIELD_MAX_ROWS} rows",
             field=field_key,
         )
+    if len(value) < min_rows:
+        raise AppValidationError(
+            f"Record fields must contain at least {min_rows} row{'s' if min_rows != 1 else ''}",
+            field=field_key,
+        )
 
     declared_keys = {column.key for column in columns}
     constrained_options = {
         column.key: frozenset(column.options) for column in columns if column.options
     }
+    required_columns = {column.key for column in columns if column.required}
     for row_index, row in enumerate(value):
         if not isinstance(row, Mapping) or set(row) != declared_keys:
             raise AppValidationError(
@@ -165,6 +172,12 @@ def _validate_records_override(
             if isinstance(item, float) and not math.isfinite(item):
                 raise AppValidationError(
                     "Record numbers must be finite",
+                    field=field_key,
+                    details={"column": column_key, "row": row_index},
+                )
+            if column_key in required_columns and isinstance(item, str) and not item.strip():
+                raise AppValidationError(
+                    "Required record cells must not be blank",
                     field=field_key,
                     details={"column": column_key, "row": row_index},
                 )

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import type { ApprovalField } from "@/components/tool-ui/approval-card"
 import {
   DEFAULT_APPROVAL_DECISION,
   buildResumeDecisions,
@@ -321,6 +322,67 @@ describe("approval decision helpers", () => {
         },
       })
     ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "records-1" }])
+  })
+
+  it("rejects incomplete record edits using the declared presentation", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "records-1",
+      name: "records_write",
+      args: { rows: [{ text: "jobs", match_type: "EXACT" }] },
+    }
+    const fields: ApprovalField[] = [
+      {
+        key: "rows",
+        label: "Negative Keywords",
+        format: "records",
+        editable: true,
+        min_rows: 1,
+        options: [],
+        placeholder: "",
+        secondary: false,
+        columns: [
+          { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+          {
+            key: "match_type",
+            label: "Match Type",
+            options: ["EXACT", "PHRASE"],
+            placeholder: "",
+            required: true,
+          },
+        ],
+      },
+    ]
+    const fieldsForTool = () => fields
+
+    for (const rows of [[], [{ text: "  ", match_type: "EXACT" }]]) {
+      expect(
+        buildResumeDecisions(
+          [approval],
+          {
+            "records-1": {
+              decision: "approved",
+              message: "",
+              edits: { rows },
+            },
+          },
+          fieldsForTool
+        )
+      ).toBe("This request can no longer be edited. Refresh and try again.")
+    }
+  })
+
+  it("does not classify an empty array as records or entity references without metadata", () => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "records-1",
+      name: "records_write",
+      args: { rows: [{ text: "jobs", match_type: "EXACT" }] },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "records-1": { decision: "approved", message: "", edits: { rows: [] } },
+      })
+    ).toBe("This request can no longer be edited. Refresh and try again.")
   })
 
   it("submits exact structured entity references selected by the operator", () => {

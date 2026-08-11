@@ -244,12 +244,14 @@ DEFINITION = RuntimeToolDefinition(
                 label="Keywords",
                 format="records",
                 editable=True,
+                min_rows=1,
                 columns=(
-                    ToolFieldColumn(key="text", label="Keyword"),
+                    ToolFieldColumn(key="text", label="Keyword", required=True),
                     ToolFieldColumn(
                         key="match_type",
                         label="Match Type",
                         options=("EXACT", "PHRASE", "BROAD"),
+                        required=True,
                     ),
                 ),
             ),

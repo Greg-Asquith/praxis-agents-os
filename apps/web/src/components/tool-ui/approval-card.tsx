@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type ReactNode } from "react"
 import { CheckIcon, WrenchIcon } from "lucide-react"
 
 import { ApprovalRequestFields } from "@/components/tool-ui/approval-request-fields"
+import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import { ApprovalStaticField } from "@/components/tool-ui/approval-static-field"
 import type {
   ApprovalDecision,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { pluralize } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
 
 export type {
@@ -62,6 +64,15 @@ export function ToolApprovalDecisionCard({
   const [invalidEntityFields, setInvalidEntityFields] = useState<Set<string>>(() => new Set())
   const disabled = controls.disabled ?? false
   const isDecided = controls.decision.decision !== "pending"
+  const recordArgs = isRecord(args) ? args : null
+  const hasInvalidRecordFields = fields.some((field) => {
+    if (!field.editable || field.format !== "records") {
+      return false
+    }
+    const value = controls.decision.edits[field.key] ?? recordArgs?.[field.key]
+    const validity = recordRowsValidity(value, field.columns, field.min_rows)
+    return !validity.isRecords || validity.error !== null
+  })
   const handleEntityValidityChange = useCallback((key: string, valid: boolean) => {
     setInvalidEntityFields((current) => {
       const next = new Set(current)
@@ -81,7 +92,7 @@ export function ToolApprovalDecisionCard({
         <ApprovalFooter
           approveLabel={approveLabel}
           controls={controls}
-          disabled={disabled || invalidEntityFields.size > 0}
+          disabled={disabled || invalidEntityFields.size > 0 || hasInvalidRecordFields}
           isDeclining={isDeclining}
           label={label}
           onApprove={() => {

@@ -9,6 +9,7 @@ import {
   addRecordRow,
   keyedRecordRows,
   normalizeRecordNumericInput,
+  recordRowsValidity,
   removeRecordRow,
   updateRecordCell,
 } from "@/components/tool-ui/records-field-values"
@@ -31,6 +32,7 @@ export function RecordsFieldInput({
   disabled,
   id,
   labelId,
+  minRows,
   onChange,
   value,
 }: {
@@ -38,6 +40,7 @@ export function RecordsFieldInput({
   disabled: boolean
   id: string
   labelId: string
+  minRows: number
   onChange: (value: EditedRecords) => void
   value: EditedRecords
 }) {
@@ -46,6 +49,8 @@ export function RecordsFieldInput({
     value.map((_, index) => `${id}-row-${String(index)}`)
   )
   const rows = keyedRecordRows(value, rowKeys)
+  const validation = recordRowsValidity(value, columns, minRows)
+  const error = validation.isRecords ? validation.error : null
 
   function addRow() {
     const key = `${id}-row-${String(nextRowKey.current)}`
@@ -60,7 +65,12 @@ export function RecordsFieldInput({
   }
 
   return (
-    <div aria-labelledby={labelId} className="min-w-0 overflow-hidden" role="group">
+    <div
+      aria-describedby={error ? `${id}-error` : undefined}
+      aria-labelledby={labelId}
+      className="min-w-0 overflow-hidden"
+      role="group"
+    >
       <div className="border-border/70 flex items-center justify-between gap-3 border-b py-1">
         <span className="text-muted-foreground text-xs font-medium">
           {String(value.length)} {value.length === 1 ? "row" : "rows"}
@@ -81,11 +91,16 @@ export function RecordsFieldInput({
           <thead className="bg-muted/30 text-muted-foreground sticky top-0 z-10">
             <tr>
               {columns.map((column) => (
-                <th className="border-border border-b px-2.5 py-1.5 font-medium" key={column.key}>
+                <th
+                  className="border-border border-b px-2.5 py-1.5 font-medium"
+                  key={column.key}
+                  scope="col"
+                >
                   {column.label}
+                  {column.required ? <span aria-hidden="true"> *</span> : null}
                 </th>
               ))}
-              <th className="border-border w-9 border-b px-1.5 py-1.5">
+              <th className="border-border w-9 border-b px-1.5 py-1.5" scope="col">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
@@ -99,6 +114,7 @@ export function RecordsFieldInput({
                       column={column}
                       disabled={disabled}
                       id={`${id}-${String(rowIndex)}-${column.key}`}
+                      label={`${column.label}, row ${String(rowIndex + 1)}`}
                       onChange={(nextValue) => {
                         onChange(updateRecordCell(value, rowIndex, column.key, nextValue))
                       }}
@@ -125,6 +141,11 @@ export function RecordsFieldInput({
           </tbody>
         </table>
       </div>
+      {error ? (
+        <p aria-live="polite" className="text-destructive mt-1.5 text-xs" id={`${id}-error`}>
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -133,12 +154,14 @@ function RecordCellInput({
   column,
   disabled,
   id,
+  label,
   onChange,
   value,
 }: {
   column: ToolFieldColumn
   disabled: boolean
   id: string
+  label: string
   onChange: (value: string | number) => void
   value: string | number | undefined
 }) {
@@ -153,7 +176,13 @@ function RecordCellInput({
         }}
         value={value}
       >
-        <SelectTrigger className="h-7 w-full" id={id}>
+        <SelectTrigger
+          aria-invalid={column.required && !value.trim()}
+          aria-label={label}
+          aria-required={column.required}
+          className="h-7 w-full"
+          id={id}
+        >
           <SelectValue placeholder={column.placeholder || undefined} />
         </SelectTrigger>
         <SelectContent align="start">
@@ -171,10 +200,14 @@ function RecordCellInput({
   if (typeof value === "number") {
     return (
       <Input
+        aria-label={label}
+        aria-required={column.required}
+        autoComplete="off"
         className="h-7"
         disabled={disabled}
         id={id}
         inputMode="decimal"
+        name={id}
         onChange={(event) => {
           const nextValue = normalizeRecordNumericInput(event.currentTarget.value)
           if (nextValue === null) {
@@ -190,9 +223,14 @@ function RecordCellInput({
   }
   return (
     <Input
+      aria-invalid={column.required && !value?.trim()}
+      aria-label={label}
+      aria-required={column.required}
+      autoComplete="off"
       className="h-7"
       disabled={disabled}
       id={id}
+      name={id}
       onChange={(event) => {
         onChange(event.currentTarget.value)
       }}

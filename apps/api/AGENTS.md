@@ -118,6 +118,8 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorized immediately before resume.
+  Editable `records` fields also enforce their declared minimum row count and
+  required columns before resume, even when the operator approves without edits.
 - Provider packages keep each agent tool in its own module under a `tools/`
   tree. The tree may share schemas and provider-local helpers, while its
   `__init__.py` only composes exported definitions; do not accumulate a

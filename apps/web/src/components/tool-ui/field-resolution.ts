@@ -31,6 +31,7 @@ export type ToolFieldColumn = {
   label: string
   options: string[]
   placeholder: string
+  required: boolean
 }
 
 export type ResolvedToolField = {

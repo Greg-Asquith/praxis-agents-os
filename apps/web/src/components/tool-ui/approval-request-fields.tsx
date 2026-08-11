@@ -26,6 +26,7 @@ import { HtmlFieldInput } from "@/components/tool-ui/html-field-input"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
 import { ListFieldInput } from "@/components/tool-ui/list-field-input"
 import { RecordsFieldInput } from "@/components/tool-ui/records-field-input"
+import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -279,6 +280,7 @@ export function ApprovalRequestFields({
                 disabled={disabled}
                 id={id}
                 labelId={`${id}-label`}
+                minRows={field.min_rows}
                 onChange={(nextValue) => {
                   applyFieldEdit(field.key, nextValue)
                 }}
@@ -480,20 +482,7 @@ function isEditedKeyValue(value: unknown): value is EditedKeyValue {
 }
 
 function isEditedRecords(value: unknown, field: ApprovalField): value is EditedRecords {
-  if (!Array.isArray(value) || !field.columns || field.columns.length === 0) {
-    return false
-  }
-  const columnKeys = new Set(field.columns.map((column) => column.key))
-  return value.every(
-    (row) =>
-      isRecord(row) &&
-      Object.keys(row).length === columnKeys.size &&
-      Object.entries(row).every(
-        ([key, item]) =>
-          columnKeys.has(key) &&
-          (typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
-      )
-  )
+  return recordRowsValidity(value, field.columns, field.min_rows).isRecords
 }
 
 function lockedKeyValueEntries(value: unknown): string[] {

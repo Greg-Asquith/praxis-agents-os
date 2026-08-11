@@ -104,6 +104,7 @@ EDITABLE_TOOL_FIELD_FORMATS = frozenset(
     }
 )
 STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
+RECORDS_FIELD_MAX_ROWS = 500
 # Semantic icon tokens the web client maps to concrete icons.
 VALID_TOOL_ICONS = frozenset(
     {
@@ -137,6 +138,7 @@ class ToolFieldColumn:
     label: str
     options: tuple[str, ...] = ()
     placeholder: str = ""
+    required: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,6 +155,7 @@ class ToolFieldPresentation:
     entity_kind: str | None = None
     depends_on: tuple[str, ...] = ()
     columns: tuple[ToolFieldColumn, ...] = ()
+    min_rows: int = 0
 
 
 @dataclass(frozen=True)
@@ -462,10 +465,26 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             raise RuntimeError("Runtime tool presentation field columns require the records format")
         if field.format == "records" and not field.columns:
             raise RuntimeError("Records runtime tool presentation fields require columns")
+        if type(field.min_rows) is not int or field.min_rows < 0:
+            raise RuntimeError(
+                "Runtime tool presentation field min_rows must be a non-negative integer"
+            )
+        if field.format != "records" and field.min_rows != 0:
+            raise RuntimeError(
+                "Runtime tool presentation field min_rows requires the records format"
+            )
+        if field.min_rows > RECORDS_FIELD_MAX_ROWS:
+            raise RuntimeError(
+                f"Runtime tool presentation field min_rows cannot exceed {RECORDS_FIELD_MAX_ROWS}"
+            )
         column_keys = [column.key for column in field.columns]
         if len(column_keys) != len(set(column_keys)):
             raise RuntimeError("Runtime tool presentation record column keys must be unique")
         for column in field.columns:
+            if type(column.required) is not bool:
+                raise RuntimeError(
+                    "Runtime tool presentation record column required must be a boolean"
+                )
             if not _TOOL_NAME_PATTERN.fullmatch(column.key):
                 raise RuntimeError(
                     "Runtime tool presentation record column keys must be lowercase snake_case"

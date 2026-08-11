@@ -94,6 +94,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   use the shared Base UI combobox for editable targets, preserve structured
   reference values, and fail closed as “Target unavailable” rather than
   exposing a raw ID.
+- Editable record approvals use the server-declared `min_rows` and column
+  `required` constraints. Keep editor feedback, approval gating, and decision
+  merge on the shared record-validity helper, and give repeated controls
+  row-specific accessible names.
 - The conversation composer exposes active integration context for both new
   and existing conversations, including for read-only members.
   New-conversation selection stays local until it is submitted atomically with

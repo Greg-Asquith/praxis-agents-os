@@ -13,11 +13,9 @@ from integrations.google_ads.tools.add_negative_keywords import (
 from integrations.google_ads.tools.remove_negative_keywords import (
     DEFINITION as GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
 )
-from services.agent_runs.validate_override_args import (
-    RECORDS_FIELD_MAX_ROWS,
-    validate_and_canonicalize_override_args,
-)
+from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.runtime.tools.contract import (
+    RECORDS_FIELD_MAX_ROWS,
     RuntimeToolDefinition,
     ToolFieldColumn,
     ToolFieldPresentation,
@@ -35,7 +33,13 @@ def _records_tool(_rows: list[dict[str, str | int | float]]) -> str:
     return "ok"
 
 
-def _records_definition(*, editable: bool = True) -> RuntimeToolDefinition:
+def _records_definition(
+    *,
+    editable: bool = True,
+    min_rows: int = 0,
+    required_text: bool = False,
+    required_match_type: bool = False,
+) -> RuntimeToolDefinition:
     return RuntimeToolDefinition(
         name="records_write",
         function=_records_tool,
@@ -47,12 +51,14 @@ def _records_definition(*, editable: bool = True) -> RuntimeToolDefinition:
                     label="Rows",
                     format="records",
                     editable=editable,
+                    min_rows=min_rows,
                     columns=(
-                        ToolFieldColumn(key="text", label="Text"),
+                        ToolFieldColumn(key="text", label="Text", required=required_text),
                         ToolFieldColumn(
                             key="match_type",
                             label="Match Type",
                             options=("EXACT", "PHRASE"),
+                            required=required_match_type,
                         ),
                     ),
                 ),
@@ -289,6 +295,83 @@ async def test_records_override_rejects_invalid_rows(monkeypatch, rows, error: s
             ),
             override_args={"rows": rows},
         )
+
+
+@pytest.mark.parametrize(
+    ("rows", "error"),
+    [
+        ([], "at least 1 row"),
+        ([{"text": "   ", "match_type": "EXACT"}], "must not be blank"),
+    ],
+)
+async def test_records_override_enforces_declared_completeness(
+    monkeypatch, rows, error: str
+) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: _records_definition(min_rows=1, required_text=True),
+    )
+
+    with pytest.raises(AppValidationError, match=error):
+        await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(conversation_id=uuid4()),
+            tool_call=_call(
+                "records_write",
+                {"rows": [{"text": "old", "match_type": "EXACT"}]},
+            ),
+            override_args={"rows": rows},
+        )
+
+
+async def test_records_approval_enforces_completeness_without_an_override(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: _records_definition(min_rows=1, required_text=True),
+    )
+
+    with pytest.raises(AppValidationError, match="must not be blank"):
+        await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(conversation_id=uuid4()),
+            tool_call=_call(
+                "records_write",
+                {"rows": [{"text": " ", "match_type": "EXACT"}]},
+            ),
+            override_args=None,
+        )
+
+
+@pytest.mark.parametrize("text", ["", "   ", 0, -2, 1.5])
+async def test_records_override_preserves_optional_blank_and_finite_numeric_cells(
+    monkeypatch, text
+) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: _records_definition(min_rows=1),
+    )
+    rows = [{"text": text, "match_type": "EXACT"}]
+
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call(
+            "records_write",
+            {"rows": [{"text": "old", "match_type": "EXACT"}]},
+        ),
+        override_args={"rows": rows},
+    )
+
+    assert result == {"rows": rows}
 
 
 async def test_locked_records_override_is_rejected(monkeypatch) -> None:

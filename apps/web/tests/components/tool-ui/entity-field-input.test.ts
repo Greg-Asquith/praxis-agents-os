@@ -14,6 +14,7 @@ import { isRecord } from "@/lib/guards"
 const field = {
   key: "file_id",
   label: "File",
+  min_rows: 0,
   format: "entity" as const,
   editable: true,
   placeholder: "",

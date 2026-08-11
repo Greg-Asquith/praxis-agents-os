@@ -338,6 +338,7 @@ function field(key: string, label: string, format: "text" | "markdown" | "multil
   return {
     key,
     label,
+    min_rows: 0,
     format,
     editable: false,
     placeholder: "",
