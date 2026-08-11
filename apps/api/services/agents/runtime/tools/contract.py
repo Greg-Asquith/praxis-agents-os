@@ -383,6 +383,8 @@ def _validate_integration_binding(definition: RuntimeToolDefinition) -> None:
         )
     if binding.requires_write and definition.effect != TOOL_EFFECT_WRITE:
         raise RuntimeError("Write-required integration bindings require a write tool")
+    if definition.egress == TOOL_EGRESS_EXTERNAL_WRITE and not binding.requires_write:
+        raise RuntimeError("External-write integration tools require a write-required binding")
     parameter_names = set(inspect.signature(definition.function).parameters)
     if parameter_names.intersection(_INTEGRATION_PARAMETER_DENYLIST):
         raise RuntimeError(

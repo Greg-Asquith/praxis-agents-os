@@ -15,34 +15,41 @@ from services.agents.runtime.tools.contract import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.list_accounts import list_accounts
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     google_ads_available,
-    run_audited_operation,
 )
 
 
 async def google_ads_list_accounts(ctx: RunContext[RuntimeDeps]) -> dict[str, Any]:
     async def operation(entry: ResolvedContextEntry) -> Any:
-        return await run_audited_operation(
+        async def execute() -> IntegrationAuditOutcome[Any]:
+            result = await list_accounts(
+                ctx.deps.db,
+                connection_id=entry.connection_id,
+                integration_resource_id=entry.integration_resource_id,
+            )
+            return IntegrationAuditOutcome(result)
+
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_list_accounts",
             operation="list_accounts",
-            execute=lambda: list_accounts(
-                ctx.deps.db,
-                connection_id=entry.connection_id,
-                integration_resource_id=entry.integration_resource_id,
-            ),
+            execute=execute,
         )
 
-    results = await run_context_fan_out(ctx.deps, binding=GOOGLE_ADS_BINDING, operation=operation)
-    return {"results": [fan_out_dict(item) for item in results]}
+    results = await run_context_fan_out(ctx, binding=GOOGLE_ADS_BINDING, operation=operation)
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

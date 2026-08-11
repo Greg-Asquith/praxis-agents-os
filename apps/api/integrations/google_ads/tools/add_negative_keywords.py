@@ -28,6 +28,10 @@ from services.audit_events import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.add_negative_keywords import add_negative_keywords
 from .schemas import GoogleAdsOutput
@@ -43,8 +47,6 @@ from .utils import (
     google_ads_client,
     login_customer_id,
     normalize_negative_keywords,
-    record_google_ads_operation_audit,
-    run_audited_operation,
 )
 from .verifiers import verify_shared_sets
 
@@ -83,55 +85,41 @@ async def google_ads_add_negative_keywords(
                 entry=entry,
                 shared_set_ids=(reference.external_id,),
             )
-            return await add_negative_keywords(
+            result = await add_negative_keywords(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
                 shared_set_id=reference.external_id,
                 keywords=[keyword.model_dump() for keyword in normalized_keywords],
             )
+            return IntegrationAuditOutcome(
+                result,
+                status=_negative_keyword_audit_status(result),
+                external_ref=(",".join(item["resource_name"] for item in result["added"]) or None),
+                operation_detail=_negative_keyword_operation_detail(reference, result),
+            )
 
-        full_result = await run_audited_operation(
+        full_result = await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_add_negative_keywords",
             operation="add_negative_keywords",
             execute=execute,
-            external_ref_from_result=lambda value: (
-                ",".join(item["resource_name"] for item in value["added"]) or None
-            ),
-            operation_detail_from_result=lambda value: _negative_keyword_operation_detail(
-                reference, value
-            ),
-            status_from_result=_negative_keyword_audit_status,
             pending_operation_detail=_pending_negative_keyword_operation_detail(
                 reference,
                 [keyword.model_dump() for keyword in normalized_keywords],
             ),
-            require_durable_audit=True,
         )
         return {
             "model_result": bounded_negative_keyword_result(full_result),
             "display_result": complete_negative_keyword_result(full_result),
         }
 
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_google_ads_operation_audit(
-            ctx,
-            entry,
-            tool_name="google_ads_add_negative_keywords",
-            operation="add_negative_keywords",
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
-        )
-
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=GOOGLE_ADS_WRITE_BINDING,
         references=[negative_list],
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
     return fan_out_tool_return(results)
 

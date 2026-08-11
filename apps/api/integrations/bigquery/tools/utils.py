@@ -4,18 +4,22 @@
 
 import re
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import suppress
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import IntegrationToolBinding
-from services.audit_events import AuditStatus, record_integration_operation_audit_event
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     get_usable_connection_credential,
     parse_google_service_account_json,
+)
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
 )
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
@@ -112,7 +116,7 @@ async def bigquery_query_client(
     return BigQueryClient(access_token), provider.credentials.project_id
 
 
-async def run_audited_operation(
+async def run_multi_context_query_with_audit(
     ctx: RunContext[RuntimeDeps],
     entries: Sequence[ResolvedContextEntry],
     *,
@@ -120,53 +124,56 @@ async def run_audited_operation(
     operation: str,
     execute: Callable[[], Awaitable[Any]],
 ) -> Any:
+    """Execute one query and project its audit result onto every dataset context."""
+    if not entries:
+        raise ValueError("BigQuery multi-context audit requires at least one entry")
+
+    outcome: IntegrationAuditOutcome[Any] | None = None
+
+    async def execute_once() -> IntegrationAuditOutcome[Any]:
+        nonlocal outcome
+        outcome = IntegrationAuditOutcome(await execute())
+        return outcome
+
     try:
-        result = await execute()
-    except Exception as exc:
-        await _record_operation_for_entries(
+        result = await run_audited_integration_operation(
             ctx,
-            entries,
+            entries[0],
             tool_name=tool_name,
             operation=operation,
-            status=AuditStatus.FAILURE,
-            error_code=exc.__class__.__name__,
+            execute=execute_once,
         )
+    except Exception as exc:
+
+        async def raise_same_error(error: Exception = exc) -> IntegrationAuditOutcome[Any]:
+            raise error
+
+        for entry in entries[1:]:
+            with suppress(Exception):
+                await run_audited_integration_operation(
+                    ctx,
+                    entry,
+                    tool_name=tool_name,
+                    operation=operation,
+                    execute=raise_same_error,
+                )
         raise
-    await _record_operation_for_entries(
-        ctx,
-        entries,
-        tool_name=tool_name,
-        operation=operation,
-        status=AuditStatus.SUCCESS,
-    )
-    return result
+    if outcome is None:
+        raise RuntimeError("BigQuery query completed without an audit outcome")
+    shared_outcome = outcome
 
+    async def reuse_outcome() -> IntegrationAuditOutcome[Any]:
+        return shared_outcome
 
-async def _record_operation_for_entries(
-    ctx: RunContext[RuntimeDeps],
-    entries: Sequence[ResolvedContextEntry],
-    *,
-    tool_name: str,
-    operation: str,
-    status: AuditStatus,
-    error_code: str | None = None,
-) -> None:
-    for entry in entries:
-        await record_integration_operation_audit_event(
-            workspace_id=ctx.deps.workspace.id,
-            agent=ctx.deps.agent,
-            run=ctx.deps.run,
-            tool_call_id=getattr(ctx, "tool_call_id", None),
+    for entry in entries[1:]:
+        await run_audited_integration_operation(
+            ctx,
+            entry,
             tool_name=tool_name,
-            provider_key="bigquery",
-            connection_id=entry.connection_id,
-            integration_resource_id=entry.integration_resource_id,
-            external_id=entry.external_id,
             operation=operation,
-            status=status,
-            external_ref=None,
-            error_code=error_code,
+            execute=reuse_outcome,
         )
+    return result
 
 
 def query_labels(ctx: RunContext[RuntimeDeps]) -> dict[str, str]:

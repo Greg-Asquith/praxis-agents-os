@@ -2,13 +2,14 @@
 
 """Typed Gmail tool-result contracts."""
 
-from typing import Any
-from uuid import UUID
-
 from pydantic import BaseModel
 
 from integrations.gmail.references import GmailMessageReference
 from services.agents.runtime.untrusted import UntrustedNode
+from services.integrations.context.results import (
+    IntegrationFanOutEntry,
+    IntegrationFanOutOutput,
+)
 
 type UntrustedText = str | UntrustedNode
 
@@ -42,37 +43,25 @@ class GmailSendData(BaseModel):
     message_id: str
 
 
-class GmailFanOutEntry(BaseModel):
-    integration_resource_id: UUID
-    connection_id: UUID
-    provider_key: str
-    external_id: str
-    display_name: str
-    status: str
-    data: Any | None = None
-    error_code: str | None = None
-    error_message: str | None = None
-
-
-class GmailSearchEntry(GmailFanOutEntry):
+class GmailSearchEntry(IntegrationFanOutEntry):
     data: GmailSearchData | None = None
 
 
-class GmailReadEntry(GmailFanOutEntry):
+class GmailReadEntry(IntegrationFanOutEntry):
     data: GmailMessageData | None = None
 
 
-class GmailSendEntry(GmailFanOutEntry):
+class GmailSendEntry(IntegrationFanOutEntry):
     data: GmailSendData | None = None
 
 
-class GmailSearchOutput(BaseModel):
+class GmailSearchOutput(IntegrationFanOutOutput):
     results: list[GmailSearchEntry]
 
 
-class GmailReadOutput(BaseModel):
+class GmailReadOutput(IntegrationFanOutOutput):
     results: list[GmailReadEntry]
 
 
-class GmailSendOutput(BaseModel):
+class GmailSendOutput(IntegrationFanOutOutput):
     results: list[GmailSendEntry]

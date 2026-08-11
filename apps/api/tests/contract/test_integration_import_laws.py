@@ -64,3 +64,42 @@ def test_provider_packages_only_import_published_service_seams() -> None:
             and not value.startswith(ALLOWED_PROVIDER_SERVICE_PREFIXES)
         )
     assert offenders == []
+
+
+def test_provider_packages_do_not_recreate_shared_operation_process_helpers() -> None:
+    forbidden = {
+        "fan_out_dict",
+        "record_airtable_operation_audit",
+        "record_gmail_operation_audit",
+        "record_google_ads_operation_audit",
+        "run_audited_operation",
+    }
+    offenders = []
+    for path in (API_ROOT / "integrations").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        offenders.extend(
+            (str(path.relative_to(API_ROOT)), node.name)
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in forbidden
+        )
+    assert offenders == []
+
+
+def test_representative_simple_writes_use_the_published_recipe() -> None:
+    paths = (
+        "integrations/gmail/tools/send_message.py",
+        "integrations/airtable/tools/create_record.py",
+        "integrations/airtable/tools/update_record.py",
+    )
+    forbidden = (
+        "on_write_denied",
+        "record_integration_operation_audit_event",
+        "require_durable_audit",
+        "serialize_fan_out_results(item)",
+    )
+    for relative_path in paths:
+        source = (API_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "run_audited_integration_operation" in source
+        assert "pending_operation_detail=" in source
+        assert "serialize_fan_out_results(results)" in source
+        assert all(value not in source for value in forbidden)

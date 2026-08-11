@@ -477,13 +477,14 @@ async def test_read_message_targets_only_the_referenced_mailbox(monkeypatch) -> 
         for mailbox in ("first@example.com", "second@example.com")
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
+        tool_name="gmail_read_message",
     )
     client = object()
     provider_read = AsyncMock(return_value={"message_id": "m2", "subject": "Selected"})
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.gmail.tools.read_message.gmail_client",
@@ -491,7 +492,7 @@ async def test_read_message_targets_only_the_referenced_mailbox(monkeypatch) -> 
     )
     monkeypatch.setattr("integrations.gmail.tools.read_message.read_message", provider_read)
     monkeypatch.setattr(
-        "integrations.gmail.tools.read_message.run_audited_operation",
+        "integrations.gmail.tools.read_message.run_audited_integration_operation",
         passthrough_audit,
     )
 

@@ -18,6 +18,11 @@ from services.agents.runtime.tools.contract import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.list_records import MAX_RECORDS, list_records
 from .schemas import AirtableOutput
@@ -25,8 +30,6 @@ from .utils import (
     AIRTABLE_BINDING,
     RESULTS_FIELD,
     airtable_client,
-    fan_out_dict,
-    run_audited_operation,
 )
 
 
@@ -63,9 +66,9 @@ async def airtable_list_records(
                 reference = airtable_record_reference(entry, normalized_table, record)
                 if reference is not None:
                     record["reference"] = reference
-            return result
+            return IntegrationAuditOutcome(result)
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="airtable_list_records",
@@ -73,8 +76,8 @@ async def airtable_list_records(
             execute=execute,
         )
 
-    results = await run_context_fan_out(ctx.deps, binding=AIRTABLE_BINDING, operation=operation)
-    return {"results": [fan_out_dict(item) for item in results]}
+    results = await run_context_fan_out(ctx, binding=AIRTABLE_BINDING, operation=operation)
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

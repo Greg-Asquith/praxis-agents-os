@@ -3,6 +3,7 @@
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -389,7 +390,8 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
 ) -> None:
     entry = _writable_google_ads_entry()
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_add_campaign_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {
@@ -413,7 +415,7 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
     )
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
@@ -424,7 +426,7 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -447,7 +449,8 @@ async def test_campaign_negative_keyword_fan_out_bound_rejects_3000_before_provi
 ) -> None:
     entry = _writable_google_ads_entry()
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_remove_campaign_negative_keywords",
     )
     provider_client = AsyncMock()
     monkeypatch.setattr(
@@ -474,14 +477,15 @@ async def test_campaign_negative_keywords_fail_closed_when_campaign_is_missing(
 ) -> None:
     entry = _writable_google_ads_entry()
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_add_campaign_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": []}
     provider_add = AsyncMock()
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
@@ -492,7 +496,7 @@ async def test_campaign_negative_keywords_fail_closed_when_campaign_is_missing(
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -512,7 +516,14 @@ async def test_campaign_negative_keyword_write_denial_is_audited_before_provider
 ) -> None:
     entry = _writable_google_ads_entry(write_allowed=False)
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name="google_ads_add_campaign_negative_keywords",
+        tool_call_id="call-add-denied",
     )
     provider_client = AsyncMock()
     audit = AsyncMock()
@@ -521,7 +532,7 @@ async def test_campaign_negative_keyword_write_denial_is_audited_before_provider
         provider_client,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.negative_keyword_tools.record_google_ads_operation_audit",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -530,6 +541,7 @@ async def test_campaign_negative_keyword_write_denial_is_audited_before_provider
         [_campaign_reference(entry, "10")],
         [NegativeKeywordEntry(text="term", match_type="EXACT")],
     )
+    ctx.tool_name = "google_ads_remove_campaign_negative_keywords"
     remove_result = await google_ads_remove_campaign_negative_keywords(
         ctx,
         [_campaign_reference(entry, "10")],
@@ -659,7 +671,8 @@ async def test_ad_group_negative_keyword_operations_skip_resolve_and_map_rows() 
 async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch) -> None:
     entry = _writable_google_ads_entry()
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_add_ad_group_negative_keywords",
     )
     accepted_client = AsyncMock()
     accepted_client.post.return_value = {
@@ -683,7 +696,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
     )
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
@@ -694,7 +707,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_integration_operation",
         passthrough_audit,
     )
     accepted = await google_ads_add_ad_group_negative_keywords(
@@ -706,6 +719,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
     assert len(provider_add.await_args.kwargs["ad_group_ids"]) == 50
     assert len(provider_add.await_args.kwargs["keywords"]) == 50
 
+    ctx.tool_name = "google_ads_remove_ad_group_negative_keywords"
     provider_client = AsyncMock()
     monkeypatch.setattr(
         "integrations.google_ads.tools.utils.negative_keyword_tools.google_ads_client",
@@ -725,6 +739,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
     assert "2,500" in oversized.return_value["results"][0]["error_message"]
     provider_client.assert_not_awaited()
 
+    ctx.tool_name = "google_ads_add_ad_group_negative_keywords"
     client = AsyncMock()
     client.post.return_value = {"results": []}
     provider_add = AsyncMock()
@@ -738,7 +753,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_operation",
+        "integrations.google_ads.tools.utils.negative_keyword_tools.run_audited_integration_operation",
         passthrough_audit,
     )
     missing = await google_ads_add_ad_group_negative_keywords(
@@ -756,7 +771,14 @@ async def test_ad_group_negative_keyword_write_denial_is_audited_before_provider
 ) -> None:
     entry = _writable_google_ads_entry(write_allowed=False)
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name="google_ads_add_ad_group_negative_keywords",
+        tool_call_id="call-add-denied",
     )
     provider_client = AsyncMock()
     audit = AsyncMock()
@@ -765,7 +787,7 @@ async def test_ad_group_negative_keyword_write_denial_is_audited_before_provider
         provider_client,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.negative_keyword_tools.record_google_ads_operation_audit",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -774,6 +796,7 @@ async def test_ad_group_negative_keyword_write_denial_is_audited_before_provider
         [_ad_group_reference(entry, "10")],
         [NegativeKeywordEntry(text="term", match_type="EXACT")],
     )
+    ctx.tool_name = "google_ads_remove_ad_group_negative_keywords"
     remove_result = await google_ads_remove_ad_group_negative_keywords(
         ctx,
         [_ad_group_reference(entry, "10")],

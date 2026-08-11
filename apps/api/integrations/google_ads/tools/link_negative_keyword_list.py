@@ -30,20 +30,22 @@ from services.audit_events import (
     IntegrationOperationTarget,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.link_negative_keyword_list import link_negative_keyword_list
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     google_ads_available,
     google_ads_client,
     login_customer_id,
-    record_google_ads_operation_audit,
-    run_audited_operation,
 )
 from .verifiers import verify_campaigns, verify_shared_sets
 
@@ -117,7 +119,7 @@ async def google_ads_link_negative_keyword_list(
                 campaign_ids=normalized_campaign_ids,
                 ignore_removed=True,
             )
-            return await link_negative_keyword_list(
+            result = await link_negative_keyword_list(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
@@ -125,22 +127,24 @@ async def google_ads_link_negative_keyword_list(
                 campaign_ids=normalized_campaign_ids,
                 action=action,
             )
+            return IntegrationAuditOutcome(
+                result,
+                status=_audit_status(result),
+                external_ref=",".join(result["resource_names"]) or None,
+                operation_detail=_operation_detail(
+                    list_reference, campaign_references, action, result
+                ),
+            )
 
-        audited_result = await run_audited_operation(
+        audited_result = await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_link_negative_keyword_list",
             operation="link_negative_keyword_list",
             execute=execute,
-            external_ref_from_result=lambda value: ",".join(value["resource_names"]) or None,
-            operation_detail_from_result=lambda value: _operation_detail(
-                list_reference, campaign_references, action, value
-            ),
-            status_from_result=_audit_status,
             pending_operation_detail=_pending_operation_detail(
                 list_reference, campaign_references, action
             ),
-            require_durable_audit=True,
         )
         return _campaign_link_result(
             list_reference,
@@ -149,25 +153,13 @@ async def google_ads_link_negative_keyword_list(
             audited_result,
         )
 
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_google_ads_operation_audit(
-            ctx,
-            entry,
-            tool_name="google_ads_link_negative_keyword_list",
-            operation="link_negative_keyword_list",
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
-        )
-
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=GOOGLE_ADS_WRITE_BINDING,
         references=[negative_list, *campaign_ids],
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 def _audit_status(result: dict[str, Any]) -> AuditStatus:

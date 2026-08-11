@@ -124,6 +124,19 @@ Repo-wide expectations are in the root `AGENTS.md`.
   tree. The tree may share schemas and provider-local helpers, while its
   `__init__.py` only composes exported definitions; do not accumulate a
   provider's catalog in one `tools.py` module.
+- Integration tools use the provider-neutral operation runtime under
+  `services/integrations/`: context fan-out/targeting share one authorization
+  and failure-isolation loop, `run_audited_integration_operation` derives
+  external-write durability from the registered `RuntimeToolDefinition`, and
+  `serialize_fan_out_results` owns the nine-field outer envelope. Providers
+  return one `IntegrationAuditOutcome`, supply bounded pending detail for
+  external writes, and subclass the shared result models only to narrow data.
+  The runtime rejects caller-supplied tool names or context bindings that do
+  not match the actually dispatched definition, and outcomes must be terminal.
+  Do not add provider-local audit runners, durability booleans, denial
+  callbacks, fan-out serializers, or copied outer result fields. A genuine
+  one-request/many-context topology may retain a narrowly named adapter that
+  delegates persistence to the shared runner.
 - Provider packages keep each entity resolver in its own module under an
   `entity_resolvers/` tree, with one module per entity kind. The package
   `__init__.py` only composes exported resolver definitions so provider

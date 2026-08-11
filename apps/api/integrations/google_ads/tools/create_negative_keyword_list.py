@@ -26,18 +26,20 @@ from services.audit_events import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.create_negative_keyword_list import create_negative_keyword_list
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     google_ads_available,
     google_ads_client,
     login_customer_id,
-    record_google_ads_operation_audit,
-    run_audited_operation,
 )
 
 
@@ -53,44 +55,34 @@ async def google_ads_create_negative_keyword_list(
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
-            return await create_negative_keyword_list(
+            result = await create_negative_keyword_list(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
                 names=normalized_names,
             )
+            return IntegrationAuditOutcome(
+                result,
+                status=_audit_status(result),
+                external_ref=",".join(result["resource_names"]) or None,
+                operation_detail=_operation_detail(entry, result),
+            )
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_create_negative_keyword_list",
             operation="create_negative_keyword_list",
             execute=execute,
-            external_ref_from_result=lambda value: ",".join(value["resource_names"]) or None,
-            operation_detail_from_result=lambda value: _operation_detail(entry, value),
-            status_from_result=_audit_status,
             pending_operation_detail=_pending_operation_detail(entry, normalized_names),
-            require_durable_audit=True,
-        )
-
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_google_ads_operation_audit(
-            ctx,
-            entry,
-            tool_name="google_ads_create_negative_keyword_list",
-            operation="create_negative_keyword_list",
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
         )
 
     results = await run_context_fan_out(
-        ctx.deps,
+        ctx,
         binding=GOOGLE_ADS_WRITE_BINDING,
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 def _audit_status(result: dict[str, Any]) -> AuditStatus:

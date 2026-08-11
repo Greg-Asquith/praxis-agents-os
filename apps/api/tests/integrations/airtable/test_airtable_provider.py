@@ -20,14 +20,22 @@ from integrations.airtable.operations.get_record import get_record
 from integrations.airtable.operations.list_records import list_records
 from integrations.airtable.operations.update_record import update_record
 from integrations.airtable.references import AirtableRecordReference
+from integrations.airtable.tools import TOOL_DEFINITIONS
 from integrations.airtable.tools.get_record import airtable_get_record
 from integrations.airtable.tools.list_records import airtable_list_records
 from integrations.airtable.tools.update_record import airtable_update_record
 from integrations.airtable.tools.utils import airtable_client
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations import http as integration_http
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.providers_view import list_providers
+
+
+@pytest.fixture(autouse=True)
+def _loaded_airtable_tool_definitions(monkeypatch):
+    for definition in TOOL_DEFINITIONS:
+        monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
 
 
 def test_manifest_declares_and_exposes_discovery_and_pat_scope_help(monkeypatch) -> None:
@@ -346,14 +354,15 @@ async def test_list_records_attaches_each_base_scope_to_returned_references(monk
         for base_id in ("app-one", "app-two")
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
+        tool_name="airtable_list_records",
     )
 
     async def provider_list(_client, *, base_id, **_kwargs):
         return {"records": [{"record_id": f"rec-{base_id}", "fields": {"Name": base_id}}]}
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.airtable.tools.list_records.airtable_client",
@@ -361,7 +370,7 @@ async def test_list_records_attaches_each_base_scope_to_returned_references(monk
     )
     monkeypatch.setattr("integrations.airtable.tools.list_records.list_records", provider_list)
     monkeypatch.setattr(
-        "integrations.airtable.tools.list_records.run_audited_operation",
+        "integrations.airtable.tools.list_records.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -405,17 +414,18 @@ async def test_record_tools_target_only_the_referenced_base(
         for base_id in ("app-one", "app-two")
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
+        tool_name=f"airtable_{operation_name}",
     )
     provider_operation = AsyncMock(return_value={"record_id": "rec-selected"})
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     module_path = f"integrations.airtable.tools.{module}"
     monkeypatch.setattr(f"{module_path}.airtable_client", AsyncMock(return_value=object()))
     monkeypatch.setattr(f"{module_path}.{operation_name}", provider_operation)
-    monkeypatch.setattr(f"{module_path}.run_audited_operation", passthrough_audit)
+    monkeypatch.setattr(f"{module_path}.run_audited_integration_operation", passthrough_audit)
     reference = AirtableRecordReference(
         integration_resource_id=entries[1].integration_resource_id,
         external_id="rec-selected",
@@ -447,7 +457,8 @@ async def test_update_record_rejects_table_reference_mismatch_before_dispatch(mo
         write_allowed=True,
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="airtable_update_record",
     )
     provider_update = AsyncMock()
     monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
@@ -481,12 +492,13 @@ async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch
         write_allowed=True,
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="airtable_update_record",
     )
     provider_update = AsyncMock(return_value={"record_id": "rec-one"})
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.airtable.tools.update_record.airtable_client",
@@ -494,7 +506,7 @@ async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch
     )
     monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
     monkeypatch.setattr(
-        "integrations.airtable.tools.update_record.run_audited_operation",
+        "integrations.airtable.tools.update_record.run_audited_integration_operation",
         passthrough_audit,
     )
 

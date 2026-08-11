@@ -17,9 +17,13 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.create_record import create_record
 from .schemas import AirtableOutput
@@ -27,9 +31,7 @@ from .utils import (
     AIRTABLE_WRITE_BINDING,
     RESULTS_FIELD,
     airtable_client,
-    fan_out_dict,
-    record_airtable_operation_audit,
-    run_audited_operation,
+    pending_record_operation_detail,
 )
 
 
@@ -45,40 +47,37 @@ async def airtable_create_record(
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await airtable_client(ctx, entry)
-            return await create_record(
+            result = await create_record(
                 client,
                 base_id=entry.external_id,
                 table=normalized_table,
                 fields=fields,
             )
+            return IntegrationAuditOutcome(
+                result,
+                external_ref=str(result.get("record_id", "")) or None,
+            )
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="airtable_create_record",
             operation="create_record",
             execute=execute,
-            external_ref_from_result=lambda value: str(value.get("record_id", "")) or None,
-        )
-
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_airtable_operation_audit(
-            ctx,
-            entry,
-            tool_name="airtable_create_record",
-            operation="create_record",
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
+            pending_operation_detail=pending_record_operation_detail(
+                entry,
+                action="create",
+                table=normalized_table,
+                field_count=len(fields),
+            ),
         )
 
     results = await run_context_fan_out(
-        ctx.deps,
+        ctx,
         binding=AIRTABLE_WRITE_BINDING,
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

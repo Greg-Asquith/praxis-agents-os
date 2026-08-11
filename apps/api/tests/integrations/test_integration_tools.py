@@ -15,7 +15,6 @@ from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINI
 from integrations.gmail.tools import TOOL_DEFINITIONS
 from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
-from integrations.gmail.tools.utils import run_audited_operation
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from models.agent import Agent
@@ -31,6 +30,10 @@ from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL
 from services.agents.runtime.tools.permissions import is_tool_allowed
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 from tests.factories import build_user, build_workspace
 
 
@@ -298,13 +301,22 @@ async def test_write_gating_fails_closed_without_provider_call(monkeypatch) -> N
         connection_status="active",
         write_allowed=False,
     )
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
-    ctx = SimpleNamespace(deps=deps)
+    deps = SimpleNamespace(
+        active_context=ResolvedActiveContext(entries=(entry,)),
+        workspace=SimpleNamespace(id=uuid4()),
+        agent=SimpleNamespace(id=uuid4()),
+        run=SimpleNamespace(id=uuid4()),
+    )
+    ctx = SimpleNamespace(
+        deps=deps,
+        tool_name="gmail_send_message",
+        tool_call_id="call-denied",
+    )
     provider_call = AsyncMock()
     audit = AsyncMock()
     monkeypatch.setattr("integrations.gmail.tools.send_message.send_message", provider_call)
     monkeypatch.setattr(
-        "integrations.gmail.tools.send_message.record_gmail_operation_audit",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -329,14 +341,14 @@ async def test_client_setup_failure_is_audited(monkeypatch) -> None:
         agent=SimpleNamespace(id=uuid4()),
         run=SimpleNamespace(id=uuid4()),
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = SimpleNamespace(deps=deps, tool_name="gmail_search_messages")
     audit = AsyncMock()
     monkeypatch.setattr(
         "integrations.gmail.tools.search_messages.gmail_client",
         AsyncMock(side_effect=IntegrationAuthError("expired", provider_key="gmail")),
     )
     monkeypatch.setattr(
-        "integrations.gmail.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -355,7 +367,7 @@ async def test_fan_out_preserves_mixed_success_and_failure(monkeypatch) -> None:
         agent=SimpleNamespace(id=uuid4()),
         run=SimpleNamespace(id=uuid4()),
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = SimpleNamespace(deps=deps, tool_name="gmail_search_messages")
     monkeypatch.setattr(
         "integrations.gmail.tools.search_messages.gmail_client",
         lambda _ctx, entry: _async_value(entry.external_id),
@@ -371,7 +383,7 @@ async def test_fan_out_preserves_mixed_success_and_failure(monkeypatch) -> None:
         provider_search,
     )
     monkeypatch.setattr(
-        "integrations.gmail.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
@@ -384,7 +396,7 @@ async def test_fan_out_preserves_mixed_success_and_failure(monkeypatch) -> None:
 async def test_audited_operation_records_external_reference_without_content(monkeypatch) -> None:
     audit = AsyncMock()
     monkeypatch.setattr(
-        "integrations.gmail.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
     entry = ResolvedContextEntry(
@@ -403,19 +415,22 @@ async def test_audited_operation_records_external_reference_without_content(monk
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name="gmail_read_message",
     )
 
     async def execute():
-        return {"message_id": "sent-1", "body": "must-not-enter-audit"}
+        return IntegrationAuditOutcome(
+            {"message_id": "sent-1", "body": "must-not-enter-audit"},
+            external_ref="sent-1",
+        )
 
-    result = await run_audited_operation(
+    result = await run_audited_integration_operation(
         ctx,
         entry,
-        tool_name="gmail_send_message",
-        operation="send_message",
+        tool_name="gmail_read_message",
+        operation="read_message",
         execute=execute,
-        external_ref_from_result=lambda value: value["message_id"],
     )
 
     assert result["message_id"] == "sent-1"
@@ -464,7 +479,7 @@ async def test_tool_fan_out_commits_one_audit_row_per_entry(
                 envelope=RunEnvelope(principal="interactive"),
                 active_context=ResolvedActiveContext(entries=entries),
             )
-            ctx = SimpleNamespace(deps=deps)
+            ctx = SimpleNamespace(deps=deps, tool_name="gmail_search_messages")
             monkeypatch.setattr(
                 "integrations.gmail.tools.search_messages.gmail_client",
                 lambda _ctx, entry: _async_value(entry.external_id),

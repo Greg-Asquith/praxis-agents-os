@@ -25,8 +25,11 @@ from services.audit_events import (
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
-from .audit import record_google_ads_operation_audit, run_audited_operation
 from .client import google_ads_client
 from .fan_out import fan_out_tool_return
 from .negative_keyword_evidence import exact_negative_keyword_outcomes
@@ -99,34 +102,37 @@ async def run_negative_keyword_tool(
 
         keyword_values = [keyword.model_dump() for keyword in normalized_keywords]
 
-        async def execute() -> dict[str, Any]:
+        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
             client = await google_ads_client(ctx, entry)
             await spec.verify_targets(client, entry, normalized_entity_ids)
-            return await spec.mutate_targets(
+            result = await spec.mutate_targets(
                 client,
                 entry,
                 normalized_entity_ids,
                 keyword_values,
                 action,
             )
+            return IntegrationAuditOutcome(
+                result,
+                status=_audit_status(action, result, spec=spec),
+                external_ref=_single_external_ref(result),
+                operation_detail=_operation_detail(
+                    entry,
+                    entity_references,
+                    keyword_values,
+                    action,
+                    result,
+                    spec=spec,
+                ),
+            )
 
         operation_name = f"{action}_{spec.operation_entity}_negative_keywords"
-        full_result = await run_audited_operation(
+        full_result = await run_audited_integration_operation(
             ctx,
             entry,
             tool_name=f"google_ads_{operation_name}",
             operation=operation_name,
             execute=execute,
-            external_ref_from_result=_single_external_ref,
-            operation_detail_from_result=lambda value: _operation_detail(
-                entry,
-                entity_references,
-                keyword_values,
-                action,
-                value,
-                spec=spec,
-            ),
-            status_from_result=lambda value: _audit_status(action, value, spec=spec),
             pending_operation_detail=_pending_operation_detail(
                 entry,
                 entity_references,
@@ -134,7 +140,6 @@ async def run_negative_keyword_tool(
                 keyword_values,
                 spec=spec,
             ),
-            require_durable_audit=True,
         )
         return {
             "model_result": _entity_result(
@@ -156,24 +161,11 @@ async def run_negative_keyword_tool(
             ),
         }
 
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        operation_name = f"{action}_{spec.operation_entity}_negative_keywords"
-        await record_google_ads_operation_audit(
-            ctx,
-            entry,
-            tool_name=f"google_ads_{operation_name}",
-            operation=operation_name,
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
-        )
-
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=spec.binding,
         references=targets,
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
     return fan_out_tool_return(results)
 

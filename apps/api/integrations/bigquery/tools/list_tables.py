@@ -13,10 +13,14 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.list_tables import list_tables
 from .schemas import BigQueryListTablesOutput
-from .utils import BIGQUERY_BINDING, active_bigquery_entries, run_audited_operation
+from .utils import BIGQUERY_BINDING, active_bigquery_entries
 
 
 async def bigquery_list_tables(ctx: RunContext[RuntimeDeps]) -> dict[str, Any]:
@@ -26,14 +30,16 @@ async def bigquery_list_tables(ctx: RunContext[RuntimeDeps]) -> dict[str, Any]:
     for entry in entries:
 
         async def execute(target=entry):
-            return await list_tables(
-                ctx.deps.db,
-                integration_resource_id=target.integration_resource_id,
+            return IntegrationAuditOutcome(
+                await list_tables(
+                    ctx.deps.db,
+                    integration_resource_id=target.integration_resource_id,
+                )
             )
 
-        rows = await run_audited_operation(
+        rows = await run_audited_integration_operation(
             ctx,
-            (entry,),
+            entry,
             tool_name="bigquery_list_tables",
             operation="list_cached_tables",
             execute=execute,

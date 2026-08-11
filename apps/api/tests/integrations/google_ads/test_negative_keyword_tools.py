@@ -43,7 +43,8 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
         permissions_metadata={"login_customer_id": "999"},
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_add_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
@@ -62,7 +63,7 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
     )
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
@@ -73,7 +74,7 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.add_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.add_negative_keywords.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -129,7 +130,8 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name="google_ads_add_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
@@ -164,7 +166,7 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -310,7 +312,8 @@ async def test_add_negative_keywords_classifies_audit_outcome(
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name="google_ads_add_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
@@ -324,7 +327,7 @@ async def test_add_negative_keywords_classifies_audit_outcome(
         AsyncMock(return_value=provider_result),
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -366,14 +369,15 @@ async def test_add_negative_keywords_fails_closed_when_list_is_missing(monkeypat
         permissions_metadata={"login_customer_id": "999"},
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_add_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": []}
     provider_add = AsyncMock()
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
@@ -384,7 +388,7 @@ async def test_add_negative_keywords_fails_closed_when_list_is_missing(monkeypat
         provider_add,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.add_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.add_negative_keywords.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -448,7 +452,14 @@ async def test_add_negative_keywords_write_denial_is_audited_before_provider_cal
         permissions_metadata={"login_customer_id": "999"},
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name="google_ads_add_negative_keywords",
+        tool_call_id="call-denied",
     )
     provider_client = AsyncMock()
     audit = AsyncMock()
@@ -457,7 +468,7 @@ async def test_add_negative_keywords_write_denial_is_audited_before_provider_cal
         provider_client,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.add_negative_keywords.record_google_ads_operation_audit",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -493,7 +504,8 @@ async def test_remove_negative_keywords_normalizes_any_and_targets_one_account(
         permissions_metadata={"login_customer_id": "999"},
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_remove_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
@@ -507,7 +519,7 @@ async def test_remove_negative_keywords_normalizes_any_and_targets_one_account(
     )
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.remove_negative_keywords.google_ads_client",
@@ -518,7 +530,7 @@ async def test_remove_negative_keywords_normalizes_any_and_targets_one_account(
         provider_remove,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.remove_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.remove_negative_keywords.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -557,14 +569,15 @@ async def test_remove_negative_keywords_fails_closed_when_list_is_missing(
         permissions_metadata={"login_customer_id": "999"},
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="google_ads_remove_negative_keywords",
     )
     client = AsyncMock()
     client.post.return_value = {"results": []}
     provider_remove = AsyncMock()
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.google_ads.tools.remove_negative_keywords.google_ads_client",
@@ -575,7 +588,7 @@ async def test_remove_negative_keywords_fails_closed_when_list_is_missing(
         provider_remove,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.remove_negative_keywords.run_audited_operation",
+        "integrations.google_ads.tools.remove_negative_keywords.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -610,7 +623,14 @@ async def test_remove_negative_keywords_write_denial_is_audited_before_provider_
         permissions_metadata={"login_customer_id": "999"},
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name="google_ads_remove_negative_keywords",
+        tool_call_id="call-denied",
     )
     provider_client = AsyncMock()
     audit = AsyncMock()
@@ -619,7 +639,7 @@ async def test_remove_negative_keywords_write_denial_is_audited_before_provider_
         provider_client,
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.remove_negative_keywords.record_google_ads_operation_audit",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 

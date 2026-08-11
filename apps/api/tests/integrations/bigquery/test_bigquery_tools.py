@@ -73,13 +73,16 @@ async def test_cache_tools_scope_rows_to_active_resources(
     entry, cached = await _cached_table_context(db_session)
     audit = AsyncMock()
     monkeypatch.setattr(
-        "integrations.bigquery.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
-    ctx = _ctx(db_session, (entry,))
-
-    listed = await bigquery_list_tables(ctx)
-    schema = await bigquery_get_table_schema(ctx, "campaign_daily")
+    listed = await bigquery_list_tables(
+        _ctx(db_session, (entry,), tool_name="bigquery_list_tables")
+    )
+    schema = await bigquery_get_table_schema(
+        _ctx(db_session, (entry,), tool_name="bigquery_get_table_schema"),
+        "campaign_daily",
+    )
     BigQueryListTablesOutput.model_validate(listed)
     BigQueryTableSchemaOutput.model_validate(schema)
     assert listed["datasets"][0]["tables"][0]["table"] == "campaign_daily"
@@ -128,12 +131,19 @@ async def test_get_schema_requires_qualification_when_table_name_is_ambiguous(
         external_id="analytics.finance",
     )
     monkeypatch.setattr(
-        "integrations.bigquery.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
     with pytest.raises(ModelRetry, match="ambiguous"):
-        await bigquery_get_table_schema(_ctx(db_session, (first, second)), "campaign_daily")
+        await bigquery_get_table_schema(
+            _ctx(
+                db_session,
+                (first, second),
+                tool_name="bigquery_get_table_schema",
+            ),
+            "campaign_daily",
+        )
 
 
 @pytest.mark.parametrize("statement_type", ["INSERT", "CREATE_TABLE", "SCRIPT"])
@@ -271,7 +281,7 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
         _entry(connection_id=connection_id, external_id="analytics.marketing"),
         _entry(connection_id=connection_id, external_id="analytics.finance"),
     )
-    ctx = _ctx(object(), entries)
+    ctx = _ctx(object(), entries, tool_name="bigquery_run_query")
     provider_run = AsyncMock(
         return_value={
             "rows": [],
@@ -291,7 +301,7 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
         provider_run,
     )
     monkeypatch.setattr(
-        "integrations.bigquery.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -504,7 +514,7 @@ def _entry(
     )
 
 
-def _ctx(db, entries):
+def _ctx(db, entries, *, tool_name: str | None = None):
     return SimpleNamespace(
         deps=SimpleNamespace(
             db=db,
@@ -513,5 +523,6 @@ def _ctx(db, entries):
             user=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name=tool_name,
     )

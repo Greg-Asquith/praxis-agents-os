@@ -108,7 +108,8 @@ async def test_report_tool_uses_discovered_account_currency(monkeypatch) -> None
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name="google_ads_run_report",
     )
     provider_report = AsyncMock(
         return_value={
@@ -125,7 +126,7 @@ async def test_report_tool_uses_discovered_account_currency(monkeypatch) -> None
     )
     monkeypatch.setattr("integrations.google_ads.tools.run_report.run_report", provider_report)
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
@@ -203,7 +204,8 @@ async def test_list_accounts_tool_scopes_each_result_to_its_context_entry(monkey
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name="google_ads_list_accounts",
     )
     operation = AsyncMock(
         side_effect=[
@@ -213,7 +215,7 @@ async def test_list_accounts_tool_scopes_each_result_to_its_context_entry(monkey
     )
     monkeypatch.setattr("integrations.google_ads.tools.list_accounts.list_accounts", operation)
     monkeypatch.setattr(
-        "integrations.google_ads.tools.utils.audit.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
