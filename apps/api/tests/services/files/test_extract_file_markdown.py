@@ -10,6 +10,7 @@ from core.settings import settings
 from services.files.utils import private_ref_from_key, revision_object_key
 from services.jobs.handlers.extract_file_markdown import extract_file_markdown
 from tests.factories import build_file, build_file_revision, build_job, build_workspace
+from tests.support.documents import tiny_pdf
 from tests.support.storage import reset_storage_provider_cache
 from utils.document_markdown import TRUNCATION_MARKER, DocumentConversionError
 
@@ -51,7 +52,7 @@ async def _persist_pdf_file(
 
     revision_id = uuid4()
     object_key = revision_object_key(workspace.id, file.id, revision_id, ".pdf")
-    pdf_bytes = _tiny_pdf(text)
+    pdf_bytes = tiny_pdf(text)
     await get_storage_provider().put_object(
         private_ref_from_key(object_key),
         pdf_bytes,
@@ -234,20 +235,3 @@ async def test_extract_file_markdown_failure_marks_current_file_error(
     assert file.processing_status == "error"
     assert file.processing_attempts == 1
     assert file.processing_error == "very noisy conversion failure"
-
-
-def _tiny_pdf(text: str) -> bytes:
-    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    stream = f"BT /F1 12 Tf 50 100 Td ({escaped}) Tj ET".encode()
-    return (
-        b"%PDF-1.1\n"
-        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-        b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n"
-        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]"
-        b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
-        + f"4 0 obj<</Length {len(stream)}>>stream\n".encode()
-        + stream
-        + b"\nendstream endobj\n"
-        b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
-        b"trailer<</Root 1 0 R>>\n%%EOF\n"
-    )

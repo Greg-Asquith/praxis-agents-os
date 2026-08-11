@@ -3,7 +3,6 @@
 """Shared document-to-markdown conversion helpers."""
 
 import asyncio
-import io
 from pathlib import PurePosixPath
 
 from services.assets.utils import normalize_content_type
@@ -66,12 +65,14 @@ def document_extension(filename: str, *, content_type: str | None = None) -> str
 
 
 def _convert_sync(data: bytes, extension: str) -> str:
-    from markitdown import MarkItDown
+    import anydoc
 
-    result = MarkItDown().convert_stream(io.BytesIO(data), file_extension=extension or None)
-    text = getattr(result, "text_content", None)
-    if text is None:
-        text = getattr(result, "markdown", None)
+    document_format = anydoc.format_from_extension(extension) if extension else None
+    if document_format is None:
+        document_format = anydoc.format_from_bytes(data)
+    if document_format is None:
+        raise DocumentConversionError("Document format could not be determined")
+    text = anydoc.to_markdown_bytes(data, format=document_format)
     if not isinstance(text, str):
         raise DocumentConversionError("Markdown converter returned no text content")
     return text
