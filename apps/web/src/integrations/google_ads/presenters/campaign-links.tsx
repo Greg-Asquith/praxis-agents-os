@@ -9,7 +9,7 @@ import type { ToolRowPresenter } from "@/integrations/contract"
 import {
   CampaignLinkApprovalSummary,
   CampaignLinkOutcome,
-  type CampaignLinkError,
+  type CampaignLinkCampaignOutcome,
   type CampaignLinkResult,
 } from "@/integrations/google_ads/components/campaign-link-outcome"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
@@ -52,7 +52,7 @@ export const googleAdsCampaignLinksPresenter: ToolRowPresenter = {
         >
           <CampaignLinkApprovalSummary
             campaignCount={currentArgs.campaignIds.length}
-            listName={currentArgs.listName}
+            listName={currentArgs.negativeList.name}
           />
         </ToolApprovalDecisionCard>
       )
@@ -89,7 +89,9 @@ export const googleAdsCampaignLinksPresenter: ToolRowPresenter = {
         defaultOpen
       )
     }
-    const fanOut = parseFanOutData(activity.result, (value) => campaignLinkResult(value, action))
+    const fanOut = parseFanOutData(activity.result, (value) =>
+      campaignLinkResult(value, originalArgs)
+    )
     if (!fanOut) {
       return campaignLinkFailure(
         activity.id,
@@ -112,7 +114,7 @@ export const googleAdsCampaignLinksPresenter: ToolRowPresenter = {
         >
           {(_entry, index) => {
             const result = results[index]
-            return result ? <CampaignLinkOutcome action={action} result={result} /> : null
+            return result ? <CampaignLinkOutcome result={result} /> : null
           }}
         </FanOutShell>
       </div>
@@ -124,7 +126,11 @@ type CampaignLinkArgs = {
   action: "LINK" | "UNLINK"
   campaignIds: string[]
   campaignLabels: string[]
-  listName: string
+  negativeList: {
+    externalId: string
+    memberCount: number | null
+    name: string
+  }
 }
 
 function campaignLinkArgs(value: unknown): CampaignLinkArgs | null {
@@ -153,11 +159,22 @@ function campaignLinkArgs(value: unknown): CampaignLinkArgs | null {
   }
   const list = value["negative_list"]
   const listName = typeof list["label"] === "string" ? list["label"].trim() : ""
+  const listId = typeof list["external_id"] === "string" ? list["external_id"].trim() : ""
+  const memberCount =
+    typeof list["member_count"] === "number" &&
+    Number.isInteger(list["member_count"]) &&
+    list["member_count"] >= 0
+      ? list["member_count"]
+      : null
   return {
     action: value["action"],
     campaignIds,
     campaignLabels,
-    listName: listName || "Selected negative keyword list",
+    negativeList: {
+      externalId: listId || "Unavailable",
+      memberCount,
+      name: listName || "Selected negative keyword list",
+    },
   }
 }
 
@@ -166,13 +183,25 @@ function campaignLinkDetails(args: CampaignLinkArgs | null) {
     return []
   }
   return [
-    { label: "Negative keyword list", value: args.listName },
+    { label: "Negative keyword list", value: args.negativeList.name },
     { label: "Campaigns", value: args.campaignLabels.join(", ") },
     { label: "Action", value: titleCaseToken(args.action, args.action) },
   ]
 }
 
-function campaignLinkResult(value: unknown, action: "LINK" | "UNLINK"): CampaignLinkResult | null {
+function campaignLinkResult(
+  value: unknown,
+  args: CampaignLinkArgs | null
+): CampaignLinkResult | null {
+  const enriched = enrichedCampaignLinkResult(value)
+  if (
+    enriched ||
+    (isRecord(value) && ("action" in value || "campaigns" in value || "negative_list" in value))
+  ) {
+    return enriched
+  }
+
+  const action = args?.action ?? "LINK"
   const skippedKey = action === "LINK" ? "skipped_existing" : "not_found"
   if (
     !isRecord(value) ||
@@ -184,7 +213,39 @@ function campaignLinkResult(value: unknown, action: "LINK" | "UNLINK"): Campaign
   ) {
     return null
   }
-  const errors: CampaignLinkError[] = []
+  const campaignNames = new Map(
+    (args?.campaignIds ?? []).map((campaignId, index) => [
+      campaignId,
+      args?.campaignLabels[index] ?? campaignId,
+    ])
+  )
+  const campaigns: CampaignLinkCampaignOutcome[] = value["resource_names"].flatMap(
+    (resourceName) => {
+      const campaignId = resourceName.slice(resourceName.lastIndexOf("/") + 1).split("~", 1)[0]
+      return campaignId
+        ? [
+            {
+              campaignId,
+              campaignName: campaignNames.get(campaignId) ?? campaignId,
+              errorCode: null,
+              externalRef: resourceName,
+              message: null,
+              outcome: action === "LINK" ? ("linked" as const) : ("unlinked" as const),
+            },
+          ]
+        : []
+    }
+  )
+  for (const campaignId of value[skippedKey]) {
+    campaigns.push({
+      campaignId,
+      campaignName: campaignNames.get(campaignId) ?? campaignId,
+      errorCode: null,
+      externalRef: null,
+      message: null,
+      outcome: action === "LINK" ? "already_linked" : "not_linked",
+    })
+  }
   for (const item of value["campaign_errors"]) {
     if (
       !isRecord(item) ||
@@ -193,19 +254,93 @@ function campaignLinkResult(value: unknown, action: "LINK" | "UNLINK"): Campaign
     ) {
       return null
     }
-    errors.push({
+    campaigns.push({
       campaignId: item["campaign_id"],
+      campaignName: campaignNames.get(item["campaign_id"]) ?? item["campaign_id"],
       errorCode: typeof item["error_code"] === "string" ? item["error_code"] : "unknown",
+      externalRef: null,
       message: item["message"],
+      outcome: "failed",
     })
   }
   return {
-    errors,
-    skippedIds: value[skippedKey].flatMap((item) => (typeof item === "string" ? [item] : [])),
-    succeededIds: value["resource_names"].flatMap((resourceName) => {
-      const campaignId = resourceName.slice(resourceName.lastIndexOf("/") + 1).split("~", 1)[0]
-      return campaignId ? [campaignId] : []
-    }),
+    action,
+    campaigns,
+    negativeList:
+      args?.negativeList ??
+      ({
+        externalId: "Unavailable",
+        memberCount: null,
+        name: "Selected negative keyword list",
+      } satisfies CampaignLinkResult["negativeList"]),
+  }
+}
+
+function enrichedCampaignLinkResult(value: unknown): CampaignLinkResult | null {
+  if (
+    !isRecord(value) ||
+    (value["action"] !== "LINK" && value["action"] !== "UNLINK") ||
+    !isRecord(value["negative_list"]) ||
+    !Array.isArray(value["campaigns"]) ||
+    value["campaigns"].length === 0
+  ) {
+    return null
+  }
+  const list = value["negative_list"]
+  if (
+    typeof list["external_id"] !== "string" ||
+    typeof list["name"] !== "string" ||
+    (list["member_count"] !== null &&
+      (typeof list["member_count"] !== "number" ||
+        !Number.isInteger(list["member_count"]) ||
+        list["member_count"] < 0))
+  ) {
+    return null
+  }
+  const action = value["action"]
+  const allowedOutcomes =
+    action === "LINK"
+      ? new Set(["linked", "already_linked", "failed"])
+      : new Set(["unlinked", "not_linked", "failed"])
+  const campaigns: CampaignLinkCampaignOutcome[] = []
+  for (const campaign of value["campaigns"]) {
+    if (
+      !isRecord(campaign) ||
+      typeof campaign["campaign_id"] !== "string" ||
+      typeof campaign["campaign_name"] !== "string" ||
+      typeof campaign["outcome"] !== "string" ||
+      !allowedOutcomes.has(campaign["outcome"]) ||
+      (campaign["external_ref"] !== null && typeof campaign["external_ref"] !== "string")
+    ) {
+      return null
+    }
+    const failed = campaign["outcome"] === "failed"
+    const applied = campaign["outcome"] === "linked" || campaign["outcome"] === "unlinked"
+    if (
+      (failed &&
+        (typeof campaign["message"] !== "string" || typeof campaign["error_code"] !== "string")) ||
+      (applied && (typeof campaign["external_ref"] !== "string" || !campaign["external_ref"])) ||
+      (!applied && campaign["external_ref"] !== null)
+    ) {
+      return null
+    }
+    campaigns.push({
+      campaignId: campaign["campaign_id"],
+      campaignName: campaign["campaign_name"] || campaign["campaign_id"],
+      errorCode: failed ? (campaign["error_code"] as string) : null,
+      externalRef: campaign["external_ref"],
+      message: failed ? (campaign["message"] as string) : null,
+      outcome: campaign["outcome"] as CampaignLinkCampaignOutcome["outcome"],
+    })
+  }
+  return {
+    action,
+    campaigns,
+    negativeList: {
+      externalId: list["external_id"],
+      memberCount: list["member_count"],
+      name: list["name"] || list["external_id"],
+    },
   }
 }
 

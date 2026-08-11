@@ -383,7 +383,7 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Approve &amp; Apply")
   })
 
-  it("renders linked, already-linked, and failed campaigns per account", () => {
+  it("renders self-contained named campaign-link evidence", () => {
     const html = render(
       googleAdsCampaignLinksPresenter.render(
         props({
@@ -403,6 +403,34 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               entry({
+                action: "LINK",
+                negative_list: {
+                  external_id: "50",
+                  name: "Persisted Brand Protection",
+                  member_count: 17,
+                },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Persisted Summer Sale",
+                    outcome: "linked",
+                    external_ref: "customers/1234567890/campaignSharedSets/10~50",
+                  },
+                  {
+                    campaign_id: "20",
+                    campaign_name: "Persisted Brand Awareness",
+                    outcome: "already_linked",
+                    external_ref: null,
+                  },
+                  {
+                    campaign_id: "30",
+                    campaign_name: "Persisted Shopping",
+                    outcome: "failed",
+                    external_ref: null,
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
                 resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
                 skipped_existing: ["20"],
                 campaign_errors: [
@@ -420,15 +448,20 @@ describe("Google Ads tool presenters", () => {
     )
 
     expect(html).toContain('aria-label="Google Ads campaign list results"')
-    expect(html).toContain("Brand Protection")
-    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Persisted Brand Protection")
+    expect(html).toContain("List ID 50")
+    expect(html).toContain("17 keywords")
+    expect(html).toContain("Persisted Summer Sale")
+    expect(html).toContain("Persisted Brand Awareness")
+    expect(html).toContain("Persisted Shopping")
+    expect(html).toContain("Campaign ID")
     expect(html).toContain("Linked")
     expect(html).toContain("Already linked")
     expect(html).toContain("Campaign is removed.")
     expect(html).toContain("30")
   })
 
-  it("renders unlinked and not-linked campaign outcomes", () => {
+  it("renders enriched unlinked, not-linked, and failed campaign outcomes", () => {
     const html = render(
       googleAdsCampaignLinksPresenter.render(
         props({
@@ -444,9 +477,43 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               entry({
-                resource_names: [],
-                not_found: ["10"],
-                campaign_errors: [],
+                action: "UNLINK",
+                negative_list: {
+                  external_id: "50",
+                  name: "Brand Protection",
+                  member_count: null,
+                },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Summer Sale",
+                    outcome: "unlinked",
+                    external_ref: "customers/1234567890/campaignSharedSets/10~50",
+                  },
+                  {
+                    campaign_id: "20",
+                    campaign_name: "Brand Awareness",
+                    outcome: "not_linked",
+                    external_ref: null,
+                  },
+                  {
+                    campaign_id: "30",
+                    campaign_name: "Shopping",
+                    outcome: "failed",
+                    external_ref: null,
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                not_found: ["20"],
+                campaign_errors: [
+                  {
+                    campaign_id: "30",
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
               }),
             ],
           },
@@ -456,7 +523,73 @@ describe("Google Ads tool presenters", () => {
 
     expect(html).toContain("Unlinked")
     expect(html).toContain("Not linked")
-    expect(html).toContain("10")
+    expect(html).toContain("Failed")
+    expect(html).toContain("Member count unavailable")
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Brand Awareness")
+    expect(html).toContain("Shopping")
+  })
+
+  it("joins historical campaign-link IDs to names from the saved arguments", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "historical-campaign-links-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                skipped_existing: [],
+                campaign_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Brand Protection")
+    expect(html).toContain("List ID 50")
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Campaign ID")
+  })
+
+  it("keeps historical campaign IDs visible when saved arguments lack their names", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "historical-unknown-campaign-link",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                resource_names: [],
+                skipped_existing: ["99"],
+                campaign_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("99")
+    expect(html).toContain("Already linked")
   })
 
   it("renders created, existing, and failed negative keyword lists per account", () => {

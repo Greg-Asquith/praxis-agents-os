@@ -47,6 +47,8 @@ from .utils import (
 )
 from .verifiers import verify_campaigns, verify_shared_sets
 
+_CONTRADICTORY_ACCOUNTING_MESSAGE = "Google Ads returned contradictory campaign link accounting"
+
 
 async def google_ads_link_negative_keyword_list(
     ctx: RunContext[RuntimeDeps],
@@ -124,7 +126,7 @@ async def google_ads_link_negative_keyword_list(
                 action=action,
             )
 
-        return await run_audited_operation(
+        audited_result = await run_audited_operation(
             ctx,
             entry,
             tool_name="google_ads_link_negative_keyword_list",
@@ -139,6 +141,12 @@ async def google_ads_link_negative_keyword_list(
                 list_reference, campaign_references, action
             ),
             require_durable_audit=True,
+        )
+        return _campaign_link_result(
+            list_reference,
+            campaign_references,
+            action,
+            audited_result,
         )
 
     async def audit_write_denied(entry: ResolvedContextEntry) -> None:
@@ -166,6 +174,76 @@ def _audit_status(result: dict[str, Any]) -> AuditStatus:
     if result["campaign_errors"] and not result["resource_names"]:
         return AuditStatus.FAILURE
     return AuditStatus.SUCCESS
+
+
+def _campaign_link_result(
+    negative_list: GoogleAdsSharedSetReference,
+    campaigns: Sequence[GoogleAdsCampaignReference],
+    action: Literal["LINK", "UNLINK"],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    requested_by_id = {campaign.external_id: campaign for campaign in campaigns}
+    if len(requested_by_id) != len(campaigns):
+        raise ValueError("Google Ads campaign references must be unique")
+
+    applied_by_id: dict[str, str] = {}
+    for resource_name in result["resource_names"]:
+        campaign_id = _campaign_id_from_link_resource(resource_name)
+        if campaign_id not in requested_by_id or campaign_id in applied_by_id:
+            raise ValueError(_CONTRADICTORY_ACCOUNTING_MESSAGE)
+        applied_by_id[campaign_id] = resource_name
+
+    skipped_key = "skipped_existing" if action == "LINK" else "not_found"
+    skipped_ids = result[skipped_key]
+    if len(set(skipped_ids)) != len(skipped_ids) or any(
+        campaign_id not in requested_by_id for campaign_id in skipped_ids
+    ):
+        raise ValueError(_CONTRADICTORY_ACCOUNTING_MESSAGE)
+
+    errors_by_id: dict[str, dict[str, str]] = {}
+    for error in result["campaign_errors"]:
+        campaign_id = error["campaign_id"]
+        if campaign_id not in requested_by_id or campaign_id in errors_by_id:
+            raise ValueError(_CONTRADICTORY_ACCOUNTING_MESSAGE)
+        errors_by_id[campaign_id] = error
+
+    accounted_ids = set(applied_by_id) | set(skipped_ids) | set(errors_by_id)
+    if len(accounted_ids) != len(applied_by_id) + len(skipped_ids) + len(
+        errors_by_id
+    ) or accounted_ids != set(requested_by_id):
+        raise ValueError(_CONTRADICTORY_ACCOUNTING_MESSAGE)
+
+    applied_outcome = "linked" if action == "LINK" else "unlinked"
+    skipped_outcome = "already_linked" if action == "LINK" else "not_linked"
+    campaign_results: list[dict[str, Any]] = []
+    for campaign in campaigns:
+        campaign_id = campaign.external_id
+        row: dict[str, Any] = {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign.label,
+            "outcome": (
+                applied_outcome
+                if campaign_id in applied_by_id
+                else skipped_outcome
+                if campaign_id in skipped_ids
+                else "failed"
+            ),
+            "external_ref": applied_by_id.get(campaign_id),
+        }
+        if error := errors_by_id.get(campaign_id):
+            row.update(message=error["message"], error_code=error["error_code"])
+        campaign_results.append(row)
+
+    return {
+        **result,
+        "action": action,
+        "negative_list": {
+            "external_id": negative_list.external_id,
+            "name": negative_list.label,
+            "member_count": negative_list.member_count,
+        },
+        "campaigns": campaign_results,
+    }
 
 
 def _operation_detail(

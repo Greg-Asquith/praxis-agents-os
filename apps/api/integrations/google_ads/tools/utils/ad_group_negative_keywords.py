@@ -1,4 +1,3 @@
-
 # apps/api/integrations/google_ads/tools/utils/ad_group_negative_keywords.py
 
 """Ad-group negative-keyword execution adapter."""

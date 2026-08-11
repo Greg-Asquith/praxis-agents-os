@@ -99,6 +99,7 @@ from integrations.google_ads.tools.create_negative_keyword_list import (
     google_ads_create_negative_keyword_list,
 )
 from integrations.google_ads.tools.link_negative_keyword_list import (
+    _campaign_link_result,
     google_ads_link_negative_keyword_list,
 )
 from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
@@ -2939,12 +2940,24 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
         deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
     )
     client = AsyncMock()
-    client.post.return_value = {"results": [{"campaign": {"id": "10"}}, {"campaign": {"id": "20"}}]}
+    client.post.return_value = {
+        "results": [
+            {"campaign": {"id": "10"}},
+            {"campaign": {"id": "20"}},
+            {"campaign": {"id": "30"}},
+        ]
+    }
     provider_link = AsyncMock(
         return_value={
             "resource_names": ["customers/111/campaignSharedSets/10~50"],
             "skipped_existing": ["20"],
-            "campaign_errors": [],
+            "campaign_errors": [
+                {
+                    "campaign_id": "30",
+                    "message": "Campaign is removed",
+                    "error_code": "CAMPAIGN_REMOVED",
+                }
+            ],
         }
     )
     audited_kwargs: dict[str, Any] = {}
@@ -2976,6 +2989,7 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
             integration_resource_id=entry.integration_resource_id,
             external_id="50",
             label="Brand Protection",
+            member_count=17,
         ),
         [
             GoogleAdsCampaignReference(
@@ -2988,6 +3002,11 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
                 external_id="10",
                 label="Search",
             ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=entry.integration_resource_id,
+                external_id="30",
+                label="Legacy",
+            ),
         ],
         "LINK",
     )
@@ -2997,8 +3016,47 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
         "customer_id": "111",
         "login_customer_id": "999",
         "shared_set_id": "50",
-        "campaign_ids": ["10", "20"],
+        "campaign_ids": ["10", "20", "30"],
         "action": "LINK",
+    }
+    assert result["results"][0]["data"] == {
+        "resource_names": ["customers/111/campaignSharedSets/10~50"],
+        "skipped_existing": ["20"],
+        "campaign_errors": [
+            {
+                "campaign_id": "30",
+                "message": "Campaign is removed",
+                "error_code": "CAMPAIGN_REMOVED",
+            }
+        ],
+        "action": "LINK",
+        "negative_list": {
+            "external_id": "50",
+            "name": "Brand Protection",
+            "member_count": 17,
+        },
+        "campaigns": [
+            {
+                "campaign_id": "20",
+                "campaign_name": "Shopping",
+                "outcome": "already_linked",
+                "external_ref": None,
+            },
+            {
+                "campaign_id": "10",
+                "campaign_name": "Search",
+                "outcome": "linked",
+                "external_ref": "customers/111/campaignSharedSets/10~50",
+            },
+            {
+                "campaign_id": "30",
+                "campaign_name": "Legacy",
+                "outcome": "failed",
+                "external_ref": None,
+                "message": "Campaign is removed",
+                "error_code": "CAMPAIGN_REMOVED",
+            },
+        ],
     }
     provider_result = provider_link.return_value
     assert audited_kwargs["external_ref_from_result"](provider_result) == (
@@ -3007,6 +3065,95 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
     detail = audited_kwargs["operation_detail_from_result"](provider_result)
     assert detail.changes[0].external_ref == "customers/111/campaignSharedSets/10~50"
     assert audited_kwargs["require_durable_audit"] is True
+
+
+def test_negative_list_campaign_link_result_uses_unlink_outcomes() -> None:
+    resource_id = uuid4()
+    result = _campaign_link_result(
+        GoogleAdsSharedSetReference(
+            integration_resource_id=resource_id,
+            external_id="50",
+            label="Brand Protection",
+        ),
+        [
+            GoogleAdsCampaignReference(
+                integration_resource_id=resource_id,
+                external_id="10",
+                label="Search",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=resource_id,
+                external_id="20",
+                label="Shopping",
+            ),
+            GoogleAdsCampaignReference(
+                integration_resource_id=resource_id,
+                external_id="30",
+                label="Legacy",
+            ),
+        ],
+        "UNLINK",
+        {
+            "resource_names": ["customers/111/campaignSharedSets/10~50"],
+            "not_found": ["20"],
+            "campaign_errors": [
+                {
+                    "campaign_id": "30",
+                    "message": "Campaign is removed",
+                    "error_code": "CAMPAIGN_REMOVED",
+                }
+            ],
+        },
+    )
+
+    assert [campaign["outcome"] for campaign in result["campaigns"]] == [
+        "unlinked",
+        "not_linked",
+        "failed",
+    ]
+    assert result["campaigns"][0]["external_ref"] == "customers/111/campaignSharedSets/10~50"
+
+
+def test_negative_list_campaign_link_result_rejects_contradictory_accounting() -> None:
+    resource_id = uuid4()
+    negative_list = GoogleAdsSharedSetReference(
+        integration_resource_id=resource_id,
+        external_id="50",
+        label="Brand Protection",
+    )
+    campaigns = [
+        GoogleAdsCampaignReference(
+            integration_resource_id=resource_id,
+            external_id="10",
+            label="Search",
+        ),
+        GoogleAdsCampaignReference(
+            integration_resource_id=resource_id,
+            external_id="20",
+            label="Shopping",
+        ),
+    ]
+    contradictory_results = [
+        {
+            "resource_names": ["customers/111/campaignSharedSets/10~50"],
+            "skipped_existing": ["10", "20"],
+            "campaign_errors": [],
+        },
+        {
+            "resource_names": ["customers/111/campaignSharedSets/10~50"],
+            "skipped_existing": [],
+            "campaign_errors": [],
+        },
+    ]
+
+    for provider_result in contradictory_results:
+        with pytest.raises(ValueError, match="contradictory campaign link accounting"):
+            _campaign_link_result(
+                negative_list,
+                campaigns,
+                "LINK",
+                provider_result,
+            )
 
 
 async def test_negative_list_campaign_links_audit_write_denial_before_provider(
