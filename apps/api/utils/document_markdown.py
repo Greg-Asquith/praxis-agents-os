@@ -11,6 +11,7 @@ from services.storage.paths import safe_filename
 
 TRUNCATION_MARKER = "\n\n[Truncated: document exceeds the converted size limit.]"
 _TEXT_CONTENT_TYPES = frozenset({"text/plain", "text/markdown"})
+_HTML_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 _CONTENT_TYPE_EXTENSIONS = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
@@ -42,9 +43,12 @@ async def convert_document_to_markdown(
     if normalized_content_type in _TEXT_CONTENT_TYPES:
         markdown = data.decode("utf-8", errors="replace")
     else:
-        extension = document_extension(filename, content_type=normalized_content_type)
         try:
-            markdown = await asyncio.to_thread(_convert_sync, data, extension)
+            if normalized_content_type in _HTML_CONTENT_TYPES:
+                markdown = await asyncio.to_thread(_convert_html_sync, data)
+            else:
+                extension = document_extension(filename, content_type=normalized_content_type)
+                markdown = await asyncio.to_thread(_convert_sync, data, extension)
         except Exception as exc:
             raise DocumentConversionError("Document could not be converted to markdown") from exc
 
@@ -71,6 +75,16 @@ def _convert_sync(data: bytes, extension: str) -> str:
     if not isinstance(text, str):
         raise DocumentConversionError("Markdown converter returned no text content")
     return text
+
+
+def _convert_html_sync(data: bytes) -> str:
+    from markdownify import ATX, markdownify
+
+    # Markitdown's HTML converter selects ATX headings over markdownify's default.
+    return markdownify(
+        data.decode("utf-8", errors="replace"),
+        heading_style=ATX,
+    ).strip()
 
 
 def truncate_markdown(markdown: str, *, max_bytes: int) -> str:

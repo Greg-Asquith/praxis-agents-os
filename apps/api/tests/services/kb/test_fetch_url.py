@@ -2,9 +2,7 @@
 
 """SSRF and pinned-connect coverage for knowledge-base URL ingestion."""
 
-import sys
 from collections.abc import Awaitable, Callable
-from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -96,24 +94,7 @@ async def test_fetch_url_pins_initial_and_redirect_connections() -> None:
     ]
 
 
-async def test_convert_html_to_markdown_accepts_charset_for_extensionless_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeResult:
-        text_content = "# Safe content"
-
-    class FakeMarkItDown:
-        def convert_stream(self, stream, *, file_extension=None, **_kwargs):
-            assert stream.read() == b"<h1>Safe content</h1>"
-            assert file_extension == ".html"
-            return FakeResult()
-
-    monkeypatch.setitem(
-        sys.modules,
-        "markitdown",
-        SimpleNamespace(MarkItDown=FakeMarkItDown),
-    )
-
+async def test_convert_html_to_markdown_accepts_charset_for_extensionless_url() -> None:
     markdown = await convert_html_to_markdown(
         b"<h1>Safe content</h1>",
         content_type="text/html; charset=UTF-8",
@@ -121,6 +102,19 @@ async def test_convert_html_to_markdown_accepts_charset_for_extensionless_url(
     )
 
     assert markdown == "# Safe content"
+
+
+async def test_convert_html_to_markdown_replaces_images_and_removes_empty_links() -> None:
+    markdown = await convert_html_to_markdown(
+        b'<main><p><img src="/diagram.png" alt="System diagram"></p>'
+        b'<p><a href="/empty"></a>Ready to use.</p></main>',
+        content_type="application/xhtml+xml",
+        source_url="https://source.example/guide",
+    )
+
+    assert markdown == "System diagram\n\nReady to use."
+    assert "![" not in markdown
+    assert "[](" not in markdown
 
 
 async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> None:
