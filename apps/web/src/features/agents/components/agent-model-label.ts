@@ -3,7 +3,13 @@
 import type { Agent } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 
-export function formatAgentModel(agent: Agent, catalog: ModelCatalogResponse) {
+type AgentModelSelection = Pick<Agent, "azure_deployment" | "model" | "model_provider">
+
+export function formatAgentModel(
+  agent: AgentModelSelection,
+  catalog: ModelCatalogResponse,
+  { showDefaultLabel = true }: { showDefaultLabel?: boolean } = {}
+) {
   if (agent.model_provider === "azure" && agent.azure_deployment) {
     return `Azure OpenAI · ${agent.azure_deployment}`
   }
@@ -14,7 +20,9 @@ export function formatAgentModel(agent: Agent, catalog: ModelCatalogResponse) {
   }
 
   if (catalog.defaults.agent_model) {
-    return `Default · ${modelDisplayName(catalog, catalog.defaults.agent_model) ?? catalog.defaults.agent_model}`
+    const defaultModel =
+      modelDisplayName(catalog, catalog.defaults.agent_model) ?? catalog.defaults.agent_model
+    return showDefaultLabel ? `Default · ${defaultModel}` : defaultModel
   }
 
   return "Workspace default"

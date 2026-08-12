@@ -3,6 +3,13 @@
 import { Link } from "@tanstack/react-router"
 import { HistoryIcon, MessageSquareIcon } from "lucide-react"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -26,9 +33,49 @@ import type { AgentScheduleRun } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime, pluralize, truncateText } from "@/lib/format"
 
+const EMPTY_RUNS: AgentScheduleRun[] = []
+const columnHelper = createAppColumnHelper<AgentScheduleRun>()
+
+const columns = columnHelper.columns([
+  columnHelper.accessor("scheduled_for", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => formatDateTime(getValue()),
+    meta: { label: "Scheduled for" },
+  }),
+  columnHelper.accessor("status", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => (
+      <ScheduleRunStatusBadge
+        completionJson={row.original.completion_json}
+        outcome={row.original.outcome}
+        status={row.original.status}
+      />
+    ),
+    meta: { label: "Status" },
+  }),
+  columnHelper.accessor("attempt_count", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => `${String(getValue())} ${pluralize(getValue(), "attempt")}`,
+    meta: { label: "Attempts" },
+  }),
+  columnHelper.display({
+    id: "error",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => <RunError run={row.original} />,
+    meta: { label: "Error" },
+  }),
+  columnHelper.display({
+    id: "conversation",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => <ConversationLink run={row.original} />,
+    meta: { label: "Conversation", labelClassName: "sr-only" },
+  }),
+])
+
 export function ScheduleRunHistory({ scheduleId }: { scheduleId: string }) {
   const runsQuery = useScheduleRunsQuery(scheduleId, { limit: 100 })
-  const runs = runsQuery.data?.items ?? []
+  const runs = runsQuery.data?.items ?? EMPTY_RUNS
+  const table = useAppTable({ columns, data: runs })
 
   if (runsQuery.isPending) {
     return (
@@ -66,45 +113,57 @@ export function ScheduleRunHistory({ scheduleId }: { scheduleId: string }) {
         ))}
       </ResponsiveList>
 
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Scheduled for</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Attempts</TableHead>
-              <TableHead>Error</TableHead>
-              <TableHead>
-                <span className="sr-only">Conversation</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => (
-              <TableRow key={run.id}>
-                <TableCell>{formatDateTime(run.scheduled_for)}</TableCell>
-                <TableCell>
-                  <ScheduleRunStatusBadge
-                    completionJson={run.completion_json}
-                    outcome={run.outcome}
-                    status={run.status}
-                  />
-                </TableCell>
-                <TableCell>
-                  {run.attempt_count} {pluralize(run.attempt_count, "attempt")}
-                </TableCell>
-                <TableCell>
-                  <RunError run={run} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <ConversationLink run={run} />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <table.AppTable>
+        <ScheduleRunsDesktopTable />
+      </table.AppTable>
     </div>
+  )
+}
+
+function ScheduleRunsDesktopTable() {
+  const table = useTableContext<AgentScheduleRun>()
+
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <table.AppHeader header={header} key={header.id}>
+                  {() => <ScheduleRunHeaderCell />}
+                </table.AppHeader>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <table.AppCell cell={cell} key={cell.id}>
+                  {() => <ScheduleRunBodyCell />}
+                </table.AppCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function ScheduleRunHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function ScheduleRunBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell className={cell.column.id === "conversation" ? "text-right" : undefined}>
+      <cell.FlexRender />
+    </TableCell>
   )
 }
 

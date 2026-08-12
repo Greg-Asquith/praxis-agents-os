@@ -1,9 +1,16 @@
 // apps/web/src/features/knowledge/components/documents-table.tsx
 
-import { useState, type ReactNode } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import { BookOpenIcon, LockIcon, RefreshCwIcon } from "lucide-react"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -27,6 +34,8 @@ import type { KbDocument } from "@/features/knowledge/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { relativeDateTime } from "@/lib/format"
 
+const columnHelper = createAppColumnHelper<KbDocument>()
+
 export function DocumentsTable({
   canWrite,
   documents,
@@ -39,14 +48,89 @@ export function DocumentsTable({
   const mutation = useReprocessDocumentMutation()
   const [error, setError] = useState<string | null>(null)
 
-  async function reprocess(documentId: string) {
-    setError(null)
-    try {
-      await mutation.mutateAsync(documentId)
-    } catch (mutationError) {
-      setError(getErrorMessage(mutationError))
-    }
-  }
+  const reprocess = useCallback(
+    async (documentId: string) => {
+      setError(null)
+      try {
+        await mutation.mutateAsync(documentId)
+      } catch (mutationError) {
+        setError(getErrorMessage(mutationError))
+      }
+    },
+    [mutation]
+  )
+
+  const columns = useMemo(
+    () =>
+      columnHelper.columns([
+        columnHelper.accessor("title", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) => (
+            <div className="flex max-w-md min-w-44 flex-col gap-1">
+              <Link
+                className="truncate font-medium hover:underline"
+                params={{ documentId: row.original.id }}
+                to="/knowledge/$documentId"
+              >
+                {row.original.title}
+              </Link>
+              <span className="text-muted-foreground text-xs">
+                {row.original.chunk_count} {row.original.chunk_count === 1 ? "chunk" : "chunks"}
+              </span>
+            </div>
+          ),
+          meta: { label: "Title" },
+        }),
+        columnHelper.accessor("source_type", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ getValue }) => <SourceTypeBadge sourceType={getValue()} />,
+          meta: { label: "Source" },
+        }),
+        columnHelper.accessor("status", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) => <StatusCell document={row.original} />,
+          meta: { label: "Status" },
+        }),
+        columnHelper.accessor("is_private", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ getValue }) =>
+            getValue() ? (
+              <span className="inline-flex items-center gap-1 text-sm">
+                <LockIcon className="text-muted-foreground size-3.5" />
+                Private
+              </span>
+            ) : (
+              <span className="text-muted-foreground text-sm">Workspace</span>
+            ),
+          meta: { label: "Privacy" },
+        }),
+        columnHelper.accessor("updated_at", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ getValue }) => <span title={getValue()}>{relativeDateTime(getValue())}</span>,
+          meta: { label: "Updated" },
+        }),
+        columnHelper.display({
+          id: "actions",
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) =>
+            canWrite && row.original.status === "error" ? (
+              <Button
+                disabled={mutation.isPending}
+                onClick={() => void reprocess(row.original.id)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <RefreshCwIcon data-icon="inline-start" />
+                Reprocess
+              </Button>
+            ) : null,
+          meta: { label: "Actions", labelClassName: "sr-only" },
+        }),
+      ]),
+    [canWrite, mutation.isPending, reprocess]
+  )
+  const table = useAppTable({ columns, data: documents })
 
   if (documents.length === 0) {
     return (
@@ -80,76 +164,57 @@ export function DocumentsTable({
           </ResponsiveListItem>
         ))}
       </ResponsiveList>
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Title</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Privacy</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {documents.map((document) => (
-              <TableRow key={document.id}>
-                <TableCell>
-                  <div className="flex max-w-md min-w-44 flex-col gap-1">
-                    <Link
-                      className="truncate font-medium hover:underline"
-                      params={{ documentId: document.id }}
-                      to="/knowledge/$documentId"
-                    >
-                      {document.title}
-                    </Link>
-                    <span className="text-muted-foreground text-xs">
-                      {document.chunk_count} {document.chunk_count === 1 ? "chunk" : "chunks"}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <SourceTypeBadge sourceType={document.source_type} />
-                </TableCell>
-                <TableCell>
-                  <StatusCell document={document} />
-                </TableCell>
-                <TableCell>
-                  {document.is_private ? (
-                    <span className="inline-flex items-center gap-1 text-sm">
-                      <LockIcon className="text-muted-foreground size-3.5" />
-                      Private
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground text-sm">Workspace</span>
-                  )}
-                </TableCell>
-                <TableCell title={document.updated_at}>
-                  {relativeDateTime(document.updated_at)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {canWrite && document.status === "error" ? (
-                    <Button
-                      disabled={mutation.isPending}
-                      onClick={() => void reprocess(document.id)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      <RefreshCwIcon data-icon="inline-start" />
-                      Reprocess
-                    </Button>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      <table.AppTable>
+        <DocumentsDesktopTable />
+      </table.AppTable>
     </div>
+  )
+}
+
+function DocumentsDesktopTable() {
+  const table = useTableContext<KbDocument>()
+
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <table.AppHeader header={header} key={header.id}>
+                  {() => <DocumentHeaderCell />}
+                </table.AppHeader>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <table.AppCell cell={cell} key={cell.id}>
+                  {() => <DocumentBodyCell />}
+                </table.AppCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function DocumentHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function DocumentBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell className={cell.column.id === "actions" ? "text-right" : undefined}>
+      <cell.FlexRender />
+    </TableCell>
   )
 }
 

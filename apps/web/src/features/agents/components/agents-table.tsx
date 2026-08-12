@@ -1,8 +1,16 @@
 // apps/web/src/features/agents/components/agents-table.tsx
 
+import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { BotIcon, MessageSquarePlusIcon, PencilIcon, PlusIcon } from "lucide-react"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -27,6 +35,8 @@ import type { Agent } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { formatDateTime, pluralize } from "@/lib/format"
 
+const columnHelper = createAppColumnHelper<Agent>()
+
 export function AgentsTable({
   agents,
   modelCatalog,
@@ -34,6 +44,87 @@ export function AgentsTable({
   agents: Agent[]
   modelCatalog: ModelCatalogResponse
 }) {
+  const columns = useMemo(
+    () =>
+      columnHelper.columns([
+        columnHelper.accessor("name", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) => (
+            <div className="flex min-w-56 items-start gap-2.5">
+              <AgentIdentityIcon agentId={row.original.id} decorative name={row.original.name} />
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="font-medium">{row.original.name}</span>
+                {row.original.description ? (
+                  <span className="text-muted-foreground max-w-md truncate text-xs">
+                    {row.original.description}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ),
+          meta: { label: "Name" },
+        }),
+        columnHelper.display({
+          id: "status",
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) => <AgentStatusBadges agent={row.original} />,
+          meta: { label: "Status" },
+        }),
+        columnHelper.display({
+          id: "model",
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) =>
+            formatAgentModel(row.original, modelCatalog, { showDefaultLabel: false }),
+          meta: { label: "Model" },
+        }),
+        columnHelper.display({
+          id: "tools",
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) => (
+            <AgentToolsSummary
+              approvalCount={countApprovalPolicyTools(row.original)}
+              toolCount={row.original.tool_names.length}
+            />
+          ),
+          meta: { label: "Tools" },
+        }),
+        columnHelper.accessor("updated_at", {
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ getValue }) => formatDateTime(getValue()),
+          meta: { label: "Updated" },
+        }),
+        columnHelper.display({
+          id: "actions",
+          header: ({ header }) => <header.ColumnHeader />,
+          cell: ({ row }) => (
+            <div className="flex items-center justify-end gap-2">
+              {row.original.is_active ? (
+                <Button
+                  render={<Link search={{ agent: row.original.id }} to="/conversations/new" />}
+                  size="sm"
+                  variant="outline"
+                >
+                  <MessageSquarePlusIcon data-icon="inline-start" />
+                  Chat
+                </Button>
+              ) : null}
+              <Button
+                render={<Link params={{ agentId: row.original.id }} to="/agents/$agentId" />}
+                size="sm"
+                variant="outline"
+              >
+                <PencilIcon data-icon="inline-start" />
+                Edit
+              </Button>
+            </div>
+          ),
+          meta: { label: "Actions", labelClassName: "sr-only" },
+        }),
+      ]),
+    [modelCatalog]
+  )
+  const table = useAppTable({ columns, data: agents })
+
   if (agents.length === 0) {
     return (
       <EmptyState
@@ -59,79 +150,57 @@ export function AgentsTable({
         ))}
       </ResponsiveList>
 
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Model</TableHead>
-              <TableHead>Tools</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {agents.map((agent) => {
-              const approvalPolicyTools = countApprovalPolicyTools(agent)
-
-              return (
-                <TableRow key={agent.id}>
-                  <TableCell>
-                    <div className="flex min-w-56 items-start gap-2.5">
-                      <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} />
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <span className="font-medium">{agent.name}</span>
-                        {agent.description && (
-                          <span className="text-muted-foreground max-w-md truncate text-xs">
-                            {agent.description}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <AgentStatusBadges agent={agent} />
-                  </TableCell>
-                  <TableCell>{formatAgentModel(agent, modelCatalog)}</TableCell>
-                  <TableCell>
-                    <AgentToolsSummary
-                      approvalCount={approvalPolicyTools}
-                      toolCount={agent.tool_names.length}
-                    />
-                  </TableCell>
-                  <TableCell>{formatDateTime(agent.updated_at)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-2">
-                      {agent.is_active ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          render={<Link to="/conversations/new" search={{ agent: agent.id }} />}
-                        >
-                          <MessageSquarePlusIcon data-icon="inline-start" />
-                          Chat
-                        </Button>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        render={<Link to="/agents/$agentId" params={{ agentId: agent.id }} />}
-                      >
-                        <PencilIcon data-icon="inline-start" />
-                        Edit
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
+      <table.AppTable>
+        <AgentsDesktopTable />
+      </table.AppTable>
     </div>
+  )
+}
+
+function AgentsDesktopTable() {
+  const table = useTableContext<Agent>()
+
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <table.AppHeader header={header} key={header.id}>
+                  {() => <AgentHeaderCell />}
+                </table.AppHeader>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <table.AppCell cell={cell} key={cell.id}>
+                  {() => <AgentBodyCell />}
+                </table.AppCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function AgentHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function AgentBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell className={cell.column.id === "actions" ? "text-right" : undefined}>
+      <cell.FlexRender />
+    </TableCell>
   )
 }
 
@@ -165,7 +234,7 @@ function AgentMobileRow({
 
         <dl className="grid gap-3 sm:grid-cols-2">
           <ResponsiveListMeta label="Model">
-            {formatAgentModel(agent, modelCatalog)}
+            {formatAgentModel(agent, modelCatalog, { showDefaultLabel: false })}
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Tools">
             <AgentToolsSummary
