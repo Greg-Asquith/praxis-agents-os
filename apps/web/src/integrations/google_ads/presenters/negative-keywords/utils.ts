@@ -60,6 +60,14 @@ export function listNegativeKeywordApprovalSummary(
 
 export function listNegativeKeywordResult(
   value: unknown,
+  removing: false
+): NegativeKeywordResult | null
+export function listNegativeKeywordResult(
+  value: unknown,
+  removing: true
+): NegativeKeywordRemovalResult | null
+export function listNegativeKeywordResult(
+  value: unknown,
   removing: boolean
 ): NegativeKeywordRemovalResult | NegativeKeywordResult | null {
   return removing ? removalResult(value) : addResult(value)

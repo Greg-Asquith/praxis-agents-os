@@ -191,7 +191,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     assert [column.key for column in keyword_field.columns] == ["text", "match_type"]
     assert keyword_field.columns[1].options == ("EXACT", "PHRASE", "BROAD")
     remove = definitions["google_ads_remove_negative_keywords"]
-    assert remove.max_public_result_chars is not None
+    assert remove.max_public_result_chars == 1_000_000
     assert definitions["google_ads_add_negative_keywords"].max_public_result_chars == (
         remove.max_public_result_chars
     )
@@ -216,7 +216,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         )
         assert campaign_field.format == "entity_list"
         assert campaign_field.entity_kind == "google_ads_campaign"
-        assert campaign_tool.max_public_result_chars is not None
+        assert campaign_tool.max_public_result_chars == 1_000_000
     campaign_add_keywords = next(
         field for field in campaign_add.presentation.arg_fields if field.key == "keywords"
     )
@@ -242,7 +242,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         )
         assert ad_group_field.format == "entity_list"
         assert ad_group_field.entity_kind == "google_ads_ad_group"
-        assert ad_group_tool.max_public_result_chars is not None
+        assert ad_group_tool.max_public_result_chars == 1_000_000
     ad_group_add_keywords = next(
         field for field in ad_group_add.presentation.arg_fields if field.key == "keywords"
     )
@@ -266,6 +266,12 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         field for field in campaign_links.presentation.arg_fields if field.key == "action"
     )
     assert link_action.options == ("LINK", "UNLINK")
+    for summarized_write in (
+        create,
+        campaign_links,
+        definitions["google_ads_update_campaign_status"],
+    ):
+        assert summarized_write.max_public_result_chars is None
 
     denylisted = {
         "account_id",

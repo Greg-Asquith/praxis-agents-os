@@ -1,54 +1,55 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keyword-lists.tsx
 
-import { parseFanOutData } from "@/components/tool-ui/fan-out"
-import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
-import type { ToolRowPresenter } from "@/integrations/contract"
 import {
   NegativeKeywordListOutcome,
   type NegativeKeywordListError,
   type NegativeKeywordListResult,
 } from "@/integrations/google_ads/components/negative-keyword-list-outcome"
-import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
-import { formatGoogleAdsAccountId } from "@/lib/format"
+import {
+  createGoogleAdsWritePresenter,
+  defineGoogleAdsWriteVariant,
+} from "@/integrations/google_ads/presenters/write-presenter"
 import { isRecord } from "@/lib/guards"
 
-export const googleAdsNegativeKeywordListsPresenter: ToolRowPresenter = {
+export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-create-negative-keyword-list",
-  matches: (activity) =>
-    activity.name === "google_ads_create_negative_keyword_list" &&
-    (activity.status === "running" || activity.status === "completed"),
-  render: ({ activity, defaultOpen }) => {
-    if (activity.status === "running") {
-      return (
-        <FanOutSkeleton
-          heading={<GoogleAdsToolHeading>Create Negative Keyword Lists</GoogleAdsToolHeading>}
-          label="Creating Google Ads negative keyword lists…"
-        />
-      )
-    }
-    const fanOut = parseFanOutData(activity.result, negativeKeywordListResult)
-    if (!fanOut) {
-      return null
-    }
-    return (
-      <div aria-label="Google Ads negative keyword list results" className="w-full min-w-0">
-        <FanOutShell
-          contextLabel="Account"
-          defaultOpen={defaultOpen}
-          entries={fanOut.entries}
-          emptyLabel="No Google Ads accounts created a negative keyword list."
-          externalLabel="Customer ID"
-          formatContextValue={formatGoogleAdsAccountId}
-          heading={<GoogleAdsToolHeading>Create Negative Keyword Lists</GoogleAdsToolHeading>}
-        >
-          {(_entry, index) => {
-            const result = fanOut.data[index]
-            return result ? <NegativeKeywordListOutcome result={result} /> : null
-          }}
-        </FanOutShell>
-      </div>
-    )
+  variants: {
+    google_ads_create_negative_keyword_list: defineGoogleAdsWriteVariant({
+      approval: {
+        approveLabel: "Approve & Create",
+        label: "Create Google Ads Negative Keyword Lists",
+        parseArgs: negativeKeywordListArgs,
+        prompt: "Review the list names before creating them in the selected accounts.",
+        title: "Create Negative Keyword Lists",
+      },
+      deniedDescription: "This negative keyword list creation was declined. Nothing was created.",
+      emptyLabel: "No Google Ads accounts created a negative keyword list.",
+      failedDescription:
+        "The update did not finish. No negative keyword list creation was confirmed.",
+      heading: "Create Negative Keyword Lists",
+      malformedDescription:
+        "The system couldn't verify this account's negative keyword list outcomes. Check the Google Ads platform before taking further action.",
+      parseResult: negativeKeywordListResult,
+      progressLabel: "Creating Google Ads negative keyword lists…",
+      renderOutcome: (result) => <NegativeKeywordListOutcome result={result} />,
+      resultAriaLabel: "Google Ads negative keyword list results",
+      resultFailure:
+        "The system couldn't verify the negative keyword list changes. Check the Google Ads platform before taking further action.",
+      unconfirmedAriaLabel: "Unconfirmed Google Ads negative keyword list update",
+      unverifiedDescription:
+        "The system couldn't verify whether Google Ads created these negative keyword lists. Check the Google Ads platform before taking further action.",
+      waitingLabel: "Waiting for negative keyword list approval…",
+    }),
   },
+})
+
+function negativeKeywordListArgs(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) &&
+    Array.isArray(value["names"]) &&
+    value["names"].length > 0 &&
+    value["names"].every((name) => typeof name === "string" && name.trim().length > 0)
+    ? value
+    : null
 }
 
 function negativeKeywordListResult(value: unknown): NegativeKeywordListResult | null {

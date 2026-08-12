@@ -40,7 +40,6 @@ export const googleAdsAdGroupNegativeKeywordsPresenter = createNegativeKeywordPr
       remove: "Removing ad group negative keywords…",
     },
     resultAriaLabel: "Google Ads ad group negative keyword results",
-    resultFailure: "Praxis could not confirm the ad group negative keyword changes.",
     unconfirmedAriaLabel: "Unconfirmed Google Ads ad group negative keyword update",
     waitingLabel: "Waiting for ad group negative keyword approval…",
   },

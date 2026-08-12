@@ -11,7 +11,7 @@ import {
 } from "@/components/tool-ui/records-field-values"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
-import type { ToolActivity } from "@/integrations/contract"
+import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
@@ -459,6 +459,51 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Already linked")
     expect(html).toContain("Campaign is removed.")
     expect(html).toContain("30")
+    expect(html).toContain('aria-label="Copy Report Table"')
+    expect(html).toContain('aria-label="Download Report CSV"')
+  })
+
+  it("keeps complete campaign-link rows behind client pagination and export controls", () => {
+    const campaigns = Array.from({ length: 26 }, (_, index) => ({
+      campaign_id: String(index + 1),
+      campaign_name: `Campaign ${String(index + 1)}`,
+      outcome: "linked",
+      external_ref: `customers/1234567890/campaignSharedSets/${String(index + 1)}~50`,
+    }))
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-links-paginated-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [campaignReference("1", "Campaign 1")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                action: "LINK",
+                negative_list: {
+                  external_id: "50",
+                  name: "Brand Protection",
+                  member_count: 12,
+                },
+                campaigns,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("26 rows")
+    expect(html).toContain("Showing 1-25 of 26")
+    expect(html).toContain(">Next<")
+    expect(html).toContain('aria-label="Copy Report Table"')
+    expect(html).toContain('aria-label="Download Report CSV"')
   })
 
   it("renders enriched unlinked, not-linked, and failed campaign outcomes", () => {
@@ -528,68 +573,6 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Summer Sale")
     expect(html).toContain("Brand Awareness")
     expect(html).toContain("Shopping")
-  })
-
-  it("joins historical campaign-link IDs to names from the saved arguments", () => {
-    const html = render(
-      googleAdsCampaignLinksPresenter.render(
-        props({
-          id: "historical-campaign-links-result",
-          kind: "result",
-          name: "google_ads_link_negative_keyword_list",
-          status: "completed",
-          args: {
-            action: "LINK",
-            campaign_ids: [campaignReference("10", "Summer Sale")],
-            negative_list: sharedSetReference("50", "Brand Protection"),
-          },
-          result: {
-            results: [
-              entry({
-                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
-                skipped_existing: [],
-                campaign_errors: [],
-              }),
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("Brand Protection")
-    expect(html).toContain("List ID 50")
-    expect(html).toContain("Summer Sale")
-    expect(html).toContain("Campaign ID")
-  })
-
-  it("keeps historical campaign IDs visible when saved arguments lack their names", () => {
-    const html = render(
-      googleAdsCampaignLinksPresenter.render(
-        props({
-          id: "historical-unknown-campaign-link",
-          kind: "result",
-          name: "google_ads_link_negative_keyword_list",
-          status: "completed",
-          args: {
-            action: "LINK",
-            campaign_ids: [campaignReference("10", "Summer Sale")],
-            negative_list: sharedSetReference("50", "Brand Protection"),
-          },
-          result: {
-            results: [
-              entry({
-                resource_names: [],
-                skipped_existing: ["99"],
-                campaign_errors: [],
-              }),
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("99")
-    expect(html).toContain("Already linked")
   })
 
   it("renders created, existing, and failed negative keyword lists per account", () => {
@@ -664,17 +647,23 @@ describe("Google Ads tool presenters", () => {
     expect(html).not.toContain("STRASSE")
   })
 
-  it("keeps negative keyword list approvals on the server-declared default card", () => {
-    expect(googleAdsNegativeKeywordListsPresenter.handlesApprovals).toBeUndefined()
-    expect(
-      googleAdsNegativeKeywordListsPresenter.matches({
-        id: "negative-lists-approval",
-        kind: "approval",
-        name: "google_ads_create_negative_keyword_list",
-        status: "awaiting_approval",
-        args: { names: ["New exclusions"] },
-      })
-    ).toBe(false)
+  it("renders negative keyword list approval through the shared write shell", () => {
+    const rendered = googleAdsNegativeKeywordListsPresenter.render(
+      props(
+        {
+          id: "negative-lists-approval",
+          kind: "approval",
+          name: "google_ads_create_negative_keyword_list",
+          status: "awaiting_approval",
+          args: { names: ["New exclusions"] },
+        },
+        approvalControls(),
+        toolUi([field("names", "List Names", "list", true)])
+      )
+    )
+
+    expect(googleAdsNegativeKeywordListsPresenter.handlesApprovals).toBe(true)
+    expect(render(rendered)).toContain("Approve &amp; Create")
   })
 
   it("renders an editable negative keyword approval with a match-type summary", () => {
@@ -1392,6 +1381,194 @@ describe("Google Ads tool presenters", () => {
       )
     )
     expect(html).toContain(expected)
+  })
+
+  it("isolates a malformed account outcome without hiding valid siblings", () => {
+    const html = render(
+      googleAdsCampaignStatusPresenter.render(
+        props({
+          id: "campaign-mixed-contract",
+          kind: "result",
+          name: "google_ads_update_campaign_status",
+          status: "completed",
+          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
+          result: {
+            results: [
+              entry({
+                resource_names: ["customers/1234567890/campaigns/10"],
+                campaign_errors: [],
+              }),
+              {
+                ...entry({ resource_names: "malformed", campaign_errors: [] }),
+                connection_id: "connection-2",
+                display_name: "Second account",
+                external_id: "2222222222",
+              },
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Updated")
+    expect(html).toContain("Second account")
+    expect(html).toContain("The system couldn&#x27;t verify this account&#x27;s campaign outcomes.")
+    expect(html).toContain("Check the Google Ads platform")
+  })
+
+  it("distinguishes an unverified mutation from a known failure", () => {
+    const html = render(
+      googleAdsCampaignStatusPresenter.render(
+        props({
+          id: "campaign-unverified",
+          kind: "result",
+          name: "google_ads_update_campaign_status",
+          status: "completed",
+          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
+          result: {
+            results: [
+              {
+                ...entry(null),
+                status: "error",
+                error_code: "unverified_mutation",
+                error_message: "request outcome unknown",
+              },
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("The system couldn&#x27;t verify whether Google Ads applied")
+    expect(html).toContain("Check the Google Ads platform")
+    expect(html).not.toContain("request outcome unknown")
+  })
+
+  it("routes every write through the shared approval and lifecycle shell", () => {
+    const cases: { args: unknown; name: string; presenter: ToolRowPresenter }[] = [
+      {
+        args: { names: ["Brand exclusions"] },
+        name: "google_ads_create_negative_keyword_list",
+        presenter: googleAdsNegativeKeywordListsPresenter,
+      },
+      {
+        args: {
+          negative_list: sharedSetReference("50", "Brand Protection"),
+          keywords: [{ text: "free", match_type: "EXACT" }],
+        },
+        name: "google_ads_add_negative_keywords",
+        presenter: googleAdsListNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          negative_list: sharedSetReference("50", "Brand Protection"),
+          keywords: [{ text: "free", match_type: "ANY" }],
+        },
+        name: "google_ads_remove_negative_keywords",
+        presenter: googleAdsListNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "EXACT" }],
+        },
+        name: "google_ads_add_campaign_negative_keywords",
+        presenter: googleAdsCampaignNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "ANY" }],
+        },
+        name: "google_ads_remove_campaign_negative_keywords",
+        presenter: googleAdsCampaignNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          ad_group_ids: [adGroupReference("20", "Exact", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "EXACT" }],
+        },
+        name: "google_ads_add_ad_group_negative_keywords",
+        presenter: googleAdsAdGroupNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          ad_group_ids: [adGroupReference("20", "Exact", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "ANY" }],
+        },
+        name: "google_ads_remove_ad_group_negative_keywords",
+        presenter: googleAdsAdGroupNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          action: "LINK",
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          negative_list: sharedSetReference("50", "Brand Protection"),
+        },
+        name: "google_ads_link_negative_keyword_list",
+        presenter: googleAdsCampaignLinksPresenter,
+      },
+      {
+        args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
+        name: "google_ads_update_campaign_status",
+        presenter: googleAdsCampaignStatusPresenter,
+      },
+    ]
+
+    for (const testCase of cases) {
+      const activity = {
+        args: testCase.args,
+        id: `${testCase.name}-lifecycle`,
+        kind: "result" as const,
+        name: testCase.name,
+      }
+      expect(testCase.presenter.handlesApprovals).toBe(true)
+      expect(testCase.presenter.matches({ ...activity, status: "awaiting_approval" })).toBe(true)
+      expect(
+        render(testCase.presenter.render(props({ ...activity, status: "running" })))
+      ).toContain("…")
+      expect(
+        render(testCase.presenter.render(props({ ...activity, status: "awaiting_approval" })))
+      ).toContain("Waiting")
+      expect(render(testCase.presenter.render(props({ ...activity, status: "denied" })))).toContain(
+        "declined"
+      )
+      expect(render(testCase.presenter.render(props({ ...activity, status: "failed" })))).toContain(
+        "confirmed"
+      )
+    }
+  })
+
+  it("rejects the superseded campaign-link result shape without reconstructing saved arguments", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-link-old-shape",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                skipped_existing: [],
+                campaign_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain(
+      "The system couldn&#x27;t verify this account&#x27;s campaign list outcomes."
+    )
+    expect(html).not.toContain("List ID 50")
   })
 
   it("falls through for malformed read payloads and registers all presenters", () => {

@@ -40,7 +40,6 @@ export const googleAdsCampaignNegativeKeywordsPresenter = createNegativeKeywordP
       remove: "Removing campaign negative keywords…",
     },
     resultAriaLabel: "Google Ads campaign negative keyword results",
-    resultFailure: "Praxis could not confirm the campaign negative keyword changes.",
     unconfirmedAriaLabel: "Unconfirmed Google Ads campaign negative keyword update",
     waitingLabel: "Waiting for campaign negative keyword approval…",
   },
