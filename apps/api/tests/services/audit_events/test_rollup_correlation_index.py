@@ -1,7 +1,6 @@
 """Measured coverage for indexed audit roll-up correlation lookup."""
 
 import json
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,78 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_maintenance_async_db_session_factory
 from models.audit_event import AuditEvent
-from services.audit_events.enums import (
-    AuditAction,
-    AuditActorType,
-    AuditResourceType,
-    AuditStatus,
-)
+from services.audit_events.enums import AuditResourceType
 from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.support.audit_rollup import (
+    MATCHING_GROUPS,
+    ROWS_PER_GROUP,
+    SOURCE_ROWS,
+    UNRELATED_GROUPS,
+    audit_rollup_correlation_pair,
+    build_audit_rollup_event_rows,
+)
 
-_UNRELATED_GROUPS = 2_000
-_MATCHING_GROUPS = 10
-_ROWS_PER_GROUP = 3
-_SOURCE_ROWS = (_UNRELATED_GROUPS + _MATCHING_GROUPS) * _ROWS_PER_GROUP
 _INDEX_NAME = "ix_audit_events_rollup_correlation"
-
-
-def _correlation_pair(index: int) -> tuple[str, str]:
-    call_id = "plan-148-reused-call" if index >= 2_008 else f"plan-148-call-{index}"
-    return f"plan-148-run-{index}", call_id
-
-
-def _event_rows(
-    *,
-    workspace_id: UUID,
-    actor_id: UUID,
-    group_indexes: range,
-) -> list[dict[str, Any]]:
-    base_time = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
-    rows: list[dict[str, Any]] = []
-    for index in group_indexes:
-        run_id, call_id = _correlation_pair(index)
-        common = {
-            "workspace_id": workspace_id,
-            "action": AuditAction.EXECUTE.value,
-            "summary": "Audit roll-up correlation fixture",
-            "tool_name": "plan_148_matching" if index >= 2_000 else "plan_148_unrelated",
-            "tool_provider": "query_plan",
-            "actor_type": AuditActorType.USER.value,
-            "actor_id": str(actor_id),
-            "actor_user_id": actor_id,
-            "requested_by_user_id": actor_id,
-            "request_id": f"req-{workspace_id}-{index}",
-        }
-        occurred_at = base_time + timedelta(microseconds=index * _ROWS_PER_GROUP)
-        rows.extend(
-            (
-                {
-                    **common,
-                    "occurred_at": occurred_at,
-                    "resource_type": AuditResourceType.TOOL_CALL.value,
-                    "resource_id": call_id,
-                    "status": AuditStatus.PENDING.value,
-                    "details": {"run_id": run_id},
-                },
-                {
-                    **common,
-                    "occurred_at": occurred_at + timedelta(microseconds=2),
-                    "resource_type": AuditResourceType.TOOL_CALL.value,
-                    "resource_id": call_id,
-                    "status": AuditStatus.SUCCESS.value,
-                    "details": {"run_id": run_id},
-                },
-                {
-                    **common,
-                    "occurred_at": occurred_at + timedelta(microseconds=1),
-                    "resource_type": AuditResourceType.INTEGRATION_RESOURCE.value,
-                    "resource_id": f"resource-{workspace_id}-{index}",
-                    "status": AuditStatus.SUCCESS.value,
-                    "details": {"run_id": run_id, "tool_call_id": call_id},
-                },
-            )
-        )
-    return rows
 
 
 def _lookup_statement(workspace_id: UUID):
@@ -93,10 +32,10 @@ def _lookup_statement(workspace_id: UUID):
         )
         .data(
             [
-                _correlation_pair(index)
+                audit_rollup_correlation_pair(index)
                 for index in range(
-                    _UNRELATED_GROUPS,
-                    _UNRELATED_GROUPS + _MATCHING_GROUPS,
+                    UNRELATED_GROUPS,
+                    UNRELATED_GROUPS + MATCHING_GROUPS,
                 )
             ]
         )
@@ -138,12 +77,12 @@ async def test_rollup_correlation_lookup_is_indexed_complete_and_workspace_scope
         ]
     )
     await db_session.flush()
-    rows = _event_rows(
+    rows = build_audit_rollup_event_rows(
         workspace_id=workspace.id,
         actor_id=actor.id,
-        group_indexes=range(_UNRELATED_GROUPS + _MATCHING_GROUPS),
+        group_indexes=range(UNRELATED_GROUPS + MATCHING_GROUPS),
     )
-    assert len(rows) == _SOURCE_ROWS
+    assert len(rows) == SOURCE_ROWS
     await db_session.execute(insert(AuditEvent), rows)
 
     legacy_ids = [uuid4(), uuid4(), uuid4()]
@@ -186,10 +125,10 @@ async def test_rollup_correlation_lookup_is_indexed_complete_and_workspace_scope
         await maintenance_db.flush()
         await maintenance_db.execute(
             insert(AuditEvent),
-            _event_rows(
+            build_audit_rollup_event_rows(
                 workspace_id=other_workspace.id,
                 actor_id=actor.id,
-                group_indexes=range(_UNRELATED_GROUPS, _UNRELATED_GROUPS + 1),
+                group_indexes=range(UNRELATED_GROUPS, UNRELATED_GROUPS + 1),
             ),
         )
         await maintenance_db.commit()
@@ -231,7 +170,7 @@ async def test_rollup_correlation_lookup_is_indexed_complete_and_workspace_scope
     await db_session.execute(text("SET LOCAL ROLE praxis_app"))
     lookup_stmt = _lookup_statement(workspace.id)
     member_ids = set((await db_session.execute(lookup_stmt)).scalars())
-    assert len(member_ids) == _MATCHING_GROUPS * _ROWS_PER_GROUP
+    assert len(member_ids) == MATCHING_GROUPS * ROWS_PER_GROUP
 
     compiled = lookup_stmt.compile(
         dialect=db_session.get_bind().dialect,
@@ -252,6 +191,6 @@ async def test_rollup_correlation_lookup_is_indexed_complete_and_workspace_scope
     }
     print(json.dumps(summary, sort_keys=True))  # noqa: T201
 
-    assert plan["Actual Rows"] == _MATCHING_GROUPS * _ROWS_PER_GROUP
+    assert plan["Actual Rows"] == MATCHING_GROUPS * ROWS_PER_GROUP
     assert _INDEX_NAME in indexes
     assert shared_buffers <= 283

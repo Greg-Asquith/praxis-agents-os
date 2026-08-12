@@ -686,6 +686,27 @@ async def test_audit_event_rollup_keeps_incomplete_legacy_correlation_standalone
     assert {event["id"] for event in body["events"]} == {str(event.id) for event in events}
     assert all(event["id"] == event["detail_event_id"] for event in body["events"])
 
+    shared_id_response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={"resource_id": tool_call_id},
+    )
+    assert shared_id_response.status_code == 200
+    assert shared_id_response.json()["total"] == 2
+    assert {event["id"] for event in shared_id_response.json()["events"]} == {
+        str(events[0].id),
+        str(events[1].id),
+    }
+    for expected in events[2:]:
+        filtered_response = await db_async_client.get(
+            "/api/v1/audit-events/",
+            headers=headers,
+            params={"resource_id": expected.resource_id},
+        )
+        assert filtered_response.status_code == 200
+        assert filtered_response.json()["total"] == 1
+        assert filtered_response.json()["events"][0]["id"] == str(expected.id)
+
 
 async def test_integration_operation_audit_persists_and_round_trips_full_detail(
     db_session: AsyncSession,
