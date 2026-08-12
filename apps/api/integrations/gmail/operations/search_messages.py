@@ -7,6 +7,7 @@ from typing import Any
 
 from integrations.gmail.client import GmailClient
 from integrations.gmail.operations.utils import extract_headers, untrusted
+from services.integrations.http import IntegrationRequestPolicy
 
 MAX_SEARCH_RESULTS = 25
 _HEADER_NAMES = ("From", "To", "Subject", "Date")
@@ -17,6 +18,7 @@ async def search_messages(client: GmailClient, *, query: str, limit: int) -> dic
     payload = await client.get(
         "users/me/messages",
         operation="search_messages",
+        policy=IntegrationRequestPolicy.READ,
         params={"q": query, "maxResults": capped_limit},
     )
     message_refs = payload.get("messages") if isinstance(payload, dict) else None
@@ -37,6 +39,7 @@ async def get_message_metadata(client: GmailClient, message_id: str) -> dict[str
     payload = await client.get(
         f"users/me/messages/{message_id}",
         operation="search_message_metadata",
+        policy=IntegrationRequestPolicy.READ,
         params={"format": "metadata", "metadataHeaders": list(_HEADER_NAMES)},
     )
     headers = extract_headers(payload)

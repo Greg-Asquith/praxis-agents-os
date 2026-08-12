@@ -14,13 +14,16 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.get_table_schema import get_table_schema
 from .schemas import BigQueryTableSchemaOutput
 from .utils import (
     BIGQUERY_BINDING,
     active_bigquery_entries,
-    run_audited_operation,
 )
 
 
@@ -53,15 +56,17 @@ async def bigquery_get_table_schema(
     for entry in matches:
 
         async def execute(target=entry):
-            return await get_table_schema(
-                ctx.deps.db,
-                integration_resource_id=target.integration_resource_id,
-                table_external_id=table_id,
+            return IntegrationAuditOutcome(
+                await get_table_schema(
+                    ctx.deps.db,
+                    integration_resource_id=target.integration_resource_id,
+                    table_external_id=table_id,
+                )
             )
 
-        row = await run_audited_operation(
+        row = await run_audited_integration_operation(
             ctx,
-            (entry,),
+            entry,
             tool_name="bigquery_get_table_schema",
             operation="get_cached_table_schema",
             execute=execute,

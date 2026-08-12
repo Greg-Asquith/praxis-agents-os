@@ -2,8 +2,8 @@
 
 import { AlertCircleIcon, CircleCheckIcon } from "lucide-react"
 
-import { KpiStrip } from "@/components/tool-ui/kpi"
 import { Badge } from "@/components/ui/badge"
+import { Stat, StatGroup } from "@/components/ui/stat"
 import { campaignReferenceLabels } from "@/integrations/google_ads/lib/tool-details"
 import { titleCaseToken } from "@/lib/format"
 
@@ -21,16 +21,18 @@ export type CampaignStatusResult = {
 export function CampaignOutcome({ result }: { result: CampaignStatusResult }) {
   return (
     <div className="grid min-w-0 gap-3">
-      <KpiStrip
-        items={[
-          { label: "Succeeded", tone: "success", value: result.succeededIds.length },
-          {
-            label: "Failed",
-            tone: result.errors.length > 0 ? "danger" : "neutral",
-            value: result.errors.length,
-          },
-        ]}
-      />
+      <StatGroup className="px-3 pt-2">
+        <Stat
+          label="Succeeded"
+          tone={result.succeededIds.length > 0 ? "success" : undefined}
+          value={result.succeededIds.length}
+        />
+        <Stat
+          label="Failed"
+          tone={result.errors.length > 0 ? "danger" : undefined}
+          value={result.errors.length}
+        />
+      </StatGroup>
       <div className="grid gap-1" role="list">
         {result.succeededIds.map((campaignId) => (
           <div

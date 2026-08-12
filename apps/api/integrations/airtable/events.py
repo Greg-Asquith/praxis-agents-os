@@ -30,6 +30,7 @@ from models.integrations import (
     IntegrationWebhook,
 )
 from services.integrations.events.domain import WebhookVerificationError
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.plugin import (
     IntegrationEventDefinition,
     IntegrationEventRequest,
@@ -76,6 +77,7 @@ async def create_webhook(
     response = await client.post(
         f"bases/{resource.external_id}/webhooks",
         operation="create_webhook",
+        policy=IntegrationRequestPolicy.MUTATION,
         json={
             "notificationUrl": notification_url,
             "specification": {
@@ -103,6 +105,7 @@ async def create_webhook(
             await client.delete(
                 f"bases/{resource.external_id}/webhooks/{external_webhook_id}",
                 operation="delete_orphaned_webhook",
+                policy=IntegrationRequestPolicy.MUTATION,
             )
         raise
 
@@ -131,6 +134,7 @@ async def refresh_webhook(db: AsyncSession, webhook: IntegrationWebhook) -> None
     response = await client.post(
         (f"bases/{webhook.external_resource_id}/webhooks/{webhook.external_webhook_id}/refresh"),
         operation="refresh_webhook",
+        policy=IntegrationRequestPolicy.MUTATION,
     )
     webhook.expires_at = _optional_datetime(response, "expirationTime")
     webhook.last_refreshed_at = datetime.now(UTC)
@@ -146,6 +150,7 @@ async def delete_webhook(db: AsyncSession, webhook: IntegrationWebhook) -> None:
         await client.delete(
             (f"bases/{webhook.external_resource_id}/webhooks/{webhook.external_webhook_id}"),
             operation="delete_webhook",
+            policy=IntegrationRequestPolicy.MUTATION,
         )
     await delete_secret(
         db,
@@ -245,6 +250,7 @@ async def process_event(
                 f"{webhook.external_webhook_id}/payloads"
             ),
             operation="list_webhook_payloads",
+            policy=IntegrationRequestPolicy.READ,
             params=params,
         )
         if not isinstance(response, dict):

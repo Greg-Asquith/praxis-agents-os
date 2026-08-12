@@ -51,7 +51,7 @@ export function parseConversationMessages(
   liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
-  const { consumedResultKeys, resultsByCallKey } = pairToolResults(parsed)
+  const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
   const pendingDelegationsByParentCallId = new Map(
     pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
   )
@@ -135,6 +135,10 @@ export function parseConversationMessages(
       resolvedActivities.forEach((activity, activityIndex) => {
         const originalActivity = message.toolActivities[activityIndex]
         if (!originalActivity) {
+          return
+        }
+        if (retryCallKeys.has(toolActivityKey(messageIndex, activityIndex))) {
+          resolvedActivitiesByOriginal.set(originalActivity, null)
           return
         }
         if (
@@ -266,13 +270,15 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const approvalMetadata = approvalMetadataForTool(message.metadata, toolCallId)
       const name = stringValue(part["tool_name"]) ?? "tool"
       const toolKind = stringValue(part["tool_kind"])
+      const partMetadata = isRecord(part["metadata"]) ? part["metadata"] : null
+      const hasPublicResult = partMetadata !== null && Object.hasOwn(partMetadata, "public_result")
       const activity: ToolActivity = {
         id: toolCallId,
         agentRunId,
         kind: "result",
         status: approvalMetadata?.decision === "denied" ? "denied" : statusFromOutcome(outcome),
         name,
-        result: part["content"],
+        result: hasPublicResult ? partMetadata["public_result"] : part["content"],
         outcome,
         ...(toolKind ? { toolKind } : {}),
       }

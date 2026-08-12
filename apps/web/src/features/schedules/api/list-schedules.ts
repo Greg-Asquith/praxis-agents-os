@@ -38,7 +38,7 @@ async function listSchedules({
   })
 }
 
-function schedulesQueryOptions(params: ListSchedulesParams = {}) {
+export function schedulesQueryOptions(params: ListSchedulesParams = {}) {
   return queryOptions({
     queryKey: schedulesQueryKeys.list(params),
     queryFn: () => listSchedules(params),

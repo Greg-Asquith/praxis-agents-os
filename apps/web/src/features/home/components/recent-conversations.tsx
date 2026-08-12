@@ -1,7 +1,6 @@
 // apps/web/src/features/home/components/recent-conversations.tsx
 
 import { Link } from "@tanstack/react-router"
-import { MessagesSquareIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ConversationList } from "@/features/conversations/components/conversation-list"
@@ -27,7 +26,6 @@ export function RecentConversations({ conversations }: { conversations: Conversa
         </Button>
       }
       description="Pick up where you left off."
-      icon={<MessagesSquareIcon aria-hidden="true" className="size-4" />}
       title="Continue Conversations"
     >
       <ConversationList conversations={recent} showRunStatus />

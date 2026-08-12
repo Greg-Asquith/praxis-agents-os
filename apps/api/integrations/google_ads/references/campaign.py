@@ -1,6 +1,4 @@
-# apps/api/integrations/google_ads/references.py
-
-"""Google Ads-owned scoped entity reference types."""
+# apps/api/integrations/google_ads/references/campaign.py
 
 from typing import Literal
 

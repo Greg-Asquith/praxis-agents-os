@@ -44,19 +44,16 @@ export function ToolResultCard({
   return (
     <section
       aria-label={ariaLabel}
-      className="border-border/70 max-h-120 min-w-0 overflow-y-auto rounded-lg border"
+      className="border-border max-h-120 min-w-0 overflow-y-auto rounded-lg border"
     >
       <header
-        className={cn(
-          "bg-muted/25 flex min-w-0 items-center gap-2 rounded-lg p-1",
-          expandable && open && "rounded-b-none border-b"
-        )}
+        className={cn("flex min-w-0 items-center gap-2 p-1", expandable && open && "border-b")}
       >
         {expandable ? (
           <Button
             aria-expanded={open}
             aria-label={open ? "Collapse results" : "Expand results"}
-            className="h-auto min-w-0 flex-1 justify-start px-1.5 py-0.5 text-left whitespace-normal"
+            className="hover:bg-muted/40 h-auto min-w-0 flex-1 justify-start px-1.5 py-0.5 text-left whitespace-normal aria-expanded:bg-transparent"
             onClick={() => {
               setOpen((current) => !current)
             }}

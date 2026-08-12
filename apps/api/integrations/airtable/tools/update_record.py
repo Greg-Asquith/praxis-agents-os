@@ -18,9 +18,14 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.audit_events import AuditStatus
+from services.audit_events import terminal_applied_operation_detail
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.update_record import update_record
 from .schemas import AirtableOutput
@@ -28,9 +33,7 @@ from .utils import (
     AIRTABLE_WRITE_BINDING,
     RESULTS_FIELD,
     airtable_client,
-    fan_out_dict,
-    record_airtable_operation_audit,
-    run_audited_operation,
+    pending_record_operation_detail,
 )
 
 
@@ -56,46 +59,49 @@ async def airtable_update_record(
 
     async def operation(entry: ResolvedContextEntry, references) -> Any:
         reference = references[0]
+        pending_detail = pending_record_operation_detail(
+            entry,
+            action="update",
+            table=record_id.table.strip(),
+            field_count=len(fields),
+            record_id=reference.external_id,
+        )
 
         async def execute() -> Any:
             client = await airtable_client(ctx, entry)
-            return await update_record(
+            result = await update_record(
                 client,
                 base_id=entry.external_id,
                 table=record_id.table.strip(),
                 record_id=reference.external_id,
                 fields=fields,
             )
+            external_ref = str(result.get("record_id", "")) or None
+            return IntegrationAuditOutcome(
+                result,
+                external_ref=external_ref,
+                operation_detail=terminal_applied_operation_detail(
+                    pending_detail,
+                    external_ref=external_ref,
+                ),
+            )
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="airtable_update_record",
             operation="update_record",
             execute=execute,
-            external_ref_from_result=lambda value: str(value.get("record_id", "")) or None,
-        )
-
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_airtable_operation_audit(
-            ctx,
-            entry,
-            tool_name="airtable_update_record",
-            operation="update_record",
-            status=AuditStatus.FAILURE,
-            external_ref=record_id.external_id,
-            error_code="write_not_permitted",
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=AIRTABLE_WRITE_BINDING,
         references=[record_id],
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

@@ -8,7 +8,12 @@ import httpx2
 import pytest
 from pydantic_ai import ModelRetry
 
-from core.exceptions.integration import IntegrationNotFoundError
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationNotFoundError,
+    IntegrationValidationError,
+)
 from integrations.airtable.client import AirtableClient
 from integrations.airtable.discover_resources import discover_resources
 from integrations.airtable.entity_resolvers.record import (
@@ -20,14 +25,23 @@ from integrations.airtable.operations.get_record import get_record
 from integrations.airtable.operations.list_records import list_records
 from integrations.airtable.operations.update_record import update_record
 from integrations.airtable.references import AirtableRecordReference
+from integrations.airtable.tools import TOOL_DEFINITIONS
 from integrations.airtable.tools.get_record import airtable_get_record
 from integrations.airtable.tools.list_records import airtable_list_records
 from integrations.airtable.tools.update_record import airtable_update_record
 from integrations.airtable.tools.utils import airtable_client
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations import http as integration_http
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.providers_view import list_providers
+
+
+@pytest.fixture(autouse=True)
+def _loaded_airtable_tool_definitions(monkeypatch):
+    for definition in TOOL_DEFINITIONS:
+        monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
 
 
 def test_manifest_declares_and_exposes_discovery_and_pat_scope_help(monkeypatch) -> None:
@@ -346,14 +360,15 @@ async def test_list_records_attaches_each_base_scope_to_returned_references(monk
         for base_id in ("app-one", "app-two")
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
+        tool_name="airtable_list_records",
     )
 
     async def provider_list(_client, *, base_id, **_kwargs):
         return {"records": [{"record_id": f"rec-{base_id}", "fields": {"Name": base_id}}]}
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.airtable.tools.list_records.airtable_client",
@@ -361,7 +376,7 @@ async def test_list_records_attaches_each_base_scope_to_returned_references(monk
     )
     monkeypatch.setattr("integrations.airtable.tools.list_records.list_records", provider_list)
     monkeypatch.setattr(
-        "integrations.airtable.tools.list_records.run_audited_operation",
+        "integrations.airtable.tools.list_records.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -405,17 +420,18 @@ async def test_record_tools_target_only_the_referenced_base(
         for base_id in ("app-one", "app-two")
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
+        tool_name=f"airtable_{operation_name}",
     )
     provider_operation = AsyncMock(return_value={"record_id": "rec-selected"})
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     module_path = f"integrations.airtable.tools.{module}"
     monkeypatch.setattr(f"{module_path}.airtable_client", AsyncMock(return_value=object()))
     monkeypatch.setattr(f"{module_path}.{operation_name}", provider_operation)
-    monkeypatch.setattr(f"{module_path}.run_audited_operation", passthrough_audit)
+    monkeypatch.setattr(f"{module_path}.run_audited_integration_operation", passthrough_audit)
     reference = AirtableRecordReference(
         integration_resource_id=entries[1].integration_resource_id,
         external_id="rec-selected",
@@ -447,7 +463,8 @@ async def test_update_record_rejects_table_reference_mismatch_before_dispatch(mo
         write_allowed=True,
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="airtable_update_record",
     )
     provider_update = AsyncMock()
     monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
@@ -481,12 +498,13 @@ async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch
         write_allowed=True,
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
+        tool_name="airtable_update_record",
     )
     provider_update = AsyncMock(return_value={"record_id": "rec-one"})
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.airtable.tools.update_record.airtable_client",
@@ -494,7 +512,7 @@ async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch
     )
     monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
     monkeypatch.setattr(
-        "integrations.airtable.tools.update_record.run_audited_operation",
+        "integrations.airtable.tools.update_record.run_audited_integration_operation",
         passthrough_audit,
     )
 
@@ -532,11 +550,74 @@ async def test_airtable_rate_limit_honors_retry_after(monkeypatch) -> None:
         payload = await AirtableClient(_static_token, client=client).get(
             "app/Table",
             operation="list_records",
+            policy=IntegrationRequestPolicy.READ,
         )
 
     assert payload == {"records": []}
     assert attempts == 2
     sleep.assert_awaited_once_with(1.0)
+
+
+@pytest.mark.parametrize("failure", ["connect", "read_timeout", "429", "503"])
+async def test_airtable_create_failures_attempt_once(failure: str) -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        if failure == "connect":
+            raise httpx2.ConnectError("connect failed", request=request)
+        if failure == "read_timeout":
+            raise httpx2.ReadTimeout("response timed out", request=request)
+        return httpx2.Response(int(failure), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationError):
+            await AirtableClient(_static_token, client=http_client).post(
+                "app/Table",
+                operation="create_record",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"fields": {}},
+            )
+
+    assert attempts == 1
+
+
+async def test_airtable_create_auth_rejection_is_not_retried() -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(401, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationError) as exc_info:
+            await AirtableClient(_static_token, client=http_client).post(
+                "app/Table",
+                operation="create_record",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"fields": {}},
+            )
+
+    assert attempts == 1
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.REJECTED
+
+
+async def test_airtable_malformed_create_response_is_ambiguous() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=b"not-json", request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationValidationError) as exc_info:
+            await AirtableClient(_static_token, client=http_client).post(
+                "app/Table",
+                operation="create_record",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"fields": {}},
+            )
+
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
 
 
 async def test_each_context_entry_resolves_its_own_connection_secret(monkeypatch) -> None:
@@ -592,7 +673,11 @@ async def test_each_context_entry_resolves_its_own_connection_secret(monkeypatch
             write_allowed=True,
         )
         client = await airtable_client(ctx, entry)
-        await client.get("app-one/Table", operation="list_records")
+        await client.get(
+            "app-one/Table",
+            operation="list_records",
+            policy=IntegrationRequestPolicy.READ,
+        )
 
     assert seen_authorizations == [
         "Bearer token-for-secret-1",

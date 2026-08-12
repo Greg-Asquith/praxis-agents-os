@@ -47,14 +47,17 @@ async def test_targets_are_grouped_and_never_fanned_out_to_other_entries() -> No
     second = _entry("second@example.com")
     unused = _entry("unused@example.com")
     operation = AsyncMock(side_effect=lambda entry, refs: [ref.external_id for ref in refs])
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, second, unused)))
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, second, unused))),
+        tool_name="gmail_read_message",
+    )
     binding = IntegrationToolBinding(
         provider_keys=frozenset({"gmail"}),
         resource_types=frozenset({"gmail_mailbox"}),
     )
 
     results = await run_context_targets(
-        deps,
+        ctx,
         binding=binding,
         references=[_reference(first, "m1"), _reference(second, "m2")],
         operation=operation,
@@ -70,7 +73,10 @@ async def test_targets_are_grouped_and_never_fanned_out_to_other_entries() -> No
 async def test_target_missing_from_active_context_fails_closed() -> None:
     active = _entry("active@example.com")
     removed = _entry("removed@example.com")
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=(active,)))
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(active,))),
+        tool_name="gmail_read_message",
+    )
     binding = IntegrationToolBinding(
         provider_keys=frozenset({"gmail"}),
         resource_types=frozenset({"gmail_mailbox"}),
@@ -78,7 +84,7 @@ async def test_target_missing_from_active_context_fails_closed() -> None:
 
     with pytest.raises(ModelRetry, match="no longer in the active integration context"):
         await run_context_targets(
-            deps,
+            ctx,
             binding=binding,
             references=[_reference(removed, "m1")],
             operation=AsyncMock(),

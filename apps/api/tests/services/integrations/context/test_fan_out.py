@@ -3,6 +3,7 @@
 """Active-context fan-out behavior tests."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -18,8 +19,8 @@ from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 def _entry(
     name: str,
     *,
-    provider_key: str = "test_provider",
-    resource_type: str = "test_resource",
+    provider_key: str = "gmail",
+    resource_type: str = "gmail_mailbox",
     write_allowed: bool = True,
 ) -> ResolvedContextEntry:
     return ResolvedContextEntry(
@@ -37,31 +38,52 @@ def _entry(
 
 def _binding(*, requires_write: bool = False) -> IntegrationToolBinding:
     return IntegrationToolBinding(
-        provider_keys=frozenset({"test_provider"}),
-        resource_types=frozenset({"test_resource"}),
+        provider_keys=frozenset({"gmail"}),
+        resource_types=frozenset({"gmail_mailbox"}),
         requires_write=requires_write,
+    )
+
+
+def _ctx(entries, *, tool_name: str = "gmail_search_messages"):
+    return SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=entries),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=tool_name,
+        tool_call_id="test-call",
     )
 
 
 async def test_fan_out_isolates_partial_failure() -> None:
     entries = (_entry("One"), _entry("Two"), _entry("Three"))
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    ctx = _ctx(entries)
 
     async def operation(entry: ResolvedContextEntry):
         if entry.display_name == "Two":
             raise IntegrationRateLimitError("Slow down")
         return {"name": entry.display_name}
 
-    results = await run_context_fan_out(deps, binding=_binding(), operation=operation)
+    results = await run_context_fan_out(ctx, binding=_binding(), operation=operation)
 
     assert [result.status for result in results] == ["success", "error", "success"]
     assert results[1].error_code == "IntegrationRateLimitError"
     assert results[2].data == {"name": "Three"}
 
 
-async def test_fan_out_write_gate_does_not_call_operation() -> None:
-    deps = SimpleNamespace(
-        active_context=ResolvedActiveContext(entries=(_entry("Read only", write_allowed=False),))
+async def test_fan_out_write_gate_does_not_call_operation(monkeypatch) -> None:
+    entry = _entry(
+        "Read only",
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+        write_allowed=False,
+    )
+    ctx = _ctx((entry,), tool_name="gmail_send_message")
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(),
     )
     calls = 0
 
@@ -70,8 +92,12 @@ async def test_fan_out_write_gate_does_not_call_operation() -> None:
         calls += 1
 
     results = await run_context_fan_out(
-        deps,
-        binding=_binding(requires_write=True),
+        ctx,
+        binding=IntegrationToolBinding(
+            provider_keys=frozenset({"gmail"}),
+            resource_types=frozenset({"gmail_mailbox"}),
+            requires_write=True,
+        ),
         operation=operation,
     )
 
@@ -79,30 +105,41 @@ async def test_fan_out_write_gate_does_not_call_operation() -> None:
     assert results[0].error_code == "write_not_permitted"
 
 
-async def test_fan_out_write_gate_calls_denial_observer() -> None:
-    entry = _entry("Read only", write_allowed=False)
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
-    denied_entries = []
-
-    async def on_write_denied(denied_entry: ResolvedContextEntry) -> None:
-        denied_entries.append(denied_entry)
-
-    results = await run_context_fan_out(
-        deps,
-        binding=_binding(requires_write=True),
-        operation=lambda _entry: None,
-        on_write_denied=on_write_denied,
+async def test_fan_out_write_gate_records_generic_denial_evidence(monkeypatch) -> None:
+    entry = _entry(
+        "Read only",
+        provider_key="gmail",
+        resource_type="gmail_mailbox",
+        write_allowed=False,
+    )
+    ctx = _ctx((entry,), tool_name="gmail_send_message")
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
     )
 
-    assert denied_entries == [entry]
+    results = await run_context_fan_out(
+        ctx,
+        binding=IntegrationToolBinding(
+            provider_keys=frozenset({"gmail"}),
+            resource_types=frozenset({"gmail_mailbox"}),
+            requires_write=True,
+        ),
+        operation=lambda _entry: None,
+    )
+
+    assert audit.await_args.kwargs["tool_name"] == "gmail_send_message"
+    assert audit.await_args.kwargs["operation"] == "send_message"
+    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
     assert results[0].error_code == "write_not_permitted"
 
 
 async def test_fan_out_retries_when_no_compatible_entries() -> None:
-    deps = SimpleNamespace(active_context=ResolvedActiveContext())
+    ctx = _ctx(())
 
     with pytest.raises(ModelRetry, match="select a context"):
-        await run_context_fan_out(deps, binding=_binding(), operation=lambda _entry: None)
+        await run_context_fan_out(ctx, binding=_binding(), operation=lambda _entry: None)
 
 
 async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resource() -> None:
@@ -121,9 +158,7 @@ async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resou
         provider_key="gmail",
         resource_type="gmail_mailbox",
     )
-    deps = SimpleNamespace(
-        active_context=ResolvedActiveContext(entries=(gmail_one, google_ads, gmail_two))
-    )
+    ctx = _ctx((gmail_one, google_ads, gmail_two))
     calls = []
 
     async def operation(entry: ResolvedContextEntry):
@@ -131,7 +166,7 @@ async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resou
         return {"resource_id": str(entry.integration_resource_id)}
 
     results = await run_context_fan_out(
-        deps,
+        ctx,
         binding=IntegrationToolBinding(
             provider_keys=frozenset({"gmail"}),
             resource_types=frozenset({"gmail_mailbox"}),
@@ -151,13 +186,27 @@ async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resou
 
 async def test_fan_out_never_exceeds_active_context_target_budget() -> None:
     entries = tuple(_entry(f"Account {index}") for index in range(MAX_ACTIVE_CONTEXT_TARGETS + 1))
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+    ctx = _ctx(entries)
     calls = []
 
     async def operation(entry: ResolvedContextEntry):
         calls.append(entry)
 
-    results = await run_context_fan_out(deps, binding=_binding(), operation=operation)
+    results = await run_context_fan_out(ctx, binding=_binding(), operation=operation)
 
     assert calls == list(entries[:MAX_ACTIVE_CONTEXT_TARGETS])
     assert len(results) == MAX_ACTIVE_CONTEXT_TARGETS
+
+
+async def test_fan_out_rejects_binding_that_does_not_match_dispatched_tool() -> None:
+    entry = _entry("Read only", write_allowed=False)
+    operation = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="binding does not match"):
+        await run_context_fan_out(
+            _ctx((entry,), tool_name="gmail_send_message"),
+            binding=_binding(),
+            operation=operation,
+        )
+
+    operation.assert_not_awaited()

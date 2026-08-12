@@ -20,7 +20,7 @@ export function GmailSendMessage({
   const title = sent ? "Email sent" : "Email not sent"
   return (
     <article aria-label={sent ? "Sent email" : "Unsent email"} className="min-w-0">
-      <header className="border-border/70 flex min-w-0 items-start gap-3 border-b pb-3">
+      <header className="border-border flex min-w-0 items-start gap-3 border-b pb-3">
         <StatusIcon icon={Icon} sent={sent} />
         <div className="min-w-0 flex-1">
           <p
@@ -31,7 +31,7 @@ export function GmailSendMessage({
             {title}
           </p>
           {message ? (
-            <h3 className="mt-0.5 text-sm font-semibold wrap-break-word">
+            <h3 className="mt-0.5 text-sm font-medium wrap-break-word">
               {message.subject || "(No subject)"}
             </h3>
           ) : null}
@@ -42,7 +42,7 @@ export function GmailSendMessage({
       </header>
       {message ? (
         <>
-          <dl className="border-border/70 grid min-w-0 gap-2 border-b py-3 text-xs sm:grid-cols-[3rem_1fr]">
+          <dl className="border-border grid min-w-0 gap-2 border-b py-3 text-xs sm:grid-cols-[3rem_1fr]">
             <dt className="text-muted-foreground">To</dt>
             <dd className="min-w-0 wrap-break-word">{message.to.join(", ")}</dd>
             {message.cc.length > 0 ? (
@@ -60,7 +60,7 @@ export function GmailSendMessage({
           </dl>
           <div className="pt-3">
             <HtmlContentFrame
-              className="border-border/70 h-80 rounded-lg border"
+              className="border-border h-80 rounded-lg border"
               html={message.body}
               title={message.subject || "Email body"}
             />

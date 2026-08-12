@@ -15,7 +15,6 @@ from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINI
 from integrations.gmail.tools import TOOL_DEFINITIONS
 from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
-from integrations.gmail.tools.utils import run_audited_operation
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from models.agent import Agent
@@ -31,6 +30,10 @@ from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.contract import TOOL_EFFECT_SCOPE_EXTERNAL
 from services.agents.runtime.tools.permissions import is_tool_allowed
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 from tests.factories import build_user, build_workspace
 
 
@@ -48,7 +51,25 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "gmail_search_messages": ("read", "internal", "auto", False),
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
+        "google_ads_add_ad_group_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_add_campaign_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_add_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
+        "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_remove_campaign_negative_keywords": (
+            "write",
+            "external",
+            "approval",
+            True,
+        ),
+        "google_ads_remove_ad_group_negative_keywords": (
+            "write",
+            "external",
+            "approval",
+            True,
+        ),
         "google_ads_list_accounts": ("read", "internal", "auto", False),
+        "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
         "google_ads_update_campaign_status": ("write", "external", "approval", True),
         "airtable_list_records": ("read", "internal", "auto", False),
@@ -123,20 +144,134 @@ def test_gmail_tool_contract_matrix_and_schemas() -> None:
 def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
     definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
     assert set(definitions) == {
+        "google_ads_add_ad_group_negative_keywords",
+        "google_ads_add_campaign_negative_keywords",
+        "google_ads_add_negative_keywords",
+        "google_ads_create_negative_keyword_list",
         "google_ads_list_accounts",
+        "google_ads_link_negative_keyword_list",
+        "google_ads_remove_negative_keywords",
+        "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
     }
     assert definitions["google_ads_list_accounts"].effect == "read"
     assert definitions["google_ads_run_report"].effect == "read"
-    spend = definitions["google_ads_update_campaign_status"]
-    assert spend.effect == "write"
-    assert spend.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-    assert spend.default_policy == "approval"
-    assert spend.supports_auto is False
-    assert spend.allowed_policies() == frozenset({"approval"})
-    assert spend.integration_binding is not None
-    assert spend.integration_binding.requires_write is True
+    for name in (
+        "google_ads_add_ad_group_negative_keywords",
+        "google_ads_add_campaign_negative_keywords",
+        "google_ads_add_negative_keywords",
+        "google_ads_create_negative_keyword_list",
+        "google_ads_link_negative_keyword_list",
+        "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
+        "google_ads_update_campaign_status",
+    ):
+        spend = definitions[name]
+        assert spend.effect == "write"
+        assert spend.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
+        assert spend.default_policy == "approval"
+        assert spend.supports_auto is False
+        assert spend.allowed_policies() == frozenset({"approval"})
+        assert spend.integration_binding is not None
+        assert spend.integration_binding.requires_write is True
+
+    create = definitions["google_ads_create_negative_keyword_list"]
+    editable_fields = {field.key for field in create.presentation.arg_fields if field.editable}
+    assert editable_fields == {"names"}
+    add = definitions["google_ads_add_negative_keywords"]
+    assert {field.key for field in add.presentation.arg_fields if field.editable} == {
+        "negative_list",
+        "keywords",
+    }
+    keyword_field = next(field for field in add.presentation.arg_fields if field.key == "keywords")
+    assert keyword_field.format == "records"
+    assert [column.key for column in keyword_field.columns] == ["text", "match_type"]
+    assert keyword_field.columns[1].options == ("EXACT", "PHRASE", "BROAD")
+    remove = definitions["google_ads_remove_negative_keywords"]
+    assert remove.max_public_result_chars == 1_000_000
+    assert definitions["google_ads_add_negative_keywords"].max_public_result_chars == (
+        remove.max_public_result_chars
+    )
+    assert {field.key for field in remove.presentation.arg_fields if field.editable} == {
+        "negative_list",
+        "keywords",
+    }
+    removal_field = next(
+        field for field in remove.presentation.arg_fields if field.key == "keywords"
+    )
+    assert removal_field.format == "records"
+    assert removal_field.columns[1].options == ("EXACT", "PHRASE", "BROAD", "ANY")
+    campaign_add = definitions["google_ads_add_campaign_negative_keywords"]
+    campaign_remove = definitions["google_ads_remove_campaign_negative_keywords"]
+    for campaign_tool in (campaign_add, campaign_remove):
+        assert {field.key for field in campaign_tool.presentation.arg_fields if field.editable} == {
+            "campaign_ids",
+            "keywords",
+        }
+        campaign_field = next(
+            field for field in campaign_tool.presentation.arg_fields if field.key == "campaign_ids"
+        )
+        assert campaign_field.format == "entity_list"
+        assert campaign_field.entity_kind == "google_ads_campaign"
+        assert campaign_tool.max_public_result_chars == 1_000_000
+    campaign_add_keywords = next(
+        field for field in campaign_add.presentation.arg_fields if field.key == "keywords"
+    )
+    campaign_remove_keywords = next(
+        field for field in campaign_remove.presentation.arg_fields if field.key == "keywords"
+    )
+    assert campaign_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
+    assert campaign_remove_keywords.columns[1].options == (
+        "EXACT",
+        "PHRASE",
+        "BROAD",
+        "ANY",
+    )
+    ad_group_add = definitions["google_ads_add_ad_group_negative_keywords"]
+    ad_group_remove = definitions["google_ads_remove_ad_group_negative_keywords"]
+    for ad_group_tool in (ad_group_add, ad_group_remove):
+        assert {field.key for field in ad_group_tool.presentation.arg_fields if field.editable} == {
+            "ad_group_ids",
+            "keywords",
+        }
+        ad_group_field = next(
+            field for field in ad_group_tool.presentation.arg_fields if field.key == "ad_group_ids"
+        )
+        assert ad_group_field.format == "entity_list"
+        assert ad_group_field.entity_kind == "google_ads_ad_group"
+        assert ad_group_tool.max_public_result_chars == 1_000_000
+    ad_group_add_keywords = next(
+        field for field in ad_group_add.presentation.arg_fields if field.key == "keywords"
+    )
+    ad_group_remove_keywords = next(
+        field for field in ad_group_remove.presentation.arg_fields if field.key == "keywords"
+    )
+    assert ad_group_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
+    assert ad_group_remove_keywords.columns[1].options == (
+        "EXACT",
+        "PHRASE",
+        "BROAD",
+        "ANY",
+    )
+    campaign_links = definitions["google_ads_link_negative_keyword_list"]
+    assert {field.key for field in campaign_links.presentation.arg_fields if field.editable} == {
+        "negative_list",
+        "campaign_ids",
+        "action",
+    }
+    link_action = next(
+        field for field in campaign_links.presentation.arg_fields if field.key == "action"
+    )
+    assert link_action.options == ("LINK", "UNLINK")
+    for summarized_write in (
+        create,
+        campaign_links,
+        definitions["google_ads_update_campaign_status"],
+    ):
+        assert summarized_write.max_public_result_chars is None
 
     denylisted = {
         "account_id",
@@ -172,13 +307,22 @@ async def test_write_gating_fails_closed_without_provider_call(monkeypatch) -> N
         connection_status="active",
         write_allowed=False,
     )
-    deps = SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,)))
-    ctx = SimpleNamespace(deps=deps)
+    deps = SimpleNamespace(
+        active_context=ResolvedActiveContext(entries=(entry,)),
+        workspace=SimpleNamespace(id=uuid4()),
+        agent=SimpleNamespace(id=uuid4()),
+        run=SimpleNamespace(id=uuid4()),
+    )
+    ctx = SimpleNamespace(
+        deps=deps,
+        tool_name="gmail_send_message",
+        tool_call_id="call-denied",
+    )
     provider_call = AsyncMock()
     audit = AsyncMock()
     monkeypatch.setattr("integrations.gmail.tools.send_message.send_message", provider_call)
     monkeypatch.setattr(
-        "integrations.gmail.tools.send_message.record_gmail_operation_audit",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -203,14 +347,14 @@ async def test_client_setup_failure_is_audited(monkeypatch) -> None:
         agent=SimpleNamespace(id=uuid4()),
         run=SimpleNamespace(id=uuid4()),
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = SimpleNamespace(deps=deps, tool_name="gmail_search_messages")
     audit = AsyncMock()
     monkeypatch.setattr(
         "integrations.gmail.tools.search_messages.gmail_client",
         AsyncMock(side_effect=IntegrationAuthError("expired", provider_key="gmail")),
     )
     monkeypatch.setattr(
-        "integrations.gmail.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
 
@@ -229,7 +373,7 @@ async def test_fan_out_preserves_mixed_success_and_failure(monkeypatch) -> None:
         agent=SimpleNamespace(id=uuid4()),
         run=SimpleNamespace(id=uuid4()),
     )
-    ctx = SimpleNamespace(deps=deps)
+    ctx = SimpleNamespace(deps=deps, tool_name="gmail_search_messages")
     monkeypatch.setattr(
         "integrations.gmail.tools.search_messages.gmail_client",
         lambda _ctx, entry: _async_value(entry.external_id),
@@ -245,7 +389,7 @@ async def test_fan_out_preserves_mixed_success_and_failure(monkeypatch) -> None:
         provider_search,
     )
     monkeypatch.setattr(
-        "integrations.gmail.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         AsyncMock(),
     )
 
@@ -258,7 +402,7 @@ async def test_fan_out_preserves_mixed_success_and_failure(monkeypatch) -> None:
 async def test_audited_operation_records_external_reference_without_content(monkeypatch) -> None:
     audit = AsyncMock()
     monkeypatch.setattr(
-        "integrations.gmail.tools.utils.record_integration_operation_audit_event",
+        "services.integrations.operations.record_integration_operation_audit_event",
         audit,
     )
     entry = ResolvedContextEntry(
@@ -277,19 +421,22 @@ async def test_audited_operation_records_external_reference_without_content(monk
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
-        )
+        ),
+        tool_name="gmail_read_message",
     )
 
     async def execute():
-        return {"message_id": "sent-1", "body": "must-not-enter-audit"}
+        return IntegrationAuditOutcome(
+            {"message_id": "sent-1", "body": "must-not-enter-audit"},
+            external_ref="sent-1",
+        )
 
-    result = await run_audited_operation(
+    result = await run_audited_integration_operation(
         ctx,
         entry,
-        tool_name="gmail_send_message",
-        operation="send_message",
+        tool_name="gmail_read_message",
+        operation="read_message",
         execute=execute,
-        external_ref_from_result=lambda value: value["message_id"],
     )
 
     assert result["message_id"] == "sent-1"
@@ -338,7 +485,7 @@ async def test_tool_fan_out_commits_one_audit_row_per_entry(
                 envelope=RunEnvelope(principal="interactive"),
                 active_context=ResolvedActiveContext(entries=entries),
             )
-            ctx = SimpleNamespace(deps=deps)
+            ctx = SimpleNamespace(deps=deps, tool_name="gmail_search_messages")
             monkeypatch.setattr(
                 "integrations.gmail.tools.search_messages.gmail_client",
                 lambda _ctx, entry: _async_value(entry.external_id),

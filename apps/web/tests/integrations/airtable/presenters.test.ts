@@ -329,7 +329,16 @@ function field(
   format: ToolUiField["format"] = "text",
   editable = false
 ): ToolUiField {
-  return { key, label, format, editable, secondary: false, options: [], placeholder: "" }
+  return {
+    key,
+    label,
+    format,
+    editable,
+    min_rows: 0,
+    secondary: false,
+    options: [],
+    placeholder: "",
+  }
 }
 
 function toolUi(argFields: ToolUiField[]): ToolUi {

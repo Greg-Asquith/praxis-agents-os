@@ -5,6 +5,8 @@
 from typing import Any
 from urllib.parse import quote
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import AirtableClient
 from .utils import record_payload
 
@@ -35,6 +37,7 @@ async def list_records(
         payload = await client.get(
             f"{quote(base_id, safe='')}/{quote(table, safe='')}",
             operation="list_records",
+            policy=IntegrationRequestPolicy.READ,
             params=params,
         )
         items = payload.get("records") if isinstance(payload, dict) else None

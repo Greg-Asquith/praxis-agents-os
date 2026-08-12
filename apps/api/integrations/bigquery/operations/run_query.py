@@ -10,6 +10,8 @@ from urllib.parse import quote
 
 from pydantic_ai import ModelRetry
 
+from services.integrations.http import IntegrationRequestPolicy
+
 MAX_AUTHORIZED_REFERENCES = 49
 
 
@@ -19,6 +21,7 @@ class BigQueryQueryClient(Protocol):
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         json: dict[str, Any],
         request_timeout: float | None = None,
     ) -> Any: ...
@@ -47,6 +50,7 @@ async def run_query(
     dry_run = await client.post(
         f"projects/{quote(billing_project_id, safe='')}/jobs",
         operation="dry_run_query",
+        policy=IntegrationRequestPolicy.READ,
         json={
             "configuration": {
                 "dryRun": True,
@@ -104,6 +108,7 @@ async def run_query(
     response = await client.post(
         f"projects/{quote(billing_project_id, safe='')}/queries",
         operation="run_query",
+        policy=IntegrationRequestPolicy.READ,
         json={
             "query": query,
             "useLegacySql": False,

@@ -4,9 +4,17 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolPresentation
+
+
+class ToolFieldColumnRead(BaseModel):
+    key: str
+    label: str
+    options: list[str]
+    placeholder: str
+    required: bool
 
 
 class ToolFieldPresentationRead(BaseModel):
@@ -19,6 +27,10 @@ class ToolFieldPresentationRead(BaseModel):
     secondary: bool
     entity_kind: str | None
     depends_on: list[str]
+    columns: list[ToolFieldColumnRead] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
+    min_rows: int
 
 
 class ToolPresentationRead(BaseModel):
@@ -53,6 +65,17 @@ class ToolPresentationRead(BaseModel):
                     secondary=field.secondary,
                     entity_kind=field.entity_kind,
                     depends_on=list(field.depends_on),
+                    columns=[
+                        ToolFieldColumnRead(
+                            key=column.key,
+                            label=column.label,
+                            options=list(column.options),
+                            placeholder=column.placeholder,
+                            required=column.required,
+                        )
+                        for column in field.columns
+                    ],
+                    min_rows=field.min_rows,
                 )
                 for field in presentation.arg_fields
             ],
@@ -67,6 +90,17 @@ class ToolPresentationRead(BaseModel):
                     secondary=field.secondary,
                     entity_kind=field.entity_kind,
                     depends_on=list(field.depends_on),
+                    columns=[
+                        ToolFieldColumnRead(
+                            key=column.key,
+                            label=column.label,
+                            options=list(column.options),
+                            placeholder=column.placeholder,
+                            required=column.required,
+                        )
+                        for column in field.columns
+                    ],
+                    min_rows=field.min_rows,
                 )
                 for field in presentation.result_fields
             ],

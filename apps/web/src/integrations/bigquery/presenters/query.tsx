@@ -18,7 +18,7 @@ export const bigQueryQueryPresenter: ToolRowPresenter = {
         <section
           aria-busy="true"
           aria-label="Running BigQuery query"
-          className="border-border/70 grid gap-3 rounded-lg border p-3"
+          className="border-border grid gap-3 rounded-lg border p-3"
         >
           <BigQueryToolHeading>Run BigQuery Query</BigQueryToolHeading>
           <DataTableSkeleton label="Running BigQuery query…" />

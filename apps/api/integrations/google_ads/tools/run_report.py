@@ -18,17 +18,20 @@ from services.agents.runtime.tools.contract import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.run_report import run_report
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     google_ads_available,
     google_ads_client,
     login_customer_id,
-    run_audited_operation,
 )
 
 
@@ -43,7 +46,7 @@ async def google_ads_run_report(
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
-            return await run_report(
+            result = await run_report(
                 client,
                 customer_id=entry.external_id,
                 currency_code=str(entry.permissions_metadata.get("currency_code", "")),
@@ -51,8 +54,9 @@ async def google_ads_run_report(
                 query=normalized_query,
                 max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
             )
+            return IntegrationAuditOutcome(result)
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_run_report",
@@ -60,8 +64,8 @@ async def google_ads_run_report(
             execute=execute,
         )
 
-    results = await run_context_fan_out(ctx.deps, binding=GOOGLE_ADS_BINDING, operation=operation)
-    return {"results": [fan_out_dict(item) for item in results]}
+    results = await run_context_fan_out(ctx, binding=GOOGLE_ADS_BINDING, operation=operation)
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

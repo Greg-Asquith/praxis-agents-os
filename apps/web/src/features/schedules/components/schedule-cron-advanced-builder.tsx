@@ -50,7 +50,7 @@ export function ScheduleCronAdvancedBuilder({
                 className={cn(
                   "focus-visible:ring-ring/50 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:ring-3 focus-visible:outline-none",
                   selected
-                    ? "border-foreground/30 bg-foreground text-background"
+                    ? "border-border bg-foreground text-background"
                     : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
                 key={day.value}

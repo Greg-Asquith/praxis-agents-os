@@ -35,9 +35,7 @@ export function ToolSurfaceCard({
       </div>
       <div className="flex min-w-0 flex-col gap-3 px-4 py-4">{children}</div>
       {footer !== undefined ? (
-        <div className="border-border/60 flex min-w-0 flex-col gap-2 border-t px-4 py-3">
-          {footer}
-        </div>
+        <div className="border-border flex min-w-0 flex-col gap-2 border-t px-4 py-3">{footer}</div>
       ) : null}
     </section>
   )

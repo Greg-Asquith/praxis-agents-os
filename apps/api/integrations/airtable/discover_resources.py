@@ -4,6 +4,7 @@
 
 from typing import Any
 
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.plugin import DiscoveredIntegrationResource
 
 from .client import AirtableClient
@@ -21,7 +22,12 @@ async def discover_resources(access_token: str, _principal_label: str | None = N
     seen_offsets: set[str] = set()
     while True:
         params = {"offset": offset} if offset else None
-        payload = await client.get("meta/bases", operation="discover_bases", params=params)
+        payload = await client.get(
+            "meta/bases",
+            operation="discover_bases",
+            policy=IntegrationRequestPolicy.READ,
+            params=params,
+        )
         bases = payload.get("bases") if isinstance(payload, dict) else None
         if isinstance(bases, list):
             resources.extend(_resource(item) for item in bases if isinstance(item, dict))

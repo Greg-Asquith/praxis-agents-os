@@ -17,20 +17,28 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.audit_events import AuditStatus
+from services.audit_events import (
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
+    IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
+    terminal_applied_operation_detail,
+)
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.send_message import send_message
 from .schemas import GmailSendOutput
 from .utils import (
     GMAIL_WRITE_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     gmail_available,
     gmail_client,
-    record_gmail_operation_audit,
-    run_audited_operation,
 )
 
 
@@ -55,9 +63,16 @@ async def gmail_send_message(
         raise ModelRetry("gmail_send_message requires at least one recipient.")
 
     async def operation(entry: ResolvedContextEntry) -> Any:
+        pending_detail = _pending_operation_detail(
+            entry,
+            recipient_count=len(recipients),
+            cc_count=len(cc or ()),
+            bcc_count=len(bcc or ()),
+        )
+
         async def execute() -> Any:
             client = await gmail_client(ctx, entry)
-            return await send_message(
+            result = await send_message(
                 client,
                 to=recipients,
                 subject=subject,
@@ -65,34 +80,64 @@ async def gmail_send_message(
                 cc=cc,
                 bcc=bcc,
             )
+            external_ref = str(result.get("message_id", "")) or None
+            return IntegrationAuditOutcome(
+                result,
+                external_ref=external_ref,
+                operation_detail=terminal_applied_operation_detail(
+                    pending_detail,
+                    external_ref=external_ref,
+                ),
+            )
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="gmail_send_message",
             operation="send_message",
             execute=execute,
-            external_ref_from_result=lambda value: str(value.get("message_id", "")) or None,
-        )
-
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_gmail_operation_audit(
-            ctx,
-            entry,
-            tool_name="gmail_send_message",
-            operation="send_message",
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_fan_out(
-        ctx.deps,
+        ctx,
         binding=GMAIL_WRITE_BINDING,
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
+
+
+def _pending_operation_detail(
+    entry: ResolvedContextEntry,
+    *,
+    recipient_count: int,
+    cc_count: int,
+    bcc_count: int,
+) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
+        target=IntegrationOperationTarget(
+            entity_type="gmail_mailbox",
+            external_id=entry.external_id,
+            display_name=entry.display_name,
+            integration_resource_id=str(entry.integration_resource_id),
+        ),
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key="message:send",
+                action="send",
+                entity_type="gmail_message",
+                items=[
+                    IntegrationOperationIntent(
+                        fields={
+                            "recipient_count": recipient_count,
+                            "cc_count": cc_count,
+                            "bcc_count": bcc_count,
+                        }
+                    )
+                ],
+            )
+        ],
+    )
 
 
 DEFINITION = RuntimeToolDefinition(

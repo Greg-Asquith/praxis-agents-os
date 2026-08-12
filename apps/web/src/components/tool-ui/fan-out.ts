@@ -6,6 +6,7 @@ export type FanOutEntry = {
   connectionId: string
   data: unknown
   displayName: string
+  errorCode?: string | null
   errorMessage: string | null
   externalId: string
   status: string
@@ -28,6 +29,9 @@ export function fanOutEntries(value: unknown): FanOutEntry[] | null {
       typeof item["display_name"] !== "string" ||
       typeof item["external_id"] !== "string" ||
       typeof item["status"] !== "string" ||
+      (item["error_code"] !== null &&
+        item["error_code"] !== undefined &&
+        typeof item["error_code"] !== "string") ||
       (item["error_message"] !== null &&
         item["error_message"] !== undefined &&
         typeof item["error_message"] !== "string")
@@ -38,6 +42,7 @@ export function fanOutEntries(value: unknown): FanOutEntry[] | null {
       connectionId: item["connection_id"],
       data: item["data"],
       displayName: item["display_name"],
+      errorCode: typeof item["error_code"] === "string" ? item["error_code"] : null,
       errorMessage: typeof item["error_message"] === "string" ? item["error_message"] : null,
       externalId: item["external_id"],
       status: item["status"],

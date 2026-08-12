@@ -18,22 +18,31 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.audit_events import AuditStatus
+from services.audit_events import (
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
+    IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
+)
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.update_campaign_status import update_campaign_status
 from .schemas import GoogleAdsOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     google_ads_available,
     google_ads_client,
     login_customer_id,
-    record_google_ads_operation_audit,
-    run_audited_operation,
 )
+from .utils.mutation_evidence import audit_status, terminal_operation_detail
+from .verifiers import verify_campaigns
 
 
 async def google_ads_update_campaign_status(
@@ -54,69 +63,97 @@ async def google_ads_update_campaign_status(
         entry: ResolvedContextEntry,
         references: list[GoogleAdsCampaignReference],
     ) -> Any:
+        references_by_id: dict[str, GoogleAdsCampaignReference] = {}
+        for reference in references:
+            references_by_id.setdefault(reference.external_id, reference)
+        normalized_references = [
+            references_by_id[campaign_id] for campaign_id in sorted(references_by_id)
+        ]
+        normalized_ids = [reference.external_id for reference in normalized_references]
+        pending_detail = _pending_operation_detail(entry, normalized_references, status)
+
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
-            normalized_ids = sorted({reference.external_id for reference in references})
             if any(not campaign_id.isdigit() for campaign_id in normalized_ids):
                 raise ModelRetry("A selected Google Ads campaign reference is invalid.")
-            lookup_query = (
-                "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
-                f"WHERE campaign.id IN ({', '.join(normalized_ids)}) "
-                f"LIMIT {len(normalized_ids)}"
+            await verify_campaigns(
+                client,
+                entry=entry,
+                campaign_ids=normalized_ids,
+                ignore_removed=True,
             )
-            lookup = await client.post(
-                f"customers/{entry.external_id}/googleAds:searchStream",
-                operation="resolve_campaign_references",
-                login_customer_id=login_customer_id(entry),
-                json={"query": lookup_query},
-            )
-            from integrations.google_ads.operations.utils import stream_rows
-
-            resolved_ids = {
-                str(campaign.get("id", ""))
-                for row in stream_rows(lookup)
-                if isinstance((campaign := row.get("campaign")), dict)
-            }
-            if resolved_ids != set(normalized_ids):
-                raise ModelRetry(
-                    "A selected Google Ads campaign is unavailable. Ask the user to choose it again."
-                )
-            return await update_campaign_status(
+            ledger = await update_campaign_status(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
                 campaign_ids=normalized_ids,
                 status=status,
             )
+            result = ledger.result()
+            operation_detail = terminal_operation_detail(pending_detail, ledger)
+            return IntegrationAuditOutcome(
+                result,
+                status=audit_status(operation_detail),
+                external_ref=",".join(result["resource_names"]) or None,
+                operation_detail=operation_detail,
+            )
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_update_campaign_status",
             operation="update_campaign_status",
             execute=execute,
-            external_ref_from_result=lambda value: ",".join(value["resource_names"]) or None,
-        )
-
-    async def audit_write_denied(entry: ResolvedContextEntry) -> None:
-        await record_google_ads_operation_audit(
-            ctx,
-            entry,
-            tool_name="google_ads_update_campaign_status",
-            operation="update_campaign_status",
-            status=AuditStatus.FAILURE,
-            error_code="write_not_permitted",
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=GOOGLE_ADS_WRITE_BINDING,
         references=campaign_ids,
         operation=operation,
-        write=True,
-        on_write_denied=audit_write_denied,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
+
+
+def _pending_operation_detail(
+    entry: ResolvedContextEntry,
+    campaigns: list[GoogleAdsCampaignReference],
+    status: Literal["ENABLED", "PAUSED"],
+) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
+        target=_account_target(entry),
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key="campaigns:update-status",
+                action="update_status",
+                entity_type="google_ads_campaign",
+                fields={"status": status},
+                items=[
+                    IntegrationOperationIntent(
+                        fields={
+                            "campaign_id": campaign.external_id,
+                            "campaign_name": campaign.label,
+                        }
+                    )
+                    for campaign in campaigns
+                ],
+            )
+        ],
+    )
+
+
+def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
+    return IntegrationOperationTarget(
+        entity_type="google_ads_account",
+        external_id=entry.external_id,
+        display_name=entry.display_name,
+        integration_resource_id=str(entry.integration_resource_id),
+    )
+
+
+def _campaign_id_from_resource(resource_name: str) -> str:
+    return resource_name.rsplit("/", 1)[-1]
 
 
 DEFINITION = RuntimeToolDefinition(

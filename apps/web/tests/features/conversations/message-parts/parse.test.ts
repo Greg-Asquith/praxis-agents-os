@@ -67,6 +67,29 @@ describe("parseConversationMessages", () => {
     })
   })
 
+  it("hides internal tool validation retries from the user-facing transcript", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "assistant", 1, [
+        {
+          part_kind: "tool-call",
+          tool_call_id: "tool-call-1",
+          tool_name: "google_ads_add_negative_keywords",
+          args: { negative_list: { entity_id: "50" } },
+        },
+      ]),
+      message("message-2", "tool", 2, [
+        {
+          part_kind: "retry-prompt",
+          tool_call_id: "tool-call-1",
+          tool_name: "google_ads_add_negative_keywords",
+          content: [{ msg: "Extra inputs are not permitted" }],
+        },
+      ]),
+    ])
+
+    expect(parsed).toEqual([])
+  })
+
   it("preserves thinking and visible parts in source order", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [
@@ -202,6 +225,58 @@ describe("parseConversationMessages", () => {
         toolKind: "capability-load",
       },
     ])
+  })
+
+  it("uses explicit public tool-result metadata for persisted transcript display", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "tool", 1, [
+        {
+          part_kind: "tool-return",
+          tool_call_id: "tool-call-1",
+          tool_name: "google_ads_add_negative_keywords",
+          outcome: "success",
+          content: { counts: { added: 500 }, samples: { added: [] } },
+          metadata: {
+            public_result: {
+              counts: { added: 500 },
+              rows: Array.from({ length: 500 }, (_, index) => ({ id: index })),
+            },
+          },
+        },
+      ]),
+    ])
+
+    expect(parsed[0]?.toolActivities[0]?.result).toMatchObject({
+      counts: { added: 500 },
+    })
+    expect((parsed[0]?.toolActivities[0]?.result as { rows: { id: number }[] }).rows).toHaveLength(
+      500
+    )
+  })
+
+  it.each([
+    { name: "absent", metadata: {}, expected: { model_only: "must-not-leak" } },
+    { name: "null", metadata: { public_result: null }, expected: null },
+    { name: "false", metadata: { public_result: false }, expected: false },
+    { name: "zero", metadata: { public_result: 0 }, expected: 0 },
+    { name: "empty string", metadata: { public_result: "" }, expected: "" },
+    { name: "object", metadata: { public_result: { rows: [] } }, expected: { rows: [] } },
+    { name: "list", metadata: { public_result: [] }, expected: [] },
+  ])("honors $name public-result presence in persisted messages", ({ metadata, expected }) => {
+    const parsed = parseConversationMessages([
+      message("message-1", "tool", 1, [
+        {
+          part_kind: "tool-return",
+          tool_call_id: "tool-call-1",
+          tool_name: "test_tool",
+          outcome: "success",
+          content: { model_only: "must-not-leak" },
+          metadata,
+        },
+      ]),
+    ])
+
+    expect(parsed[0]?.toolActivities[0]?.result).toEqual(expected)
   })
 
   it("groups delegation call and return details under one activity", () => {

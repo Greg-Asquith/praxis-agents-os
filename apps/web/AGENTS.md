@@ -67,6 +67,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   operator: state outcomes in plain language, lean on defaults instead of
   exposing configuration, and put expert options behind Advanced
   disclosures. Prefer simple, accessible controls over custom widgets.
+- Integration-operation audit detail parses only the canonical pending/terminal
+  contract. Pending intent must not imply an outcome. Terminal summaries use
+  one intent-count line with status badges; concrete effect counts stay in the
+  evidence contract and item detail instead of creating a second operator-facing
+  summary. Humanize machine tokens such as reason codes before display.
 - Schedule completion contracts remain opt-in behind the review step's Advanced
   disclosure. Criteria are one plain-language check per line; do not expose the
   underlying completion JSON or outcome codes in the form. Completion reports
@@ -84,11 +89,20 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- Complete transcript-only tool results may arrive through the persisted
+  tool-return `public_result` metadata while the model-facing content remains
+  bounded. Present the complete result rather than its model summary; use the
+  shared `DataTable` client pagination for large bounded row sets so copy and
+  CSV export still operate over all rows.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
   use the shared Base UI combobox for editable targets, preserve structured
   reference values, and fail closed as “Target unavailable” rather than
   exposing a raw ID.
+- Editable record approvals use the server-declared `min_rows` and column
+  `required` constraints. Keep editor feedback, approval gating, and decision
+  merge on the shared record-validity helper, and give repeated controls
+  row-specific accessible names.
 - The conversation composer exposes active integration context for both new
   and existing conversations, including for read-only members.
   New-conversation selection stays local until it is submitted atomically with

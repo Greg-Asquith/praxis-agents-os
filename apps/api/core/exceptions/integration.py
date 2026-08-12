@@ -6,7 +6,17 @@ Custom exceptions that follow our app's error handling patterns for integration 
 These exceptions provide structured error information for integration operations and integrate with our RFC 7807 problem details format.
 """
 
+from enum import StrEnum
 from typing import Any
+
+
+class IntegrationFailureDisposition(StrEnum):
+    """What the application can prove about a failed provider request."""
+
+    NOT_DISPATCHED = "not_dispatched"
+    REJECTED = "rejected"
+    AMBIGUOUS = "ambiguous"
+
 
 # Integration Services Errors
 
@@ -32,6 +42,7 @@ class IntegrationError(Exception):
         connection_id: str | None = None,
         operation: str | None = None,
         original_error: Exception | None = None,
+        failure_disposition: IntegrationFailureDisposition | None = None,
     ):
         """
         Initialize integration error with context.
@@ -47,6 +58,7 @@ class IntegrationError(Exception):
         self.connection_id = connection_id
         self.operation = operation
         self.original_error = original_error
+        self.failure_disposition = failure_disposition
 
         # Build detailed message
         parts = [message]

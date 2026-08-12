@@ -81,7 +81,7 @@ export function ToolActivityRowShell({
       >
         {header}
       </summary>
-      <div className="border-border/60 mt-1.5 ml-6 flex min-w-0 flex-col gap-3 border-l pl-3">
+      <div className="border-border mt-1.5 ml-6 flex min-w-0 flex-col gap-3 border-l pl-3">
         {children}
       </div>
     </details>

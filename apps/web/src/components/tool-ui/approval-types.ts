@@ -1,7 +1,11 @@
 // apps/web/src/components/tool-ui/approval-types.ts
 
 import type { EditedValues } from "@/components/tool-ui/edited-values"
-import type { ResolvedToolField, ToolFieldFormat } from "@/components/tool-ui/field-resolution"
+import type {
+  ResolvedToolField,
+  ToolFieldColumn,
+  ToolFieldFormat,
+} from "@/components/tool-ui/field-resolution"
 
 export type ApprovalDecision =
   | { decision: "pending"; edits: EditedValues; message: "" }
@@ -19,10 +23,12 @@ export type ToolApprovalDecisionControls = {
 }
 
 export type ApprovalField = {
+  columns?: ToolFieldColumn[]
   editable: boolean
   format: ToolFieldFormat
   key: string
   label: string
+  min_rows: number
   options: string[]
   placeholder: string
   secondary: boolean

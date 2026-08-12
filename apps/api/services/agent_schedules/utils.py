@@ -2,13 +2,15 @@
 
 """Helpers specific to agent schedule services."""
 
+from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Subquery
 
 from core.exceptions.general import AppValidationError, NotFoundError
-from models.agent import Agent, AgentSchedule
+from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.user import User
 from models.workspace import Workspace
 from services.agent_schedules.domain import ScheduleConfig, normalize_schedule_config
@@ -18,6 +20,50 @@ from services.integrations.context.utils import validate_active_context_targets
 TIMING_FIELD_NAMES = frozenset(
     {"schedule_type", "cron_expression", "interval_minutes", "run_once_at", "timezone"}
 )
+
+
+def latest_schedule_run_subquery(
+    *,
+    schedule_ids: Sequence[UUID] | None = None,
+    workspace_id: UUID | None = None,
+) -> Subquery:
+    """Return the canonical latest non-deleted run row for each schedule."""
+
+    filters = [AgentScheduleRun.deleted == False]  # noqa: E712
+    if schedule_ids is not None:
+        filters.append(AgentScheduleRun.schedule_id.in_(schedule_ids))
+    if workspace_id is not None:
+        filters.append(AgentScheduleRun.workspace_id == workspace_id)
+
+    ranked_runs = (
+        select(
+            AgentScheduleRun.id,
+            AgentScheduleRun.schedule_id,
+            AgentScheduleRun.status,
+            AgentScheduleRun.agent_run_id,
+            func.row_number()
+            .over(
+                partition_by=AgentScheduleRun.schedule_id,
+                order_by=(
+                    AgentScheduleRun.scheduled_for.desc(),
+                    AgentScheduleRun.created_at.desc(),
+                ),
+            )
+            .label("latest_run_rank"),
+        )
+        .where(*filters)
+        .subquery()
+    )
+    return (
+        select(
+            ranked_runs.c.id,
+            ranked_runs.c.schedule_id,
+            ranked_runs.c.status,
+            ranked_runs.c.agent_run_id,
+        )
+        .where(ranked_runs.c.latest_run_rank == 1)
+        .subquery()
+    )
 
 
 async def get_schedule_for_workspace(

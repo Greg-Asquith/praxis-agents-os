@@ -28,7 +28,7 @@ export function BigQuerySchemaFields({ schema }: { schema: BigQuerySchema }) {
         ))}
       </div>
       {schema.fields.length > 0 ? (
-        <div className="border-border/70 divide-border/70 divide-y overflow-hidden rounded-lg border">
+        <div className="divide-border divide-y">
           {schema.fields.map((field) => (
             <div
               className="grid min-w-0 gap-1 px-3 py-2.5 sm:grid-cols-[minmax(10rem,1fr)_auto]"

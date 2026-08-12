@@ -14,6 +14,7 @@ from sqlalchemy.orm import aliased, selectinload
 from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_runs.domain import RunOutcome
 from services.agent_schedules.domain import ScheduleConfig, calculate_next_run
+from services.agent_schedules.utils import latest_schedule_run_subquery
 from services.audit_events import (
     AuditAction,
     AuditActorType,
@@ -108,19 +109,11 @@ async def get_latest_runs_by_schedule_ids(
     if not schedule_ids:
         return {}
 
+    latest_runs = latest_schedule_run_subquery(schedule_ids=schedule_ids)
     result = await db.execute(
         select(AgentScheduleRun)
         .options(selectinload(AgentScheduleRun.agent_run))
-        .distinct(AgentScheduleRun.schedule_id)
-        .where(
-            AgentScheduleRun.schedule_id.in_(schedule_ids),
-            AgentScheduleRun.deleted == False,  # noqa: E712
-        )
-        .order_by(
-            AgentScheduleRun.schedule_id,
-            AgentScheduleRun.scheduled_for.desc(),
-            AgentScheduleRun.created_at.desc(),
-        )
+        .join(latest_runs, latest_runs.c.id == AgentScheduleRun.id)
     )
     return {run.schedule_id: run for run in result.scalars()}
 

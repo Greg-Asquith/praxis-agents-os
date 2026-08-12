@@ -19,16 +19,19 @@ from services.agents.runtime.tools.contract import (
 from services.agents.runtime.untrusted import untrusted_content_text
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.search_messages import search_messages
 from .schemas import GmailSearchOutput
 from .utils import (
     GMAIL_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     gmail_available,
     gmail_client,
-    run_audited_operation,
 )
 
 
@@ -58,9 +61,9 @@ async def gmail_search_messages(
                     sender=sender or None,
                     date=date or None,
                 )
-            return result
+            return IntegrationAuditOutcome(result)
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="gmail_search_messages",
@@ -69,11 +72,11 @@ async def gmail_search_messages(
         )
 
     results = await run_context_fan_out(
-        ctx.deps,
+        ctx,
         binding=GMAIL_BINDING,
         operation=operation,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

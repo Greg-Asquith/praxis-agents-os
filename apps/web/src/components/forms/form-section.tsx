@@ -21,7 +21,7 @@ export function FormSection({
     <section className="bg-card rounded-md border p-5 sm:p-6" id={id}>
       <div className="mb-6 flex flex-col gap-1.5">
         <p className="text-muted-foreground text-xs font-medium">{eyebrow}</p>
-        <h2 className="font-heading flex items-center gap-2 text-lg font-semibold tracking-normal">
+        <h2 className="font-heading flex items-center gap-2 text-lg font-medium tracking-normal">
           {icon}
           {title}
         </h2>

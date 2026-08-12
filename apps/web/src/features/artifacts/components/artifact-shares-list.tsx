@@ -57,7 +57,7 @@ export function ArtifactSharesList({ artifactId }: { artifactId: string }) {
       />
       {data.items.map((share) => (
         <div
-          className="border-border/70 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"
+          className="border-border flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center"
           key={share.id}
         >
           <div className="min-w-0 flex-1">

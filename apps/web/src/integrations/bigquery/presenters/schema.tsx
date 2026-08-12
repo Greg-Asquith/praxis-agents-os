@@ -18,7 +18,7 @@ export const bigQuerySchemaPresenter: ToolRowPresenter = {
         <section
           aria-busy="true"
           aria-label="Reading BigQuery table schema"
-          className="border-border/70 grid gap-3 rounded-lg border p-3"
+          className="border-border grid gap-3 rounded-lg border p-3"
         >
           <BigQueryToolHeading>Get BigQuery Table Schema</BigQueryToolHeading>
           <Skeleton className="h-10 w-full" />

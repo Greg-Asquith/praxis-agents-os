@@ -1,6 +1,6 @@
 // apps/web/src/features/tools/types.ts
 
-import type { ToolFieldFormat } from "@/components/tool-ui/field-resolution"
+import type { ToolFieldColumn, ToolFieldFormat } from "@/components/tool-ui/field-resolution"
 
 type ToolEffect = "read" | "write"
 type ToolEffectScope = "internal" | "external"
@@ -27,8 +27,10 @@ export type ToolCatalogResponse = {
 }
 
 export type ToolUiField = {
+  columns?: ToolFieldColumn[]
   key: string
   label: string
+  min_rows: number
   format: ToolFieldFormat
   editable: boolean
   placeholder: string

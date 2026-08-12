@@ -15,7 +15,7 @@ from core.exceptions.integration import (
     IntegrationError,
     IntegrationValidationError,
 )
-from services.integrations.http import request_with_retries
+from services.integrations.http import IntegrationRequestPolicy, request_with_retries
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer"
@@ -118,6 +118,7 @@ class GoogleServiceAccountTokenProvider:
                 self.credentials.token_uri,
                 operation="mint_service_account_token",
                 provider_key=self.provider_key,
+                policy=IntegrationRequestPolicy.MUTATION,
                 client=self._client,
                 data={"grant_type": JWT_BEARER_GRANT, "assertion": assertion},
             )

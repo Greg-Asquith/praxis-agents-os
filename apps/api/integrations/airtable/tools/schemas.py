@@ -2,24 +2,16 @@
 
 """Typed Airtable tool-result contracts."""
 
-from uuid import UUID
-
-from pydantic import BaseModel
-
 from services.agents.runtime.untrusted import UntrustedJsonValue
+from services.integrations.context.results import (
+    IntegrationFanOutEntry,
+    IntegrationFanOutOutput,
+)
 
 
-class AirtableFanOutEntry(BaseModel):
-    integration_resource_id: UUID
-    connection_id: UUID
-    provider_key: str
-    external_id: str
-    display_name: str
-    status: str
+class AirtableFanOutEntry(IntegrationFanOutEntry):
     data: dict[str, UntrustedJsonValue] | None = None
-    error_code: str | None = None
-    error_message: str | None = None
 
 
-class AirtableOutput(BaseModel):
+class AirtableOutput(IntegrationFanOutOutput):
     results: list[AirtableFanOutEntry]

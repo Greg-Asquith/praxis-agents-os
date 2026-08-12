@@ -31,8 +31,8 @@ export function RouteStatusPage({
         <section className="flex flex-1 items-center py-12 sm:py-16">
           <div className="grid w-full items-center gap-10 md:grid-cols-[minmax(14rem,0.7fr)_minmax(0,1fr)] md:gap-16 lg:gap-24">
             <div aria-hidden="true" className="relative hidden aspect-square md:block">
-              <div className="border-border/70 absolute inset-[8%] rounded-full border" />
-              <div className="border-border/60 absolute inset-[21%] rotate-12 rounded-full border" />
+              <div className="border-border absolute inset-[8%] rounded-full border" />
+              <div className="border-border absolute inset-[21%] rotate-12 rounded-full border" />
               <div className="bg-primary/10 absolute inset-[32%] rounded-full" />
               <div className="bg-agent-2 absolute top-[15%] left-[27%] size-2.5 rounded-full" />
               <div className="bg-agent-6 absolute right-[13%] bottom-[29%] size-2 rounded-full" />

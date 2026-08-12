@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from integrations.gmail.client import GmailClient
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.previews.sanitize import sanitize_preview_html
 
 _SKIP_TAGS = {"head", "script", "style", "title"}
@@ -108,6 +109,7 @@ async def send_message(
     payload = await client.post(
         "users/me/messages/send",
         operation="send_message",
+        policy=IntegrationRequestPolicy.MUTATION,
         json={"raw": raw},
     )
     return {"message_id": str(payload.get("id", ""))}

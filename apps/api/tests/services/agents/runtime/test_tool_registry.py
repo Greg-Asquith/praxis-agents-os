@@ -29,6 +29,15 @@ from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSA
 from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
+from integrations.google_ads.tools.add_negative_keywords import (
+    DEFINITION as GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+)
+from integrations.google_ads.tools.create_negative_keyword_list import (
+    DEFINITION as GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
+)
+from integrations.google_ads.tools.remove_negative_keywords import (
+    DEFINITION as GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
+)
 from integrations.google_ads.tools.run_report import (
     DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
 )
@@ -46,6 +55,7 @@ from services.agents.runtime.delegation.build_delegation_tools import (
 from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
+    RECORDS_FIELD_MAX_ROWS,
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_EXTERNAL_WRITE,
@@ -54,6 +64,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
     ToolEffectScope,
+    ToolFieldColumn,
     ToolFieldPresentation,
     ToolPresentation,
     validate_definition,
@@ -248,6 +259,12 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             max_result_chars=0,
         ),
         RuntimeToolDefinition(
+            name="bad_public_result_bound",
+            function=_noop,
+            description="Public result bound must be positive.",
+            max_public_result_chars=0,
+        ),
+        RuntimeToolDefinition(
             name="bad_version",
             function=_noop,
             description="Version must be positive.",
@@ -365,7 +382,15 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "gmail_read_message": "provider_query",
         "gmail_search_messages": "provider_query",
         "gmail_send_message": "external_write",
+        "google_ads_add_ad_group_negative_keywords": "external_write",
+        "google_ads_add_campaign_negative_keywords": "external_write",
         "google_ads_list_accounts": "provider_query",
+        "google_ads_add_negative_keywords": "external_write",
+        "google_ads_create_negative_keyword_list": "external_write",
+        "google_ads_link_negative_keyword_list": "external_write",
+        "google_ads_remove_negative_keywords": "external_write",
+        "google_ads_remove_ad_group_negative_keywords": "external_write",
+        "google_ads_remove_campaign_negative_keywords": "external_write",
         "google_ads_run_report": "provider_query",
         "google_ads_update_campaign_status": "external_write",
         "list_delegate_agents": "none",
@@ -607,6 +632,180 @@ def test_validate_definition_accepts_every_editable_field_format(format: str) ->
     validate_definition(definition)
 
 
+def test_validate_definition_accepts_editable_records_columns() -> None:
+    definition = RuntimeToolDefinition(
+        name="editable_records",
+        function=_noop,
+        description="Supports declared record rows.",
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(
+                    key="rows",
+                    label="Rows",
+                    format="records",
+                    editable=True,
+                    min_rows=1,
+                    columns=(
+                        ToolFieldColumn(
+                            key="text",
+                            label="Keyword",
+                            placeholder="Enter keyword",
+                            required=True,
+                        ),
+                        ToolFieldColumn(
+                            key="match_type",
+                            label="Match Type",
+                            options=("EXACT", "PHRASE", "BROAD"),
+                        ),
+                    ),
+                ),
+            )
+        ),
+    )
+
+    validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    ("arg_field", "result_field", "error"),
+    [
+        (
+            ToolFieldPresentation(
+                key="value",
+                label="Value",
+                columns=(ToolFieldColumn(key="text", label="Text"),),
+            ),
+            None,
+            "columns require the records format",
+        ),
+        (
+            ToolFieldPresentation(key="rows", label="Rows", format="records"),
+            None,
+            "Records runtime tool presentation fields require columns",
+        ),
+        (
+            ToolFieldPresentation(key="value", label="Value", min_rows=1),
+            None,
+            "min_rows requires the records format",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                min_rows=-1,
+                columns=(ToolFieldColumn(key="text", label="Text"),),
+            ),
+            None,
+            "min_rows must be a non-negative integer",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                min_rows=RECORDS_FIELD_MAX_ROWS + 1,
+                columns=(ToolFieldColumn(key="text", label="Text"),),
+            ),
+            None,
+            "min_rows cannot exceed",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(
+                    ToolFieldColumn(key="text", label="Text"),
+                    ToolFieldColumn(key="text", label="Duplicate"),
+                ),
+            ),
+            None,
+            "record column keys must be unique",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(ToolFieldColumn(key="Match Type", label="Match Type"),),
+            ),
+            None,
+            "column keys must be lowercase snake_case",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(
+                    ToolFieldColumn(
+                        key="match_type",
+                        label="Match Type",
+                        options=("EXACT", " "),
+                    ),
+                ),
+            ),
+            None,
+            "column options must not be blank",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(
+                    ToolFieldColumn(
+                        key="match_type",
+                        label="Match Type",
+                        options=("EXACT", " EXACT "),
+                    ),
+                ),
+            ),
+            None,
+            "column options must be unique",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(ToolFieldColumn(key="text", label="Text", required=1),),  # type: ignore[arg-type]
+            ),
+            None,
+            "column required must be a boolean",
+        ),
+        (
+            None,
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(ToolFieldColumn(key="text", label="Text"),),
+            ),
+            "result presentation fields cannot use records",
+        ),
+    ],
+)
+def test_validate_definition_rejects_invalid_records_presentation(
+    arg_field: ToolFieldPresentation | None,
+    result_field: ToolFieldPresentation | None,
+    error: str,
+) -> None:
+    definition = RuntimeToolDefinition(
+        name="invalid_records",
+        function=_noop,
+        description="Rejects unsafe record declarations.",
+        presentation=ToolPresentation(
+            arg_fields=(arg_field,) if arg_field is not None else (),
+            result_fields=(result_field,) if result_field is not None else (),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match=error):
+        validate_definition(definition)
+
+
 def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
     presentation = ToolPresentation(
         arg_fields=(
@@ -622,12 +821,46 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
                 format="keyvalue",
                 editable=True,
             ),
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                editable=True,
+                min_rows=1,
+                columns=(
+                    ToolFieldColumn(key="text", label="Keyword", required=True),
+                    ToolFieldColumn(
+                        key="match_type",
+                        label="Match Type",
+                        options=("EXACT", "PHRASE"),
+                    ),
+                ),
+            ),
         )
     )
 
     serialized = ToolPresentationRead.from_presentation(presentation)
 
-    assert [field.format for field in serialized.arg_fields] == ["number", "keyvalue"]
+    assert [field.format for field in serialized.arg_fields] == ["number", "keyvalue", "records"]
+    assert [field.min_rows for field in serialized.arg_fields] == [0, 0, 1]
+    assert serialized.arg_fields[0].columns == []
+    assert "columns" not in serialized.arg_fields[0].model_dump()
+    assert [column.model_dump() for column in serialized.arg_fields[2].columns] == [
+        {
+            "key": "text",
+            "label": "Keyword",
+            "options": [],
+            "placeholder": "",
+            "required": True,
+        },
+        {
+            "key": "match_type",
+            "label": "Match Type",
+            "options": ["EXACT", "PHRASE"],
+            "placeholder": "",
+            "required": False,
+        },
+    ]
 
 
 def test_presentation_wire_schema_preserves_entity_metadata() -> None:
@@ -684,6 +917,9 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         GMAIL_SEARCH_MESSAGES_DEFINITION,
         GMAIL_SEND_MESSAGE_DEFINITION,
         GOOGLE_ADS_RUN_REPORT_DEFINITION,
+        GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+        GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
+        GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
         GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
     )
     definitions = {definition.name: definition for definition in integration_definitions}
@@ -721,6 +957,9 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         "gmail_search_messages": {"limit", "query"},
         "gmail_send_message": {"bcc", "body_html", "cc", "subject", "to"},
         "google_ads_run_report": {"query"},
+        "google_ads_add_negative_keywords": {"keywords", "negative_list"},
+        "google_ads_create_negative_keyword_list": {"names"},
+        "google_ads_remove_negative_keywords": {"keywords", "negative_list"},
         "google_ads_update_campaign_status": {"campaign_ids", "status"},
         "save_memory": {
             "content",
@@ -774,6 +1013,11 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         ("delegate_to_agent", "agent_id"): "entity",
         ("gmail_read_message", "message_id"): "entity",
         ("google_ads_update_campaign_status", "campaign_ids"): "entity_list",
+        ("google_ads_add_negative_keywords", "negative_list"): "entity",
+        ("google_ads_add_negative_keywords", "keywords"): "records",
+        ("google_ads_create_negative_keyword_list", "names"): "list",
+        ("google_ads_remove_negative_keywords", "negative_list"): "entity",
+        ("google_ads_remove_negative_keywords", "keywords"): "records",
         ("read_document", "document_id"): "entity",
         ("read_file", "file_id"): "entity",
         ("save_memory", "content"): "markdown",
@@ -785,6 +1029,27 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         definition = definitions[tool_name]
         fields = {field.key: field for field in definition.presentation.arg_fields}
         assert fields[field_key].format == expected_format
+
+    google_ads_keyword_records = {
+        definition.name: field
+        for definition in GOOGLE_ADS_TOOL_DEFINITIONS
+        for field in definition.presentation.arg_fields
+        if field.format == "records"
+    }
+    assert set(google_ads_keyword_records) == {
+        "google_ads_add_ad_group_negative_keywords",
+        "google_ads_add_campaign_negative_keywords",
+        "google_ads_add_negative_keywords",
+        "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
+        "google_ads_remove_negative_keywords",
+    }
+    for tool_name, field in google_ads_keyword_records.items():
+        assert field.min_rows == 1, tool_name
+        assert {column.key: column.required for column in field.columns} == {
+            "match_type": True,
+            "text": True,
+        }, tool_name
 
     for tool_name, field_key in {
         ("airtable_list_records", "filter_by_formula"),

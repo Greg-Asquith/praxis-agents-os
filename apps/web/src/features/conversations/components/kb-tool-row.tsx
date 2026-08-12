@@ -189,7 +189,7 @@ function ReadDocumentRow({ activity, defaultOpen }: KbToolRowProps) {
         {isUntrustedNode(result.content) ? (
           <ExternalContent label="Knowledge document content" value={result.content} />
         ) : (
-          <div className="border-border/70 overflow-hidden rounded-lg border">
+          <div className="border-border overflow-hidden rounded-lg border">
             <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Content</p>
             <div className="max-h-96 min-w-0 overflow-auto px-3 py-2">
               <MarkdownContent content={result.content} />

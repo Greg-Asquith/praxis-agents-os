@@ -11,6 +11,7 @@ from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     parse_google_service_account_json,
 )
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.plugin import DiscoveredIntegrationResource
 
 from .client import GoogleAdsClient, normalize_customer_id
@@ -74,7 +75,9 @@ async def discover_google_ads_resources(
     principal_email: str | None,
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     payload = await client.get(
-        "customers:listAccessibleCustomers", operation="list_accessible_customers"
+        "customers:listAccessibleCustomers",
+        operation="list_accessible_customers",
+        policy=IntegrationRequestPolicy.READ,
     )
     names = payload.get("resourceNames", []) if isinstance(payload, dict) else []
     roots = tuple(
@@ -102,6 +105,7 @@ async def discover_google_ads_resources(
             hierarchy = await client.post(
                 f"customers/{query_customer_id}/googleAds:searchStream",
                 operation="discover_customer_hierarchy",
+                policy=IntegrationRequestPolicy.READ,
                 login_customer_id=root_id,
                 json={"query": _HIERARCHY_QUERY},
             )
@@ -166,6 +170,7 @@ async def _access_role(
         payload = await client.post(
             f"customers/{customer_id}/googleAds:searchStream",
             operation="discover_customer_access_role",
+            policy=IntegrationRequestPolicy.READ,
             login_customer_id=login_customer_id,
             json={"query": query},
         )

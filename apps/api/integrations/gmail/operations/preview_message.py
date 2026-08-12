@@ -12,12 +12,14 @@ from integrations.gmail.client import GmailClient
 from integrations.gmail.operations.count_thread_messages import count_thread_messages
 from integrations.gmail.operations.resolve_label_names import resolve_label_names
 from integrations.gmail.operations.utils import extract_headers, find_body_part
+from services.integrations.http import IntegrationRequestPolicy
 
 
 async def preview_message(client: GmailClient, *, message_id: str) -> dict[str, Any]:
     payload = await client.get(
         f"users/me/messages/{message_id}",
         operation="preview_message",
+        policy=IntegrationRequestPolicy.READ,
         params={"format": "full"},
     )
     if not isinstance(payload, dict):

@@ -100,6 +100,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
   not execute tool logic around it.
+- Tools that need richer transcript evidence than the model should receive may
+  return `ToolReturn` with the bounded, output-model-validated payload in
+  `return_value` and an explicitly safe `public_result` in metadata. The
+  metadata is persisted and streamed to the application but is never sent to
+  the model. Such tools must declare `max_public_result_chars`; dispatch makes
+  the public value JSON-safe, redacts sensitive-key values, applies the same
+  output model, and enforces that serialized budget. Keep provider-side fields
+  bounded by the tool's product limits and exclude credentials or other
+  application-only metadata at the source.
 - Opaque tool targets use the runtime entity-reference contract. Internal
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and
@@ -109,10 +118,40 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorized immediately before resume.
+  Editable `records` fields also enforce their declared minimum row count and
+  required columns before resume, even when the operator approves without edits.
 - Provider packages keep each agent tool in its own module under a `tools/`
   tree. The tree may share schemas and provider-local helpers, while its
   `__init__.py` only composes exported definitions; do not accumulate a
   provider's catalog in one `tools.py` module.
+- Integration tools use the provider-neutral operation runtime under
+  `services/integrations/`: context fan-out/targeting share one authorization
+  and failure-isolation loop, `run_audited_integration_operation` derives
+  external-write durability from the registered `RuntimeToolDefinition`, and
+  `serialize_fan_out_results` owns the nine-field outer envelope. Providers
+  return one `IntegrationAuditOutcome`, supply bounded pending detail for
+  external writes, and subclass the shared result models only to narrow data.
+  Pending integration-operation evidence contains requested intent only;
+  successful writes must return the one canonical terminal detail with exactly
+  aligned intent outcomes and concrete provider effects. Intent and effect
+  counts are validated independently. There is no schema-version compatibility
+  layer. The runtime rejects caller-supplied tool names or context bindings
+  that do not match the actually dispatched definition, and outcomes must be
+  terminal. An unverified terminal outcome is persisted before the outer
+  fan-out reports `unverified_mutation`.
+  Do not add provider-local audit runners, durability booleans, denial
+  callbacks, fan-out serializers, or copied outer result fields. A genuine
+  one-request/many-context topology may retain a narrowly named adapter that
+  delegates persistence to the shared runner.
+- Every integration HTTP request declares its semantic transport policy as
+  `read`, `idempotent_write`, or `mutation`; HTTP method and operation names
+  never imply retry safety. Reads retain bounded retries. A mutation is never
+  retried after an ambiguous attempt; only a received provider rejection, such
+  as a 401 followed by credential refresh, can authorize a fresh attempt.
+  Transport failures expose `not_dispatched`, `rejected`, or `ambiguous`
+  disposition to the shared audit runner. Unknown mutation failures and
+  in-flight cancellation are ambiguous, close correlated evidence as
+  `unverified_mutation`, and must not be replayed automatically.
 - Provider packages keep each entity resolver in its own module under an
   `entity_resolvers/` tree, with one module per entity kind. The package
   `__init__.py` only composes exported resolver definitions so provider
@@ -171,6 +210,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   cutoff computed once per run, work in bounded batches with immediate
   continuation when capped, and record deletion counts in the completed job
   payload without emitting replacement audit events.
+- Audit roll-up correlation is materialized in trigger-owned
+  `audit_rollup_run_id` and `audit_rollup_tool_call_id` columns. The trigger
+  derives the run ID from `details`, uses `resource_id` for tool calls and
+  `details.tool_call_id` for integration-resource events, and leaves incomplete
+  or unrelated identities outside the partial composite index. Writers must not
+  treat those columns as inputs or weaken the `(workspace_id, run_id,
+  tool_call_id)` lookup contract.
 - Application encryption uses a newest-first Fernet key ring loaded from
   `ENCRYPTION_KEYS` or the configured secret provider via
   `ENCRYPTION_KEYS_SECRET_NAME`. API and worker startup load the ring before

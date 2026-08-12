@@ -95,6 +95,8 @@ async def execute_run_with_builders(
     skills = await load_agent_skills(db, agent)
     available_files = await load_available_files(db, conversation)
     event_sink = sink or NullSink(run_id=run.id, conversation_id=conversation.id)
+    run_workspace_id = run.workspace_id
+    run_user_id = run.user_id
     started = False
 
     try:
@@ -232,8 +234,8 @@ async def execute_run_with_builders(
                 db,
                 event_sink=event_sink,
                 run_id=run_id,
-                workspace_id=run.workspace_id,
-                user_id=run.user_id,
+                workspace_id=run_workspace_id,
+                user_id=run_user_id,
             )
         )
         try:

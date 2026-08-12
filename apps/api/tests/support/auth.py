@@ -1,9 +1,18 @@
 # apps/api/tests/support/auth.py
 """Auth-specific helpers for API tests."""
 
+import pytest
+
+from core.settings import settings
+
 SESSION_COOKIE_NAME = "session"
 CSRF_COOKIE_NAME = "csrf"
 CSRF_HEADER_NAME = "x-csrf-token"
+
+requires_email_auth = pytest.mark.skipif(
+    not settings.EMAIL_AUTH_ENABLED,
+    reason="email/password authentication is disabled",
+)
 
 
 def bearer_headers(token: str) -> dict[str, str]:

@@ -9,6 +9,9 @@ from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import UserAuth
+from tests.support.auth import requires_email_auth
+
+pytestmark = requires_email_auth
 
 
 async def _register(client: AsyncClient) -> UUID:

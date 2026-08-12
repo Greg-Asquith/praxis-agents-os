@@ -614,7 +614,7 @@ function field(
   editable = false,
   secondary = false
 ): ToolUiField {
-  return { key, label, format, editable, secondary, options: [], placeholder: "" }
+  return { key, label, format, editable, min_rows: 0, secondary, options: [], placeholder: "" }
 }
 
 function toolUi(argFields: ToolUiField[]): ToolUi {

@@ -65,7 +65,7 @@ export function KeyValueFieldInput({
         <span>Value</span>
         <span className="sr-only">Actions</span>
       </div>
-      <div className="divide-border/60 divide-y">
+      <div className="divide-border divide-y">
         {entries.map(([key, item], index) => (
           <div
             className="grid min-w-0 grid-cols-[minmax(7rem,0.4fr)_minmax(0,1fr)_1.75rem] items-center gap-2 px-2.5 py-2"
@@ -112,7 +112,7 @@ export function KeyValueFieldInput({
           </div>
         ))}
       </div>
-      <div className="border-border/60 border-t px-2.5 py-1.5">
+      <div className="border-border border-t px-2.5 py-1.5">
         <Button disabled={disabled} onClick={addRow} size="sm" type="button" variant="ghost">
           <PlusIcon />
           Add Field

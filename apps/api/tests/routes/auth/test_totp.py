@@ -17,7 +17,7 @@ from core.settings import settings
 from models.session import Session
 from models.user import User
 from tests.factories import build_user
-from tests.support.auth import bearer_headers
+from tests.support.auth import bearer_headers, requires_email_auth
 
 pytestmark = pytest.mark.asyncio
 
@@ -109,6 +109,7 @@ async def test_newer_totp_time_step_remains_usable(
     assert response.json()["session"]["twofa_verified"] is True
 
 
+@requires_email_auth
 async def test_password_login_preserves_failure_budget_until_totp_succeeds(
     db_async_client: AsyncClient,
     db_session: AsyncSession,

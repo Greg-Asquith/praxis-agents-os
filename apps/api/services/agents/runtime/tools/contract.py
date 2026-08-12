@@ -30,6 +30,7 @@ ToolFieldFormat = Literal[
     "list",
     "number",
     "keyvalue",
+    "records",
     "entity",
     "entity_list",
 ]
@@ -83,14 +84,27 @@ VALID_TOOL_FIELD_FORMATS = frozenset(
         "list",
         "number",
         "keyvalue",
+        "records",
         "entity",
         "entity_list",
     }
 )
 EDITABLE_TOOL_FIELD_FORMATS = frozenset(
-    {"text", "multiline", "markdown", "html", "number", "list", "keyvalue", "entity", "entity_list"}
+    {
+        "text",
+        "multiline",
+        "markdown",
+        "html",
+        "number",
+        "list",
+        "keyvalue",
+        "records",
+        "entity",
+        "entity_list",
+    }
 )
 STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
+RECORDS_FIELD_MAX_ROWS = 500
 # Semantic icon tokens the web client maps to concrete icons.
 VALID_TOOL_ICONS = frozenset(
     {
@@ -117,6 +131,17 @@ VALID_TOOL_ICONS = frozenset(
 
 
 @dataclass(frozen=True)
+class ToolFieldColumn:
+    """One declared scalar column in a records argument field."""
+
+    key: str
+    label: str
+    options: tuple[str, ...] = ()
+    placeholder: str = ""
+    required: bool = False
+
+
+@dataclass(frozen=True)
 class ToolFieldPresentation:
     """One argument or result key rendered as a labelled field in the web client."""
 
@@ -129,6 +154,8 @@ class ToolFieldPresentation:
     secondary: bool = False
     entity_kind: str | None = None
     depends_on: tuple[str, ...] = ()
+    columns: tuple[ToolFieldColumn, ...] = ()
+    min_rows: int = 0
 
 
 @dataclass(frozen=True)
@@ -181,6 +208,8 @@ class RuntimeToolDefinition:
     """Declared output contract, enforced by the tool dispatch layer."""
     max_result_chars: int | None = None
     """Optional free-text result bound overriding the runtime default."""
+    max_public_result_chars: int | None = None
+    """Maximum serialized characters allowed in explicit transcript-only output."""
     configurable: bool = True
     auto_mount: bool = False
     always_allowed_when_mounted: bool = False
@@ -271,6 +300,8 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool egress must be a known classification")
     if definition.max_result_chars is not None and definition.max_result_chars < 1:
         raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
+    if definition.max_public_result_chars is not None and definition.max_public_result_chars < 1:
+        raise RuntimeError("Runtime tool max_public_result_chars must be greater than zero")
     if (
         definition.effect == TOOL_EFFECT_READ
         and definition.effect_scope != TOOL_EFFECT_SCOPE_INTERNAL
@@ -352,6 +383,8 @@ def _validate_integration_binding(definition: RuntimeToolDefinition) -> None:
         )
     if binding.requires_write and definition.effect != TOOL_EFFECT_WRITE:
         raise RuntimeError("Write-required integration bindings require a write tool")
+    if definition.egress == TOOL_EGRESS_EXTERNAL_WRITE and not binding.requires_write:
+        raise RuntimeError("External-write integration tools require a write-required binding")
     parameter_names = set(inspect.signature(definition.function).parameters)
     if parameter_names.intersection(_INTEGRATION_PARAMETER_DENYLIST):
         raise RuntimeError(
@@ -430,6 +463,45 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             raise RuntimeError("Runtime tool presentation field options must not be blank")
         if len(normalized_options) != len(set(normalized_options)):
             raise RuntimeError("Runtime tool presentation field options must be unique")
+        if field.columns and field.format != "records":
+            raise RuntimeError("Runtime tool presentation field columns require the records format")
+        if field.format == "records" and not field.columns:
+            raise RuntimeError("Records runtime tool presentation fields require columns")
+        if type(field.min_rows) is not int or field.min_rows < 0:
+            raise RuntimeError(
+                "Runtime tool presentation field min_rows must be a non-negative integer"
+            )
+        if field.format != "records" and field.min_rows != 0:
+            raise RuntimeError(
+                "Runtime tool presentation field min_rows requires the records format"
+            )
+        if field.min_rows > RECORDS_FIELD_MAX_ROWS:
+            raise RuntimeError(
+                f"Runtime tool presentation field min_rows cannot exceed {RECORDS_FIELD_MAX_ROWS}"
+            )
+        column_keys = [column.key for column in field.columns]
+        if len(column_keys) != len(set(column_keys)):
+            raise RuntimeError("Runtime tool presentation record column keys must be unique")
+        for column in field.columns:
+            if type(column.required) is not bool:
+                raise RuntimeError(
+                    "Runtime tool presentation record column required must be a boolean"
+                )
+            if not _TOOL_NAME_PATTERN.fullmatch(column.key):
+                raise RuntimeError(
+                    "Runtime tool presentation record column keys must be lowercase snake_case"
+                )
+            if not column.label.strip():
+                raise RuntimeError(
+                    "Runtime tool presentation record column labels must not be blank"
+                )
+            normalized_column_options = [option.strip() for option in column.options]
+            if any(not option for option in normalized_column_options):
+                raise RuntimeError(
+                    "Runtime tool presentation record column options must not be blank"
+                )
+            if len(normalized_column_options) != len(set(normalized_column_options)):
+                raise RuntimeError("Runtime tool presentation record column options must be unique")
         is_entity = field.format in {"entity", "entity_list"}
         if is_entity and field.entity_kind is None:
             raise RuntimeError("Entity runtime tool presentation fields require an entity kind")
@@ -446,6 +518,8 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
         if field.key in field.depends_on:
             raise RuntimeError("Runtime tool presentation fields cannot depend on themselves")
     for field in presentation.result_fields:
+        if field.format == "records":
+            raise RuntimeError("Runtime tool result presentation fields cannot use records")
         if field.editable:
             raise RuntimeError("Runtime tool result presentation fields cannot be editable")
         if field.secondary:

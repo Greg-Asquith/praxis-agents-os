@@ -1,7 +1,7 @@
 // apps/web/src/features/home/components/schedule-attention.tsx
 
 import { Link } from "@tanstack/react-router"
-import { CalendarClockIcon, MessageSquareTextIcon } from "lucide-react"
+import { MessageSquareTextIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
@@ -32,7 +32,6 @@ export function ScheduleAttention() {
         </Button>
       }
       description="Automated work that is failing or retrying."
-      icon={<CalendarClockIcon aria-hidden="true" className="size-4" />}
       title="Schedules Needing Attention"
     >
       <div className="flex flex-col gap-1">

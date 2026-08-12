@@ -3,12 +3,25 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
+import type { EditedRecords } from "@/components/tool-ui/edited-values"
+import {
+  addRecordRow,
+  removeRecordRow,
+  updateRecordCell,
+} from "@/components/tool-ui/records-field-values"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
-import type { ToolActivity } from "@/integrations/contract"
+import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
+import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
+import {
+  googleAdsAdGroupNegativeKeywordsPresenter,
+  googleAdsCampaignNegativeKeywordsPresenter,
+  googleAdsListNegativeKeywordsPresenter,
+} from "@/integrations/google_ads/presenters/negative-keywords"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
@@ -321,6 +334,1034 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Updated")
   })
 
+  it("reviews the edited negative-list campaign selection in the approval card", () => {
+    const controls = approvalControls()
+    controls.decision.edits = {
+      action: "UNLINK",
+      campaign_ids: [campaignReference("20", "Brand Awareness")],
+      negative_list: sharedSetReference("50", "Edited exclusions"),
+    }
+    const declaredFields = [
+      field("negative_list", "Negative Keyword List", "entity", true),
+      field("campaign_ids", "Campaigns", "entity_list", true),
+      {
+        ...field("action", "Action", "text", true),
+        options: ["LINK", "UNLINK"],
+      },
+    ]
+    const rendered = googleAdsCampaignLinksPresenter.render(
+      props(
+        {
+          id: "campaign-links-approval",
+          kind: "approval",
+          name: "google_ads_link_negative_keyword_list",
+          status: "awaiting_approval",
+          args: {
+            action: "LINK",
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+            ],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+        },
+        controls,
+        toolUi(declaredFields)
+      )
+    )
+
+    expect(isValidElement(rendered)).toBe(true)
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
+      expect(rendered.type).toBe(ToolApprovalDecisionCard)
+      expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
+    }
+    const html = render(rendered)
+    expect(html).toContain("Remove negative keyword list")
+    expect(html).toContain("Edited exclusions")
+    expect(html).toContain("1 campaign selected")
+    expect(html).toContain("Approve &amp; Apply")
+  })
+
+  it("renders self-contained named campaign-link evidence", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-links-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+              campaignReference("30", "Shopping"),
+            ],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                action: "LINK",
+                negative_list: {
+                  external_id: "50",
+                  name: "Persisted Brand Protection",
+                  member_count: 17,
+                },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Persisted Summer Sale",
+                    outcome: "linked",
+                    external_ref: "customers/1234567890/campaignSharedSets/10~50",
+                  },
+                  {
+                    campaign_id: "20",
+                    campaign_name: "Persisted Brand Awareness",
+                    outcome: "already_linked",
+                    external_ref: null,
+                  },
+                  {
+                    campaign_id: "30",
+                    campaign_name: "Persisted Shopping",
+                    outcome: "failed",
+                    external_ref: null,
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                skipped_existing: ["20"],
+                campaign_errors: [
+                  {
+                    campaign_id: "30",
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads campaign list results"')
+    expect(html).toContain("Persisted Brand Protection")
+    expect(html).toContain("List ID 50")
+    expect(html).toContain("17 keywords")
+    expect(html).toContain("Persisted Summer Sale")
+    expect(html).toContain("Persisted Brand Awareness")
+    expect(html).toContain("Persisted Shopping")
+    expect(html).toContain("Campaign ID")
+    expect(html).toContain("Linked")
+    expect(html).toContain("Already linked")
+    expect(html).toContain("Campaign is removed.")
+    expect(html).toContain("30")
+    expect(html).toContain('aria-label="Copy Report Table"')
+    expect(html).toContain('aria-label="Download Report CSV"')
+  })
+
+  it("keeps complete campaign-link rows behind client pagination and export controls", () => {
+    const campaigns = Array.from({ length: 26 }, (_, index) => ({
+      campaign_id: String(index + 1),
+      campaign_name: `Campaign ${String(index + 1)}`,
+      outcome: "linked",
+      external_ref: `customers/1234567890/campaignSharedSets/${String(index + 1)}~50`,
+    }))
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-links-paginated-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [campaignReference("1", "Campaign 1")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                action: "LINK",
+                negative_list: {
+                  external_id: "50",
+                  name: "Brand Protection",
+                  member_count: 12,
+                },
+                campaigns,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("26 rows")
+    expect(html).toContain("Showing 1-25 of 26")
+    expect(html).toContain(">Next<")
+    expect(html).toContain('aria-label="Copy Report Table"')
+    expect(html).toContain('aria-label="Download Report CSV"')
+  })
+
+  it("renders enriched unlinked, not-linked, and failed campaign outcomes", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-unlinks-result",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "UNLINK",
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                action: "UNLINK",
+                negative_list: {
+                  external_id: "50",
+                  name: "Brand Protection",
+                  member_count: null,
+                },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Summer Sale",
+                    outcome: "unlinked",
+                    external_ref: "customers/1234567890/campaignSharedSets/10~50",
+                  },
+                  {
+                    campaign_id: "20",
+                    campaign_name: "Brand Awareness",
+                    outcome: "not_linked",
+                    external_ref: null,
+                  },
+                  {
+                    campaign_id: "30",
+                    campaign_name: "Shopping",
+                    outcome: "failed",
+                    external_ref: null,
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                not_found: ["20"],
+                campaign_errors: [
+                  {
+                    campaign_id: "30",
+                    message: "Campaign is removed.",
+                    error_code: "CAMPAIGN_REMOVED",
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Unlinked")
+    expect(html).toContain("Not linked")
+    expect(html).toContain("Failed")
+    expect(html).toContain("Member count unavailable")
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Brand Awareness")
+    expect(html).toContain("Shopping")
+  })
+
+  it("renders created, existing, and failed negative keyword lists per account", () => {
+    const html = render(
+      googleAdsNegativeKeywordListsPresenter.render(
+        props({
+          id: "negative-lists-1",
+          kind: "result",
+          name: "google_ads_create_negative_keyword_list",
+          status: "completed",
+          args: {
+            names: ["New exclusions", "Existing exclusions", "Rejected exclusions"],
+          },
+          result: {
+            results: [
+              entry({
+                created_names: ["New exclusions"],
+                resource_names: ["customers/1234567890/sharedSets/10"],
+                skipped_existing: ["Existing exclusions"],
+                list_errors: [
+                  {
+                    name: "Rejected exclusions",
+                    message: "This list name is not allowed.",
+                    error_code: "INVALID_NAME",
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads negative keyword list results"')
+    expect(html).toContain("New exclusions")
+    expect(html).toContain("Existing exclusions")
+    expect(html).toContain("Rejected exclusions")
+    expect(html).toContain("Already existed")
+    expect(html).toContain("This list name is not allowed.")
+    expect(html).toContain("Created")
+    expect(html).toContain("Failed")
+  })
+
+  it("renders explicit created names instead of inferring them from tool arguments", () => {
+    const html = render(
+      googleAdsNegativeKeywordListsPresenter.render(
+        props({
+          id: "negative-lists-unicode",
+          kind: "result",
+          name: "google_ads_create_negative_keyword_list",
+          status: "completed",
+          args: { names: ["Straße", "STRASSE", "Other"] },
+          result: {
+            results: [
+              entry({
+                created_names: ["Straße", "Other"],
+                resource_names: [
+                  "customers/1234567890/sharedSets/10",
+                  "customers/1234567890/sharedSets/11",
+                ],
+                skipped_existing: [],
+                list_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Straße")
+    expect(html).toContain("Other")
+    expect(html).not.toContain("STRASSE")
+  })
+
+  it("renders negative keyword list approval through the shared write shell", () => {
+    const rendered = googleAdsNegativeKeywordListsPresenter.render(
+      props(
+        {
+          id: "negative-lists-approval",
+          kind: "approval",
+          name: "google_ads_create_negative_keyword_list",
+          status: "awaiting_approval",
+          args: { names: ["New exclusions"] },
+        },
+        approvalControls(),
+        toolUi([field("names", "List Names", "list", true)])
+      )
+    )
+
+    expect(googleAdsNegativeKeywordListsPresenter.handlesApprovals).toBe(true)
+    expect(render(rendered)).toContain("Approve &amp; Create")
+  })
+
+  it("renders an editable negative keyword approval with a match-type summary", () => {
+    const controls = approvalControls()
+    const declaredFields: ToolUiField[] = [
+      {
+        ...field("negative_list", "Negative Keyword List", "entity", true),
+        entity_kind: "google_ads_shared_set",
+      },
+      {
+        ...field("keywords", "Keywords", "records", true),
+        min_rows: 1,
+        columns: [
+          { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+          {
+            key: "match_type",
+            label: "Match Type",
+            options: ["EXACT", "PHRASE", "BROAD"],
+            placeholder: "",
+            required: true,
+          },
+        ],
+      },
+    ]
+    const rendered = googleAdsListNegativeKeywordsPresenter.render(
+      props(
+        {
+          id: "negative-keywords-approval",
+          kind: "approval",
+          name: "google_ads_add_negative_keywords",
+          status: "awaiting_approval",
+          args: {
+            negative_list: sharedSetReference("50", "Brand Protection"),
+            keywords: [
+              { text: "free", match_type: "EXACT" },
+              { text: "jobs", match_type: "PHRASE" },
+              { text: "cheap", match_type: "BROAD" },
+            ],
+          },
+        },
+        controls,
+        toolUi(declaredFields)
+      )
+    )
+
+    expect(isValidElement(rendered)).toBe(true)
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
+      expect(rendered.type).toBe(ToolApprovalDecisionCard)
+      expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
+    }
+    const html = render(rendered)
+    expect(html).toContain("3 keywords")
+    expect(html).toContain("Brand Protection")
+    expect(html).toContain("Exact 1 · Phrase 1 · Broad 1")
+    expect(html).toContain("Approve &amp; Add")
+  })
+
+  it("renders added, existing, and failed keyword rows per account", () => {
+    const html = render(
+      googleAdsListNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-result",
+          kind: "result",
+          name: "google_ads_add_negative_keywords",
+          status: "completed",
+          args: {
+            negative_list: sharedSetReference("50", "Brand Protection"),
+            keywords: [
+              { text: "free", match_type: "EXACT" },
+              { text: "jobs", match_type: "PHRASE" },
+              { text: "cheap", match_type: "BROAD" },
+            ],
+          },
+          result: {
+            results: [
+              entry({
+                counts: { added: 1, skipped_existing: 1, failed: 1 },
+                samples: {
+                  added: [
+                    {
+                      text: "free",
+                      match_type: "EXACT",
+                      resource_name: "customers/1234567890/sharedCriteria/50~1",
+                    },
+                  ],
+                  skipped_existing: [{ text: "jobs", match_type: "PHRASE" }],
+                  failed: [
+                    {
+                      scope: "keyword",
+                      text: "cheap",
+                      match_type: "BROAD",
+                      message: "Keyword is not permitted.",
+                      error_code: "INVALID_KEYWORD_TEXT",
+                    },
+                  ],
+                },
+                samples_truncated: false,
+                audit_note: "Full applied-change details are retained in the audit trail.",
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads negative keyword results"')
+    expect(html).toContain("Added")
+    expect(html).toContain("Already existed")
+    expect(html).toContain("Failed")
+    expect(html).toContain("free")
+    expect(html).toContain("jobs")
+    expect(html).toContain("cheap")
+    expect(html).toContain("Keyword is not permitted.")
+  })
+
+  it("keeps valid keyword outcomes when a provider failure has no operation index", () => {
+    const html = render(
+      googleAdsListNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-unattributed-error",
+          kind: "result",
+          name: "google_ads_add_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { added: 401, skipped_existing: 73, failed: 26 },
+                samples: {
+                  added: [
+                    {
+                      text: "free",
+                      match_type: "EXACT",
+                      resource_name: "customers/1234567890/sharedCriteria/50~1",
+                    },
+                  ],
+                  skipped_existing: [{ text: "jobs", match_type: "PHRASE" }],
+                  failed: [
+                    {
+                      scope: "account",
+                      message: "The account rejected part of the request.",
+                      error_code: "INVALID_INPUT",
+                    },
+                  ],
+                },
+                samples_truncated: true,
+                audit_note: "Full applied-change details are retained in the audit trail.",
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("free")
+    expect(html).toContain("jobs")
+    expect(html).toContain("Added")
+    expect(html).toContain("Already existed")
+    expect(html).toContain("Failed")
+    expect(html).toContain("Account-level error")
+    expect(html).toContain("The account rejected part of the request.")
+    expect(html).toContain("401")
+    expect(html).toContain("73")
+    expect(html).toContain("26")
+    expect(html).toContain("Showing representative rows")
+  })
+
+  it("updates the approval summary from edited keyword rows", () => {
+    const controls = approvalControls()
+    controls.decision.edits = {
+      keywords: [
+        { text: "one", match_type: "EXACT" },
+        { text: "two", match_type: "EXACT" },
+      ],
+    }
+    const html = render(
+      googleAdsListNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "negative-keywords-edited",
+            kind: "approval",
+            name: "google_ads_add_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              negative_list: sharedSetReference("50", "Brand Protection"),
+              keywords: [{ text: "old", match_type: "BROAD" }],
+            },
+          },
+          controls,
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("2 keywords")
+    expect(html).toContain("Exact 2 · Phrase 0 · Broad 0")
+  })
+
+  it("renders editable ANY removals and every settled removal outcome", () => {
+    const controls = approvalControls()
+    const approval = render(
+      googleAdsListNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "negative-keywords-remove-approval",
+            kind: "approval",
+            name: "google_ads_remove_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              negative_list: sharedSetReference("50", "Brand Protection"),
+              keywords: [
+                { text: "free", match_type: "ANY" },
+                { text: "jobs", match_type: "PHRASE" },
+              ],
+            },
+          },
+          controls,
+          toolUi([])
+        )
+      )
+    )
+    expect(approval).toContain("Approve &amp; Remove")
+    expect(approval).toContain("Any 1")
+    expect(approval).toContain("Removing them re-enables matching traffic")
+
+    const settled = render(
+      googleAdsListNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-remove-result",
+          kind: "result",
+          name: "google_ads_remove_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { removed: 2, not_found: 1, failed: 1 },
+                samples: {
+                  removed: [
+                    {
+                      text: "free",
+                      match_type: "EXACT",
+                      resource_name: "customers/123/sharedCriteria/50~1",
+                    },
+                    {
+                      text: "free",
+                      match_type: "BROAD",
+                      resource_name: "customers/123/sharedCriteria/50~2",
+                    },
+                  ],
+                  not_found: [{ text: "jobs", match_type: "ANY" }],
+                  failed: [
+                    {
+                      scope: "keyword",
+                      text: "cheap",
+                      match_type: "PHRASE",
+                      message: "Removal failed.",
+                      error_code: "INVALID_INPUT",
+                    },
+                  ],
+                },
+                samples_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+    expect(settled).toContain("Removed")
+    expect(settled).toContain("Success")
+    expect(settled).toContain("bg-success/10")
+    expect(settled).toContain("Not found")
+    expect(settled).toContain("free")
+    expect(settled).toContain("jobs")
+    expect(settled).toContain("cheap")
+    expect(settled).toContain("Removal failed.")
+    expect(settled).toContain("Invalid Input")
+    expect(settled).toContain("Error Code")
+  })
+
+  it("derives the custom approval summary across incomplete keyword row states", () => {
+    const controls = approvalControls()
+    const activity: ToolActivity = {
+      id: "negative-keywords-incomplete-edits",
+      kind: "approval",
+      name: "google_ads_add_negative_keywords",
+      status: "awaiting_approval",
+      args: {
+        negative_list: sharedSetReference("50", "Brand Protection"),
+        keywords: [{ text: "jobs", match_type: "EXACT" }],
+      },
+    }
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      {
+        key: "match_type",
+        label: "Match Type",
+        options: ["EXACT", "PHRASE", "BROAD"],
+        placeholder: "",
+        required: true,
+      },
+    ]
+    let rows: EditedRecords = [{ text: "jobs", match_type: "EXACT" }]
+
+    assertCustomApproval(activity, controls, rows, "1 keyword", "Exact 1")
+
+    rows = addRecordRow(rows, columns)
+    assertCustomApproval(activity, controls, rows, "2 keywords", "Exact 1")
+
+    rows = updateRecordCell(rows, 0, "text", "")
+    assertCustomApproval(activity, controls, rows, "2 keywords", "Exact 1")
+
+    rows = updateRecordCell(rows, 0, "text", "new jobs")
+    rows = updateRecordCell(rows, 1, "match_type", "PHRASE")
+    assertCustomApproval(activity, controls, rows, "2 keywords", "Phrase 1")
+
+    rows = removeRecordRow(removeRecordRow(rows, 1), 0)
+    assertCustomApproval(activity, controls, rows, "0 keywords", "Exact 0")
+
+    rows = addRecordRow(rows, columns)
+    rows = updateRecordCell(rows, 0, "text", "careers")
+    rows = updateRecordCell(rows, 0, "match_type", "BROAD")
+    assertCustomApproval(activity, controls, rows, "1 keyword", "Broad 1")
+  })
+
+  it("renders the campaign negative keyword approval fan-out summary", () => {
+    const controls = approvalControls()
+    const html = render(
+      googleAdsCampaignNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "campaign-negative-keywords-approval",
+            kind: "approval",
+            name: "google_ads_add_campaign_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              campaign_ids: [
+                campaignReference("10", "Brand"),
+                campaignReference("20", "Prospecting"),
+              ],
+              keywords: [
+                { text: "free", match_type: "EXACT" },
+                { text: "jobs", match_type: "PHRASE" },
+                { text: "cheap", match_type: "BROAD" },
+              ],
+            },
+          },
+          controls,
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("3 keywords")
+    expect(html).toContain("× 2 campaigns")
+    expect(html).toContain("6 proposed changes")
+    expect(html).toContain("blocking matching traffic")
+    expect(html).toContain("Approve &amp; Add")
+  })
+
+  it("renders per-campaign negative keyword removal rollups and provider errors", () => {
+    const html = render(
+      googleAdsCampaignNegativeKeywordsPresenter.render(
+        props({
+          id: "campaign-negative-keywords-result",
+          kind: "result",
+          name: "google_ads_remove_campaign_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { removed: 3, not_found: 1, failed: 1 },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Brand",
+                    counts: { removed: 2, not_found: 0, failed: 0 },
+                    campaign_errors: [],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "free",
+                        match_type: "EXACT",
+                        outcome: "removed",
+                        external_ref: "customers/111/campaignCriteria/10~1",
+                      },
+                      {
+                        text: "jobs",
+                        match_type: "PHRASE",
+                        outcome: "removed",
+                        external_ref: "customers/111/campaignCriteria/10~2",
+                      },
+                    ],
+                  },
+                  {
+                    campaign_id: "20",
+                    campaign_name: "Prospecting",
+                    counts: { removed: 1, not_found: 1, failed: 1 },
+                    campaign_errors: [
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        message: "This campaign type rejected the criterion.",
+                        error_code: "CANNOT_ADD_CRITERION",
+                      },
+                    ],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "careers",
+                        match_type: "EXACT",
+                        outcome: "removed",
+                        external_ref: "customers/111/campaignCriteria/20~3",
+                      },
+                      { text: "unavailable", match_type: "PHRASE", outcome: "not_found" },
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        outcome: "failed",
+                        error_code: "CANNOT_ADD_CRITERION",
+                      },
+                    ],
+                  },
+                ],
+                campaigns_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads campaign negative keyword results"')
+    expect(html).toContain("Brand")
+    expect(html).toContain("Prospecting")
+    expect(html).toContain("Removed")
+    expect(html).toContain("Not found")
+    expect(html).toContain("careers")
+    expect(html).toContain("customers/111/campaignCriteria/20~3")
+    expect(html).toContain("This campaign type rejected the criterion.")
+  })
+
+  it("renders ad group approval scope labels across campaigns", () => {
+    const html = render(
+      googleAdsAdGroupNegativeKeywordsPresenter.render(
+        props(
+          {
+            id: "ad-group-negative-keywords-approval",
+            kind: "approval",
+            name: "google_ads_add_ad_group_negative_keywords",
+            status: "awaiting_approval",
+            args: {
+              ad_group_ids: [
+                adGroupReference("10", "Exact", "Brand"),
+                adGroupReference("20", "Broad", "Prospecting"),
+              ],
+              keywords: [
+                { text: "free", match_type: "EXACT" },
+                { text: "jobs", match_type: "PHRASE" },
+              ],
+            },
+          },
+          approvalControls(),
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("2 keywords")
+    expect(html).toContain("× 2 ad groups")
+    expect(html).toContain("4 proposed changes")
+    expect(html).toContain("Exact — Brand")
+    expect(html).toContain("Broad — Prospecting")
+  })
+
+  it.each([
+    {
+      addName: "google_ads_add_campaign_negative_keywords",
+      adding: "Adding campaign negative keywords…",
+      denied: "This campaign negative keyword change was declined. Nothing was removed.",
+      presenter: googleAdsCampaignNegativeKeywordsPresenter,
+      removeName: "google_ads_remove_campaign_negative_keywords",
+      waiting: "Waiting for campaign negative keyword approval…",
+    },
+    {
+      addName: "google_ads_add_ad_group_negative_keywords",
+      adding: "Adding ad group negative keywords…",
+      denied: "This ad group negative keyword change was declined. Nothing was removed.",
+      presenter: googleAdsAdGroupNegativeKeywordsPresenter,
+      removeName: "google_ads_remove_ad_group_negative_keywords",
+      waiting: "Waiting for ad group negative keyword approval…",
+    },
+  ])("preserves $presenter.key running, waiting, and denied copy", (testCase) => {
+    const runningHtml = render(
+      testCase.presenter.render(
+        props({
+          id: `${testCase.presenter.key}-running`,
+          kind: "call",
+          name: testCase.addName,
+          status: "running",
+        })
+      )
+    )
+    const waitingHtml = render(
+      testCase.presenter.render(
+        props({
+          id: `${testCase.presenter.key}-waiting`,
+          kind: "call",
+          name: testCase.addName,
+          status: "awaiting_approval",
+        })
+      )
+    )
+    const deniedHtml = render(
+      testCase.presenter.render(
+        props({
+          id: `${testCase.presenter.key}-denied`,
+          kind: "result",
+          name: testCase.removeName,
+          status: "denied",
+        })
+      )
+    )
+
+    expect(runningHtml).toContain(testCase.adding)
+    expect(waitingHtml).toContain(testCase.waiting)
+    expect(deniedHtml).toContain(testCase.denied)
+  })
+
+  it("renders per-ad-group negative keyword removal rollups", () => {
+    const html = render(
+      googleAdsAdGroupNegativeKeywordsPresenter.render(
+        props({
+          id: "ad-group-negative-keywords-result",
+          kind: "result",
+          name: "google_ads_remove_ad_group_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { removed: 1, not_found: 1, failed: 1 },
+                ad_groups: [
+                  {
+                    ad_group_id: "10",
+                    ad_group_name: "Exact",
+                    campaign_name: "Brand",
+                    counts: { removed: 1, not_found: 1, failed: 1 },
+                    ad_group_errors: [
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        message: "This criterion could not be removed.",
+                        error_code: "CANNOT_REMOVE_CRITERION",
+                      },
+                    ],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "free",
+                        match_type: "EXACT",
+                        outcome: "removed",
+                        external_ref: "customers/111/adGroupCriteria/10~1",
+                      },
+                      { text: "jobs", match_type: "PHRASE", outcome: "not_found" },
+                      {
+                        text: "cheap",
+                        match_type: "BROAD",
+                        outcome: "failed",
+                        error_code: "CANNOT_REMOVE_CRITERION",
+                      },
+                    ],
+                  },
+                ],
+                ad_groups_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads ad group negative keyword results"')
+    expect(html).toContain("Exact")
+    expect(html).toContain("Brand")
+    expect(html).toContain("Not found")
+    expect(html).toContain("jobs")
+    expect(html).toContain("This criterion could not be removed.")
+  })
+
+  it("renders exact completed campaign and ad-group keyword additions", () => {
+    const campaignHtml = render(
+      googleAdsCampaignNegativeKeywordsPresenter.render(
+        props({
+          id: "campaign-negative-keywords-add-result",
+          kind: "result",
+          name: "google_ads_add_campaign_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { added: 1, skipped_existing: 0, failed: 0 },
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Brand",
+                    counts: { added: 1, skipped_existing: 0, failed: 0 },
+                    campaign_errors: [],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "free trial",
+                        match_type: "PHRASE",
+                        outcome: "added",
+                        external_ref: "customers/111/campaignCriteria/10~1",
+                      },
+                    ],
+                  },
+                ],
+                campaigns_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+    const adGroupHtml = render(
+      googleAdsAdGroupNegativeKeywordsPresenter.render(
+        props({
+          id: "ad-group-negative-keywords-add-result",
+          kind: "result",
+          name: "google_ads_add_ad_group_negative_keywords",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                counts: { added: 1, skipped_existing: 0, failed: 0 },
+                ad_groups: [
+                  {
+                    ad_group_id: "20",
+                    ad_group_name: "Exact",
+                    campaign_name: "Brand",
+                    counts: { added: 1, skipped_existing: 0, failed: 0 },
+                    ad_group_errors: [],
+                    errors_truncated: false,
+                    keyword_outcomes: [
+                      {
+                        text: "jobs near me",
+                        match_type: "EXACT",
+                        outcome: "added",
+                        external_ref: "customers/111/adGroupCriteria/20~2",
+                      },
+                    ],
+                  },
+                ],
+                ad_groups_truncated: false,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(campaignHtml).toContain("free trial")
+    expect(campaignHtml).toContain("Phrase")
+    expect(campaignHtml).toContain("Added")
+    expect(campaignHtml).toContain("External Reference")
+    expect(campaignHtml).not.toContain(">Details</span></th>")
+    expect(campaignHtml).not.toContain("Error Code")
+    expect(adGroupHtml).toContain("jobs near me")
+    expect(adGroupHtml).toContain("Exact")
+    expect(adGroupHtml).toContain("Added")
+    expect(adGroupHtml).not.toContain(">Details</span></th>")
+    expect(adGroupHtml).not.toContain("Error Code")
+  })
+
+  it.each([
+    ["running", "Adding Google Ads negative keywords…"],
+    ["awaiting_approval", "Waiting for negative keyword approval…"],
+    ["denied", "Nothing was added."],
+    ["failed", "No negative keyword change was confirmed."],
+    ["unknown", "No negative keyword change was confirmed."],
+  ] as const)("renders an honest negative-keyword %s state", (status, expected) => {
+    const html = render(
+      googleAdsListNegativeKeywordsPresenter.render(
+        props({
+          id: "negative-keywords-state",
+          kind: "call",
+          name: "google_ads_add_negative_keywords",
+          status,
+          args: {
+            negative_list: sharedSetReference("50", "Brand Protection"),
+            keywords: [{ text: "free", match_type: "EXACT" }],
+          },
+        })
+      )
+    )
+    expect(html).toContain(expected)
+  })
+
   it.each([
     ["running", "Updating Google Ads campaigns…"],
     ["awaiting_approval", "Waiting for campaign approval…"],
@@ -342,6 +1383,194 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain(expected)
   })
 
+  it("isolates a malformed account outcome without hiding valid siblings", () => {
+    const html = render(
+      googleAdsCampaignStatusPresenter.render(
+        props({
+          id: "campaign-mixed-contract",
+          kind: "result",
+          name: "google_ads_update_campaign_status",
+          status: "completed",
+          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
+          result: {
+            results: [
+              entry({
+                resource_names: ["customers/1234567890/campaigns/10"],
+                campaign_errors: [],
+              }),
+              {
+                ...entry({ resource_names: "malformed", campaign_errors: [] }),
+                connection_id: "connection-2",
+                display_name: "Second account",
+                external_id: "2222222222",
+              },
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Updated")
+    expect(html).toContain("Second account")
+    expect(html).toContain("The system couldn&#x27;t verify this account&#x27;s campaign outcomes.")
+    expect(html).toContain("Check the Google Ads platform")
+  })
+
+  it("distinguishes an unverified mutation from a known failure", () => {
+    const html = render(
+      googleAdsCampaignStatusPresenter.render(
+        props({
+          id: "campaign-unverified",
+          kind: "result",
+          name: "google_ads_update_campaign_status",
+          status: "completed",
+          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
+          result: {
+            results: [
+              {
+                ...entry(null),
+                status: "error",
+                error_code: "unverified_mutation",
+                error_message: "request outcome unknown",
+              },
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("The system couldn&#x27;t verify whether Google Ads applied")
+    expect(html).toContain("Check the Google Ads platform")
+    expect(html).not.toContain("request outcome unknown")
+  })
+
+  it("routes every write through the shared approval and lifecycle shell", () => {
+    const cases: { args: unknown; name: string; presenter: ToolRowPresenter }[] = [
+      {
+        args: { names: ["Brand exclusions"] },
+        name: "google_ads_create_negative_keyword_list",
+        presenter: googleAdsNegativeKeywordListsPresenter,
+      },
+      {
+        args: {
+          negative_list: sharedSetReference("50", "Brand Protection"),
+          keywords: [{ text: "free", match_type: "EXACT" }],
+        },
+        name: "google_ads_add_negative_keywords",
+        presenter: googleAdsListNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          negative_list: sharedSetReference("50", "Brand Protection"),
+          keywords: [{ text: "free", match_type: "ANY" }],
+        },
+        name: "google_ads_remove_negative_keywords",
+        presenter: googleAdsListNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "EXACT" }],
+        },
+        name: "google_ads_add_campaign_negative_keywords",
+        presenter: googleAdsCampaignNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "ANY" }],
+        },
+        name: "google_ads_remove_campaign_negative_keywords",
+        presenter: googleAdsCampaignNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          ad_group_ids: [adGroupReference("20", "Exact", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "EXACT" }],
+        },
+        name: "google_ads_add_ad_group_negative_keywords",
+        presenter: googleAdsAdGroupNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          ad_group_ids: [adGroupReference("20", "Exact", "Summer Sale")],
+          keywords: [{ text: "free", match_type: "ANY" }],
+        },
+        name: "google_ads_remove_ad_group_negative_keywords",
+        presenter: googleAdsAdGroupNegativeKeywordsPresenter,
+      },
+      {
+        args: {
+          action: "LINK",
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          negative_list: sharedSetReference("50", "Brand Protection"),
+        },
+        name: "google_ads_link_negative_keyword_list",
+        presenter: googleAdsCampaignLinksPresenter,
+      },
+      {
+        args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
+        name: "google_ads_update_campaign_status",
+        presenter: googleAdsCampaignStatusPresenter,
+      },
+    ]
+
+    for (const testCase of cases) {
+      const activity = {
+        args: testCase.args,
+        id: `${testCase.name}-lifecycle`,
+        kind: "result" as const,
+        name: testCase.name,
+      }
+      expect(testCase.presenter.handlesApprovals).toBe(true)
+      expect(testCase.presenter.matches({ ...activity, status: "awaiting_approval" })).toBe(true)
+      expect(
+        render(testCase.presenter.render(props({ ...activity, status: "running" })))
+      ).toContain("…")
+      expect(
+        render(testCase.presenter.render(props({ ...activity, status: "awaiting_approval" })))
+      ).toContain("Waiting")
+      expect(render(testCase.presenter.render(props({ ...activity, status: "denied" })))).toContain(
+        "declined"
+      )
+      expect(render(testCase.presenter.render(props({ ...activity, status: "failed" })))).toContain(
+        "confirmed"
+      )
+    }
+  })
+
+  it("rejects the superseded campaign-link result shape without reconstructing saved arguments", () => {
+    const html = render(
+      googleAdsCampaignLinksPresenter.render(
+        props({
+          id: "campaign-link-old-shape",
+          kind: "result",
+          name: "google_ads_link_negative_keyword_list",
+          status: "completed",
+          args: {
+            action: "LINK",
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            negative_list: sharedSetReference("50", "Brand Protection"),
+          },
+          result: {
+            results: [
+              entry({
+                resource_names: ["customers/1234567890/campaignSharedSets/10~50"],
+                skipped_existing: [],
+                campaign_errors: [],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain(
+      "The system couldn&#x27;t verify this account&#x27;s campaign list outcomes."
+    )
+    expect(html).not.toContain("List ID 50")
+  })
+
   it("falls through for malformed read payloads and registers all presenters", () => {
     expect(
       googleAdsReportPresenter.render(
@@ -357,9 +1586,17 @@ describe("Google Ads tool presenters", () => {
     expect(googleAdsModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
       "google-ads-run-report",
       "google-ads-list-accounts",
+      "google-ads-create-negative-keyword-list",
+      "google-ads-list-negative-keywords",
+      "google-ads-campaign-negative-keywords",
+      "google-ads-ad-group-negative-keywords",
+      "google-ads-negative-list-campaign-links",
       "google-ads-update-campaign-status",
     ])
+    expect(googleAdsCampaignLinksPresenter.handlesApprovals).toBe(true)
+    expect(googleAdsCampaignNegativeKeywordsPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)
+    expect(googleAdsListNegativeKeywordsPresenter.handlesApprovals).toBe(true)
   })
 
   it("loads and renders the report presenter through the production registry seam", async () => {
@@ -418,7 +1655,16 @@ function field(
   format: ToolUiField["format"],
   editable = false
 ): ToolUiField {
-  return { key, label, format, editable, secondary: false, options: [], placeholder: "" }
+  return {
+    key,
+    label,
+    format,
+    editable,
+    min_rows: 0,
+    secondary: false,
+    options: [],
+    placeholder: "",
+  }
 }
 
 function toolUi(argFields: ToolUiField[]): ToolUi {
@@ -445,6 +1691,27 @@ function campaignReference(externalId: string, label: string) {
   }
 }
 
+function adGroupReference(externalId: string, label: string, campaign: string) {
+  return {
+    version: 1,
+    entity_kind: "google_ads_ad_group",
+    integration_resource_id: "resource-1",
+    external_id: externalId,
+    label,
+    scope_label: campaign,
+  }
+}
+
+function sharedSetReference(externalId: string, label: string) {
+  return {
+    version: 1,
+    entity_kind: "google_ads_shared_set",
+    integration_resource_id: "resource-1",
+    external_id: externalId,
+    label,
+  }
+}
+
 function entry(data: unknown) {
   return {
     connection_id: "connection-1",
@@ -465,6 +1732,30 @@ function approvalControls() {
     pendingCount: 1,
     submitting: false,
   }
+}
+
+function assertCustomApproval(
+  activity: ToolActivity,
+  controls: ReturnType<typeof approvalControls>,
+  rows: Record<string, string | number>[],
+  expectedTotal: string,
+  expectedCount: string
+) {
+  controls.decision.edits = { keywords: rows }
+  const rendered = googleAdsListNegativeKeywordsPresenter.render(
+    props(activity, controls, toolUi([]))
+  )
+
+  expect(isValidElement(rendered)).toBe(true)
+  if (isValidElement<{ controls: unknown }>(rendered)) {
+    expect(rendered.type).toBe(ToolApprovalDecisionCard)
+    expect(rendered.props.controls).toBe(controls)
+  }
+  const html = render(rendered)
+  expect(html).toContain(expectedTotal)
+  expect(html).toContain(expectedCount)
+  expect(html).toContain("Approve &amp; Add")
+  expect(html).toContain("Decline")
 }
 
 function render(node: ReactNode) {

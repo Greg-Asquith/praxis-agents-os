@@ -26,7 +26,7 @@ from .utils import (
     dataset_coordinates,
     dataset_location,
     query_labels,
-    run_audited_operation,
+    run_multi_context_query_with_audit,
 )
 
 
@@ -81,7 +81,7 @@ async def bigquery_run_query(
             provider_message = str(exc).partition(" | ")[0]
             raise ModelRetry(provider_message) from exc
 
-    return await run_audited_operation(
+    return await run_multi_context_query_with_audit(
         ctx,
         entries,
         tool_name="bigquery_run_query",

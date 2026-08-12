@@ -3,9 +3,20 @@
 """Shared response and safety helpers for Google Ads operations."""
 
 import re
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
+_ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.id")
+_MAX_ENTITY_ID = (1 << 63) - 1
+_GAQL_LIKE_LITERAL_ESCAPES = {
+    "\\": "\\\\",
+    "'": "\\'",
+    "[": "[[]",
+    "]": "[]]",
+    "%": "[%]",
+    "_": "[_]",
+}
 
 
 def stream_rows(payload: Any, *, max_rows: int | None = None) -> list[dict[str, Any]]:
@@ -23,6 +34,36 @@ def stream_rows(payload: Any, *, max_rows: int | None = None) -> list[dict[str, 
                 if max_rows is not None and len(rows) >= max_rows:
                     return rows
     return rows
+
+
+def escape_gaql_like_literal(value: str, *, max_length: int = 200) -> str:
+    """Escape a bounded user value before interpolation into a GAQL LIKE literal."""
+    escaped: list[str] = []
+    escaped_length = 0
+    for character in value:
+        encoded = _GAQL_LIKE_LITERAL_ESCAPES.get(character, character)
+        if escaped_length + len(encoded) > max_length:
+            break
+        escaped.append(encoded)
+        escaped_length += len(encoded)
+    return "".join(escaped)
+
+
+def entity_id_boundary_filter(
+    field: str,
+    *,
+    minimum_id: int | None,
+    inclusive: bool,
+) -> str | None:
+    """Build a validated numeric GAQL keyset predicate for an entity ID field."""
+    if _ENTITY_ID_FIELD_PATTERN.fullmatch(field) is None:
+        raise ValueError("Google Ads entity id field is invalid")
+    if minimum_id is None:
+        return None
+    if minimum_id < 0 or minimum_id > _MAX_ENTITY_ID:
+        raise ValueError("Google Ads entity minimum id is outside the int64 range")
+    operator = ">=" if inclusive else ">"
+    return f"{field} {operator} {minimum_id}"
 
 
 def bounded_query(query: str, *, max_rows: int) -> str:
@@ -120,3 +161,76 @@ def operation_index(location: Any) -> int | None:
             except (TypeError, ValueError):
                 return None
     return None
+
+
+def grouped_partial_failure_errors[OperationValue](
+    payload: Any,
+    operation_values: Sequence[OperationValue],
+    *,
+    value_to_error_fields: Callable[[OperationValue], Mapping[str, str]],
+    unattributed_error_fields: Mapping[str, str],
+    default_message: str,
+) -> tuple[dict[int, dict[str, str]], list[dict[str, str]]]:
+    """Group Google Ads diagnostics by operation index.
+
+    Google may emit several diagnostics for one rejected operation. Keeping one
+    result per operation makes downstream counts describe failed mutations rather
+    than diagnostic rows.
+    """
+    if not isinstance(payload, dict):
+        return {}, []
+    partial = payload.get("partialFailureError")
+    if not isinstance(partial, dict):
+        return {}, []
+    indexed_diagnostics: dict[int, list[tuple[str, str]]] = {}
+    unattributed_diagnostics: list[tuple[str, str]] = []
+    for detail in partial.get("details", []):
+        if not isinstance(detail, dict):
+            continue
+        for item in detail.get("errors", []):
+            if not isinstance(item, dict):
+                continue
+            index = operation_index(item.get("location", {}))
+            diagnostic = (
+                str(item.get("message", default_message)),
+                _error_code(item.get("errorCode")),
+            )
+            if index is not None and 0 <= index < len(operation_values):
+                indexed_diagnostics.setdefault(index, []).append(diagnostic)
+            else:
+                unattributed_diagnostics.append(diagnostic)
+    if not indexed_diagnostics and not unattributed_diagnostics and partial.get("message"):
+        unattributed_diagnostics.append((str(partial["message"]), _error_code(partial.get("code"))))
+    indexed = {
+        index: {
+            **value_to_error_fields(operation_values[index]),
+            **_combined_diagnostics(diagnostics),
+        }
+        for index, diagnostics in indexed_diagnostics.items()
+    }
+    unattributed = (
+        [{**unattributed_error_fields, **_combined_diagnostics(unattributed_diagnostics)}]
+        if unattributed_diagnostics
+        else []
+    )
+    return indexed, unattributed
+
+
+def _combined_diagnostics(diagnostics: Sequence[tuple[str, str]]) -> dict[str, str]:
+    messages = list(dict.fromkeys(message for message, _code in diagnostics))
+    codes = list(dict.fromkeys(code for _message, code in diagnostics))
+    return {
+        "message": " | ".join(messages),
+        "error_code": " | ".join(codes),
+    }
+
+
+def _error_code(value: Any) -> str:
+    if isinstance(value, dict):
+        for code in value.values():
+            if isinstance(code, str) and code:
+                return code
+        return "unknown"
+    if value is None:
+        return "unknown"
+    return str(value)

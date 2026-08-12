@@ -314,6 +314,7 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
             "secondary": False,
             "entity_kind": None,
             "depends_on": [],
+            "min_rows": 0,
         },
         {
             "key": "model_provider",
@@ -325,8 +326,20 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
             "secondary": False,
             "entity_kind": None,
             "depends_on": [],
+            "min_rows": 0,
         },
     ]
+    google_ads_entry = next(
+        tool for tool in body["tools"] if tool["name"] == "google_ads_add_negative_keywords"
+    )
+    keyword_field = next(
+        field for field in google_ads_entry["ui"]["arg_fields"] if field["key"] == "keywords"
+    )
+    assert keyword_field["min_rows"] == 1
+    assert {column["key"]: column["required"] for column in keyword_field["columns"]} == {
+        "match_type": True,
+        "text": True,
+    }
     assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])
     fetch_url_entry = next(tool for tool in body["tools"] if tool["name"] == "fetch_url")
     assert fetch_url_entry["ui"]["approve_label"] == "Approve & Fetch"

@@ -6,7 +6,7 @@ from typing import Any
 
 from core.exceptions.integration import IntegrationAuthError
 from core.settings import settings
-from services.integrations.http import request_with_retries
+from services.integrations.http import IntegrationRequestPolicy, request_with_retries
 from services.integrations.oauth.resolve_provider_config import resolve_provider_oauth_config
 from services.integrations.oauth.utils import parse_oauth_json_object
 
@@ -20,6 +20,7 @@ async def exchange_authorization_code(
         oauth_config.token_url,
         operation="oauth_token_exchange",
         provider_key=provider_key,
+        policy=IntegrationRequestPolicy.MUTATION,
         data={
             "code": code,
             "client_id": oauth_config.client_id,
@@ -47,6 +48,7 @@ async def refresh_authorization_token(*, provider_key: str, refresh_token: str) 
         oauth_config.token_url,
         operation="oauth_token_refresh",
         provider_key=provider_key,
+        policy=IntegrationRequestPolicy.MUTATION,
         data={
             "refresh_token": refresh_token,
             "client_id": oauth_config.client_id,
@@ -72,6 +74,7 @@ async def revoke_authorization_token(*, provider_key: str, token: str) -> None:
         oauth_config.revoke_url,
         operation="oauth_token_revoke",
         provider_key=provider_key,
+        policy=IntegrationRequestPolicy.MUTATION,
         data={"token": token},
     )
 

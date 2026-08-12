@@ -58,7 +58,7 @@ export function ScheduleCadenceField({
               className={cn(
                 "focus-visible:ring-ring/50 flex min-h-28 flex-col items-center justify-center gap-1.5 rounded-md border px-3 py-3 text-center text-sm transition-colors focus-visible:ring-3 focus-visible:outline-none",
                 selected
-                  ? "border-foreground/30 bg-muted text-foreground"
+                  ? "border-border bg-muted text-foreground"
                   : "border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               )}
               key={option.value}

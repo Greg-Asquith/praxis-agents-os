@@ -114,7 +114,7 @@ function CompletedArtifactRow({
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-2">
-        <div className="border-border/70 bg-background/70 flex min-w-0 items-center gap-3 rounded-lg border p-2.5">
+        <div className="border-border bg-background/70 flex min-w-0 items-center gap-3 rounded-lg border p-2.5">
           <span className="bg-primary/8 text-primary flex size-9 shrink-0 items-center justify-center rounded-md">
             <ArtifactTypeIcon type={result.artifact_type} />
           </span>

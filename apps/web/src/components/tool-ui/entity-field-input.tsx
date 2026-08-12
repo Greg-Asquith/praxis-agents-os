@@ -19,7 +19,9 @@ import {
 import { Button } from "@/components/ui/button"
 import {
   entityReferenceHydrationQueryOptions,
+  entityReferenceKey,
   entityReferenceSearchQueryOptions,
+  mergeEntityChoices,
 } from "@/components/tool-ui/entity-reference-queries"
 import type { ApprovalField } from "@/components/tool-ui/approval-types"
 import type { EntityChoice, EntityReferenceValue } from "@/features/tools/types"
@@ -79,13 +81,17 @@ export function EntityFieldInput({
     enabled: open,
   })
   const choices = useMemo(
-    () => mergeChoices(hydration.data?.choices ?? [], results.data?.pages ?? []),
+    () => mergeEntityChoices(hydration.data?.choices ?? [], results.data?.pages ?? []),
     [hydration.data?.choices, results.data?.pages]
   )
   const selected = useMemo(() => {
+    const hydrated = hydration.data?.choices ?? []
+    if (hydrated.length === (exactValues ?? []).length) {
+      return hydrated
+    }
     const wanted = new Set((exactValues ?? []).map(referenceKey))
     return choices.filter((choice) => wanted.has(referenceKey(choice.value)))
-  }, [choices, exactValues])
+  }, [choices, exactValues, hydration.data?.choices])
   const unresolved =
     !invalidShape &&
     exactValues.length > 0 &&
@@ -240,24 +246,4 @@ function referenceValues(value: unknown, multiple: boolean): EntityReferenceValu
   return isRecord(value) ? [value] : null
 }
 
-// Identity excludes defaulted fields (entity_kind, version): model-issued args
-// may omit them while server-canonical choices always carry them.
-function referenceKey(value: EntityReferenceValue): string {
-  return JSON.stringify([
-    value["entity_id"],
-    value["integration_resource_id"],
-    value["external_id"],
-    value["table"],
-  ])
-}
-
-function mergeChoices(
-  hydrated: EntityChoice[],
-  pages: { choices: EntityChoice[] }[]
-): EntityChoice[] {
-  const choices = new Map<string, EntityChoice>()
-  for (const choice of [...hydrated, ...pages.flatMap((page) => page.choices)]) {
-    choices.set(referenceKey(choice.value), choice)
-  }
-  return [...choices.values()]
-}
+const referenceKey = entityReferenceKey

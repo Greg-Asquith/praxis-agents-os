@@ -12,7 +12,7 @@ export function UnsupportedPartRows({ message }: { message: ParsedConversationMe
       {message.unsupportedParts.map((part) => (
         <details
           key={part.id}
-          className="border-border/80 bg-muted/20 rounded-lg border border-dashed px-3 py-2 text-sm"
+          className="border-border bg-muted/20 rounded-lg border border-dashed px-3 py-2 text-sm"
         >
           <summary className="text-muted-foreground hover:text-foreground cursor-pointer font-medium">
             {part.label}

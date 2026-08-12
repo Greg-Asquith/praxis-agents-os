@@ -52,6 +52,31 @@ describe("pairToolResults", () => {
     expect(paired.consumedResultKeys.has(toolActivityKey(1, 0))).toBe(true)
   })
 
+  it("marks calls resolved by internal retries", () => {
+    const paired = pairToolResults([
+      parsedMessage("message-1", [
+        {
+          id: "tool-1",
+          kind: "call",
+          status: "running",
+          name: "write_tool",
+        },
+      ]),
+      parsedMessage("message-2", [
+        {
+          id: "tool-1",
+          kind: "retry",
+          status: "failed",
+          name: "write_tool",
+          result: { message: "invalid arguments" },
+        },
+      ]),
+    ])
+
+    expect(paired.retryCallKeys.has(toolActivityKey(0, 0))).toBe(true)
+    expect(paired.consumedResultKeys.has(toolActivityKey(1, 0))).toBe(true)
+  })
+
   it("leaves orphan calls unpaired", () => {
     const paired = pairToolResults([
       parsedMessage("message-1", [

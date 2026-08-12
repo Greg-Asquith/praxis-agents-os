@@ -15,6 +15,7 @@ function uiField(field: Pick<ToolUiField, "key" | "label"> & Partial<ToolUiField
   return {
     format: "text",
     editable: false,
+    min_rows: 0,
     placeholder: "",
     options: [],
     secondary: false,

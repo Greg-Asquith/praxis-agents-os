@@ -1,6 +1,6 @@
 // apps/web/src/components/ui/data-table.tsx
 
-import { useMemo, useState, type KeyboardEvent } from "react"
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react"
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
@@ -14,6 +14,7 @@ import {
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { paginateItems, PaginationControls } from "@/components/ui/pagination-controls"
 import {
   Sheet,
   SheetContent,
@@ -46,51 +47,61 @@ export {
 export function DataTable({
   columns,
   exportFilename = "report.csv",
+  header,
+  pageSize,
   rows,
   showTotals = false,
   truncationNote,
 }: {
   columns: DataColumn[]
   exportFilename?: string
+  header?: ReactNode
+  pageSize?: number
   rows: DataRow[]
   showTotals?: boolean
   truncationNote?: string | null
 }) {
   const [copied, setCopied] = useState(false)
+  const [pageOffset, setPageOffset] = useState(0)
   const [selectedRow, setSelectedRow] = useState<DataRow | null>(null)
   const exported = useMemo(() => dataTableExport(columns, rows), [columns, rows])
   const totals = useMemo(
     () => (showTotals ? dataTableTotals(columns, rows) : null),
     [columns, rows, showTotals]
   )
+  const effectivePageSize = pageSize && pageSize > 0 ? pageSize : rows.length || 1
+  const page = paginateItems(rows, pageOffset, effectivePageSize)
 
   return (
     <div className="grid min-w-0 gap-2">
-      <div className="flex items-center justify-end gap-1">
-        <Button
-          aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
-          onClick={() => {
-            void copyTable(tableToTsv(exported), setCopied)
-          }}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-        </Button>
-        <Button
-          aria-label="Download Report CSV"
-          onClick={() => {
-            downloadTableCsv(exported, exportFilename)
-          }}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <DownloadIcon />
-        </Button>
+      <div className={cn("flex gap-3", header ? "items-end justify-between" : "justify-end")}>
+        {header ? <div className="min-w-0 flex-1">{header}</div> : null}
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
+            onClick={() => {
+              void copyTable(tableToTsv(exported), setCopied)
+            }}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </Button>
+          <Button
+            aria-label="Download Report CSV"
+            onClick={() => {
+              downloadTableCsv(exported, exportFilename)
+            }}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <DownloadIcon />
+          </Button>
+        </div>
       </div>
-      <div className="border-border/70 min-w-0 overflow-hidden rounded-lg border">
+      <div className="min-w-0">
         <TooltipProvider>
           <Table className="table-fixed" style={{ minWidth: tableMinWidth(columns) }}>
             <colgroup>
@@ -98,7 +109,7 @@ export function DataTable({
                 <col key={column.key} style={{ width: columnWidth(column) }} />
               ))}
             </colgroup>
-            <TableHeader className="bg-muted/55">
+            <TableHeader>
               <TableRow>
                 {columns.map((column) => (
                   <TableHead className={columnClass(column)} key={column.key}>
@@ -119,11 +130,11 @@ export function DataTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row, index) => (
+              {page.items.map((row, index) => (
                 <TableRow
-                  aria-label={`Open row ${String(index + 1)} details`}
-                  className="even:bg-muted/20 cursor-pointer"
-                  key={index}
+                  aria-label={`Open row ${String(page.offset + index + 1)} details`}
+                  className="cursor-pointer"
+                  key={page.offset + index}
                   onClick={() => {
                     setSelectedRow(row)
                   }}
@@ -167,6 +178,14 @@ export function DataTable({
           <span className="text-warning-foreground max-w-xl">{truncationNote}</span>
         ) : null}
       </div>
+      {pageSize && rows.length > pageSize ? (
+        <PaginationControls
+          limit={pageSize}
+          offset={page.offset}
+          onPageChange={setPageOffset}
+          total={rows.length}
+        />
+      ) : null}
       <RowDetailSheet
         columns={columns}
         onOpenChange={(open) => {

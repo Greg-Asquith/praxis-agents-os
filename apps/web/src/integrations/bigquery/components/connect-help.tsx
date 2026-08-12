@@ -6,7 +6,7 @@ import type { IntegrationProvider } from "@/features/integrations/types"
 
 export function BigQueryConnectHelp({ provider }: { provider: IntegrationProvider }) {
   return (
-    <div className="border-border/70 bg-muted/20 grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
+    <div className="border-border bg-muted/20 grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
       <div className="flex gap-3">
         <ShieldCheckIcon
           aria-hidden="true"

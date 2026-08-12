@@ -17,7 +17,12 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.get_record import get_record
 from .schemas import AirtableOutput
@@ -25,8 +30,6 @@ from .utils import (
     AIRTABLE_BINDING,
     RESULTS_FIELD,
     airtable_client,
-    fan_out_dict,
-    run_audited_operation,
 )
 
 
@@ -49,29 +52,29 @@ async def airtable_get_record(
 
         async def execute() -> Any:
             client = await airtable_client(ctx, entry)
-            return await get_record(
+            result = await get_record(
                 client,
                 base_id=entry.external_id,
                 table=record_id.table.strip(),
                 record_id=reference.external_id,
             )
+            return IntegrationAuditOutcome(result, external_ref=reference.external_id)
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="airtable_get_record",
             operation="get_record",
             execute=execute,
-            external_ref=reference.external_id,
         )
 
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=AIRTABLE_BINDING,
         references=[record_id],
         operation=operation,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(

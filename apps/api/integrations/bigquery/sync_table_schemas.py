@@ -22,6 +22,7 @@ from services.integrations.credentials import (
 )
 from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
 from services.integrations.enqueue_resource_metadata_sync import enqueue_resource_metadata_sync
+from services.integrations.http import IntegrationRequestPolicy
 from services.jobs.registry import job_handler
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
@@ -387,7 +388,11 @@ async def _fetch_tables(
             f"projects/{quote(project_id, safe='')}/datasets/"
             f"{quote(dataset_id, safe='')}/tables/{quote(table_id, safe='')}"
         )
-        payload = await client.get(path, operation="get_table")
+        payload = await client.get(
+            path,
+            operation="get_table",
+            policy=IntegrationRequestPolicy.READ,
+        )
         if not isinstance(payload, dict):
             raise IntegrationValidationError(
                 "BigQuery returned invalid table metadata",
@@ -417,7 +422,12 @@ async def _list_table_references(
         }
         if page_token is not None:
             params["pageToken"] = page_token
-        payload = await client.get(path, operation="list_tables", params=params)
+        payload = await client.get(
+            path,
+            operation="list_tables",
+            policy=IntegrationRequestPolicy.READ,
+            params=params,
+        )
         if not isinstance(payload, dict):
             raise IntegrationValidationError(
                 "BigQuery returned an invalid table list",

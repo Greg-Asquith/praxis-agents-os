@@ -10,8 +10,14 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx2
+import pytest
 
-from core.exceptions.integration import IntegrationNotFoundError
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationNotFoundError,
+    IntegrationValidationError,
+)
 from integrations.gmail.client import GmailClient
 from integrations.gmail.discover_resources import GMAIL_SEND_SCOPE, discover_resources
 from integrations.gmail.entity_resolvers.message import (
@@ -28,6 +34,7 @@ from integrations.gmail.tools.read_message import gmail_read_message
 from services.integrations import http as integration_http
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.discovery.run_discovery import _apply_granted_scope_permissions
+from services.integrations.http import IntegrationRequestPolicy
 
 
 async def test_discovery_creates_one_mailbox_and_scope_gates_write(
@@ -188,10 +195,86 @@ async def test_client_forces_one_refresh_after_unauthorized() -> None:
         return httpx2.Response(401 if calls == 1 else 200, json={"ok": True}, request=request)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        result = await GmailClient(token, client=http_client).get("users/me/profile", operation="x")
+        result = await GmailClient(token, client=http_client).get(
+            "users/me/profile",
+            operation="x",
+            policy=IntegrationRequestPolicy.READ,
+        )
 
     assert result == {"ok": True}
     assert forces == [False, True]
+
+
+@pytest.mark.parametrize("failure", ["connect", "read_timeout", "429", "503"])
+async def test_gmail_send_failures_attempt_once(failure: str) -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        if failure == "connect":
+            raise httpx2.ConnectError("connect failed", request=request)
+        if failure == "read_timeout":
+            raise httpx2.ReadTimeout("response timed out", request=request)
+        return httpx2.Response(int(failure), request=request)
+
+    async def token(_force: bool) -> str:
+        return "token"
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationError):
+            await GmailClient(token, client=http_client).post(
+                "users/me/messages/send",
+                operation="send_message",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"raw": "message"},
+            )
+
+    assert attempts == 1
+
+
+async def test_gmail_send_retries_exactly_once_after_auth_rejection() -> None:
+    attempts = 0
+    forces: list[bool] = []
+
+    async def token(force: bool) -> str:
+        forces.append(force)
+        return "fresh" if force else "stale"
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(401 if attempts == 1 else 200, json={}, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        await GmailClient(token, client=http_client).post(
+            "users/me/messages/send",
+            operation="send_message",
+            policy=IntegrationRequestPolicy.MUTATION,
+            json={"raw": "message"},
+        )
+
+    assert attempts == 2
+    assert forces == [False, True]
+
+
+async def test_gmail_malformed_send_response_is_ambiguous() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=b"not-json", request=request)
+
+    async def token(_force: bool) -> str:
+        return "token"
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationValidationError) as exc_info:
+            await GmailClient(token, client=http_client).post(
+                "users/me/messages/send",
+                operation="send_message",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"raw": "message"},
+            )
+
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
 
 
 async def test_preview_extracts_html_labels_and_thread_meta() -> None:
@@ -477,13 +560,14 @@ async def test_read_message_targets_only_the_referenced_mailbox(monkeypatch) -> 
         for mailbox in ("first@example.com", "second@example.com")
     )
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries))
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
+        tool_name="gmail_read_message",
     )
     client = object()
     provider_read = AsyncMock(return_value={"message_id": "m2", "subject": "Selected"})
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
-        return await kwargs["execute"]()
+        return (await kwargs["execute"]()).value
 
     monkeypatch.setattr(
         "integrations.gmail.tools.read_message.gmail_client",
@@ -491,7 +575,7 @@ async def test_read_message_targets_only_the_referenced_mailbox(monkeypatch) -> 
     )
     monkeypatch.setattr("integrations.gmail.tools.read_message.read_message", provider_read)
     monkeypatch.setattr(
-        "integrations.gmail.tools.read_message.run_audited_operation",
+        "integrations.gmail.tools.read_message.run_audited_integration_operation",
         passthrough_audit,
     )
 

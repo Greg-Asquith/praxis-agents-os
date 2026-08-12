@@ -15,12 +15,30 @@ from services.completion_contract import (
 )
 
 
-def test_completion_outcomes_drive_schedule_health() -> None:
-    run = AgentScheduleRun(status="completed")
+@pytest.mark.parametrize(
+    ("status", "outcome", "expected"),
+    [
+        ("pending", None, "healthy"),
+        ("claimed", None, "healthy"),
+        ("accepted", None, "healthy"),
+        ("running", None, "healthy"),
+        ("awaiting_approval", None, "healthy"),
+        ("completed", "success", "healthy"),
+        ("completed", "gate_failed", "needs_attention"),
+        ("completed", "budget_exhausted", "needs_attention"),
+        ("retryable_failed", None, "retrying"),
+        ("terminal_failed", None, "needs_attention"),
+        ("cancelled", "cancelled", "cancelled"),
+    ],
+)
+def test_schedule_status_and_outcome_boundaries_drive_health(
+    status: str,
+    outcome: str | None,
+    expected: str,
+) -> None:
+    run = AgentScheduleRun(status=status)
 
-    assert schedule_health_from_run(run, outcome="success") == "healthy"
-    assert schedule_health_from_run(run, outcome="gate_failed") == "needs_attention"
-    assert schedule_health_from_run(run, outcome="budget_exhausted") == "needs_attention"
+    assert schedule_health_from_run(run, outcome=outcome) == expected
 
 
 def _valid_payload(**overrides: object) -> dict[str, object]:

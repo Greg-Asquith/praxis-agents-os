@@ -5,6 +5,8 @@
 from typing import Any
 from urllib.parse import quote
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import AirtableClient
 from .utils import record_payload
 
@@ -19,5 +21,6 @@ async def get_record(
     payload: Any = await client.get(
         f"{quote(base_id, safe='')}/{quote(table, safe='')}/{quote(record_id, safe='')}",
         operation="get_record",
+        policy=IntegrationRequestPolicy.READ,
     )
     return record_payload(payload)

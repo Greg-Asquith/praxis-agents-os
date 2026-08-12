@@ -82,9 +82,9 @@ export function MessageDetail({
 }) {
   return (
     <article className="min-w-0">
-      <header className="border-border/70 mb-3 border-b pb-3">
+      <header className="border-border mb-3 border-b pb-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold wrap-break-word">{subject || "(No subject)"}</h3>
+          <h3 className="text-sm font-medium wrap-break-word">{subject || "(No subject)"}</h3>
           <p className="text-muted-foreground mt-1 text-xs">{date}</p>
         </div>
         <dl className="mt-3 grid min-w-0 gap-2 text-xs sm:grid-cols-[3rem_1fr]">

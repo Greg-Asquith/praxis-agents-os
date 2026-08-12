@@ -55,7 +55,7 @@ export function FanOutShell({
         </div>
       ) : null}
       {entries.length === 0 ? (
-        <div className="border-border/70 bg-muted/25 rounded-lg border border-dashed px-4 py-6 text-center">
+        <div className="border-border bg-muted/25 rounded-lg border border-dashed px-4 py-6 text-center">
           <p className="text-muted-foreground text-sm">{emptyLabel}</p>
         </div>
       ) : null}
@@ -162,7 +162,7 @@ export function FanOutSkeleton({
   summary?: string
 }) {
   return (
-    <section aria-busy="true" aria-label={label} className="border-border/70 rounded-lg border p-3">
+    <section aria-busy="true" aria-label={label} className="border-border rounded-lg border p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         {heading ? (
           <div className="min-w-0">

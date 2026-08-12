@@ -12,7 +12,6 @@ import { SidebarFooter } from "@/components/shell/sidebar-footer"
 import { SidebarHeader } from "@/components/shell/sidebar-header"
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher"
 import { shouldRedirectHomeForWorkspaceSwitch } from "@/components/shell/workspace-switch-navigation"
-import { Separator } from "@/components/ui/separator"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useLogoutMutation } from "@/features/auth/api/logout"
 import { useConversationsQuery } from "@/features/conversations/api/list-conversations"
@@ -65,9 +64,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="bg-sidebar text-sidebar-foreground hidden h-dvh min-h-0 md:flex md:flex-col">
         <SidebarHeader />
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 border-t p-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 border-t px-3 py-4">
           <PrimaryNavigation pathname={pathname} workspaceRole={workspace.current_user_role} />
-          <Separator />
           <SidebarConversations
             conversations={conversationsData.conversations}
             pathname={pathname}
@@ -78,7 +76,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex h-dvh min-h-0 min-w-0 flex-col p-0 md:pl-0">
-        <div className="bg-background border-border/60 flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 shadow-none md:border md:shadow-sm">
+        <div className="bg-background border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-none border-0 md:border">
           <header className="flex h-16 shrink-0 items-center gap-3 border-b px-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <MobileMenu
@@ -106,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               "min-h-0 min-w-0 flex-1",
               pathname !== "/conversations" && pathname.startsWith("/conversations/")
                 ? "overflow-hidden"
-                : "overflow-y-auto px-6 py-5"
+                : "overflow-y-auto px-6 py-5 md:px-8 md:py-6"
             )}
           >
             {children}

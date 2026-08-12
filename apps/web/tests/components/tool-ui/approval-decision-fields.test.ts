@@ -2,8 +2,20 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { ApprovalRequestFields, type ApprovalField } from "@/components/tool-ui/approval-card"
+import {
+  ApprovalRequestFields,
+  ToolApprovalDecisionCard,
+  type ApprovalField,
+} from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import {
+  addRecordRow,
+  keyedRecordRows,
+  normalizeRecordNumericInput,
+  recordRowsValidity,
+  removeRecordRow,
+  updateRecordCell,
+} from "@/components/tool-ui/records-field-values"
 
 describe("ApprovalRequestFields", () => {
   it("uses two columns for compact fields and full width for long-form fields", () => {
@@ -57,6 +69,7 @@ describe("ApprovalRequestFields", () => {
           {
             key: "model_provider",
             label: "Search Provider",
+            min_rows: 0,
             format: "text",
             editable: true,
             placeholder: "",
@@ -224,6 +237,210 @@ describe("ApprovalRequestFields", () => {
     expect(html).not.toContain("one@example.com")
   })
 
+  it("renders declared record rows with select columns and every proposed row", () => {
+    const rows = [
+      { text: "free shipping", match_type: "PHRASE", score: 1.5 },
+      { text: "jobs", match_type: "EXACT", score: 2 },
+    ]
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "records-1",
+        args: { rows },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [
+          {
+            ...approvalField("rows", "Negative Keywords", "records"),
+            editable: true,
+            min_rows: 1,
+            columns: [
+              {
+                key: "text",
+                label: "Keyword",
+                options: [],
+                placeholder: "Enter keyword",
+                required: true,
+              },
+              {
+                key: "match_type",
+                label: "Match Type",
+                options: ["EXACT", "PHRASE"],
+                placeholder: "",
+                required: true,
+              },
+              { key: "score", label: "Score", options: [], placeholder: "", required: false },
+            ],
+          },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("2 rows")
+    expect(html).toContain("Add Row")
+    expect(html).toContain("free shipping")
+    expect(html).toContain("jobs")
+    expect(html).toContain('role="combobox"')
+    expect(html).toContain(">PHRASE<")
+    expect(html).toContain(">EXACT<")
+    expect(html).toContain('type="number"')
+    expect(html).toContain('value="1.5"')
+    expect(html).toContain('value="2"')
+    expect(html).toContain('aria-label="Remove row 1"')
+    expect(html).toContain('aria-label="Remove row 2"')
+    expect(html).toContain('aria-label="Keyword, row 1"')
+    expect(html).toContain('aria-label="Match Type, row 2"')
+    expect(html.match(/scope="col"/g)).toHaveLength(4)
+    expect(html).toContain('id="records-1-rows-edit-label"')
+    expect(html).toContain('aria-labelledby="records-1-rows-edit-label"')
+  })
+
+  it("shows record completeness errors and disables approval", () => {
+    const field: ApprovalField = {
+      ...approvalField("rows", "Negative Keywords", "records"),
+      editable: true,
+      min_rows: 1,
+      columns: [
+        { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+        {
+          key: "match_type",
+          label: "Match Type",
+          options: ["EXACT", "PHRASE"],
+          placeholder: "",
+          required: true,
+        },
+      ],
+    }
+    const html = renderToStaticMarkup(
+      createElement(ToolApprovalDecisionCard, {
+        activityId: "records-invalid",
+        args: { rows: [{ text: "", match_type: "EXACT" }] },
+        controls: {
+          decision: { decision: "pending", edits: {}, message: "" },
+          disabled: false,
+          error: null,
+          onDecisionChange: () => undefined,
+          onRetry: () => undefined,
+          pendingCount: 1,
+          submitting: false,
+        },
+        fields: [field],
+        label: "Add Negative Keywords",
+        toolName: "google_ads_add_negative_keywords",
+      })
+    )
+
+    expect(html).toContain("Keyword is required in row 1.")
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+    expect(html).toContain('aria-live="polite"')
+  })
+
+  it("adds, removes, and edits record rows without coercing numeric cells", () => {
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      { key: "score", label: "Score", options: [], placeholder: "", required: false },
+    ]
+    const original = [{ text: "jobs", score: 2 }]
+
+    const added = addRecordRow(original, columns)
+    expect(added).toEqual([
+      { text: "jobs", score: 2 },
+      { text: "", score: "" },
+    ])
+    expect(updateRecordCell(added, 0, "score", 3.5)).toEqual([
+      { text: "jobs", score: 3.5 },
+      { text: "", score: "" },
+    ])
+    expect(removeRecordRow(added, 0)).toEqual([{ text: "", score: "" }])
+    expect(original).toEqual([{ text: "jobs", score: 2 }])
+  })
+
+  it("accepts only finite numeric record edits", () => {
+    expect(normalizeRecordNumericInput("0")).toBe(0)
+    expect(normalizeRecordNumericInput("-2.5")).toBe(-2.5)
+    expect(normalizeRecordNumericInput("3.25")).toBe(3.25)
+
+    for (const value of ["", "   ", "not-a-number", "NaN", "Infinity", "-Infinity"]) {
+      expect(normalizeRecordNumericInput(value)).toBeNull()
+    }
+  })
+
+  it("validates minimum rows, required cells, options, and optional numeric values", () => {
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      {
+        key: "match_type",
+        label: "Match Type",
+        options: ["EXACT", "PHRASE"],
+        placeholder: "",
+        required: true,
+      },
+      { key: "score", label: "Score", options: [], placeholder: "", required: false },
+    ]
+
+    expect(recordRowsValidity([], columns, 1)).toEqual({
+      isRecords: true,
+      error: "Add at least 1 row before approving.",
+    })
+    expect(recordRowsValidity([{ text: "  ", match_type: "EXACT", score: 0 }], columns, 1)).toEqual(
+      { isRecords: true, error: "Keyword is required in row 1." }
+    )
+    expect(
+      recordRowsValidity([{ text: "jobs", match_type: "BROAD", score: -2.5 }], columns, 1)
+    ).toEqual({ isRecords: true, error: "Choose a valid match type in row 1." })
+    expect(
+      recordRowsValidity([{ text: "jobs", match_type: "EXACT", score: -2.5 }], columns, 1)
+    ).toEqual({ isRecords: true, error: null })
+  })
+
+  it("keeps record row keys stable while cell values change", () => {
+    const keys = ["row-1", "row-2"]
+    const original = [
+      { text: "jobs", score: 2 },
+      { text: "careers", score: 3 },
+    ]
+    const updated = updateRecordCell(original, 0, "text", "new jobs")
+
+    expect(keyedRecordRows(original, keys).map((row) => row.key)).toEqual(keys)
+    expect(keyedRecordRows(updated, keys).map((row) => row.key)).toEqual(keys)
+  })
+
+  it("renders locked record rows through the read-only table", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "records-2",
+        args: { rows: [{ text: "jobs", match_type: "EXACT" }] },
+        decision: { decision: "approved", edits: {}, message: "" },
+        disabled: true,
+        fallbackFields: [],
+        fields: [
+          {
+            ...approvalField("rows", "Negative Keywords", "records"),
+            columns: [
+              { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+              {
+                key: "match_type",
+                label: "Match Type",
+                options: ["EXACT", "PHRASE"],
+                placeholder: "",
+                required: true,
+              },
+            ],
+          },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("1 row")
+    expect(html).toContain("Keyword")
+    expect(html).toContain("jobs")
+    expect(html).toContain("EXACT")
+    expect(html).not.toContain("Add Row")
+    expect(html).not.toContain("<input")
+  })
+
   it("edits markdown strings as plain text", () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalRequestFields, {
@@ -305,6 +522,7 @@ function approvalField(key: string, label: string, format: ApprovalField["format
   return {
     key,
     label,
+    min_rows: 0,
     format,
     editable: false,
     placeholder: "",

@@ -11,9 +11,14 @@ from pydantic import SecretStr
 from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationError,
+    IntegrationFailureDisposition,
     IntegrationValidationError,
 )
-from services.integrations.http import request_with_retries
+from services.integrations.http import (
+    IntegrationRequestPolicy,
+    request_with_retries,
+    resolve_before_dispatch,
+)
 
 GOOGLE_ADS_API_VERSION = "v24"
 GOOGLE_ADS_API_BASE_URL = f"https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}"
@@ -37,10 +42,15 @@ class GoogleAdsClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         login_customer_id: str | None = None,
     ) -> Any:
         return await self._request(
-            "GET", path, operation=operation, login_customer_id=login_customer_id
+            "GET",
+            path,
+            operation=operation,
+            policy=policy,
+            login_customer_id=login_customer_id,
         )
 
     async def post(
@@ -48,6 +58,7 @@ class GoogleAdsClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         json: dict[str, Any],
         login_customer_id: str | None = None,
     ) -> Any:
@@ -55,6 +66,7 @@ class GoogleAdsClient:
             "POST",
             path,
             operation=operation,
+            policy=policy,
             login_customer_id=login_customer_id,
             json=json,
         )
@@ -65,25 +77,28 @@ class GoogleAdsClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         login_customer_id: str | None,
         **kwargs: Any,
     ) -> Any:
-        token = await self._access_token(False)
+        token = await resolve_before_dispatch(lambda: self._access_token(False))
         try:
             response = await self._send(
                 method,
                 path,
                 operation=operation,
+                policy=policy,
                 token=token,
                 login_customer_id=login_customer_id,
                 **kwargs,
             )
         except IntegrationAuthError:
-            token = await self._access_token(True)
+            token = await resolve_before_dispatch(lambda: self._access_token(True))
             response = await self._send(
                 method,
                 path,
                 operation=operation,
+                policy=policy,
                 token=token,
                 login_customer_id=login_customer_id,
                 **kwargs,
@@ -96,6 +111,11 @@ class GoogleAdsClient:
                 provider_key="google_ads",
                 operation=operation,
                 original_error=exc,
+                failure_disposition=(
+                    IntegrationFailureDisposition.AMBIGUOUS
+                    if policy is not IntegrationRequestPolicy.READ
+                    else None
+                ),
             ) from exc
 
     async def _send(
@@ -104,6 +124,7 @@ class GoogleAdsClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         token: str,
         login_customer_id: str | None,
         **kwargs: Any,
@@ -120,6 +141,7 @@ class GoogleAdsClient:
                 f"{GOOGLE_ADS_API_BASE_URL}/{path.lstrip('/')}",
                 operation=operation,
                 provider_key="google_ads",
+                policy=policy,
                 client=self._client,
                 headers=headers,
                 **kwargs,

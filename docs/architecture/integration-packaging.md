@@ -71,6 +71,15 @@ Goals, in priority order:
    and the existing presentation schema. Adding SSE event types or
    presentation field formats is a platform change with its own review,
    never something a provider does in passing.
+6. **Model output and transcript evidence may differ only through the governed
+   public-result seam.** A tool may return Pydantic AI `ToolReturn` metadata
+   named `public_result` when an operator needs complete bounded evidence that
+   would be too large for model context. The tool must declare
+   `max_public_result_chars`; dispatch converts the value to JSON-safe data,
+   redacts sensitive-key values, validates it against the tool's output model,
+   and rejects it above the declared budget before Pydantic AI persists or
+   streams it. The ordinary `return_value` remains the only model-visible
+   result. Provider code owns safe row construction; core owns enforcement.
 
 ## 3. What stays centralized (deliberately)
 
@@ -83,7 +92,17 @@ Goals, in priority order:
 | OAuth connect flows, api-key connect, state signing | `routes/integrations/` + engine services | one hardened flow, parameterized by manifest |
 | Discovery job harness, status machine, sweeps | `services/integrations/discovery/` | one lifecycle; providers supply only `discover_resources` |
 | Active-context resolution + fan-out | `services/integrations/context/` | one place that decides what agents operate on |
-| SSE protocol, `ToolActivity` shape, presentation schema | stream/protocol + tool contract | stale-client safety; closed vocabularies |
+| SSE protocol, `ToolActivity` shape, presentation schema, public-result enforcement | stream/protocol + tool contract | stale-client safety; closed vocabularies; bounded transcript evidence |
+
+The presentation field-format vocabulary is closed:
+`text`, `multiline`, `markdown`, `html`, `bytes`, `datetime`, `boolean`,
+`url`, `list`, `number`, `keyvalue`, `records`, `entity`, and
+`entity_list`. The platform-owned `records` format is argument-only and uses
+server-declared scalar columns; providers may consume it but cannot extend its
+row shape, column types, or rendering contract inside a provider package.
+Record fields may declare a platform-bounded `min_rows`, and each declared
+column may be marked `required`; approval preflight enforces those constraints
+before a deferred tool resumes.
 
 A provider package supplies: manifest data, a discovery function,
 operation clients, one-module-per-tool definitions (with bindings and presentations),
@@ -99,7 +118,7 @@ apps/api/integrations/
   gmail/
     __init__.py          # exports PROVIDER: IntegrationProviderPlugin
     manifest.py          # the IntegrationProviderManifest entry (data)
-    client.py            # thin async client over httpx2 + shared retries
+    client.py            # thin async client over httpx2 + semantic request policy
     discover_resources.py
     operations/          # one service op per file (AGENTS.md rule applies)
       search_messages.py
@@ -216,7 +235,84 @@ current providers) declare no extra.
    walks the AST of both trees and asserts 1–3. It runs in the default
    suite so violations fail CI, not review.
 
-### 4.7 Graceful degradation
+### 4.7 Integration operation runtime
+
+Provider tools contribute typed operations and safe evidence; the integration
+service owns the repeated lifecycle:
+
+- `context/fan_out.py::run_context_fan_out` selects every compatible active
+  resource, while `context/targeted.py::run_context_targets` groups exact
+  scoped references. Both delegate authorization, denial evidence, exception
+  isolation, sanitization, and result construction to one private execution
+  loop.
+- `context/results.py` publishes `IntegrationFanOutEntry`,
+  `IntegrationFanOutOutput`, and `serialize_fan_out_results`. Provider result
+  models subclass those bases only to narrow `data` or `results`; they never
+  copy the nine outer fields or add another serializer.
+- `services/integrations/operations.py` publishes
+  `IntegrationAuditOutcome` and `run_audited_integration_operation`. The
+  runner resolves the registered tool definition, validates the provider and
+  binding against the actually dispatched tool, and derives external-write
+  durability from effect/egress metadata. Caller-supplied tool names or context
+  bindings that disagree with the dispatched definition fail before provider
+  execution.
+  An external write must supply bounded pending `IntegrationOperationDetail`;
+  the runner commits it before provider execution and correlates strict
+  terminal evidence. Outcomes accept terminal statuses only; reads remain
+  best-effort.
+  Every provider request also supplies the shared HTTP seam with one semantic
+  policy: `read`, `idempotent_write`, or `mutation`. The policy is mandatory at
+  the call site; neither an HTTP verb nor an operation-name string implies
+  retry safety. Reads retain bounded retry behavior. `idempotent_write` is
+  reserved for provider-documented and tested idempotency mechanisms. A
+  `mutation` request is attempted once for timeout, connection, rate-limit, and
+  server-failure paths; a received 401 may trigger exactly one credential
+  refresh and new attempt because the rejection proves the mutation did not
+  run.
+
+  Failed requests carry a typed `not_dispatched`, `rejected`, or `ambiguous`
+  disposition into the operation runner. The runner records provable
+  non-dispatch/rejection as ordinary failure and ambiguity as
+  `unverified_mutation`. Unknown mutation exceptions are conservative:
+  cancellation or a lost/malformed response after transport begins is
+  ambiguous. Cancellation before the transport call remains non-dispatched;
+  cancellation during a request uses a bounded shielded terminal-audit
+  finalizer and then propagates. No ambiguous mutation is automatically
+  replayed.
+
+A normal operation function resolves its provider client, executes one
+provider operation, and returns one typed terminal projection:
+
+```python
+async def operation(entry: ResolvedContextEntry):
+    async def execute():
+        result = await provider_operation(...)
+        return IntegrationAuditOutcome(
+            result,
+            external_ref=result.get("id"),
+        )
+
+    return await run_audited_integration_operation(
+        ctx,
+        entry,
+        tool_name="provider_operation",
+        operation="operation",
+        execute=execute,
+        # Required for registered external writes; omit for reads.
+        pending_operation_detail=pending_detail(entry),
+    )
+
+results = await run_context_fan_out(ctx, binding=BINDING, operation=operation)
+return {"results": serialize_fan_out_results(results)}
+```
+
+The provider must not choose audit durability, add a write-denial callback,
+wrap the shared audit recorder, or recreate the outer envelope. A legitimate
+one-provider-request/many-context topology may keep a narrowly named adapter,
+as BigQuery does with `run_multi_context_query_with_audit`, but persistence
+still delegates to the shared runner.
+
+### 4.8 Graceful degradation
 
 Disabling a provider must degrade agents, not brick them. Two engine
 behaviors guarantee this:
@@ -327,7 +423,7 @@ map. No other shared file changes per provider.
 | Every tool needed bespoke UI | default-first: server-declared presentation renders everything; custom rows exceptional |
 | One provider's change regression-tested all | per-package tests; provider→provider imports forbidden |
 | Registry sprawl | single registry retained; contribution via one boring contract; loader invariants machine-check it |
-| Disabling anything broke agents | lenient run-time resolution (§4.7); UI preserves unavailable saved tools |
+| Disabling anything broke agents | lenient run-time resolution (§4.8); UI preserves unavailable saved tools |
 
 ## 8. Provider N+1 checklist
 
@@ -351,6 +447,12 @@ Adding a provider touches:
    adapters only and never add kit logic.
 8. Governance §2 policy review: writes default `approval`; spend ops
    `supports_auto=False`. No exceptions by packaging.
+9. Build each normal tool over the §4.7 context, audit-outcome, and result
+   seams. External writes supply bounded pending intent; providers do not own
+   denial callbacks, durability switches, audit runners, or outer serializers.
+10. Declare `IntegrationRequestPolicy` on every provider-client call. Query
+    POSTs are reads; external writes are mutations unless a real provider
+    idempotency mechanism is documented and covered.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,

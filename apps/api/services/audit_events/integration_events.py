@@ -15,6 +15,7 @@ from services.audit_events.enums import (
     AuditResourceType,
     AuditStatus,
 )
+from services.audit_events.integration_operation_detail import IntegrationOperationDetail
 from utils.json_safe import json_safe_details
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ async def record_integration_operation_audit_event(
     workspace_id: UUID,
     agent: Agent,
     run: AgentRun,
+    tool_call_id: str | None,
     tool_name: str,
     provider_key: str,
     connection_id: UUID,
@@ -34,8 +36,15 @@ async def record_integration_operation_audit_event(
     status: AuditStatus,
     external_ref: str | None,
     error_code: str | None,
-) -> None:
-    """Record one provider operation in an independent transaction."""
+    operation_detail: IntegrationOperationDetail | None = None,
+    related_event_id: UUID | None = None,
+    raise_on_error: bool = False,
+) -> UUID | None:
+    """Record one provider operation in an independent transaction.
+
+    Strict callers receive persistence errors so external writes cannot silently
+    outlive the durable evidence promised to operators.
+    """
     try:
         session_factory = get_async_db_session_factory()
         async with session_factory() as db:
@@ -44,6 +53,19 @@ async def record_integration_operation_audit_event(
                 workspace_id=workspace_id,
                 user_id=run.user_id,
             )
+            details = {
+                "run_id": str(run.id),
+                "tool_call_id": tool_call_id,
+                "connection_id": str(connection_id),
+                "integration_resource_id": str(integration_resource_id),
+                "external_id": external_id,
+                "provider_operation": operation,
+                "external_ref": external_ref,
+                "error_code": error_code,
+                "related_event_id": str(related_event_id) if related_event_id else None,
+            }
+            if operation_detail is not None:
+                details["operation_detail"] = operation_detail.model_dump(mode="json")
             event = AuditEvent(
                 workspace_id=workspace_id,
                 action=AuditAction.EXECUTE,
@@ -60,19 +82,15 @@ async def record_integration_operation_audit_event(
                 actor_id=str(agent.id),
                 actor_display=agent.name,
                 requested_by_user_id=run.user_id,
-                details=json_safe_details(
-                    {
-                        "run_id": str(run.id),
-                        "connection_id": str(connection_id),
-                        "integration_resource_id": str(integration_resource_id),
-                        "external_id": external_id,
-                        "provider_operation": operation,
-                        "external_ref": external_ref,
-                        "error_code": error_code,
-                    }
-                ),
+                details=json_safe_details(details),
             )
             db.add(event)
+            await db.flush()
+            event_id = event.id
             await db.commit()
+            return event_id
     except Exception:
         logger.warning("Failed to record integration operation audit event", exc_info=True)
+        if raise_on_error:
+            raise
+        return None

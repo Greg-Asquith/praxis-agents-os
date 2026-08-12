@@ -17,17 +17,20 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
+from services.integrations.operations import (
+    IntegrationAuditOutcome,
+    run_audited_integration_operation,
+)
 
 from ..operations.read_message import read_message
 from .schemas import GmailReadOutput
 from .utils import (
     GMAIL_BINDING,
     RESULTS_FIELD,
-    fan_out_dict,
     gmail_available,
     gmail_client,
-    run_audited_operation,
 )
 
 
@@ -43,24 +46,24 @@ async def gmail_read_message(
 
         async def execute() -> Any:
             client = await gmail_client(ctx, entry)
-            return await read_message(client, message_id=reference.external_id)
+            result = await read_message(client, message_id=reference.external_id)
+            return IntegrationAuditOutcome(result, external_ref=reference.external_id)
 
-        return await run_audited_operation(
+        return await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="gmail_read_message",
             operation="read_message",
             execute=execute,
-            external_ref=reference.external_id,
         )
 
     results = await run_context_targets(
-        ctx.deps,
+        ctx,
         binding=GMAIL_BINDING,
         references=[message_id],
         operation=operation,
     )
-    return {"results": [fan_out_dict(item) for item in results]}
+    return {"results": serialize_fan_out_results(results)}
 
 
 DEFINITION = RuntimeToolDefinition(
