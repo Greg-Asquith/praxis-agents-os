@@ -90,7 +90,9 @@ export function AuditEventFields({
 
   return (
     <div className="flex flex-col gap-5">
-      {hasOperationDetail ? <IntegrationOperationDetail value={operationDetail} /> : null}
+      {hasOperationDetail ? (
+        <IntegrationOperationDetail eventId={event.id} value={operationDetail} />
+      ) : null}
       {hasOperationDetail ? null : <EventSummary summary={event.summary} />}
       {hasOperationDetail ? null : <EventFields event={event} toolLabelFor={toolLabelFor} />}
       <TechnicalDetails event={event} showSummary={hasOperationDetail} toolLabelFor={toolLabelFor}>

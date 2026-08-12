@@ -2,14 +2,17 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
+import { paginateItems } from "@/components/ui/pagination-controls"
 import { AuditEventFields } from "@/features/audit/components/audit-event-detail"
 import { IntegrationOperationDetail } from "@/features/audit/components/integration-operation-detail"
 import type { AuditEvent } from "@/features/audit/types"
 
+const AUDIT_DETAIL_PAGE_SIZE = 25
+
 describe("IntegrationOperationDetail", () => {
   it("renders pending intent without claiming an outcome", () => {
     const html = renderToStaticMarkup(
-      createElement(IntegrationOperationDetail, { value: pendingDetail() })
+      createElement(IntegrationOperationDetail, { eventId: "event-1", value: pendingDetail() })
     )
 
     expect(html).toContain('aria-label="Integration operation evidence"')
@@ -24,7 +27,7 @@ describe("IntegrationOperationDetail", () => {
 
   it("renders independently counted terminal intent and concrete effects", () => {
     const html = renderToStaticMarkup(
-      createElement(IntegrationOperationDetail, { value: terminalDetail() })
+      createElement(IntegrationOperationDetail, { eventId: "event-1", value: terminalDetail() })
     )
 
     expect(html).toContain("Some requested changes failed")
@@ -71,7 +74,7 @@ describe("IntegrationOperationDetail", () => {
       effect_counts: { applied: 0, skipped: 0, failed: 0, unverified: 1 },
     }
     const html = renderToStaticMarkup(
-      createElement(IntegrationOperationDetail, { value: terminal })
+      createElement(IntegrationOperationDetail, { eventId: "event-1", value: terminal })
     )
 
     expect(html).toContain("could not be verified")
@@ -83,15 +86,65 @@ describe("IntegrationOperationDetail", () => {
     const malformed = { ...terminalDetail(), intent_counts: { applied: 99 } }
 
     expect(
-      renderToStaticMarkup(createElement(IntegrationOperationDetail, { value: malformed }))
+      renderToStaticMarkup(
+        createElement(IntegrationOperationDetail, { eventId: "event-1", value: malformed })
+      )
     ).toBe("")
     expect(
       renderToStaticMarkup(
         createElement(IntegrationOperationDetail, {
           value: { schema_version: 1, target: {}, changes: [], counts: {} },
+          eventId: "event-1",
         })
       )
     ).toBe("")
+  })
+
+  it.each([0, 1, 25, 26, 2_500])("bounds an initial collection of %i rows", (size) => {
+    const rows = Array.from({ length: size }, (_, index) => index + 1)
+    const page = paginateItems(rows, 0, AUDIT_DETAIL_PAGE_SIZE)
+
+    expect(page.items).toHaveLength(Math.min(size, AUDIT_DETAIL_PAGE_SIZE))
+    expect(page.offset).toBe(0)
+  })
+
+  it("keeps the last persisted row reachable and clamps stale offsets", () => {
+    const rows = Array.from({ length: 2_500 }, (_, index) => `row-${String(index + 1)}`)
+
+    expect(paginateItems(rows, 2_475, AUDIT_DETAIL_PAGE_SIZE)).toEqual({
+      items: rows.slice(2_475),
+      offset: 2_475,
+    })
+    expect(paginateItems(rows, 99_999, AUDIT_DETAIL_PAGE_SIZE)).toEqual({
+      items: rows.slice(2_475),
+      offset: 2_475,
+    })
+  })
+
+  it("renders only the first outcome and nested-record pages with accessible controls", () => {
+    const detail = largePendingDetail(2_500)
+    const html = renderToStaticMarkup(
+      createElement(IntegrationOperationDetail, { eventId: "event-large", value: detail })
+    )
+
+    expect(html.match(/>Item \d+</g)).toHaveLength(25)
+    expect(html).toContain("Item 25")
+    expect(html).not.toContain("Item 26")
+    expect(html).toContain('aria-label="Requested changes pagination"')
+    expect(html).toContain('aria-label="Structured details pagination"')
+    expect(html).toContain('role="status"')
+    expect(html).toContain("Showing 1-25 of 2500")
+    expect(html).toContain('type="button"')
+    expect(html).toContain("record-25")
+    expect(html).not.toContain("record-26")
+  })
+
+  it("keys pagination state to the audit event", () => {
+    const first = IntegrationOperationDetail({ eventId: "event-1", value: pendingDetail() })
+    const second = IntegrationOperationDetail({ eventId: "event-2", value: pendingDetail() })
+
+    expect(first?.key).toBe("event-1")
+    expect(second?.key).toBe("event-2")
   })
 
   it("uses the normal audit fallback for data outside the one current contract", () => {
@@ -191,6 +244,28 @@ function terminalDetail() {
     ],
     intent_counts: { applied: 0, skipped: 1, failed: 1, unverified: 0 },
     effect_counts: { applied: 1, skipped: 0, failed: 1, unverified: 0 },
+  }
+}
+
+function largePendingDetail(size: number) {
+  return {
+    ...pendingDetail(),
+    target: {
+      ...pendingDetail().target,
+      attributes: {
+        records: Array.from({ length: size }, (_, index) => ({
+          name: `record-${String(index + 1)}`,
+        })),
+      },
+    },
+    intent_groups: [
+      {
+        ...pendingDetail().intent_groups[0],
+        items: Array.from({ length: size }, (_, index) => ({
+          fields: { text: `keyword-${String(index + 1)}`, match_type: "EXACT" },
+        })),
+      },
+    ],
   }
 }
 

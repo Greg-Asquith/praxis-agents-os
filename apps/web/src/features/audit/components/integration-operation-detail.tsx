@@ -1,5 +1,6 @@
 // apps/web/src/features/audit/components/integration-operation-detail.tsx
 
+import { useMemo, useState } from "react"
 import {
   CircleAlertIcon,
   CircleCheckIcon,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { paginateItems, PaginationControls } from "@/components/ui/pagination-controls"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   parseIntegrationOperationDetail,
@@ -22,10 +24,22 @@ import {
 import { titleCaseToken, truncateText } from "@/lib/format"
 
 const STRUCTURED_VALUE_PREVIEW_LENGTH = 15
+const AUDIT_DETAIL_PAGE_SIZE = 25
 
-export function IntegrationOperationDetail({ value }: { value: unknown }) {
+export function IntegrationOperationDetail({
+  eventId,
+  value,
+}: {
+  eventId: string
+  value: unknown
+}) {
   const detail = parseIntegrationOperationDetail(value)
   if (!detail) return null
+
+  return <IntegrationOperationDetailContent detail={detail} key={eventId} />
+}
+
+function IntegrationOperationDetailContent({ detail }: { detail: OperationDetail }) {
   const targetAttributes = Object.entries(detail.target.attributes).filter(
     ([, item]) => item !== null
   )
@@ -73,22 +87,64 @@ export function IntegrationOperationDetail({ value }: { value: unknown }) {
             {intentItemCount(detail)} {intentItemCount(detail) === 1 ? "item" : "items"}
           </span>
         </div>
-        <div className="max-h-[min(28rem,50dvh)] divide-y overflow-y-auto rounded-lg border">
-          {detail.intent_groups.map((group, groupIndex) => (
-            <IntentGroup
-              group={group}
-              groupIndex={groupIndex}
-              key={group.key}
-              outcomes={
-                detail.phase === "terminal"
-                  ? detail.outcome_groups[groupIndex]?.outcomes
-                  : undefined
-              }
-            />
-          ))}
-        </div>
+        <PaginatedIntentItems detail={detail} />
       </div>
     </section>
+  )
+}
+
+type IntentItemRow = {
+  group: OperationIntentGroup
+  groupIndex: number
+  itemIndex: number
+  outcome: OperationOutcome | undefined
+}
+type IntentItemSegment = [IntentItemRow, ...IntentItemRow[]]
+
+function PaginatedIntentItems({ detail }: { detail: OperationDetail }) {
+  const [pageOffset, setPageOffset] = useState(0)
+  const rows = useMemo(
+    () =>
+      detail.intent_groups.flatMap((group, groupIndex) =>
+        group.items.map((_, itemIndex) => ({
+          group,
+          groupIndex,
+          itemIndex,
+          outcome:
+            detail.phase === "terminal"
+              ? detail.outcome_groups[groupIndex]?.outcomes[itemIndex]
+              : undefined,
+        }))
+      ),
+    [detail]
+  )
+  const page = paginateItems(rows, pageOffset, AUDIT_DETAIL_PAGE_SIZE)
+  const segments = segmentIntentRows(page.items)
+
+  return (
+    <div className="space-y-3">
+      <div className="max-h-[min(28rem,50dvh)] divide-y overflow-y-auto rounded-lg border">
+        {segments.map((segment) => (
+          <IntentGroup
+            group={segment[0].group}
+            groupIndex={segment[0].groupIndex}
+            key={`${segment[0].group.key}:${String(segment[0].itemIndex)}`}
+            rows={segment}
+          />
+        ))}
+      </div>
+      {rows.length > AUDIT_DETAIL_PAGE_SIZE ? (
+        <PaginationControls
+          ariaLabel={
+            detail.phase === "pending" ? "Requested changes pagination" : "Outcomes pagination"
+          }
+          limit={AUDIT_DETAIL_PAGE_SIZE}
+          offset={page.offset}
+          onPageChange={setPageOffset}
+          total={rows.length}
+        />
+      ) : null}
+    </div>
   )
 }
 
@@ -173,11 +229,11 @@ function StatusCounts({ counts }: { counts: OperationCounts }) {
 function IntentGroup({
   group,
   groupIndex,
-  outcomes,
+  rows,
 }: {
   group: OperationIntentGroup
   groupIndex: number
-  outcomes: OperationOutcome[] | undefined
+  rows: IntentItemRow[]
 }) {
   const groupFields = visibleGroupFields(group)
   return (
@@ -200,8 +256,9 @@ function IntentGroup({
         </dl>
       ) : null}
       <div className="divide-y border-t">
-        {group.items.map((item, itemIndex) => {
-          const outcome = outcomes?.[itemIndex]
+        {rows.map(({ itemIndex, outcome }) => {
+          const item = group.items[itemIndex]
+          if (!item) return null
           const singleEffect = outcome?.effects.length === 1 ? outcome.effects[0] : undefined
           const itemFields = visibleItemFields(group, item.fields)
           return (
@@ -308,36 +365,52 @@ function DetailValue({ field, value }: { field: string; value: AuditDetailValue 
 }
 
 function StructuredRecordTable({ records }: { records: Record<string, AuditDetailValue>[] }) {
-  const columns = recordColumns(records)
+  const [pageOffset, setPageOffset] = useState(0)
+  const columns = useMemo(() => recordColumns(records), [records])
+  const page = paginateItems(records, pageOffset, AUDIT_DETAIL_PAGE_SIZE)
   return (
     <TooltipProvider>
-      <div className="overflow-x-auto">
-        <table aria-label="Structured details" className="w-full min-w-max text-left text-sm">
-          <thead>
-            <tr className="border-b">
-              {columns.map((key) => (
-                <th
-                  className="text-muted-foreground pr-4 pb-2 text-[11px] font-medium last:pr-0"
-                  key={key}
-                  scope="col"
-                >
-                  {titleCaseToken(key, key)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {records.map((record, index) => (
-              <tr className="border-b last:border-b-0" key={detailRecordKey(record, index)}>
+      <div className="space-y-2">
+        <div className="overflow-x-auto">
+          <table aria-label="Structured details" className="w-full min-w-max text-left text-sm">
+            <thead>
+              <tr className="border-b">
                 {columns.map((key) => (
-                  <td className="max-w-52 py-2 pr-4 align-top last:pr-0" key={key}>
-                    <StructuredRecordValue field={key} value={record[key]} />
-                  </td>
+                  <th
+                    className="text-muted-foreground pr-4 pb-2 text-[11px] font-medium last:pr-0"
+                    key={key}
+                    scope="col"
+                  >
+                    {titleCaseToken(key, key)}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {page.items.map((record, index) => (
+                <tr
+                  className="border-b last:border-b-0"
+                  key={detailRecordKey(record, page.offset + index)}
+                >
+                  {columns.map((key) => (
+                    <td className="max-w-52 py-2 pr-4 align-top last:pr-0" key={key}>
+                      <StructuredRecordValue field={key} value={record[key]} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {records.length > AUDIT_DETAIL_PAGE_SIZE ? (
+          <PaginationControls
+            ariaLabel="Structured details pagination"
+            limit={AUDIT_DETAIL_PAGE_SIZE}
+            offset={page.offset}
+            onPageChange={setPageOffset}
+            total={records.length}
+          />
+        ) : null}
       </div>
     </TooltipProvider>
   )
@@ -429,4 +502,17 @@ function recordColumns(records: Record<string, AuditDetailValue>[]): string[] {
 
 function detailRecordKey(record: Record<string, AuditDetailValue>, index: number): string {
   return `${String(index)}:${JSON.stringify(record)}`
+}
+
+function segmentIntentRows(rows: IntentItemRow[]): IntentItemSegment[] {
+  const segments: IntentItemSegment[] = []
+  for (const row of rows) {
+    const current = segments.at(-1)
+    if (current?.[0].groupIndex !== row.groupIndex) {
+      segments.push([row])
+    } else {
+      current.push(row)
+    }
+  }
+  return segments
 }

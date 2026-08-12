@@ -3,6 +3,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 type PaginationControlsProps = {
+  ariaLabel?: string
   disabled?: boolean
   limit: number
   offset: number
@@ -10,7 +11,14 @@ type PaginationControlsProps = {
   total: number
 }
 
+export function paginateItems<T>(items: T[], requestedOffset: number, limit: number) {
+  const maximumOffset = Math.max(0, Math.floor(Math.max(0, items.length - 1) / limit) * limit)
+  const offset = Math.min(Math.max(0, requestedOffset), maximumOffset)
+  return { items: items.slice(offset, offset + limit), offset }
+}
+
 export function PaginationControls({
+  ariaLabel = "Pagination",
   disabled = false,
   limit,
   offset,
@@ -23,8 +31,11 @@ export function PaginationControls({
   const hasNext = offset + limit < total
 
   return (
-    <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-muted-foreground text-sm">
+    <nav
+      aria-label={ariaLabel}
+      className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <p aria-live="polite" className="text-muted-foreground text-sm" role="status">
         Showing {start}-{end} of {total}
       </p>
       <div className="flex items-center gap-2">
@@ -53,6 +64,6 @@ export function PaginationControls({
           <ChevronRightIcon data-icon="inline-end" />
         </Button>
       </div>
-    </div>
+    </nav>
   )
 }

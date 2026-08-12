@@ -14,7 +14,7 @@ import {
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { PaginationControls } from "@/components/ui/pagination-controls"
+import { paginateItems, PaginationControls } from "@/components/ui/pagination-controls"
 import {
   Sheet,
   SheetContent,
@@ -70,12 +70,7 @@ export function DataTable({
     [columns, rows, showTotals]
   )
   const effectivePageSize = pageSize && pageSize > 0 ? pageSize : rows.length || 1
-  const maximumOffset = Math.max(
-    0,
-    Math.floor(Math.max(0, rows.length - 1) / effectivePageSize) * effectivePageSize
-  )
-  const effectivePageOffset = Math.min(pageOffset, maximumOffset)
-  const visibleRows = rows.slice(effectivePageOffset, effectivePageOffset + effectivePageSize)
+  const page = paginateItems(rows, pageOffset, effectivePageSize)
 
   return (
     <div className="grid min-w-0 gap-2">
@@ -135,11 +130,11 @@ export function DataTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleRows.map((row, index) => (
+              {page.items.map((row, index) => (
                 <TableRow
-                  aria-label={`Open row ${String(effectivePageOffset + index + 1)} details`}
+                  aria-label={`Open row ${String(page.offset + index + 1)} details`}
                   className="cursor-pointer"
-                  key={effectivePageOffset + index}
+                  key={page.offset + index}
                   onClick={() => {
                     setSelectedRow(row)
                   }}
@@ -186,7 +181,7 @@ export function DataTable({
       {pageSize && rows.length > pageSize ? (
         <PaginationControls
           limit={pageSize}
-          offset={effectivePageOffset}
+          offset={page.offset}
           onPageChange={setPageOffset}
           total={rows.length}
         />
