@@ -6,6 +6,7 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableSearch } from "@/components/data-table/data-table-search"
 import { DataTableSortMenu } from "@/components/data-table/data-table-sort-menu"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { appTableContexts } from "@/components/data-table/contexts"
 import { appTableFeatures } from "@/components/data-table/features"
 
@@ -24,6 +25,7 @@ const appTable = createTableHook({
     Pagination: DataTablePagination,
     Search: DataTableSearch,
     SortMenu: DataTableSortMenu,
+    ViewOptions: DataTableViewOptions,
   },
 })
 

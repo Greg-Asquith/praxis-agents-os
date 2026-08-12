@@ -14,9 +14,13 @@ import {
 } from "@tanstack/react-table"
 
 type AppColumnMeta = {
+  align?: "left" | "right"
+  cellClassName?: string
   headClassName?: string
+  isMetric?: boolean
   label?: string
   labelClassName?: string
+  width?: number
 }
 
 export const appTableFeatures = tableFeatures({

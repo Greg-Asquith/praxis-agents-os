@@ -3,6 +3,12 @@
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+} from "@/components/data-table/table"
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import {
   dataTableExport,
@@ -14,7 +20,6 @@ import {
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { paginateItems, PaginationControls } from "@/components/ui/pagination-controls"
 import {
   Sheet,
   SheetContent,
@@ -34,6 +39,7 @@ import {
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { titleCaseToken } from "@/lib/format"
+import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { downloadTableCsv, tableToTsv } from "@/lib/table-export"
 import { cn } from "@/lib/utils"
 
@@ -43,6 +49,14 @@ export {
   type DataColumnKind,
   type DataRow,
 } from "@/components/ui/data-table-model"
+
+type DataTableTableRow = {
+  id: string
+  values: DataRow
+}
+
+const columnHelper = createAppColumnHelper<DataTableTableRow>()
+const textCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" })
 
 export function DataTable({
   columns,
@@ -61,142 +75,214 @@ export function DataTable({
   showTotals?: boolean
   truncationNote?: string | null
 }) {
-  const [copied, setCopied] = useState(false)
-  const [pageOffset, setPageOffset] = useState(0)
+  const { copied, copy } = useClipboardCopy()
   const [selectedRow, setSelectedRow] = useState<DataRow | null>(null)
-  const exported = useMemo(() => dataTableExport(columns, rows), [columns, rows])
+  const tableColumns = useMemo(() => dataColumnsToDefs(columns), [columns])
+  const tableRows = useMemo(
+    () => rows.map((values, index) => ({ id: String(index), values })),
+    [rows]
+  )
+  const columnsByKey = useMemo(
+    () => new Map(columns.map((column) => [column.key, column])),
+    [columns]
+  )
   const totals = useMemo(
     () => (showTotals ? dataTableTotals(columns, rows) : null),
     [columns, rows, showTotals]
   )
-  const effectivePageSize = pageSize && pageSize > 0 ? pageSize : rows.length || 1
-  const page = paginateItems(rows, pageOffset, effectivePageSize)
+  const resolvedPageSize = pageSize && pageSize > 0 ? pageSize : null
+  const table = useAppTable({
+    columns: tableColumns,
+    data: tableRows,
+    enableMultiSort: false,
+    initialState: {
+      pagination: { pageIndex: 0, pageSize: resolvedPageSize ?? (rows.length || 1) },
+    },
+    manualPagination: resolvedPageSize === null,
+  })
+  const sortedModelRows = table.getSortedRowModel().rows
+  const exported = useMemo(
+    () => dataTableExportFromRowModel(columns, sortedModelRows),
+    [columns, sortedModelRows]
+  )
+  const pagination = table.state.pagination
+  const visibleRowOffset =
+    resolvedPageSize === null ? 0 : pagination.pageIndex * pagination.pageSize
+  const visibleColumns = table.getVisibleLeafColumns()
 
   return (
-    <div className="grid min-w-0 gap-2">
-      <div className={cn("flex gap-3", header ? "items-end justify-between" : "justify-end")}>
-        {header ? <div className="min-w-0 flex-1">{header}</div> : null}
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
-            onClick={() => {
-              void copyTable(tableToTsv(exported), setCopied)
-            }}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            {copied ? <CheckIcon /> : <CopyIcon />}
-          </Button>
-          <Button
-            aria-label="Download Report CSV"
-            onClick={() => {
-              downloadTableCsv(exported, exportFilename)
-            }}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <DownloadIcon />
-          </Button>
-        </div>
-      </div>
-      <div className="min-w-0">
-        <TooltipProvider>
-          <Table className="table-fixed" style={{ minWidth: tableMinWidth(columns) }}>
-            <colgroup>
-              {columns.map((column) => (
-                <col key={column.key} style={{ width: columnWidth(column) }} />
-              ))}
-            </colgroup>
-            <TableHeader>
-              <TableRow>
-                {columns.map((column) => (
-                  <TableHead className={columnClass(column)} key={column.key}>
-                    <Tooltip>
-                      <TooltipTrigger
-                        className={cn(
-                          "block w-full truncate",
-                          columnAlignment(column) === "right" && "text-right"
-                        )}
-                        render={<span />}
-                      >
-                        {column.label}
-                      </TooltipTrigger>
-                      <TooltipContent>{column.label}</TooltipContent>
-                    </Tooltip>
-                  </TableHead>
+    <table.AppTable>
+      <TooltipProvider>
+        <div className="grid min-w-0 gap-2">
+          <div className={cn("flex gap-3", header ? "items-end justify-between" : "justify-end")}>
+            {header ? <div className="min-w-0 flex-1">{header}</div> : null}
+            <div className="flex shrink-0 items-center gap-1">
+              <table.ViewOptions />
+              <Button
+                aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
+                onClick={() => {
+                  void copy(tableToTsv(exported))
+                }}
+                size="icon-xs"
+                type="button"
+                variant="ghost"
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </Button>
+              <Button
+                aria-label="Download Report CSV"
+                onClick={() => {
+                  downloadTableCsv(exported, exportFilename)
+                }}
+                size="icon-xs"
+                type="button"
+                variant="ghost"
+              >
+                <DownloadIcon />
+              </Button>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <Table className="table-fixed" style={{ minWidth: tableMinWidth(visibleColumns) }}>
+              <colgroup>
+                {visibleColumns.map((column) => (
+                  <col key={column.id} style={{ width: column.columnDef.meta?.width }} />
                 ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {page.items.map((row, index) => (
-                <TableRow
-                  aria-label={`Open row ${String(page.offset + index + 1)} details`}
-                  className="cursor-pointer"
-                  key={page.offset + index}
-                  onClick={() => {
-                    setSelectedRow(row)
-                  }}
-                  onKeyDown={(event) => {
-                    openRowFromKeyboard(event, row, setSelectedRow)
-                  }}
-                  role="button"
-                  tabIndex={0}
-                >
-                  {columns.map((column) => (
-                    <TableCell className={columnClass(column)} key={column.key}>
-                      <DataCell column={column} value={row[column.key]} />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-            {totals ? (
-              <TableFooter>
-                <TableRow>
-                  {columns.map((column, index) => (
-                    <TableCell className={columnClass(column)} key={column.key}>
-                      {index === 0 ? (
-                        <span className="font-medium">Total</span>
-                      ) : totals[column.key] === undefined ? null : (
-                        <DataCell column={column} value={totals[column.key]} />
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableFooter>
+              </colgroup>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((tableHeader) => (
+                      <table.AppHeader header={tableHeader} key={tableHeader.id}>
+                        {() => <DataTableHeaderCell />}
+                      </table.AppHeader>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows.map((row, index) => (
+                  <TableRow
+                    aria-label={`Open row ${String(visibleRowOffset + index + 1)} details`}
+                    className="cursor-pointer"
+                    key={row.id}
+                    onClick={() => {
+                      setSelectedRow(row.original.values)
+                    }}
+                    onKeyDown={(event) => {
+                      openRowFromKeyboard(event, row.original.values, setSelectedRow)
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <table.AppCell cell={cell} key={cell.id}>
+                        {() => <DataTableBodyCell />}
+                      </table.AppCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+              {totals ? (
+                <TableFooter>
+                  <TableRow>
+                    {visibleColumns.map((tableColumn, index) => {
+                      const column = columnsByKey.get(tableColumn.id)
+                      return (
+                        <TableCell
+                          className={tableColumn.columnDef.meta?.cellClassName}
+                          key={tableColumn.id}
+                        >
+                          {index === 0 ? (
+                            <span className="font-medium">Total</span>
+                          ) : column === undefined || totals[column.key] === undefined ? null : (
+                            <DataCell column={column} value={totals[column.key]} />
+                          )}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                </TableFooter>
+              ) : null}
+            </Table>
+          </div>
+          <div className="text-muted-foreground flex flex-wrap items-start justify-between gap-2 text-xs">
+            <span>
+              {String(rows.length)} {rows.length === 1 ? "row" : "rows"}
+            </span>
+            {truncationNote ? (
+              <span className="text-warning-foreground max-w-xl">{truncationNote}</span>
             ) : null}
-          </Table>
-        </TooltipProvider>
-      </div>
-      <div className="text-muted-foreground flex flex-wrap items-start justify-between gap-2 text-xs">
-        <span>
-          {String(rows.length)} {rows.length === 1 ? "row" : "rows"}
-        </span>
-        {truncationNote ? (
-          <span className="text-warning-foreground max-w-xl">{truncationNote}</span>
-        ) : null}
-      </div>
-      {pageSize && rows.length > pageSize ? (
-        <PaginationControls
-          limit={pageSize}
-          offset={page.offset}
-          onPageChange={setPageOffset}
-          total={rows.length}
-        />
-      ) : null}
-      <RowDetailSheet
-        columns={columns}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedRow(null)
-          }
-        }}
-        row={selectedRow}
-      />
-    </div>
+          </div>
+          {resolvedPageSize !== null && rows.length > resolvedPageSize ? (
+            <table.Pagination total={rows.length} />
+          ) : null}
+          <RowDetailSheet
+            columns={columns}
+            onOpenChange={(open) => {
+              if (!open) {
+                setSelectedRow(null)
+              }
+            }}
+            row={selectedRow}
+          />
+        </div>
+      </TooltipProvider>
+    </table.AppTable>
   )
+}
+
+export function dataColumnsToDefs(columns: DataColumn[]) {
+  return columnHelper.columns(
+    columns.map((column) =>
+      columnHelper.accessor((row) => row.values[column.key], {
+        id: column.key,
+        cell: () => <DataCellFromContext column={column} />,
+        enableHiding: true,
+        enableSorting: true,
+        header: ({ header }) => <header.ColumnHeader />,
+        meta: {
+          align: columnAlignment(column),
+          cellClassName: columnClass(column),
+          headClassName: columnClass(column),
+          isMetric: column.isMetric ?? false,
+          label: column.label,
+          labelClassName: cn(
+            "max-w-full truncate",
+            columnAlignment(column) === "right" && "text-right"
+          ),
+          width: columnWidth(column),
+        },
+        sortDescFirst: sortDescFirst(column),
+        sortFn: (rowA, rowB) =>
+          compareDataCellValues(
+            column,
+            rowA.original.values[column.key],
+            rowB.original.values[column.key]
+          ),
+        sortUndefined: "last",
+      })
+    )
+  )
+}
+
+function DataTableHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function DataTableBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell className={cell.column.columnDef.meta?.cellClassName}>
+      <cell.FlexRender />
+    </TableCell>
+  )
+}
+
+function DataCellFromContext({ column }: { column: DataColumn }) {
+  const cell = useCellContext()
+  return <DataCell column={column} value={cell.getValue()} />
 }
 
 export function DataTableSkeleton({ label = "Loading report…" }: { label?: string }) {
@@ -340,8 +426,8 @@ function columnWidth(column: DataColumn): number {
   return 120
 }
 
-function tableMinWidth(columns: DataColumn[]): number {
-  return columns.reduce((width, column) => width + columnWidth(column), 0)
+function tableMinWidth(columns: { columnDef: { meta?: { width?: number } } }[]): number {
+  return columns.reduce((width, column) => width + (column.columnDef.meta?.width ?? 120), 0)
 }
 
 function scalarText(value: unknown): string | null {
@@ -369,11 +455,70 @@ function statusVariant(value: string): "success" | "warning" | "destructive" | "
   return "outline"
 }
 
-async function copyTable(value: string, onCopied: (copied: boolean) => void): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(value)
-  } catch {
-    return
+export function compareDataCellValues(column: DataColumn, left: unknown, right: unknown): number {
+  if (column.kind === "number" || column.kind === "currency" || column.kind === "percent") {
+    const leftNumber = finiteSortNumber(left)
+    const rightNumber = finiteSortNumber(right)
+    if (leftNumber !== null && rightNumber !== null) {
+      return leftNumber - rightNumber
+    }
+    if (leftNumber !== null) {
+      return -1
+    }
+    if (rightNumber !== null) {
+      return 1
+    }
   }
-  onCopied(true)
+  if (column.kind === "date" || column.kind === "datetime") {
+    const leftTime = sortableTime(left, column.kind)
+    const rightTime = sortableTime(right, column.kind)
+    if (leftTime !== null && rightTime !== null) {
+      return leftTime - rightTime
+    }
+    if (leftTime !== null) {
+      return -1
+    }
+    if (rightTime !== null) {
+      return 1
+    }
+  }
+  return textCollator.compare(scalarText(left) ?? "", scalarText(right) ?? "")
+}
+
+function finiteSortNumber(value: unknown): number | null {
+  const text = scalarText(value)
+  if (!text?.trim()) {
+    return null
+  }
+  const number = Number(text)
+  return Number.isFinite(number) ? number : null
+}
+
+function sortableTime(value: unknown, kind: "date" | "datetime"): number | null {
+  const text = scalarText(value)
+  if (text === null) {
+    return null
+  }
+  const timestamp = new Date(kind === "date" ? `${text}T00:00:00` : text).getTime()
+  return Number.isNaN(timestamp) ? null : timestamp
+}
+
+function sortDescFirst(column: DataColumn): boolean {
+  return (
+    column.kind === "number" ||
+    column.kind === "currency" ||
+    column.kind === "percent" ||
+    column.kind === "date" ||
+    column.kind === "datetime"
+  )
+}
+
+export function dataTableExportFromRowModel(
+  columns: DataColumn[],
+  rows: readonly { original: DataTableTableRow }[]
+) {
+  return dataTableExport(
+    columns,
+    rows.map((row) => row.original.values)
+  )
 }

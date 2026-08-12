@@ -2,9 +2,17 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import {
+  compareDataCellValues,
+  DataTable,
+  dataColumnsToDefs,
+  dataTableExportFromRowModel,
+  type DataColumn,
+  type DataRow,
+} from "@/components/ui/data-table"
+import { useAppTable } from "@/components/data-table/table"
 import { dataTableExport, dataTableTotals, formatDataCell } from "@/components/ui/data-table-model"
-import { tableToCsv } from "@/lib/table-export"
+import { tableToCsv, tableToTsv } from "@/lib/table-export"
 
 const NODE = (content: string) => ({
   node: "praxis_untrusted" as const,
@@ -48,12 +56,19 @@ const CTR_COLUMN: DataColumn = {
   label: "CTR",
   isMetric: true,
 }
+const CLICKS_COLUMN: DataColumn = {
+  key: "metrics.clicks",
+  kind: "number",
+  label: "Clicks",
+  isMetric: true,
+}
 const DATE_COLUMN: DataColumn = { key: "segments.date", kind: "date", label: "Date" }
 const STATUS_COLUMN: DataColumn = {
   key: "campaign.status",
   kind: "status",
   label: "Status",
 }
+const LINK_COLUMN: DataColumn = { key: "landing_page", kind: "link", label: "Landing page" }
 const COLUMNS = [ID_COLUMN, COST_COLUMN, CTR_COLUMN, DATE_COLUMN, STATUS_COLUMN]
 
 describe("DataTable", () => {
@@ -98,6 +113,34 @@ describe("DataTable", () => {
     expect(csv).not.toContain("source_kind")
   })
 
+  it("sorts report values by kind and exports the full sorted row model", () => {
+    const rows: DataRow[] = Array.from({ length: 30 }, (_, index) => ({
+      "campaign.id": NODE(`campaign-${String(index + 1).padStart(2, "0")}`),
+      "metrics.cost_micros": NODE(String((index + 1) * 1_000_000)),
+    }))
+    const html = renderToStaticMarkup(
+      createElement(SortedExport, {
+        columns: [ID_COLUMN, COST_COLUMN],
+        rows,
+        sortColumn: COST_COLUMN.key,
+      })
+    )
+
+    expect(html.indexOf("campaign-30")).toBeLessThan(html.indexOf("campaign-01"))
+    expect(html).toContain("campaign-16")
+    expect(html).not.toContain("praxis_untrusted")
+  })
+
+  it("uses numeric, date, and natural text comparators", () => {
+    expect(compareDataCellValues(COST_COLUMN, NODE("2"), NODE("10"))).toBeLessThan(0)
+    expect(compareDataCellValues(DATE_COLUMN, NODE("2026-07-23"), NODE("2026-08-01"))).toBeLessThan(
+      0
+    )
+    expect(compareDataCellValues(ID_COLUMN, NODE("campaign-2"), NODE("campaign-10"))).toBeLessThan(
+      0
+    )
+  })
+
   it("renders totals, export actions, truncation context, and row-detail affordances", () => {
     const html = renderToStaticMarkup(
       createElement(DataTable, {
@@ -118,6 +161,7 @@ describe("DataTable", () => {
 
     expect(html).toContain("Copy Report Table")
     expect(html).toContain("Download Report CSV")
+    expect(html).toContain("Choose report columns")
     expect(html).toContain("Open row 1 details")
     expect(html).toContain("Report limited to 1 row.")
     expect(html).toContain("Total")
@@ -127,7 +171,26 @@ describe("DataTable", () => {
     expect(html).toContain("<colgroup>")
     expect(html).toContain("truncate")
     expect(html).toContain("text-right")
+    expect(html).toContain('aria-sort="none"')
     expect(html).not.toContain("<code")
+  })
+
+  it("renders only validated HTTP links as external anchors", () => {
+    const html = renderToStaticMarkup(
+      createElement(DataTable, {
+        columns: [LINK_COLUMN],
+        rows: [
+          { landing_page: NODE("https://example.com/landing") },
+          { landing_page: NODE("javascript:alert(1)") },
+        ],
+      })
+    )
+
+    expect(html).toContain('href="https://example.com/landing"')
+    expect(html).toContain('rel="noopener noreferrer"')
+    expect(html).toContain('target="_blank"')
+    expect(html).not.toContain('href="javascript:alert(1)"')
+    expect(html).toContain("javascript:alert(1)")
   })
 
   it("paginates large row sets while exporting the complete table", () => {
@@ -152,4 +215,43 @@ describe("DataTable", () => {
     expect(exported.rows).toHaveLength(30)
     expect(exported.rows.at(-1)).toEqual(["campaign-30"])
   })
+
+  it("keeps totals over all rows when the visible table is paginated", () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      "campaign.id": `campaign-${String(index + 1).padStart(2, "0")}`,
+      "metrics.clicks": String(index + 1),
+    }))
+    const html = renderToStaticMarkup(
+      createElement(DataTable, {
+        columns: [ID_COLUMN, CLICKS_COLUMN],
+        pageSize: 25,
+        rows,
+        showTotals: true,
+      })
+    )
+
+    expect(html).not.toContain("campaign-26")
+    expect(html).toContain("Total")
+    expect(html).toContain(">465<")
+  })
 })
+
+function SortedExport({
+  columns,
+  rows,
+  sortColumn,
+}: {
+  columns: DataColumn[]
+  rows: DataRow[]
+  sortColumn: string
+}) {
+  const table = useAppTable({
+    columns: dataColumnsToDefs(columns),
+    data: rows.map((values, index) => ({ id: String(index), values })),
+    manualPagination: true,
+    state: { sorting: [{ desc: true, id: sortColumn }] },
+  })
+  const exported = dataTableExportFromRowModel(columns, table.getSortedRowModel().rows)
+
+  return createElement("pre", null, tableToTsv(exported))
+}
