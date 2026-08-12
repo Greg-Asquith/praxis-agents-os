@@ -44,7 +44,7 @@ class LLMSettingsMixin:
         description="Provider for the conversation-naming utility model.",
     )
     CONVERSATION_NAMING_MODEL: str = Field(
-        default="gpt-5.4-nano",
+        default="gpt-5.6-luna",
         description="Model used to generate conversation titles.",
     )
     NATIVE_WEB_SEARCH_MAX_STEPS: int = Field(

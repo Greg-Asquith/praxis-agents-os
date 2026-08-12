@@ -371,6 +371,30 @@ def test_generate_image_uses_latest_provider_model_defaults(
     assert image_generation_tools.DEFAULT_OPENAI_IMAGE_MODEL == "gpt-image-2"
 
 
+def test_image_generation_captures_output_metadata_for_cost_estimates() -> None:
+    details = {"action": "generate", "image_model": "gpt-image-2"}
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolReturnPart(
+                    tool_name="image_generation",
+                    tool_call_id="image-1",
+                    content={"status": "completed", "quality": "Medium", "size": "1024x1024"},
+                )
+            ]
+        )
+    ]
+
+    image_generation_tools._capture_image_output_metering(details, messages)
+
+    assert details == {
+        "action": "generate",
+        "image_model": "gpt-image-2",
+        "image_quality": "medium",
+        "image_size": "1024x1024",
+    }
+
+
 def test_generate_image_availability_follows_supported_provider_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

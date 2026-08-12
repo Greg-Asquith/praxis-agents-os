@@ -24,7 +24,7 @@ export function ProfileRoute() {
             ? "Manage your account details, password, and security."
             : "Manage your account details and security."
         }
-        title="Profile settings"
+        title="Profile Settings"
       />
 
       <ProfileForm />

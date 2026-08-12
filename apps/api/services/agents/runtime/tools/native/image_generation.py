@@ -24,7 +24,13 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import ImageGeneration
-from pydantic_ai.messages import BinaryContent, BinaryImage, ModelMessage, ModelResponse
+from pydantic_ai.messages import (
+    BinaryContent,
+    BinaryImage,
+    ModelMessage,
+    ModelResponse,
+    NativeToolReturnPart,
+)
 from pydantic_ai.native_tools import ImageAspectRatio
 from pydantic_ai.usage import RunUsage, UsageLimits
 
@@ -65,6 +71,8 @@ DEFAULT_NATIVE_IMAGE_MODELS = {
     PROVIDER_OPENAI: "gpt-5.6-luna",
 }
 DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_GOOGLE_IMAGE_QUALITY = "standard"
+DEFAULT_GOOGLE_IMAGE_SIZE = "1k"
 
 IMAGE_GENERATION_HELPER_INSTRUCTIONS = """\
 Generate exactly one new image from the user's prompt using the native image
@@ -342,12 +350,24 @@ async def run_native_image_generation(
     if input_media:
         user_content = [user_content, *input_media]
 
+    metering_details = {"action": action}
+    if model_spec.provider == PROVIDER_OPENAI:
+        metering_details["image_model"] = DEFAULT_OPENAI_IMAGE_MODEL
+    elif model_spec.provider == PROVIDER_GOOGLE:
+        metering_details.update(
+            image_model=model_spec.model,
+            image_quality=DEFAULT_GOOGLE_IMAGE_QUALITY,
+            image_size=DEFAULT_GOOGLE_IMAGE_SIZE,
+        )
+
     async def call(usage: RunUsage):
-        return await helper.run(
+        result = await helper.run(
             user_content,
             usage_limits=UsageLimits(request_limit=model_spec.max_steps),
             usage=usage,
         )
+        _capture_image_output_metering(metering_details, result.all_messages())
+        return result
 
     result = await run_metered_helper(
         AIUsageEventData(
@@ -359,7 +379,7 @@ async def run_native_image_generation(
             user_id=deps.user.id,
             run_id=deps.run.id,
             conversation_id=deps.conversation.id,
-            details={"action": action},
+            details=metering_details,
         ),
         call,
     )
@@ -384,6 +404,26 @@ async def run_native_image_generation(
     raise ModelRetry(
         "The image provider completed without returning an image. Try again or choose another provider."
     )
+
+
+def _capture_image_output_metering(
+    details: dict[str, str],
+    messages: list[ModelMessage],
+) -> None:
+    """Retain provider-returned metadata needed for image output estimates."""
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            continue
+        for part in message.parts:
+            if not isinstance(part, NativeToolReturnPart) or part.tool_name != "image_generation":
+                continue
+            content = part.content
+            if not isinstance(content, dict) or content.get("status") != "completed":
+                continue
+            for source, target in (("quality", "image_quality"), ("size", "image_size")):
+                value = content.get(source)
+                if isinstance(value, str) and value:
+                    details[target] = value.lower()
 
 
 def _was_content_policy_refusal(messages: list[ModelMessage]) -> bool:

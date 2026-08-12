@@ -1,15 +1,179 @@
 # apps/api/services/ai_usage/utils.py
 
-"""Shared AI usage conversion and persistence mechanics."""
+"""Shared AI usage conversion, persistence, and aggregation mechanics."""
 
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.general import AppValidationError
 from models.ai_usage_event import AIUsageEvent
 from services.ai_usage.domain import AIUsageEventData
+from services.ai_usage.pricing import ModelPrice, find_image_output_price
+from services.ai_usage.schemas import PricingCoverage, TokenCounts
+
+_MILLION = Decimal(1_000_000)
+_HUNDRED = Decimal(100)
+
+
+@dataclass(frozen=True)
+class UsageRange:
+    from_: datetime
+    to: datetime
+
+
+@dataclass(frozen=True)
+class UsageBucket:
+    day: date
+    provider: str
+    model: str
+    input_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    output_tokens: int
+    requests: int
+    invocations: int = 0
+    purpose: str | None = None
+    image_model: str | None = None
+    image_quality: str | None = None
+    image_size: str | None = None
+    key: str | None = None
+    label: str | None = None
+
+    @property
+    def tokens(self) -> int:
+        return (
+            self.input_tokens
+            + self.cache_read_tokens
+            + self.cache_write_tokens
+            + self.output_tokens
+        )
+
+
+@dataclass
+class UsageFold:
+    tokens_by_class: TokenCounts = field(default_factory=TokenCounts)
+    requests: int = 0
+    estimated_cost_usd: Decimal = Decimal(0)
+    priced_tokens: int = 0
+    unpriced_tokens: int = 0
+    priced_requests: int = 0
+    unpriced_requests: int = 0
+    has_priced_bucket: bool = False
+    priced_image_generations: int = 0
+    unpriced_image_generations: int = 0
+
+    @property
+    def tokens(self) -> int:
+        return sum(
+            (
+                self.tokens_by_class.input,
+                self.tokens_by_class.cache_read,
+                self.tokens_by_class.cache_write,
+                self.tokens_by_class.output,
+            )
+        )
+
+
+def resolve_usage_range(
+    from_: datetime | None,
+    to: datetime | None,
+    *,
+    now: datetime | None = None,
+) -> UsageRange:
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    end = to or current
+    start = from_ or (end - timedelta(days=30))
+    if start.tzinfo is None or end.tzinfo is None:
+        raise AppValidationError("Usage range timestamps must include a UTC offset.")
+    start = start.astimezone(UTC)
+    end = end.astimezone(UTC)
+    if start >= end:
+        raise AppValidationError("Usage range start must be before its end.")
+    if end - start > timedelta(days=92):
+        raise AppValidationError("Usage range cannot exceed 92 days.")
+    return UsageRange(from_=start, to=end)
+
+
+def bucket_cost(bucket: UsageBucket, price: ModelPrice) -> Decimal:
+    return (
+        Decimal(bucket.input_tokens) * price.input_usd_per_mtok
+        + Decimal(bucket.cache_read_tokens) * price.cache_read_usd_per_mtok
+        + Decimal(bucket.cache_write_tokens) * price.cache_write_usd_per_mtok
+        + Decimal(bucket.output_tokens) * price.output_usd_per_mtok
+    ) / _MILLION
+
+
+def fold_buckets(
+    buckets: Iterable[tuple[UsageBucket, ModelPrice | None]],
+) -> UsageFold:
+    folded = UsageFold()
+    for bucket, price in buckets:
+        folded.tokens_by_class.input += bucket.input_tokens
+        folded.tokens_by_class.cache_read += bucket.cache_read_tokens
+        folded.tokens_by_class.cache_write += bucket.cache_write_tokens
+        folded.tokens_by_class.output += bucket.output_tokens
+        folded.requests += bucket.requests
+        if price is None:
+            folded.unpriced_tokens += bucket.tokens
+            folded.unpriced_requests += bucket.requests
+        else:
+            folded.has_priced_bucket = True
+            folded.priced_tokens += bucket.tokens
+            folded.priced_requests += bucket.requests
+            folded.estimated_cost_usd += bucket_cost(bucket, price)
+        if bucket.purpose == "image_generation":
+            image_price = (
+                find_image_output_price(
+                    bucket.provider,
+                    bucket.image_model,
+                    bucket.image_quality,
+                    bucket.image_size,
+                    bucket.day,
+                )
+                if bucket.image_model and bucket.image_quality and bucket.image_size
+                else None
+            )
+            if image_price is None:
+                folded.unpriced_image_generations += bucket.invocations
+            else:
+                folded.has_priced_bucket = True
+                folded.priced_image_generations += bucket.invocations
+                folded.estimated_cost_usd += Decimal(bucket.invocations) * image_price.usd_per_image
+    return folded
+
+
+def decimal_share(numerator: int | Decimal, denominator: int | Decimal) -> Decimal:
+    if denominator == 0:
+        return Decimal(0)
+    return Decimal(numerator) / Decimal(denominator)
+
+
+def optional_cost_share(cost: Decimal, total_cost: Decimal) -> Decimal | None:
+    if total_cost == 0:
+        return None
+    return cost / total_cost
+
+
+def pricing_coverage(folded: UsageFold) -> PricingCoverage:
+    total_tokens = folded.priced_tokens + folded.unpriced_tokens
+    total_requests = folded.priced_requests + folded.unpriced_requests
+    return PricingCoverage(
+        priced_tokens=folded.priced_tokens,
+        unpriced_tokens=folded.unpriced_tokens,
+        token_coverage_percent=decimal_share(folded.priced_tokens, total_tokens) * _HUNDRED,
+        priced_requests=folded.priced_requests,
+        unpriced_requests=folded.unpriced_requests,
+        request_coverage_percent=decimal_share(folded.priced_requests, total_requests) * _HUNDRED,
+        priced_image_generations=folded.priced_image_generations,
+        unpriced_image_generations=folded.unpriced_image_generations,
+    )
 
 
 def usage_values(usage: Any) -> dict[str, int]:

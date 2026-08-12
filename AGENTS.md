@@ -37,7 +37,12 @@ behind good defaults and progressive disclosure, not in their face.
   Successful and suspended agent invocations record atomically with their run
   transition; failure/cancellation and helper/embedding paths use best-effort
   durable recording through a distinct bounded runtime-role connection pool.
-  This ledger is observability only: it does not enforce budgets or admission.
+  Owner/admin usage routes apply effective-dated public prices to UTC daily
+  buckets and expose estimated workspace cost, trends, attribution breakdowns,
+  and explicit pricing coverage. Image-generation events retain known output
+  metadata so GPT Image 2 and Gemini 3.1 Flash Image estimates are added
+  separately from the mainline helper model. This ledger is observability only:
+  it does not enforce budgets or admission.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router +
   TanStack Query). It talks to the API over REST and consumes agent turns over
   SSE.
@@ -58,7 +63,8 @@ Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations
 (SSE chat with tool calls and approvals), agent runs (durable approval resume,
 configurable approval expiry, and staged-input cleanup), the
-LLM model catalog, files and storage (signed uploads, revisions, background
+LLM model catalog, AI usage and estimated public-rate costs, files and storage
+(signed uploads, revisions, background
 markdown extraction), skills, knowledge base, agent memories, the context hub,
 schedules, integrations (OAuth, API-key, and service-account connections),
 artifacts (dedicated immutable revisions, approval-gated agent

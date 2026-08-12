@@ -25,6 +25,7 @@ from routes.skills import router as skills_router
 from routes.status import router as status_router
 from routes.storage import router as storage_router
 from routes.tools import router as tools_router
+from routes.usage import router as usage_router
 from routes.users import router as users_router
 from routes.workspaces import router as workspaces_router
 
@@ -47,6 +48,7 @@ api_router.include_router(skills_router)
 api_router.include_router(status_router)
 api_router.include_router(storage_router)
 api_router.include_router(tools_router)
+api_router.include_router(usage_router)
 api_router.include_router(users_router)
 api_router.include_router(workspaces_router)
 

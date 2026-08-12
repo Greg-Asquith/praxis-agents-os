@@ -56,7 +56,7 @@ export function HomeRoute() {
             New Conversation
           </Button>
         }
-        description={`${workspace.name} · Review work that needs you, read new results, or start something.`}
+        description={`${workspace.name} · Review actions that needs your approval, check unread messages, or start a new task.`}
         title="Home"
       />
 

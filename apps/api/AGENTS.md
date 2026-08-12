@@ -59,6 +59,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
   pool, so metering cannot consume the normal pool's overflow capacity. Usage
   details must remain bounded, and the ledger must not become a budget or
   admission-enforcement mechanism.
+- Workspace usage reads use the ordinary tenant runtime session, retain an
+  explicit workspace predicate, and price UTC-day buckets before wider folds.
+  The `/usage` router is owner/admin-only. Costs are read-time estimates from
+  effective-dated public rates; unknown models remain unpriced. Native image
+  helpers retain known model/quality/size metadata so GPT Image 2 and Gemini
+  3.1 Flash Image output estimates are added to, not substituted for, mainline
+  helper-model token cost. Unavailable image-model input remains disclosed
+  rather than guessed.
 
 ## Agent Runtime And Providers
 
