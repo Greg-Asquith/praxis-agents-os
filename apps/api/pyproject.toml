@@ -13,7 +13,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "firecrawl-anydoc==0.1.8",
     "greenlet>=3.5.4",
-    "httpx2>=2.9.1",
+    "httpx2>=2.10.0",
     "logfire>=4.40.0",
     "markdownify>=1.2.3",
     "nh3>=0.2.20",
