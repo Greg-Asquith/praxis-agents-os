@@ -6,6 +6,7 @@ from contextlib import suppress
 from typing import Any
 
 from integrations.gmail.client import GmailClient
+from services.integrations.http import IntegrationRequestPolicy
 
 
 async def count_thread_messages(client: GmailClient, *, thread_id: Any) -> int | None:
@@ -17,6 +18,7 @@ async def count_thread_messages(client: GmailClient, *, thread_id: Any) -> int |
         thread = await client.get(
             f"users/me/threads/{thread_id}",
             operation="count_thread_messages",
+            policy=IntegrationRequestPolicy.READ,
             params={"format": "minimal"},
         )
         messages = thread.get("messages") if isinstance(thread, dict) else None

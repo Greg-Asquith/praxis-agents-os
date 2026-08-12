@@ -8,7 +8,12 @@ import httpx2
 import pytest
 from pydantic_ai import ModelRetry
 
-from core.exceptions.integration import IntegrationNotFoundError
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationNotFoundError,
+    IntegrationValidationError,
+)
 from integrations.airtable.client import AirtableClient
 from integrations.airtable.discover_resources import discover_resources
 from integrations.airtable.entity_resolvers.record import (
@@ -28,6 +33,7 @@ from integrations.airtable.tools.utils import airtable_client
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations import http as integration_http
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.providers_view import list_providers
 
@@ -544,11 +550,74 @@ async def test_airtable_rate_limit_honors_retry_after(monkeypatch) -> None:
         payload = await AirtableClient(_static_token, client=client).get(
             "app/Table",
             operation="list_records",
+            policy=IntegrationRequestPolicy.READ,
         )
 
     assert payload == {"records": []}
     assert attempts == 2
     sleep.assert_awaited_once_with(1.0)
+
+
+@pytest.mark.parametrize("failure", ["connect", "read_timeout", "429", "503"])
+async def test_airtable_create_failures_attempt_once(failure: str) -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        if failure == "connect":
+            raise httpx2.ConnectError("connect failed", request=request)
+        if failure == "read_timeout":
+            raise httpx2.ReadTimeout("response timed out", request=request)
+        return httpx2.Response(int(failure), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationError):
+            await AirtableClient(_static_token, client=http_client).post(
+                "app/Table",
+                operation="create_record",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"fields": {}},
+            )
+
+    assert attempts == 1
+
+
+async def test_airtable_create_auth_rejection_is_not_retried() -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(401, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationError) as exc_info:
+            await AirtableClient(_static_token, client=http_client).post(
+                "app/Table",
+                operation="create_record",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"fields": {}},
+            )
+
+    assert attempts == 1
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.REJECTED
+
+
+async def test_airtable_malformed_create_response_is_ambiguous() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=b"not-json", request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        with pytest.raises(IntegrationValidationError) as exc_info:
+            await AirtableClient(_static_token, client=http_client).post(
+                "app/Table",
+                operation="create_record",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"fields": {}},
+            )
+
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
 
 
 async def test_each_context_entry_resolves_its_own_connection_secret(monkeypatch) -> None:
@@ -604,7 +673,11 @@ async def test_each_context_entry_resolves_its_own_connection_secret(monkeypatch
             write_allowed=True,
         )
         client = await airtable_client(ctx, entry)
-        await client.get("app-one/Table", operation="list_records")
+        await client.get(
+            "app-one/Table",
+            operation="list_records",
+            policy=IntegrationRequestPolicy.READ,
+        )
 
     assert seen_authorizations == [
         "Bearer token-for-secret-1",

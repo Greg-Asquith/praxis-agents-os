@@ -4,6 +4,8 @@
 
 from typing import Any
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import GoogleAdsClient, normalize_customer_id
 from .utils import grouped_partial_failure_errors, stream_rows
 
@@ -32,6 +34,7 @@ async def add_negative_keywords(
     existing_payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",
         operation="list_negative_keywords",
+        policy=IntegrationRequestPolicy.READ,
         login_customer_id=login_customer_id,
         json={"query": existing_query},
     )
@@ -61,6 +64,7 @@ async def add_negative_keywords(
     payload = await client.post(
         f"customers/{normalized_customer_id}/sharedCriteria:mutate",
         operation="add_negative_keywords",
+        policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={
             "operations": [

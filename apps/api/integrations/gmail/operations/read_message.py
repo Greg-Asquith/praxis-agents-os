@@ -7,6 +7,7 @@ from typing import Any
 
 from integrations.gmail.client import GmailClient
 from integrations.gmail.operations.utils import extract_headers, find_body_part, untrusted
+from services.integrations.http import IntegrationRequestPolicy
 
 MAX_BODY_CHARS = 50_000
 TRUNCATION_MARKER = "\n\n[Message body truncated at 50000 characters.]"
@@ -25,6 +26,7 @@ async def read_message(client: GmailClient, *, message_id: str) -> dict[str, Any
     payload = await client.get(
         f"users/me/messages/{message_id}",
         operation="read_message",
+        policy=IntegrationRequestPolicy.READ,
         params={"format": "full"},
     )
     headers = extract_headers(payload)

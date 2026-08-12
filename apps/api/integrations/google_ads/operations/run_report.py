@@ -4,6 +4,8 @@
 
 from typing import Any
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import GoogleAdsClient
 from .utils import bounded_query, stream_rows
 
@@ -21,6 +23,7 @@ async def run_report(
     payload = await client.post(
         f"customers/{customer_id}/googleAds:searchStream",
         operation="run_report",
+        policy=IntegrationRequestPolicy.READ,
         login_customer_id=login_customer_id,
         json={"query": query_with_limit},
     )

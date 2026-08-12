@@ -137,6 +137,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   callbacks, fan-out serializers, or copied outer result fields. A genuine
   one-request/many-context topology may retain a narrowly named adapter that
   delegates persistence to the shared runner.
+- Every integration HTTP request declares its semantic transport policy as
+  `read`, `idempotent_write`, or `mutation`; HTTP method and operation names
+  never imply retry safety. Reads retain bounded retries. A mutation is never
+  retried after an ambiguous attempt; only a received provider rejection, such
+  as a 401 followed by credential refresh, can authorize a fresh attempt.
+  Transport failures expose `not_dispatched`, `rejected`, or `ambiguous`
+  disposition to the shared audit runner. Unknown mutation failures and
+  in-flight cancellation are ambiguous, close correlated evidence as
+  `unverified_mutation`, and must not be replayed automatically.
 - Provider packages keep each entity resolver in its own module under an
   `entity_resolvers/` tree, with one module per entity kind. The package
   `__init__.py` only composes exported resolver definitions so provider

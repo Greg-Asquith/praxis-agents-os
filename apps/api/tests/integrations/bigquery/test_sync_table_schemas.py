@@ -16,6 +16,7 @@ from integrations.bigquery.sync_table_schemas import (
 from models.integration_table_schema import IntegrationTableSchema
 from models.integrations import ExternalCredential
 from models.jobs import Job
+from services.integrations.http import IntegrationRequestPolicy
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -374,8 +375,10 @@ class _SchemaClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
     ) -> Any:
+        assert policy is IntegrationRequestPolicy.READ
         self.calls.append((path, params))
         if operation == "list_tables":
             return next(self._list_responses)

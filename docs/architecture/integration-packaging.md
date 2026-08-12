@@ -118,7 +118,7 @@ apps/api/integrations/
   gmail/
     __init__.py          # exports PROVIDER: IntegrationProviderPlugin
     manifest.py          # the IntegrationProviderManifest entry (data)
-    client.py            # thin async client over httpx2 + shared retries
+    client.py            # thin async client over httpx2 + semantic request policy
     discover_resources.py
     operations/          # one service op per file (AGENTS.md rule applies)
       search_messages.py
@@ -260,6 +260,25 @@ service owns the repeated lifecycle:
   the runner commits it before provider execution and correlates strict
   terminal evidence. Outcomes accept terminal statuses only; reads remain
   best-effort.
+  Every provider request also supplies the shared HTTP seam with one semantic
+  policy: `read`, `idempotent_write`, or `mutation`. The policy is mandatory at
+  the call site; neither an HTTP verb nor an operation-name string implies
+  retry safety. Reads retain bounded retry behavior. `idempotent_write` is
+  reserved for provider-documented and tested idempotency mechanisms. A
+  `mutation` request is attempted once for timeout, connection, rate-limit, and
+  server-failure paths; a received 401 may trigger exactly one credential
+  refresh and new attempt because the rejection proves the mutation did not
+  run.
+
+  Failed requests carry a typed `not_dispatched`, `rejected`, or `ambiguous`
+  disposition into the operation runner. The runner records provable
+  non-dispatch/rejection as ordinary failure and ambiguity as
+  `unverified_mutation`. Unknown mutation exceptions are conservative:
+  cancellation or a lost/malformed response after transport begins is
+  ambiguous. Cancellation before the transport call remains non-dispatched;
+  cancellation during a request uses a bounded shielded terminal-audit
+  finalizer and then propagates. No ambiguous mutation is automatically
+  replayed.
 
 A normal operation function resolves its provider client, executes one
 provider operation, and returns one typed terminal projection:
@@ -431,6 +450,9 @@ Adding a provider touches:
 9. Build each normal tool over the §4.7 context, audit-outcome, and result
    seams. External writes supply bounded pending intent; providers do not own
    denial callbacks, durability switches, audit runners, or outer serializers.
+10. Declare `IntegrationRequestPolicy` on every provider-client call. Query
+    POSTs are reads; external writes are mutations unless a real provider
+    idempotency mechanism is documented and covered.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,

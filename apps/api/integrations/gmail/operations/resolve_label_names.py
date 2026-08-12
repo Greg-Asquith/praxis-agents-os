@@ -6,6 +6,7 @@ from contextlib import suppress
 from typing import Any
 
 from integrations.gmail.client import GmailClient
+from services.integrations.http import IntegrationRequestPolicy
 
 # System labels an operator recognizes; category/read-state noise stays out.
 _SYSTEM_LABELS = {
@@ -29,6 +30,7 @@ async def resolve_label_names(client: GmailClient, *, label_ids: Any) -> list[st
         listing = await client.get(
             "users/me/labels",
             operation="resolve_label_names",
+            policy=IntegrationRequestPolicy.READ,
         )
         raw_labels = listing.get("labels") if isinstance(listing, dict) else None
         if isinstance(raw_labels, list):

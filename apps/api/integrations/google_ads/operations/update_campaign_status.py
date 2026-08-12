@@ -5,6 +5,8 @@
 from collections.abc import Mapping
 from typing import Any, Literal
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import GoogleAdsClient, normalize_customer_id
 from .utils import grouped_partial_failure_errors
 
@@ -39,6 +41,7 @@ async def update_campaign_status(
     payload = await client.post(
         f"customers/{normalized_customer_id}/campaigns:mutate",
         operation="update_campaign_status",
+        policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={"operations": operations, "partialFailure": True},
     )

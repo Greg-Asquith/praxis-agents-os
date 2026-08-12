@@ -1,11 +1,16 @@
 """Published integration-operation runtime recipe and contract tests."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
+from core.exceptions.integration import (
+    IntegrationConnectionError,
+    IntegrationFailureDisposition,
+)
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
@@ -288,6 +293,285 @@ async def test_operation_rejects_non_terminal_outcome_status(
         "failure",
     ]
     assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected_error_code"),
+    [
+        (IntegrationFailureDisposition.NOT_DISPATCHED, "IntegrationConnectionError"),
+        (IntegrationFailureDisposition.REJECTED, "IntegrationConnectionError"),
+        (IntegrationFailureDisposition.AMBIGUOUS, "unverified_mutation"),
+    ],
+)
+async def test_write_failure_disposition_controls_terminal_evidence(
+    synthetic_provider,
+    monkeypatch,
+    disposition: IntegrationFailureDisposition,
+    expected_error_code: str,
+) -> None:
+    entry = _entry()
+    pending_event_id = uuid4()
+    audit = AsyncMock(return_value=pending_event_id)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+    error = IntegrationConnectionError(
+        "provider failed",
+        failure_disposition=disposition,
+    )
+
+    async def execute():
+        raise error
+
+    with pytest.raises(IntegrationConnectionError) as exc_info:
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    assert exc_info.value is error
+    terminal = audit.await_args_list[1].kwargs
+    assert terminal["status"] == "failure"
+    assert terminal["error_code"] == expected_error_code
+    assert terminal["related_event_id"] == pending_event_id
+
+
+async def test_unknown_write_failure_defaults_to_ambiguous(
+    synthetic_provider,
+    monkeypatch,
+) -> None:
+    entry = _entry()
+    audit = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+    error = ValueError("malformed provider response")
+
+    async def execute():
+        raise error
+
+    with pytest.raises(ValueError) as exc_info:
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    assert exc_info.value is error
+    assert error.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
+    assert audit.await_args_list[1].kwargs["error_code"] == "unverified_mutation"
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected_error_code"),
+    [
+        (None, "CancelledError"),
+        (IntegrationFailureDisposition.AMBIGUOUS, "unverified_mutation"),
+    ],
+)
+async def test_write_cancellation_finalizes_correlated_evidence_and_propagates(
+    synthetic_provider,
+    monkeypatch,
+    disposition: IntegrationFailureDisposition | None,
+    expected_error_code: str,
+) -> None:
+    entry = _entry()
+    pending_event_id = uuid4()
+    audit = AsyncMock(return_value=pending_event_id)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+
+    async def execute():
+        error = asyncio.CancelledError("cancelled")
+        if disposition is not None:
+            error.failure_disposition = disposition
+        raise error
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    terminal = audit.await_args_list[1].kwargs
+    assert terminal["status"] == "failure"
+    assert terminal["error_code"] == expected_error_code
+    assert terminal["related_event_id"] == pending_event_id
+
+
+async def test_write_cancellation_terminal_finalizer_is_bounded(
+    synthetic_provider,
+    monkeypatch,
+) -> None:
+    entry = _entry()
+    pending_event_id = uuid4()
+    audit_calls = 0
+
+    async def audit(**_kwargs):
+        nonlocal audit_calls
+        audit_calls += 1
+        if audit_calls == 1:
+            return pending_event_id
+        await asyncio.Event().wait()
+        return None
+
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations._TERMINAL_AUDIT_FINALIZE_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    async def execute():
+        raise asyncio.CancelledError("cancelled before transport")
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    assert audit_calls == 2
+
+
+@pytest.mark.parametrize(
+    ("provider_result", "expected_status", "expected_error_code"),
+    [
+        ("success", "success", None),
+        ("failure", "failure", "IntegrationConnectionError"),
+    ],
+)
+async def test_cancellation_during_terminal_persistence_preserves_known_outcome(
+    synthetic_provider,
+    monkeypatch,
+    provider_result: str,
+    expected_status: str,
+    expected_error_code: str | None,
+) -> None:
+    entry = _entry()
+    pending_event_id = uuid4()
+    terminal_started = asyncio.Event()
+    release_terminal = asyncio.Event()
+    persisted: list[dict] = []
+    audit_calls = 0
+
+    async def audit(**kwargs):
+        nonlocal audit_calls
+        audit_calls += 1
+        if audit_calls == 1:
+            return pending_event_id
+        terminal_started.set()
+        await release_terminal.wait()
+        persisted.append(kwargs)
+        return None
+
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+
+    async def execute():
+        if provider_result == "failure":
+            raise IntegrationConnectionError(
+                "provider rejected the request",
+                failure_disposition=IntegrationFailureDisposition.REJECTED,
+            )
+        return IntegrationAuditOutcome(None, external_ref="record-1")
+
+    task = asyncio.create_task(
+        run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+    )
+    await terminal_started.wait()
+    task.cancel()
+    release_terminal.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(persisted) == 1
+    terminal = persisted[0]
+    assert terminal["status"] == expected_status
+    assert terminal["error_code"] == expected_error_code
+    assert terminal["related_event_id"] == pending_event_id
+    if provider_result == "success":
+        assert terminal["external_ref"] == "record-1"
+
+
+async def test_cancellation_during_terminal_persistence_is_bounded(
+    synthetic_provider,
+    monkeypatch,
+) -> None:
+    entry = _entry()
+    pending_event_id = uuid4()
+    terminal_started = asyncio.Event()
+    audit_calls = 0
+
+    async def audit(**_kwargs):
+        nonlocal audit_calls
+        audit_calls += 1
+        if audit_calls == 1:
+            return pending_event_id
+        terminal_started.set()
+        await asyncio.Event().wait()
+        return None
+
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations._TERMINAL_AUDIT_FINALIZE_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    async def execute():
+        return IntegrationAuditOutcome(None)
+
+    task = asyncio.create_task(
+        run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+    )
+    await terminal_started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert audit_calls == 2
 
 
 def test_external_write_definition_requires_write_binding(synthetic_provider) -> None:

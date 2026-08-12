@@ -2,6 +2,7 @@
 
 """Discover the authenticated Gmail mailbox."""
 
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.plugin import DiscoveredIntegrationResource
 
 from .client import GmailClient
@@ -16,6 +17,7 @@ async def discover_resources(access_token: str, _principal_label: str | None = N
     payload = await GmailClient(resolve_token).get(
         "users/me/profile",
         operation="discover_mailbox",
+        policy=IntegrationRequestPolicy.READ,
     )
     email_address = str(payload.get("emailAddress", "")).strip()
     return (

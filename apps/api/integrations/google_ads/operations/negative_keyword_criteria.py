@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationValidationError
+from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
 from .utils import grouped_partial_failure_errors, stream_rows
@@ -124,6 +125,7 @@ async def add_entity_negative_keywords(
     payload = await client.post(
         f"customers/{normalized_customer_id}/{spec.criterion_path}:mutate",
         operation=f"add_{spec.operation_entity}_negative_keywords",
+        policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={
             "operations": [
@@ -219,6 +221,7 @@ async def remove_entity_negative_keywords(
     payload = await client.post(
         f"customers/{normalized_customer_id}/{spec.criterion_path}:mutate",
         operation=f"remove_{spec.operation_entity}_negative_keywords",
+        policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={
             "operations": [{"remove": item["resource_name"]} for item in removals],
@@ -259,6 +262,7 @@ async def _negative_criteria(
     payload = await client.post(
         f"customers/{customer_id}/googleAds:searchStream",
         operation=f"list_{spec.operation_entity}_negative_keywords",
+        policy=IntegrationRequestPolicy.READ,
         login_customer_id=login_customer_id,
         json={"query": query},
     )

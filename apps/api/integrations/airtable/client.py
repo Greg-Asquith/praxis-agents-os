@@ -7,8 +7,12 @@ from typing import Any
 
 import httpx2
 
-from core.exceptions.integration import IntegrationValidationError
-from services.integrations.http import request_with_retries
+from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
+from services.integrations.http import (
+    IntegrationRequestPolicy,
+    request_with_retries,
+    resolve_before_dispatch,
+)
 
 AIRTABLE_API_BASE_URL = "https://api.airtable.com/v0"
 AccessTokenFn = Callable[[], Awaitable[str]]
@@ -29,33 +33,57 @@ class AirtableClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
     ) -> Any:
-        return await self._request("GET", path, operation=operation, params=params)
+        return await self._request("GET", path, operation=operation, policy=policy, params=params)
 
     async def post(
         self,
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         json: dict[str, Any] | None = None,
     ) -> Any:
         kwargs = {"json": json} if json is not None else {}
-        return await self._request("POST", path, operation=operation, **kwargs)
+        return await self._request("POST", path, operation=operation, policy=policy, **kwargs)
 
-    async def patch(self, path: str, *, operation: str, json: dict[str, Any]) -> Any:
-        return await self._request("PATCH", path, operation=operation, json=json)
+    async def patch(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        json: dict[str, Any],
+    ) -> Any:
+        return await self._request("PATCH", path, operation=operation, policy=policy, json=json)
 
-    async def delete(self, path: str, *, operation: str) -> Any:
-        return await self._request("DELETE", path, operation=operation)
+    async def delete(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+    ) -> Any:
+        return await self._request("DELETE", path, operation=operation, policy=policy)
 
-    async def _request(self, method: str, path: str, *, operation: str, **kwargs: Any) -> Any:
-        token = await self._access_token()
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        **kwargs: Any,
+    ) -> Any:
+        token = await resolve_before_dispatch(self._access_token)
         response = await request_with_retries(
             method,
             f"{AIRTABLE_API_BASE_URL}/{path.lstrip('/')}",
             operation=operation,
             provider_key="airtable",
+            policy=policy,
             client=self._client,
             headers={"Authorization": f"Bearer {token}"},
             **kwargs,
@@ -70,4 +98,9 @@ class AirtableClient:
                 provider_key="airtable",
                 operation=operation,
                 original_error=exc,
+                failure_disposition=(
+                    IntegrationFailureDisposition.AMBIGUOUS
+                    if policy is not IntegrationRequestPolicy.READ
+                    else None
+                ),
             ) from exc

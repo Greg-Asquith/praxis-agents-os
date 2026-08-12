@@ -11,6 +11,7 @@ from services.integrations.credentials import (
     GoogleServiceAccountTokenProvider,
     parse_google_service_account_json,
 )
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.plugin import DiscoveredIntegrationResource
 
 from .client import BigQueryClient
@@ -79,6 +80,7 @@ async def _pages(
         payload = await client.get(
             path,
             operation=f"list_{collection_key}",
+            policy=IntegrationRequestPolicy.READ,
             params=params,
         )
         if not isinstance(payload, dict):

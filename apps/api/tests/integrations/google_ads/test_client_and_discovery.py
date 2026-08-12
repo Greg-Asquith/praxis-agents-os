@@ -1,10 +1,17 @@
 """Google Ads client routing and resource discovery contracts."""
 
 import httpx2
+import pytest
 from pydantic import SecretStr
 
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationValidationError,
+)
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.discover_resources import discover_google_ads_resources
+from services.integrations.http import IntegrationRequestPolicy
 from tests.integrations.google_ads.support import (
     _DiscoveryClient,
     _DuplicateRouteDiscoveryClient,
@@ -28,12 +35,96 @@ async def test_client_routes_login_customer_id_from_each_request() -> None:
         await client.post(
             "customers/333/googleAds:searchStream",
             operation="report",
+            policy=IntegrationRequestPolicy.READ,
             login_customer_id="111-111-1111",
             json={"query": "SELECT campaign.id FROM campaign"},
         )
 
     assert seen_headers[0]["login-customer-id"] == "1111111111"
     assert seen_headers[0]["developer-token"] == "developer-secret"
+
+
+@pytest.mark.parametrize("failure", ["connect", "read_timeout", "429", "503"])
+async def test_google_ads_mutation_ambiguous_or_retryable_failures_attempt_once(
+    failure: str,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        if failure == "connect":
+            raise httpx2.ConnectError("connect failed", request=request)
+        if failure == "read_timeout":
+            raise httpx2.ReadTimeout("response timed out", request=request)
+        return httpx2.Response(int(failure), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(
+            _static_token,
+            developer_token=SecretStr("developer-secret"),
+            client=http_client,
+        )
+        with pytest.raises(IntegrationError):
+            await client.post(
+                "customers/333/campaigns:mutate",
+                operation="update_campaign_status",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"operations": []},
+            )
+
+    assert attempts == 1
+
+
+async def test_google_ads_mutation_retries_exactly_once_after_auth_rejection() -> None:
+    attempts = 0
+    forces: list[bool] = []
+
+    async def token(force: bool) -> str:
+        forces.append(force)
+        return "fresh" if force else "stale"
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(401 if attempts == 1 else 200, json={}, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(
+            token,
+            developer_token=SecretStr("developer-secret"),
+            client=http_client,
+        )
+        await client.post(
+            "customers/333/campaigns:mutate",
+            operation="update_campaign_status",
+            policy=IntegrationRequestPolicy.MUTATION,
+            json={"operations": []},
+        )
+
+    assert attempts == 2
+    assert forces == [False, True]
+
+
+async def test_google_ads_malformed_mutation_response_is_ambiguous() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, content=b"not-json", request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(
+            _static_token,
+            developer_token=SecretStr("developer-secret"),
+            client=http_client,
+        )
+        with pytest.raises(IntegrationValidationError) as exc_info:
+            await client.post(
+                "customers/333/campaigns:mutate",
+                operation="update_campaign_status",
+                policy=IntegrationRequestPolicy.MUTATION,
+                json={"operations": []},
+            )
+
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
 
 
 async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:

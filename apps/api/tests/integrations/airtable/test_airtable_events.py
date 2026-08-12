@@ -249,8 +249,9 @@ async def test_process_event_advances_cursor_across_all_pages(
     ]
 
     class FakeClient:
-        async def get(self, _path, *, operation, params):
+        async def get(self, _path, *, operation, policy, params):
             assert operation == "list_webhook_payloads"
+            assert policy == "read"
             calls.append(params)
             return responses.pop(0)
 

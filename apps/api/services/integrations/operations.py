@@ -2,13 +2,16 @@
 
 """Provider-neutral audit orchestration for integration operations."""
 
+import asyncio
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
 from pydantic_ai import RunContext
 
+from core.exceptions.integration import IntegrationFailureDisposition
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
@@ -34,6 +37,7 @@ _TERMINAL_AUDIT_STATUSES = frozenset(
         AuditStatus.DENIED,
     }
 )
+_TERMINAL_AUDIT_FINALIZE_TIMEOUT_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -75,21 +79,46 @@ async def run_audited_integration_operation[T](
         outcome = await execute()
         if outcome.status not in _TERMINAL_AUDIT_STATUSES:
             raise ValueError("Integration audit outcomes must have a terminal status")
+    except asyncio.CancelledError as exc:
+        disposition = getattr(
+            exc,
+            "failure_disposition",
+            IntegrationFailureDisposition.NOT_DISPATCHED,
+        )
+        if durable:
+            exc.failure_disposition = disposition
+        with suppress(BaseException):
+            await _record_terminal_operation(
+                ctx,
+                entry,
+                tool_name=tool_name,
+                operation=operation,
+                status=AuditStatus.FAILURE,
+                error_code=_failure_error_code(exc, disposition),
+                operation_detail=pending_operation_detail,
+                related_event_id=pending_event_id,
+                raise_on_error=durable,
+            )
+        raise
     except Exception as exc:
-        await _record_operation(
+        disposition = getattr(exc, "failure_disposition", None)
+        if durable and disposition is None:
+            disposition = IntegrationFailureDisposition.AMBIGUOUS
+            exc.failure_disposition = disposition
+        await _record_terminal_operation(
             ctx,
             entry,
             tool_name=tool_name,
             operation=operation,
             status=AuditStatus.FAILURE,
-            error_code=exc.__class__.__name__,
+            error_code=_failure_error_code(exc, disposition),
             operation_detail=pending_operation_detail,
             related_event_id=pending_event_id,
             raise_on_error=durable,
         )
         raise
 
-    await _record_operation(
+    await _record_terminal_operation(
         ctx,
         entry,
         tool_name=tool_name,
@@ -101,6 +130,56 @@ async def run_audited_integration_operation[T](
         raise_on_error=durable,
     )
     return outcome.value
+
+
+def _failure_error_code(
+    exc: BaseException,
+    disposition: IntegrationFailureDisposition | None,
+) -> str:
+    if disposition is IntegrationFailureDisposition.AMBIGUOUS:
+        return "unverified_mutation"
+    return exc.__class__.__name__
+
+
+async def _record_terminal_operation(
+    ctx: RunContext[RuntimeDeps],
+    entry: ResolvedContextEntry,
+    *,
+    tool_name: str,
+    operation: str,
+    status: IntegrationTerminalAuditStatus,
+    external_ref: str | None = None,
+    error_code: str | None = None,
+    operation_detail: IntegrationOperationDetail | None,
+    related_event_id: UUID | None,
+    raise_on_error: bool,
+) -> None:
+    async def record() -> None:
+        try:
+            async with asyncio.timeout(_TERMINAL_AUDIT_FINALIZE_TIMEOUT_SECONDS):
+                await _record_operation(
+                    ctx,
+                    entry,
+                    tool_name=tool_name,
+                    operation=operation,
+                    status=status,
+                    external_ref=external_ref,
+                    error_code=error_code,
+                    operation_detail=operation_detail,
+                    related_event_id=related_event_id,
+                    raise_on_error=raise_on_error,
+                )
+        except TimeoutError:
+            if raise_on_error:
+                raise
+
+    task = asyncio.create_task(record())
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        with suppress(BaseException):
+            await asyncio.shield(task)
+        raise
 
 
 async def record_integration_write_denial(

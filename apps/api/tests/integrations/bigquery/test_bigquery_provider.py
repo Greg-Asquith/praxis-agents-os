@@ -11,6 +11,7 @@ from integrations.bigquery.client import BigQueryClient
 from integrations.bigquery.discover_resources import discover_bigquery_resources
 from integrations.bigquery.sync_table_schemas import SYNC_TABLE_SCHEMAS_KIND
 from services.integrations.credentials import parse_google_service_account_json
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.loader import _validate_plugin
 
 
@@ -75,6 +76,7 @@ async def test_client_refreshes_once_after_an_auth_failure() -> None:
         result = await BigQueryClient(access_token, client=http_client).get(
             "projects",
             operation="list_projects",
+            policy=IntegrationRequestPolicy.READ,
             params={"maxResults": 1000},
         )
 
@@ -109,6 +111,7 @@ async def test_client_preserves_bigquery_validation_message_for_model_retry() ->
             await client.post(
                 "projects/analytics/jobs",
                 operation="dry_run_query",
+                policy=IntegrationRequestPolicy.READ,
                 json={"configuration": {"dryRun": True}},
             )
 
@@ -196,9 +199,11 @@ class _DiscoveryClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
     ) -> Any:
         assert operation in {"list_projects", "list_datasets"}
+        assert policy is IntegrationRequestPolicy.READ
         resolved_params = params or {}
         self.calls.append((path, resolved_params))
         return self._responses[(path, resolved_params.get("pageToken"))]
@@ -221,9 +226,11 @@ async def test_discovery_rejects_incomplete_or_invalid_pages(response: dict[str,
             _path: str,
             *,
             operation: str,
+            policy: IntegrationRequestPolicy,
             params: dict[str, Any] | None = None,
         ) -> Any:
             assert operation == "list_projects"
+            assert policy is IntegrationRequestPolicy.READ
             self.calls += 1
             if self.calls == 1 and response.get("nextPageToken") == "same":
                 return {"projects": [], "nextPageToken": "same"}

@@ -22,6 +22,7 @@ from integrations.google_ads.references import (
 from integrations.google_ads.tools.remove_negative_keywords import (
     _operation_detail as removal_operation_detail,
 )
+from services.integrations.http import IntegrationRequestPolicy
 from tests.integrations.google_ads.support import (
     _CampaignSharedSetClient,
     _NegativeKeywordClient,
@@ -160,6 +161,7 @@ async def test_link_negative_keyword_list_skips_existing_and_maps_failures() -> 
     assert client.calls[1] == {
         "path": "customers/3333333333/campaignSharedSets:mutate",
         "operation": "link_negative_keyword_list",
+        "policy": IntegrationRequestPolicy.MUTATION,
         "login_customer_id": "111-111-1111",
         "json": {
             "operations": [
@@ -326,6 +328,7 @@ async def test_create_negative_keyword_list_skips_existing_and_maps_partial_fail
     assert client.calls[0] == {
         "path": "customers/3333333333/googleAds:searchStream",
         "operation": "list_negative_keyword_lists",
+        "policy": IntegrationRequestPolicy.READ,
         "login_customer_id": "111-111-1111",
         "json": {
             "query": (

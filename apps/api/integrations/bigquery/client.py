@@ -7,8 +7,16 @@ from typing import Any
 
 import httpx2
 
-from core.exceptions.integration import IntegrationAuthError, IntegrationValidationError
-from services.integrations.http import request_with_retries
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationFailureDisposition,
+    IntegrationValidationError,
+)
+from services.integrations.http import (
+    IntegrationRequestPolicy,
+    request_with_retries,
+    resolve_before_dispatch,
+)
 
 BIGQUERY_API_BASE_URL = "https://bigquery.googleapis.com/bigquery/v2"
 AccessTokenFn = Callable[[bool], Awaitable[str]]
@@ -29,22 +37,24 @@ class BigQueryClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
     ) -> Any:
-        return await self._request("GET", path, operation=operation, params=params)
+        return await self._request("GET", path, operation=operation, policy=policy, params=params)
 
     async def post(
         self,
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         json: dict[str, Any],
         request_timeout: float | None = None,
     ) -> Any:
         kwargs: dict[str, Any] = {"json": json}
         if request_timeout is not None:
             kwargs["timeout"] = request_timeout
-        return await self._request("POST", path, operation=operation, **kwargs)
+        return await self._request("POST", path, operation=operation, policy=policy, **kwargs)
 
     async def _request(
         self,
@@ -52,23 +62,26 @@ class BigQueryClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         **kwargs: Any,
     ) -> Any:
-        token = await self._access_token(False)
+        token = await resolve_before_dispatch(lambda: self._access_token(False))
         try:
             response = await self._send(
                 method,
                 path,
                 operation=operation,
+                policy=policy,
                 token=token,
                 **kwargs,
             )
         except IntegrationAuthError:
-            token = await self._access_token(True)
+            token = await resolve_before_dispatch(lambda: self._access_token(True))
             response = await self._send(
                 method,
                 path,
                 operation=operation,
+                policy=policy,
                 token=token,
                 **kwargs,
             )
@@ -80,6 +93,11 @@ class BigQueryClient:
                 provider_key="bigquery",
                 operation=operation,
                 original_error=exc,
+                failure_disposition=(
+                    IntegrationFailureDisposition.AMBIGUOUS
+                    if policy is not IntegrationRequestPolicy.READ
+                    else None
+                ),
             ) from exc
 
     async def _send(
@@ -88,6 +106,7 @@ class BigQueryClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         token: str,
         **kwargs: Any,
     ) -> httpx2.Response:
@@ -96,6 +115,7 @@ class BigQueryClient:
             f"{BIGQUERY_API_BASE_URL}/{path.lstrip('/')}",
             operation=operation,
             provider_key="bigquery",
+            policy=policy,
             client=self._client,
             headers={"Authorization": f"Bearer {token}"},
             validation_error_detail=_bigquery_error_detail,

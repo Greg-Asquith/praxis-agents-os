@@ -5,6 +5,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import GoogleAdsClient, normalize_customer_id
 from .utils import escape_gaql_like_literal, stream_rows
 
@@ -45,6 +47,7 @@ async def list_ad_groups(
     payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",
         operation="list_ad_groups",
+        policy=IntegrationRequestPolicy.READ,
         login_customer_id=login_customer_id,
         json={"query": query},
     )

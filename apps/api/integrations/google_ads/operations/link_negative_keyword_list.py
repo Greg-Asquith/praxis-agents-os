@@ -5,6 +5,8 @@
 from collections.abc import Mapping
 from typing import Any, Literal
 
+from services.integrations.http import IntegrationRequestPolicy
+
 from ..client import GoogleAdsClient, normalize_customer_id
 from .utils import grouped_partial_failure_errors, stream_rows
 
@@ -38,6 +40,7 @@ async def link_negative_keyword_list(
     existing_payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",
         operation="list_negative_keyword_list_campaign_links",
+        policy=IntegrationRequestPolicy.READ,
         login_customer_id=login_customer_id,
         json={"query": existing_query},
     )
@@ -61,6 +64,7 @@ async def link_negative_keyword_list(
     payload = await client.post(
         f"customers/{normalized_customer_id}/campaignSharedSets:mutate",
         operation="link_negative_keyword_list",
+        policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={
             "operations": [

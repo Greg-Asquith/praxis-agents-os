@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import quote
 
 from core.exceptions.integration import IntegrationValidationError
+from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import AirtableClient
 
@@ -21,6 +22,7 @@ async def update_record(
     payload = await client.patch(
         f"{quote(base_id, safe='')}/{quote(table, safe='')}/{quote(record_id, safe='')}",
         operation="update_record",
+        policy=IntegrationRequestPolicy.MUTATION,
         json={"fields": fields},
     )
     updated_id = str(payload.get("id", "")).strip() if isinstance(payload, dict) else ""

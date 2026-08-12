@@ -25,6 +25,7 @@ from integrations.bigquery.tools.schemas import (
 )
 from models.integrations import IntegrationConnection
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -406,6 +407,7 @@ class _QueryClient:
         path: str,
         *,
         operation: str,
+        policy: IntegrationRequestPolicy,
         json: dict,
         request_timeout: float | None = None,
     ):
@@ -413,6 +415,7 @@ class _QueryClient:
             {
                 "path": path,
                 "operation": operation,
+                "policy": policy,
                 "json": json,
                 "request_timeout": request_timeout,
             }
