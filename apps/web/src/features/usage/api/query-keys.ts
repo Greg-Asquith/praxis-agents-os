@@ -9,3 +9,11 @@ export const usageQueryKeys = {
   breakdown: (params: object) => [...baseUsageQueryKeys.workspace(), "breakdown", params] as const,
   summary: (params: object) => [...baseUsageQueryKeys.workspace(), "summary", params] as const,
 }
+
+export const platformUsageQueryKeys = {
+  all: (userId: string) => ["platform-usage", userId] as const,
+  breakdown: (userId: string, params: object) =>
+    [...platformUsageQueryKeys.all(userId), "breakdown", params] as const,
+  summary: (userId: string, params: object) =>
+    [...platformUsageQueryKeys.all(userId), "summary", params] as const,
+}

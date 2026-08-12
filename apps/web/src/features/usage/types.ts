@@ -1,6 +1,7 @@
 // apps/web/src/features/usage/types.ts
 
 export type UsageDimension = "agent" | "user" | "purpose" | "model"
+export type PlatformUsageDimension = "workspace" | "user" | "purpose" | "model"
 
 export type TokenCounts = {
   input: number
@@ -71,6 +72,10 @@ export type UsageBreakdown = {
   timezone: "UTC"
   dimension: UsageDimension
   rows: UsageBreakdownRow[]
+}
+
+export type PlatformUsageBreakdown = Omit<UsageBreakdown, "dimension"> & {
+  dimension: PlatformUsageDimension
 }
 
 export type UsageRange = {

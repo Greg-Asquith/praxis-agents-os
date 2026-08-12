@@ -2,7 +2,6 @@
 
 """Build one workspace usage breakdown from UTC daily ledger buckets."""
 
-from collections import defaultdict
 from datetime import datetime
 from uuid import UUID
 
@@ -12,18 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.agent import Agent
 from models.ai_usage_event import AIUsageEvent
 from models.user import User
-from services.ai_usage.pricing import find_price
 from services.ai_usage.schemas import (
-    BreakdownUsageRow,
     UsageBreakdownResponse,
     UsageDimension,
 )
 from services.ai_usage.utils import (
     UsageBucket,
-    decimal_share,
-    fold_buckets,
-    optional_cost_share,
-    pricing_coverage,
+    build_usage_breakdown_rows,
     resolve_usage_range,
 )
 
@@ -102,48 +96,11 @@ async def get_usage_breakdown(
         )
         for row in result
     ]
-    priced = [(bucket, find_price(bucket.provider, bucket.model, bucket.day)) for bucket in buckets]
-    total = fold_buckets(priced)
-    grouped: dict[tuple[str, str], list] = defaultdict(list)
-    for bucket, price in priced:
-        grouped[(bucket.key or "unattributed", bucket.label or "Unattributed")].append(
-            (bucket, price)
-        )
-
-    rows = []
-    for (row_key, row_label), grouped_buckets in grouped.items():
-        folded = fold_buckets(grouped_buckets)
-        rows.append(
-            BreakdownUsageRow(
-                key=row_key,
-                label=row_label,
-                estimated_cost_usd=(
-                    folded.estimated_cost_usd if folded.has_priced_bucket else None
-                ),
-                tokens_by_class=folded.tokens_by_class,
-                requests=folded.requests,
-                token_share=decimal_share(folded.tokens, total.tokens),
-                priced_cost_share=(
-                    optional_cost_share(folded.estimated_cost_usd, total.estimated_cost_usd)
-                    if folded.has_priced_bucket
-                    else None
-                ),
-                pricing_coverage=pricing_coverage(folded),
-            )
-        )
-    rows.sort(
-        key=lambda row: (
-            row.estimated_cost_usd is not None,
-            row.estimated_cost_usd or 0,
-            sum(row.tokens_by_class.model_dump().values()),
-        ),
-        reverse=True,
-    )
     return UsageBreakdownResponse(
         from_=usage_range.from_,
         to=usage_range.to,
         dimension=dimension,
-        rows=rows,
+        rows=build_usage_breakdown_rows(buckets),
     )
 
 

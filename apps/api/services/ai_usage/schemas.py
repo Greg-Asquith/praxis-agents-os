@@ -16,6 +16,13 @@ class UsageDimension(StrEnum):
     MODEL = "model"
 
 
+class PlatformUsageDimension(StrEnum):
+    WORKSPACE = "workspace"
+    USER = "user"
+    PURPOSE = "purpose"
+    MODEL = "model"
+
+
 class TokenCounts(BaseModel):
     input: int = 0
     cache_read: int = 0
@@ -86,6 +93,16 @@ class UsageBreakdownResponse(BaseModel):
     to: datetime
     timezone: str = "UTC"
     dimension: UsageDimension
+    rows: list[BreakdownUsageRow]
+
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+
+class PlatformUsageBreakdownResponse(BaseModel):
+    from_: datetime = Field(alias="from")
+    to: datetime
+    timezone: str = "UTC"
+    dimension: PlatformUsageDimension
     rows: list[BreakdownUsageRow]
 
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)

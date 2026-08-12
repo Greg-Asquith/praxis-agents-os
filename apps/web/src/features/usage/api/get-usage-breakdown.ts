@@ -14,7 +14,7 @@ async function getUsageBreakdown(params: UsageBreakdownParams) {
   })
 }
 
-function usageBreakdownQueryOptions(params: UsageBreakdownParams) {
+export function usageBreakdownQueryOptions(params: UsageBreakdownParams) {
   return queryOptions({
     queryKey: usageQueryKeys.breakdown(params),
     queryFn: () => getUsageBreakdown(params),

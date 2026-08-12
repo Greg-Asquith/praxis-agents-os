@@ -12,7 +12,7 @@ async function getUsageSummary(range: UsageRange) {
   })
 }
 
-function usageSummaryQueryOptions(range: UsageRange) {
+export function usageSummaryQueryOptions(range: UsageRange) {
   return queryOptions({
     queryKey: usageQueryKeys.summary(range),
     queryFn: () => getUsageSummary(range),

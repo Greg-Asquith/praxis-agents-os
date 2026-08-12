@@ -37,9 +37,9 @@ export function CostQualityPanel({ coverage }: { coverage: PricingCoverage }) {
       </dl>
       {coverage.priced_image_generations + coverage.unpriced_image_generations > 0 ? (
         <p className="text-muted-foreground mt-4 text-xs leading-relaxed">
-          These figures are estimates based on publicly available pricing information and
-          token counts returned from providers. It may not match your bill exactly, especially
-          for web search/image generation.
+          These figures are estimates based on publicly available pricing information and token
+          counts returned from providers. It may not match your bill exactly, especially for web
+          search/image generation.
         </p>
       ) : null}
     </aside>

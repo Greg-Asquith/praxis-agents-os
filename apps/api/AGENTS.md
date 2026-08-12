@@ -67,6 +67,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   3.1 Flash Image output estimates are added to, not substituted for, mainline
   helper-model token cost. Unavailable image-model input remains disclosed
   rather than guessed.
+- Platform usage reads are confined to `services/ai_usage/platform_queries.py`,
+  use the sanctioned maintenance session, and set each transaction read-only
+  before its first query. The `/platform-usage` router is super-admin-only;
+  it exposes aggregate usage and workspace/user/model/purpose attribution but
+  never workspace content. RLS remains unchanged.
 
 ## Agent Runtime And Providers
 

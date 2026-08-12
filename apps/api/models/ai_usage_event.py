@@ -68,4 +68,5 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
         CheckConstraint("output_tokens >= 0", name="ai_usage_events_output_tokens_check"),
         CheckConstraint("requests >= 0", name="ai_usage_events_requests_check"),
         Index("ix_ai_usage_events_workspace_occurred", "workspace_id", "occurred_at"),
+        Index("ix_ai_usage_events_occurred_at", "occurred_at"),
     )

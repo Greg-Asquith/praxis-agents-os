@@ -39,7 +39,10 @@ behind good defaults and progressive disclosure, not in their face.
   durable recording through a distinct bounded runtime-role connection pool.
   Owner/admin usage routes apply effective-dated public prices to UTC daily
   buckets and expose estimated workspace cost, trends, attribution breakdowns,
-  and explicit pricing coverage. Image-generation events retain known output
+  and explicit pricing coverage. Super admins can use a separately gated,
+  database-read-only maintenance view to see the same measures across all
+  workspaces, including workspace and cross-workspace user attribution.
+  Image-generation events retain known output
   metadata so GPT Image 2 and Gemini 3.1 Flash Image estimates are added
   separately from the mainline helper model. This ledger is observability only:
   it does not enforce budgets or admission.

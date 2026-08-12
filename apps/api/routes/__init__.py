@@ -19,6 +19,7 @@ from routes.kb import router as kb_router
 from routes.memories import router as memories_router
 from routes.meta import router as meta_router
 from routes.models import router as models_router
+from routes.platform_usage import router as platform_usage_router
 from routes.schedules import router as schedules_router
 from routes.security_events import router as security_events_router
 from routes.skills import router as skills_router
@@ -42,6 +43,7 @@ api_router.include_router(kb_router)
 api_router.include_router(memories_router)
 api_router.include_router(meta_router)
 api_router.include_router(models_router)
+api_router.include_router(platform_usage_router)
 api_router.include_router(schedules_router)
 api_router.include_router(security_events_router)
 api_router.include_router(skills_router)

@@ -2,6 +2,7 @@
 
 """Shared AI usage conversion, persistence, and aggregation mechanics."""
 
+from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -15,8 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from models.ai_usage_event import AIUsageEvent
 from services.ai_usage.domain import AIUsageEventData
-from services.ai_usage.pricing import ModelPrice, find_image_output_price
-from services.ai_usage.schemas import PricingCoverage, TokenCounts
+from services.ai_usage.pricing import ModelPrice, find_image_output_price, find_price
+from services.ai_usage.schemas import (
+    BreakdownUsageRow,
+    DailyUsagePoint,
+    ModelUsageRow,
+    PricingCoverage,
+    TokenCounts,
+    UsageSummaryResponse,
+    UsageTotals,
+)
 
 _MILLION = Decimal(1_000_000)
 _HUNDRED = Decimal(100)
@@ -174,6 +183,117 @@ def pricing_coverage(folded: UsageFold) -> PricingCoverage:
         priced_image_generations=folded.priced_image_generations,
         unpriced_image_generations=folded.unpriced_image_generations,
     )
+
+
+def build_usage_summary_response(
+    buckets: list[UsageBucket],
+    usage_range: UsageRange,
+) -> UsageSummaryResponse:
+    """Fold daily pricing buckets into the shared workspace/platform summary."""
+    priced = [(bucket, find_price(bucket.provider, bucket.model, bucket.day)) for bucket in buckets]
+    total = fold_buckets(priced)
+    daily_buckets: dict[object, list] = defaultdict(list)
+    model_buckets: dict[tuple[str, str], list] = defaultdict(list)
+    for bucket, price in priced:
+        daily_buckets[bucket.day].append((bucket, price))
+        model_buckets[(bucket.provider, bucket.model)].append((bucket, price))
+
+    daily = []
+    for bucket_day, day_buckets in daily_buckets.items():
+        folded = fold_buckets(day_buckets)
+        daily.append(
+            DailyUsagePoint(
+                date=bucket_day,
+                estimated_cost_usd=folded.estimated_cost_usd,
+                tokens=folded.tokens,
+                requests=folded.requests,
+            )
+        )
+
+    models = []
+    for (provider, model), grouped_buckets in model_buckets.items():
+        folded = fold_buckets(grouped_buckets)
+        models.append(
+            ModelUsageRow(
+                provider=provider,
+                model=model,
+                estimated_cost_usd=(
+                    folded.estimated_cost_usd if folded.has_priced_bucket else None
+                ),
+                tokens=folded.tokens,
+                requests=folded.requests,
+                token_share=decimal_share(folded.tokens, total.tokens),
+                priced_cost_share=(
+                    optional_cost_share(folded.estimated_cost_usd, total.estimated_cost_usd)
+                    if folded.has_priced_bucket
+                    else None
+                ),
+                pricing_coverage=pricing_coverage(folded),
+            )
+        )
+    models.sort(
+        key=lambda row: (
+            row.estimated_cost_usd is not None,
+            row.estimated_cost_usd or 0,
+            row.tokens,
+        ),
+        reverse=True,
+    )
+
+    return UsageSummaryResponse(
+        from_=usage_range.from_,
+        to=usage_range.to,
+        totals=UsageTotals(
+            estimated_cost_usd=total.estimated_cost_usd,
+            tokens_by_class=total.tokens_by_class,
+            requests=total.requests,
+        ),
+        pricing_coverage=pricing_coverage(total),
+        daily=daily,
+        models=models,
+    )
+
+
+def build_usage_breakdown_rows(buckets: list[UsageBucket]) -> list[BreakdownUsageRow]:
+    """Fold daily pricing buckets into shared workspace/platform breakdown rows."""
+    priced = [(bucket, find_price(bucket.provider, bucket.model, bucket.day)) for bucket in buckets]
+    total = fold_buckets(priced)
+    grouped: dict[tuple[str, str], list] = defaultdict(list)
+    for bucket, price in priced:
+        grouped[(bucket.key or "unattributed", bucket.label or "Unattributed")].append(
+            (bucket, price)
+        )
+
+    rows = []
+    for (row_key, row_label), grouped_buckets in grouped.items():
+        folded = fold_buckets(grouped_buckets)
+        rows.append(
+            BreakdownUsageRow(
+                key=row_key,
+                label=row_label,
+                estimated_cost_usd=(
+                    folded.estimated_cost_usd if folded.has_priced_bucket else None
+                ),
+                tokens_by_class=folded.tokens_by_class,
+                requests=folded.requests,
+                token_share=decimal_share(folded.tokens, total.tokens),
+                priced_cost_share=(
+                    optional_cost_share(folded.estimated_cost_usd, total.estimated_cost_usd)
+                    if folded.has_priced_bucket
+                    else None
+                ),
+                pricing_coverage=pricing_coverage(folded),
+            )
+        )
+    rows.sort(
+        key=lambda row: (
+            row.estimated_cost_usd is not None,
+            row.estimated_cost_usd or 0,
+            sum(row.tokens_by_class.model_dump().values()),
+        ),
+        reverse=True,
+    )
+    return rows
 
 
 def usage_values(usage: Any) -> dict[str, int]:

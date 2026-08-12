@@ -3,7 +3,7 @@
 import { PageHeader } from "@/components/shell/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AuditSettingsPanel } from "@/features/audit/components/audit-settings-panel"
-import { UsageDashboardPanel } from "@/features/usage/components/usage-dashboard-panel"
+import { UsageSettingsPanel } from "@/features/usage/components/usage-dashboard-panel"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { InvitationsTable } from "@/features/workspaces/components/invitations-table"
 import { MembersTable } from "@/features/workspaces/components/members-table"
@@ -44,7 +44,7 @@ export function WorkspaceSettingsRoute() {
         ) : null}
         {canManageWorkspace ? (
           <TabsContent value="usage">
-            <UsageDashboardPanel />
+            <UsageSettingsPanel />
           </TabsContent>
         ) : null}
         {canManageWorkspace ? (
