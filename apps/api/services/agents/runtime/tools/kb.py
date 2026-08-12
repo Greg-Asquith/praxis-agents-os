@@ -142,6 +142,7 @@ async def search_knowledge(
             ctx.deps.db,
             workspace_id=ctx.deps.workspace.id,
             user_id=ctx.deps.user.id,
+            agent_id=ctx.deps.agent.id,
             query=normalized_query,
             top_k=normalized_limit,
             source_types=search_filters.source_types,

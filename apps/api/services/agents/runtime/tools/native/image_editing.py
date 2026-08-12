@@ -190,6 +190,7 @@ async def edit_image(
         max_total_bytes=settings.NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES,
     )
     image = await run_native_image_generation(
+        deps=ctx.deps,
         prompt=normalized_prompt,
         aspect_ratio=None,
         model_spec=model_spec,

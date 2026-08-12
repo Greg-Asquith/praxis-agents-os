@@ -39,6 +39,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.asyncio
 
@@ -119,6 +120,23 @@ async def test_usage_is_a_property_not_a_method() -> None:
     # run identity is built into the result (relevant to the agent_runs table decision)
     assert result.run_id
     assert result.conversation_id
+
+
+async def test_model_response_usage_exposes_all_metered_token_classes() -> None:
+    response = ModelResponse(
+        parts=[TextPart(content="done")],
+        usage=RequestUsage(
+            input_tokens=11,
+            cache_read_tokens=3,
+            cache_write_tokens=4,
+            output_tokens=5,
+        ),
+    )
+
+    assert response.usage.input_tokens == 11
+    assert response.usage.cache_read_tokens == 3
+    assert response.usage.cache_write_tokens == 4
+    assert response.usage.output_tokens == 5
 
 
 async def test_iter_driver_surfaces_tool_calls_and_output() -> None:

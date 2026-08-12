@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
+from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
@@ -15,6 +16,8 @@ from models.kb import KBChunk, KBDocument
 from services.agents.models.domain import DEFAULT_MAX_STEPS, ResolvedModel
 from services.agents.models.factory import build_model
 from services.agents.models.registry import get_model
+from services.ai_usage.domain import PURPOSE_KB_ANNOTATION, AIUsageEventData
+from services.ai_usage.run_metered_helper import run_metered_helper
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +68,9 @@ async def annotate_chunks(
             },
         )
 
+    resolved_model = None if model is not None else _resolve_annotation_model()
     annotation_agent = Agent(
-        model or build_model(_resolve_annotation_model()),
+        model or build_model(resolved_model),
         name="kb_chunk_annotation_agent",
         output_type=ChunkContext,
         instructions=_ANNOTATION_INSTRUCTIONS,
@@ -78,7 +82,23 @@ async def annotate_chunks(
             chunk=chunk.content,
         )
         try:
-            result = await annotation_agent.run(prompt)
+            provider = resolved_model.provider if resolved_model is not None else model.system
+            model_name = resolved_model.model if resolved_model is not None else model.model_name
+
+            async def call(usage: RunUsage, *, current_prompt: str = prompt):
+                return await annotation_agent.run(current_prompt, usage=usage)
+
+            result = await run_metered_helper(
+                AIUsageEventData(
+                    workspace_id=document.workspace_id,
+                    provider=provider,
+                    model=model_name,
+                    purpose=PURPOSE_KB_ANNOTATION,
+                    user_id=document.created_by_user_id,
+                    details={"document_id": str(document.id), "chunk_id": str(chunk.id)},
+                ),
+                call,
+            )
             context_line = " ".join(result.output.context.split())
             chunk.context_line = context_line[: settings.KB_ANNOTATION_CONTEXT_MAX_CHARS].rstrip()
             if chunk.context_line:

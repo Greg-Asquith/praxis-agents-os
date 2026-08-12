@@ -160,9 +160,11 @@ async def generate_image_from_video(
     )
     model_spec = resolve_video_to_image_model(model=model)
     image = await run_native_image_generation(
+        deps=ctx.deps,
         prompt=normalized_prompt,
         aspect_ratio=None,
         model_spec=model_spec,
+        action="video_to_image",
         input_media=(input_media.content,),
         output_format="png",
     )

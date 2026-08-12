@@ -49,7 +49,14 @@ class FailingEmbeddingProvider(FakeEmbeddingProvider):
 
 
 def _context(*, db: object, workspace: object, user: object):
-    return SimpleNamespace(deps=SimpleNamespace(db=db, workspace=workspace, user=user))
+    return SimpleNamespace(
+        deps=SimpleNamespace(
+            db=db,
+            workspace=workspace,
+            user=user,
+            agent=SimpleNamespace(id=uuid4()),
+        )
+    )
 
 
 async def test_search_knowledge_clamps_limit_and_preserves_filters(
@@ -88,8 +95,9 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
         )
 
     monkeypatch.setattr("services.agents.runtime.tools.kb.search_chunks", fake_search)
+    context = _context(db=object(), workspace=workspace, user=user)
     output = await search_knowledge(
-        _context(db=object(), workspace=workspace, user=user),
+        context,
         "  policy  ",
         filters=KnowledgeSearchFilters(
             source_types=[KB_SOURCE_MANUAL],
@@ -102,6 +110,7 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
     assert captured == {
         "workspace_id": workspace.id,
         "user_id": user.id,
+        "agent_id": context.deps.agent.id,
         "query": "policy",
         "top_k": settings.KB_SEARCH_TOP_K_MAX,
         "source_types": [KB_SOURCE_MANUAL],

@@ -131,6 +131,8 @@ async def update_memory(
             workspace_id=workspace.id,
             title=memory.title,
             content_md=memory.content_md,
+            agent_id=agent.id,
+            user_id=user.id,
         )
         memory.embedding = embedded.vectors[0] if embedded is not None else None
         memory.embedding_provider = embedded.provider if embedded is not None else None

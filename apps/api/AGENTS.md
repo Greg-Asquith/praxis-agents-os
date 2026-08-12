@@ -49,6 +49,16 @@ Repo-wide expectations are in the root `AGENTS.md`.
   predicates, and be added to `tests/security/test_workspace_rls.py`.
   Missing GUCs must continue to fail closed. Never grant the runtime role
   `BYPASSRLS`, ownership, or superuser privileges.
+- `ai_usage_events` is runtime append-only: `praxis_app` may select and insert,
+  but may not update or delete. Its exact cardinality is one row per logical
+  agent-run invocation (including each approval resume), helper invocation, or
+  embedding API batch; `requests` sums provider requests within that row.
+  Successful/suspended agent usage is transactional with the terminal or parked
+  transition. Failure/cancellation fallback and helper/embedding usage are
+  best-effort durable writes through the separate bounded runtime-role AI usage
+  pool, so metering cannot consume the normal pool's overflow capacity. Usage
+  details must remain bounded, and the ledger must not become a budget or
+  admission-enforcement mechanism.
 
 ## Agent Runtime And Providers
 

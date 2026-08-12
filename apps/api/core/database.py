@@ -26,6 +26,8 @@ _async_engine: AsyncEngine | None = None
 _async_session_factory: async_sessionmaker[AsyncSession] | None = None
 _maintenance_async_engine: AsyncEngine | None = None
 _maintenance_async_session_factory: async_sessionmaker[AsyncSession] | None = None
+_ai_usage_async_engine: AsyncEngine | None = None
+_ai_usage_async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 SESSION_WORKSPACE_ID_KEY = "praxis_workspace_id"
 SESSION_USER_ID_KEY = "praxis_user_id"
@@ -73,6 +75,19 @@ def get_maintenance_async_engine() -> AsyncEngine:
     return _maintenance_async_engine
 
 
+def get_ai_usage_async_engine() -> AsyncEngine:
+    """Get the isolated, bounded runtime-role engine for durable metering."""
+    global _ai_usage_async_engine
+
+    if _ai_usage_async_engine is None:
+        kwargs = _engine_kwargs()
+        kwargs.pop("poolclass", None)
+        kwargs["pool_size"] = settings.AI_USAGE_DB_POOL_SIZE
+        kwargs["max_overflow"] = settings.AI_USAGE_DB_POOL_MAX_OVERFLOW
+        _ai_usage_async_engine = create_async_engine(settings.DATABASE_URL, **kwargs)
+    return _ai_usage_async_engine
+
+
 def get_async_db_session_factory() -> async_sessionmaker[AsyncSession]:
     """Get or create the process-wide async session factory."""
     global _async_session_factory
@@ -99,6 +114,19 @@ def get_maintenance_async_db_session_factory() -> async_sessionmaker[AsyncSessio
             info={SESSION_MAINTENANCE_KEY: True},
         )
     return _maintenance_async_session_factory
+
+
+def get_ai_usage_async_db_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Get the isolated runtime-role session factory for durable metering."""
+    global _ai_usage_async_session_factory
+
+    if _ai_usage_async_session_factory is None:
+        _ai_usage_async_session_factory = async_sessionmaker(
+            get_ai_usage_async_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+    return _ai_usage_async_session_factory
 
 
 def _apply_transaction_context(
@@ -220,6 +248,7 @@ async def close_db_connections() -> None:
     """Dispose database connections and reset cached factories."""
     global _async_engine, _async_session_factory
     global _maintenance_async_engine, _maintenance_async_session_factory
+    global _ai_usage_async_engine, _ai_usage_async_session_factory
 
     if _async_engine is not None:
         await _async_engine.dispose()
@@ -229,6 +258,10 @@ async def close_db_connections() -> None:
         await _maintenance_async_engine.dispose()
         _maintenance_async_engine = None
         _maintenance_async_session_factory = None
+    if _ai_usage_async_engine is not None:
+        await _ai_usage_async_engine.dispose()
+        _ai_usage_async_engine = None
+        _ai_usage_async_session_factory = None
 
 
 async def check_database_connection() -> None:

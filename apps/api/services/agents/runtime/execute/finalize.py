@@ -35,6 +35,8 @@ from services.agents.runtime.run_persistence import (
     persist_suspended_run,
 )
 from services.agents.runtime.sinks import EventSink
+from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
+from services.ai_usage.domain import AIUsageEventData
 
 from .errors import public_run_error
 from .types import ExecuteRunResult
@@ -57,6 +59,7 @@ async def finalize_terminal_run(
     skip_initial_user_prompt: bool = False,
     live_deferred_result_ids: Sequence[str] | set[str] = (),
     eager_tool_return_ids: set[str] | None = None,
+    usage_event: AIUsageEventData | None = None,
 ) -> ExecuteRunResult:
     if deferred_tool_results is not None:
         await emit_deferred_tool_resume_events(
@@ -78,6 +81,7 @@ async def finalize_terminal_run(
             deps=deps,
             skip_initial_user_prompt=skip_initial_user_prompt,
             eager_tool_return_ids=eager_tool_return_ids,
+            usage_event=usage_event,
         )
 
     return await finalize_successful_run(
@@ -91,6 +95,7 @@ async def finalize_terminal_run(
         deferred_tool_results=deferred_tool_results,
         skip_initial_user_prompt=skip_initial_user_prompt,
         eager_tool_return_ids=eager_tool_return_ids,
+        usage_event=usage_event,
     )
 
 
@@ -105,6 +110,7 @@ async def finalize_suspended_run(
     deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
+    usage_event: AIUsageEventData | None = None,
 ) -> ExecuteRunResult:
     deferred_tool_requests = terminal_result.output
     await record_policy_approval_request_audit_events(
@@ -120,6 +126,7 @@ async def finalize_suspended_run(
         client_message_id=client_message_id,
         skip_initial_user_prompt=skip_initial_user_prompt,
         eager_tool_return_ids=eager_tool_return_ids,
+        usage_event=usage_event,
     )
     await emit_approval_required_events(event_sink, deferred_tool_requests)
     await event_sink.emit(
@@ -146,6 +153,7 @@ async def finalize_successful_run(
     deferred_tool_results: DeferredToolResults | None,
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
+    usage_event: AIUsageEventData | None = None,
 ) -> ExecuteRunResult:
     tool_approval_metadata_by_call_id = (
         build_deferred_tool_result_metadata(
@@ -166,6 +174,7 @@ async def finalize_successful_run(
         tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
         skip_initial_user_prompt=skip_initial_user_prompt,
         eager_tool_return_ids=eager_tool_return_ids,
+        usage_event=usage_event,
     )
     if final_run.status == RUN_STATUS_COMPLETED:
         await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_COMPLETED})
@@ -196,6 +205,7 @@ async def emit_failure_events(
     started: bool,
     run_id: UUID,
     exc: Exception,
+    metering: AgentRunMeteringContext | None = None,
 ) -> None:
     public_error = public_run_error(exc)
     logger.error(
@@ -216,6 +226,7 @@ async def emit_failure_events(
             error_code=public_error.code,
             error_message=public_error.message,
             completion_json=public_error.completion_json,
+            metering=metering,
         )
         if failed_run is not None:
             terminal_status = failed_run.status
@@ -246,6 +257,7 @@ async def finalize_cancelled_run(
     run_id: UUID,
     workspace_id: UUID,
     user_id: UUID,
+    metering: AgentRunMeteringContext | None = None,
 ) -> None:
     """Persist and emit cancelled terminal state during cancellation unwind."""
     with suppress(Exception):
@@ -257,6 +269,7 @@ async def finalize_cancelled_run(
             run_id,
             workspace_id=workspace_id,
             user_id=user_id,
+            metering=metering,
         )
         if cancelled_run is not None:
             status = str(cancelled_run.status)

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.agent_memories import AgentMemory
+from services.ai_usage.domain import PURPOSE_EMBEDDING_MEMORY_WRITE
 from services.audit_events.enums import (
     AuditAction,
     AuditActorType,
@@ -31,6 +32,9 @@ async def embed_memory(db: AsyncSession, *, memory_id: UUID) -> None:
         db,
         [memory_text(title=memory.title, content_md=memory.content_md)],
         workspace_id=memory.workspace_id,
+        purpose=PURPOSE_EMBEDDING_MEMORY_WRITE,
+        agent_id=memory.agent_id,
+        user_id=memory.user_id or memory.created_by_user_id,
     )
     vector = embedded.vectors[0]
     nearest, similarity = await find_near_duplicate(

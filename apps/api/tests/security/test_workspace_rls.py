@@ -42,6 +42,7 @@ DIRECT_TABLES = (
     "integration_context_groups",
     "active_context_selections",
     "audit_events",
+    "ai_usage_events",
 )
 DUAL_OWNER_TABLES = (
     "external_credentials",
@@ -95,6 +96,9 @@ def _required_value(
         ("integration_events", "payload_digest"): marker * 64,
         ("integration_table_schemas", "table_type"): "table",
         ("kb_documents", "source_type"): "manual",
+        ("ai_usage_events", "provider"): "openai",
+        ("ai_usage_events", "model"): "gpt-5.6-luna",
+        ("ai_usage_events", "purpose"): "agent_run",
     }
     if (table_name, name) in table_values:
         return table_values[(table_name, name)]
@@ -334,6 +338,57 @@ async def test_runtime_role_fails_closed_without_tenant_gucs(
                             )
                         )
                     )
+
+
+async def test_ai_usage_ledger_is_runtime_append_only_and_workspace_cascade_safe(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    workspace_id = uuid4()
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        workspaces = await _reflect_table(maintenance_db, "workspaces")
+        events = await _reflect_table(maintenance_db, "ai_usage_events")
+        await _insert_seed(
+            maintenance_db,
+            workspaces,
+            workspace_id=workspace_id,
+            marker="usage",
+            overrides={"id": workspace_id},
+        )
+        await maintenance_db.commit()
+
+        async with db_session_factory() as runtime_db:
+            await set_session_tenant_context(runtime_db, workspace_id=workspace_id)
+            event_id = await runtime_db.scalar(
+                sa.insert(events)
+                .values(
+                    id=uuid4(),
+                    workspace_id=workspace_id,
+                    provider="openai",
+                    model="gpt-5.6-luna",
+                    purpose="agent_run",
+                    requests=1,
+                )
+                .returning(events.c.id)
+            )
+            await runtime_db.commit()
+
+            with pytest.raises(DBAPIError):
+                async with runtime_db.begin_nested():
+                    await runtime_db.execute(
+                        sa.update(events).where(events.c.id == event_id).values(requests=2)
+                    )
+            with pytest.raises(DBAPIError):
+                async with runtime_db.begin_nested():
+                    await runtime_db.execute(sa.delete(events).where(events.c.id == event_id))
+
+        await maintenance_db.execute(sa.delete(workspaces).where(workspaces.c.id == workspace_id))
+        await maintenance_db.commit()
+        assert (
+            await maintenance_db.scalar(
+                sa.select(sa.func.count()).select_from(events).where(events.c.id == event_id)
+            )
+            == 0
+        )
 
 
 @pytest.mark.parametrize("table_name", RLS_TABLES)

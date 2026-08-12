@@ -21,7 +21,7 @@ from tests.support.embeddings import FakeEmbeddingProvider
 def _install_job_embeddings(monkeypatch) -> None:
     provider = FakeEmbeddingProvider()
 
-    async def fake_embed_texts(_db, texts, *, workspace_id):
+    async def fake_embed_texts(_db, texts, *, workspace_id, **_attribution):
         del workspace_id
         return await provider.embed_texts(
             texts,

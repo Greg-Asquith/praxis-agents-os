@@ -3,6 +3,8 @@
 """Tests for provider-native runtime tool catalog entries."""
 
 from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -84,6 +86,31 @@ class NativeRuntimeContext:
     agent_id: UUID
     conversation_id: UUID
     run_id: UUID
+
+
+def _metering_deps() -> RuntimeDeps:
+    """Minimal explicit attribution for model-only helper probes."""
+    return cast(
+        RuntimeDeps,
+        SimpleNamespace(
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            user=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+            conversation=SimpleNamespace(id=uuid4()),
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_helper_metering(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_record(_event) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
 
 
 def _agent(
@@ -397,7 +424,7 @@ async def test_native_image_generation_probe_extracts_normalized_provider_image(
             captured["model"] = model
             captured.update(kwargs)
 
-        async def run(self, prompt, *, usage_limits):
+        async def run(self, prompt, *, usage_limits, usage):
             captured["prompt"] = prompt
             captured["usage_limits"] = usage_limits
             return FakeResult()
@@ -407,6 +434,7 @@ async def test_native_image_generation_probe_extracts_normalized_provider_image(
     spec = ResolvedModel(provider=provider, model="probe-model", settings={}, max_steps=3)
 
     result = await image_generation_tools.run_native_image_generation(
+        deps=_metering_deps(),
         prompt="A paper-cut fox",
         aspect_ratio="3:2",
         model_spec=spec,
@@ -447,7 +475,7 @@ async def test_native_image_editing_probe_sends_input_image_and_edit_action(
             captured["model"] = model
             captured.update(kwargs)
 
-        async def run(self, prompt, *, usage_limits):
+        async def run(self, prompt, *, usage_limits, usage):
             captured["prompt"] = prompt
             captured["usage_limits"] = usage_limits
             return FakeResult()
@@ -456,6 +484,7 @@ async def test_native_image_editing_probe_sends_input_image_and_edit_action(
     monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
 
     result = await image_generation_tools.run_native_image_generation(
+        deps=_metering_deps(),
         prompt="Make the fox red",
         aspect_ratio=None,
         model_spec=ResolvedModel(
@@ -555,7 +584,7 @@ async def test_native_video_to_image_probe_sends_inline_video_to_google(
             captured["model"] = model
             captured.update(kwargs)
 
-        async def run(self, prompt, *, usage_limits):
+        async def run(self, prompt, *, usage_limits, usage):
             captured["prompt"] = prompt
             captured["usage_limits"] = usage_limits
             return FakeResult()
@@ -564,6 +593,7 @@ async def test_native_video_to_image_probe_sends_inline_video_to_google(
     monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
 
     result = await image_generation_tools.run_native_image_generation(
+        deps=_metering_deps(),
         prompt="Create a thumbnail of the main scene",
         aspect_ratio=None,
         model_spec=ResolvedModel(
@@ -619,6 +649,7 @@ async def test_native_image_generation_rejects_multiple_provider_images(
 
     with pytest.raises(ModelRetry, match="returned multiple images"):
         await image_generation_tools.run_native_image_generation(
+            deps=_metering_deps(),
             prompt="Two accidental images",
             aspect_ratio=None,
             model_spec=ResolvedModel(
@@ -634,6 +665,7 @@ async def test_native_image_generation_rejects_multiple_provider_images(
 async def test_native_image_generation_rejects_google_only_ratio_for_openai() -> None:
     with pytest.raises(ModelRetry, match="OpenAI image generation supports aspect ratios"):
         await image_generation_tools.run_native_image_generation(
+            deps=_metering_deps(),
             prompt="A cinematic landscape",
             aspect_ratio="16:9",
             model_spec=ResolvedModel(
@@ -685,6 +717,7 @@ async def test_native_image_generation_probe_maps_content_policy_refusals(
 
     with pytest.raises(ModelRetry, match="declined this prompt under its content policy"):
         await image_generation_tools.run_native_image_generation(
+            deps=_metering_deps(),
             prompt="blocked prompt",
             aspect_ratio=None,
             model_spec=spec,
@@ -777,8 +810,9 @@ async def test_fetch_url_wraps_hostile_page_content_and_neutralizes_forged_marke
     _set_native_provider_keys(monkeypatch, anthropic="sk-ant-test")
 
     async def fake_fetch(
-        *, url: str, model_spec: ResolvedModel
+        *, deps: RuntimeDeps, url: str, model_spec: ResolvedModel
     ) -> web_fetch_tools.NativeWebFetchResult:
+        assert deps is FakeContext.deps
         assert model_spec.provider == PROVIDER_ANTHROPIC
         return web_fetch_tools.NativeWebFetchResult(
             content=hostile,
@@ -903,7 +937,7 @@ async def test_native_web_fetch_parser_handles_normalized_provider_messages_and_
             captured["model"] = model
             captured.update(kwargs)
 
-        async def run(self, prompt, *, usage_limits):
+        async def run(self, prompt, *, usage_limits, usage):
             captured["prompt"] = prompt
             captured["usage_limits"] = usage_limits
             return FakeResult()
@@ -913,7 +947,11 @@ async def test_native_web_fetch_parser_handles_normalized_provider_messages_and_
     monkeypatch.setattr(settings, "NATIVE_WEB_FETCH_BLOCKED_DOMAINS", "blocked.example")
     spec = ResolvedModel(provider=provider, model="probe-model", settings={}, max_steps=2)
 
-    result = await web_fetch_tools.run_native_web_fetch(url=requested_url, model_spec=spec)
+    result = await web_fetch_tools.run_native_web_fetch(
+        deps=_metering_deps(),
+        url=requested_url,
+        model_spec=spec,
+    )
 
     [capability] = captured["capabilities"]
     assert capability.local is False
@@ -1175,8 +1213,9 @@ async def test_web_search_tool_uses_configured_helper_model(
     captured: dict[str, object] = {}
 
     async def fake_search(
-        *, query: str, model_spec: ResolvedModel
+        *, deps: RuntimeDeps, query: str, model_spec: ResolvedModel
     ) -> web_search_tools.NativeWebSearchResult:
+        assert deps is FakeContext.deps
         captured["query"] = query
         captured["model_spec"] = model_spec
         return web_search_tools.NativeWebSearchResult(

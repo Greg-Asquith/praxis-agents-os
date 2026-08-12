@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
+from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
@@ -20,6 +21,8 @@ from models.conversation import Conversation
 from services.agents.models import build_model, resolve_naming_model
 from services.agents.runtime.events import EVENT_CONVERSATION_UPDATED
 from services.agents.runtime.sinks import EventSink
+from services.ai_usage.domain import PURPOSE_CONVERSATION_NAMING, AIUsageEventData
+from services.ai_usage.run_metered_helper import run_metered_helper
 from services.conversations.schemas import ConversationRead
 from services.conversations.utils import (
     get_active_run_for_conversation,
@@ -54,6 +57,9 @@ class ConversationTitleOutput(BaseModel):
 async def generate_conversation_title(
     user_prompt: str,
     *,
+    workspace_id: UUID,
+    user_id: UUID,
+    conversation_id: UUID,
     model: Model | None = None,
 ) -> ConversationTitle:
     """Generate a short title for a new conversation with structured output."""
@@ -65,7 +71,23 @@ async def generate_conversation_title(
         output_type=ConversationTitleOutput,
         instructions=_TITLE_INSTRUCTIONS,
     )
-    result = await agent.run(user_prompt)
+    provider = resolved_model.provider if resolved_model is not None else model.system
+    model_name = resolved_model.model if resolved_model is not None else model.model_name
+
+    async def call(usage: RunUsage):
+        return await agent.run(user_prompt, usage=usage)
+
+    result = await run_metered_helper(
+        AIUsageEventData(
+            workspace_id=workspace_id,
+            provider=provider,
+            model=model_name,
+            purpose=PURPOSE_CONVERSATION_NAMING,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        ),
+        call,
+    )
     title = _normalize_title(result.output.title)
     if not title:
         title = fallback_conversation_title(user_prompt)
@@ -94,7 +116,13 @@ async def run_conversation_title_worker(
             workspace_id=workspace_id,
             user_id=user_id,
         )
-        title = await _safe_generate_title(user_prompt, fallback_title=fallback_title)
+        title = await _safe_generate_title(
+            user_prompt,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            fallback_title=fallback_title,
+        )
         await _persist_title_update(
             session,
             conversation_id=conversation_id,
@@ -119,9 +147,21 @@ def fallback_conversation_title(user_prompt: str) -> str:
     return _truncate_title(first_line or "New Conversation")
 
 
-async def _safe_generate_title(user_prompt: str, *, fallback_title: str) -> ConversationTitle:
+async def _safe_generate_title(
+    user_prompt: str,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+    conversation_id: UUID,
+    fallback_title: str,
+) -> ConversationTitle:
     try:
-        return await generate_conversation_title(user_prompt)
+        return await generate_conversation_title(
+            user_prompt,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
     except Exception:
         logger.warning("Conversation title generation failed", exc_info=True)
         return ConversationTitle(title=fallback_title, source="fallback", model_name=None)

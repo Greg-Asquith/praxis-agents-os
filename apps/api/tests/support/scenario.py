@@ -18,6 +18,7 @@ from pydantic_ai import DeferredToolResults
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.usage import RunUsage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -242,6 +243,7 @@ async def run_scenario(
     expected_status: str | None = RUN_STATUS_PENDING,
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
+    usage: RunUsage | None = None,
     attachment_file_ids: Sequence[UUID] = (),
     sink: CollectingSink | None = None,
 ) -> ScenarioResult:
@@ -262,6 +264,7 @@ async def run_scenario(
             expected_status=expected_status,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
+            usage=usage,
         )
 
     async with session_factory() as db:

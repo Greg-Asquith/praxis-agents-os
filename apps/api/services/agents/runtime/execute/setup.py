@@ -346,8 +346,7 @@ async def build_agent_for_run(
         history_compaction=history_compaction,
     )
     _record_skipped_runtime_tools(run, skipped_tool_names)
-    if run.model_name is None:
-        run.model_name = runtime_agent.resolved_model.qualified_id
+    run.model_name = runtime_agent.resolved_model.qualified_id
 
     await db.commit()
     return BuiltRuntimeAgent(runtime_agent=runtime_agent, history=history)

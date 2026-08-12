@@ -32,6 +32,12 @@ behind good defaults and progressive disclosure, not in their face.
   authoritative under cancellation/finalization races. Schedules may also
   require a bounded completion report against operator-authored criteria;
   pass, fail, and missing-report verdicts remain separate from lifecycle status.
+  AI usage is recorded in a forced-RLS, runtime-append-only ledger with one row
+  per logical agent, helper, or embedding invocation, not per provider request.
+  Successful and suspended agent invocations record atomically with their run
+  transition; failure/cancellation and helper/embedding paths use best-effort
+  durable recording through a distinct bounded runtime-role connection pool.
+  This ledger is observability only: it does not enforce budgets or admission.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router +
   TanStack Query). It talks to the API over REST and consumes agent turns over
   SSE.

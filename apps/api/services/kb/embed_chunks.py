@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.kb import KBChunk, KBDocument
+from services.ai_usage.domain import PURPOSE_EMBEDDING_KB_INGEST
 from services.embeddings import embed_texts
 from services.embeddings.domain import EmbeddingConfigurationError, EmbeddingProvider
 from services.embeddings.utils import chunk_batches
@@ -81,6 +82,7 @@ async def embed_kb_chunks(
             db,
             inputs,
             workspace_id=document.workspace_id,
+            purpose=PURPOSE_EMBEDDING_KB_INGEST,
             provider=provider,
         )
         if result.dimensions != KB_COLLECTION_DIMS:

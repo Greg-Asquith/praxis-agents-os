@@ -21,8 +21,21 @@ from services.conversations.naming import (
 from tests.factories import build_user, build_workspace
 
 
+@pytest.fixture(autouse=True)
+def _isolate_helper_metering(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_record(_event) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+
+
 @pytest.mark.asyncio
 async def test_generate_conversation_title_uses_structured_output() -> None:
+    workspace_id, user_id, conversation_id = uuid4(), uuid4(), uuid4()
+
     async def title_function(_messages, agent_info: AgentInfo) -> ModelResponse:
         output_tool = agent_info.output_tools[0]
         return ModelResponse(
@@ -37,6 +50,9 @@ async def test_generate_conversation_title_uses_structured_output() -> None:
 
     title = await generate_conversation_title(
         "Can you help me plan the roadmap for next quarter?",
+        workspace_id=workspace_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
         model=FunctionModel(title_function, model_name="title-test"),
     )
 
@@ -47,6 +63,8 @@ async def test_generate_conversation_title_uses_structured_output() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_conversation_title_falls_back_when_model_returns_blank() -> None:
+    workspace_id, user_id, conversation_id = uuid4(), uuid4(), uuid4()
+
     async def blank_function(_messages, agent_info: AgentInfo) -> ModelResponse:
         output_tool = agent_info.output_tools[0]
         return ModelResponse(
@@ -61,6 +79,9 @@ async def test_generate_conversation_title_falls_back_when_model_returns_blank()
 
     title = await generate_conversation_title(
         "Summarize the finance report before tomorrow's board meeting",
+        workspace_id=workspace_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
         model=FunctionModel(blank_function, model_name="blank-title-test"),
     )
 

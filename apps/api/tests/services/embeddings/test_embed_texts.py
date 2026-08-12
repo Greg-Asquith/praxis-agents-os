@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from services.ai_usage.domain import PURPOSE_EMBEDDING_KB_SEARCH, AIUsageEventData
 from services.embeddings.domain import (
     EmbeddingBatch,
     EmbeddingConfigurationError,
@@ -21,6 +22,7 @@ from services.embeddings.get_embedding_usage import get_embedding_usage
 from tests.factories import build_workspace
 
 pytestmark = pytest.mark.asyncio
+embed_texts_module = importlib.import_module("services.embeddings.embed_texts")
 
 
 class RecordingProvider(EmbeddingProvider):
@@ -50,6 +52,14 @@ class RecordingProvider(EmbeddingProvider):
         )
 
 
+class FailingSecondProvider(RecordingProvider):
+    async def embed_texts(self, texts, *, model, dimensions):
+        if self.call_sizes:
+            self.call_sizes.append(len(texts))
+            raise EmbeddingProviderError("later batch failed")
+        return await super().embed_texts(texts, model=model, dimensions=dimensions)
+
+
 async def _workspace(db: AsyncSession):
     workspace = build_workspace(slug=f"embeddings-{uuid4().hex}")
     db.add(workspace)
@@ -63,18 +73,29 @@ async def test_batches_preserve_order_and_meter_provider_tokens(
 ) -> None:
     workspace = await _workspace(db_session)
     provider = RecordingProvider()
+    recorded: list[AIUsageEventData] = []
+
+    async def record(event: AIUsageEventData) -> bool:
+        recorded.append(event)
+        return True
+
+    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
     monkeypatch.setattr(settings, "EMBEDDINGS_MAX_BATCH_TEXTS", 2)
 
     result = await embed_texts(
         db_session,
         ["one", "two", "three", "four", "five"],
         workspace_id=workspace.id,
+        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
         provider=provider,
     )
 
     assert provider.call_sizes == [2, 2, 1]
     assert len(result.vectors) == 5
     assert result.total_tokens == 15
+    assert len(recorded) == 1
+    assert recorded[0].requests == 3
+    assert recorded[0].input_tokens == 15
     assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 15
 
 
@@ -88,6 +109,7 @@ async def test_empty_input_short_circuits_without_provider_or_metering(
         db_session,
         [],
         workspace_id=workspace.id,
+        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
         provider=provider,
     )
 
@@ -108,6 +130,7 @@ async def test_invalid_text_names_its_index(
             db_session,
             ["okay", "too long"],
             workspace_id=workspace.id,
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
             provider=RecordingProvider(),
         )
 
@@ -129,12 +152,14 @@ async def test_soft_budget_warns_only_on_the_crossing_call(
         db_session,
         ["first", "second"],
         workspace_id=workspace.id,
+        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
         provider=RecordingProvider(),
     )
     await embed_texts(
         db_session,
         ["third"],
         workspace_id=workspace.id,
+        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
         provider=RecordingProvider(),
     )
 
@@ -145,15 +170,69 @@ async def test_soft_budget_warns_only_on_the_crossing_call(
 
 async def test_provider_length_mismatch_fails_before_metering(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = await _workspace(db_session)
+    recorded: list[AIUsageEventData] = []
+
+    async def record(event: AIUsageEventData) -> bool:
+        recorded.append(event)
+        return True
+
+    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
 
     with pytest.raises(EmbeddingProviderError, match="unexpected number"):
         await embed_texts(
             db_session,
             ["first", "second"],
             workspace_id=workspace.id,
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
             provider=RecordingProvider(omit_last=True),
         )
 
+    assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 0
+    assert recorded[0].requests == 1
+    assert recorded[0].input_tokens == 6
+
+
+async def test_invalid_purpose_fails_before_provider_call(db_session: AsyncSession) -> None:
+    workspace = await _workspace(db_session)
+    provider = RecordingProvider()
+
+    with pytest.raises(ValueError, match="Unknown AI usage purpose"):
+        await embed_texts(
+            db_session,
+            ["text"],
+            workspace_id=workspace.id,
+            purpose="invalid",  # type: ignore[arg-type] - runtime boundary probe
+            provider=provider,
+        )
+    assert provider.call_sizes == []
+
+
+async def test_later_batch_failure_records_completed_batches_only(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = await _workspace(db_session)
+    provider = FailingSecondProvider()
+    recorded: list[AIUsageEventData] = []
+    monkeypatch.setattr(settings, "EMBEDDINGS_MAX_BATCH_TEXTS", 1)
+
+    async def record(event: AIUsageEventData) -> bool:
+        recorded.append(event)
+        return True
+
+    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
+    with pytest.raises(EmbeddingProviderError, match="later batch failed"):
+        await embed_texts(
+            db_session,
+            ["first", "second"],
+            workspace_id=workspace.id,
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
+            provider=provider,
+        )
+
+    assert recorded[0].requests == 1
+    assert recorded[0].input_tokens == 3
     assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 0
