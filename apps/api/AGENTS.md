@@ -184,6 +184,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   cutoff computed once per run, work in bounded batches with immediate
   continuation when capped, and record deletion counts in the completed job
   payload without emitting replacement audit events.
+- Audit roll-up correlation is materialized in trigger-owned
+  `audit_rollup_run_id` and `audit_rollup_tool_call_id` columns. The trigger
+  derives the run ID from `details`, uses `resource_id` for tool calls and
+  `details.tool_call_id` for integration-resource events, and leaves incomplete
+  or unrelated identities outside the partial composite index. Writers must not
+  treat those columns as inputs or weaken the `(workspace_id, run_id,
+  tool_call_id)` lookup contract.
 - Application encryption uses a newest-first Fernet key ring loaded from
   `ENCRYPTION_KEYS` or the configured secret provider via
   `ENCRYPTION_KEYS_SECRET_NAME`. API and worker startup load the ring before

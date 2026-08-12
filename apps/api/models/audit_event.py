@@ -47,6 +47,8 @@ class AuditEvent(Base, UUIDMixin, CreatedAtMixin):
     )
 
     details = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+    audit_rollup_run_id = Column(Text, nullable=True)
+    audit_rollup_tool_call_id = Column(Text, nullable=True)
     request_id = Column(String(160), nullable=True, index=True)
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(Text, nullable=True)
@@ -70,6 +72,15 @@ class AuditEvent(Base, UUIDMixin, CreatedAtMixin):
         ),
         Index("ix_audit_events_status_occurred", "status", "occurred_at"),
         Index("ix_audit_events_details", "details", postgresql_using="gin"),
+        Index(
+            "ix_audit_events_rollup_correlation",
+            "workspace_id",
+            "audit_rollup_run_id",
+            "audit_rollup_tool_call_id",
+            postgresql_where=text(
+                "audit_rollup_run_id IS NOT NULL AND audit_rollup_tool_call_id IS NOT NULL"
+            ),
+        ),
     )
 
     def __repr__(self) -> str:

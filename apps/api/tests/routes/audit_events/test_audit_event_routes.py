@@ -469,7 +469,7 @@ async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
         db_session,
         workspace=workspace,
         actor=actor,
-        action=AuditAction.EXECUTE,
+        action=AuditAction.UPDATE,
         resource_type=AuditResourceType.INTEGRATION_RESOURCE,
         resource_id=integration_resource_id,
         status=AuditStatus.FAILURE,
@@ -516,6 +516,17 @@ async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
             "occurred_before": (base_time + timedelta(milliseconds=1500)).isoformat(),
         },
         {"status": "failure"},
+        {
+            "resource_type": "integration_resource",
+            "resource_id": integration_resource_id,
+            "actor_user_id": str(actor.id),
+            "action": "update",
+            "tool_name": "google_ads_add_negative_keywords",
+            "tool_provider": "google_ads",
+            "occurred_after": (base_time + timedelta(milliseconds=500)).isoformat(),
+            "occurred_before": (base_time + timedelta(milliseconds=1500)).isoformat(),
+            "status": "failure",
+        },
     ):
         body = await get_events(**params)
         assert body["total"] == 1
