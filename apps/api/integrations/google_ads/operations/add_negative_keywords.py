@@ -2,11 +2,14 @@
 
 """Add keyword criteria to a Google Ads negative keyword shared set."""
 
-from typing import Any
-
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .mutation_outcomes import (
+    SHARED_SET_KEYWORD_MUTATION_SPEC,
+    GoogleAdsMutationLedger,
+    build_keyword_mutation_ledger,
+)
 from .utils import grouped_partial_failure_errors, stream_rows
 
 _UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
@@ -20,7 +23,7 @@ async def add_negative_keywords(
     login_customer_id: str,
     shared_set_id: str,
     keywords: list[dict[str, str]],
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     normalized_customer_id = normalize_customer_id(customer_id)
     if not shared_set_id.isdigit():
         raise ValueError("Google Ads shared set id must contain only digits")
@@ -44,22 +47,24 @@ async def add_negative_keywords(
         if isinstance((criterion := row.get("sharedCriterion")), dict)
         and isinstance((keyword := criterion.get("keyword")), dict)
     }
-    skipped_existing = [
-        keyword
-        for keyword in keywords
+    skipped_indices = {
+        index: "already_exists"
+        for index, keyword in enumerate(keywords)
         if (keyword["text"].casefold(), keyword["match_type"]) in existing
+    }
+    submitted = [
+        (index, keyword) for index, keyword in enumerate(keywords) if index not in skipped_indices
     ]
-    create_keywords = [
-        keyword
-        for keyword in keywords
-        if (keyword["text"].casefold(), keyword["match_type"]) not in existing
-    ]
+    create_keywords = [keyword for _, keyword in submitted]
     if not create_keywords:
-        return {
-            "added": [],
-            "skipped_existing": skipped_existing,
-            "keyword_errors": [],
-        }
+        return build_keyword_mutation_ledger(
+            spec=SHARED_SET_KEYWORD_MUTATION_SPEC,
+            action="add",
+            parent_fields=keywords,
+            skipped_indices=skipped_indices,
+            submitted=(),
+            outcomes=(),
+        )
 
     payload = await client.post(
         f"customers/{normalized_customer_id}/sharedCriteria:mutate",
@@ -92,68 +97,71 @@ async def add_negative_keywords(
     )
     if unattributed_errors:
         diagnostic = unattributed_errors[0]
-        return {
-            "added": [],
-            "skipped_existing": skipped_existing,
-            "keyword_errors": [
-                _keyword_response_error(
-                    keyword,
-                    _merge_error_diagnostic(indexed_error, diagnostic)
-                    if (indexed_error := indexed_errors.get(index)) is not None
-                    else diagnostic,
-                )
-                for index, keyword in enumerate(create_keywords)
-            ],
-        }
+        outcomes = []
+        for index, _keyword in enumerate(create_keywords):
+            merged = (
+                _merge_error_diagnostic(indexed_error, diagnostic)
+                if (indexed_error := indexed_errors.get(index)) is not None
+                else diagnostic
+            )
+            outcomes.append(("unverified", None, merged["error_code"], merged["message"]))
+        return build_keyword_mutation_ledger(
+            spec=SHARED_SET_KEYWORD_MUTATION_SPEC,
+            action="add",
+            parent_fields=keywords,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=outcomes,
+        )
     if not isinstance(results, list) or len(results) != len(create_keywords):
-        return {
-            "added": [],
-            "skipped_existing": skipped_existing,
-            "keyword_errors": [
-                _keyword_response_error(keyword, indexed_errors.get(index))
-                for index, keyword in enumerate(create_keywords)
-            ],
-        }
+        outcomes = [
+            (
+                "failed" if index in indexed_errors else "unverified",
+                None,
+                (
+                    indexed_errors[index]["error_code"]
+                    if index in indexed_errors
+                    else _UNACCOUNTED_RESPONSE_CODE
+                ),
+                (
+                    indexed_errors[index]["message"]
+                    if index in indexed_errors
+                    else _UNACCOUNTED_RESPONSE_MESSAGE
+                ),
+            )
+            for index in range(len(create_keywords))
+        ]
+        return build_keyword_mutation_ledger(
+            spec=SHARED_SET_KEYWORD_MUTATION_SPEC,
+            action="add",
+            parent_fields=keywords,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=outcomes,
+        )
 
-    added: list[dict[str, str]] = []
-    keyword_errors: list[dict[str, str]] = []
-    for index, (keyword, item) in enumerate(zip(create_keywords, results, strict=True)):
+    outcomes = []
+    for index, (_keyword, item) in enumerate(zip(create_keywords, results, strict=True)):
         error = indexed_errors.get(index)
         resource_name = item.get("resourceName") if isinstance(item, dict) else None
         if error is not None:
-            keyword_errors.append(error)
+            if resource_name is not None:
+                raise ValueError("Google Ads returned contradictory keyword mutation evidence")
+            outcomes.append(("failed", None, error["error_code"], error["message"]))
         elif isinstance(resource_name, str) and resource_name:
-            added.append({**keyword, "resource_name": resource_name})
+            outcomes.append(("applied", resource_name, None, None))
         else:
-            keyword_errors.append(_unaccounted_keyword_error(keyword))
-
-    return {
-        "added": added,
-        "skipped_existing": skipped_existing,
-        "keyword_errors": keyword_errors,
-    }
-
-
-def _unaccounted_keyword_error(keyword: dict[str, str]) -> dict[str, str]:
-    return {
-        "scope": "keyword",
-        **keyword,
-        "message": _UNACCOUNTED_RESPONSE_MESSAGE,
-        "error_code": _UNACCOUNTED_RESPONSE_CODE,
-    }
-
-
-def _keyword_response_error(
-    keyword: dict[str, str], diagnostic: dict[str, str] | None
-) -> dict[str, str]:
-    if diagnostic is None:
-        return _unaccounted_keyword_error(keyword)
-    return {
-        "scope": "keyword",
-        **keyword,
-        "message": diagnostic["message"],
-        "error_code": diagnostic["error_code"],
-    }
+            outcomes.append(
+                ("unverified", None, _UNACCOUNTED_RESPONSE_CODE, _UNACCOUNTED_RESPONSE_MESSAGE)
+            )
+    return build_keyword_mutation_ledger(
+        spec=SHARED_SET_KEYWORD_MUTATION_SPEC,
+        action="add",
+        parent_fields=keywords,
+        skipped_indices=skipped_indices,
+        submitted=submitted,
+        outcomes=outcomes,
+    )
 
 
 def _merge_error_diagnostic(error: dict[str, str], diagnostic: dict[str, str]) -> dict[str, str]:

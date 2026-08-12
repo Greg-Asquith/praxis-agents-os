@@ -2,7 +2,7 @@
 
 """Ad-group negative-keyword execution adapter."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic_ai import RunContext, ToolReturn
@@ -13,13 +13,13 @@ from integrations.google_ads.operations.ad_group_negative_keywords import (
     add_ad_group_negative_keywords,
     remove_ad_group_negative_keywords,
 )
+from integrations.google_ads.operations.mutation_outcomes import GoogleAdsMutationLedger
 from integrations.google_ads.references import GoogleAdsAdGroupReference
 from integrations.google_ads.tools.schemas.negative_keyword import (
     NegativeKeywordEntry,
     NegativeKeywordRemovalEntry,
 )
 from services.agents.runtime.context import RuntimeDeps
-from services.audit_events import IntegrationOperationDetail
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.entity_references import ScopedEntityReference
 
@@ -29,9 +29,6 @@ from .negative_keyword_tools import (
     MAX_SCOPED_NEGATIVE_PUBLIC_RESULT_CHARS,
     NegativeKeywordAction,
     NegativeKeywordToolSpec,
-    entity_result,
-    operation_detail,
-    pending_operation_detail,
     run_negative_keyword_tool,
 )
 from .routing import login_customer_id
@@ -51,46 +48,7 @@ async def run_ad_group_negative_keyword_tool(
         ad_group_ids,
         keywords,
         action=action,
-        spec=_AD_GROUP_SPEC,
-    )
-
-
-def _pending_operation_detail(
-    entry: ResolvedContextEntry,
-    ad_groups: Sequence[GoogleAdsAdGroupReference],
-    action: NegativeKeywordAction,
-    keywords: Sequence[Mapping[str, str]],
-) -> IntegrationOperationDetail:
-    return pending_operation_detail(entry, ad_groups, action, keywords, spec=_AD_GROUP_SPEC)
-
-
-def _operation_detail(
-    entry: ResolvedContextEntry,
-    ad_groups: Sequence[GoogleAdsAdGroupReference],
-    keywords: Sequence[Mapping[str, str]],
-    action: NegativeKeywordAction,
-    result: Mapping[str, Any],
-) -> IntegrationOperationDetail:
-    return operation_detail(entry, ad_groups, keywords, action, result, spec=_AD_GROUP_SPEC)
-
-
-def _ad_group_result(
-    action: NegativeKeywordAction,
-    ad_groups: Sequence[GoogleAdsAdGroupReference],
-    result: Mapping[str, Any],
-    *,
-    max_ad_groups: int,
-    keywords: Sequence[Mapping[str, str]] = (),
-    include_keyword_outcomes: bool,
-) -> dict[str, Any]:
-    return entity_result(
-        action,
-        ad_groups,
-        result,
-        max_entities=max_ad_groups,
-        keywords=keywords,
-        include_keyword_outcomes=include_keyword_outcomes,
-        spec=_AD_GROUP_SPEC,
+        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
 
 
@@ -108,7 +66,7 @@ async def _mutate_targets(
     ad_group_ids: list[str],
     keywords: list[dict[str, str]],
     action: NegativeKeywordAction,
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     operation = (
         add_ad_group_negative_keywords if action == "add" else remove_ad_group_negative_keywords
     )
@@ -129,7 +87,7 @@ def _reference_fields(reference: ScopedEntityReference) -> dict[str, str]:
     }
 
 
-_AD_GROUP_SPEC = NegativeKeywordToolSpec(
+AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC = NegativeKeywordToolSpec(
     reference_type=GoogleAdsAdGroupReference,
     entity_id_key="ad_group_id",
     errors_key="ad_group_errors",

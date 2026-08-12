@@ -9,6 +9,11 @@ from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .mutation_outcomes import (
+    SHARED_SET_KEYWORD_MUTATION_SPEC,
+    GoogleAdsMutationLedger,
+    build_keyword_mutation_ledger,
+)
 from .utils import grouped_partial_failure_errors, stream_rows
 
 MAX_NEGATIVE_KEYWORD_REMOVALS = 500
@@ -23,7 +28,7 @@ async def remove_negative_keywords(
     login_customer_id: str,
     shared_set_id: str,
     keywords: list[dict[str, str]],
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     normalized_customer_id = normalize_customer_id(customer_id)
     if not shared_set_id.isdigit():
         raise ValueError("Google Ads shared set id must contain only digits")
@@ -46,9 +51,9 @@ async def remove_negative_keywords(
         customer_id=normalized_customer_id,
         shared_set_id=shared_set_id,
     )
-    removals: list[dict[str, str]] = []
-    not_found: list[dict[str, str]] = []
-    for keyword in keywords:
+    removals: list[tuple[int, dict[str, str]]] = []
+    skipped_indices: dict[int, str] = {}
+    for parent_index, keyword in enumerate(keywords):
         matches = [
             criterion
             for criterion in existing
@@ -56,9 +61,9 @@ async def remove_negative_keywords(
             and (keyword["match_type"] == "ANY" or criterion["match_type"] == keyword["match_type"])
         ]
         if not matches:
-            not_found.append(keyword)
+            skipped_indices[parent_index] = "not_found"
             continue
-        removals.extend(matches)
+        removals.extend((parent_index, match) for match in matches)
 
     if len(removals) > MAX_NEGATIVE_KEYWORD_REMOVALS:
         raise IntegrationValidationError(
@@ -69,12 +74,9 @@ async def remove_negative_keywords(
         )
 
     if not removals:
-        return {
-            "removed": [],
-            "resource_names": [],
-            "not_found": not_found,
-            "keyword_errors": [],
-        }
+        return _ledger(keywords, skipped_indices=skipped_indices, submitted=(), outcomes=())
+
+    removal_rows = [removal for _, removal in removals]
 
     payload = await client.post(
         f"customers/{normalized_customer_id}/sharedCriteria:mutate",
@@ -82,13 +84,13 @@ async def remove_negative_keywords(
         policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={
-            "operations": [{"remove": removal["resource_name"]} for removal in removals],
+            "operations": [{"remove": removal["resource_name"]} for removal in removal_rows],
             "partialFailure": True,
         },
     )
     indexed_errors, unattributed_errors = grouped_partial_failure_errors(
         payload,
-        removals,
+        removal_rows,
         value_to_error_fields=lambda removal: {
             "scope": "keyword",
             "text": removal["text"],
@@ -100,40 +102,73 @@ async def remove_negative_keywords(
     results = payload.get("results") if isinstance(payload, dict) else None
     if unattributed_errors:
         diagnostic = unattributed_errors[0]
-        return {
-            "removed": [],
-            "resource_names": [],
-            "not_found": not_found,
-            "keyword_errors": [_removal_error(removal, diagnostic) for removal in removals],
-        }
-    if not isinstance(results, list) or len(results) != len(removals):
-        return {
-            "removed": [],
-            "resource_names": [],
-            "not_found": not_found,
-            "keyword_errors": [
-                _removal_error(removal, indexed_errors.get(index))
-                for index, removal in enumerate(removals)
+        return _ledger(
+            keywords,
+            skipped_indices=skipped_indices,
+            submitted=removals,
+            outcomes=[
+                ("unverified", None, diagnostic["error_code"], diagnostic["message"])
+                for _ in removals
             ],
-        }
+        )
+    if not isinstance(results, list) or len(results) != len(removals):
+        outcomes = [
+            (
+                "failed" if index in indexed_errors else "unverified",
+                None,
+                (
+                    indexed_errors[index]["error_code"]
+                    if index in indexed_errors
+                    else _UNACCOUNTED_RESPONSE_CODE
+                ),
+                (
+                    indexed_errors[index]["message"]
+                    if index in indexed_errors
+                    else _UNACCOUNTED_RESPONSE_MESSAGE
+                ),
+            )
+            for index in range(len(removals))
+        ]
+        return _ledger(
+            keywords, skipped_indices=skipped_indices, submitted=removals, outcomes=outcomes
+        )
 
-    removed: list[dict[str, str]] = []
-    keyword_errors: list[dict[str, str]] = []
-    for index, (removal, item) in enumerate(zip(removals, results, strict=True)):
+    outcomes = []
+    for index, (_removal, item) in enumerate(zip(removal_rows, results, strict=True)):
         error = indexed_errors.get(index)
         resource_name = item.get("resourceName") if isinstance(item, dict) else None
         if error is not None:
-            keyword_errors.append(error)
+            if resource_name is not None:
+                raise ValueError("Google Ads returned contradictory keyword mutation evidence")
+            outcomes.append(("failed", None, error["error_code"], error["message"]))
         elif isinstance(resource_name, str) and resource_name:
-            removed.append({**removal, "resource_name": resource_name})
+            outcomes.append(("applied", resource_name, None, None))
         else:
-            keyword_errors.append(_removal_error(removal, None))
-    return {
-        "removed": removed,
-        "resource_names": [item["resource_name"] for item in removed],
-        "not_found": not_found,
-        "keyword_errors": keyword_errors,
-    }
+            outcomes.append(
+                ("unverified", None, _UNACCOUNTED_RESPONSE_CODE, _UNACCOUNTED_RESPONSE_MESSAGE)
+            )
+    return _ledger(keywords, skipped_indices=skipped_indices, submitted=removals, outcomes=outcomes)
+
+
+def _ledger(
+    keywords: list[dict[str, str]],
+    *,
+    skipped_indices: dict[int, str],
+    submitted: Any,
+    outcomes: Any,
+) -> GoogleAdsMutationLedger:
+    concrete = [
+        (parent_index, {key: value for key, value in removal.items() if key != "resource_name"})
+        for parent_index, removal in submitted
+    ]
+    return build_keyword_mutation_ledger(
+        spec=SHARED_SET_KEYWORD_MUTATION_SPEC,
+        action="remove",
+        parent_fields=keywords,
+        skipped_indices=skipped_indices,
+        submitted=concrete,
+        outcomes=outcomes,
+    )
 
 
 def _existing_criteria(
@@ -165,13 +200,3 @@ def _existing_criteria(
             }
         )
     return criteria
-
-
-def _removal_error(removal: dict[str, str], diagnostic: dict[str, str] | None) -> dict[str, str]:
-    return {
-        "scope": "keyword",
-        "text": removal["text"],
-        "match_type": removal["match_type"],
-        "message": (diagnostic["message"] if diagnostic else _UNACCOUNTED_RESPONSE_MESSAGE),
-        "error_code": (diagnostic["error_code"] if diagnostic else _UNACCOUNTED_RESPONSE_CODE),
-    }

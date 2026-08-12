@@ -10,6 +10,14 @@ from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .mutation_outcomes import (
+    AD_GROUP_KEYWORD_MUTATION_SPEC,
+    CAMPAIGN_KEYWORD_MUTATION_SPEC,
+    GoogleAdsKeywordMutationSpec,
+    GoogleAdsMutationLedger,
+    MutationEffectOutcome,
+    build_keyword_mutation_ledger,
+)
 from .utils import grouped_partial_failure_errors, stream_rows
 
 MAX_ENTITY_NEGATIVE_OPERATIONS = 2_500
@@ -39,6 +47,7 @@ class NegativeKeywordEntitySpec:
     entity_plural_label: Literal["Campaigns", "Ad groups"]
     criterion_label: Literal["campaign", "ad group"]
     max_operations: int
+    ledger_spec: GoogleAdsKeywordMutationSpec
 
 
 CAMPAIGN_NEGATIVE_KEYWORD_SPEC = NegativeKeywordEntitySpec(
@@ -55,6 +64,7 @@ CAMPAIGN_NEGATIVE_KEYWORD_SPEC = NegativeKeywordEntitySpec(
     entity_plural_label="Campaigns",
     criterion_label="campaign",
     max_operations=MAX_ENTITY_NEGATIVE_OPERATIONS,
+    ledger_spec=CAMPAIGN_KEYWORD_MUTATION_SPEC,
 )
 AD_GROUP_NEGATIVE_KEYWORD_SPEC = NegativeKeywordEntitySpec(
     entity_id_key="ad_group_id",
@@ -70,6 +80,7 @@ AD_GROUP_NEGATIVE_KEYWORD_SPEC = NegativeKeywordEntitySpec(
     entity_plural_label="Ad groups",
     criterion_label="ad group",
     max_operations=MAX_ENTITY_NEGATIVE_OPERATIONS,
+    ledger_spec=AD_GROUP_KEYWORD_MUTATION_SPEC,
 )
 _KNOWN_SPECS = (CAMPAIGN_NEGATIVE_KEYWORD_SPEC, AD_GROUP_NEGATIVE_KEYWORD_SPEC)
 
@@ -82,7 +93,7 @@ async def add_entity_negative_keywords(
     login_customer_id: str,
     entity_ids: list[str],
     keywords: list[dict[str, str]],
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     _require_known_spec(spec)
     normalized_customer_id = normalize_customer_id(customer_id)
     normalized_entity_ids = _entity_ids(spec, entity_ids)
@@ -103,24 +114,17 @@ async def add_entity_negative_keywords(
         for entity_id in normalized_entity_ids
         for keyword in keywords
     ]
-    skipped_existing = [
-        item
-        for item in requested
+    skipped_indices = {
+        index: "already_exists"
+        for index, item in enumerate(requested)
         if (item[spec.entity_id_key], item["text"].casefold(), item["match_type"]) in existing_pairs
+    }
+    submitted = [
+        (index, item) for index, item in enumerate(requested) if index not in skipped_indices
     ]
-    creates = [
-        item
-        for item in requested
-        if (item[spec.entity_id_key], item["text"].casefold(), item["match_type"])
-        not in existing_pairs
-    ]
+    creates = [item for _, item in submitted]
     if not creates:
-        return {
-            "added": [],
-            "resource_names": [],
-            "skipped_existing": skipped_existing,
-            spec.errors_key: [],
-        }
+        return _ledger(spec, "add", requested, skipped_indices, (), ())
 
     payload = await client.post(
         f"customers/{normalized_customer_id}/{spec.criterion_path}:mutate",
@@ -147,18 +151,13 @@ async def add_entity_negative_keywords(
             "partialFailure": True,
         },
     )
-    added, errors = _mutation_results(
+    outcomes = _mutation_outcomes(
         payload,
         creates,
         spec=spec,
         default_message=f"{spec.entity_plural_label[:-1]} negative keyword creation failed",
     )
-    return {
-        "added": added,
-        "resource_names": [item["resource_name"] for item in added],
-        "skipped_existing": skipped_existing,
-        spec.errors_key: errors,
-    }
+    return _ledger(spec, "add", requested, skipped_indices, submitted, outcomes)
 
 
 async def remove_entity_negative_keywords(
@@ -169,7 +168,7 @@ async def remove_entity_negative_keywords(
     login_customer_id: str,
     entity_ids: list[str],
     keywords: list[dict[str, str]],
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     _require_known_spec(spec)
     normalized_customer_id = normalize_customer_id(customer_id)
     normalized_entity_ids = _entity_ids(spec, entity_ids)
@@ -181,8 +180,14 @@ async def remove_entity_negative_keywords(
         login_customer_id=login_customer_id,
         entity_ids=normalized_entity_ids,
     )
-    removals: list[dict[str, str]] = []
-    not_found: list[dict[str, str]] = []
+    requested = [
+        {spec.entity_id_key: entity_id, **keyword}
+        for entity_id in normalized_entity_ids
+        for keyword in keywords
+    ]
+    removals: list[tuple[int, dict[str, str]]] = []
+    skipped_indices: dict[int, str] = {}
+    parent_index = 0
     for entity_id in normalized_entity_ids:
         entity_criteria = [
             criterion for criterion in existing if criterion[spec.entity_id_key] == entity_id
@@ -198,9 +203,10 @@ async def remove_entity_negative_keywords(
                 )
             ]
             if matches:
-                removals.extend(matches)
+                removals.extend((parent_index, match) for match in matches)
             else:
-                not_found.append({spec.entity_id_key: entity_id, **keyword})
+                skipped_indices[parent_index] = "not_found"
+            parent_index += 1
 
     if len(removals) > spec.max_operations:
         raise IntegrationValidationError(
@@ -211,12 +217,9 @@ async def remove_entity_negative_keywords(
             operation=f"remove_{spec.operation_entity}_negative_keywords",
         )
     if not removals:
-        return {
-            "removed": [],
-            "resource_names": [],
-            "not_found": not_found,
-            spec.errors_key: [],
-        }
+        return _ledger(spec, "remove", requested, skipped_indices, (), ())
+
+    removal_rows = [item for _, item in removals]
 
     payload = await client.post(
         f"customers/{normalized_customer_id}/{spec.criterion_path}:mutate",
@@ -224,22 +227,24 @@ async def remove_entity_negative_keywords(
         policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={
-            "operations": [{"remove": item["resource_name"]} for item in removals],
+            "operations": [{"remove": item["resource_name"]} for item in removal_rows],
             "partialFailure": True,
         },
     )
-    removed, errors = _mutation_results(
+    outcomes = _mutation_outcomes(
         payload,
-        removals,
+        removal_rows,
         spec=spec,
         default_message=f"{spec.entity_plural_label[:-1]} negative keyword removal failed",
     )
-    return {
-        "removed": removed,
-        "resource_names": [item["resource_name"] for item in removed],
-        "not_found": not_found,
-        spec.errors_key: errors,
-    }
+    concrete = [
+        (
+            parent,
+            {key: value for key, value in item.items() if key != "resource_name"},
+        )
+        for parent, item in removals
+    ]
+    return _ledger(spec, "remove", requested, skipped_indices, concrete, outcomes)
 
 
 async def _negative_criteria(
@@ -321,13 +326,13 @@ def _validate_operation_count(
         )
 
 
-def _mutation_results(
+def _mutation_outcomes(
     payload: Any,
     operations: list[dict[str, str]],
     *,
     spec: NegativeKeywordEntitySpec,
     default_message: str,
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+) -> list[tuple[MutationEffectOutcome, str | None, str | None, str | None]]:
     indexed_errors, unattributed_errors = grouped_partial_failure_errors(
         payload,
         operations,
@@ -342,25 +347,62 @@ def _mutation_results(
     results = payload.get("results") if isinstance(payload, dict) else None
     if unattributed_errors:
         diagnostic = unattributed_errors[0]
-        return [], [_operation_error(spec, item, diagnostic) for item in operations]
+        return [
+            ("unverified", None, diagnostic["error_code"], diagnostic["message"])
+            for _ in operations
+        ]
     if not isinstance(results, list) or len(results) != len(operations):
-        return [], [
-            _operation_error(spec, item, indexed_errors.get(index))
-            for index, item in enumerate(operations)
+        return [
+            (
+                "failed" if index in indexed_errors else "unverified",
+                None,
+                (
+                    indexed_errors[index]["error_code"]
+                    if index in indexed_errors
+                    else _UNACCOUNTED_RESPONSE_CODE
+                ),
+                (
+                    indexed_errors[index]["message"]
+                    if index in indexed_errors
+                    else _UNACCOUNTED_RESPONSE_MESSAGE
+                ),
+            )
+            for index in range(len(operations))
         ]
 
-    succeeded: list[dict[str, str]] = []
-    errors: list[dict[str, str]] = []
-    for index, (operation, item) in enumerate(zip(operations, results, strict=True)):
+    outcomes: list[tuple[MutationEffectOutcome, str | None, str | None, str | None]] = []
+    for index, (_operation, item) in enumerate(zip(operations, results, strict=True)):
         error = indexed_errors.get(index)
         resource_name = item.get("resourceName") if isinstance(item, Mapping) else None
         if error is not None:
-            errors.append(error)
+            if resource_name is not None:
+                raise ValueError("Google Ads returned contradictory criterion mutation evidence")
+            outcomes.append(("failed", None, error["error_code"], error["message"]))
         elif isinstance(resource_name, str) and resource_name:
-            succeeded.append({**_error_fields(spec, operation), "resource_name": resource_name})
+            outcomes.append(("applied", resource_name, None, None))
         else:
-            errors.append(_operation_error(spec, operation, None))
-    return succeeded, errors
+            outcomes.append(
+                ("unverified", None, _UNACCOUNTED_RESPONSE_CODE, _UNACCOUNTED_RESPONSE_MESSAGE)
+            )
+    return outcomes
+
+
+def _ledger(
+    spec: NegativeKeywordEntitySpec,
+    action: Literal["add", "remove"],
+    requested: list[dict[str, str]],
+    skipped_indices: dict[int, str],
+    submitted: Any,
+    outcomes: Any,
+) -> GoogleAdsMutationLedger:
+    return build_keyword_mutation_ledger(
+        spec=spec.ledger_spec,
+        action=action,
+        parent_fields=requested,
+        skipped_indices=skipped_indices,
+        submitted=submitted,
+        outcomes=outcomes,
+    )
 
 
 def _error_fields(spec: NegativeKeywordEntitySpec, item: Mapping[str, str]) -> dict[str, str]:
@@ -368,18 +410,6 @@ def _error_fields(spec: NegativeKeywordEntitySpec, item: Mapping[str, str]) -> d
         spec.entity_id_key: item[spec.entity_id_key],
         "text": item["text"],
         "match_type": item["match_type"],
-    }
-
-
-def _operation_error(
-    spec: NegativeKeywordEntitySpec,
-    item: Mapping[str, str],
-    diagnostic: Mapping[str, str] | None,
-) -> dict[str, str]:
-    return {
-        **_error_fields(spec, item),
-        "message": diagnostic["message"] if diagnostic else _UNACCOUNTED_RESPONSE_MESSAGE,
-        "error_code": diagnostic["error_code"] if diagnostic else _UNACCOUNTED_RESPONSE_CODE,
     }
 
 

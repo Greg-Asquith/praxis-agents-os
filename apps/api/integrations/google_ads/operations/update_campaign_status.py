@@ -8,6 +8,11 @@ from typing import Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .mutation_outcomes import (
+    GoogleAdsMutationLedger,
+    GoogleAdsMutationProjection,
+    build_mutation_ledger,
+)
 from .utils import grouped_partial_failure_errors
 
 _UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
@@ -21,7 +26,7 @@ async def update_campaign_status(
     login_customer_id: str,
     campaign_ids: list[str],
     status: Literal["ENABLED", "PAUSED"],
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     normalized_customer_id = normalize_customer_id(customer_id)
     normalized_campaign_ids = [normalize_customer_id(value) for value in campaign_ids]
     expected_resource_names = [
@@ -53,30 +58,75 @@ async def update_campaign_status(
         default_message="Campaign update failed",
     )
     results = payload.get("results") if isinstance(payload, dict) else None
+    submitted = [
+        (index, {"campaign_id": campaign_id})
+        for index, campaign_id in enumerate(normalized_campaign_ids)
+    ]
     if unattributed_errors:
         diagnostic = unattributed_errors[0]
-        return _failed_result(
+        return _ledger(
             normalized_campaign_ids,
-            indexed_errors=dict.fromkeys(range(len(normalized_campaign_ids)), diagnostic),
+            submitted=submitted,
+            outcomes=[
+                ("unverified", None, diagnostic["error_code"], diagnostic["message"])
+                for _ in normalized_campaign_ids
+            ],
         )
     if not _valid_results(
         results,
         expected_resource_names=expected_resource_names,
         indexed_errors=indexed_errors,
     ):
-        return _failed_result(normalized_campaign_ids, indexed_errors=indexed_errors)
+        return _ledger(
+            normalized_campaign_ids,
+            submitted=submitted,
+            outcomes=[
+                (
+                    "failed" if index in indexed_errors else "unverified",
+                    None,
+                    (
+                        indexed_errors[index]["error_code"]
+                        if index in indexed_errors
+                        else _UNACCOUNTED_RESPONSE_CODE
+                    ),
+                    (
+                        indexed_errors[index]["message"]
+                        if index in indexed_errors
+                        else _UNACCOUNTED_RESPONSE_MESSAGE
+                    ),
+                )
+                for index in range(len(normalized_campaign_ids))
+            ],
+        )
 
-    resource_names: list[str] = []
-    campaign_errors: list[dict[str, str]] = []
+    outcomes = []
     for index, item in enumerate(results):
         if (error := indexed_errors.get(index)) is not None:
-            campaign_errors.append(error)
+            outcomes.append(("failed", None, error["error_code"], error["message"]))
         else:
-            resource_names.append(item["resourceName"])
-    return {
-        "resource_names": resource_names,
-        "campaign_errors": campaign_errors,
-    }
+            outcomes.append(("applied", item["resourceName"], None, None))
+    return _ledger(normalized_campaign_ids, submitted=submitted, outcomes=outcomes)
+
+
+def _ledger(
+    campaign_ids: list[str],
+    *,
+    submitted: Any,
+    outcomes: Any,
+) -> GoogleAdsMutationLedger:
+    return build_mutation_ledger(
+        family="campaign_status",
+        action="update",
+        parent_fields=[{"campaign_id": campaign_id} for campaign_id in campaign_ids],
+        skipped_indices={},
+        submitted=submitted,
+        outcomes=outcomes,
+        projection=GoogleAdsMutationProjection(
+            applied_key="updated",
+            skipped_key="skipped",
+            errors_key="campaign_errors",
+        ),
+    )
 
 
 def _valid_results(
@@ -102,25 +152,3 @@ def _valid_results(
             return False
         seen.add(resource_name)
     return True
-
-
-def _failed_result(
-    campaign_ids: list[str],
-    *,
-    indexed_errors: Mapping[int, dict[str, str]],
-) -> dict[str, Any]:
-    return {
-        "resource_names": [],
-        "campaign_errors": [
-            _campaign_error(campaign_id, indexed_errors.get(index))
-            for index, campaign_id in enumerate(campaign_ids)
-        ],
-    }
-
-
-def _campaign_error(campaign_id: str, diagnostic: dict[str, str] | None) -> dict[str, str]:
-    return {
-        "campaign_id": campaign_id,
-        "message": diagnostic["message"] if diagnostic else _UNACCOUNTED_RESPONSE_MESSAGE,
-        "error_code": (diagnostic["error_code"] if diagnostic else _UNACCOUNTED_RESPONSE_CODE),
-    }

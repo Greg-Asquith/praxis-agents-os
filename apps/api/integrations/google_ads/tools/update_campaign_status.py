@@ -81,13 +81,15 @@ async def google_ads_update_campaign_status(
                 campaign_ids=normalized_ids,
                 ignore_removed=True,
             )
-            result = await update_campaign_status(
+            ledger = await update_campaign_status(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
                 campaign_ids=normalized_ids,
                 status=status,
             )
+            ledger.require_verified()
+            result = ledger.result()
             return IntegrationAuditOutcome(
                 result,
                 status=_audit_status(result),

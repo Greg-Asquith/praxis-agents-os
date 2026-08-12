@@ -67,6 +67,7 @@ from services.integrations.operations import (
 from tests.integrations.google_ads.support import (
     _campaign_reference,
     _writable_google_ads_entry,
+    mutation_ledger_double,
 )
 
 
@@ -431,12 +432,14 @@ async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
         tool_name="google_ads_create_negative_keyword_list",
     )
     provider_create = AsyncMock(
-        side_effect=lambda _client, **kwargs: {
-            "created_names": ["Alpha List", "Beta List"],
-            "resource_names": [f"customers/{kwargs['customer_id']}/sharedSets/1"],
-            "skipped_existing": [],
-            "list_errors": [],
-        }
+        side_effect=lambda _client, **kwargs: mutation_ledger_double(
+            {
+                "created_names": ["Alpha List", "Beta List"],
+                "resource_names": [f"customers/{kwargs['customer_id']}/sharedSets/1"],
+                "skipped_existing": [],
+                "list_errors": [],
+            }
+        )
     )
     audited_calls: list[dict[str, Any]] = []
 
@@ -541,12 +544,14 @@ async def test_create_negative_keyword_list_durable_audit_failures_are_not_succe
     )
     provider_client = AsyncMock(return_value=object())
     provider_create = AsyncMock(
-        return_value={
-            "created_names": ["New List"],
-            "resource_names": ["customers/111/sharedSets/50"],
-            "skipped_existing": [],
-            "list_errors": [],
-        }
+        return_value=mutation_ledger_double(
+            {
+                "created_names": ["New List"],
+                "resource_names": ["customers/111/sharedSets/50"],
+                "skipped_existing": [],
+                "list_errors": [],
+            }
+        )
     )
     audit = AsyncMock(side_effect=RuntimeError("pending audit unavailable"))
     monkeypatch.setattr(
@@ -664,13 +669,15 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
 
     client.post.side_effect = lookup
     provider_update = AsyncMock(
-        side_effect=lambda _client, **kwargs: {
-            "resource_names": [
-                f"customers/{kwargs['customer_id']}/campaigns/{campaign_id}"
-                for campaign_id in kwargs["campaign_ids"]
-            ],
-            "campaign_errors": [],
-        }
+        side_effect=lambda _client, **kwargs: mutation_ledger_double(
+            {
+                "resource_names": [
+                    f"customers/{kwargs['customer_id']}/campaigns/{campaign_id}"
+                    for campaign_id in kwargs["campaign_ids"]
+                ],
+                "campaign_errors": [],
+            }
+        )
     )
     audited_calls: list[dict[str, Any]] = []
 
@@ -782,10 +789,12 @@ async def test_campaign_status_durable_audit_failures_are_not_success(monkeypatc
     provider_client = AsyncMock(return_value=object())
     verifier = AsyncMock()
     provider_update = AsyncMock(
-        return_value={
-            "resource_names": ["customers/111/campaigns/10"],
-            "campaign_errors": [],
-        }
+        return_value=mutation_ledger_double(
+            {
+                "resource_names": ["customers/111/campaigns/10"],
+                "campaign_errors": [],
+            }
+        )
     )
     audit = AsyncMock(side_effect=RuntimeError("pending audit unavailable"))
     monkeypatch.setattr(
@@ -1126,17 +1135,19 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
         ]
     }
     provider_link = AsyncMock(
-        return_value={
-            "resource_names": ["customers/111/campaignSharedSets/10~50"],
-            "skipped_existing": ["20"],
-            "campaign_errors": [
-                {
-                    "campaign_id": "30",
-                    "message": "Campaign is removed",
-                    "error_code": "CAMPAIGN_REMOVED",
-                }
-            ],
-        }
+        return_value=mutation_ledger_double(
+            {
+                "resource_names": ["customers/111/campaignSharedSets/10~50"],
+                "skipped_existing": ["20"],
+                "campaign_errors": [
+                    {
+                        "campaign_id": "30",
+                        "message": "Campaign is removed",
+                        "error_code": "CAMPAIGN_REMOVED",
+                    }
+                ],
+            }
+        )
     )
     audited_kwargs: dict[str, Any] = {}
 

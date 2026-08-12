@@ -16,6 +16,7 @@ from integrations.google_ads.operations.campaign_negative_keywords import (
     add_campaign_negative_keywords,
     remove_campaign_negative_keywords,
 )
+from integrations.google_ads.operations.mutation_outcomes import GoogleAdsMutationLedger
 from integrations.google_ads.tools.add_ad_group_negative_keywords import (
     google_ads_add_ad_group_negative_keywords,
 )
@@ -33,15 +34,16 @@ from integrations.google_ads.tools.schemas.negative_keyword import (
     NegativeKeywordRemovalEntry,
 )
 from integrations.google_ads.tools.utils.ad_group_negative_keywords import (
-    _ad_group_result,
-    _operation_detail as ad_group_negative_operation_detail,
-    _pending_operation_detail as ad_group_negative_pending_detail,
+    AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
 )
 from integrations.google_ads.tools.utils.campaign_negative_keywords import (
+    CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
-    _campaign_result,
-    _operation_detail as campaign_negative_operation_detail,
-    _pending_operation_detail as campaign_negative_pending_detail,
+)
+from integrations.google_ads.tools.utils.negative_keyword_tools import (
+    entity_result,
+    operation_detail,
+    pending_operation_detail,
 )
 from services.audit_events import AuditStatus
 from services.audit_events.integration_operation_detail import (
@@ -54,6 +56,7 @@ from tests.integrations.google_ads.support import (
     _campaign_reference,
     _CampaignNegativeKeywordClient,
     _writable_google_ads_entry,
+    mutation_ledger_double,
 )
 
 
@@ -158,6 +161,7 @@ async def test_scoped_negative_keyword_operation_parity_matrix(
 
     added = await add_operation(add_client, **call_arguments)
 
+    assert isinstance(added, GoogleAdsMutationLedger)
     assert added["skipped_existing"] == [{id_key: "20", "text": "existing", "match_type": "EXACT"}]
     assert [(row[id_key], row["text"]) for row in added["added"]] == [
         ("20", "phrase"),
@@ -202,6 +206,7 @@ async def test_scoped_negative_keyword_operation_parity_matrix(
         keywords=[{"text": "term", "match_type": "ANY"}],
     )
 
+    assert isinstance(removed, GoogleAdsMutationLedger)
     assert [(row[id_key], row["match_type"]) for row in removed["removed"]] == [
         ("20", "EXACT"),
         ("20", "BROAD"),
@@ -398,20 +403,22 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
         "results": [{"campaign": {"id": str(index), "status": "ENABLED"}} for index in range(1, 51)]
     }
     provider_add = AsyncMock(
-        return_value={
-            "added": [],
-            "resource_names": [],
-            "skipped_existing": [
-                {
-                    "campaign_id": str(campaign_index),
-                    "text": f"term {keyword_index}",
-                    "match_type": "EXACT",
-                }
-                for campaign_index in range(1, 51)
-                for keyword_index in range(50)
-            ],
-            "campaign_errors": [],
-        }
+        return_value=mutation_ledger_double(
+            {
+                "added": [],
+                "resource_names": [],
+                "skipped_existing": [
+                    {
+                        "campaign_id": str(campaign_index),
+                        "text": f"term {keyword_index}",
+                        "match_type": "EXACT",
+                    }
+                    for campaign_index in range(1, 51)
+                    for keyword_index in range(50)
+                ],
+                "campaign_errors": [],
+            }
+        )
     )
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
@@ -679,20 +686,22 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         "results": [{"adGroup": {"id": str(index)}} for index in range(1, 51)]
     }
     provider_add = AsyncMock(
-        return_value={
-            "added": [],
-            "resource_names": [],
-            "skipped_existing": [
-                {
-                    "ad_group_id": str(ad_group_index),
-                    "text": f"term {keyword_index}",
-                    "match_type": "EXACT",
-                }
-                for ad_group_index in range(1, 51)
-                for keyword_index in range(50)
-            ],
-            "ad_group_errors": [],
-        }
+        return_value=mutation_ledger_double(
+            {
+                "added": [],
+                "resource_names": [],
+                "skipped_existing": [
+                    {
+                        "ad_group_id": str(ad_group_index),
+                        "text": f"term {keyword_index}",
+                        "match_type": "EXACT",
+                    }
+                    for ad_group_index in range(1, 51)
+                    for keyword_index in range(50)
+                ],
+                "ad_group_errors": [],
+            }
+        )
     )
 
     async def passthrough_audit(_ctx, _entry, **kwargs):
@@ -851,19 +860,38 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
         ],
     }
 
-    display = _campaign_result(
+    display = entity_result(
         "add",
         campaigns,
         result,
-        max_campaigns=2,
+        max_entities=2,
         keywords=keywords,
         include_keyword_outcomes=True,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    model = _campaign_result(
-        "add", campaigns, result, max_campaigns=2, include_keyword_outcomes=False
+    model = entity_result(
+        "add",
+        campaigns,
+        result,
+        max_entities=2,
+        include_keyword_outcomes=False,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    detail = campaign_negative_operation_detail(entry, campaigns, keywords, "add", result)
-    pending = campaign_negative_pending_detail(entry, campaigns, "add", keywords)
+    detail = operation_detail(
+        entry,
+        campaigns,
+        keywords,
+        "add",
+        result,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
+    pending = pending_operation_detail(
+        entry,
+        campaigns,
+        "add",
+        keywords,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
 
     expected = [
         {
@@ -937,16 +965,30 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
         ],
     }
 
-    display = _ad_group_result(
+    display = entity_result(
         "remove",
         ad_groups,
         result,
-        max_ad_groups=2,
+        max_entities=2,
         keywords=keywords,
         include_keyword_outcomes=True,
+        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    detail = ad_group_negative_operation_detail(entry, ad_groups, keywords, "remove", result)
-    pending = ad_group_negative_pending_detail(entry, ad_groups, "remove", keywords)
+    detail = operation_detail(
+        entry,
+        ad_groups,
+        keywords,
+        "remove",
+        result,
+        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
+    pending = pending_operation_detail(
+        entry,
+        ad_groups,
+        "remove",
+        keywords,
+        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
 
     assert display["ad_groups"][0]["keyword_outcomes"] == [
         {
@@ -989,7 +1031,14 @@ def test_campaign_negative_keyword_evidence_rejects_inconsistent_resource_attrib
     }
 
     with pytest.raises(ValueError, match="resource attribution"):
-        campaign_negative_operation_detail(entry, campaigns, keywords, "add", result)
+        operation_detail(
+            entry,
+            campaigns,
+            keywords,
+            "add",
+            result,
+            spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+        )
 
 
 def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> None:
@@ -1016,15 +1065,23 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
         "campaign_errors": [],
     }
 
-    display = _campaign_result(
+    display = entity_result(
         "add",
         campaigns,
         result,
-        max_campaigns=50,
+        max_entities=50,
         keywords=keywords,
         include_keyword_outcomes=True,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    detail = campaign_negative_operation_detail(entry, campaigns, keywords, "add", result)
+    detail = operation_detail(
+        entry,
+        campaigns,
+        keywords,
+        "add",
+        result,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
     display_bytes = len(json.dumps(display, ensure_ascii=False, separators=(",", ":")).encode())
     detail_bytes = len(
         json.dumps(

@@ -55,12 +55,14 @@ async def google_ads_create_negative_keyword_list(
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
-            result = await create_negative_keyword_list(
+            ledger = await create_negative_keyword_list(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
                 names=normalized_names,
             )
+            ledger.require_verified()
+            result = ledger.result()
             return IntegrationAuditOutcome(
                 result,
                 status=_audit_status(result),

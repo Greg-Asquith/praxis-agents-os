@@ -85,13 +85,15 @@ async def google_ads_remove_negative_keywords(
                 entry=entry,
                 shared_set_ids=(reference.external_id,),
             )
-            result = await remove_negative_keywords(
+            ledger = await remove_negative_keywords(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
                 shared_set_id=reference.external_id,
                 keywords=[keyword.model_dump() for keyword in normalized_keywords],
             )
+            ledger.require_verified()
+            result = ledger.result()
             return IntegrationAuditOutcome(
                 result,
                 status=_audit_status(result),

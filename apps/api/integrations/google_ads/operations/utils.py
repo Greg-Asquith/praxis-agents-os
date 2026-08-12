@@ -144,25 +144,6 @@ def operation_index(location: Any) -> int | None:
     return None
 
 
-def partial_failure_errors[OperationValue](
-    payload: Any,
-    operation_values: Sequence[OperationValue],
-    *,
-    value_to_error_fields: Callable[[OperationValue], Mapping[str, str]],
-    unattributed_error_fields: Mapping[str, str],
-    default_message: str,
-) -> list[dict[str, str]]:
-    """Map partial failures to at most one error per operation plus one fallback."""
-    indexed, unattributed = grouped_partial_failure_errors(
-        payload,
-        operation_values,
-        value_to_error_fields=value_to_error_fields,
-        unattributed_error_fields=unattributed_error_fields,
-        default_message=default_message,
-    )
-    return [*[indexed[index] for index in sorted(indexed)], *unattributed]
-
-
 def grouped_partial_failure_errors[OperationValue](
     payload: Any,
     operation_values: Sequence[OperationValue],

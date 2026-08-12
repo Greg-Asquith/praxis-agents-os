@@ -9,6 +9,11 @@ from typing import Any
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .mutation_outcomes import (
+    GoogleAdsMutationLedger,
+    GoogleAdsMutationProjection,
+    build_mutation_ledger,
+)
 from .utils import grouped_partial_failure_errors, stream_rows
 
 _UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
@@ -22,7 +27,7 @@ async def create_negative_keyword_list(
     customer_id: str,
     login_customer_id: str,
     names: list[str],
-) -> dict[str, Any]:
+) -> GoogleAdsMutationLedger:
     normalized_customer_id = normalize_customer_id(customer_id)
     existing_payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",
@@ -43,15 +48,17 @@ async def create_negative_keyword_list(
         if isinstance((shared_set := row.get("sharedSet")), dict)
         and str(shared_set.get("name", ""))
     }
-    skipped_existing = [name for name in names if name.casefold() in existing_names]
-    create_names = [name for name in names if name.casefold() not in existing_names]
+    skipped_indices = {
+        index: "already_exists"
+        for index, name in enumerate(names)
+        if name.casefold() in existing_names
+    }
+    submitted = [
+        (index, {"name": name}) for index, name in enumerate(names) if index not in skipped_indices
+    ]
+    create_names = [fields["name"] for _, fields in submitted]
     if not create_names:
-        return {
-            "created_names": [],
-            "resource_names": [],
-            "skipped_existing": skipped_existing,
-            "list_errors": [],
-        }
+        return _ledger(names, skipped_indices=skipped_indices, submitted=(), outcomes=())
 
     payload = await client.post(
         f"customers/{normalized_customer_id}/sharedSets:mutate",
@@ -75,10 +82,14 @@ async def create_negative_keyword_list(
     results = payload.get("results") if isinstance(payload, dict) else None
     if unattributed_errors:
         diagnostic = unattributed_errors[0]
-        return _failed_result(
-            create_names,
-            skipped_existing=skipped_existing,
-            indexed_errors=dict.fromkeys(range(len(create_names)), diagnostic),
+        return _ledger(
+            names,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=[
+                ("unverified", None, diagnostic["error_code"], diagnostic["message"])
+                for _ in create_names
+            ],
         )
     if not _valid_results(
         results,
@@ -86,27 +97,58 @@ async def create_negative_keyword_list(
         operation_count=len(create_names),
         indexed_errors=indexed_errors,
     ):
-        return _failed_result(
-            create_names,
-            skipped_existing=skipped_existing,
-            indexed_errors=indexed_errors,
+        return _ledger(
+            names,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=[
+                (
+                    "failed" if index in indexed_errors else "unverified",
+                    None,
+                    (
+                        indexed_errors[index]["error_code"]
+                        if index in indexed_errors
+                        else _UNACCOUNTED_RESPONSE_CODE
+                    ),
+                    (
+                        indexed_errors[index]["message"]
+                        if index in indexed_errors
+                        else _UNACCOUNTED_RESPONSE_MESSAGE
+                    ),
+                )
+                for index in range(len(create_names))
+            ],
         )
 
-    created_names: list[str] = []
-    resource_names: list[str] = []
-    list_errors: list[dict[str, str]] = []
-    for index, (name, item) in enumerate(zip(create_names, results, strict=True)):
+    outcomes = []
+    for index, (_name, item) in enumerate(zip(create_names, results, strict=True)):
         if (error := indexed_errors.get(index)) is not None:
-            list_errors.append(error)
-            continue
-        created_names.append(name)
-        resource_names.append(item["resourceName"])
-    return {
-        "created_names": created_names,
-        "resource_names": resource_names,
-        "skipped_existing": skipped_existing,
-        "list_errors": list_errors,
-    }
+            outcomes.append(("failed", None, error["error_code"], error["message"]))
+        else:
+            outcomes.append(("applied", item["resourceName"], None, None))
+    return _ledger(names, skipped_indices=skipped_indices, submitted=submitted, outcomes=outcomes)
+
+
+def _ledger(
+    names: list[str],
+    *,
+    skipped_indices: dict[int, str],
+    submitted: Any,
+    outcomes: Any,
+) -> GoogleAdsMutationLedger:
+    return build_mutation_ledger(
+        family="negative_keyword_lists",
+        action="create",
+        parent_fields=[{"name": name} for name in names],
+        skipped_indices=skipped_indices,
+        submitted=submitted,
+        outcomes=outcomes,
+        projection=GoogleAdsMutationProjection(
+            applied_key="created",
+            skipped_key="skipped_existing",
+            errors_key="list_errors",
+        ),
+    )
 
 
 def _valid_results(
@@ -136,27 +178,3 @@ def _valid_results(
             return False
         seen.add(resource_name)
     return True
-
-
-def _failed_result(
-    names: list[str],
-    *,
-    skipped_existing: list[str],
-    indexed_errors: Mapping[int, dict[str, str]],
-) -> dict[str, Any]:
-    return {
-        "created_names": [],
-        "resource_names": [],
-        "skipped_existing": skipped_existing,
-        "list_errors": [
-            _list_error(name, indexed_errors.get(index)) for index, name in enumerate(names)
-        ],
-    }
-
-
-def _list_error(name: str, diagnostic: dict[str, str] | None) -> dict[str, str]:
-    return {
-        "name": name,
-        "message": diagnostic["message"] if diagnostic else _UNACCOUNTED_RESPONSE_MESSAGE,
-        "error_code": (diagnostic["error_code"] if diagnostic else _UNACCOUNTED_RESPONSE_CODE),
-    }

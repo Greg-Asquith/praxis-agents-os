@@ -1,5 +1,6 @@
 """Shared fakes and builders for Google Ads integration tests."""
 
+from typing import Any
 from uuid import uuid4
 
 from integrations.google_ads.references import (
@@ -11,6 +12,20 @@ from services.integrations.context.domain import ResolvedContextEntry
 
 async def _static_token(_force: bool) -> str:
     return "access-token"
+
+
+class _MutationLedgerDouble(dict[str, Any]):
+    """Suite-local stand-in for isolated provider-operation mocks."""
+
+    def require_verified(self) -> None:
+        return None
+
+    def result(self) -> dict[str, Any]:
+        return dict(self)
+
+
+def mutation_ledger_double(result: dict[str, Any]) -> _MutationLedgerDouble:
+    return _MutationLedgerDouble(result)
 
 
 class _DiscoveryClient:

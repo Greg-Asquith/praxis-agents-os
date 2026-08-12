@@ -119,7 +119,7 @@ async def google_ads_link_negative_keyword_list(
                 campaign_ids=normalized_campaign_ids,
                 ignore_removed=True,
             )
-            result = await link_negative_keyword_list(
+            ledger = await link_negative_keyword_list(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
@@ -127,6 +127,8 @@ async def google_ads_link_negative_keyword_list(
                 campaign_ids=normalized_campaign_ids,
                 action=action,
             )
+            ledger.require_verified()
+            result = ledger.result()
             return IntegrationAuditOutcome(
                 result,
                 status=_audit_status(result),
