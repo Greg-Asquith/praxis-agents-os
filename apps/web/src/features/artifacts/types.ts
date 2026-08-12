@@ -1,6 +1,8 @@
 // apps/web/src/features/artifacts/types.ts
 
 export type ArtifactType = "html" | "markdown" | "mermaid" | "csv" | "image-ref"
+export type ArtifactSortDirection = "asc" | "desc"
+export type ArtifactSortField = "artifact_type" | "title" | "updated_at" | "version_count"
 
 export type ArtifactViewGrant = {
   url: string
