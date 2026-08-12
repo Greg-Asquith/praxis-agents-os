@@ -389,6 +389,7 @@ describe("file tool rows", () => {
               format: "multiline",
               key: "prompt",
               label: "Prompt",
+              min_rows: 0,
               options: [],
               placeholder: "Describe the image to generate",
               secondary: false,
@@ -398,6 +399,7 @@ describe("file tool rows", () => {
               format: "text",
               key: "model_provider",
               label: "Image Provider",
+              min_rows: 0,
               options: ["google", "openai"],
               placeholder: "",
               secondary: false,
@@ -459,6 +461,7 @@ describe("file tool rows", () => {
                 format: "multiline",
                 key: "prompt",
                 label: "Prompt",
+                min_rows: 0,
                 options: [],
                 placeholder: "Describe the result",
                 secondary: false,
@@ -468,6 +471,7 @@ describe("file tool rows", () => {
                 format: isEdit ? "entity_list" : "entity",
                 key: isEdit ? "file_ids" : "file_id",
                 label: isEdit ? "Source Images" : "Source Video",
+                min_rows: 0,
                 options: [],
                 placeholder: "",
                 secondary: false,
@@ -487,7 +491,7 @@ describe("file tool rows", () => {
       expect(html).toContain(title)
       expect(html).toContain(sourceName)
       expect(html).toContain(badge)
-      expect(html).toContain(approveLabel.replace("&", "&amp;"))
+      expect(html).toContain(approveLabel.replaceAll("&", "&amp;"))
       expect(html).toContain(isEdit ? "<img" : "<video")
       expect(html).toContain("https://files.example/source-preview")
       expect(html).not.toContain('aria-busy="true"')

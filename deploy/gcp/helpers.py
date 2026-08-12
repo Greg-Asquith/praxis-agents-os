@@ -146,7 +146,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
     if args.command == "secret-id":
-        print(cloud_secret_id(args.logical_name))
+        # This is a one-way SHA-256 resource identifier, not secret material.
+        print(cloud_secret_id(args.logical_name))  # lgtm[py/clear-text-logging-sensitive-data]
         return
 
     if args.command == "render-template":

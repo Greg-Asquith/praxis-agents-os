@@ -30,7 +30,7 @@ describe("audit filter options", () => {
 
     expect(auditProviderFilterOptions(tools)).toEqual([
       { label: "Airtable", value: "airtable" },
-      { label: "Bigquery", value: "bigquery" },
+      { label: "BigQuery", value: "bigquery" },
       { label: "Google Ads", value: "google_ads" },
     ])
   })

@@ -139,6 +139,14 @@ export function titleCaseToken(value: string, fallback: string) {
     return fallback
   }
 
+  if (words.length === 1 && words[0] === "bigquery") {
+    return "BigQuery"
+  }
+
+  if (words.length === 1 && words[0] === "openai") {
+    return "OpenAI"
+  }
+
   return words.map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`).join(" ")
 }
 

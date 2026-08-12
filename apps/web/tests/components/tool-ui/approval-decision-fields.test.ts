@@ -81,7 +81,7 @@ describe("ApprovalRequestFields", () => {
       })
     )
 
-    expect(html).toContain("Openai")
+    expect(html).toContain("OpenAI")
     expect(html).toContain('value="openai"')
     expect(html).not.toContain(">openai<")
   })
