@@ -1,11 +1,21 @@
 // apps/web/src/features/audit/components/security-events-table.tsx
 
 import { ShieldAlertIcon } from "lucide-react"
+import type { OnChangeFn, PaginationState } from "@tanstack/react-table"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+} from "@/components/data-table/table"
+import {
+  paginationStateFromServer,
+  paginationStateToServer,
+} from "@/components/data-table/server-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { PaginationControls } from "@/components/ui/pagination-controls"
 import {
   ResponsiveList,
   ResponsiveListItem,
@@ -21,6 +31,37 @@ import {
 } from "@/components/ui/table"
 import type { SecurityEvent } from "@/features/audit/types"
 import { formatDateTime, titleCaseToken } from "@/lib/format"
+
+const columnHelper = createAppColumnHelper<SecurityEvent>()
+
+const columns = columnHelper.columns([
+  columnHelper.accessor("occurred_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => formatDateTime(getValue()),
+    meta: { label: "Occurred" },
+  }),
+  columnHelper.accessor("event_type", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => (
+      <Badge variant="outline">{titleCaseToken(getValue(), getValue())}</Badge>
+    ),
+    meta: { label: "Event" },
+  }),
+  columnHelper.accessor("user_email", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => getValue() ?? "None",
+    meta: { label: "User" },
+  }),
+  columnHelper.accessor("ip_address", {
+    header: ({ header }) => <header.ColumnHeader />,
+    meta: { label: "IP address" },
+  }),
+  columnHelper.accessor("endpoint", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => <span className="block max-w-72 truncate">{getValue() ?? "None"}</span>,
+    meta: { label: "Endpoint" },
+  }),
+])
 
 export function SecurityEventsTable({
   events,
@@ -39,6 +80,20 @@ export function SecurityEventsTable({
   onSelectEvent: (eventId: string) => void
   total: number
 }) {
+  const pagination = paginationStateFromServer({ limit, offset }, total)
+  const table = useAppTable({
+    columns,
+    data: events,
+    manualPagination: true,
+    manualSorting: true,
+    onPaginationChange: ((updater) => {
+      const nextPagination = typeof updater === "function" ? updater(pagination) : updater
+      onPageChange(paginationStateToServer(nextPagination).offset)
+    }) satisfies OnChangeFn<PaginationState>,
+    rowCount: total,
+    state: { pagination },
+  })
+
   if (events.length === 0) {
     return (
       <EmptyState
@@ -51,59 +106,71 @@ export function SecurityEventsTable({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <ResponsiveList>
-        {events.map((event) => (
-          <SecurityEventMobileRow key={event.id} event={event} onSelectEvent={onSelectEvent} />
-        ))}
-      </ResponsiveList>
+    <table.AppTable>
+      <div className="flex flex-col gap-3">
+        <ResponsiveList>
+          {events.map((event) => (
+            <SecurityEventMobileRow key={event.id} event={event} onSelectEvent={onSelectEvent} />
+          ))}
+        </ResponsiveList>
 
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Occurred</TableHead>
-              <TableHead>Event</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>IP address</TableHead>
-              <TableHead>Endpoint</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {events.map((event) => (
-              <TableRow
-                key={event.id}
-                className="cursor-pointer"
-                tabIndex={0}
-                onClick={() => {
-                  onSelectEvent(event.id)
-                }}
-                onKeyDown={(keyboardEvent) => {
-                  if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                    keyboardEvent.preventDefault()
-                    onSelectEvent(event.id)
-                  }
-                }}
-              >
-                <TableCell>{formatDateTime(event.occurred_at)}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">
-                    {titleCaseToken(event.event_type, event.event_type)}
-                  </Badge>
-                </TableCell>
-                <TableCell>{event.user_email ?? "None"}</TableCell>
-                <TableCell>{event.ip_address}</TableCell>
-                <TableCell>
-                  <span className="block max-w-72 truncate">{event.endpoint ?? "None"}</span>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <table.AppHeader header={header} key={header.id}>
+                      {() => <SecurityHeaderCell />}
+                    </table.AppHeader>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  tabIndex={0}
+                  onClick={() => {
+                    onSelectEvent(row.original.id)
+                  }}
+                  onKeyDown={(keyboardEvent) => {
+                    if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                      keyboardEvent.preventDefault()
+                      onSelectEvent(row.original.id)
+                    }
+                  }}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <table.AppCell cell={cell} key={cell.id}>
+                      {() => <SecurityBodyCell />}
+                    </table.AppCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <table.Pagination ariaLabel="Security events pagination" total={total} />
       </div>
+    </table.AppTable>
+  )
+}
 
-      <PaginationControls limit={limit} offset={offset} onPageChange={onPageChange} total={total} />
-    </div>
+function SecurityHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function SecurityBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell>
+      <cell.FlexRender />
+    </TableCell>
   )
 }
 

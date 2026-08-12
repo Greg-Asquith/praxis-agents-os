@@ -16,6 +16,7 @@ import {
 type AppColumnMeta = {
   headClassName?: string
   label?: string
+  labelClassName?: string
 }
 
 export const appTableFeatures = tableFeatures({

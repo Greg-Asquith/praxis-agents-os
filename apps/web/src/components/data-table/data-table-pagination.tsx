@@ -1,7 +1,10 @@
 // apps/web/src/components/data-table/data-table-pagination.tsx
 
 import { appTableContexts } from "@/components/data-table/contexts"
-import { offsetToPageIndex, pageIndexToOffset } from "@/components/data-table/pagination-model"
+import {
+  paginationStateFromServer,
+  paginationStateToServer,
+} from "@/components/data-table/server-state"
 import { PaginationControls } from "@/components/ui/pagination-controls"
 
 type DataTablePaginationProps = {
@@ -24,9 +27,11 @@ export function DataTablePagination({
       {...(ariaLabel === undefined ? {} : { ariaLabel })}
       disabled={disabled}
       limit={pagination.pageSize}
-      offset={pageIndexToOffset(pagination.pageIndex, pagination.pageSize)}
+      offset={paginationStateToServer(pagination).offset}
       onPageChange={(offset) => {
-        table.setPageIndex(offsetToPageIndex(offset, pagination.pageSize, resolvedTotal))
+        table.setPagination(
+          paginationStateFromServer({ limit: pagination.pageSize, offset }, resolvedTotal)
+        )
       }}
       total={resolvedTotal}
     />

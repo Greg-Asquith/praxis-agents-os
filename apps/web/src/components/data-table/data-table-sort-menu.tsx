@@ -47,7 +47,9 @@ export function DataTableSortMenu({ className, disabled = false }: DataTableSort
                 <DropdownMenuItem
                   key={column.id}
                   onClick={() => {
-                    column.toggleSorting(column.getFirstSortDir() === "desc")
+                    column.toggleSorting(
+                      sorting?.id === column.id ? sorting.desc : column.getFirstSortDir() === "desc"
+                    )
                   }}
                 >
                   {label}

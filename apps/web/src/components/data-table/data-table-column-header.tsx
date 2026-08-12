@@ -15,7 +15,11 @@ export function DataTableColumnHeader() {
   const sorted = column.getIsSorted()
 
   if (!canSort) {
-    return <TableHead className={meta?.headClassName}>{label}</TableHead>
+    return (
+      <TableHead className={meta?.headClassName}>
+        <span className={meta?.labelClassName}>{label}</span>
+      </TableHead>
+    )
   }
 
   const ariaSort = sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"
@@ -31,7 +35,7 @@ export function DataTableColumnHeader() {
         type="button"
         variant="ghost"
       >
-        {label}
+        <span className={meta?.labelClassName}>{label}</span>
         <SortIcon aria-hidden="true" data-icon="inline-end" />
       </Button>
     </TableHead>
