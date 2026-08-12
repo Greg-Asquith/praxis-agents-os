@@ -13,6 +13,7 @@ from core.exceptions.general import ConflictError, NotFoundError
 from models.user import UserAuth
 from services.auth.oauth.unlink_oauth_provider import unlink_oauth_provider
 from tests.factories.users import build_user
+from tests.support.auth import requires_email_auth
 
 ORIGIN = "http://localhost:3000"
 
@@ -36,6 +37,7 @@ def _state_changing_headers(client: AsyncClient) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
+@requires_email_auth
 async def test_unlink_removes_provider_when_password_remains(
     db_async_client: AsyncClient,
     db_session: AsyncSession,
@@ -65,6 +67,7 @@ async def test_unlink_removes_provider_when_password_remains(
 
 
 @pytest.mark.asyncio
+@requires_email_auth
 async def test_unlink_unknown_provider_returns_404(db_async_client: AsyncClient) -> None:
     await _register(db_async_client)
 

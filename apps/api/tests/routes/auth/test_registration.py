@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.user import User
 from models.workspace import WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.support.auth import requires_email_auth
+
+pytestmark = requires_email_auth
 
 
 @pytest.mark.asyncio

@@ -19,7 +19,7 @@ from models.workspace import WorkspaceInvitation, WorkspaceMembership, Workspace
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
 from tests.factories import build_user, build_workspace, build_workspace_membership
-from tests.support.auth import bearer_headers
+from tests.support.auth import bearer_headers, requires_email_auth
 
 pytestmark = pytest.mark.asyncio
 
@@ -27,6 +27,7 @@ ORIGIN = "http://localhost:3000"
 PASSWORD = "StrongerPassword123!"
 
 
+@requires_email_auth
 async def test_login_accepts_pending_invitation_for_verified_identity(
     db_async_client: AsyncClient,
     db_session: AsyncSession,
@@ -97,6 +98,7 @@ async def test_login_accepts_pending_invitation_for_verified_identity(
     assert security_event.details["verified_identity_id"] == str(verified_identity_id)
 
 
+@requires_email_auth
 async def test_verified_login_with_twofa_accepts_invitation_only_after_totp_verification(
     db_async_client: AsyncClient,
     db_session: AsyncSession,
