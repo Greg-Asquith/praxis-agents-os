@@ -240,13 +240,16 @@ async def test_list_shared_sets_filters_enabled_negative_keyword_lists_and_escap
         shared_set_type="NEGATIVE_KEYWORDS",
         shared_set_ids=("50",),
         search="Brand's \\ list",
+        minimum_id=50,
+        minimum_id_inclusive=True,
         limit=1,
     )
     assert "shared_set.status = 'ENABLED'" in client.last_json["query"]
     assert "shared_set.type = 'NEGATIVE_KEYWORDS'" in client.last_json["query"]
     assert "shared_set.id IN (50)" in client.last_json["query"]
+    assert "shared_set.id >= 50" in client.last_json["query"]
     assert "LIKE '%Brand\\'s \\\\ list%'" in client.last_json["query"]
-    assert "ORDER BY shared_set.name, shared_set.id LIMIT 1" in client.last_json["query"]
+    assert "ORDER BY shared_set.id LIMIT 1" in client.last_json["query"]
 
 
 async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
@@ -265,6 +268,8 @@ async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
         login_customer_id="111",
         campaign_ids=("20", "10", "20"),
         search="Brand's \\ sale%_[]",
+        minimum_id=10,
+        minimum_id_inclusive=False,
         limit=101,
         exclude_removed=True,
     )
@@ -272,8 +277,9 @@ async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
     assert campaigns == [{"id": "10", "name": "Brand", "status": "ENABLED"}]
     assert "campaign.status != 'REMOVED'" in client.last_json["query"]
     assert "campaign.id IN (10, 20)" in client.last_json["query"]
+    assert "campaign.id > 10" in client.last_json["query"]
     assert "LIKE '%Brand\\'s \\\\ sale[%][_][[][]]%'" in client.last_json["query"]
-    assert "ORDER BY campaign.name, campaign.id LIMIT 101" in client.last_json["query"]
+    assert "ORDER BY campaign.id LIMIT 101" in client.last_json["query"]
 
 
 async def test_list_ad_groups_validates_exact_ids_and_returns_campaign_rows() -> None:
@@ -289,13 +295,16 @@ async def test_list_ad_groups_validates_exact_ids_and_returns_campaign_rows() ->
         login_customer_id="111",
         ad_group_ids=("20", "10", "20"),
         search="Group's \\ sale",
+        minimum_id=10,
+        minimum_id_inclusive=True,
         limit=101,
         exclude_removed=True,
     ) == [row]
     assert "ad_group.status != 'REMOVED'" in client.last_json["query"]
     assert "ad_group.id IN (10, 20)" in client.last_json["query"]
+    assert "ad_group.id >= 10" in client.last_json["query"]
     assert "ad_group.name LIKE '%Group\\'s \\\\ sale%'" in client.last_json["query"]
-    assert "ORDER BY ad_group.name, ad_group.id LIMIT 101" in client.last_json["query"]
+    assert "ORDER BY ad_group.id LIMIT 101" in client.last_json["query"]
 
 
 @pytest.mark.parametrize(
@@ -318,6 +327,8 @@ async def test_google_ads_entity_operations_reject_malformed_ids_and_bounds(
         await operation(client, **common, **{id_name: ("10 OR 1=1",)})
     with pytest.raises(ValueError, match="between 1 and 101"):
         await operation(client, **{**common, "limit": 102})
+    with pytest.raises(ValueError, match="minimum id"):
+        await operation(client, **common, minimum_id=-1)
 
 
 @pytest.mark.parametrize(
@@ -349,7 +360,7 @@ async def test_list_shared_sets_treats_gaql_like_metacharacters_literally(
         "SELECT shared_set.id, shared_set.name, shared_set.member_count FROM shared_set "
         "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' AND shared_set.status = 'ENABLED' "
         "AND shared_set.name LIKE '%SEARCH_LITERAL%' "
-        "ORDER BY shared_set.name, shared_set.id LIMIT 1"
+        "ORDER BY shared_set.id LIMIT 1"
     ).replace("SEARCH_LITERAL", escaped)
     assert client.last_json["query"] == expected_query
 
@@ -376,24 +387,22 @@ async def test_list_shared_sets_search_bound_never_splits_an_escape_sequence() -
         "SELECT shared_set.id, shared_set.name, shared_set.member_count FROM shared_set "
         "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' AND shared_set.status = 'ENABLED' "
         "AND shared_set.name LIKE '%SEARCH_LITERAL%' "
-        "ORDER BY shared_set.name, shared_set.id LIMIT 1"
+        "ORDER BY shared_set.id LIMIT 1"
     ).replace("SEARCH_LITERAL", "a" * 199)
     assert client.last_json["query"] == expected_query
 
 
-async def test_list_shared_sets_can_return_the_complete_ordered_result() -> None:
+async def test_list_shared_sets_requires_a_bounded_result() -> None:
     client = _OperationClient({"results": []})
 
-    await list_shared_sets(
-        client,
-        customer_id="3333333333",
-        login_customer_id="111",
-        shared_set_type="NEGATIVE_KEYWORDS",
-        limit=None,
-    )
-
-    assert "ORDER BY shared_set.name, shared_set.id" in client.last_json["query"]
-    assert " LIMIT " not in client.last_json["query"]
+    with pytest.raises(ValueError, match="between 1 and 101"):
+        await list_shared_sets(
+            client,
+            customer_id="3333333333",
+            login_customer_id="111",
+            shared_set_type="NEGATIVE_KEYWORDS",
+            limit=0,
+        )
 
 
 async def test_list_shared_sets_uses_the_requested_validated_type() -> None:

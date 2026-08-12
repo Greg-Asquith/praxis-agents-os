@@ -1,14 +1,22 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("@/lib/api/client", () => ({
+  apiRequest: vi.fn(),
+  setApiRequestHeadersProvider: vi.fn(),
+}))
 
 import { EntityFieldInput } from "@/components/tool-ui/entity-field-input"
 import {
   entityReferenceHydrationQueryOptions,
+  entityReferenceSearchQueryOptions,
+  mergeEntityChoices,
   type EntityReferenceHydration,
 } from "@/components/tool-ui/entity-reference-queries"
 import type { EntityChoice } from "@/features/tools/types"
+import { apiRequest } from "@/lib/api/client"
 import { isRecord } from "@/lib/guards"
 
 const field = {
@@ -40,7 +48,6 @@ function renderEntityInput(value: unknown, choices: EntityChoice[] = []): string
       choices,
     })
   }
-
   return renderToStaticMarkup(
     createElement(
       QueryClientProvider,
@@ -61,6 +68,10 @@ function renderEntityInput(value: unknown, choices: EntityChoice[] = []): string
 }
 
 describe("EntityFieldInput", () => {
+  beforeEach(() => {
+    vi.mocked(apiRequest).mockReset()
+  })
+
   it("blocks legacy raw identifiers with an explicit unavailable state", () => {
     const html = renderEntityInput("opaque-file-id")
 
@@ -139,5 +150,50 @@ describe("EntityFieldInput", () => {
 
     expect(html).toContain('value="Testing 2"')
     expect(html).not.toContain("Target unavailable")
+  })
+
+  it("merges paged choices by identity", () => {
+    const duplicate: EntityChoice = {
+      value: {
+        version: 1,
+        entity_kind: "file",
+        entity_id: "duplicate-id",
+        label: "Duplicate target",
+      },
+      label: "Duplicate target",
+      description: null,
+      scope_label: null,
+    }
+    const choices = mergeEntityChoices([], [{ choices: [duplicate] }, { choices: [duplicate] }])
+
+    expect(choices).toEqual([duplicate])
+  })
+
+  it("isolates search generations and forwards TanStack Query cancellation", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({
+      entity_kind: "file",
+      choices: [],
+      next_cursor: null,
+    })
+    const base = {
+      conversationId: "conversation-1",
+      dependentArgs: {},
+      fieldKey: "file_id",
+      toolName: "read_file",
+    }
+    const first = entityReferenceSearchQueryOptions({ ...base, search: "first" })
+    const second = entityReferenceSearchQueryOptions({ ...base, search: "second" })
+    const signal = new AbortController().signal
+    if (typeof second.queryFn !== "function") {
+      throw new Error("Expected an entity search query function")
+    }
+
+    await second.queryFn({ pageParam: "cursor-2", signal } as never)
+
+    expect(first.queryKey).not.toEqual(second.queryKey)
+    const [path, options] = vi.mocked(apiRequest).mock.calls[0] ?? []
+    expect(path).toBe("/tools/conversations/conversation-1/entity-references")
+    expect(options?.signal).toBe(signal)
+    expect(options?.body).toMatchObject({ search: "second", cursor: "cursor-2" })
   })
 })

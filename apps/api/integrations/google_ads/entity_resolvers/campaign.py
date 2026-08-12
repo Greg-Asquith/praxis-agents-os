@@ -2,7 +2,6 @@
 
 """Google Ads campaign lookup for shared runtime entity selectors."""
 
-import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -16,12 +15,9 @@ from integrations.google_ads.tools.utils import (
 from services.integrations.entity_references import (
     EntityChoice,
     EntityResolverDefinition,
-    EntityResolverPage,
 )
 
-from .utils import bounded_offset, group_scoped_references
-
-MAX_SEARCH_CHOICES = 101
+from .utils import group_scoped_references, search_scoped_entities
 
 
 def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
@@ -49,6 +45,8 @@ async def _query(
     *,
     campaign_ids: Sequence[str] = (),
     search: str | None = None,
+    minimum_id: int | None = None,
+    minimum_id_inclusive: bool = False,
     limit: int,
     exclude_removed: bool,
 ) -> list[Mapping[str, Any]]:
@@ -64,40 +62,35 @@ async def _query(
         login_customer_id=login_customer_id(entry),
         campaign_ids=campaign_ids,
         search=search,
+        minimum_id=minimum_id,
+        minimum_id_inclusive=minimum_id_inclusive,
         limit=limit,
         exclude_removed=exclude_removed,
     )
 
 
 async def search_google_ads_campaigns(ctx, search, _dependent_args, page_size, cursor):
-    offset = bounded_offset(cursor, upper_bound=MAX_SEARCH_CHOICES - 1)
-    request_limit = min(offset + page_size + 1, MAX_SEARCH_CHOICES)
+    normalized_search = search.strip()
 
-    async def search_entry(entry) -> list[EntityChoice]:
-        campaigns = await _query(
+    async def query_entry(entry, minimum_id, inclusive, limit):
+        return await _query(
             ctx,
             entry,
-            search=search.strip() or None,
-            limit=request_limit,
+            search=normalized_search or None,
+            minimum_id=minimum_id,
+            minimum_id_inclusive=inclusive,
+            limit=limit,
             exclude_removed=True,
         )
-        return [
-            choice for campaign in campaigns if (choice := _choice(entry, campaign)) is not None
-        ]
 
-    entries = ctx.active_context.compatible_entries(GOOGLE_ADS_BINDING)
-    choices = [
-        choice
-        for entry_choices in await asyncio.gather(*(search_entry(entry) for entry in entries))
-        for choice in entry_choices
-    ]
-    bounded_choices = choices[:MAX_SEARCH_CHOICES]
-    selected = bounded_choices[offset : offset + page_size]
-    return EntityResolverPage(
-        choices=tuple(selected),
-        next_cursor=(
-            str(offset + page_size) if len(bounded_choices) > offset + page_size else None
-        ),
+    return await search_scoped_entities(
+        ctx,
+        GOOGLE_ADS_BINDING,
+        search=normalized_search,
+        page_size=page_size,
+        cursor=cursor,
+        query_entry=query_entry,
+        choice_for_row=_choice,
     )
 
 

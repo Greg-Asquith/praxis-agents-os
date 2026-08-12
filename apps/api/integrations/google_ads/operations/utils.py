@@ -7,6 +7,8 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
+_ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.id")
+_MAX_ENTITY_ID = (1 << 63) - 1
 _GAQL_LIKE_LITERAL_ESCAPES = {
     "\\": "\\\\",
     "'": "\\'",
@@ -45,6 +47,23 @@ def escape_gaql_like_literal(value: str, *, max_length: int = 200) -> str:
         escaped.append(encoded)
         escaped_length += len(encoded)
     return "".join(escaped)
+
+
+def entity_id_boundary_filter(
+    field: str,
+    *,
+    minimum_id: int | None,
+    inclusive: bool,
+) -> str | None:
+    """Build a validated numeric GAQL keyset predicate for an entity ID field."""
+    if _ENTITY_ID_FIELD_PATTERN.fullmatch(field) is None:
+        raise ValueError("Google Ads entity id field is invalid")
+    if minimum_id is None:
+        return None
+    if minimum_id < 0 or minimum_id > _MAX_ENTITY_ID:
+        raise ValueError("Google Ads entity minimum id is outside the int64 range")
+    operator = ">=" if inclusive else ">"
+    return f"{field} {operator} {minimum_id}"
 
 
 def bounded_query(query: str, *, max_rows: int) -> str:

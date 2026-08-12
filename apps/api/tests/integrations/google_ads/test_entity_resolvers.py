@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -23,7 +23,13 @@ from integrations.google_ads.entity_resolvers.shared_set import (
     resolve_google_ads_shared_sets,
     search_google_ads_shared_sets,
 )
-from integrations.google_ads.entity_resolvers.utils import group_scoped_references
+from integrations.google_ads.entity_resolvers.utils import (
+    GoogleAdsEntityCursor,
+    decode_entity_cursor,
+    encode_entity_cursor,
+    entity_search_fingerprint,
+    group_scoped_references,
+)
 from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
     GoogleAdsCampaignReference,
@@ -103,6 +109,80 @@ def test_scoped_reference_grouping_is_context_ordered_deduplicated_and_bounded()
     assert [reference.external_id for reference in grouped[1][1]] == ["900"]
 
 
+def test_entity_cursor_round_trips_at_worst_case_within_generic_bound() -> None:
+    resource_ids = (UUID(int=1), UUID(int=(1 << 128) - 1))
+    fingerprint = entity_search_fingerprint("  Sale  ", resource_ids)
+    cursor = GoogleAdsEntityCursor(
+        fingerprint=fingerprint,
+        last_entity_id=(1 << 63) - 1,
+        last_integration_resource_id=resource_ids[-1],
+    )
+
+    encoded = encode_entity_cursor(cursor)
+
+    assert len(encoded) <= 128
+    assert (
+        decode_entity_cursor(
+            encoded,
+            search="Sale",
+            integration_resource_ids=resource_ids,
+        )
+        == cursor
+    )
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        "",
+        "2.0000000000000000.1.00000000000000000000000000000001",
+        "1.0000000000000000.-1.00000000000000000000000000000001",
+        f"1.0000000000000000.{1 << 63}.00000000000000000000000000000001",
+        "1.not-a-fingerprint.1.00000000000000000000000000000001",
+        "x" * 129,
+    ],
+)
+def test_entity_cursor_malformed_negative_and_oversized_values_restart(cursor: str) -> None:
+    resource_id = UUID(int=1)
+
+    assert (
+        decode_entity_cursor(
+            cursor,
+            search="sale",
+            integration_resource_ids=(resource_id,),
+        )
+        is None
+    )
+
+
+def test_entity_cursor_search_and_active_context_fingerprints_fail_closed() -> None:
+    resource_id = UUID(int=1)
+    cursor = encode_entity_cursor(
+        GoogleAdsEntityCursor(
+            fingerprint=entity_search_fingerprint("sale", (resource_id,)),
+            last_entity_id=10,
+            last_integration_resource_id=resource_id,
+        )
+    )
+
+    assert (
+        decode_entity_cursor(
+            cursor,
+            search="different",
+            integration_resource_ids=(resource_id,),
+        )
+        is None
+    )
+    assert (
+        decode_entity_cursor(
+            cursor,
+            search="sale",
+            integration_resource_ids=(UUID(int=2),),
+        )
+        is None
+    )
+
+
 def test_shared_set_choice_carries_member_count() -> None:
     choice = shared_set_choice(
         SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
@@ -144,10 +224,12 @@ def test_shared_set_reference_rejects_conflicting_redundant_id() -> None:
         )
 
 
-async def test_shared_set_search_pages_every_account_without_truncation(monkeypatch) -> None:
+async def test_shared_set_search_uses_global_tuple_order_and_reaches_every_account(
+    monkeypatch,
+) -> None:
     entries = tuple(
         ResolvedContextEntry(
-            integration_resource_id=uuid4(),
+            integration_resource_id=UUID(int=index),
             provider_key="google_ads",
             resource_type="google_ads_account",
             external_id=customer_id,
@@ -158,7 +240,7 @@ async def test_shared_set_search_pages_every_account_without_truncation(monkeypa
             write_allowed=True,
             permissions_metadata={"login_customer_id": "999"},
         )
-        for customer_id in ("111", "222")
+        for index, customer_id in enumerate(("111", "222"), start=1)
     )
     ctx = SimpleNamespace(
         db=object(),
@@ -166,20 +248,26 @@ async def test_shared_set_search_pages_every_account_without_truncation(monkeypa
         workspace=object(),
         active_context=ResolvedActiveContext(entries=entries),
     )
-    query_calls = []
+    rows_by_resource = {
+        entries[0].integration_resource_id: (1, 2, 4, 7, 9, 11, 11),
+        entries[1].integration_resource_id: (1, 3, 4, 5),
+    }
+    query_calls: list[tuple[ResolvedContextEntry, dict]] = []
 
     async def query(_ctx, entry, **kwargs):
         query_calls.append((entry, kwargs))
-        if entry == entries[1]:
-            return [{"id": "900", "name": "Only in second", "memberCount": 1}]
+        minimum_id = kwargs["minimum_id"]
+        inclusive = kwargs["minimum_id_inclusive"]
+        ids = rows_by_resource[entry.integration_resource_id]
         return [
             {
                 "id": str(index),
-                "name": f"List {index:03d}",
+                "name": f"List {index}",
                 "memberCount": index,
             }
-            for index in range(150)
-        ]
+            for index in ids
+            if minimum_id is None or index > minimum_id or (inclusive and index == minimum_id)
+        ][: kwargs["limit"]]
 
     monkeypatch.setattr("integrations.google_ads.entity_resolvers.shared_set._query", query)
 
@@ -187,7 +275,7 @@ async def test_shared_set_search_pages_every_account_without_truncation(monkeypa
     cursors = []
     cursor = None
     while True:
-        page = await search_google_ads_shared_sets(ctx, "Brand's \\ list", {}, 25, cursor)
+        page = await search_google_ads_shared_sets(ctx, "Brand's \\ list", {}, 2, cursor)
         pages.append(page)
         if page.next_cursor is None:
             break
@@ -199,19 +287,95 @@ async def test_shared_set_search_pages_every_account_without_truncation(monkeypa
     identities = [
         (choice.value["integration_resource_id"], choice.value["external_id"]) for choice in choices
     ]
-    assert len(choices) == 151
+    assert len(choices) == 10
     assert len(identities) == len(set(identities))
-    assert identities[1] == (str(entries[1].integration_resource_id), "900")
-    assert all(len(page.choices) <= 25 for page in pages)
+    expected = {
+        (entity_id, str(entry.integration_resource_id))
+        for entry in entries
+        for entity_id in rows_by_resource[entry.integration_resource_id]
+    }
+    assert identities == [
+        (resource_id, str(entity_id)) for entity_id, resource_id in sorted(expected)
+    ]
+    assert all(len(page.choices) <= 2 for page in pages)
     assert pages[-1].next_cursor is None
-    assert cursors == ["25", "50", "75", "100", "125", "150"]
     assert all(kwargs["search"] == "Brand's \\ list" for _, kwargs in query_calls)
-    assert all(kwargs["limit"] is None for _, kwargs in query_calls)
+    assert all(kwargs["limit"] == 3 for _, kwargs in query_calls)
 
-    invalid_cursor_page = await search_google_ads_shared_sets(
-        ctx, "Brand's \\ list", {}, 25, "invalid"
+    replayed_page = await search_google_ads_shared_sets(ctx, "Brand's \\ list", {}, 2, cursors[1])
+    assert replayed_page == pages[2]
+
+
+async def test_shared_set_tie_cursor_uses_exclusive_then_inclusive_account_boundaries(
+    monkeypatch,
+) -> None:
+    entries = tuple(
+        ResolvedContextEntry(
+            integration_resource_id=UUID(int=index),
+            provider_key="google_ads",
+            resource_type="google_ads_account",
+            external_id=str(index),
+            display_name=f"Account {index}",
+            connection_id=uuid4(),
+            connection_label="Agency",
+            connection_status="active",
+            write_allowed=True,
+            permissions_metadata={"login_customer_id": "999"},
+        )
+        for index in (1, 2)
     )
-    assert invalid_cursor_page.choices == pages[0].choices
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=entries),
+    )
+    query = AsyncMock(return_value=[{"id": "10", "name": "Same ID", "memberCount": 1}])
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.shared_set._query", query)
+
+    first = await search_google_ads_shared_sets(ctx, "", {}, 1, None)
+    second = await search_google_ads_shared_sets(ctx, "", {}, 1, first.next_cursor)
+
+    assert first.choices[0].value["integration_resource_id"] == str(
+        entries[0].integration_resource_id
+    )
+    assert second.choices[0].value["integration_resource_id"] == str(
+        entries[1].integration_resource_id
+    )
+    continuation_calls = query.await_args_list[2:]
+    assert continuation_calls[0].kwargs["minimum_id"] == 10
+    assert continuation_calls[0].kwargs["minimum_id_inclusive"] is False
+    assert continuation_calls[1].kwargs["minimum_id"] == 10
+    assert continuation_calls[1].kwargs["minimum_id_inclusive"] is True
+
+
+async def test_shared_set_search_restarts_stale_cursor_and_propagates_provider_failure(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(entry,)),
+    )
+    query = AsyncMock(
+        return_value=[
+            {"id": "1", "name": "First", "memberCount": 1},
+            {"id": "2", "name": "Second", "memberCount": 2},
+        ]
+    )
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.shared_set._query", query)
+    first = await search_google_ads_shared_sets(ctx, "old", {}, 1, None)
+
+    restarted = await search_google_ads_shared_sets(ctx, "new", {}, 1, first.next_cursor)
+
+    assert restarted.choices[0].value["external_id"] == "1"
+    assert query.await_args.kwargs["minimum_id"] is None
+
+    query.side_effect = RuntimeError("provider unavailable")
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await search_google_ads_shared_sets(ctx, "new", {}, 1, None)
 
 
 async def test_shared_set_hydration_drops_invalid_and_inactive_ids(monkeypatch) -> None:
@@ -265,7 +429,7 @@ async def test_shared_set_hydration_drops_invalid_and_inactive_ids(monkeypatch) 
     assert query.await_args.kwargs["limit"] == 1
 
 
-async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkeypatch) -> None:
+async def test_campaign_targeted_search_reaches_match_beyond_old_101_prefix(monkeypatch) -> None:
     active = ResolvedContextEntry(
         integration_resource_id=uuid4(),
         provider_key="google_ads",
@@ -307,28 +471,66 @@ async def test_campaign_search_bounds_pagination_and_filters_active_scope(monkey
         workspace=object(),
         active_context=ResolvedActiveContext(entries=(active, second_active, incompatible)),
     )
-    query = AsyncMock(
-        return_value=[
-            {"id": str(index), "name": f"Campaign {index}", "status": "ENABLED"}
-            for index in range(101)
-        ]
-    )
+    campaigns = [
+        {
+            "id": str(index),
+            "name": "Needle campaign" if index == 150 else f"Campaign {index}",
+            "status": "ENABLED",
+        }
+        for index in range(1, 151)
+    ]
+
+    async def query(_ctx, _entry, **kwargs):
+        minimum_id = kwargs["minimum_id"]
+        normalized_search = (kwargs["search"] or "").casefold()
+        return [
+            campaign
+            for campaign in campaigns
+            if normalized_search in campaign["name"].casefold()
+            and (minimum_id is None or int(campaign["id"]) > minimum_id)
+        ][: kwargs["limit"]]
+
     monkeypatch.setattr("integrations.google_ads.entity_resolvers.campaign._query", query)
 
-    page = await search_google_ads_campaigns(ctx, "Campaign's \\ list", {}, 25, "100")
+    page = await search_google_ads_campaigns(ctx, "Needle", {}, 25, None)
 
-    assert [choice.value["external_id"] for choice in page.choices] == ["100"]
+    assert [choice.value["external_id"] for choice in page.choices] == ["150", "150"]
     assert page.next_cursor is None
-    assert [call.args[1] for call in query.await_args_list] == [active, second_active]
-    assert all(
-        call.kwargs
-        == {
-            "search": "Campaign's \\ list",
-            "limit": 101,
-            "exclude_removed": True,
-        }
-        for call in query.await_args_list
+
+
+async def test_shared_set_targeted_search_reaches_match_beyond_provider_page_prefix(
+    monkeypatch,
+) -> None:
+    entry = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(entry,)),
     )
+    shared_sets = [
+        {
+            "id": str(index),
+            "name": "Needle list" if index == 10_050 else f"List {index}",
+            "memberCount": index,
+        }
+        for index in range(1, 10_051)
+    ]
+
+    async def query(_ctx, _entry, **kwargs):
+        normalized_search = (kwargs["search"] or "").casefold()
+        return [
+            shared_set
+            for shared_set in shared_sets
+            if normalized_search in shared_set["name"].casefold()
+        ][: kwargs["limit"]]
+
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.shared_set._query", query)
+
+    page = await search_google_ads_shared_sets(ctx, "Needle", {}, 25, None)
+
+    assert [choice.value["external_id"] for choice in page.choices] == ["10050"]
+    assert page.next_cursor is None
 
 
 async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) -> None:
@@ -424,6 +626,8 @@ async def test_ad_group_search_fans_out_and_labels_campaign_scope(monkeypatch) -
         == {
             "search": "Group's \\ name",
             "limit": 26,
+            "minimum_id": None,
+            "minimum_id_inclusive": False,
             "exclude_removed": True,
         }
         for call in query.await_args_list
@@ -517,6 +721,8 @@ async def test_campaign_and_ad_group_resolvers_call_canonical_operations(monkeyp
         login_customer_id="999",
         campaign_ids=["10"],
         search=None,
+        minimum_id=None,
+        minimum_id_inclusive=False,
         limit=1,
         exclude_removed=True,
     )
@@ -526,6 +732,8 @@ async def test_campaign_and_ad_group_resolvers_call_canonical_operations(monkeyp
         login_customer_id="999",
         ad_group_ids=["20"],
         search=None,
+        minimum_id=None,
+        minimum_id_inclusive=False,
         limit=1,
         exclude_removed=True,
     )

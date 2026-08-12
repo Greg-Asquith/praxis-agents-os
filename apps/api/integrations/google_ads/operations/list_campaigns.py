@@ -8,7 +8,7 @@ from typing import Any
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .utils import escape_gaql_like_literal, stream_rows
+from .utils import entity_id_boundary_filter, escape_gaql_like_literal, stream_rows
 
 
 async def list_campaigns(
@@ -18,6 +18,8 @@ async def list_campaigns(
     login_customer_id: str,
     campaign_ids: Sequence[str] = (),
     search: str | None = None,
+    minimum_id: int | None = None,
+    minimum_id_inclusive: bool = False,
     limit: int,
     exclude_removed: bool,
 ) -> list[Mapping[str, Any]]:
@@ -38,11 +40,17 @@ async def list_campaigns(
         filters.append(f"campaign.id IN ({', '.join(normalized_ids)})")
     if search and search.strip():
         filters.append(f"campaign.name LIKE '%{escape_gaql_like_literal(search.strip())}%'")
+    if boundary_filter := entity_id_boundary_filter(
+        "campaign.id",
+        minimum_id=minimum_id,
+        inclusive=minimum_id_inclusive,
+    ):
+        filters.append(boundary_filter)
     where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
     query = (
         "SELECT campaign.id, campaign.name, campaign.status FROM campaign"  # noqa: S608 -- digit-only ids and escaped search
         f"{where_clause} "
-        f"ORDER BY campaign.name, campaign.id LIMIT {limit}"
+        f"ORDER BY campaign.id LIMIT {limit}"
     )
     payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",
@@ -53,6 +61,6 @@ async def list_campaigns(
     )
     return [
         campaign
-        for row in stream_rows(payload)
+        for row in stream_rows(payload, max_rows=limit)
         if isinstance((campaign := row.get("campaign")), Mapping)
     ]

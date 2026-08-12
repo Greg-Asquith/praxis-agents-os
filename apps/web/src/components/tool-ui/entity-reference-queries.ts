@@ -1,6 +1,10 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
-import type { EntityReferenceLookupResponse, EntityReferenceValue } from "@/features/tools/types"
+import type {
+  EntityChoice,
+  EntityReferenceLookupResponse,
+  EntityReferenceValue,
+} from "@/features/tools/types"
 import { apiRequest } from "@/lib/api/client"
 import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
@@ -82,4 +86,26 @@ export function entityReferenceSearchQueryOptions(request: EntityReferenceSearch
     getNextPageParam: (page) => page.next_cursor ?? null,
     staleTime: 15_000,
   })
+}
+
+export function mergeEntityChoices(
+  hydrated: EntityChoice[],
+  pages: { choices: EntityChoice[] }[]
+): EntityChoice[] {
+  const choices = new Map<string, EntityChoice>()
+  for (const choice of [...hydrated, ...pages.flatMap((page) => page.choices)]) {
+    choices.set(entityReferenceKey(choice.value), choice)
+  }
+  return [...choices.values()]
+}
+
+// Identity excludes defaulted fields (entity_kind, version): model-issued args
+// may omit them while server-canonical choices always carry them.
+export function entityReferenceKey(value: EntityReferenceValue): string {
+  return JSON.stringify([
+    value["entity_id"],
+    value["integration_resource_id"],
+    value["external_id"],
+    value["table"],
+  ])
 }
