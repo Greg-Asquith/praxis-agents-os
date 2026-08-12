@@ -20,10 +20,14 @@ from services.audit_events import (
     AuditActorType,
     AuditResourceType,
     AuditStatus,
-    IntegrationOperationChange,
     IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationEffect,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
+    IntegrationOperationOutcome,
+    IntegrationOperationOutcomeGroup,
     IntegrationOperationTarget,
+    TerminalIntegrationOperationDetail,
     record_integration_operation_audit_event,
 )
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -251,6 +255,42 @@ async def test_audit_event_filter_rejects_unknown_action(
     body = response.json()
     assert body["field"] == "action"
     assert "create" in body["allowed_values"]
+
+
+@pytest.mark.parametrize("status", [AuditStatus.PARTIAL, AuditStatus.UNVERIFIED])
+async def test_audit_event_filters_accept_terminal_mutation_statuses(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    status: AuditStatus,
+) -> None:
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    matching = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.UPDATE,
+        resource_type=AuditResourceType.INTEGRATION_RESOURCE,
+        status=status,
+    )
+    await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.UPDATE,
+        resource_type=AuditResourceType.INTEGRATION_RESOURCE,
+        status=AuditStatus.SUCCESS,
+    )
+    await db_session.commit()
+
+    response = await db_async_client.get(
+        "/api/v1/audit-events/",
+        headers=headers,
+        params={"status": status.value},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["events"][0]["id"] == str(matching.id)
 
 
 async def test_audit_event_tool_filters_are_exact_combined_and_workspace_scoped(
@@ -713,22 +753,40 @@ async def test_integration_operation_audit_persists_and_round_trips_full_detail(
     db_async_client: AsyncClient,
 ) -> None:
     actor, workspace, headers = await _authenticated_workspace(db_session)
-    detail = IntegrationOperationDetail(
+    intent_group = IntegrationOperationIntentGroup(
+        key="shared-set:50:add-keywords",
+        action="add",
+        entity_type="negative_keyword",
+        items=[IntegrationOperationIntent(fields={"text": "Brand Term", "match_type": "EXACT"})],
+    )
+    detail = TerminalIntegrationOperationDetail(
         target=IntegrationOperationTarget(
             entity_type="google_ads_shared_set",
             external_id="50",
             display_name="Brand Protection",
             integration_resource_id=str(uuid4()),
         ),
-        changes=[
-            IntegrationOperationChange(
-                action="add",
-                entity_type="negative_keyword",
-                external_ref="customers/111/sharedCriteria/50~1",
-                fields={"text": "Brand Term", "match_type": "EXACT"},
+        intent_groups=[intent_group],
+        outcome_groups=[
+            IntegrationOperationOutcomeGroup(
+                key=intent_group.key,
+                outcomes=[
+                    IntegrationOperationOutcome(
+                        intent_index=0,
+                        status="applied",
+                        effects=[
+                            IntegrationOperationEffect(
+                                status="applied",
+                                fields={"text": "Brand Term", "match_type": "EXACT"},
+                                external_ref="customers/111/sharedCriteria/50~1",
+                            )
+                        ],
+                    )
+                ],
             )
         ],
-        counts=IntegrationOperationCounts(applied=1, skipped=0, failed=0),
+        intent_counts=IntegrationOperationCounts(applied=1, skipped=0, failed=0, unverified=0),
+        effect_counts=IntegrationOperationCounts(applied=1, skipped=0, failed=0, unverified=0),
     )
     event_id = await record_integration_operation_audit_event(
         workspace_id=workspace.id,
@@ -775,7 +833,7 @@ async def test_audit_roll_up_keeps_pending_provider_evidence_when_finalization_f
         details={
             "run_id": "run-2",
             "tool_call_id": tool_call_id,
-            "operation_detail": {"schema_version": 1},
+            "operation_detail": {"phase": "pending"},
         },
         tool_name="google_ads_add_negative_keywords",
         tool_provider="google_ads",

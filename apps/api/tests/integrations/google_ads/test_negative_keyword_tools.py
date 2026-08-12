@@ -59,7 +59,7 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
                         "resource_name": "criteria/1",
                     }
                 ],
-                "skipped_existing": [],
+                "skipped_existing": [{"text": "brand term", "match_type": "PHRASE"}],
                 "keyword_errors": [],
             }
         )
@@ -104,7 +104,7 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
                 "resource_name": "criteria/1",
             }
         ],
-        "skipped_existing": [],
+        "skipped_existing": [{"text": "brand term", "match_type": "PHRASE"}],
         "failed": [],
     }
     assert provider_add.await_args.kwargs["shared_set_id"] == "50"
@@ -191,34 +191,39 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
     )
 
     detail = audit.await_args.kwargs["operation_detail"].model_dump(mode="json")
-    assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
-    assert detail == {
-        "schema_version": 1,
-        "target": {
-            "entity_type": "google_ads_shared_set",
-            "external_id": "50",
-            "display_name": "Brand Protection",
-            "integration_resource_id": str(entry.integration_resource_id),
-            "attributes": {"member_count": 7},
-        },
-        "changes": [
-            {
-                "action": "add",
-                "entity_type": "negative_keyword",
-                "external_ref": "customers/111/sharedCriteria/50~1",
-                "fields": {"text": "Edited Brand", "match_type": "PHRASE"},
-            }
-        ],
-        "counts": {"applied": 1, "skipped": 1, "failed": 1},
+    assert audit.await_args.kwargs["status"] == AuditStatus.PARTIAL
+    assert detail["phase"] == "terminal"
+    assert detail["intent_counts"] == {
+        "applied": 1,
+        "skipped": 1,
+        "failed": 1,
+        "unverified": 0,
     }
+    assert detail["effect_counts"] == {
+        "applied": 1,
+        "skipped": 0,
+        "failed": 1,
+        "unverified": 0,
+    }
+    assert [item["fields"]["text"] for item in detail["intent_groups"][0]["items"]] == [
+        "Edited Brand",
+        "existing",
+        "rejected",
+    ]
+    assert [item["status"] for item in detail["outcome_groups"][0]["outcomes"]] == [
+        "applied",
+        "skipped",
+        "failed",
+    ]
     serialized = json.dumps(detail)
-    assert "existing" not in serialized
-    assert "rejected" not in serialized
+    assert "existing" in serialized
+    assert "rejected" in serialized
+    assert "INVALID_KEYWORD_TEXT" in serialized
     assert "provider detail" not in serialized
 
 
 @pytest.mark.parametrize(
-    ("provider_result", "expected_status", "expected_counts", "expected_changes"),
+    ("provider_result", "requested", "expected_status", "expected_counts"),
     [
         pytest.param(
             {
@@ -232,9 +237,9 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
                 "skipped_existing": [],
                 "keyword_errors": [],
             },
+            [{"text": "accepted", "match_type": "EXACT"}],
             AuditStatus.SUCCESS,
-            {"applied": 1, "skipped": 0, "failed": 0},
-            1,
+            {"applied": 1, "skipped": 0, "failed": 0, "unverified": 0},
             id="all-success",
         ),
         pytest.param(
@@ -243,9 +248,9 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
                 "skipped_existing": [{"text": "existing", "match_type": "EXACT"}],
                 "keyword_errors": [],
             },
+            [{"text": "existing", "match_type": "EXACT"}],
             AuditStatus.SUCCESS,
-            {"applied": 0, "skipped": 1, "failed": 0},
-            0,
+            {"applied": 0, "skipped": 1, "failed": 0, "unverified": 0},
             id="all-skipped-no-op",
         ),
         pytest.param(
@@ -268,9 +273,12 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
                     }
                 ],
             },
-            AuditStatus.SUCCESS,
-            {"applied": 1, "skipped": 0, "failed": 1},
-            1,
+            [
+                {"text": "accepted", "match_type": "EXACT"},
+                {"text": "rejected", "match_type": "PHRASE"},
+            ],
+            AuditStatus.PARTIAL,
+            {"applied": 1, "skipped": 0, "failed": 1, "unverified": 0},
             id="mixed-partial-success",
         ),
         pytest.param(
@@ -279,15 +287,17 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
                 "skipped_existing": [],
                 "keyword_errors": [
                     {
-                        "scope": "account",
+                        "scope": "keyword",
+                        "text": "rejected",
+                        "match_type": "PHRASE",
                         "message": "request rejected",
                         "error_code": "AUTHORIZATION_ERROR",
                     }
                 ],
             },
+            [{"text": "rejected", "match_type": "PHRASE"}],
             AuditStatus.FAILURE,
-            {"applied": 0, "skipped": 0, "failed": 1},
-            0,
+            {"applied": 0, "skipped": 0, "failed": 1, "unverified": 0},
             id="all-failed",
         ),
     ],
@@ -295,9 +305,9 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
 async def test_add_negative_keywords_classifies_audit_outcome(
     monkeypatch,
     provider_result,
+    requested: list[dict[str, str]],
     expected_status: AuditStatus,
     expected_counts: dict[str, int],
-    expected_changes: int,
 ) -> None:
     entry = ResolvedContextEntry(
         integration_resource_id=uuid4(),
@@ -343,10 +353,7 @@ async def test_add_negative_keywords_classifies_audit_outcome(
             external_id="50",
             label="Brand Protection",
         ),
-        [
-            NegativeKeywordEntry(text="accepted", match_type="EXACT"),
-            NegativeKeywordEntry(text="rejected", match_type="PHRASE"),
-        ],
+        [NegativeKeywordEntry(**item) for item in requested],
     )
 
     assert audit.await_count == 2
@@ -356,8 +363,8 @@ async def test_add_negative_keywords_classifies_audit_outcome(
     assert audit_kwargs["status"] == expected_status
     assert audit_kwargs["raise_on_error"] is True
     detail = audit_kwargs["operation_detail"].model_dump(mode="json")
-    assert detail["counts"] == expected_counts
-    assert len(detail["changes"]) == expected_changes
+    assert detail["intent_counts"] == expected_counts
+    assert sum(len(group["outcomes"]) for group in detail["outcome_groups"]) == len(requested)
 
 
 async def test_add_negative_keywords_fails_closed_when_list_is_missing(monkeypatch) -> None:

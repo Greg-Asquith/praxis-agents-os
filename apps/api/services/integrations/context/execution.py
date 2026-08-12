@@ -5,6 +5,7 @@
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from core.exceptions.integration import IntegrationFailureDisposition
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import IntegrationFanOutEntry
 from services.integrations.context.utils import sanitize_context_error
@@ -55,11 +56,17 @@ async def _run_authorized_entries[T](
         try:
             data = await operation(entry, operation_input)
         except Exception as exc:
+            error_code = (
+                "unverified_mutation"
+                if getattr(exc, "failure_disposition", None)
+                is IntegrationFailureDisposition.AMBIGUOUS
+                else exc.__class__.__name__
+            )
             results.append(
                 IntegrationFanOutEntry(
                     **base,
                     status="error",
-                    error_code=exc.__class__.__name__,
+                    error_code=error_code,
                     error_message=sanitize_context_error(str(exc)),
                 )
             )

@@ -17,11 +17,10 @@ from integrations.google_ads.tools.schemas.negative_keyword import (
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.audit_events import (
-    AuditStatus,
-    IntegrationOperationChange,
-    IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
@@ -33,6 +32,7 @@ from services.integrations.operations import (
 
 from .client import google_ads_client
 from .fan_out import fan_out_tool_return
+from .mutation_evidence import audit_status, terminal_operation_detail
 from .negative_keywords import normalize_negative_keywords
 
 type NegativeKeywordAction = Literal["add", "remove"]
@@ -101,6 +101,13 @@ async def run_negative_keyword_tool(
             raise ModelRetry(f"A selected Google Ads {spec.selection_label} reference is invalid.")
 
         keyword_values = [keyword.model_dump() for keyword in normalized_keywords]
+        pending_detail = pending_operation_detail(
+            entry,
+            entity_references,
+            action,
+            keyword_values,
+            spec=spec,
+        )
 
         async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
             client = await google_ads_client(ctx, entry)
@@ -112,19 +119,12 @@ async def run_negative_keyword_tool(
                 keyword_values,
                 action,
             )
-            ledger.require_verified()
+            operation_evidence = terminal_operation_detail(pending_detail, ledger)
             return IntegrationAuditOutcome(
                 ledger,
-                status=_audit_status(action, ledger, spec=spec),
+                status=audit_status(operation_evidence),
                 external_ref=_single_external_ref(ledger),
-                operation_detail=operation_detail(
-                    entry,
-                    entity_references,
-                    keyword_values,
-                    action,
-                    ledger,
-                    spec=spec,
-                ),
+                operation_detail=operation_evidence,
             )
 
         operation_name = f"{action}_{spec.operation_entity}_negative_keywords"
@@ -134,13 +134,7 @@ async def run_negative_keyword_tool(
             tool_name=f"google_ads_{operation_name}",
             operation=operation_name,
             execute=execute,
-            pending_operation_detail=pending_operation_detail(
-                entry,
-                entity_references,
-                action,
-                keyword_values,
-                spec=spec,
-            ),
+            pending_operation_detail=pending_detail,
         )
         return {
             "model_result": entity_result(
@@ -178,58 +172,27 @@ def pending_operation_detail(
     keywords: Sequence[Mapping[str, str]],
     *,
     spec: NegativeKeywordToolSpec,
-) -> IntegrationOperationDetail:
+) -> PendingIntegrationOperationDetail:
     """Build the pre-dispatch audit detail for a scoped keyword mutation."""
-    return IntegrationOperationDetail(
-        target=_account_target(entry, requested_keywords=keywords),
-        changes=[
-            IntegrationOperationChange(
-                action=action,
-                entity_type=spec.entity_type,
-                fields={
-                    **spec.reference_fields(reference),
-                    "keyword_count": len(keywords),
-                },
-            )
-            for reference in references
-        ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
-    )
-
-
-def operation_detail(
-    entry: ResolvedContextEntry,
-    references: Sequence[ScopedEntityReference],
-    keywords: Sequence[Mapping[str, str]],
-    action: NegativeKeywordAction,
-    result: Mapping[str, Any],
-    *,
-    spec: NegativeKeywordToolSpec,
-) -> IntegrationOperationDetail:
-    """Build the terminal audit detail from the mutation ledger."""
-    applied_key = "added" if action == "add" else "removed"
-    skipped_key = "skipped_existing" if action == "add" else "not_found"
-    counts = _entity_counts(action, references, result, spec=spec)
-    outcomes = _keyword_outcomes(action, references, keywords, result, spec=spec)
-    return IntegrationOperationDetail(
+    return PendingIntegrationOperationDetail(
         target=_account_target(entry),
-        changes=[
-            IntegrationOperationChange(
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key=f"{spec.operation_entity}:{reference.external_id}:{action}-keywords",
                 action=action,
                 entity_type=spec.entity_type,
-                fields={
-                    **spec.reference_fields(reference),
-                    **counts[reference.external_id],
-                    "keyword_outcomes": outcomes[reference.external_id],
-                },
+                external_id=reference.external_id,
+                display_name=reference.label,
+                fields=spec.reference_fields(reference),
+                items=[
+                    IntegrationOperationIntent(
+                        fields={spec.entity_id_key: reference.external_id, **keyword}
+                    )
+                    for keyword in keywords
+                ],
             )
             for reference in references
         ],
-        counts=IntegrationOperationCounts(
-            applied=len(result.get(applied_key, [])),
-            skipped=len(result.get(skipped_key, [])),
-            failed=len(result.get(spec.errors_key, [])),
-        ),
     )
 
 
@@ -304,29 +267,14 @@ def _deduplicate_references(
     return list(unique.values())
 
 
-def _audit_status(
-    action: NegativeKeywordAction,
-    result: Mapping[str, Any],
-    *,
-    spec: NegativeKeywordToolSpec,
-) -> AuditStatus:
-    applied_key = "added" if action == "add" else "removed"
-    if result.get(spec.errors_key) and not result.get(applied_key):
-        return AuditStatus.FAILURE
-    return AuditStatus.SUCCESS
-
-
 def _account_target(
     entry: ResolvedContextEntry,
-    *,
-    requested_keywords: Sequence[Mapping[str, str]] = (),
 ) -> IntegrationOperationTarget:
     return IntegrationOperationTarget(
         entity_type="google_ads_account",
         external_id=entry.external_id,
         display_name=entry.display_name,
         integration_resource_id=str(entry.integration_resource_id),
-        attributes={"requested_keywords": [dict(keyword) for keyword in requested_keywords]},
     )
 
 

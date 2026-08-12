@@ -131,8 +131,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `serialize_fan_out_results` owns the nine-field outer envelope. Providers
   return one `IntegrationAuditOutcome`, supply bounded pending detail for
   external writes, and subclass the shared result models only to narrow data.
-  The runtime rejects caller-supplied tool names or context bindings that do
-  not match the actually dispatched definition, and outcomes must be terminal.
+  Pending integration-operation evidence contains requested intent only;
+  successful writes must return the one canonical terminal detail with exactly
+  aligned intent outcomes and concrete provider effects. Intent and effect
+  counts are validated independently. There is no schema-version compatibility
+  layer. The runtime rejects caller-supplied tool names or context bindings
+  that do not match the actually dispatched definition, and outcomes must be
+  terminal. An unverified terminal outcome is persisted before the outer
+  fan-out reports `unverified_mutation`.
   Do not add provider-local audit runners, durability booleans, denial
   callbacks, fan-out serializers, or copied outer result fields. A genuine
   one-request/many-context topology may retain a narrowly named adapter that

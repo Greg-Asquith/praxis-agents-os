@@ -1,14 +1,23 @@
 // apps/web/src/features/audit/components/integration-operation-detail.tsx
 
-import { CircleCheckIcon, CircleXIcon, MinusCircleIcon } from "lucide-react"
+import {
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CircleXIcon,
+  Clock3Icon,
+  MinusCircleIcon,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   parseIntegrationOperationDetail,
   type AuditDetailValue,
-  type OperationChange,
+  type OperationCounts,
   type OperationDetail,
+  type OperationIntentGroup,
+  type OperationOutcome,
+  type OperationOutcomeStatus,
 } from "@/features/audit/operation-detail"
 import { titleCaseToken, truncateText } from "@/lib/format"
 
@@ -16,20 +25,22 @@ const STRUCTURED_VALUE_PREVIEW_LENGTH = 15
 
 export function IntegrationOperationDetail({ value }: { value: unknown }) {
   const detail = parseIntegrationOperationDetail(value)
-  if (!detail) {
-    return null
-  }
+  if (!detail) return null
   const targetAttributes = Object.entries(detail.target.attributes).filter(
     ([, item]) => item !== null
   )
 
   return (
-    <section className="min-w-0 space-y-5" aria-label="Integration operation outcome">
-      <OperationOutcome counts={detail.counts} />
+    <section className="min-w-0 space-y-5" aria-label="Integration operation evidence">
+      {detail.phase === "pending" ? (
+        <PendingSummary itemCount={intentItemCount(detail)} />
+      ) : (
+        <OperationOutcome intentCounts={detail.intent_counts} effectCounts={detail.effect_counts} />
+      )}
 
       <div className="space-y-2">
         <SectionLabel>Target</SectionLabel>
-        <div className="bg-muted/40 rounded-lg border p-3.5 text-sm">
+        <div className="text-sm">
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="font-medium wrap-break-word">
@@ -39,100 +50,244 @@ export function IntegrationOperationDetail({ value }: { value: unknown }) {
                 {titleCaseToken(detail.target.entity_type, detail.target.entity_type)}
               </p>
             </div>
-            <Badge variant="outline">ID {detail.target.external_id}</Badge>
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              ID {detail.target.external_id}
+            </span>
           </div>
           {targetAttributes.length > 0 ? (
-            <dl className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2">
+            <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2 md:grid-cols-3">
               {targetAttributes.map(([key, item]) => (
-                <div
-                  key={key}
-                  className={isStructuredRecordArray(item) ? "min-w-0 sm:col-span-2" : "min-w-0"}
-                >
-                  <dt className="text-muted-foreground text-xs">{titleCaseToken(key, key)}</dt>
-                  <dd className="mt-0.5 wrap-break-word">
-                    <DetailValue value={item} />
-                  </dd>
-                </div>
+                <DetailField key={key} label={key} value={item} />
               ))}
             </dl>
           ) : null}
         </div>
       </div>
 
-      {detail.changes.length > 0 ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <SectionLabel>Changes</SectionLabel>
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {detail.changes.length} {detail.changes.length === 1 ? "item" : "items"}
-            </span>
-          </div>
-          <div className="max-h-[min(24rem,45dvh)] divide-y overflow-y-auto rounded-lg border">
-            {detail.changes.map((change, index) => (
-              <article className="min-w-0 space-y-3 p-3.5" key={changeKey(change)}>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground text-xs tabular-nums">{index + 1}</span>
-                  <Badge variant="success">{titleCaseToken(change.action, change.action)}</Badge>
-                  <span className="text-sm font-medium">
-                    {titleCaseToken(change.entity_type, change.entity_type)}
-                  </span>
-                </div>
-                <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-                  {Object.entries(change.fields).map(([key, item]) => (
-                    <div
-                      className={
-                        isStructuredRecordArray(item) ? "min-w-0 sm:col-span-2" : "min-w-0"
-                      }
-                      key={key}
-                    >
-                      <dt className="text-muted-foreground text-xs">{titleCaseToken(key, key)}</dt>
-                      <dd className="mt-0.5 text-sm wrap-break-word">
-                        <DetailValue value={item} />
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-                {change.external_ref ? (
-                  <p className="text-muted-foreground border-t pt-2 font-mono text-[11px] break-all">
-                    {change.external_ref}
-                  </p>
-                ) : null}
-              </article>
-            ))}
-          </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <SectionLabel>
+            {detail.phase === "pending" ? "Requested changes" : "Outcomes"}
+          </SectionLabel>
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {intentItemCount(detail)} {intentItemCount(detail) === 1 ? "item" : "items"}
+          </span>
         </div>
-      ) : null}
+        <div className="max-h-[min(28rem,50dvh)] divide-y overflow-y-auto rounded-lg border">
+          {detail.intent_groups.map((group, groupIndex) => (
+            <IntentGroup
+              group={group}
+              groupIndex={groupIndex}
+              key={group.key}
+              outcomes={
+                detail.phase === "terminal"
+                  ? detail.outcome_groups[groupIndex]?.outcomes
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+      </div>
     </section>
   )
 }
 
-function OperationOutcome({ counts }: { counts: OperationDetail["counts"] }) {
-  const hasFailures = counts.failed > 0
-  const hasApplied = counts.applied > 0
-  const Icon = hasFailures ? CircleXIcon : hasApplied ? CircleCheckIcon : MinusCircleIcon
-  const title = hasFailures
-    ? `${String(counts.failed)} ${counts.failed === 1 ? "change" : "changes"} failed`
-    : hasApplied
-      ? `${String(counts.applied)} ${counts.applied === 1 ? "change" : "changes"} applied`
-      : "No changes applied"
-
+function PendingSummary({ itemCount }: { itemCount: number }) {
   return (
-    <div className="bg-muted/40 flex items-start gap-3 rounded-lg border p-3.5">
+    <div className="flex items-start gap-3 py-1">
+      <div className="text-muted-foreground pt-0.5">
+        <Clock3Icon className="size-4" aria-hidden="true" />
+      </div>
+      <div className="min-w-0">
+        <p className="font-medium">Waiting to record the provider outcome</p>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {itemCount} {itemCount === 1 ? "requested item is" : "requested items are"} recorded. No
+          outcome is claimed yet.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function OperationOutcome({
+  intentCounts,
+  effectCounts,
+}: {
+  intentCounts: OperationCounts
+  effectCounts: OperationCounts
+}) {
+  const state = aggregateState(intentCounts, effectCounts)
+  const Icon =
+    state === "unverified"
+      ? CircleAlertIcon
+      : state === "failure"
+        ? CircleXIcon
+        : state === "success"
+          ? CircleCheckIcon
+          : MinusCircleIcon
+  const title =
+    state === "unverified"
+      ? "One or more outcomes could not be verified"
+      : state === "failure"
+        ? "The requested changes failed"
+        : state === "partial"
+          ? "Some requested changes failed"
+          : intentCounts.applied > 0
+            ? "Requested changes completed"
+            : "No provider changes were needed"
+  return (
+    <div className="flex items-start gap-3 py-1">
       <div
         className={
-          hasFailures
-            ? "bg-destructive/10 text-destructive rounded-full p-1.5"
-            : "bg-success/10 text-success rounded-full p-1.5"
+          state === "failure"
+            ? "text-destructive pt-0.5"
+            : state === "partial" || state === "unverified"
+              ? "text-warning pt-0.5"
+              : "text-success pt-0.5"
         }
       >
         <Icon className="size-4" aria-hidden="true" />
       </div>
-      <div className="min-w-0">
-        <p className="font-medium">{title}</p>
-        <p className="text-muted-foreground mt-1 text-xs tabular-nums">
-          {counts.applied} applied · {counts.skipped} skipped · {counts.failed} failed
+      <div className="min-w-0 space-y-2">
+        <p className="flex gap-4 font-medium">
+          {title} <StatusCounts counts={intentCounts} />
         </p>
       </div>
+    </div>
+  )
+}
+
+function StatusCounts({ counts }: { counts: OperationCounts }) {
+  const nonZero = (["applied", "skipped", "failed", "unverified"] as const).filter(
+    (status) => counts[status] > 0
+  )
+  return (
+    <div className="flex flex-wrap gap-1.5" aria-label="Outcome counts">
+      {nonZero.map((status) => (
+        <StatusBadge count={counts[status]} key={status} status={status} />
+      ))}
+    </div>
+  )
+}
+
+function IntentGroup({
+  group,
+  groupIndex,
+  outcomes,
+}: {
+  group: OperationIntentGroup
+  groupIndex: number
+  outcomes: OperationOutcome[] | undefined
+}) {
+  const groupFields = visibleGroupFields(group)
+  return (
+    <article className="min-w-0">
+      <div className="bg-muted/30 flex min-w-0 items-center gap-2 px-3.5 py-2.5">
+        <span className="text-muted-foreground text-xs tabular-nums">{groupIndex + 1}</span>
+        <Badge variant="outline">{titleCaseToken(group.action, group.action)}</Badge>
+        <span className="truncate text-sm font-medium">
+          {group.display_name ?? titleCaseToken(group.entity_type, group.entity_type)}
+        </span>
+        {group.external_id ? (
+          <span className="text-muted-foreground ml-auto text-[11px]">ID {group.external_id}</span>
+        ) : null}
+      </div>
+      {groupFields.length > 0 ? (
+        <dl className="grid gap-x-4 gap-y-1.5 border-t px-3.5 py-2.5 sm:grid-cols-2 md:grid-cols-3">
+          {groupFields.map(([key, item]) => (
+            <DetailField key={key} label={key} value={item} />
+          ))}
+        </dl>
+      ) : null}
+      <div className="divide-y border-t">
+        {group.items.map((item, itemIndex) => {
+          const outcome = outcomes?.[itemIndex]
+          const singleEffect = outcome?.effects.length === 1 ? outcome.effects[0] : undefined
+          const itemFields = visibleItemFields(group, item.fields)
+          return (
+            <div
+              className="min-w-0 space-y-2 px-3.5 py-3"
+              key={`${group.key}:${String(itemIndex)}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground text-[11px] tabular-nums">
+                  Item {itemIndex + 1}
+                </span>
+                {outcome ? <OutcomeBadge status={outcome.status} /> : null}
+              </div>
+              <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 md:grid-cols-3">
+                {itemFields.map(([key, value]) => (
+                  <DetailField key={key} label={key} value={value} />
+                ))}
+                {outcome
+                  ? Object.entries(outcome.fields).map(([key, value]) => (
+                      <DetailField key={`outcome:${key}`} label={key} value={value} />
+                    ))
+                  : null}
+              </dl>
+              {singleEffect ? <SingleEffectSummary effect={singleEffect} /> : null}
+              {outcome && outcome.effects.length > 1 ? (
+                <div className="bg-muted/25 min-w-0 px-2.5 py-2">
+                  <p className="text-muted-foreground mb-1.5 text-[11px] font-medium">
+                    {outcome.effects.length} concrete effects
+                  </p>
+                  <StructuredRecordTable
+                    records={outcome.effects.map((effect) => ({
+                      status: effect.status,
+                      ...effect.fields,
+                      ...(effect.external_ref ? { external_ref: effect.external_ref } : {}),
+                      ...(effect.error_code ? { error_code: effect.error_code } : {}),
+                    }))}
+                  />
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
+
+function SingleEffectSummary({ effect }: { effect: OperationOutcome["effects"][number] }) {
+  if (!effect.external_ref && !effect.error_code) return null
+  return (
+    <p className="text-muted-foreground min-w-0 text-[11px]">
+      <span className="font-medium">{effect.error_code ? "Error" : "Provider reference"}</span>{" "}
+      <span className="font-mono break-all">{effect.error_code ?? effect.external_ref}</span>
+    </p>
+  )
+}
+
+function OutcomeBadge({ status }: { status: OperationOutcomeStatus }) {
+  return <StatusBadge status={status} />
+}
+
+function StatusBadge({ count, status }: { count?: number; status: OperationOutcomeStatus }) {
+  const variant =
+    status === "applied"
+      ? "success"
+      : status === "failed"
+        ? "destructive"
+        : status === "unverified"
+          ? "warning"
+          : "secondary"
+  return (
+    <Badge variant={variant}>
+      {count === undefined
+        ? titleCaseToken(status, status)
+        : `${String(count)} ${status === "applied" ? "Successful" : titleCaseToken(status, status)}`}
+    </Badge>
+  )
+}
+
+function DetailField({ label, value }: { label: string; value: AuditDetailValue | undefined }) {
+  return (
+    <div className={isStructuredRecordArray(value) ? "min-w-0 sm:col-span-2" : "min-w-0"}>
+      <dt className="text-muted-foreground text-xs">{titleCaseToken(label, label)}</dt>
+      <dd className="mt-0.5 text-sm wrap-break-word">
+        <DetailValue field={label} value={value} />
+      </dd>
     </div>
   )
 }
@@ -141,48 +296,66 @@ function SectionLabel({ children }: { children: string }) {
   return <h3 className="text-muted-foreground text-xs font-medium">{children}</h3>
 }
 
-function DetailValue({ value }: { value: AuditDetailValue | undefined }) {
-  if (isStructuredRecordArray(value)) {
-    return <StructuredRecordTable records={value} />
+function DetailValue({ field, value }: { field: string; value: AuditDetailValue | undefined }) {
+  if (field === "reason" && typeof value === "string") {
+    return titleCaseToken(value, value)
   }
-  return formatDetailValue(value)
+  return isStructuredRecordArray(value) ? (
+    <StructuredRecordTable records={value} />
+  ) : (
+    formatDetailValue(value)
+  )
 }
 
 function StructuredRecordTable({ records }: { records: Record<string, AuditDetailValue>[] }) {
   const columns = recordColumns(records)
   return (
     <TooltipProvider>
-      <table aria-label="Structured details" className="w-full table-fixed text-left text-sm">
-        <thead>
-          <tr className="border-b">
-            {columns.map((key) => (
-              <th
-                className="text-muted-foreground pr-4 pb-2 text-[11px] font-medium last:pr-0"
-                key={key}
-                scope="col"
-              >
-                {titleCaseToken(key, key)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {records.map((record, index) => (
-            <tr className="border-b last:border-b-0" key={detailRecordKey(record, index)}>
+      <div className="overflow-x-auto">
+        <table aria-label="Structured details" className="w-full min-w-max text-left text-sm">
+          <thead>
+            <tr className="border-b">
               {columns.map((key) => (
-                <td className="py-3 pr-4 align-top last:pr-0" key={key}>
-                  <StructuredRecordValue value={record[key]} />
-                </td>
+                <th
+                  className="text-muted-foreground pr-4 pb-2 text-[11px] font-medium last:pr-0"
+                  key={key}
+                  scope="col"
+                >
+                  {titleCaseToken(key, key)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {records.map((record, index) => (
+              <tr className="border-b last:border-b-0" key={detailRecordKey(record, index)}>
+                {columns.map((key) => (
+                  <td className="max-w-52 py-2 pr-4 align-top last:pr-0" key={key}>
+                    <StructuredRecordValue field={key} value={record[key]} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </TooltipProvider>
   )
 }
 
-function StructuredRecordValue({ value }: { value: AuditDetailValue | undefined }) {
+function StructuredRecordValue({
+  field,
+  value,
+}: {
+  field: string
+  value: AuditDetailValue | undefined
+}) {
+  if (
+    field === "status" &&
+    (value === "applied" || value === "skipped" || value === "failed" || value === "unverified")
+  ) {
+    return <StatusBadge status={value} />
+  }
   const formatted = formatDetailValue(value)
   if (formatted.length <= STRUCTURED_VALUE_PREVIEW_LENGTH) {
     return <span className="block max-w-full truncate">{formatted}</span>
@@ -197,6 +370,40 @@ function StructuredRecordValue({ value }: { value: AuditDetailValue | undefined 
       </TooltipContent>
     </Tooltip>
   )
+}
+
+function aggregateState(
+  intents: OperationCounts,
+  effects: OperationCounts
+): "success" | "partial" | "failure" | "unverified" {
+  if (intents.unverified > 0 || effects.unverified > 0) return "unverified"
+  if (intents.failed === 0) return "success"
+  return intents.failed === countTotal(intents) && effects.applied === 0 ? "failure" : "partial"
+}
+
+function countTotal(counts: OperationCounts): number {
+  return counts.applied + counts.skipped + counts.failed + counts.unverified
+}
+
+function intentItemCount(detail: OperationDetail): number {
+  return detail.intent_groups.reduce((total, group) => total + group.items.length, 0)
+}
+
+function visibleGroupFields(group: OperationIntentGroup): [string, AuditDetailValue][] {
+  return Object.entries(group.fields).filter(([, value]) => {
+    const comparable = typeof value === "string" ? value : null
+    return comparable !== group.external_id && comparable !== group.display_name
+  })
+}
+
+function visibleItemFields(
+  group: OperationIntentGroup,
+  fields: Record<string, AuditDetailValue>
+): [string, AuditDetailValue][] {
+  return Object.entries(fields).filter(([key, value]) => {
+    if (group.fields[key] === value) return false
+    return !(key.endsWith("_id") && value === group.external_id)
+  })
 }
 
 function formatDetailValue(value: AuditDetailValue | undefined): string {
@@ -222,12 +429,4 @@ function recordColumns(records: Record<string, AuditDetailValue>[]): string[] {
 
 function detailRecordKey(record: Record<string, AuditDetailValue>, index: number): string {
   return `${String(index)}:${JSON.stringify(record)}`
-}
-
-function changeKey(change: OperationChange) {
-  if (change.external_ref) return change.external_ref
-  const fields = Object.entries(change.fields)
-    .map(([key, value]) => `${key}=${formatDetailValue(value)}`)
-    .join("|")
-  return `${change.action}:${change.entity_type}:${fields}`
 }

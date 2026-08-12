@@ -12,7 +12,11 @@ from integrations.google_ads.operations.create_negative_keyword_list import (
 from integrations.google_ads.operations.link_negative_keyword_list import (
     link_negative_keyword_list,
 )
-from integrations.google_ads.operations.mutation_outcomes import GoogleAdsMutationLedger
+from integrations.google_ads.operations.mutation_outcomes import (
+    SHARED_SET_KEYWORD_MUTATION_SPEC,
+    GoogleAdsMutationLedger,
+    build_keyword_mutation_ledger,
+)
 from integrations.google_ads.operations.remove_negative_keywords import (
     remove_negative_keywords,
 )
@@ -21,8 +25,9 @@ from integrations.google_ads.references import (
     GoogleAdsSharedSetReference,
 )
 from integrations.google_ads.tools.remove_negative_keywords import (
-    _operation_detail as removal_operation_detail,
+    _pending_operation_detail as pending_removal_operation_detail,
 )
+from integrations.google_ads.tools.utils.mutation_evidence import terminal_operation_detail
 from services.integrations.http import IntegrationRequestPolicy
 from tests.integrations.google_ads.support import (
     _CampaignSharedSetClient,
@@ -951,21 +956,41 @@ def test_remove_negative_keyword_audit_detail_retains_removed_resource_names() -
         label="Brand Protection",
     )
 
-    detail = removal_operation_detail(
+    pending = pending_removal_operation_detail(
         reference,
-        {
-            "removed": [
-                {
-                    "text": "brand term",
-                    "match_type": "EXACT",
-                    "resource_name": "customers/333/sharedCriteria/50~1",
-                }
-            ],
-            "not_found": [{"text": "missing", "match_type": "ANY"}],
-            "keyword_errors": [],
-        },
+        [
+            {"text": "brand term", "match_type": "EXACT"},
+            {"text": "missing", "match_type": "ANY"},
+        ],
     )
+    ledger = build_keyword_mutation_ledger(
+        spec=SHARED_SET_KEYWORD_MUTATION_SPEC,
+        action="remove",
+        parent_fields=[
+            {"text": "brand term", "match_type": "EXACT"},
+            {"text": "missing", "match_type": "ANY"},
+        ],
+        skipped_indices={1: "not_found"},
+        submitted=[(0, {"text": "brand term", "match_type": "EXACT"})],
+        outcomes=[
+            (
+                "applied",
+                "customers/333/sharedCriteria/50~1",
+                None,
+                None,
+            )
+        ],
+    )
+    detail = terminal_operation_detail(pending, ledger)
 
-    assert detail.changes[0].action == "remove"
-    assert detail.changes[0].external_ref == "customers/333/sharedCriteria/50~1"
-    assert detail.counts.model_dump() == {"applied": 1, "skipped": 1, "failed": 0}
+    assert detail.intent_groups[0].action == "remove"
+    assert (
+        detail.outcome_groups[0].outcomes[0].effects[0].external_ref
+        == "customers/333/sharedCriteria/50~1"
+    )
+    assert detail.intent_counts.model_dump() == {
+        "applied": 1,
+        "skipped": 1,
+        "failed": 0,
+        "unverified": 0,
+    }

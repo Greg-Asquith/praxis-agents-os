@@ -200,7 +200,9 @@ function EventStatusBadge({ status }: { status: string }) {
       ? "destructive"
       : status === "success"
         ? "success"
-        : "secondary"
+        : status === "unverified"
+          ? "warning"
+          : "secondary"
   return <Badge variant={variant}>{titleCaseToken(status, status)}</Badge>
 }
 

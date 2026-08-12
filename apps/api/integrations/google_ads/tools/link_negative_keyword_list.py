@@ -23,11 +23,10 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
-    IntegrationOperationChange,
-    IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
@@ -47,6 +46,7 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
+from .utils.mutation_evidence import audit_status, terminal_operation_detail
 from .verifiers import verify_campaigns, verify_shared_sets
 
 _CONTRADICTORY_ACCOUNTING_MESSAGE = "Google Ads returned contradictory campaign link accounting"
@@ -101,6 +101,11 @@ async def google_ads_link_negative_keyword_list(
         normalized_campaign_ids = sorted(
             {reference.external_id for reference in campaign_references}
         )
+        pending_detail = _pending_operation_detail(
+            list_reference,
+            campaign_references,
+            action,
+        )
 
         async def execute() -> Any:
             if not list_reference.external_id.isdigit() or any(
@@ -127,15 +132,13 @@ async def google_ads_link_negative_keyword_list(
                 campaign_ids=normalized_campaign_ids,
                 action=action,
             )
-            ledger.require_verified()
             result = ledger.result()
+            operation_detail = terminal_operation_detail(pending_detail, ledger)
             return IntegrationAuditOutcome(
                 result,
-                status=_audit_status(result),
+                status=audit_status(operation_detail),
                 external_ref=",".join(result["resource_names"]) or None,
-                operation_detail=_operation_detail(
-                    list_reference, campaign_references, action, result
-                ),
+                operation_detail=operation_detail,
             )
 
         audited_result = await run_audited_integration_operation(
@@ -144,9 +147,7 @@ async def google_ads_link_negative_keyword_list(
             tool_name="google_ads_link_negative_keyword_list",
             operation="link_negative_keyword_list",
             execute=execute,
-            pending_operation_detail=_pending_operation_detail(
-                list_reference, campaign_references, action
-            ),
+            pending_operation_detail=pending_detail,
         )
         return _campaign_link_result(
             list_reference,
@@ -162,12 +163,6 @@ async def google_ads_link_negative_keyword_list(
         operation=operation,
     )
     return {"results": serialize_fan_out_results(results)}
-
-
-def _audit_status(result: dict[str, Any]) -> AuditStatus:
-    if result["campaign_errors"] and not result["resource_names"]:
-        return AuditStatus.FAILURE
-    return AuditStatus.SUCCESS
 
 
 def _campaign_link_result(
@@ -240,52 +235,32 @@ def _campaign_link_result(
     }
 
 
-def _operation_detail(
-    negative_list: GoogleAdsSharedSetReference,
-    campaigns: Sequence[GoogleAdsCampaignReference],
-    action: Literal["LINK", "UNLINK"],
-    result: dict[str, Any],
-) -> IntegrationOperationDetail:
-    by_id = {campaign.external_id: campaign for campaign in campaigns}
-    return IntegrationOperationDetail(
-        target=_operation_target(negative_list),
-        changes=[
-            IntegrationOperationChange(
-                action="link" if action == "LINK" else "unlink",
-                entity_type="google_ads_campaign",
-                external_ref=resource_name,
-                fields={
-                    "campaign_id": campaign_id,
-                    "campaign_name": by_id.get(campaign_id).label if campaign_id in by_id else None,
-                },
-            )
-            for resource_name in result["resource_names"]
-            if (campaign_id := _campaign_id_from_link_resource(resource_name))
-        ],
-        counts=IntegrationOperationCounts(
-            applied=len(result["resource_names"]),
-            skipped=len(result.get("skipped_existing", result.get("not_found", []))),
-            failed=len(result["campaign_errors"]),
-        ),
-    )
-
-
 def _pending_operation_detail(
     negative_list: GoogleAdsSharedSetReference,
     campaigns: Sequence[GoogleAdsCampaignReference],
     action: Literal["LINK", "UNLINK"],
-) -> IntegrationOperationDetail:
-    return IntegrationOperationDetail(
+) -> PendingIntegrationOperationDetail:
+    operation = "link" if action == "LINK" else "unlink"
+    return PendingIntegrationOperationDetail(
         target=_operation_target(negative_list),
-        changes=[
-            IntegrationOperationChange(
-                action="link" if action == "LINK" else "unlink",
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key=f"shared-set:{negative_list.external_id}:{operation}-campaigns",
+                action=operation,
                 entity_type="google_ads_campaign",
-                fields={"campaign_id": campaign.external_id, "campaign_name": campaign.label},
+                external_id=negative_list.external_id,
+                display_name=negative_list.label,
+                items=[
+                    IntegrationOperationIntent(
+                        fields={
+                            "campaign_id": campaign.external_id,
+                            "campaign_name": campaign.label,
+                        }
+                    )
+                    for campaign in campaigns
+                ],
             )
-            for campaign in campaigns
         ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
     )
 
 

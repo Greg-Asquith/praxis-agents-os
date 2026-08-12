@@ -7,10 +7,10 @@ from pydantic_ai import ModelRetry, RunContext
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import IntegrationToolBinding, ToolFieldPresentation
 from services.audit_events import (
-    IntegrationOperationChange,
-    IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.credentials import get_usable_connection_credential
@@ -83,22 +83,26 @@ def pending_record_operation_detail(
     table: str,
     field_count: int,
     record_id: str | None = None,
-) -> IntegrationOperationDetail:
+) -> PendingIntegrationOperationDetail:
     """Build bounded mutation intent without storing record content."""
-    return IntegrationOperationDetail(
+    return PendingIntegrationOperationDetail(
         target=IntegrationOperationTarget(
             entity_type="airtable_base",
             external_id=entry.external_id,
             display_name=entry.display_name,
             integration_resource_id=str(entry.integration_resource_id),
         ),
-        changes=[
-            IntegrationOperationChange(
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key=f"record:{record_id or 'new'}:{action}",
                 action=action,
                 entity_type="airtable_record",
-                external_ref=record_id,
-                fields={"table": table[:255], "field_count": field_count},
+                external_id=record_id,
+                items=[
+                    IntegrationOperationIntent(
+                        fields={"table": table[:255], "field_count": field_count}
+                    )
+                ],
             )
         ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
     )

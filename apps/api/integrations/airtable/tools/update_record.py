@@ -18,6 +18,7 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.audit_events import terminal_applied_operation_detail
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
@@ -58,6 +59,13 @@ async def airtable_update_record(
 
     async def operation(entry: ResolvedContextEntry, references) -> Any:
         reference = references[0]
+        pending_detail = pending_record_operation_detail(
+            entry,
+            action="update",
+            table=record_id.table.strip(),
+            field_count=len(fields),
+            record_id=reference.external_id,
+        )
 
         async def execute() -> Any:
             client = await airtable_client(ctx, entry)
@@ -68,9 +76,14 @@ async def airtable_update_record(
                 record_id=reference.external_id,
                 fields=fields,
             )
+            external_ref = str(result.get("record_id", "")) or None
             return IntegrationAuditOutcome(
                 result,
-                external_ref=str(result.get("record_id", "")) or None,
+                external_ref=external_ref,
+                operation_detail=terminal_applied_operation_detail(
+                    pending_detail,
+                    external_ref=external_ref,
+                ),
             )
 
         return await run_audited_integration_operation(
@@ -79,13 +92,7 @@ async def airtable_update_record(
             tool_name="airtable_update_record",
             operation="update_record",
             execute=execute,
-            pending_operation_detail=pending_record_operation_detail(
-                entry,
-                action="update",
-                table=record_id.table.strip(),
-                field_count=len(fields),
-                record_id=reference.external_id,
-            ),
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_targets(

@@ -18,10 +18,11 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    IntegrationOperationChange,
-    IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
+    terminal_applied_operation_detail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
@@ -62,6 +63,13 @@ async def gmail_send_message(
         raise ModelRetry("gmail_send_message requires at least one recipient.")
 
     async def operation(entry: ResolvedContextEntry) -> Any:
+        pending_detail = _pending_operation_detail(
+            entry,
+            recipient_count=len(recipients),
+            cc_count=len(cc or ()),
+            bcc_count=len(bcc or ()),
+        )
+
         async def execute() -> Any:
             client = await gmail_client(ctx, entry)
             result = await send_message(
@@ -72,9 +80,14 @@ async def gmail_send_message(
                 cc=cc,
                 bcc=bcc,
             )
+            external_ref = str(result.get("message_id", "")) or None
             return IntegrationAuditOutcome(
                 result,
-                external_ref=str(result.get("message_id", "")) or None,
+                external_ref=external_ref,
+                operation_detail=terminal_applied_operation_detail(
+                    pending_detail,
+                    external_ref=external_ref,
+                ),
             )
 
         return await run_audited_integration_operation(
@@ -83,12 +96,7 @@ async def gmail_send_message(
             tool_name="gmail_send_message",
             operation="send_message",
             execute=execute,
-            pending_operation_detail=_pending_operation_detail(
-                entry,
-                recipient_count=len(recipients),
-                cc_count=len(cc or ()),
-                bcc_count=len(bcc or ()),
-            ),
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_fan_out(
@@ -105,26 +113,30 @@ def _pending_operation_detail(
     recipient_count: int,
     cc_count: int,
     bcc_count: int,
-) -> IntegrationOperationDetail:
-    return IntegrationOperationDetail(
+) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
         target=IntegrationOperationTarget(
             entity_type="gmail_mailbox",
             external_id=entry.external_id,
             display_name=entry.display_name,
             integration_resource_id=str(entry.integration_resource_id),
         ),
-        changes=[
-            IntegrationOperationChange(
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key="message:send",
                 action="send",
                 entity_type="gmail_message",
-                fields={
-                    "recipient_count": recipient_count,
-                    "cc_count": cc_count,
-                    "bcc_count": bcc_count,
-                },
+                items=[
+                    IntegrationOperationIntent(
+                        fields={
+                            "recipient_count": recipient_count,
+                            "cc_count": cc_count,
+                            "bcc_count": bcc_count,
+                        }
+                    )
+                ],
             )
         ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
     )
 
 

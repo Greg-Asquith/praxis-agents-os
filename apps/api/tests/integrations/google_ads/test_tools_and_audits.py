@@ -23,12 +23,11 @@ from integrations.google_ads.references import (
     GoogleAdsSharedSetReference,
 )
 from integrations.google_ads.tools.add_negative_keywords import (
-    _negative_keyword_operation_detail,
+    _pending_negative_keyword_operation_detail,
     google_ads_add_negative_keywords,
 )
 from integrations.google_ads.tools.create_negative_keyword_list import (
-    _audit_status as create_list_audit_status,
-    _operation_detail as create_list_operation_detail,
+    _pending_operation_detail as create_list_pending_operation_detail,
     google_ads_create_negative_keyword_list,
 )
 from integrations.google_ads.tools.link_negative_keyword_list import (
@@ -40,8 +39,7 @@ from integrations.google_ads.tools.schemas.negative_keyword import (
     NegativeKeywordRemovalEntry,
 )
 from integrations.google_ads.tools.update_campaign_status import (
-    _audit_status as campaign_status_audit_status,
-    _operation_detail as campaign_status_operation_detail,
+    _pending_operation_detail as campaign_status_pending_operation_detail,
     google_ads_update_campaign_status,
 )
 from integrations.google_ads.tools.utils import (
@@ -52,6 +50,10 @@ from integrations.google_ads.tools.utils import (
     complete_negative_keyword_removal_result,
     complete_negative_keyword_result,
     normalize_negative_keywords,
+)
+from integrations.google_ads.tools.utils.mutation_evidence import (
+    audit_status,
+    terminal_operation_detail,
 )
 from integrations.google_ads.tools.verifiers import (
     verify_ad_groups,
@@ -84,15 +86,31 @@ async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkey
         tool_name="google_ads_add_negative_keywords",
     )
     entry = _writable_google_ads_entry()
-    detail = _negative_keyword_operation_detail(
+    detail = _pending_negative_keyword_operation_detail(
         GoogleAdsSharedSetReference(
             integration_resource_id=uuid4(),
             external_id="50",
             label="Brand Protection",
         ),
-        {"added": [], "skipped_existing": [], "keyword_errors": []},
+        [{"text": "brand", "match_type": "EXACT"}],
     )
-    execute.return_value = IntegrationAuditOutcome({"ok": True}, operation_detail=detail)
+    terminal_detail = terminal_operation_detail(
+        detail,
+        mutation_ledger_double(
+            {
+                "added": [
+                    {
+                        "text": "brand",
+                        "match_type": "EXACT",
+                        "resource_name": "customers/111/sharedCriteria/50~1",
+                    }
+                ],
+                "skipped_existing": [],
+                "keyword_errors": [],
+            }
+        ),
+    )
+    execute.return_value = IntegrationAuditOutcome({"ok": True}, operation_detail=terminal_detail)
     monkeypatch.setattr(
         "services.integrations.operations.record_integration_operation_audit_event", audit
     )
@@ -259,13 +277,23 @@ def test_negative_keyword_audit_detail_retains_all_applied_rows() -> None:
         "keyword_errors": [],
     }
 
-    detail = _negative_keyword_operation_detail(reference, provider_result)
+    pending = _pending_negative_keyword_operation_detail(
+        reference,
+        [
+            {"text": item["text"], "match_type": item["match_type"]}
+            for item in provider_result["added"]
+        ],
+    )
+    detail = terminal_operation_detail(pending, mutation_ledger_double(provider_result))
 
-    assert detail.counts.applied == 500
-    assert len(detail.changes) == 500
-    assert detail.changes[0].fields["text"] == "keyword 0"
-    assert detail.changes[-1].fields["text"] == "keyword 499"
-    assert detail.changes[-1].external_ref == "customers/333/sharedCriteria/50~499"
+    assert detail.intent_counts.applied == 500
+    assert len(detail.intent_groups[0].items) == 500
+    assert detail.intent_groups[0].items[0].fields["text"] == "keyword 0"
+    assert detail.intent_groups[0].items[-1].fields["text"] == "keyword 499"
+    assert (
+        detail.outcome_groups[0].outcomes[-1].effects[0].external_ref
+        == "customers/333/sharedCriteria/50~499"
+    )
 
 
 def test_negative_keyword_normalization_is_pairwise_and_bounded() -> None:
@@ -435,7 +463,10 @@ async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
         side_effect=lambda _client, **kwargs: mutation_ledger_double(
             {
                 "created_names": ["Alpha List", "Beta List"],
-                "resource_names": [f"customers/{kwargs['customer_id']}/sharedSets/1"],
+                "resource_names": [
+                    f"customers/{kwargs['customer_id']}/sharedSets/1",
+                    f"customers/{kwargs['customer_id']}/sharedSets/2",
+                ],
                 "skipped_existing": [],
                 "list_errors": [],
             }
@@ -475,7 +506,7 @@ async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
         for call in provider_create.await_args_list
     )
     pending = audited_calls[0]["pending_operation_detail"]
-    assert [change.fields["name"] for change in pending.changes] == [
+    assert [item.fields["name"] for item in pending.intent_groups[0].items] == [
         "Alpha List",
         "Beta List",
     ]
@@ -490,17 +521,29 @@ def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_resul
         "list_errors": [{"name": "Rejected List", "error_code": "INVALID_NAME"}],
     }
 
-    detail = create_list_operation_detail(entry, partial_result)
+    pending = create_list_pending_operation_detail(
+        entry,
+        ["Created List", "Existing List", "Rejected List"],
+    )
+    detail = terminal_operation_detail(pending, mutation_ledger_double(partial_result))
 
-    assert create_list_audit_status(partial_result) == AuditStatus.SUCCESS
+    assert audit_status(detail) == AuditStatus.PARTIAL
     assert detail.target.external_id == "111"
-    assert [change.action for change in detail.changes] == ["create", "create_failed"]
-    assert detail.changes[0].external_ref == "customers/111/sharedSets/50"
-    assert detail.changes[1].fields == {
-        "name": "Rejected List",
-        "error_code": "INVALID_NAME",
+    assert [outcome.status for outcome in detail.outcome_groups[0].outcomes] == [
+        "applied",
+        "skipped",
+        "failed",
+    ]
+    assert (
+        detail.outcome_groups[0].outcomes[0].effects[0].external_ref
+        == "customers/111/sharedSets/50"
+    )
+    assert detail.intent_counts.model_dump() == {
+        "applied": 1,
+        "skipped": 1,
+        "failed": 1,
+        "unverified": 0,
     }
-    assert detail.counts.model_dump() == {"applied": 1, "skipped": 1, "failed": 1}
 
     noop_result = {
         "created_names": [],
@@ -508,25 +551,31 @@ def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_resul
         "skipped_existing": ["Existing List"],
         "list_errors": [],
     }
-    assert create_list_audit_status(noop_result) == AuditStatus.SUCCESS
-    assert create_list_operation_detail(entry, noop_result).counts.model_dump() == {
+    noop = terminal_operation_detail(
+        create_list_pending_operation_detail(entry, ["Existing List"]),
+        mutation_ledger_double(noop_result),
+    )
+    assert audit_status(noop) == AuditStatus.SUCCESS
+    assert noop.intent_counts.model_dump() == {
         "applied": 0,
         "skipped": 1,
         "failed": 0,
+        "unverified": 0,
     }
 
-    failed_result = {**noop_result, "skipped_existing": [], "list_errors": [{}]}
-    assert create_list_audit_status(failed_result) == AuditStatus.FAILURE
-
-    malformed_result = {
-        "created_names": ["First List", "Second List"],
-        "resource_names": ["customers/111/sharedSets/50"],
+    failed_result = {
+        "created_names": [],
+        "resource_names": [],
         "skipped_existing": [],
-        "list_errors": [],
+        "list_errors": [
+            {"name": "Rejected List", "error_code": "INVALID_NAME", "message": "invalid"}
+        ],
     }
-    malformed_detail = create_list_operation_detail(entry, malformed_result)
-    assert malformed_detail.counts.applied == 1
-    assert [change.fields["name"] for change in malformed_detail.changes] == ["First List"]
+    failed = terminal_operation_detail(
+        create_list_pending_operation_detail(entry, ["Rejected List"]),
+        mutation_ledger_double(failed_result),
+    )
+    assert audit_status(failed) == AuditStatus.FAILURE
 
 
 async def test_create_negative_keyword_list_durable_audit_failures_are_not_success(
@@ -727,8 +776,10 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
         ["10"],
         ["20"],
     ]
-    assert [change.fields for change in audited_calls[0]["pending_operation_detail"].changes] == [
-        {"campaign_id": "10", "campaign_name": "First campaign", "status": "PAUSED"}
+    pending = audited_calls[0]["pending_operation_detail"]
+    assert pending.intent_groups[0].fields == {"status": "PAUSED"}
+    assert [item.fields for item in pending.intent_groups[0].items] == [
+        {"campaign_id": "10", "campaign_name": "First campaign"}
     ]
 
 
@@ -740,38 +791,38 @@ def test_campaign_status_audit_detail_covers_partial_and_noop_results() -> None:
         "campaign_errors": [{"campaign_id": "20", "error_code": "CANNOT_MODIFY_REMOVED_CAMPAIGN"}],
     }
 
-    detail = campaign_status_operation_detail(entry, campaigns, "PAUSED", partial_result)
+    detail = terminal_operation_detail(
+        campaign_status_pending_operation_detail(entry, campaigns, "PAUSED"),
+        mutation_ledger_double(partial_result),
+    )
 
-    assert campaign_status_audit_status(partial_result) == AuditStatus.SUCCESS
-    assert [change.action for change in detail.changes] == [
-        "update_status",
-        "update_status_failed",
+    assert audit_status(detail) == AuditStatus.PARTIAL
+    assert [outcome.status for outcome in detail.outcome_groups[0].outcomes] == [
+        "applied",
+        "failed",
     ]
-    assert detail.changes[0].external_ref == "customers/111/campaigns/10"
-    assert detail.changes[0].fields == {
-        "campaign_id": "10",
-        "campaign_name": "Campaign 10",
-        "status": "PAUSED",
+    assert (
+        detail.outcome_groups[0].outcomes[0].effects[0].external_ref == "customers/111/campaigns/10"
+    )
+    assert detail.outcome_groups[0].outcomes[1].effects[0].error_code == (
+        "CANNOT_MODIFY_REMOVED_CAMPAIGN"
+    )
+    assert detail.intent_counts.model_dump() == {
+        "applied": 1,
+        "skipped": 0,
+        "failed": 1,
+        "unverified": 0,
     }
-    assert detail.changes[1].fields == {
-        "campaign_id": "20",
-        "campaign_name": "Campaign 20",
-        "status": "PAUSED",
-        "error_code": "CANNOT_MODIFY_REMOVED_CAMPAIGN",
-    }
-    assert detail.counts.model_dump() == {"applied": 1, "skipped": 0, "failed": 1}
-
-    noop_result = {"resource_names": [], "campaign_errors": []}
-    assert campaign_status_audit_status(noop_result) == AuditStatus.SUCCESS
-    assert campaign_status_operation_detail(
-        entry, campaigns, "ENABLED", noop_result
-    ).counts.model_dump() == {"applied": 0, "skipped": 0, "failed": 0}
 
     failed_result = {
         "resource_names": [],
         "campaign_errors": [{"campaign_id": "10", "error_code": "NOT_ALLOWED"}],
     }
-    assert campaign_status_audit_status(failed_result) == AuditStatus.FAILURE
+    failed = terminal_operation_detail(
+        campaign_status_pending_operation_detail(entry, [campaigns[0]], "PAUSED"),
+        mutation_ledger_double(failed_result),
+    )
+    assert audit_status(failed) == AuditStatus.FAILURE
 
 
 async def test_campaign_status_durable_audit_failures_are_not_success(monkeypatch) -> None:
@@ -1253,7 +1304,10 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
     assert outcome.external_ref == "customers/111/campaignSharedSets/10~50"
     detail = outcome.operation_detail
     assert detail is not None
-    assert detail.changes[0].external_ref == "customers/111/campaignSharedSets/10~50"
+    assert (
+        detail.outcome_groups[0].outcomes[1].effects[0].external_ref
+        == "customers/111/campaignSharedSets/10~50"
+    )
 
 
 def test_negative_list_campaign_link_result_uses_unlink_outcomes() -> None:

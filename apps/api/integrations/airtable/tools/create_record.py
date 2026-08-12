@@ -17,6 +17,7 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.audit_events import terminal_applied_operation_detail
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
 from services.integrations.context.results import serialize_fan_out_results
@@ -45,6 +46,13 @@ async def airtable_create_record(
         raise ModelRetry("airtable_create_record requires a table and at least one field.")
 
     async def operation(entry: ResolvedContextEntry) -> Any:
+        pending_detail = pending_record_operation_detail(
+            entry,
+            action="create",
+            table=normalized_table,
+            field_count=len(fields),
+        )
+
         async def execute() -> Any:
             client = await airtable_client(ctx, entry)
             result = await create_record(
@@ -53,9 +61,14 @@ async def airtable_create_record(
                 table=normalized_table,
                 fields=fields,
             )
+            external_ref = str(result.get("record_id", "")) or None
             return IntegrationAuditOutcome(
                 result,
-                external_ref=str(result.get("record_id", "")) or None,
+                external_ref=external_ref,
+                operation_detail=terminal_applied_operation_detail(
+                    pending_detail,
+                    external_ref=external_ref,
+                ),
             )
 
         return await run_audited_integration_operation(
@@ -64,12 +77,7 @@ async def airtable_create_record(
             tool_name="airtable_create_record",
             operation="create_record",
             execute=execute,
-            pending_operation_detail=pending_record_operation_detail(
-                entry,
-                action="create",
-                table=normalized_table,
-                field_count=len(fields),
-            ),
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_fan_out(

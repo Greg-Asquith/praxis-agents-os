@@ -9,6 +9,7 @@ import pytest
 
 from core.exceptions.integration import (
     IntegrationConnectionError,
+    IntegrationError,
     IntegrationFailureDisposition,
 )
 from services.agents.runtime.tools.contract import (
@@ -26,10 +27,17 @@ from services.agents.runtime.tools.registry import (
     register_tool_definition,
 )
 from services.audit_events import (
-    IntegrationOperationChange,
+    AuditStatus,
     IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationEffect,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
+    IntegrationOperationOutcome,
+    IntegrationOperationOutcomeGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
+    TerminalIntegrationOperationDetail,
+    terminal_applied_operation_detail,
 )
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
@@ -86,21 +94,58 @@ def _ctx(
     )
 
 
-def _pending_detail(entry: ResolvedContextEntry) -> IntegrationOperationDetail:
-    return IntegrationOperationDetail(
+def _pending_detail(entry: ResolvedContextEntry) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
         target=IntegrationOperationTarget(
             entity_type="test_resource",
             external_id=entry.external_id,
             integration_resource_id=str(entry.integration_resource_id),
         ),
-        changes=[
-            IntegrationOperationChange(
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key="records:create",
                 action="create",
                 entity_type="test_record",
-                fields={"record_count": 1},
+                items=[IntegrationOperationIntent(fields={"record_count": 1})],
             )
         ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
+    )
+
+
+def _unverified_detail(entry: ResolvedContextEntry) -> TerminalIntegrationOperationDetail:
+    pending = _pending_detail(entry)
+    return TerminalIntegrationOperationDetail(
+        target=pending.target,
+        intent_groups=pending.intent_groups,
+        outcome_groups=[
+            IntegrationOperationOutcomeGroup(
+                key="records:create",
+                outcomes=[
+                    IntegrationOperationOutcome(
+                        intent_index=0,
+                        status="unverified",
+                        effects=[
+                            IntegrationOperationEffect(
+                                status="unverified",
+                                error_code="UNKNOWN_RESULT",
+                            )
+                        ],
+                    )
+                ],
+            )
+        ],
+        intent_counts=IntegrationOperationCounts(
+            applied=0,
+            skipped=0,
+            failed=0,
+            unverified=1,
+        ),
+        effect_counts=IntegrationOperationCounts(
+            applied=0,
+            skipped=0,
+            failed=0,
+            unverified=1,
+        ),
     )
 
 
@@ -123,10 +168,19 @@ async def _synthetic_read(ctx):
 
 async def _synthetic_write(ctx):
     async def operation(entry: ResolvedContextEntry):
+        pending_detail = _pending_detail(entry)
+
         async def execute():
             if ctx.deps.events is not None:
                 ctx.deps.events.append("provider")
-            return IntegrationAuditOutcome({"created": 1}, external_ref="record-1")
+            return IntegrationAuditOutcome(
+                {"created": 1},
+                external_ref="record-1",
+                operation_detail=terminal_applied_operation_detail(
+                    pending_detail,
+                    external_ref="record-1",
+                ),
+            )
 
         return await run_audited_integration_operation(
             ctx,
@@ -134,7 +188,7 @@ async def _synthetic_write(ctx):
             tool_name=WRITE_TOOL,
             operation="write",
             execute=execute,
-            pending_operation_detail=_pending_detail(entry),
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_fan_out(ctx, binding=WRITE_BINDING, operation=operation)
@@ -292,6 +346,45 @@ async def test_operation_rejects_non_terminal_outcome_status(
         "pending",
         "failure",
     ]
+    assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
+
+
+async def test_unverified_outcome_is_persisted_before_outer_failure(
+    synthetic_provider,
+    monkeypatch,
+) -> None:
+    entry = _entry()
+    pending_event_id = uuid4()
+    audit = AsyncMock(return_value=pending_event_id)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+    detail = _unverified_detail(entry)
+
+    async def execute():
+        return IntegrationAuditOutcome(
+            {"created": 0},
+            status=AuditStatus.UNVERIFIED,
+            operation_detail=detail,
+        )
+
+    with pytest.raises(IntegrationError) as exc_info:
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
+    assert [call.kwargs["status"] for call in audit.await_args_list] == [
+        AuditStatus.PENDING,
+        AuditStatus.UNVERIFIED,
+    ]
+    assert audit.await_args_list[1].kwargs["operation_detail"] is detail
     assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
 
 
@@ -497,7 +590,14 @@ async def test_cancellation_during_terminal_persistence_preserves_known_outcome(
                 "provider rejected the request",
                 failure_disposition=IntegrationFailureDisposition.REJECTED,
             )
-        return IntegrationAuditOutcome(None, external_ref="record-1")
+        return IntegrationAuditOutcome(
+            None,
+            external_ref="record-1",
+            operation_detail=terminal_applied_operation_detail(
+                _pending_detail(entry),
+                external_ref="record-1",
+            ),
+        )
 
     task = asyncio.create_task(
         run_audited_integration_operation(

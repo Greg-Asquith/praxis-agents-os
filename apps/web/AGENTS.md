@@ -67,6 +67,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   operator: state outcomes in plain language, lean on defaults instead of
   exposing configuration, and put expert options behind Advanced
   disclosures. Prefer simple, accessible controls over custom widgets.
+- Integration-operation audit detail parses only the canonical pending/terminal
+  contract. Pending intent must not imply an outcome. Terminal summaries use
+  one intent-count line with status badges; concrete effect counts stay in the
+  evidence contract and item detail instead of creating a second operator-facing
+  summary. Humanize machine tokens such as reason codes before display.
 - Schedule completion contracts remain opt-in behind the review step's Advanced
   disclosure. Criteria are one plain-language check per line; do not expose the
   underlying completion JSON or outcome codes in the form. Completion reports

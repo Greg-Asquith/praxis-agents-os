@@ -16,10 +16,17 @@ from services.audit_events.enums import (
 from services.audit_events.get_event import get_audit_event_for_workspace
 from services.audit_events.integration_events import record_integration_operation_audit_event
 from services.audit_events.integration_operation_detail import (
-    IntegrationOperationChange,
     IntegrationOperationCounts,
     IntegrationOperationDetail,
+    IntegrationOperationEffect,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
+    IntegrationOperationOutcome,
+    IntegrationOperationOutcomeGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
+    TerminalIntegrationOperationDetail,
+    terminal_applied_operation_detail,
 )
 from services.audit_events.list_events import list_audit_events_for_workspace
 from services.audit_events.operations import safe_record_operation_audit_event
@@ -41,10 +48,16 @@ __all__ = [
     "AuditActorType",
     "AuditResourceType",
     "AuditStatus",
-    "IntegrationOperationChange",
     "IntegrationOperationCounts",
     "IntegrationOperationDetail",
+    "IntegrationOperationEffect",
+    "IntegrationOperationIntent",
+    "IntegrationOperationIntentGroup",
+    "IntegrationOperationOutcome",
+    "IntegrationOperationOutcomeGroup",
     "IntegrationOperationTarget",
+    "PendingIntegrationOperationDetail",
+    "TerminalIntegrationOperationDetail",
     "get_audit_event",
     "get_audit_event_for_workspace",
     "list_audit_events",
@@ -57,4 +70,5 @@ __all__ = [
     "record_workspace_audit_event",
     "safe_record_independent_operation_audit_event",
     "safe_record_operation_audit_event",
+    "terminal_applied_operation_detail",
 ]

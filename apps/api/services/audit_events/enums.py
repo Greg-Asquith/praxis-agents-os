@@ -66,6 +66,8 @@ class AuditStatus(StrEnum):
     """Outcome of the action."""
 
     SUCCESS = "success"
+    PARTIAL = "partial"
     PENDING = "pending"
     FAILURE = "failure"
+    UNVERIFIED = "unverified"
     DENIED = "denied"

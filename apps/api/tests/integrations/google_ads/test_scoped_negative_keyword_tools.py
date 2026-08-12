@@ -16,7 +16,11 @@ from integrations.google_ads.operations.campaign_negative_keywords import (
     add_campaign_negative_keywords,
     remove_campaign_negative_keywords,
 )
-from integrations.google_ads.operations.mutation_outcomes import GoogleAdsMutationLedger
+from integrations.google_ads.operations.mutation_outcomes import (
+    GoogleAdsMutationLedger,
+    GoogleAdsMutationProjection,
+    build_mutation_ledger,
+)
 from integrations.google_ads.tools.add_ad_group_negative_keywords import (
     google_ads_add_ad_group_negative_keywords,
 )
@@ -40,9 +44,9 @@ from integrations.google_ads.tools.utils.campaign_negative_keywords import (
     CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
 )
+from integrations.google_ads.tools.utils.mutation_evidence import terminal_operation_detail
 from integrations.google_ads.tools.utils.negative_keyword_tools import (
     entity_result,
-    operation_detail,
     pending_operation_detail,
 )
 from services.audit_events import AuditStatus
@@ -877,14 +881,6 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
         include_keyword_outcomes=False,
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    detail = operation_detail(
-        entry,
-        campaigns,
-        keywords,
-        "add",
-        result,
-        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
     pending = pending_operation_detail(
         entry,
         campaigns,
@@ -892,6 +888,32 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
         keywords,
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
+    ledger = build_mutation_ledger(
+        family="campaign_negative_keywords",
+        action="add",
+        parent_fields=[
+            {"campaign_id": campaign.external_id, **keyword}
+            for campaign in campaigns
+            for keyword in keywords
+        ],
+        skipped_indices={1: "already_exists"},
+        submitted=[
+            (0, {"campaign_id": "10", **keywords[0]}),
+            (2, {"campaign_id": "20", **keywords[0]}),
+            (3, {"campaign_id": "20", **keywords[1]}),
+        ],
+        outcomes=[
+            ("applied", "customers/111/campaignCriteria/10~1", None, None),
+            ("failed", None, "INVALID_KEYWORD_TEXT", "restricted"),
+            ("applied", "customers/111/campaignCriteria/20~4", None, None),
+        ],
+        projection=GoogleAdsMutationProjection(
+            applied_key="added",
+            skipped_key="skipped_existing",
+            errors_key="campaign_errors",
+        ),
+    )
+    detail = terminal_operation_detail(pending, ledger)
 
     expected = [
         {
@@ -918,10 +940,17 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
         },
     ]
     assert "keyword_outcomes" not in model["campaigns"][0]
-    assert detail.changes[0].fields["keyword_outcomes"] == expected
-    assert detail.counts.model_dump() == {"applied": 2, "skipped": 1, "failed": 1}
-    assert pending.target.attributes["requested_keywords"] == keywords
-    assert [change.fields["keyword_count"] for change in pending.changes] == [2, 2]
+    assert [outcome.status for outcome in detail.outcome_groups[0].outcomes] == [
+        "applied",
+        "skipped",
+    ]
+    assert detail.intent_counts.model_dump() == {
+        "applied": 2,
+        "skipped": 1,
+        "failed": 1,
+        "unverified": 0,
+    }
+    assert [len(group.items) for group in pending.intent_groups] == [2, 2]
 
 
 def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -> None:
@@ -974,14 +1003,6 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
         include_keyword_outcomes=True,
         spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    detail = operation_detail(
-        entry,
-        ad_groups,
-        keywords,
-        "remove",
-        result,
-        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
     pending = pending_operation_detail(
         entry,
         ad_groups,
@@ -989,6 +1010,32 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
         keywords,
         spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
+    ledger = build_mutation_ledger(
+        family="ad_group_negative_keywords",
+        action="remove",
+        parent_fields=[
+            {"ad_group_id": ad_group.external_id, **keyword}
+            for ad_group in ad_groups
+            for keyword in keywords
+        ],
+        skipped_indices={1: "not_found", 3: "not_found"},
+        submitted=[
+            (0, {"ad_group_id": "10", "text": "term", "match_type": "EXACT"}),
+            (0, {"ad_group_id": "10", "text": "term", "match_type": "BROAD"}),
+            (2, {"ad_group_id": "20", "text": "Term", "match_type": "PHRASE"}),
+        ],
+        outcomes=[
+            ("failed", None, "CANNOT_REMOVE_CRITERION", "not removed"),
+            ("applied", "customers/111/adGroupCriteria/10~2", None, None),
+            ("applied", "customers/111/adGroupCriteria/20~3", None, None),
+        ],
+        projection=GoogleAdsMutationProjection(
+            applied_key="removed",
+            skipped_key="not_found",
+            errors_key="ad_group_errors",
+        ),
+    )
+    detail = terminal_operation_detail(pending, ledger)
 
     assert display["ad_groups"][0]["keyword_outcomes"] == [
         {
@@ -1005,40 +1052,51 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
         },
         {"text": "missing", "match_type": "EXACT", "outcome": "not_found"},
     ]
-    assert (
-        detail.changes[0].fields["keyword_outcomes"] == display["ad_groups"][0]["keyword_outcomes"]
-    )
-    assert detail.counts.model_dump() == {"applied": 2, "skipped": 2, "failed": 1}
-    assert pending.target.attributes["requested_keywords"] == keywords
+    assert [effect.status for effect in detail.outcome_groups[0].outcomes[0].effects] == [
+        "failed",
+        "applied",
+    ]
+    assert detail.intent_counts.model_dump() == {
+        "applied": 1,
+        "skipped": 2,
+        "failed": 1,
+        "unverified": 0,
+    }
+    assert detail.effect_counts.model_dump() == {
+        "applied": 2,
+        "skipped": 0,
+        "failed": 1,
+        "unverified": 0,
+    }
 
 
 def test_campaign_negative_keyword_evidence_rejects_inconsistent_resource_attribution() -> None:
     entry = _writable_google_ads_entry()
     campaigns = [_campaign_reference(entry, "10")]
     keywords = [{"text": "free", "match_type": "EXACT"}]
-    result = {
-        "added": [
-            {
-                "campaign_id": "10",
-                "text": "free",
-                "match_type": "EXACT",
-                "resource_name": "customers/111/campaignCriteria/10~1",
-            }
-        ],
-        "resource_names": ["customers/111/campaignCriteria/10~wrong"],
-        "skipped_existing": [],
-        "campaign_errors": [],
-    }
+    pending = pending_operation_detail(
+        entry,
+        campaigns,
+        "add",
+        keywords,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
+    ledger = build_mutation_ledger(
+        family="campaign_negative_keywords",
+        action="add",
+        parent_fields=[{"campaign_id": "20", **keywords[0]}],
+        skipped_indices={},
+        submitted=[(0, {"campaign_id": "20", **keywords[0]})],
+        outcomes=[("applied", "customers/111/campaignCriteria/20~1", None, None)],
+        projection=GoogleAdsMutationProjection(
+            applied_key="added",
+            skipped_key="skipped_existing",
+            errors_key="campaign_errors",
+        ),
+    )
 
-    with pytest.raises(ValueError, match="resource attribution"):
-        operation_detail(
-            entry,
-            campaigns,
-            keywords,
-            "add",
-            result,
-            spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
-        )
+    with pytest.raises(ValueError, match="unknown audit intent"):
+        terminal_operation_detail(pending, ledger)
 
 
 def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> None:
@@ -1074,14 +1132,32 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
         include_keyword_outcomes=True,
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
-    detail = operation_detail(
+    pending = pending_operation_detail(
         entry,
         campaigns,
-        keywords,
         "add",
-        result,
+        keywords,
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
+    parent_fields = [
+        {"campaign_id": campaign.external_id, **keyword}
+        for campaign in campaigns
+        for keyword in keywords
+    ]
+    ledger = build_mutation_ledger(
+        family="campaign_negative_keywords",
+        action="add",
+        parent_fields=parent_fields,
+        skipped_indices={},
+        submitted=list(enumerate(parent_fields)),
+        outcomes=[("applied", item["resource_name"], None, None) for item in added],
+        projection=GoogleAdsMutationProjection(
+            applied_key="added",
+            skipped_key="skipped_existing",
+            errors_key="campaign_errors",
+        ),
+    )
+    detail = terminal_operation_detail(pending, ledger)
     display_bytes = len(json.dumps(display, ensure_ascii=False, separators=(",", ":")).encode())
     detail_bytes = len(
         json.dumps(
@@ -1090,6 +1166,6 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
     )
 
     assert sum(len(row["keyword_outcomes"]) for row in display["campaigns"]) == 2_500
-    assert sum(len(change.fields["keyword_outcomes"]) for change in detail.changes) == 2_500
+    assert sum(len(group.outcomes) for group in detail.outcome_groups) == 2_500
     assert display_bytes < MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS
     assert detail_bytes < MAX_INTEGRATION_OPERATION_DETAIL_BYTES

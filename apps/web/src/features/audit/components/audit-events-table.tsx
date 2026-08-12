@@ -237,7 +237,17 @@ function AuditEventMobileRow({
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant={status === "failure" || status === "denied" ? "destructive" : "secondary"}>
+    <Badge
+      variant={
+        status === "failure" || status === "denied"
+          ? "destructive"
+          : status === "unverified"
+            ? "warning"
+            : status === "success"
+              ? "success"
+              : "secondary"
+      }
+    >
       {titleCaseToken(status, status)}
     </Badge>
   )

@@ -20,11 +20,10 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
-    IntegrationOperationChange,
-    IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
@@ -48,6 +47,7 @@ from .utils import (
     login_customer_id,
     normalize_negative_keywords,
 )
+from .utils.mutation_evidence import audit_status, terminal_operation_detail
 from .verifiers import verify_shared_sets
 
 
@@ -73,6 +73,10 @@ async def google_ads_remove_negative_keywords(
         references: list[GoogleAdsSharedSetReference],
     ) -> Any:
         reference = references[0] if references else negative_list
+        pending_detail = _pending_operation_detail(
+            reference,
+            [keyword.model_dump() for keyword in normalized_keywords],
+        )
 
         async def execute() -> Any:
             if len(references) != 1:
@@ -92,13 +96,13 @@ async def google_ads_remove_negative_keywords(
                 shared_set_id=reference.external_id,
                 keywords=[keyword.model_dump() for keyword in normalized_keywords],
             )
-            ledger.require_verified()
             result = ledger.result()
+            operation_detail = terminal_operation_detail(pending_detail, ledger)
             return IntegrationAuditOutcome(
                 result,
-                status=_audit_status(result),
+                status=audit_status(operation_detail),
                 external_ref=",".join(result["resource_names"]) or None,
-                operation_detail=_operation_detail(reference, result),
+                operation_detail=operation_detail,
             )
 
         full_result = await run_audited_integration_operation(
@@ -107,10 +111,7 @@ async def google_ads_remove_negative_keywords(
             tool_name="google_ads_remove_negative_keywords",
             operation="remove_negative_keywords",
             execute=execute,
-            pending_operation_detail=_pending_operation_detail(
-                reference,
-                [keyword.model_dump() for keyword in normalized_keywords],
-            ),
+            pending_operation_detail=pending_detail,
         )
         return {
             "model_result": bounded_negative_keyword_removal_result(full_result),
@@ -126,50 +127,22 @@ async def google_ads_remove_negative_keywords(
     return fan_out_tool_return(results)
 
 
-def _audit_status(result: dict[str, Any]) -> AuditStatus:
-    if result["keyword_errors"] and not result["removed"]:
-        return AuditStatus.FAILURE
-    return AuditStatus.SUCCESS
-
-
-def _operation_detail(
-    reference: GoogleAdsSharedSetReference,
-    result: dict[str, Any],
-) -> IntegrationOperationDetail:
-    return IntegrationOperationDetail(
-        target=_operation_target(reference),
-        changes=[
-            IntegrationOperationChange(
-                action="remove",
-                entity_type="negative_keyword",
-                external_ref=item["resource_name"],
-                fields={"text": item["text"], "match_type": item["match_type"]},
-            )
-            for item in result["removed"]
-        ],
-        counts=IntegrationOperationCounts(
-            applied=len(result["removed"]),
-            skipped=len(result["not_found"]),
-            failed=len(result["keyword_errors"]),
-        ),
-    )
-
-
 def _pending_operation_detail(
     reference: GoogleAdsSharedSetReference,
     keywords: list[dict[str, str]],
-) -> IntegrationOperationDetail:
-    return IntegrationOperationDetail(
+) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
         target=_operation_target(reference),
-        changes=[
-            IntegrationOperationChange(
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key=f"shared-set:{reference.external_id}:remove-keywords",
                 action="remove",
                 entity_type="negative_keyword",
-                fields={"text": keyword["text"], "match_type": keyword["match_type"]},
+                external_id=reference.external_id,
+                display_name=reference.label,
+                items=[IntegrationOperationIntent(fields=keyword) for keyword in keywords],
             )
-            for keyword in keywords
         ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
     )
 
 

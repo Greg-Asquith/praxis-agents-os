@@ -19,11 +19,10 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
-    IntegrationOperationChange,
-    IntegrationOperationCounts,
-    IntegrationOperationDetail,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
     IntegrationOperationTarget,
+    PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
@@ -42,6 +41,7 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
+from .utils.mutation_evidence import audit_status, terminal_operation_detail
 from .verifiers import verify_campaigns
 
 
@@ -70,6 +70,7 @@ async def google_ads_update_campaign_status(
             references_by_id[campaign_id] for campaign_id in sorted(references_by_id)
         ]
         normalized_ids = [reference.external_id for reference in normalized_references]
+        pending_detail = _pending_operation_detail(entry, normalized_references, status)
 
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
@@ -88,13 +89,13 @@ async def google_ads_update_campaign_status(
                 campaign_ids=normalized_ids,
                 status=status,
             )
-            ledger.require_verified()
             result = ledger.result()
+            operation_detail = terminal_operation_detail(pending_detail, ledger)
             return IntegrationAuditOutcome(
                 result,
-                status=_audit_status(result),
+                status=audit_status(operation_detail),
                 external_ref=",".join(result["resource_names"]) or None,
-                operation_detail=_operation_detail(entry, normalized_references, status, result),
+                operation_detail=operation_detail,
             )
 
         return await run_audited_integration_operation(
@@ -103,9 +104,7 @@ async def google_ads_update_campaign_status(
             tool_name="google_ads_update_campaign_status",
             operation="update_campaign_status",
             execute=execute,
-            pending_operation_detail=_pending_operation_detail(
-                entry, normalized_references, status
-            ),
+            pending_operation_detail=pending_detail,
         )
 
     results = await run_context_targets(
@@ -117,81 +116,30 @@ async def google_ads_update_campaign_status(
     return {"results": serialize_fan_out_results(results)}
 
 
-def _audit_status(result: dict[str, Any]) -> AuditStatus:
-    if result["campaign_errors"] and not result["resource_names"]:
-        return AuditStatus.FAILURE
-    return AuditStatus.SUCCESS
-
-
-def _operation_detail(
-    entry: ResolvedContextEntry,
-    campaigns: list[GoogleAdsCampaignReference],
-    status: Literal["ENABLED", "PAUSED"],
-    result: dict[str, Any],
-) -> IntegrationOperationDetail:
-    by_id = {campaign.external_id: campaign for campaign in campaigns}
-    return IntegrationOperationDetail(
-        target=_account_target(entry),
-        changes=[
-            *(
-                IntegrationOperationChange(
-                    action="update_status",
-                    entity_type="google_ads_campaign",
-                    external_ref=resource_name,
-                    fields={
-                        "campaign_id": campaign_id,
-                        "campaign_name": by_id[campaign_id].label,
-                        "status": status,
-                    },
-                )
-                for resource_name in result["resource_names"]
-                if (campaign_id := _campaign_id_from_resource(resource_name)) in by_id
-            ),
-            *(
-                IntegrationOperationChange(
-                    action="update_status_failed",
-                    entity_type="google_ads_campaign",
-                    fields={
-                        "campaign_id": campaign_id,
-                        "campaign_name": (
-                            by_id[campaign_id].label if campaign_id in by_id else None
-                        ),
-                        "status": status,
-                        "error_code": str(error.get("error_code", "unknown"))[:100],
-                    },
-                )
-                for error in result["campaign_errors"]
-                if (campaign_id := str(error.get("campaign_id", "")))
-            ),
-        ],
-        counts=IntegrationOperationCounts(
-            applied=len(result["resource_names"]),
-            skipped=0,
-            failed=len(result["campaign_errors"]),
-        ),
-    )
-
-
 def _pending_operation_detail(
     entry: ResolvedContextEntry,
     campaigns: list[GoogleAdsCampaignReference],
     status: Literal["ENABLED", "PAUSED"],
-) -> IntegrationOperationDetail:
-    return IntegrationOperationDetail(
+) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
         target=_account_target(entry),
-        changes=[
-            IntegrationOperationChange(
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key="campaigns:update-status",
                 action="update_status",
                 entity_type="google_ads_campaign",
-                fields={
-                    "campaign_id": campaign.external_id,
-                    "campaign_name": campaign.label,
-                    "status": status,
-                },
+                fields={"status": status},
+                items=[
+                    IntegrationOperationIntent(
+                        fields={
+                            "campaign_id": campaign.external_id,
+                            "campaign_name": campaign.label,
+                        }
+                    )
+                    for campaign in campaigns
+                ],
             )
-            for campaign in campaigns
         ],
-        counts=IntegrationOperationCounts(applied=0, skipped=0, failed=0),
     )
 
 
