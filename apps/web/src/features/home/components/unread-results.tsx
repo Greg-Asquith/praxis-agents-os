@@ -18,7 +18,7 @@ export function UnreadResults({ conversations }: { conversations: Conversation[]
       description="Agent work that came back while you were away."
       title="Unread Conversations"
     >
-      <ConversationList conversations={unreadResults} showRunStatus />
+      <ConversationList className="lg:grid-cols-2" conversations={unreadResults} showRunStatus />
     </HomeSection>
   )
 }

@@ -28,7 +28,7 @@ export function RecentConversations({ conversations }: { conversations: Conversa
       description="Pick up where you left off."
       title="Continue Conversations"
     >
-      <ConversationList conversations={recent} showRunStatus />
+      <ConversationList className="lg:grid-cols-2" conversations={recent} showRunStatus />
     </HomeSection>
   )
 }
