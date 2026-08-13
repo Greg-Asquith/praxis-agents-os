@@ -79,10 +79,12 @@ _ANTHROPIC_PRICES = (
     _price("anthropic", "claude-haiku-4-5", date(2026, 5, 27), "1", "0.1", "1.25", "5"),
 )
 
-# Standard Gemini Developer API rates as of 2026-08-12. Context-cache storage
+# Standard Gemini Developer API rates as of 2026-08-13. Context-cache storage
 # duration and non-standard execution tiers are outside the ledger contract.
 # https://ai.google.dev/gemini-api/docs/pricing
 _GOOGLE_PRICES = (
+    _price("google", "gemini-3.7-flash", date(2026, 8, 13), "0.75", "0.075", "0.75", "3.75"),
+    _price("google", "gemini-3.7-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.6-flash", date(2026, 8, 12), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.5-flash", date(2026, 7, 21), "1.5", "0.15", "1.5", "9"),
     _price("google", "gemini-3.5-flash-lite", date(2026, 8, 12), "0.3", "0.03", "0.3", "2.5"),

@@ -56,7 +56,7 @@ SUPPORTED_NATIVE_SEARCH_PROVIDERS = (
 
 DEFAULT_NATIVE_SEARCH_MODELS = {
     PROVIDER_ANTHROPIC: "claude-sonnet-5",
-    PROVIDER_GOOGLE: "gemini-3.5-flash",
+    PROVIDER_GOOGLE: "gemini-3.7-flash",
     PROVIDER_OPENAI: "gpt-5.6-luna",
 }
 
