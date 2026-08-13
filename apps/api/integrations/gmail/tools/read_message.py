@@ -72,6 +72,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Read one Gmail message by id from the active mailbox context.",
     provider="gmail",
     label="Read Gmail Message",
+    code_eligible=False,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,

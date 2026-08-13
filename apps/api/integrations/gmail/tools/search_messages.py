@@ -85,6 +85,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Search messages in every compatible Gmail mailbox in the active context.",
     provider="gmail",
     label="Search Gmail",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,

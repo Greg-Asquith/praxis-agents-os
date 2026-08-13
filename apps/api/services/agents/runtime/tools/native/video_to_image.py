@@ -75,6 +75,7 @@ def configured_video_to_image_provider() -> bool:
     name="generate_image_from_video",
     provider="native",
     label="Generate Image from Video",
+    code_eligible=False,
     description=(
         "Generate one still image from the current revision of a workspace video using Google "
         "and save it to workspace Files. The UI displays the saved image automatically; do not "

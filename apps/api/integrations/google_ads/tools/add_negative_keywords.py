@@ -159,6 +159,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Add negative keywords to a selected Google Ads negative keyword list.",
     provider="google_ads",
     label="Add Google Ads Negative Keywords",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

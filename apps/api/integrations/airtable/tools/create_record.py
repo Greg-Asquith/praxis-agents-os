@@ -94,6 +94,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Create one record in a table in every writable Airtable base in context.",
     provider="airtable",
     label="Create Airtable Record",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

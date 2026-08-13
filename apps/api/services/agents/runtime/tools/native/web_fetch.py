@@ -132,6 +132,7 @@ class NativeWebFetchResult(BaseModel):
     name="fetch_url",
     provider="native",
     label="Fetch URL",
+    code_eligible=False,
     description=(
         "Read one public web page for the current turn with a provider-native helper model. "
         "Use knowledge-base URL ingestion instead when the user wants the page remembered "

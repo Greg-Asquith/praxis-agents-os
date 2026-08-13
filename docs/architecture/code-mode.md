@@ -438,9 +438,73 @@ Planning evidence does not belong in runtime comments or docstrings.
 
 ### 7.2 Plan 110 package and bridge probes
 
-Pending. Record dated raw findings for every item in §5, the exact package
-versions and lock digest, the probe commands or test identifiers, and every
-residual resource-limit risk before implementation proceeds.
+**2026-08-13 — Chunk A package probes.** The probe suite is
+`tests/services/agents/runtime/code_mode/test_monty_probes.py`; run with
+`cd apps/api && uv run pytest
+tests/services/agents/runtime/code_mode/test_monty_probes.py -q`. The recorded
+run passed 24 tests. The lock resolves `pydantic-ai` 2.28.0 and exact-matched
+`pydantic-monty`, `pydantic-monty-client`, and `pydantic-monty-runtime` 0.0.21.
+The post-lock `apps/api/uv.lock` SHA-256 is
+`0a9ebef2d29ccf0f09f20531f376e09e33e4ab5bffb9f7a3147fad13d95cb0f2`.
+The broader `make check` compatibility run also passed: migration drift was
+clean, 2,058 API tests passed with 9 configured skips, and 121 web test files /
+679 tests passed before the production build completed.
+
+- `AsyncMonty.feed_run` dispatches both synchronous and asynchronous
+  `external_lookup` callables. An exception raised by an async host callable is
+  injected into the interpreter and is catchable by the script.
+- Manual `feed_start` stops on an `AsyncFunctionSnapshot` carrying
+  `function_name`, integer `call_id`, positional `args`, and keyword `kwargs`.
+  An awaited async external call has a two-stage resume contract: first resume
+  the function snapshot with `{"future": ...}`, then settle the resulting
+  `AsyncFutureSnapshot` by call id with `{"return_value": value}`,
+  `{"exception": exception}`, or
+  `{"exc_type": supported_name, "message": message}`. Directly resuming an
+  awaited function snapshot with a plain return value produces a catchable
+  interpreter `TypeError` because that value is not awaitable. The manual
+  bridge must preserve both stages.
+- A suspended snapshot dumps to bytes, exits its original pool, loads in a new
+  pool/process, re-announces the same external call, and completes using the
+  `external_lookup` supplied to `load_snapshot`. Rebinding on load is therefore
+  the host-tool reattachment mechanism. `feed_run` and `resume_auto` hide the
+  intermediate snapshot; the durable bridge must use the manual `feed_start`
+  loop.
+- The production-shaped probe retained and dumped the function snapshot while
+  a host dispatch coroutine was in flight, settled it after dispatch, restored
+  the same pre-call dump in a fresh pool, and injected `PermissionError` by the
+  typed exception-data mapping. The paused-interpreter ownership required by
+  plan 112 is available.
+- `ResourceLimits` has exactly four optional fields:
+  `max_duration_secs`, `max_memory`, `gc_interval`, and
+  `max_recursion_depth`. Duration exhaustion surfaces as
+  `MontyRuntimeError(TimeoutError)`, memory exhaustion as
+  `MontyRuntimeError(MemoryError)`, and stack exhaustion as
+  `MontyRuntimeError(RecursionError)`; each leaves the worker alive for a fresh
+  checkout. The memory signal crosses to the host even when script code tries
+  to catch `MemoryError`, so it is not an ordinary recoverable in-script soft
+  limit. Pool `checkout_timeout` raises host `TimeoutError`. Pool
+  `request_timeout` kills the stuck worker, raises `MontyCrashedError` with
+  `timed_out=True`, and replaces the worker before the next checkout.
+- The pinned language surface executes user classes, decorators, async methods,
+  and type-checked signatures. The import allowlist observed by the probe is
+  `asyncio`, `collections`, `dataclasses`, `datetime`, `itertools`, `json`,
+  `math`, `os`, `pathlib`, `re`, `sys`, `typing`, and `unicodedata`.
+  Non-allowlisted imports fail. Without an OS handler or mount, environment
+  reads, wall-clock reads, and filesystem reads fail; network modules are not
+  importable.
+- Boundary conversion accepts bytes, tuples, sets, and registered host
+  dataclasses; it rejects at least `bytearray` and `complex` with
+  `MontyConversionError`. Monty's conversion surface is intentionally broader
+  than the code-mode value contract, so the bridge still needs its independent
+  byte-bounded, JSON-safe allowlist and binary-content rejection.
+
+Residual resource risks on 0.0.21: there is no distinct configurable hard
+memory field and no CPU-quota field. `max_duration_secs` bounds interpreter
+execution, not elapsed host-tool time, so the outer wall-clock timeout remains
+mandatory. `gc_interval` is tuning rather than a cap. Hard allocator failures
+remain contained by subprocess crash isolation and the pool-level
+`request_timeout`; these controls do not replace the bridge's cumulative
+wall-clock, call-count, value, and output budgets.
 
 ### 7.3 Measured gate record
 

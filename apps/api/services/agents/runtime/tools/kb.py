@@ -81,6 +81,7 @@ class ReadDocumentOutput(BaseModel):
     name="search_knowledge",
     provider="kb",
     label="Search Knowledge",
+    code_eligible=True,
     description=(
         "Search this workspace's knowledge base. Returns short snippets ranked "
         "by relevance; call read_document with a result's document_id to read "
@@ -186,6 +187,7 @@ async def search_knowledge(
     name="read_document",
     provider="kb",
     label="Read Knowledge Document",
+    code_eligible=True,
     description=(
         "Read a knowledge document's canonical markdown by id, optionally using "
         "a character range for long documents."

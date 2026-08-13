@@ -40,6 +40,7 @@ from middleware import (
 )
 from routes import api_router, artifact_serving_router, health_router
 from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
+from services.agents.runtime.code_mode import close_code_mode_executor
 from services.agents.runtime.events import STREAM_VERSION_HEADER
 from services.notifications.registration import register_notification_action_handlers
 from services.security import ensure_application_encryption_keys_loaded
@@ -78,8 +79,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down FastAPI application...")
-    await run_task_registry.drain(max_wait_seconds=settings.AGENT_RUN_SHUTDOWN_DRAIN_SECONDS)
-    await close_db_connections()
+    try:
+        await run_task_registry.drain(max_wait_seconds=settings.AGENT_RUN_SHUTDOWN_DRAIN_SECONDS)
+    finally:
+        try:
+            await close_code_mode_executor()
+        finally:
+            await close_db_connections()
 
 
 app = FastAPI(

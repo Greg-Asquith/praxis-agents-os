@@ -58,6 +58,7 @@ DEFINITION = RuntimeToolDefinition(
     description="List the persisted Google Ads account hierarchy for the active context.",
     provider="google_ads",
     label="List Google Ads Accounts",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,

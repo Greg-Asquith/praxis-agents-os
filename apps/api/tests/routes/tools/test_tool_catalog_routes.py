@@ -68,6 +68,7 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
         "effect": "read",
         "effect_scope": "internal",
         "egress": "provider_query",
+        "code_eligible": False,
         "default_policy": "approval",
         "supported_policies": ["approval", "auto"],
         "defer_loading": False,

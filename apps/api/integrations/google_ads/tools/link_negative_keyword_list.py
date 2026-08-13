@@ -286,6 +286,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Apply or remove a negative keyword list across selected campaigns.",
     provider="google_ads",
     label="Apply Google Ads Negative Keyword List",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

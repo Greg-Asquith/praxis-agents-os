@@ -149,6 +149,7 @@ DEFINITION = RuntimeToolDefinition(
     ),
     provider="gmail",
     label="Send Gmail Message",
+    code_eligible=False,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

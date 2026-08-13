@@ -164,6 +164,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Remove negative keywords from a selected Google Ads negative keyword list.",
     provider="google_ads",
     label="Remove Google Ads Negative Keywords",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

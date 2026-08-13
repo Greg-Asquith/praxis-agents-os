@@ -139,6 +139,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Create named negative keyword lists in selected Google Ads accounts.",
     provider="google_ads",
     label="Create Google Ads Negative Keyword Lists",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

@@ -123,6 +123,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
   not execute tool logic around it.
+- Code-mode execution lives under `services/agents/runtime/code_mode/` and
+  uses the dedicated `core/settings/code_mode.py` mixin. Its lazily created
+  Monty subprocess pool must close in API, worker, and test lifecycles. The
+  sandbox has no OS handler or mount; nested calls are serial and must use the
+  parent's prepared `ToolManager` so validation, approval, hooks, dispatch,
+  and audit remain the framework-owned path. Keep script arguments, nested
+  results, final values, and print output independently bounded.
 - Tools that need richer transcript evidence than the model should receive may
   return `ToolReturn` with the bounded, output-model-validated payload in
   `return_value` and an explicitly safe `public_result` in metadata. The

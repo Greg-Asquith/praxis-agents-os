@@ -57,6 +57,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Remove negative keywords directly from selected Google Ads ad groups.",
     provider="google_ads",
     label="Remove Google Ads Ad Group Negative Keywords",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

@@ -76,6 +76,7 @@ async def test_create_agent_route_persists_public_model_shape(
             "instructions": " Answer carefully. ",
             "tool_names": ["web_search", "write_todos", "read_todos"],
             "tool_policies": {"web_search": "auto", "write_todos": "approval"},
+            "code_mode_enabled": True,
             "skill_ids": [str(skill.id)],
             "allowed_agent_ids": [str(delegate.id)],
             "model_provider": "OPENAI",
@@ -95,6 +96,7 @@ async def test_create_agent_route_persists_public_model_shape(
     assert body["created_by"] == str(user.id)
     assert body["tool_names"] == ["web_search"]
     assert body["tool_policies"] == {"web_search": "auto"}
+    assert body["code_mode_enabled"] is True
     assert body["skill_ids"] == [str(skill.id)]
     assert body["allowed_agent_ids"] == [str(delegate.id)]
     assert body["model_provider"] == "openai"
@@ -108,6 +110,7 @@ async def test_create_agent_route_persists_public_model_shape(
     )
     assert fetch_response.status_code == 200
     assert fetch_response.json()["metadata"] == {"accent": "green"}
+    assert fetch_response.json()["code_mode_enabled"] is True
 
     audit_event = await db_session.scalar(
         select(AuditEvent).where(
@@ -203,6 +206,7 @@ async def test_update_and_delete_agent_routes_apply_workspace_write_access(
         json={
             "name": "Production Agent",
             "tool_names": ["web_search", "read_todos"],
+            "code_mode_enabled": True,
             "is_active": False,
             "metadata": {"stage": "prod"},
         },
@@ -213,6 +217,7 @@ async def test_update_and_delete_agent_routes_apply_workspace_write_access(
     assert update_body["name"] == "Production Agent"
     assert update_body["tool_names"] == ["web_search"]
     assert update_body["tool_policies"] == {"web_search": "auto"}
+    assert update_body["code_mode_enabled"] is True
     assert update_body["is_active"] is False
     assert update_body["metadata"] == {"stage": "prod"}
 

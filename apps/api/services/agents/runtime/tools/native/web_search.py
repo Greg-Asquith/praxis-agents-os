@@ -119,6 +119,7 @@ class NativeWebSearchResult(BaseModel):
     name="web_search",
     provider="native",
     label="Web Search",
+    code_eligible=False,
     description=(
         "Search the web with a provider-native helper model. The helper model "
         "provider and model can be selected per call from the available native "

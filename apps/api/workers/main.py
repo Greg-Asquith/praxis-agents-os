@@ -14,6 +14,7 @@ from core.database import (
 )
 from core.logging import setup_logging
 from core.settings import settings
+from services.agents.runtime.code_mode import close_code_mode_executor
 from services.security import ensure_application_encryption_keys_loaded
 from workers import agent_runner, job_runner
 
@@ -35,7 +36,10 @@ async def main() -> int:
             return await _run_drain_mode(shutdown_event)
         return await _run_forever_mode(shutdown_event)
     finally:
-        await close_db_connections()
+        try:
+            await close_code_mode_executor()
+        finally:
+            await close_db_connections()
 
 
 async def _run_forever_mode(shutdown_event: asyncio.Event) -> int:

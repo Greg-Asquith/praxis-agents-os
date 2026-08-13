@@ -83,6 +83,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Get one selected record from its Airtable base and table.",
     provider="airtable",
     label="Get Airtable Record",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,

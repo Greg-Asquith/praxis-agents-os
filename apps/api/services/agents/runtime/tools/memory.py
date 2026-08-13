@@ -78,6 +78,7 @@ def _service_retry(exc: Exception) -> ModelRetry:
     name="save_memory",
     provider="core",
     label="Save Memory",
+    code_eligible=False,
     description=(
         "Save a durable fact, preference, episode, or outcome. Search first; "
         "near duplicates require an explicit resolution."
@@ -190,6 +191,7 @@ async def save_memory(
     name="search_memory",
     provider="core",
     label="Search Memory",
+    code_eligible=False,
     description="Search active memories visible to this agent and user.",
     effect=TOOL_EFFECT_READ,
     default_policy=TOOL_POLICY_AUTO,
@@ -269,6 +271,7 @@ async def search_memory(
     name="update_memory",
     provider="core",
     label="Update Memory",
+    code_eligible=False,
     description="Edit memory metadata or supersede its content while preserving history.",
     effect=TOOL_EFFECT_WRITE,
     default_policy=TOOL_POLICY_AUTO,
@@ -359,6 +362,7 @@ async def update_memory(
     name="forget_memory",
     provider="core",
     label="Forget Memory",
+    code_eligible=False,
     description="Archive a stale memory without deleting its history.",
     effect=TOOL_EFFECT_WRITE,
     default_policy=TOOL_POLICY_AUTO,

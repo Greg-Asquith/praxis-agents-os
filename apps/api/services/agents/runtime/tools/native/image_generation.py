@@ -138,6 +138,7 @@ class GenerateImageOutput(BaseModel):
     name="generate_image",
     provider="native",
     label="Generate Image",
+    code_eligible=False,
     description=(
         "Generate one new image and save it to workspace Files using a provider-native helper "
         "model. The UI displays the saved image automatically; do not construct Markdown, data, "

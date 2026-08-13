@@ -74,6 +74,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Run a bounded read-only GAQL report for selected Google Ads accounts.",
     provider="google_ads",
     label="Run Google Ads Report",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,

@@ -58,6 +58,16 @@ VALID_TOOL_EGRESS = frozenset(
 )
 _TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _TOOL_PROVIDER_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
+_CODE_MODE_MACHINERY_TOOL_NAMES = frozenset(
+    {
+        "delegate_to_agent",
+        "list_delegate_agents",
+        "load_capability",
+        "report_completion",
+        "run_code",
+        "run_script",
+    }
+)
 _INTEGRATION_PARAMETER_DENYLIST = frozenset(
     {
         "account_id",
@@ -195,6 +205,7 @@ class RuntimeToolDefinition:
     effect: ToolEffect = TOOL_EFFECT_READ
     effect_scope: ToolEffectScope = TOOL_EFFECT_SCOPE_INTERNAL
     egress: ToolEgress = TOOL_EGRESS_NONE
+    code_eligible: bool = False
     takes_ctx: bool = False
     default_policy: ToolPolicy = TOOL_POLICY_AUTO
     supports_auto: bool = True
@@ -298,6 +309,12 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool effect scope must be internal or external")
     if definition.egress not in VALID_TOOL_EGRESS:
         raise RuntimeError("Runtime tool egress must be a known classification")
+    if definition.code_eligible and (
+        definition.name in _CODE_MODE_MACHINERY_TOOL_NAMES
+        or definition.always_allowed_when_mounted
+        or definition.defer_loading
+    ):
+        raise RuntimeError("Runtime machinery and deferred tools cannot be code eligible")
     if definition.max_result_chars is not None and definition.max_result_chars < 1:
         raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
     if definition.max_public_result_chars is not None and definition.max_public_result_chars < 1:

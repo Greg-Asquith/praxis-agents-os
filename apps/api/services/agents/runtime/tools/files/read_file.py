@@ -33,6 +33,7 @@ from services.storage.factory import get_storage_provider
     name="read_file",
     provider="core",
     label="Read File",
+    code_eligible=True,
     description=(
         "Inspect a workspace file by id. "
         "Use content mode for inspection; use url mode only when the user needs a download."

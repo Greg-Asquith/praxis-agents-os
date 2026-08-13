@@ -100,6 +100,7 @@ DEFINITION = RuntimeToolDefinition(
     ),
     provider="bigquery",
     label="Run BigQuery Query",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,

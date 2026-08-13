@@ -79,6 +79,7 @@ class EditImageOutput(BaseModel):
     name="edit_image",
     provider="native",
     label="Edit Image",
+    code_eligible=False,
     description=(
         "Edit one current workspace image revision and save the result to workspace Files. "
         "The UI displays the saved image automatically; do not construct Markdown, data, or "

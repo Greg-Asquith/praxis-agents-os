@@ -162,6 +162,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Pause or enable named campaigns in selected Google Ads accounts.",
     provider="google_ads",
     label="Update Google Ads Campaign Status",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,

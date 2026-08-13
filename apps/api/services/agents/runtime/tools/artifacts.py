@@ -29,6 +29,7 @@ from services.artifacts.schemas import ArtifactToolResult
     name="create_artifact",
     provider="core",
     label="Create artifact",
+    code_eligible=False,
     description=(
         "Create a titled, versioned artifact (html, markdown, mermaid, or csv) "
         "rendered for the user to view and revise. Use for reports and documents "
@@ -101,6 +102,7 @@ async def create_artifact(
     name="update_artifact",
     provider="core",
     label="Update artifact",
+    code_eligible=False,
     description="Append a new immutable version to an existing artifact.",
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,

@@ -2,6 +2,8 @@
 
 """Unit tests for the runtime tool registry contract."""
 
+import ast
+from pathlib import Path
 from typing import get_args, get_type_hints
 from uuid import uuid4
 
@@ -187,6 +189,7 @@ def test_runtime_tool_decorator_registers_definition_with_derived_label(
     assert definition.effect == "read"
     assert definition.effect_scope == "internal"
     assert definition.egress == TOOL_EGRESS_NONE
+    assert definition.code_eligible is False
     assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
     assert definition.version == 1
     assert definition.serialized_input_schema() == {
@@ -303,6 +306,28 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             effect=TOOL_EFFECT_WRITE,
             egress="provider_query",
         ),
+        RuntimeToolDefinition(
+            name="run_script",
+            function=_noop,
+            description="Machinery cannot be wrapped.",
+            code_eligible=True,
+        ),
+        RuntimeToolDefinition(
+            name="bad_code_always_allowed",
+            function=_noop,
+            description="Always-allowed machinery cannot be wrapped.",
+            code_eligible=True,
+            configurable=False,
+            always_allowed_when_mounted=True,
+            supports_approval=False,
+        ),
+        RuntimeToolDefinition(
+            name="bad_code_deferred",
+            function=_noop,
+            description="Deferred tools cannot be wrapped in v1.",
+            code_eligible=True,
+            defer_loading=True,
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_invariants(
@@ -410,6 +435,91 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
     }
 
     assert {name: definition.egress for name, definition in definitions.items()} == expected
+
+
+def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
+    definitions = {
+        definition.name: definition
+        for definition in (
+            *(
+                definition
+                for definition in RUNTIME_TOOL_CATALOG.values()
+                if definition.integration_binding is None
+                and not definition.name.startswith("test_")
+            ),
+            *AIRTABLE_TOOL_DEFINITIONS,
+            *BIGQUERY_TOOL_DEFINITIONS,
+            *GMAIL_TOOL_DEFINITIONS,
+            *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *DELEGATION_TOOL_DEFINITIONS,
+        )
+    }
+    expected_eligible = {
+        "airtable_create_record",
+        "airtable_get_record",
+        "airtable_list_records",
+        "airtable_update_record",
+        "bigquery_get_table_schema",
+        "bigquery_list_tables",
+        "bigquery_run_query",
+        "gmail_search_messages",
+        "google_ads_add_ad_group_negative_keywords",
+        "google_ads_add_campaign_negative_keywords",
+        "google_ads_add_negative_keywords",
+        "google_ads_create_negative_keyword_list",
+        "google_ads_link_negative_keyword_list",
+        "google_ads_list_accounts",
+        "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
+        "google_ads_remove_negative_keywords",
+        "google_ads_run_report",
+        "google_ads_update_campaign_status",
+        "list_files",
+        "read_document",
+        "read_file",
+        "search_knowledge",
+        "write_file",
+    }
+
+    assert {name for name, definition in definitions.items() if definition.code_eligible} == (
+        expected_eligible
+    )
+
+
+def test_first_party_tool_definitions_declare_code_eligibility() -> None:
+    api_root = Path(__file__).resolve().parents[4]
+    source_roots = (
+        api_root / "integrations",
+        api_root / "services" / "agents" / "runtime",
+    )
+    missing: list[str] = []
+
+    for source_root in source_roots:
+        for path in source_root.rglob("*.py"):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                calls: list[ast.Call] = []
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "RuntimeToolDefinition"
+                ):
+                    calls.append(node)
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    calls.extend(
+                        decorator
+                        for decorator in node.decorator_list
+                        if isinstance(decorator, ast.Call)
+                        and isinstance(decorator.func, ast.Name)
+                        and decorator.func.id == "runtime_tool"
+                    )
+                missing.extend(
+                    f"{path.relative_to(api_root)}:{call.lineno}"
+                    for call in calls
+                    if not any(keyword.arg == "code_eligible" for keyword in call.keywords)
+                )
+
+    assert missing == []
 
 
 def test_validate_definition_rejects_editable_result_fields() -> None:

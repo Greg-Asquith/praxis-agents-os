@@ -54,6 +54,12 @@ class Agent(BaseModel):
     tool_names = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     # Tool policies: {tool_name: 'auto' | 'approval'}
     tool_policies = Column(JSONB, nullable=True)
+    code_mode_enabled = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
 
     # Skill access (IDs of user-created skills this agent can use)
     skill_ids = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))

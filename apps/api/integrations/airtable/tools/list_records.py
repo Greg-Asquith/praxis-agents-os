@@ -86,6 +86,7 @@ DEFINITION = RuntimeToolDefinition(
     description="List up to 100 records from a table in each selected Airtable base.",
     provider="airtable",
     label="List Airtable Records",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
