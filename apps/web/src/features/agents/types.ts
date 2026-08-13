@@ -10,6 +10,7 @@ export type Agent = {
   instructions: string
   workspace_id: string
   created_by: string
+  code_mode_enabled: boolean
   tool_names: string[]
   tool_policies: Record<string, ToolPolicyValue> | null
   skill_ids: string[]
@@ -41,6 +42,7 @@ export type AgentCreateRequest = {
   slug?: string | null
   description?: string | null
   instructions: string
+  code_mode_enabled?: boolean
   tool_names?: string[]
   tool_policies?: Record<string, ToolPolicyValue> | null
   skill_ids?: string[]

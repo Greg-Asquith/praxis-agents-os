@@ -64,6 +64,7 @@ type ThinkingSelection = (typeof THINKING_OPTIONS)[number]["value"]
 export type AgentFormState = {
   allowedAgentIds: string[]
   azureDeployment: string
+  codeModeEnabled: boolean
   description: string
   instructions: string
   isActive: "true" | "false"
@@ -102,6 +103,7 @@ export function initialAgentFormState(
   return {
     allowedAgentIds: agent?.allowed_agent_ids ?? [],
     azureDeployment: agent?.azure_deployment ?? "",
+    codeModeEnabled: agent?.code_mode_enabled ?? false,
     description: agent?.description ?? "",
     instructions: agent?.instructions ?? "",
     isActive: agent?.is_active === false ? "false" : "true",
@@ -178,6 +180,7 @@ export function buildAgentPayload(
   const basePayload = {
     allowed_agent_ids: state.allowedAgentIds,
     azure_deployment: modelSelection.azure_deployment,
+    code_mode_enabled: state.codeModeEnabled,
     description: optionalText(state.description),
     instructions,
     is_active: state.isActive === "true",
@@ -242,6 +245,7 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.instructions !== initial.instructions ||
     current.modelSelection !== initial.modelSelection ||
     current.azureDeployment !== initial.azureDeployment ||
+    current.codeModeEnabled !== initial.codeModeEnabled ||
     current.maxSteps !== initial.maxSteps ||
     current.isActive !== initial.isActive ||
     current.isFavorite !== initial.isFavorite ||

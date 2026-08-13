@@ -97,6 +97,7 @@ export type StreamEvent =
         name: string
         args: unknown
         replay_args?: unknown
+        parent_tool_call_id?: string
         delegation?: PendingDelegatedApproval | null
       }
     }

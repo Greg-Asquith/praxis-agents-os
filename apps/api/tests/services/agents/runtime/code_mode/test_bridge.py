@@ -110,6 +110,7 @@ async def _bridge(
     deps: Any = None,
     max_nested_calls: int = 25,
     value_max_bytes: int = 262_144,
+    result_max_bytes: int | None = None,
 ) -> CodeModeBridge:
     return await CodeModeBridge.create(
         ctx=_ctx(toolset, root_capability=root_capability, deps=deps),
@@ -117,6 +118,7 @@ async def _bridge(
         outer_tool_call_id="outer-call",
         max_nested_calls=max_nested_calls,
         value_max_bytes=value_max_bytes,
+        result_max_bytes=result_max_bytes,
     )
 
 
@@ -239,6 +241,7 @@ async def test_two_call_workflow_emits_parented_events_and_bounded_trace(
             "summary": "First",
             "status": "succeeded",
             "excerpt": '{"value":"one"}',
+            "presentation_result": {"value": "one"},
         },
         {
             "order": 2,
@@ -249,6 +252,7 @@ async def test_two_call_workflow_emits_parented_events_and_bounded_trace(
             "summary": "Second",
             "status": "succeeded",
             "excerpt": "ONE",
+            "presentation_result": "ONE",
         },
     ]
 
@@ -273,6 +277,89 @@ async def test_nested_trace_excerpt_is_redacted_and_bounded(executor: MontyExecu
     assert "[REDACTED]" in entry["excerpt"]
     assert "[excerpt truncated]" in entry["excerpt"]
     assert secret not in entry["excerpt"]
+    assert entry["presentation_result"] == {"password": secret, "payload": "x" * 2_000}
+
+
+async def test_nested_trace_retains_every_complete_presentation_result() -> None:
+    async def read_large(*, marker: str) -> dict[str, str]:
+        return {"marker": marker, "payload": "x" * 22_000}
+
+    bridge = await _bridge(FunctionToolset([Tool(read_large)]))
+    call = bridge.external_lookup()["read_large"]
+    for marker in ("one", "two", "three"):
+        await call(marker=marker)
+
+    result = bridge.finalize(ScriptExecution(result="done", output="", output_truncated=False))
+    calls = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+
+    assert [entry["presentation_result"]["marker"] for entry in calls] == [
+        "one",
+        "two",
+        "three",
+    ]
+    assert all(entry["presentation_result"]["payload"] == "x" * 22_000 for entry in calls)
+
+
+async def test_large_fan_out_trace_retains_every_row_for_user_presentation() -> None:
+    rows = [{"id": index, "payload": "x" * 3_000} for index in range(10)]
+
+    async def read_report() -> dict[str, Any]:
+        return {
+            "results": [
+                {
+                    "connection_id": f"connection-{account}",
+                    "data": {
+                        "currency_code": "GBP",
+                        "row_count": len(rows),
+                        "rows": rows,
+                        "truncated": False,
+                        "truncation_note": None,
+                    },
+                    "display_name": f"Account {account}",
+                    "error_code": None,
+                    "error_message": None,
+                    "external_id": str(account),
+                    "status": "success",
+                }
+                for account in (1, 2)
+            ]
+        }
+
+    bridge = await _bridge(FunctionToolset([Tool(read_report)]))
+    await bridge.external_lookup()["read_report"]()
+    result = bridge.finalize(ScriptExecution(result="done", output="", output_truncated=False))
+    [entry] = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+    presentation = entry["presentation_result"]
+
+    assert [len(item["data"]["rows"]) for item in presentation["results"]] == [10, 10]
+    assert all(item["data"]["truncated"] is False for item in presentation["results"])
+    assert all(item["data"]["truncation_note"] is None for item in presentation["results"])
+
+
+async def test_nested_tool_public_result_stays_user_visible_but_outside_sandbox() -> None:
+    public_result = {"rows": [{"id": index, "value": "x" * 100} for index in range(20)]}
+
+    async def summarized_result() -> ToolReturn[dict[str, str]]:
+        return ToolReturn(
+            return_value={"summary": "20 rows available"},
+            metadata={"public_result": public_result},
+        )
+
+    deps = SimpleNamespace(sink=_RecordingSink())
+    bridge = await _bridge(
+        FunctionToolset([Tool(summarized_result)]),
+        deps=deps,
+        value_max_bytes=50,
+    )
+
+    sandbox_result = await bridge.external_lookup()["summarized_result"]()
+    result = bridge.finalize(ScriptExecution(result="done", output="", output_truncated=False))
+    [trace_entry] = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+    tool_result_event = next(event for event in deps.sink.events if event.event == "tool.result")
+
+    assert sandbox_result == {"summary": "20 rows available"}
+    assert trace_entry["presentation_result"] == public_result
+    assert tool_result_event.data["result"] == public_result
 
 
 async def test_workflow_state_output_and_error_excerpts_are_bounded() -> None:
@@ -510,6 +597,19 @@ async def test_nested_value_boundary_failures_are_structured(
         await bridge.external_lookup()["value"]()
 
 
+async def test_nested_value_boundary_serializes_uuid_identifiers() -> None:
+    resource_id = uuid4()
+
+    async def value() -> dict[str, Any]:
+        return {"integration_resource_id": resource_id}
+
+    bridge = await _bridge(FunctionToolset([Tool(value)]))
+
+    assert await bridge.external_lookup()["value"]() == {
+        "integration_resource_id": str(resource_id)
+    }
+
+
 @pytest.mark.parametrize("argument", [b"binary", "x" * 50])
 async def test_nested_arguments_are_independently_byte_bounded(argument: Any) -> None:
     async def value(payload: Any) -> Any:
@@ -532,6 +632,17 @@ async def test_script_result_value_boundary_is_enforced() -> None:
     )
     with pytest.raises(CodeModeBoundaryError, match=r"run_workflow.*exceeds the 5-byte"):
         bridge.finalize(ScriptExecution(result="too long", output="", output_truncated=False))
+
+
+async def test_script_result_has_a_tighter_bound_than_nested_values() -> None:
+    bridge = await _bridge(
+        FunctionToolset([]),
+        value_max_bytes=100,
+        result_max_bytes=20,
+    )
+
+    with pytest.raises(CodeModeBoundaryError, match=r"run_workflow.*exceeds the 20-byte"):
+        bridge.finalize(ScriptExecution(result="x" * 30, output="", output_truncated=False))
 
 
 async def test_direct_and_nested_calls_share_framework_tool_contract() -> None:

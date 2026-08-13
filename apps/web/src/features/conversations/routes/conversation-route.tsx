@@ -260,6 +260,7 @@ function ConversationDetail({
               messages={messagesQuery.data.messages}
               onApprovalSubmit={handleApprovalSubmit}
               pendingDelegations={pendingDelegations}
+              pendingWorkflow={approvalStateQuery.data?.workflow ?? null}
               pendingUserMessages={visiblePendingUserMessages}
               streamApprovals={visibleStreamApprovals}
               streamConversationId={shouldRenderStream ? stream.conversationId : null}

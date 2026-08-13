@@ -190,6 +190,319 @@ describe("parseConversationMessages", () => {
     ])
   })
 
+  it("rebuilds a workflow tree only from persisted nested-trace metadata", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "assistant", 1, [
+        {
+          part_kind: "tool-call",
+          tool_call_id: "workflow-1",
+          tool_name: "run_workflow",
+          args: {
+            code: "report = await google_ads_run_report(query='campaigns')\nreport",
+            reason: "Find weak campaigns",
+          },
+        },
+      ]),
+      message("message-2", "tool", 2, [
+        {
+          part_kind: "tool-return",
+          tool_call_id: "workflow-1",
+          tool_name: "run_workflow",
+          outcome: "success",
+          content: { result: "done" },
+          metadata: {
+            code_mode_trace: {
+              calls: [
+                {
+                  order: 1,
+                  tool_call_id: "workflow-1:1",
+                  parent_tool_call_id: "workflow-1",
+                  tool_name: "google_ads_run_report",
+                  args_sha256: "digest-only",
+                  summary: "Run report",
+                  status: "succeeded",
+                  excerpt: '{"rows":3}',
+                  presentation_result: {
+                    results: [
+                      {
+                        connection_id: "connection-1",
+                        data: {
+                          currency_code: "GBP",
+                          row_count: 1,
+                          rows: [{ metrics: { clicks: "3" } }],
+                          truncated: false,
+                          truncation_note: null,
+                        },
+                        display_name: "Search account",
+                        error_code: null,
+                        error_message: null,
+                        external_id: "1234567890",
+                        status: "success",
+                      },
+                    ],
+                  },
+                },
+                {
+                  order: 2,
+                  tool_call_id: "workflow-1:2",
+                  parent_tool_call_id: "workflow-1",
+                  tool_name: "read_file",
+                  args_sha256: "digest-only",
+                  summary: "Read file",
+                  status: "failed",
+                  excerpt: "File unavailable",
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    ])
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      id: "workflow-1",
+      name: "run_workflow",
+      status: "completed",
+      script: {
+        code: "report = await google_ads_run_report(query='campaigns')\nreport",
+        reason: "Find weak campaigns",
+        status: "completed",
+        children: [
+          {
+            id: "workflow-1:1",
+            name: "google_ads_run_report",
+            status: "completed",
+            result: {
+              results: [
+                {
+                  connection_id: "connection-1",
+                  data: {
+                    currency_code: "GBP",
+                    row_count: 1,
+                    rows: [{ metrics: { clicks: "3" } }],
+                    truncated: false,
+                    truncation_note: null,
+                  },
+                  display_name: "Search account",
+                  error_code: null,
+                  error_message: null,
+                  external_id: "1234567890",
+                  status: "success",
+                },
+              ],
+            },
+            resultExcerpt: '{"rows":3}',
+          },
+          {
+            id: "workflow-1:2",
+            name: "read_file",
+            status: "failed",
+            result: "File unavailable",
+            resultExcerpt: "File unavailable",
+          },
+        ],
+      },
+    })
+  })
+
+  it("leaves legacy workflow messages without trace metadata as plain tool rows", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "assistant", 1, [
+        {
+          part_kind: "tool-call",
+          tool_call_id: "workflow-1",
+          tool_name: "run_workflow",
+          args: { code: "'done'" },
+        },
+        {
+          part_kind: "tool-return",
+          tool_call_id: "workflow-1",
+          tool_name: "run_workflow",
+          outcome: "success",
+          content: "done",
+        },
+      ]),
+    ])
+
+    expect(parsed[0]?.toolActivities[0]).not.toHaveProperty("script")
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      name: "run_workflow",
+      result: "done",
+      status: "completed",
+    })
+  })
+
+  it("rebuilds a suspended workflow from the typed approval-state contract fixture", () => {
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "workflow-1",
+              tool_name: "run_workflow",
+              args: { code: "'stored separately'" },
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
+      ],
+      run("run-1", "awaiting_approval"),
+      [],
+      undefined,
+      {
+        code: "report = await check_report(account='one')\nawait send_email(report=report)",
+        nested_trace: [
+          {
+            position: 1,
+            result_excerpt: '{"rows":3}',
+            status: "succeeded",
+            summary: "Check report",
+            tool_call_id: "workflow-1:1",
+            tool_name: "check_report",
+          },
+        ],
+        outer_tool_call_id: "workflow-1",
+        pending: {
+          args: { subject: "Campaign update" },
+          name: "send_email",
+          parent_tool_call_id: "workflow-1",
+          tool_call_id: "workflow-1:2",
+        },
+        reason: "Check the account and share an update",
+        recovery: null,
+        status: "suspended",
+        trace_truncated: false,
+      }
+    )
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      id: "workflow-1",
+      status: "awaiting_approval",
+      script: {
+        code: "report = await check_report(account='one')\nawait send_email(report=report)",
+        reason: "Check the account and share an update",
+        status: "awaiting_approval",
+        children: [
+          { id: "workflow-1:1", status: "completed" },
+          {
+            args: { subject: "Campaign update" },
+            id: "workflow-1:2",
+            name: "send_email",
+            status: "awaiting_approval",
+          },
+        ],
+      },
+    })
+  })
+
+  it.each([
+    {
+      name: "failed",
+      outcome: "failed",
+      traceStatus: "failed",
+      expectedStatus: "failed",
+    },
+    {
+      name: "resumed",
+      outcome: "success",
+      traceStatus: "succeeded",
+      expectedStatus: "completed",
+    },
+  ])(
+    "replays a $name workflow from its settled trace",
+    ({ outcome, traceStatus, expectedStatus }) => {
+      const parsed = parseConversationMessages([
+        message("message-1", "assistant", 1, [
+          {
+            args: { code: "await check_report(account='one')" },
+            part_kind: "tool-call",
+            tool_call_id: "workflow-1",
+            tool_name: "run_workflow",
+          },
+          {
+            content: outcome === "failed" ? { error: "Stopped" } : "done",
+            metadata: {
+              code_mode_trace: {
+                calls: [
+                  {
+                    excerpt: outcome === "failed" ? "Stopped" : '{"rows":3}',
+                    status: traceStatus,
+                    tool_call_id: "workflow-1:1",
+                    tool_name: "check_report",
+                  },
+                ],
+              },
+            },
+            outcome,
+            part_kind: "tool-return",
+            tool_call_id: "workflow-1",
+            tool_name: "run_workflow",
+          },
+        ]),
+      ])
+
+      expect(parsed[0]?.toolActivities[0]).toMatchObject({
+        status: expectedStatus,
+        script: {
+          status: expectedStatus,
+          children: [{ status: expectedStatus }],
+        },
+      })
+    }
+  )
+
+  it("keeps the partial workflow visible when a suspended run expires", () => {
+    const pendingWorkflow = {
+      code: "await send_email(subject='Update')",
+      nested_trace: [],
+      outer_tool_call_id: "workflow-1",
+      pending: {
+        args: { subject: "Update" },
+        name: "send_email",
+        parent_tool_call_id: "workflow-1",
+        tool_call_id: "workflow-1:1",
+      },
+      reason: "Share the update",
+      recovery: null,
+      status: "suspended" as const,
+      trace_truncated: false,
+    }
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              args: { code: "await send_email(subject='Update')" },
+              part_kind: "tool-call",
+              tool_call_id: "workflow-1",
+              tool_name: "run_workflow",
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
+      ],
+      run("run-1", "failed"),
+      [],
+      undefined,
+      pendingWorkflow
+    )
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      status: "failed",
+      script: {
+        children: [{ id: "workflow-1:1", status: "awaiting_approval" }],
+        reason: "Share the update",
+      },
+    })
+  })
+
   it("preserves capability-load metadata for skill activation rows", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [

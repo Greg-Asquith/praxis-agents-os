@@ -129,7 +129,17 @@ Repo-wide expectations are in the root `AGENTS.md`.
   sandbox has no OS handler or mount; nested calls are serial and must use the
   parent's prepared `ToolManager` so validation, approval, hooks, dispatch,
   and audit remain the framework-owned path. Keep script arguments, nested
-  results, final values, and print output independently bounded.
+  results, final values, and print output independently bounded. Generated
+  stubs render faithful input signatures and declared `output_model` return
+  shapes; tools without a declared output model remain explicitly `Any`.
+  Persisted nested traces retain each complete normalized nested result as 
+  application- only presentation evidence, with no additional UI sampling or 
+  truncation; when a nested tool supplies a governed `public_result`, that 
+  richer value is the presentation evidence while only `return_value` enters 
+  the sandbox. That evidence must never enter model context. The governed 
+  nested-value and provider product bounds remain authoritative. Keep the 
+  workflow's model- facing final-result bound materially tighter than the 
+  nested value bound so a faulty reduction cannot flood every later request.
 - Tools that need richer transcript evidence than the model should receive may
   return `ToolReturn` with the bounded, output-model-validated payload in
   `return_value` and an explicitly safe `public_result` in metadata. The

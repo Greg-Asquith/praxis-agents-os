@@ -89,6 +89,7 @@ const validEventCases = [
     {
       ...envelope,
       tool_call_id: "tool-1",
+      parent_tool_call_id: "workflow-1",
       name: "send_email",
       args: { to: "operator@example.com" },
       replay_args: null,
@@ -361,6 +362,17 @@ describe("parseSseStream", () => {
       "data.parent_tool_call_id",
     ],
     ["workflow.state", { ...envelope, tool_call_id: "workflow-1", state: "paused" }, "data.state"],
+    [
+      "tool.approval_required",
+      {
+        ...envelope,
+        tool_call_id: "tool-1",
+        parent_tool_call_id: "",
+        name: "send_email",
+        args: {},
+      },
+      "data.parent_tool_call_id",
+    ],
     [
       "tool.approval_required",
       {

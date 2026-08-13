@@ -21,6 +21,7 @@ import type {
   AgentRunResumeDecision,
   ConversationMessage,
   PendingDelegatedApproval,
+  PendingWorkflowState,
   PendingToolApproval,
 } from "@/features/conversations/types"
 import {
@@ -29,14 +30,13 @@ import {
   type ChatMessageDraft,
   type ToolCallState,
 } from "@/features/conversations/stream/reducer"
-import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skills/skill-activation"
 import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"
+import { buildLiveToolActivities } from "@/features/conversations/live-tool-activities"
 import {
   groupConversationRenderItems,
   parseConversationMessages,
   delegationDetailsForToolActivity,
   delegationDetailsForPendingApproval,
-  mergeDelegationDetails,
   normalizeToolArgs,
   toolActivityIdentity,
   type ConversationRenderItem,
@@ -65,6 +65,7 @@ type MessageListProps = {
   isStreaming: boolean
   onApprovalSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
   pendingDelegations: PendingDelegatedApproval[]
+  pendingWorkflow: PendingWorkflowState | null
 }
 
 export function MessageList({
@@ -76,6 +77,7 @@ export function MessageList({
   approvals,
   assistantAgentId,
   pendingDelegations,
+  pendingWorkflow,
   assistantLabel,
   isApprovalLoading,
   isApprovalSubmitting,
@@ -106,8 +108,14 @@ export function MessageList({
   }, [shouldShowStream, streamRunId, streamToolCalls])
   const parsedMessages = useMemo(
     () =>
-      parseConversationMessages(messages, activeRun, pendingDelegations, liveResultsByCallIdentity),
-    [messages, activeRun, pendingDelegations, liveResultsByCallIdentity]
+      parseConversationMessages(
+        messages,
+        activeRun,
+        pendingDelegations,
+        liveResultsByCallIdentity,
+        pendingWorkflow
+      ),
+    [messages, activeRun, pendingDelegations, liveResultsByCallIdentity, pendingWorkflow]
   )
   const renderItems = useMemo(() => groupConversationRenderItems(parsedMessages), [parsedMessages])
   const visiblePendingUserMessages = pendingUserMessages
@@ -333,84 +341,4 @@ function orphanApprovalActivity(
     activity.delegate = delegate
   }
   return activity
-}
-
-function buildLiveToolActivities(
-  toolCalls: ToolCallState[],
-  approvals: ApprovalState[],
-  agentRunId: string | null
-): ToolActivity[] {
-  const activities = toolCalls.map((toolCall): ToolActivity => {
-    const args = normalizeToolArgs(toolCall.args)
-    const activity: ToolActivity = {
-      id: toolCall.tool_call_id,
-      agentRunId,
-      kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
-      status: toolCall.status,
-      name: toolCall.name,
-      args,
-      result: toolCall.result,
-      ...(toolCall.name === LOAD_CAPABILITY_TOOL_NAME ? { toolKind: "capability-load" } : {}),
-    }
-    const delegate = delegationDetailsForToolActivity(toolCall.name, args, toolCall.result)
-    if (delegate) {
-      activity.delegate = delegate
-    }
-    return activity
-  })
-  const activityIndexesById = new Map(activities.map((activity, index) => [activity.id, index]))
-
-  for (const delegation of approvals
-    .map((approval) => approval.delegation)
-    .filter((value): value is PendingDelegatedApproval => Boolean(value))) {
-    const existingIndex = activityIndexesById.get(delegation.parent_tool_call_id)
-    if (existingIndex === undefined) {
-      activities.push({
-        id: delegation.parent_tool_call_id,
-        agentRunId,
-        kind: "approval",
-        status: "awaiting_approval",
-        name: "delegate_to_agent",
-        delegate: delegationDetailsForPendingApproval(delegation),
-      })
-      activityIndexesById.set(delegation.parent_tool_call_id, activities.length - 1)
-      continue
-    }
-
-    const existing = activities[existingIndex]
-    if (existing === undefined) {
-      continue
-    }
-    const pendingDelegate = delegationDetailsForPendingApproval(delegation, existing.args)
-    const delegate = mergeDelegationDetails(existing.delegate, pendingDelegate) ?? pendingDelegate
-    activities[existingIndex] = {
-      ...existing,
-      delegate,
-      kind: "approval",
-      status: "awaiting_approval",
-    }
-  }
-
-  for (const approval of approvals) {
-    if (activities.some((activity) => activity.id === approval.tool_call_id)) {
-      continue
-    }
-
-    const args = normalizeToolArgs(approval.args)
-    const activity: ToolActivity = {
-      id: approval.tool_call_id,
-      agentRunId,
-      kind: "approval",
-      status: "awaiting_approval",
-      name: approval.name,
-      args,
-    }
-    const delegate = delegationDetailsForToolActivity(approval.name, args)
-    if (delegate) {
-      activity.delegate = delegate
-    }
-    activities.push(activity)
-  }
-
-  return activities
 }

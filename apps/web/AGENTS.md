@@ -89,6 +89,20 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- Code-mode workflows render as one collapsed outer row whose children recurse
+  through the standard `ToolCallRow`; keep live state normalized by parent id,
+  rebuild replay only from the persisted nested trace, and auto-expand any
+  nested approval so operator consent is never hidden. Label the children as
+  tool calls, not workflow steps: interpreter-side filtering, aggregation, and
+  branching are meaningful work but are not separate trace children. Prefer a trace's
+  structured presentation result over its excerpt so provider presenters work
+  after reload. The presentation result is complete relative to the governed
+  nested tool return: pagination may control the visible page, but must not
+  discard rows, and copy/export actions use the complete retained result. A
+  truncated legacy excerpt gets explanatory fallback copy, not malformed JSON.
+  Settled workflow rows also expose the complete outer tool result under an
+  explicitly labelled model-output disclosure so operators can distinguish
+  what the model received from the richer nested results retained for them.
 - Complete transcript-only tool results may arrive through the persisted
   tool-return `public_result` metadata while the model-facing content remains
   bounded. Present the complete result rather than its model summary; use the

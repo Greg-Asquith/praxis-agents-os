@@ -5,6 +5,7 @@ import type {
   ParsedMessagePart,
   ParsedMessageRole,
   ParsedAttachment,
+  CodeModeScriptActivity,
   ToolActivity,
   ToolActivityStatus,
   ToolApprovalDecision,
@@ -27,12 +28,14 @@ import {
   isRunStatusPolling,
   normalizeToolArgs,
   safeJsonPreview,
+  traceExcerptResult,
   toolActivityIdentity,
 } from "@/features/conversations/message-parts/utils"
 import type {
   AgentRun,
   ConversationMessage,
   PendingDelegatedApproval,
+  PendingWorkflowState,
 } from "@/features/conversations/types"
 import { titleCaseToken } from "@/lib/format"
 import { isRecord, stringValue } from "@/lib/guards"
@@ -48,7 +51,8 @@ export function parseConversationMessages(
   messages: ConversationMessage[],
   activeRun?: Pick<AgentRun, "id" | "status"> | null,
   pendingDelegations: PendingDelegatedApproval[] = [],
-  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
+  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>,
+  pendingWorkflow?: PendingWorkflowState | null
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
@@ -82,15 +86,28 @@ export function parseConversationMessages(
         const activityWithDelegate = activityDelegate
           ? { ...activity, delegate: activityDelegate }
           : activity
+        const activityWithPendingWorkflow =
+          pendingWorkflow &&
+          belongsToActiveRun &&
+          activity.id === pendingWorkflow.outer_tool_call_id
+            ? {
+                ...activityWithDelegate,
+                script: codeModeScriptFromPendingWorkflow(pendingWorkflow),
+              }
+            : activityWithDelegate
 
         const result = resultsByCallKey.get(toolActivityKey(messageIndex, activityIndex))
         if (result) {
           const delegate = mergeDelegationDetails(activityDelegate, result.delegate)
+          const script = result.script
+            ? mergeCodeModeScriptArgs(result.script, activity.args)
+            : activityWithPendingWorkflow.script
           const mergedActivity: ToolActivity = {
-            ...activity,
+            ...activityWithPendingWorkflow,
             outcome: result.outcome ?? null,
             result: result.result,
             status: result.status,
+            ...(script ? { script: { ...script, status: result.status } } : {}),
           }
           if (delegate) {
             mergedActivity.delegate = delegate
@@ -110,25 +127,25 @@ export function parseConversationMessages(
           : undefined
         if (liveResult) {
           return {
-            ...activityWithDelegate,
+            ...activityWithPendingWorkflow,
             result: liveResult.result,
             status: "completed" as const,
           }
         }
         if (belongsToActiveRun && runAwaitsApproval) {
           return {
-            ...activityWithDelegate,
+            ...activityWithPendingWorkflow,
             kind: "approval" as const,
             status: "awaiting_approval" as const,
           }
         }
         if (belongsToActiveRun && runStoppedBeforeToolResult) {
-          return { ...activityWithDelegate, status: "failed" as const }
+          return { ...activityWithPendingWorkflow, status: "failed" as const }
         }
         if (!belongsToActiveRun || !runIsExecuting) {
-          return { ...activityWithDelegate, status: "unknown" as const }
+          return { ...activityWithPendingWorkflow, status: "unknown" as const }
         }
-        return activityWithDelegate
+        return activityWithPendingWorkflow
       })
       const resolvedActivitiesByOriginal = new Map<ToolActivity, ToolActivity | null>()
       const visibleActivities: ToolActivity[] = []
@@ -272,6 +289,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const toolKind = stringValue(part["tool_kind"])
       const partMetadata = isRecord(part["metadata"]) ? part["metadata"] : null
       const hasPublicResult = partMetadata !== null && Object.hasOwn(partMetadata, "public_result")
+      const script = codeModeScriptFromMetadata(partMetadata, statusFromOutcome(outcome))
       const activity: ToolActivity = {
         id: toolCallId,
         agentRunId,
@@ -280,6 +298,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
         name,
         result: hasPublicResult ? partMetadata["public_result"] : part["content"],
         outcome,
+        ...(script ? { script } : {}),
         ...(toolKind ? { toolKind } : {}),
       }
       const delegate = delegationDetailsForToolActivity(name, undefined, part["content"])
@@ -336,6 +355,123 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
   })
 
   return parsed
+}
+
+function codeModeScriptFromMetadata(
+  metadata: Record<string, unknown> | null,
+  status: ToolActivityStatus = "completed"
+): CodeModeScriptActivity | null {
+  if (!metadata) {
+    return null
+  }
+  const trace = metadata["code_mode_trace"]
+  if (!isRecord(trace) || !Array.isArray(trace["calls"])) {
+    return null
+  }
+
+  const children = trace["calls"].flatMap((value): ToolActivity[] => {
+    if (!isRecord(value)) {
+      return []
+    }
+    const id = stringValue(value["tool_call_id"])
+    const name = stringValue(value["tool_name"])
+    if (!id || !name) {
+      return []
+    }
+    const traceStatus = codeModeTraceStatus(value["status"])
+    const excerpt = stringValue(value["excerpt"])
+    const hasPresentationResult = Object.hasOwn(value, "presentation_result")
+    return [
+      {
+        id,
+        kind: traceStatus === "awaiting_approval" ? "approval" : "result",
+        name,
+        status: traceStatus,
+        ...(hasPresentationResult
+          ? {
+              result: value["presentation_result"],
+              ...(excerpt === null ? {} : { resultExcerpt: excerpt }),
+            }
+          : excerpt === null
+            ? {}
+            : {
+                result: traceExcerptResult(excerpt),
+                resultExcerpt: excerpt,
+              }),
+      },
+    ]
+  })
+
+  return {
+    children,
+    code: null,
+    error: null,
+    output: stringValue(trace["output_excerpt"]),
+    reason: null,
+    status,
+  }
+}
+
+function codeModeScriptFromPendingWorkflow(workflow: PendingWorkflowState): CodeModeScriptActivity {
+  const children = workflow.nested_trace.map((entry): ToolActivity => ({
+    id: entry.tool_call_id,
+    kind: entry.status === "pending" ? "approval" : "result",
+    name: entry.tool_name,
+    status: codeModeTraceStatus(entry.status),
+    ...(entry.result_excerpt === null
+      ? {}
+      : {
+          result: traceExcerptResult(entry.result_excerpt),
+          resultExcerpt: entry.result_excerpt,
+        }),
+  }))
+  if (!children.some((child) => child.id === workflow.pending.tool_call_id)) {
+    children.push({
+      args: normalizeToolArgs(workflow.pending.args),
+      id: workflow.pending.tool_call_id,
+      kind: "approval",
+      name: workflow.pending.name,
+      status: "awaiting_approval",
+    })
+  }
+  return {
+    children,
+    code: workflow.code,
+    error: null,
+    output: null,
+    reason: workflow.reason,
+    status: "awaiting_approval",
+  }
+}
+
+function mergeCodeModeScriptArgs(
+  script: CodeModeScriptActivity,
+  args: unknown
+): CodeModeScriptActivity {
+  if (!isRecord(args)) {
+    return script
+  }
+  return {
+    ...script,
+    code: stringValue(args["code"]),
+    reason: stringValue(args["reason"]),
+  }
+}
+
+function codeModeTraceStatus(value: unknown): ToolActivityStatus {
+  if (value === "succeeded") {
+    return "completed"
+  }
+  if (value === "failed") {
+    return "failed"
+  }
+  if (value === "pending") {
+    return "awaiting_approval"
+  }
+  if (value === "denied") {
+    return "denied"
+  }
+  return "unknown"
 }
 
 function resolveOrderedToolParts(

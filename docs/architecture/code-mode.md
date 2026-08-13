@@ -1,6 +1,6 @@
 # Code-Mode Orchestration
 
-- **Status**: adopted architecture; Plan 110 Chunks A–D implemented, Chunks E–F and plans 111–113 pending
+- **Status**: adopted architecture; Plans 109–111 complete, measured exit gate and Plans 112–113 pending
 - **Owner**: agent runtime
 - **Rule**: implementation work cites the decision it consumes. A change that
   deviates records the deviation here in the same pull request.
@@ -24,10 +24,10 @@ accounting, and audit path as a direct call.
 
 This is distinct from provider-native compute:
 
-| Surface | Purpose | Sandbox | Tool name |
-|---|---|---|---|
-| Code-mode orchestration | Compose Praxis tools while intermediate data stays local to the interpreter | Local Monty worker with only declared tool stubs | `run_workflow` |
-| Provider-native compute (plan 059) | Perform pandas-class or file-heavy computation in a provider sandbox | Model provider or later external executor | `run_code` |
+| Surface                            | Purpose                                                                     | Sandbox                                          | Tool name      |
+| ---------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------ | -------------- |
+| Code-mode orchestration            | Compose Praxis tools while intermediate data stays local to the interpreter | Local Monty worker with only declared tool stubs | `run_workflow` |
+| Provider-native compute (plan 059) | Perform pandas-class or file-heavy computation in a provider sandbox        | Model provider or later external executor        | `run_code`     |
 
 Neither sandbox may invoke the other.
 
@@ -102,6 +102,8 @@ The complete resource obligation is binding:
 - stack depth;
 - cumulative nested-call count;
 - captured print and final-output size;
+- a separate 32,768-byte model-facing final-result limit, tighter than the
+  general 262,144-byte nested boundary-value limit;
 - a hard serialized-byte limit on every value crossing into or out of Monty;
 - cumulative budgets preserved across approval suspension and resume; and
 - ordinary per-call model/provider spend through existing usage accounting and
@@ -171,8 +173,9 @@ the operator has not reviewed.
 ### D-7 — Catalog rules: wrapped tools replace direct mounting
 
 When code mode is enabled, eligible wrapped tools are not also registered as
-direct Pydantic AI tools. Their JSON schemas leave the model request and are
-represented only by concise Python signatures and one-line descriptions in
+direct Pydantic AI tools. Their Pydantic AI JSON tool schemas leave the model
+request and are represented by concise Python input signatures, declared
+`output_model` return shapes, and one-line descriptions in
 the generated stub catalog. A one-tool operation becomes a one-line script;
 the trade is accepted so the request does not pay for both schemas.
 
@@ -270,7 +273,7 @@ weakens those decisions.
 ### D-10 — Guidance has one source for models and one for operators
 
 Model-facing guidance is generated with the stub catalog from the same source
-as the signatures. It says that direct tools serve conversation-shaped acts,
+as the input signatures and declared output contracts. It says that direct tools serve conversation-shaped acts,
 wrapped functions serve data work, scripts should be short, the last
 expression is the result, and one script per task is preferred to many small
 scripts. Sandbox syntax and stdlib guidance come from the pinned probe record,
@@ -280,7 +283,7 @@ classes, decorators, or typed signatures must not be introduced.
 Operator-facing guidance lives only in the checkbox popover and uses outcome
 language:
 
-> Lets the agent combine several of its tools in one step, working through
+> Lets the agent combine several tools in one workflow, working through
 > data without back-and-forth. Use it for agents that run reports, reconcile,
 > or act on many items at once — for example, run an ads report, work out the
 > weakest campaigns, and pause them. Leave it off for simple chat or
@@ -295,8 +298,10 @@ allowed in v1.
 
 Bridge-internal calls are not Pydantic AI message parts. Live SSE and audit
 events are observation channels, not replay sources. The durable
-representation is therefore bounded, redacted trace metadata attached to the
-outer `run_workflow` result.
+representation is therefore governed trace metadata attached to the outer
+`run_workflow` result. Compact diagnostic fields remain bounded and redacted;
+the separate user-presentation value remains complete relative to the governed
+nested tool return.
 
 Each nested entry contains:
 
@@ -307,6 +312,20 @@ Each nested entry contains:
 - a presentation-resolvable summary;
 - status: succeeded, failed, pending, or denied; and
 - a bounded result or failure excerpt.
+
+The trace also retains the complete normalized nested result as application-only
+presentation evidence. Presentation values never enter model context and receive
+no additional UI sampling or truncation: replay shows exactly the governed value
+that the sandbox received, including every returned fan-out resource and row. If
+a nested tool has the richer governed `public_result` contract, replay and live
+SSE use that complete user-only value while only `return_value` enters Monty.
+The existing 262,144-byte per-value boundary and each provider tool's product
+bounds remain authoritative. The compact excerpt remains useful for summaries
+and legacy traces, but the web always prefers the complete presentation value.
+The settled workflow card separately renders the outer `run_workflow` result as
+"Output sent to model." This is the bounded final expression (or the
+`{"output": ..., "result": ...}` wrapper when the script printed), not a copy
+of the richer application-only nested presentation values.
 
 Plan 110 writes settled traces; plan 112 persists partial trace state across
 suspension and appends on resume. The web renders replay exclusively from this
@@ -401,16 +420,16 @@ authority for an executor to waive or reinterpret a miss.
 
 All must pass:
 
-| Metric | Passing threshold |
-|---|---|
-| Task success | Code mode is at parity with direct calling; no lower success rate across the five runs |
-| Model requests | Median reduced by **at least 50%** |
-| Input tokens | Median reduced by **at least 20%** |
-| Output tokens | Median reduced by **at least 20%** |
-| Total tokens | Median reduced by **at least 20%** |
-| End-to-end latency | Median no more than **20% worse** |
-| Redrafts | At most **one redraft across five scripted runs**, with median per-run redrafts equal to zero |
-| G6 compliance | **Zero** non-compliant graded-eval outcomes |
+| Metric             | Passing threshold                                                                             |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| Task success       | Code mode is at parity with direct calling; no lower success rate across the five runs        |
+| Model requests     | Median reduced by **at least 50%**                                                            |
+| Input tokens       | Median reduced by **at least 20%**                                                            |
+| Output tokens      | Median reduced by **at least 20%**                                                            |
+| Total tokens       | Median reduced by **at least 20%**                                                            |
+| End-to-end latency | Median no more than **20% worse**                                                             |
+| Redrafts           | At most **one redraft across five scripted runs**, with median per-run redrafts equal to zero |
+| G6 compliance      | **Zero** non-compliant graded-eval outcomes                                                   |
 
 The maintainer may change a number only before a gate run and records the
 change, date, and rationale in §7. Changing a threshold after seeing results
@@ -514,11 +533,42 @@ wall-clock, call-count, value, and output budgets.
 
 ### 7.3 Measured gate record
 
-**Status: not run.** Plan 110 completed 2026-08-13 on its deterministic and
-full repository gates by operator decision; the local environment had no
-configured OpenAI, Anthropic, Google, Ollama, or eval model for a credentialed
-smoke. Plan 111 remains pending. The five-run-per-arm measured exit gate follows
-Plan 111 and remains a hard prerequisite for Plan 112.
+**Status: formal gate not run.** Plans 110 and 111 completed 2026-08-13 on
+their deterministic and full repository gates. A single diagnostic
+`gpt-5.6-luna` smoke ran against conversation
+`92d0604d-32c3-4494-a179-01396b521bfb`: seven model requests recorded 77,892
+input tokens (58,431 cache reads; 19,440 cache writes) and 2,811 output tokens.
+The model used four workflows but returned large raw report payloads for later
+model-side reasoning instead of reducing them in the sandbox. This is not an
+on/off arm and therefore supplies no gate verdict; it drove stronger
+intermediate-variable/compact-output guidance. The five-run-per-arm measured
+exit gate is the next lane boundary and remains a hard prerequisite for Plan 112.
+
+A second diagnostic `gpt-5.6-luna` smoke against conversation
+`1032be41-7d3e-4807-878d-50edc6abf1c2` used seven model requests, 69,989 input
+tokens (55,264 cache reads; 14,704 cache writes), and 4,724 output tokens. Its
+third workflow did meaningful interpreter-side work: it re-read eight ad rows,
+normalized metrics, derived 12 headline/description rollups, and sorted both
+sets before returning 6,695 characters of decision-ready data. However, the
+preceding workflow misread the fan-out envelope as one row and returned an
+8,366-character sample containing the full ad report, and the third workflow
+then repeated that provider query. This is progress, but still not an on/off
+comparison or a formal gate verdict. It drove explicit fan-out guidance and a
+separate lossless presentation-result channel so replay UI can render complete
+nested reports without adding them to model context.
+
+A third diagnostic `gpt-5.6-luna` smoke against conversation
+`3cfbf6b5-da64-4a46-924e-0268077014ad` used two active Google Ads contexts and
+recorded eight model requests, 355,571 cumulative input tokens (269,625 cache
+reads; 85,760 cache writes), and 3,921 output tokens. Its third workflow's
+faulty `compact()` helper retained the full fan-out `data` object and returned
+273,959 persisted JSON characters to the model. The next request rose from
+6,682 to 78,732 input tokens, and the oversized value remained in every later
+request. The eventual fifth workflow did perform the desired cross-account
+aggregation and returned 15,187 characters, but the run is a clear efficiency
+failure. It drove the separate 32,768-byte model-facing workflow-result limit
+and the lossless application-only presentation channel; neither changes the
+larger nested value available for interpreter-side computation.
 
 Before running, record:
 
@@ -530,9 +580,9 @@ Before running, record:
 
 Then append one row per raw run:
 
-| Arm | Run | Success | Requests | Input tokens | Output tokens | Total tokens | Latency | Redrafts | G6 result | Notes |
-|---|---:|---|---:|---:|---:|---:|---:|---:|---|---|
-| Pending | — | — | — | — | — | — | — | — | — | — |
+| Arm     | Run | Success | Requests | Input tokens | Output tokens | Total tokens | Latency | Redrafts | G6 result | Notes |
+| ------- | --: | ------- | -------: | -----------: | ------------: | -----------: | ------: | -------: | --------- | ----- |
+| Pending |   — | —       |        — |            — |             — |            — |       — |        — | —         | —     |
 
 Record both arm medians, success rates, the threshold verdict for every metric,
 and the maintainer's dated **PASS** or **STOP** decision below the raw table.
@@ -542,26 +592,26 @@ and the maintainer's dated **PASS** or **STOP** decision below the raw table.
 These are deliberately outside plans 110–113 and require their own decision or
 plan before implementation:
 
-| Follow-up | Re-entry condition |
-|---|---|
-| Parallel nested dispatch | Plan 057 is replaced by a safe session-isolation or per-tool-barrier design, then D-4 is revisited first |
-| Deferred-tool stubs | Plans 094 and 110 are landed; compare deferred stub materialization with Pydantic AI's hidden-until-revealed tool channel |
-| MCP-derived stubs | Plans 095 and 110 are landed; add a threat-model delta for MCP output flowing through scripts |
-| In-sandbox discovery (`search_tools` / `describe_tool`) | Measured catalogs show even concise stub text materially harms requests or routing |
-| Enablement suggestion in the agent form | On/off measurements plus observed multi-call turns identify a useful, non-surprising suggestion rule |
-| Workspace-level controls | A workspace governance need cannot be served by per-agent opt-in and existing tool grants |
-| Workflow-scoped tool grants | A concrete workload cannot use batch arguments, and consent can constrain future arguments to an operator-reviewed target/value set |
-| Durable deduplicating execution ledger | Product evidence justifies replaying past executed writes instead of D-5's fail-closed recovery branch |
-| Object-storage snapshot offload | Measured bounded snapshots create material Postgres storage pressure |
+| Follow-up                                               | Re-entry condition                                                                                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Parallel nested dispatch                                | Plan 057 is replaced by a safe session-isolation or per-tool-barrier design, then D-4 is revisited first                            |
+| Deferred-tool stubs                                     | Plans 094 and 110 are landed; compare deferred stub materialization with Pydantic AI's hidden-until-revealed tool channel           |
+| MCP-derived stubs                                       | Plans 095 and 110 are landed; add a threat-model delta for MCP output flowing through scripts                                       |
+| In-sandbox discovery (`search_tools` / `describe_tool`) | Measured catalogs show even concise stub text materially harms requests or routing                                                  |
+| Enablement suggestion in the agent form                 | On/off measurements plus observed multi-call turns identify a useful, non-surprising suggestion rule                                |
+| Workspace-level controls                                | A workspace governance need cannot be served by per-agent opt-in and existing tool grants                                           |
+| Workflow-scoped tool grants                             | A concrete workload cannot use batch arguments, and consent can constrain future arguments to an operator-reviewed target/value set |
+| Durable deduplicating execution ledger                  | Product evidence justifies replaying past executed writes instead of D-5's fail-closed recovery branch                              |
+| Object-storage snapshot offload                         | Measured bounded snapshots create material Postgres storage pressure                                                                |
 
 ## 9. Consumed by
 
-| Plan | Contract consumed | Status |
-|---|---|---|
-| 110 | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate | Complete 2026-08-13; post-111 measured exit gate remains separate |
-| 111 | D-8, D-10, D-11; operator enablement and live/replay presentation | Pending |
-| 112 | D-3–D-6, D-9, D-11; durable approvals, taint persistence, write tools | Pending; hard-gated by §6 |
-| 113 | D-6, D-7, D-11; faithful batch approvals over landed `records` | Pending |
-| 059 | Compute/orchestration delineation and no sandbox nesting | Pending |
-| 094 | Deferred-loading exclusion and joint revisit | Pending |
-| 095 | MCP exclusion and threat-model-gated joint revisit | Pending |
+| Plan | Contract consumed                                                     | Status                                                            |
+| ---- | --------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 110  | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate    | Complete 2026-08-13; post-111 measured exit gate remains separate |
+| 111  | D-8, D-10, D-11; operator enablement and live/replay presentation     | Complete 2026-08-13; measured exit gate remains separate          |
+| 112  | D-3–D-6, D-9, D-11; durable approvals, taint persistence, write tools | Pending; hard-gated by §6                                         |
+| 113  | D-6, D-7, D-11; faithful batch approvals over landed `records`        | Pending                                                           |
+| 059  | Compute/orchestration delineation and no sandbox nesting              | Pending                                                           |
+| 094  | Deferred-loading exclusion and joint revisit                          | Pending                                                           |
+| 095  | MCP exclusion and threat-model-gated joint revisit                    | Pending                                                           |

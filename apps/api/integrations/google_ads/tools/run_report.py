@@ -25,7 +25,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.run_report import run_report
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsRunReportOutput
 from .utils import (
     GOOGLE_ADS_BINDING,
     RESULTS_FIELD,
@@ -37,7 +37,16 @@ from .utils import (
 
 async def google_ads_run_report(
     ctx: RunContext[RuntimeDeps],
-    query: Annotated[str, Field(description="Google Ads Query Language SELECT query.")],
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "Google Ads Query Language SELECT query. Selected fields determine each row's "
+                "nested lowerCamelCase shape: SELECT campaign.id, metrics.clicks returns "
+                "row['campaign']['id'] and row['metrics']['clicks']."
+            )
+        ),
+    ],
 ) -> dict[str, Any]:
     normalized_query = query.strip()
     if not normalized_query.upper().startswith("SELECT"):
@@ -71,7 +80,15 @@ async def google_ads_run_report(
 DEFINITION = RuntimeToolDefinition(
     name="google_ads_run_report",
     function=google_ads_run_report,
-    description="Run a bounded read-only GAQL report for selected Google Ads accounts.",
+    description=(
+        "Run a bounded read-only GAQL report for the Google Ads accounts selected in Active "
+        "Context. The result has `results`, one fan-out entry per selected account; inspect each "
+        "entry's `status` and `error_message`, then read successful rows from `data.rows`. "
+        "`data` also contains `currency_code`, `row_count`, `truncated`, and `truncation_note`. "
+        "Each row mirrors the GAQL SELECT paths as nested lowerCamelCase objects: selecting "
+        "`campaign.id` and `metrics.clicks` yields `row['campaign']['id']` and "
+        "`row['metrics']['clicks']`. Google Ads int64 values may be serialized as strings."
+    ),
     provider="google_ads",
     label="Run Google Ads Report",
     code_eligible=True,
@@ -79,7 +96,7 @@ DEFINITION = RuntimeToolDefinition(
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsRunReportOutput,
     integration_binding=GOOGLE_ADS_BINDING,
     availability_check=google_ads_available,
     presentation=ToolPresentation(

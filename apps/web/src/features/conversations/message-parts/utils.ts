@@ -24,6 +24,18 @@ export function normalizeToolArgs(value: unknown) {
   }
 }
 
+export function traceExcerptResult(excerpt: string): unknown {
+  const trimmed = excerpt.trim()
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    return excerpt
+  }
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return excerpt
+  }
+}
+
 export function safeJsonPreview(value: unknown, limit = PREVIEW_LIMIT) {
   let raw: string
   try {

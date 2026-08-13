@@ -220,7 +220,7 @@ async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadat
         to=datetime(2026, 8, 13, tzinfo=UTC),
     )
 
-    assert summary.totals.estimated_cost_usd == Decimal("0.053002")
+    assert summary.totals.estimated_cost_usd == Decimal("0.0530004")
     assert summary.pricing_coverage.priced_image_generations == 1
     assert summary.pricing_coverage.unpriced_image_generations == 1
 

@@ -39,6 +39,11 @@ class CodeModeSettingsMixin:
         ge=1,
         description="Maximum serialized bytes for each value crossing the Monty boundary.",
     )
+    AGENT_CODE_MODE_RESULT_MAX_BYTES: int = Field(
+        default=32_768,
+        ge=1,
+        description="Maximum serialized bytes returned from one workflow to the model.",
+    )
     AGENT_CODE_MODE_MEMORY_MAX_BYTES: int = Field(
         default=64 * 1024 * 1024,
         ge=1,
@@ -57,10 +62,14 @@ class CodeModeSettingsMixin:
 
     @model_validator(mode="after")
     def validate_code_mode_timeouts(self):
-        """Keep the worker-kill backstop behind normal script cancellation."""
+        """Keep timeout and model-facing result bounds internally consistent."""
         if self.AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS <= self.AGENT_CODE_MODE_TIMEOUT_SECONDS:
             raise ValueError(
                 "AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS must exceed "
                 "AGENT_CODE_MODE_TIMEOUT_SECONDS"
+            )
+        if self.AGENT_CODE_MODE_RESULT_MAX_BYTES > self.AGENT_CODE_MODE_VALUE_MAX_BYTES:
+            raise ValueError(
+                "AGENT_CODE_MODE_RESULT_MAX_BYTES cannot exceed AGENT_CODE_MODE_VALUE_MAX_BYTES"
             )
         return self

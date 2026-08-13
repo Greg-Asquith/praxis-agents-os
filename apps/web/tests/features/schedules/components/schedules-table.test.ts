@@ -19,6 +19,7 @@ const agent: Agent = {
   azure_deployment: null,
   created_at: "2026-08-12T08:00:00Z",
   created_by: "user-1",
+  code_mode_enabled: false,
   deleted: false,
   deleted_at: null,
   description: null,

@@ -25,6 +25,15 @@ export type DelegationToolActivity = {
   truncated: boolean
 }
 
+export type CodeModeScriptActivity = {
+  code: string | null
+  reason: string | null
+  status: ToolActivityStatus
+  children: ToolActivity[]
+  output: string | null
+  error: string | null
+}
+
 export type ToolActivity = {
   id: string
   agentRunId?: string | null
@@ -35,7 +44,9 @@ export type ToolActivity = {
   decision?: ToolApprovalDecision
   delegate?: DelegationToolActivity
   result?: unknown
+  resultExcerpt?: string
   outcome?: string | null
+  script?: CodeModeScriptActivity
   toolKind?: string
 }
 

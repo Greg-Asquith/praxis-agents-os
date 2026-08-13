@@ -49,6 +49,7 @@ const agent: Agent = {
   instructions: "Plan the work carefully.",
   workspace_id: "workspace-1",
   created_by: "user-1",
+  code_mode_enabled: true,
   tool_names: ["read_file", "missing_tool"],
   tool_policies: { read_file: "approval" },
   skill_ids: ["skill-1"],
@@ -72,6 +73,7 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
   return {
     allowedAgentIds: ["agent-2"],
     azureDeployment: "",
+    codeModeEnabled: false,
     description: "  Helps plan launches.  ",
     instructions: "  Use the playbook.  ",
     isActive: "true",
@@ -97,6 +99,7 @@ describe("initialAgentFormState", () => {
     expect(state).toEqual({
       allowedAgentIds: [],
       azureDeployment: "",
+      codeModeEnabled: false,
       description: "",
       instructions: "",
       isActive: "true",
@@ -120,6 +123,7 @@ describe("initialAgentFormState", () => {
     expect(state).toEqual({
       allowedAgentIds: ["agent-2"],
       azureDeployment: "",
+      codeModeEnabled: true,
       description: "Plans work",
       instructions: "Plan the work carefully.",
       isActive: "false",
@@ -174,6 +178,7 @@ describe("buildAgentPayload", () => {
     expect(buildAgentPayload(validState(), "create")).toEqual({
       allowed_agent_ids: ["agent-2"],
       azure_deployment: null,
+      code_mode_enabled: false,
       description: "Helps plan launches.",
       instructions: "Use the playbook.",
       is_active: true,
@@ -213,6 +218,7 @@ describe("isAgentFormDirty", () => {
 
     expect(isAgentFormDirty(initial, initial)).toBe(false)
     expect(isAgentFormDirty({ ...initial, name: "Planner v2" }, initial)).toBe(true)
+    expect(isAgentFormDirty({ ...initial, codeModeEnabled: false }, initial)).toBe(true)
   })
 })
 

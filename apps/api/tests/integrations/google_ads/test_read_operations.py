@@ -9,7 +9,6 @@ from pydantic_ai import (
     ModelRetry,
 )
 
-from integrations.google_ads.operations.list_accounts import list_accounts
 from integrations.google_ads.operations.list_ad_groups import list_ad_groups
 from integrations.google_ads.operations.list_campaigns import list_campaigns
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
@@ -19,7 +18,6 @@ from integrations.google_ads.operations.utils import (
     escape_gaql_like_literal,
     stream_rows,
 )
-from integrations.google_ads.tools.list_accounts import google_ads_list_accounts
 from integrations.google_ads.tools.run_report import google_ads_run_report
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from tests.integrations.google_ads.support import (
@@ -134,100 +132,6 @@ async def test_report_tool_uses_discovered_account_currency(monkeypatch) -> None
 
     assert result["results"][0]["data"]["currency_code"] == "GBP"
     assert provider_report.await_args.kwargs["currency_code"] == "GBP"
-
-
-async def test_list_accounts_queries_only_the_selected_active_context_resource() -> None:
-    connection_id = uuid4()
-    selected_resource_id = uuid4()
-    selected = SimpleNamespace(
-        external_id="333",
-        display_name="Selected account",
-        parent_external_id="111",
-        permissions_metadata={
-            "manager": False,
-            "currency_code": "GBP",
-            "status": "ENABLED",
-        },
-        writable=True,
-        enabled=True,
-    )
-    db = AsyncMock()
-    db.scalar.return_value = selected
-
-    result = await list_accounts(
-        db,
-        connection_id=connection_id,
-        integration_resource_id=selected_resource_id,
-    )
-
-    statement = db.scalar.await_args.args[0]
-    assert statement.compile().params == {
-        "id_1": selected_resource_id,
-        "connection_id_1": connection_id,
-        "resource_type_1": "google_ads_account",
-    }
-    assert result["accounts"] == [
-        {
-            "customer_id": "333",
-            "display_name": "Selected account",
-            "parent_customer_id": "111",
-            "manager": False,
-            "currency_code": "GBP",
-            "status": "ENABLED",
-            "writable": True,
-            "enabled": True,
-        }
-    ]
-
-
-async def test_list_accounts_tool_scopes_each_result_to_its_context_entry(monkeypatch) -> None:
-    connection_id = uuid4()
-    entries = tuple(
-        ResolvedContextEntry(
-            integration_resource_id=uuid4(),
-            provider_key="google_ads",
-            resource_type="google_ads_account",
-            external_id=customer_id,
-            display_name=f"Account {customer_id}",
-            connection_id=connection_id,
-            connection_label="Agency",
-            connection_status="active",
-            write_allowed=True,
-            permissions_metadata={"login_customer_id": customer_id},
-        )
-        for customer_id in ("222", "333")
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            db=object(),
-            active_context=ResolvedActiveContext(entries=entries),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
-            run=SimpleNamespace(id=uuid4()),
-        ),
-        tool_name="google_ads_list_accounts",
-    )
-    operation = AsyncMock(
-        side_effect=[
-            {"accounts": [{"customer_id": "222"}]},
-            {"accounts": [{"customer_id": "333"}]},
-        ]
-    )
-    monkeypatch.setattr("integrations.google_ads.tools.list_accounts.list_accounts", operation)
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        AsyncMock(),
-    )
-
-    result = await google_ads_list_accounts(ctx)
-
-    assert [item["data"]["accounts"][0]["customer_id"] for item in result["results"]] == [
-        "222",
-        "333",
-    ]
-    assert [call.kwargs["integration_resource_id"] for call in operation.await_args_list] == [
-        entry.integration_resource_id for entry in entries
-    ]
 
 
 async def test_list_shared_sets_filters_enabled_negative_keyword_lists_and_escapes_search() -> None:

@@ -10,6 +10,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import (
@@ -85,12 +86,14 @@ class CodeModeBridge:
         outer_tool_call_id: str,
         max_nested_calls: int,
         value_max_bytes: int,
+        result_max_bytes: int,
     ) -> None:
         self._ctx = ctx
         self._manager = manager
         self._outer_tool_call_id = outer_tool_call_id
         self._max_nested_calls = max_nested_calls
         self._value_max_bytes = value_max_bytes
+        self._result_max_bytes = result_max_bytes
         self._call_count = 0
         self._lock = asyncio.Lock()
         self._taint = _TaintState()
@@ -105,6 +108,7 @@ class CodeModeBridge:
         outer_tool_call_id: str,
         max_nested_calls: int | None = None,
         value_max_bytes: int | None = None,
+        result_max_bytes: int | None = None,
     ) -> CodeModeBridge:
         """Prepare the framework-owned nested manager for this script execution."""
         parent_manager = ctx.tool_manager
@@ -117,6 +121,11 @@ class CodeModeBridge:
             tools=await wrapped_toolset.get_tools(ctx),
             default_max_retries=parent_manager.default_max_retries,
         )
+        resolved_value_max_bytes = (
+            value_max_bytes
+            if value_max_bytes is not None
+            else settings.AGENT_CODE_MODE_VALUE_MAX_BYTES
+        )
         return cls(
             ctx=ctx,
             manager=manager,
@@ -126,10 +135,14 @@ class CodeModeBridge:
                 if max_nested_calls is not None
                 else settings.AGENT_CODE_MODE_MAX_NESTED_CALLS
             ),
-            value_max_bytes=(
-                value_max_bytes
-                if value_max_bytes is not None
-                else settings.AGENT_CODE_MODE_VALUE_MAX_BYTES
+            value_max_bytes=resolved_value_max_bytes,
+            result_max_bytes=min(
+                (
+                    result_max_bytes
+                    if result_max_bytes is not None
+                    else settings.AGENT_CODE_MODE_RESULT_MAX_BYTES
+                ),
+                resolved_value_max_bytes,
             ),
         )
 
@@ -145,7 +158,7 @@ class CodeModeBridge:
         result = _normalize_boundary_value(
             execution.result,
             tool_name="run_workflow",
-            max_bytes=self._value_max_bytes,
+            max_bytes=self._result_max_bytes,
         )
         output: Any = execution.output
         if self._taint.tainted:
@@ -201,6 +214,7 @@ class CodeModeBridge:
             )
             from services.agents.runtime.dispatch import (
                 CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
+                PUBLIC_RESULT_METADATA_KEY,
                 digest_args,
             )
 
@@ -244,6 +258,8 @@ class CodeModeBridge:
                 error = CodeModeBoundaryError(tool_name, str(result))
                 await self._record_nested_failure(trace_entry, error, status="denied")
                 raise error
+            has_public_result = False
+            presentation_result: Any = None
             if isinstance(result, ToolReturn):
                 if _has_binary_or_multimodal_content(result.content):
                     error = CodeModeBoundaryError(
@@ -252,6 +268,14 @@ class CodeModeBridge:
                     )
                     await self._record_nested_failure(trace_entry, error, status="failed")
                     raise error
+                if (
+                    isinstance(result.metadata, dict)
+                    and PUBLIC_RESULT_METADATA_KEY in result.metadata
+                ):
+                    has_public_result = True
+                    presentation_result = _to_json_value(
+                        result.metadata[PUBLIC_RESULT_METADATA_KEY]
+                    )
                 result = result.return_value
 
             self._taint.observe(result)
@@ -266,13 +290,19 @@ class CodeModeBridge:
                 raise
             trace_entry["status"] = "succeeded"
             trace_entry["excerpt"] = _bounded_excerpt(normalized_result)
+            # ToolReturn metadata is persisted and streamed to the application but
+            # never enters model context. Keep the complete governed nested value
+            # here so replay is as transparent as the live tool-result event.
+            if not has_public_result:
+                presentation_result = normalized_result
+            trace_entry["presentation_result"] = presentation_result
             await self._ctx.deps.sink.emit(
                 EVENT_TOOL_RESULT,
                 {
                     "tool_call_id": call.tool_call_id,
                     "parent_tool_call_id": self._outer_tool_call_id,
                     "name": tool_name,
-                    "result": normalized_result,
+                    "result": presentation_result,
                 },
             )
             return normalized_result
@@ -381,6 +411,8 @@ def _to_json_value(value: Any) -> Any:
         return node.model_dump(mode="json")
     if value is None or isinstance(value, (str, bool, int)):
         return value
+    if isinstance(value, UUID):
+        return str(value)
     if isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError("non-finite numbers are not JSON-safe")

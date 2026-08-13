@@ -20,6 +20,15 @@ workflow per task. Call every wrapped function with `await` and keyword argument
 workflow's answer as the last expression. The signatures below are reference documentation; do
 not redefine them.
 
+Treat wrapped-tool results as intermediate variables, not as the workflow answer. Use Python to
+filter, join, aggregate, rank, branch, or derive identifiers and arguments for later calls. Return
+only compact, decision-ready data with relevant counts and caveats. Do not merely collect
+independent tool responses or return whole raw payloads unless the user explicitly requests raw
+data and the payload is already small. For fan-out results, inspect each result entry's `data`;
+the outer `results` length is the number of resources queried, not the number of provider rows.
+Do not return samples that still contain a whole fan-out entry. Governed nested calls execute
+serially; `asyncio.gather` does not make them parallel.
+
 The pinned sandbox supports classes, decorators, async code, and type-checked signatures. Allowed
 imports are asyncio, collections, dataclasses, datetime, itertools, json, math, os, pathlib, re,
 sys, typing, and unicodedata. It has no network modules or third-party imports. Environment,
@@ -98,26 +107,47 @@ def render_tool_stub(definition: RuntimeToolDefinition) -> str:
 
 
 def render_stub_catalog(definitions: Sequence[RuntimeToolDefinition]) -> str:
-    """Render deterministic TypedDict shapes and keyword-only async function signatures."""
-    schemas: list[tuple[RuntimeToolDefinition, Mapping[str, Any]]] = []
+    """Render deterministic input/output shapes and async function signatures."""
+    schemas: list[tuple[RuntimeToolDefinition, Mapping[str, Any], Mapping[str, Any] | None]] = []
     merged_defs: dict[str, Any] = {}
+    output_schemas: dict[type[Any], Mapping[str, Any]] = {}
     for definition in definitions:
-        schema = definition.serialized_input_schema()
-        if not isinstance(schema, Mapping):
+        input_schema = definition.serialized_input_schema()
+        if not isinstance(input_schema, Mapping):
             raise UnsupportedCodeModeSchemaError(f"{definition.name} has no object input schema")
-        _validate_root_schema(definition.name, schema)
-        for name, value in _mapping(schema.get("$defs", {}), key="$defs").items():
-            existing = merged_defs.get(name)
-            if existing is not None and existing != value:
-                raise UnsupportedCodeModeSchemaError(f"conflicting $defs entry: {name}")
-            merged_defs[name] = value
-        schemas.append((definition, schema))
+        _validate_root_schema(definition.name, input_schema)
+        _merge_definitions(merged_defs, input_schema, owner=definition.name)
+
+        output_schema: Mapping[str, Any] | None = None
+        if definition.output_model is not None:
+            output_schema = output_schemas.get(definition.output_model)
+            if output_schema is None:
+                output_model_name = _python_identifier(definition.output_model.__name__)
+                declared_schema = _namespace_schema_definitions(
+                    definition.output_model.model_json_schema(mode="serialization"),
+                    prefix=output_model_name,
+                )
+                _merge_definitions(
+                    merged_defs,
+                    declared_schema,
+                    owner=f"{definition.name} output",
+                )
+                root_schema = _schema_without_definitions(declared_schema)
+                existing = merged_defs.get(output_model_name)
+                if existing is not None and existing != root_schema:
+                    raise UnsupportedCodeModeSchemaError(
+                        f"{definition.name} output conflicts with schema {output_model_name}"
+                    )
+                merged_defs[output_model_name] = root_schema
+                output_schema = {"$ref": f"#/$defs/{output_model_name}"}
+                output_schemas[definition.output_model] = output_schema
+        schemas.append((definition, input_schema, output_schema))
 
     renderer = _SchemaRenderer(merged_defs)
     functions: list[str] = []
-    for definition, schema in schemas:
-        properties = _mapping(schema.get("properties", {}), key="properties")
-        required = _required_keys(schema, properties)
+    for definition, input_schema, output_schema in schemas:
+        properties = _mapping(input_schema.get("properties", {}), key="properties")
+        required = _required_keys(input_schema, properties)
         parameters: list[str] = []
         for name, property_schema in properties.items():
             if not isinstance(name, str) or not name.isidentifier():
@@ -134,8 +164,18 @@ def render_stub_catalog(definitions: Sequence[RuntimeToolDefinition]) -> str:
                 default = property_schema.get("default", None)
                 parameters.append(f"{name}: {type_expr} = {default!r}")
         signature = ", ".join(("*", *parameters)) if parameters else ""
+        return_type = (
+            renderer.type_expr(
+                output_schema,
+                hint=f"{_pascal(definition.name)}Result",
+            )
+            if output_schema is not None
+            else "Any"
+        )
         description = " ".join(definition.description.split())
-        functions.append(f"async def {definition.name}({signature}) -> Any: ...  # {description}")
+        functions.append(
+            f"async def {definition.name}({signature}) -> {return_type}: ...  # {description}"
+        )
 
     blocks: list[str] = []
     if renderer.aliases:
@@ -145,6 +185,56 @@ def render_stub_catalog(definitions: Sequence[RuntimeToolDefinition]) -> str:
         blocks.append("from typing import Any, Literal")
     blocks.extend(functions)
     return "\n\n".join(blocks)
+
+
+def _merge_definitions(
+    merged: dict[str, Any],
+    schema: Mapping[str, Any],
+    *,
+    owner: str,
+) -> None:
+    for name, value in _mapping(schema.get("$defs", {}), key=f"{owner}.$defs").items():
+        existing = merged.get(name)
+        if existing is not None and existing != value:
+            raise UnsupportedCodeModeSchemaError(f"{owner} has a conflicting $defs entry: {name}")
+        merged[name] = value
+
+
+def _schema_without_definitions(schema: Mapping[str, Any]) -> Mapping[str, Any]:
+    return {key: value for key, value in schema.items() if key != "$defs"}
+
+
+def _namespace_schema_definitions(
+    schema: Mapping[str, Any],
+    *,
+    prefix: str,
+) -> Mapping[str, Any]:
+    definitions = _mapping(schema.get("$defs", {}), key=f"{prefix}.$defs")
+    renamed = {name: f"{prefix}{_python_identifier(name)}" for name in definitions}
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if not isinstance(value, Mapping):
+            return value
+        rewritten: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "$defs":
+                rewritten[key] = {renamed[name]: rewrite(child) for name, child in item.items()}
+                continue
+            if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/"):
+                name = item.removeprefix("#/$defs/")
+                replacement = renamed.get(name)
+                if replacement is None:
+                    raise UnsupportedCodeModeSchemaError(
+                        f"{prefix} references missing $defs entry {name}"
+                    )
+                rewritten[key] = f"#/$defs/{replacement}"
+                continue
+            rewritten[key] = rewrite(item)
+        return rewritten
+
+    return rewrite(schema)
 
 
 class _SchemaRenderer:
@@ -171,8 +261,11 @@ class _SchemaRenderer:
                 raise UnsupportedCodeModeSchemaError(
                     f"{hint} references missing $defs entry {name}"
                 )
+            identifier = _python_identifier(name)
+            if identifier in self._visiting:
+                return repr(identifier)
             self._ensure_alias(name, target)
-            return _python_identifier(name)
+            return identifier
         if "anyOf" in schema:
             _reject_unknown_keys(schema, {"anyOf"}, hint=hint)
             variants = schema["anyOf"]
@@ -249,9 +342,15 @@ class _SchemaRenderer:
         if name in self._rendered_aliases:
             return
         if name in self._visiting:
-            raise UnsupportedCodeModeSchemaError(f"recursive schema alias is unsupported: {name}")
-        if schema.get("type") != "object":
-            raise UnsupportedCodeModeSchemaError(f"$defs entry {name} is not an object")
+            return
+        if schema.get("type") != "object" or not schema.get("properties"):
+            self._visiting.add(name)
+            try:
+                expression = self.type_expr(schema, hint=name)
+            finally:
+                self._visiting.remove(name)
+            self._rendered_aliases[name] = f"{name} = {expression}"
+            return
         _reject_unknown_keys(
             schema,
             {"type", "properties", "required", "additionalProperties"},
@@ -260,20 +359,22 @@ class _SchemaRenderer:
         properties = _mapping(schema.get("properties", {}), key=f"{name}.properties")
         required = _required_keys(schema, properties)
         self._visiting.add(name)
-        fields: list[str] = []
-        for field_name, field_schema in properties.items():
-            if not isinstance(field_name, str) or not field_name.isidentifier():
-                raise UnsupportedCodeModeSchemaError(
-                    f"{name} has a non-Python field name: {field_name!r}"
+        try:
+            fields: list[str] = []
+            for field_name, field_schema in properties.items():
+                if not isinstance(field_name, str) or not field_name.isidentifier():
+                    raise UnsupportedCodeModeSchemaError(
+                        f"{name} has a non-Python field name: {field_name!r}"
+                    )
+                field_type = self.type_expr(
+                    field_schema,
+                    hint=f"{name}{_pascal(field_name)}",
                 )
-            field_type = self.type_expr(
-                field_schema,
-                hint=f"{name}{_pascal(field_name)}",
-            )
-            if field_name not in required:
-                field_type = f"NotRequired[{field_type}]"
-            fields.append(f"    {field_name}: {field_type}")
-        self._visiting.remove(name)
+                if field_name not in required:
+                    field_type = f"NotRequired[{field_type}]"
+                fields.append(f"    {field_name}: {field_type}")
+        finally:
+            self._visiting.remove(name)
         body = "\n".join(fields) if fields else "    pass"
         self._rendered_aliases[name] = f"class {name}(TypedDict):\n{body}"
 

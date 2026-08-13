@@ -7,6 +7,7 @@ import {
 import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
 import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
 import { CompletionReportRow } from "@/features/conversations/components/completion-report-row"
+import { CodeModeRow } from "@/features/conversations/components/code-mode-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
 import { MemoryToolRow } from "@/features/conversations/components/memory-tool-row"
@@ -85,6 +86,14 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 // runtime_tool definition.
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  {
+    handlesApprovals: true,
+    key: "code-mode-workflow",
+    matches: (activity) => activity.name === "run_workflow" && Boolean(activity.script),
+    render: ({ activity, defaultOpen, live }) => (
+      <CodeModeRow activity={activity} defaultOpen={defaultOpen} live={live} />
+    ),
+  },
   {
     key: "completion-report",
     matches: (activity) =>

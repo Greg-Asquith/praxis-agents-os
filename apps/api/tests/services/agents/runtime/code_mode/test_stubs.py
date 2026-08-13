@@ -76,6 +76,31 @@ def test_catalog_description_uses_probe_pinned_workflow_guidance() -> None:
         catalog.tool_description
     )
     assert "one\nworkflow per task" in catalog.tool_description
+    assert "results as intermediate variables" in catalog.tool_description
+    assert "filter, join, aggregate, rank, branch" in catalog.tool_description
+    assert "Do not merely collect\nindependent tool responses" in catalog.tool_description
+    assert "outer `results` length is the number of resources queried" in (catalog.tool_description)
+    assert "Do not return samples that still contain a whole fan-out entry" in (
+        catalog.tool_description
+    )
+    assert "`asyncio.gather` does not make them parallel" in catalog.tool_description
+
+
+def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
+    definition = next(
+        item for item in GOOGLE_ADS_TOOL_DEFINITIONS if item.name == "google_ads_run_report"
+    )
+
+    rendered = render_tool_stub(definition)
+
+    assert "class GoogleAdsRunReportOutputGoogleAdsReportData(TypedDict):" in rendered
+    assert "rows: list[dict[str, GoogleAdsRunReportOutputGoogleAdsJsonValue]]" in rendered
+    assert "row_count: int" in rendered
+    assert "class GoogleAdsRunReportOutput(TypedDict):" in rendered
+    assert "async def google_ads_run_report(*, query: str) -> GoogleAdsRunReportOutput" in rendered
+    assert "one fan-out entry per selected account" in rendered
+    assert "`data.rows`" in rendered
+    assert "mirrors the GAQL SELECT paths" in rendered
 
 
 def test_every_first_party_eligible_schema_renders() -> None:
@@ -94,8 +119,14 @@ def test_every_first_party_eligible_schema_renders() -> None:
     rendered = render_stub_catalog(tuple(definitions.values()))
 
     assert definitions
-    for name in definitions:
-        assert f"async def {name}(" in rendered
+    for name, definition in definitions.items():
+        signature = next(
+            line for line in rendered.splitlines() if line.startswith(f"async def {name}(")
+        )
+        if definition.output_model is not None:
+            assert "-> Any" not in signature
+
+    assert rendered.count("class AirtableOutput(TypedDict):") == 1
 
 
 def test_unsupported_schema_keyword_fails_closed() -> None:

@@ -139,6 +139,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
     }
     case "tool.approval_required": {
       const replayArgs = optionalField(data, "replay_args")
+      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       const delegation = optionalNullableDelegation(eventName, data)
       return {
         event: "tool.approval_required",
@@ -151,6 +152,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           name: requiredNonEmptyString(eventName, "data.name", data["name"]),
           args: requiredField(eventName, data, "args"),
+          ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
           ...(replayArgs.present ? { replay_args: replayArgs.value } : {}),
           ...(delegation === undefined ? {} : { delegation }),
         },

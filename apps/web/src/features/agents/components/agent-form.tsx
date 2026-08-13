@@ -206,6 +206,9 @@ export function AgentForm(props: AgentFormProps) {
               ) : null}
               {activeStepId === "tools" ? (
                 <AgentToolsSection
+                  onCodeModeEnabledChange={(enabled) => {
+                    setField("codeModeEnabled", enabled)
+                  }}
                   onToolModeChange={setToolMode}
                   state={state}
                   toolCatalog={toolCatalog.tools}

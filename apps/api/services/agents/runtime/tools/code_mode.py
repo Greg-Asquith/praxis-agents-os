@@ -59,10 +59,10 @@ RUN_WORKFLOW_DEFINITION = RuntimeToolDefinition(
     configurable=False,
     auto_mount=False,
     presentation=ToolPresentation(
-        icon="list-todo",
-        running_label="Running Workflow",
+        icon="workflow",
+        running_label="Running Workflow…",
         completed_label="Completed Workflow",
-        failed_label="Workflow Failed",
+        failed_label="Couldn't Complete Workflow",
         arg_fields=(
             ToolFieldPresentation(key="code", label="Workflow code", format="multiline"),
             ToolFieldPresentation(key="reason", label="Reason", secondary=True),
