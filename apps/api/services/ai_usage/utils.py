@@ -56,9 +56,14 @@ class UsageBucket:
     label: str | None = None
 
     @property
+    def uncached_input_tokens(self) -> int:
+        """Return the disjoint input subset after removing cached tokens."""
+        return max(0, self.input_tokens - self.cache_read_tokens - self.cache_write_tokens)
+
+    @property
     def tokens(self) -> int:
         return (
-            self.input_tokens
+            self.uncached_input_tokens
             + self.cache_read_tokens
             + self.cache_write_tokens
             + self.output_tokens
@@ -112,7 +117,7 @@ def resolve_usage_range(
 
 def bucket_cost(bucket: UsageBucket, price: ModelPrice) -> Decimal:
     return (
-        Decimal(bucket.input_tokens) * price.input_usd_per_mtok
+        Decimal(bucket.uncached_input_tokens) * price.input_usd_per_mtok
         + Decimal(bucket.cache_read_tokens) * price.cache_read_usd_per_mtok
         + Decimal(bucket.cache_write_tokens) * price.cache_write_usd_per_mtok
         + Decimal(bucket.output_tokens) * price.output_usd_per_mtok
@@ -124,7 +129,7 @@ def fold_buckets(
 ) -> UsageFold:
     folded = UsageFold()
     for bucket, price in buckets:
-        folded.tokens_by_class.input += bucket.input_tokens
+        folded.tokens_by_class.input += bucket.uncached_input_tokens
         folded.tokens_by_class.cache_read += bucket.cache_read_tokens
         folded.tokens_by_class.cache_write += bucket.cache_write_tokens
         folded.tokens_by_class.output += bucket.output_tokens

@@ -126,6 +126,57 @@ async def test_summary_uses_half_open_range_and_exposes_unpriced_coverage(
 
 
 @pytest.mark.asyncio
+async def test_summary_reconciles_inclusive_cached_input_with_provider_cost(
+    db_session: AsyncSession,
+) -> None:
+    workspace = build_workspace(slug=f"inclusive-input-{uuid4().hex}")
+    db_session.add(workspace)
+    await db_session.flush()
+    occurred_at = datetime(2026, 8, 13, 12, tzinfo=UTC)
+    db_session.add_all(
+        [
+            _event(
+                workspace.id,
+                occurred_at,
+                provider="openai",
+                model="gpt-5.6-luna",
+                input_tokens=521_813,
+                cache_read_tokens=395_052,
+                cache_write_tokens=126_020,
+                output_tokens=12_051,
+                requests=29,
+            ),
+            _event(
+                workspace.id,
+                occurred_at,
+                provider="openai",
+                model="text-embedding-3-small",
+                purpose="embedding_kb_search",
+                input_tokens=78,
+                requests=5,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    summary = await get_usage_summary(
+        db_session,
+        workspace_id=workspace.id,
+        from_=datetime(2026, 8, 13, tzinfo=UTC),
+        to=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert summary.totals.estimated_cost_usd == Decimal("0.054017")
+    assert summary.totals.tokens_by_class.model_dump() == {
+        "input": 819,
+        "cache_read": 395_052,
+        "cache_write": 126_020,
+        "output": 12_051,
+    }
+    assert summary.pricing_coverage.priced_tokens == 533_942
+
+
+@pytest.mark.asyncio
 async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadata(
     db_session: AsyncSession,
 ) -> None:

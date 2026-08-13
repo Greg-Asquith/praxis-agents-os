@@ -48,12 +48,14 @@ def _price(
     )
 
 
-# Standard OpenAI API rates as of 2026-08-12.
+# Standard OpenAI API rates as of 2026-08-13.
 # https://developers.openai.com/api/docs/models
 _OPENAI_PRICES = (
     _price("openai", "gpt-5.6-sol", date(2026, 7, 9), "5", "0.5", "6.25", "30"),
     _price("openai", "gpt-5.6-terra", date(2026, 7, 9), "2.5", "0.25", "3.125", "15"),
+    _price("openai", "gpt-5.6-terra", date(2026, 7, 30), "2", "0.2", "2.5", "12"),
     _price("openai", "gpt-5.6-luna", date(2026, 7, 9), "1", "0.1", "1.25", "6"),
+    _price("openai", "gpt-5.6-luna", date(2026, 7, 30), "0.2", "0.02", "0.25", "1.2"),
     _price("openai", "gpt-5.5", date(2026, 4, 23), "5", "0.5", "5", "30"),
     _price("openai", "gpt-5.4", date(2026, 3, 5), "2.5", "0.25", "2.5", "15"),
     _price("openai", "gpt-5.4-mini", date(2026, 3, 17), "0.75", "0.075", "0.75", "4.5"),
