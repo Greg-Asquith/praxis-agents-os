@@ -51,7 +51,12 @@ export function AgentsTable({
           header: ({ header }) => <header.ColumnHeader />,
           cell: ({ row }) => (
             <div className="flex min-w-56 items-start gap-2.5">
-              <AgentIdentityIcon agentId={row.original.id} decorative name={row.original.name} />
+              <AgentIdentityIcon
+                agentId={row.original.id}
+                decorative
+                metadata={row.original.metadata}
+                name={row.original.name}
+              />
               <div className="flex min-w-0 flex-col gap-1">
                 <span className="font-medium">{row.original.name}</span>
                 {row.original.description ? (
@@ -218,7 +223,12 @@ function AgentMobileRow({
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
-            <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} />
+            <AgentIdentityIcon
+              agentId={agent.id}
+              decorative
+              metadata={agent.metadata}
+              name={agent.name}
+            />
             <div className="min-w-0">
               <p className="truncate font-medium">{agent.name}</p>
             </div>

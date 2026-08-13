@@ -1,13 +1,22 @@
 // apps/web/src/features/agents/components/agent-profile-section.tsx
 
+import type { CSSProperties } from "react"
+
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { FormSection } from "@/components/forms/form-section"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import type {
-  AgentFormFieldSetter,
-  AgentFormState,
+import {
+  IDENTITY_COLOR_AUTO,
+  type AgentFormFieldSetter,
+  type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
+import { AGENT_IDENTITY_COUNT } from "@/lib/agent-identity"
+import { cn } from "@/lib/utils"
+
+const identityColorValues = Array.from({ length: AGENT_IDENTITY_COUNT }, (_, index) =>
+  String(index + 1)
+)
 
 export function AgentProfileSection({
   fieldErrors,
@@ -68,6 +77,51 @@ export function AgentProfileSection({
             Keep this durable and specific to the agent&apos;s role.
           </FieldDescription>
           <FieldError>{fieldErrors.instructions}</FieldError>
+        </Field>
+
+        <Field>
+          <FieldLabel id="agent-color-label">Color</FieldLabel>
+          <div
+            aria-labelledby="agent-color-label"
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+          >
+            <button
+              aria-pressed={state.identityColor === IDENTITY_COLOR_AUTO}
+              className={cn(
+                "inline-flex h-7 items-center rounded-md border px-3 text-xs font-medium transition-shadow",
+                state.identityColor === IDENTITY_COLOR_AUTO
+                  ? "ring-ring ring-offset-background ring-2 ring-offset-2"
+                  : "hover:bg-muted"
+              )}
+              onClick={() => {
+                setField("identityColor", IDENTITY_COLOR_AUTO)
+              }}
+              type="button"
+            >
+              Auto
+            </button>
+            {identityColorValues.map((value) => (
+              <button
+                aria-label={`Color ${value}`}
+                aria-pressed={state.identityColor === value}
+                className={cn(
+                  "size-7 shrink-0 rounded-full bg-linear-to-br from-(--agent-color)/95 to-(--agent-color) shadow-xs transition-shadow",
+                  state.identityColor === value &&
+                    "ring-ring ring-offset-background ring-2 ring-offset-2"
+                )}
+                key={value}
+                onClick={() => {
+                  setField("identityColor", value)
+                }}
+                style={{ "--agent-color": `var(--agent-${value})` } as CSSProperties}
+                type="button"
+              />
+            ))}
+          </div>
+          <FieldDescription>
+            Used for this agent&apos;s icon across the workspace. Auto picks one for you.
+          </FieldDescription>
         </Field>
       </FieldGroup>
     </FormSection>

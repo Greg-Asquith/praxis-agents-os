@@ -1,8 +1,10 @@
 // apps/web/src/features/home/components/approvals-inbox.tsx
 
+import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { CheckIcon, Clock3Icon } from "lucide-react"
 
+import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { usePendingApprovalsQuery } from "@/features/conversations/api/list-pending-approvals"
 import { HomeSection } from "@/features/home/components/home-section"
@@ -10,6 +12,11 @@ import { relativeDateTime, titleCaseToken } from "@/lib/format"
 
 export function ApprovalsInbox() {
   const { data } = usePendingApprovalsQuery()
+  const { data: agentsData } = useAgentsQuery({ includeInactive: true, limit: 100 })
+  const agentsById = useMemo(
+    () => new Map(agentsData.agents.map((agent) => [agent.id, agent])),
+    [agentsData.agents]
+  )
   const remaining = Math.max(0, data.total - data.items.length)
 
   return (
@@ -41,6 +48,7 @@ export function ApprovalsInbox() {
                 <AgentIdentityIcon
                   agentId={item.agent_id ?? item.run_id}
                   decorative
+                  metadata={item.agent_id ? agentsById.get(item.agent_id)?.metadata : null}
                   name={agentName}
                   size="md"
                 />

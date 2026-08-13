@@ -48,7 +48,13 @@ export function NewConversationRoute() {
                     className="ring-background rounded-lg ring-2 not-first:-ml-2"
                     key={agent.id}
                   >
-                    <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="lg" />
+                    <AgentIdentityIcon
+                      agentId={agent.id}
+                      decorative
+                      metadata={agent.metadata}
+                      name={agent.name}
+                      size="lg"
+                    />
                   </span>
                 ))}
                 {hiddenAgentCount > 0 ? (

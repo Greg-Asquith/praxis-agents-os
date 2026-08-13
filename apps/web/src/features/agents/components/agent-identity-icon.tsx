@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react"
 import { BotIcon } from "lucide-react"
 
-import { agentIdentityIndex } from "@/lib/agent-identity"
+import { agentIdentityColorIndex, agentIdentityIndex } from "@/lib/agent-identity"
 import { cn } from "@/lib/utils"
 
 const sizeClasses = {
@@ -15,6 +15,7 @@ const sizeClasses = {
 type AgentIdentityIconProps = {
   agentId: string
   decorative?: boolean
+  metadata?: Record<string, unknown> | null | undefined
   name: string
   size?: keyof typeof sizeClasses
 }
@@ -22,10 +23,11 @@ type AgentIdentityIconProps = {
 export function AgentIdentityIcon({
   agentId,
   decorative = false,
+  metadata,
   name,
   size = "md",
 }: AgentIdentityIconProps) {
-  const identityIndex = agentIdentityIndex(agentId)
+  const identityIndex = agentIdentityColorIndex(metadata) ?? agentIdentityIndex(agentId)
   const classes = sizeClasses[size]
   const style = {
     "--agent-color": `var(--agent-${String(identityIndex + 1)})`,

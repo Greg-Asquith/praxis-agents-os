@@ -53,7 +53,13 @@ export function AgentLauncher() {
             search={{ agent: agent.id }}
             to="/conversations/new"
           >
-            <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="md" />
+            <AgentIdentityIcon
+              agentId={agent.id}
+              decorative
+              metadata={agent.metadata}
+              name={agent.name}
+              size="md"
+            />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{agent.name}</span>
               <span className="text-muted-foreground line-clamp-1 text-xs">

@@ -52,7 +52,13 @@ export function AgentDetailRoute() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="flex min-w-0 items-start gap-3">
-          <AgentIdentityIcon agentId={agent.id} decorative name={agent.name} size="lg" />
+          <AgentIdentityIcon
+            agentId={agent.id}
+            decorative
+            metadata={agent.metadata}
+            name={agent.name}
+            size="lg"
+          />
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-semibold tracking-normal">{agent.name}</h1>

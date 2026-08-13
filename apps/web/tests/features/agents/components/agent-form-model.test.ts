@@ -75,10 +75,12 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
     azureDeployment: "",
     codeModeEnabled: false,
     description: "  Helps plan launches.  ",
+    identityColor: "Auto",
     instructions: "  Use the playbook.  ",
     isActive: "true",
     isFavorite: "false",
     maxSteps: "25",
+    metadataJson: {},
     modelSelection: "openai:gpt-5.4-mini",
     modelSettings: { temperature: 0.1 },
     name: "  Launch planner  ",
@@ -101,10 +103,12 @@ describe("initialAgentFormState", () => {
       azureDeployment: "",
       codeModeEnabled: false,
       description: "",
+      identityColor: "Auto",
       instructions: "",
       isActive: "true",
       isFavorite: "false",
       maxSteps: "20",
+      metadataJson: {},
       modelSelection: "Default",
       modelSettings: {},
       name: "",
@@ -125,10 +129,12 @@ describe("initialAgentFormState", () => {
       azureDeployment: "",
       codeModeEnabled: true,
       description: "Plans work",
+      identityColor: "Auto",
       instructions: "Plan the work carefully.",
       isActive: "false",
       isFavorite: "true",
       maxSteps: "12",
+      metadataJson: {},
       modelSelection: "openai:gpt-5.4-mini",
       modelSettings: { temperature: 0.2, thinking: "high" },
       name: "Planner",
@@ -140,6 +146,16 @@ describe("initialAgentFormState", () => {
         send_email: "off",
       },
     })
+  })
+
+  it("restores a stored identity color", () => {
+    const state = initialAgentFormState(
+      { ...agent, metadata: { identity_color: 5, note: "keep" } },
+      toolCatalog
+    )
+
+    expect(state.identityColor).toBe("5")
+    expect(state.metadataJson).toEqual({ identity_color: 5, note: "keep" })
   })
 })
 
@@ -184,6 +200,7 @@ describe("buildAgentPayload", () => {
       is_active: true,
       is_favorite: false,
       max_steps: 25,
+      metadata: null,
       model: "gpt-5.4-mini",
       model_provider: "openai",
       model_settings: { temperature: 0.1, thinking: "low" },
@@ -202,6 +219,20 @@ describe("buildAgentPayload", () => {
       name: "Launch planner",
     })
     expect(buildAgentPayload(validState(), "edit")).not.toHaveProperty("slug")
+  })
+
+  it("stores a chosen identity color without dropping other metadata", () => {
+    expect(
+      buildAgentPayload(validState({ identityColor: "3", metadataJson: { note: "keep" } }), "edit")
+    ).toMatchObject({
+      metadata: { identity_color: 3, note: "keep" },
+    })
+    expect(
+      buildAgentPayload(
+        validState({ identityColor: "Auto", metadataJson: { identity_color: 3 } }),
+        "edit"
+      )
+    ).toMatchObject({ metadata: null })
   })
 
   it("returns the first validation error string for invalid state", () => {

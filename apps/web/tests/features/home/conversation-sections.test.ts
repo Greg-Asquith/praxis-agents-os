@@ -1,6 +1,9 @@
 import { createElement, Fragment } from "react"
+import { QueryClient } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 
+import { agentsQueryKeys } from "@/features/agents/api/list-agents"
+import type { AgentsListResponse } from "@/features/agents/types"
 import type { Conversation } from "@/features/conversations/types"
 import { RecentConversations } from "@/features/home/components/recent-conversations"
 import { UnreadResults } from "@/features/home/components/unread-results"
@@ -18,13 +21,19 @@ describe("home conversation sections", () => {
         unread: true,
       }),
     ]
+    const queryClient = new QueryClient()
+    queryClient.setQueryData<AgentsListResponse>(
+      agentsQueryKeys.list({ includeInactive: true, limit: 100 }),
+      { agents: [], total: 0, limit: 100, offset: 0 }
+    )
     const html = renderHomeComponent(
       createElement(
         Fragment,
         null,
         createElement(UnreadResults, { conversations }),
         createElement(RecentConversations, { conversations })
-      )
+      ),
+      queryClient
     )
 
     expect(html).toContain("Unread Conversations")
