@@ -90,6 +90,13 @@ per-agent `tool_policies`; this section is the policy law:
   dispatch reloads the initiating user's active membership and requires
   `EDITOR_ROLES` before every `effect="write"` invocation; read-only members
   may continue conversations and use `effect="read"` tools. *(enforced)*
+- Code mode never aggregates or weakens tool decisions. The outer
+  `run_workflow` tool has no side effect; every nested call independently
+  retains its declared effect and egress, active membership and role check,
+  run-envelope verdict, approval policy, output contract, bounds, and audit
+  record through the same dispatch choke point as a direct call. Plan 110
+  exposes only eligible auto-read stubs; gated and write tools remain direct
+  until durable nested approvals land. *(enforced)*
 - Anything that **spends money** (e.g. Google Ads mutations) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. *(enforced)*

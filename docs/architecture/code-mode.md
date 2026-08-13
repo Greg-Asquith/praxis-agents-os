@@ -514,7 +514,11 @@ wall-clock, call-count, value, and output budgets.
 
 ### 7.3 Measured gate record
 
-**Status: not run. Plans 110 and 111 are pending.**
+**Status: not run.** Plan 110 completed 2026-08-13 on its deterministic and
+full repository gates by operator decision; the local environment had no
+configured OpenAI, Anthropic, Google, Ollama, or eval model for a credentialed
+smoke. Plan 111 remains pending. The five-run-per-arm measured exit gate follows
+Plan 111 and remains a hard prerequisite for Plan 112.
 
 Before running, record:
 
@@ -554,7 +558,7 @@ plan before implementation:
 
 | Plan | Contract consumed | Status |
 |---|---|---|
-| 110 | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate | Pending |
+| 110 | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate | Complete 2026-08-13; post-111 measured exit gate remains separate |
 | 111 | D-8, D-10, D-11; operator enablement and live/replay presentation | Pending |
 | 112 | D-3–D-6, D-9, D-11; durable approvals, taint persistence, write tools | Pending; hard-gated by §6 |
 | 113 | D-6, D-7, D-11; faithful batch approvals over landed `records` | Pending |
