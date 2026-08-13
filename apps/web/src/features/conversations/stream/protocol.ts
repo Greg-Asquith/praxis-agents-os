@@ -19,6 +19,7 @@ const STREAM_EVENT_NAMES = [
   "tool.call",
   "tool.result",
   "tool.approval_required",
+  "workflow.state",
   "error",
   "done",
 ] as const
@@ -34,6 +35,8 @@ type StreamEnvelope = {
 }
 
 export type MessageChannel = "text" | "thinking"
+
+export type WorkflowState = "started" | "completed" | "failed"
 
 export type StreamError = {
   code: string
@@ -71,7 +74,12 @@ export type StreamEvent =
     }
   | {
       event: "tool.call"
-      data: StreamEnvelope & { tool_call_id: string; name: string; args: unknown }
+      data: StreamEnvelope & {
+        tool_call_id: string
+        name: string
+        args: unknown
+        parent_tool_call_id?: string
+      }
     }
   | {
       event: "tool.result"
@@ -79,6 +87,7 @@ export type StreamEvent =
         tool_call_id: string
         name?: string | null
         result: unknown
+        parent_tool_call_id?: string
       }
     }
   | {
@@ -89,6 +98,15 @@ export type StreamEvent =
         args: unknown
         replay_args?: unknown
         delegation?: PendingDelegatedApproval | null
+      }
+    }
+  | {
+      event: "workflow.state"
+      data: StreamEnvelope & {
+        tool_call_id: string
+        state: WorkflowState
+        output_excerpt?: string | null
+        error_excerpt?: string | null
       }
     }
   | {

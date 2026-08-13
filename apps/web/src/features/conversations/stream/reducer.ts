@@ -256,6 +256,8 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
         },
       }
     }
+    case "workflow.state":
+      return nextState
     case "error":
       return withStreamError(nextState, {
         code: streamEvent.data.code,

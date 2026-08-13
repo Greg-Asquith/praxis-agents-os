@@ -78,6 +78,8 @@ from services.workspaces.utils import EDITOR_ROLES
 from utils.json_safe import json_safe_value
 from utils.tokens import estimate_tokens
 
+CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY = "praxis_code_mode_parent_tool_call_id"
+
 Handler = Callable[[Mapping[str, Any]], Awaitable[Any]]
 
 MUTATION_OUTPUT_WARNING = (
@@ -315,6 +317,7 @@ async def dispatch_tool_execution(
     args_sha256, args_bytes = digest_args(args)
     started = monotonic()
     tool_call_id = call.tool_call_id
+    parent_tool_call_id = _parent_tool_call_id(getattr(ctx, "tool_call_metadata", None))
     approval_ref = call.tool_call_id if getattr(ctx, "tool_call_approved", False) else None
 
     active_role = await _active_workspace_role(ctx.deps)
@@ -329,6 +332,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="denied_authorization",
             approval_ref=approval_ref,
             error_code="WorkspaceMembershipRevoked",
@@ -351,6 +355,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="denied_authorization",
             approval_ref=approval_ref,
             error_code="WorkspaceRoleDenied",
@@ -369,6 +374,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="denied_envelope",
             approval_ref=approval_ref,
         )
@@ -384,6 +390,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="approval_requested",
             approval_ref=call.tool_call_id,
         )
@@ -413,6 +420,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="approval_requested",
             approval_ref=call.tool_call_id,
         )
@@ -430,6 +438,7 @@ async def dispatch_tool_execution(
                     args_bytes=args_bytes,
                     started=started,
                     tool_call_id=tool_call_id,
+                    parent_tool_call_id=parent_tool_call_id,
                     outcome="cancelled",
                     approval_ref=approval_ref,
                     error_code="CancelledError",
@@ -446,6 +455,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="failed",
             approval_ref=approval_ref,
             error_code=exc.__class__.__name__,
@@ -473,6 +483,7 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome=exc.outcome,
             approval_ref=approval_ref,
             error_code="OutputContractValidationError",
@@ -518,6 +529,7 @@ async def dispatch_tool_execution(
         args_bytes=args_bytes,
         started=started,
         tool_call_id=tool_call_id,
+        parent_tool_call_id=parent_tool_call_id,
         outcome="completed",
         approval_ref=approval_ref,
         result_chars=result_size.chars if result_size.oversized else None,
@@ -675,6 +687,7 @@ async def record_invocation(
     result_chars: int | None = None,
     result_truncated: bool | None = None,
     result_original_chars: int | None = None,
+    parent_tool_call_id: str | None = None,
 ) -> None:
     """Assemble and persist one invocation audit event."""
     await record_tool_invocation_audit_event(
@@ -696,7 +709,15 @@ async def record_invocation(
         result_chars=result_chars,
         result_truncated=result_truncated,
         result_original_chars=result_original_chars,
+        parent_tool_call_id=parent_tool_call_id,
     )
+
+
+def _parent_tool_call_id(metadata: Any) -> str | None:
+    if not isinstance(metadata, Mapping):
+        return None
+    value = metadata.get(CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY)
+    return value if isinstance(value, str) and value else None
 
 
 def _tool_provider(

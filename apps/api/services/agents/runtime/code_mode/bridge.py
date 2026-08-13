@@ -32,10 +32,13 @@ from services.agents.runtime.code_mode.executor import (
     get_code_mode_executor,
 )
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.events import EVENT_TOOL_CALL, EVENT_TOOL_RESULT, EVENT_WORKFLOW_STATE
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
+from utils.json_safe import json_safe_value
 
 CODE_MODE_TRACE_METADATA_KEY = "code_mode_trace"
 CODE_MODE_TAINT_SOURCE_LIMIT = 32
+CODE_MODE_TRACE_EXCERPT_MAX_CHARS = 1_000
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,7 @@ class CodeModeBridge:
         self._call_count = 0
         self._lock = asyncio.Lock()
         self._taint = _TaintState()
+        self._trace: list[dict[str, Any]] = []
 
     @classmethod
     async def create(
@@ -140,7 +144,7 @@ class CodeModeBridge:
         """Validate the outbound value and preserve sticky taint on result and output."""
         result = _normalize_boundary_value(
             execution.result,
-            tool_name="run_script",
+            tool_name="run_workflow",
             max_bytes=self._value_max_bytes,
         )
         output: Any = execution.output
@@ -160,6 +164,7 @@ class CodeModeBridge:
                     "taint_sources": list(self._taint.sources),
                     "taint_sources_overflow": self._taint.overflow,
                     "output_truncated": execution.output_truncated,
+                    "calls": list(self._trace),
                 }
             },
         )
@@ -194,35 +199,106 @@ class CodeModeBridge:
                 args=normalized_args,
                 tool_call_id=f"{self._outer_tool_call_id}:{self._call_count}",
             )
+            from services.agents.runtime.dispatch import (
+                CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
+                digest_args,
+            )
+
+            args_sha256, _args_bytes = digest_args(normalized_args)
+            trace_entry = {
+                "order": self._call_count,
+                "tool_call_id": call.tool_call_id,
+                "parent_tool_call_id": self._outer_tool_call_id,
+                "tool_name": tool_name,
+                "args_sha256": args_sha256,
+                "summary": _tool_summary(tool_name),
+                "status": "failed",
+                "excerpt": None,
+            }
+            self._trace.append(trace_entry)
+            await self._ctx.deps.sink.emit(
+                EVENT_TOOL_CALL,
+                {
+                    "tool_call_id": call.tool_call_id,
+                    "parent_tool_call_id": self._outer_tool_call_id,
+                    "name": tool_name,
+                    "args": normalized_args,
+                },
+            )
             try:
                 result = await self._manager.handle_call(
                     call,
+                    metadata={CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY: self._outer_tool_call_id},
                     wrap_validation_errors=False,
                 )
             except (ApprovalRequired, CallDeferred) as exc:
-                raise CodeModeBoundaryError(tool_name, "tool requires approval") from exc
+                error = CodeModeBoundaryError(tool_name, "tool requires approval")
+                await self._record_nested_failure(trace_entry, error, status="pending")
+                raise error from exc
             except (ValidationError, ModelRetry, ToolFailed) as exc:
-                raise CodeModeBoundaryError(tool_name, str(exc)) from exc
+                error = CodeModeBoundaryError(tool_name, str(exc))
+                await self._record_nested_failure(trace_entry, error, status="failed")
+                raise error from exc
 
             if isinstance(result, ToolDenied):
-                raise CodeModeBoundaryError(tool_name, str(result))
+                error = CodeModeBoundaryError(tool_name, str(result))
+                await self._record_nested_failure(trace_entry, error, status="denied")
+                raise error
             if isinstance(result, ToolReturn):
                 if _has_binary_or_multimodal_content(result.content):
-                    raise CodeModeBoundaryError(
+                    error = CodeModeBoundaryError(
                         tool_name,
                         "binary or multimodal ToolReturn content cannot enter the sandbox",
                     )
+                    await self._record_nested_failure(trace_entry, error, status="failed")
+                    raise error
                 result = result.return_value
 
             self._taint.observe(result)
-            return _normalize_boundary_value(
-                result,
-                tool_name=tool_name,
-                max_bytes=self._value_max_bytes,
+            try:
+                normalized_result = _normalize_boundary_value(
+                    result,
+                    tool_name=tool_name,
+                    max_bytes=self._value_max_bytes,
+                )
+            except CodeModeBoundaryError as exc:
+                await self._record_nested_failure(trace_entry, exc, status="failed")
+                raise
+            trace_entry["status"] = "succeeded"
+            trace_entry["excerpt"] = _bounded_excerpt(normalized_result)
+            await self._ctx.deps.sink.emit(
+                EVENT_TOOL_RESULT,
+                {
+                    "tool_call_id": call.tool_call_id,
+                    "parent_tool_call_id": self._outer_tool_call_id,
+                    "name": tool_name,
+                    "result": normalized_result,
+                },
             )
+            return normalized_result
+
+    async def _record_nested_failure(
+        self,
+        trace_entry: dict[str, Any],
+        error: BaseException,
+        *,
+        status: str,
+    ) -> None:
+        excerpt = _bounded_excerpt(str(error))
+        trace_entry["status"] = status
+        trace_entry["excerpt"] = excerpt
+        await self._ctx.deps.sink.emit(
+            EVENT_TOOL_RESULT,
+            {
+                "tool_call_id": trace_entry["tool_call_id"],
+                "parent_tool_call_id": self._outer_tool_call_id,
+                "name": trace_entry["tool_name"],
+                "result": {"status": status, "error": excerpt},
+            },
+        )
 
 
-async def execute_code_mode_script(
+async def execute_code_mode_workflow(
     *,
     ctx: RunContext[RuntimeDeps],
     wrapped_toolset: FunctionToolset[RuntimeDeps],
@@ -230,18 +306,44 @@ async def execute_code_mode_script(
     code: str,
     executor: MontyExecutor | None = None,
 ) -> ToolReturn:
-    """Execute one script against a wrapped per-run catalog."""
+    """Execute one tool workflow against a wrapped per-run catalog."""
     bridge = await CodeModeBridge.create(
         ctx=ctx,
         wrapped_toolset=wrapped_toolset,
         outer_tool_call_id=outer_tool_call_id,
     )
     resolved_executor = executor or await get_code_mode_executor()
-    execution = await resolved_executor.execute(
-        code,
-        external_lookup=bridge.external_lookup(),
+    await ctx.deps.sink.emit(
+        EVENT_WORKFLOW_STATE,
+        {"tool_call_id": outer_tool_call_id, "state": "started"},
     )
-    return bridge.finalize(execution)
+    try:
+        execution = await resolved_executor.execute(
+            code,
+            external_lookup=bridge.external_lookup(),
+        )
+        result = bridge.finalize(execution)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        await ctx.deps.sink.emit(
+            EVENT_WORKFLOW_STATE,
+            {
+                "tool_call_id": outer_tool_call_id,
+                "state": "failed",
+                "error_excerpt": _bounded_excerpt(str(exc)),
+            },
+        )
+        raise
+    await ctx.deps.sink.emit(
+        EVENT_WORKFLOW_STATE,
+        {
+            "tool_call_id": outer_tool_call_id,
+            "state": "completed",
+            **({"output_excerpt": _bounded_excerpt(execution.output)} if execution.output else {}),
+        },
+    )
+    return result
 
 
 def _normalize_boundary_value(value: Any, *, tool_name: str, max_bytes: int) -> Any:
@@ -320,7 +422,7 @@ def _tainted_node(tool_call_id: str, value: Any) -> UntrustedNode:
         value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
     )
     return UntrustedNode(
-        source_kind="code_mode_script",
+        source_kind="code_mode_workflow",
         source_ref=tool_call_id,
         content=content,
     )
@@ -330,3 +432,24 @@ def _has_binary_or_multimodal_content(content: Any) -> bool:
     if content is None or isinstance(content, str):
         return False
     return any(not isinstance(part, str) or isinstance(part, BinaryContent) for part in content)
+
+
+def _tool_summary(tool_name: str) -> str:
+    from services.agents.runtime.tools.registry import get_runtime_tool_definition
+
+    definition = get_runtime_tool_definition(tool_name)
+    return definition.label if definition is not None else tool_name.replace("_", " ").title()
+
+
+def _bounded_excerpt(value: Any) -> str:
+    safe_value = json_safe_value(value)
+    if isinstance(safe_value, str):
+        rendered = safe_value
+    else:
+        rendered = json.dumps(safe_value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if len(rendered) <= CODE_MODE_TRACE_EXCERPT_MAX_CHARS:
+        return rendered
+    marker = "…[excerpt truncated]…"
+    remaining = CODE_MODE_TRACE_EXCERPT_MAX_CHARS - len(marker)
+    head = int(remaining * 0.8)
+    return f"{rendered[:head]}{marker}{rendered[-(remaining - head) :]}"

@@ -275,6 +275,7 @@ async def test_tool_invocation_writes_digest_only_audit_row(
         assert event.details["latency_ms"] >= 1
         assert event.details["run_id"] == str(context.run_id)
         assert event.details["agent_id"] == str(context.agent_id)
+        assert "parent_tool_call_id" not in event.details
         assert "result_chars" not in event.details
         assert "result_truncated" not in event.details
         assert marker not in json.dumps(event.details)

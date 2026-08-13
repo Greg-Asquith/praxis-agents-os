@@ -53,6 +53,7 @@ async def record_tool_invocation_audit_event(
     result_chars: int | None = None,
     result_truncated: bool | None = None,
     result_original_chars: int | None = None,
+    parent_tool_call_id: str | None = None,
 ) -> None:
     """Record one tool invocation in an independent committed transaction."""
     try:
@@ -97,6 +98,11 @@ async def record_tool_invocation_audit_event(
                         "agent_id": str(agent.id),
                         "agent_name": agent.name,
                         "tool_version": tool_version,
+                        **(
+                            {"parent_tool_call_id": parent_tool_call_id}
+                            if parent_tool_call_id is not None
+                            else {}
+                        ),
                         **(
                             {
                                 "result_chars": result_chars,

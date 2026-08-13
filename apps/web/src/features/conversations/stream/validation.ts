@@ -9,6 +9,7 @@ import type {
   MessageChannel,
   StreamEvent,
   StreamEventName,
+  WorkflowState,
 } from "@/features/conversations/stream/protocol"
 import { isRecord } from "@/lib/guards"
 
@@ -29,6 +30,7 @@ const CONVERSATION_SOURCES: ReadonlySet<string> = new Set([
 ])
 
 const MESSAGE_CHANNELS: ReadonlySet<string> = new Set(["text", "thinking"])
+const WORKFLOW_STATES: ReadonlySet<string> = new Set(["started", "completed", "failed"])
 
 type StreamEnvelope = {
   run_id: string
@@ -100,7 +102,8 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           message_id: requiredNonEmptyString(eventName, "data.message_id", data["message_id"]),
         },
       }
-    case "tool.call":
+    case "tool.call": {
+      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       return {
         event: "tool.call",
         data: {
@@ -112,10 +115,13 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           name: requiredNonEmptyString(eventName, "data.name", data["name"]),
           args: requiredField(eventName, data, "args"),
+          ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
         },
       }
+    }
     case "tool.result": {
       const name = optionalNullableNonEmptyString(eventName, data, "name")
+      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       return {
         event: "tool.result",
         data: {
@@ -127,6 +133,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           ...(name === undefined ? {} : { name }),
           result: requiredField(eventName, data, "result"),
+          ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
         },
       }
     }
@@ -146,6 +153,30 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           args: requiredField(eventName, data, "args"),
           ...(replayArgs.present ? { replay_args: replayArgs.value } : {}),
           ...(delegation === undefined ? {} : { delegation }),
+        },
+      }
+    }
+    case "workflow.state": {
+      const outputExcerpt = optionalNullableString(eventName, data, "output_excerpt")
+      const errorExcerpt = optionalNullableString(eventName, data, "error_excerpt")
+      return {
+        event: "workflow.state",
+        data: {
+          ...envelope,
+          tool_call_id: requiredNonEmptyString(
+            eventName,
+            "data.tool_call_id",
+            data["tool_call_id"]
+          ),
+          state: requiredEnum(
+            eventName,
+            "data.state",
+            data["state"],
+            WORKFLOW_STATES,
+            "a supported workflow state"
+          ) as WorkflowState,
+          ...(outputExcerpt === undefined ? {} : { output_excerpt: outputExcerpt }),
+          ...(errorExcerpt === undefined ? {} : { error_excerpt: errorExcerpt }),
         },
       }
     }
@@ -446,6 +477,28 @@ function optionalNullableNonEmptyString(
   }
   const value = record[key]
   return value === null ? null : requiredNonEmptyString(eventName, `data.${key}`, value)
+}
+
+function optionalNonEmptyString(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): string | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  return requiredNonEmptyString(eventName, `data.${key}`, record[key])
+}
+
+function optionalNullableString(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): string | null | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  return requiredNullableString(eventName, `data.${key}`, record[key])
 }
 
 function optionalNullableDelegation(

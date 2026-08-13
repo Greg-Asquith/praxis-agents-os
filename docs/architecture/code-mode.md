@@ -1,6 +1,6 @@
 # Code-Mode Orchestration
 
-- **Status**: adopted architecture; implementation pending in plans 110–113
+- **Status**: adopted architecture; Plan 110 Chunks A–D implemented, Chunks E–F and plans 111–113 pending
 - **Owner**: agent runtime
 - **Rule**: implementation work cites the decision it consumes. A change that
   deviates records the deviation here in the same pull request.
@@ -26,7 +26,7 @@ This is distinct from provider-native compute:
 
 | Surface | Purpose | Sandbox | Tool name |
 |---|---|---|---|
-| Code-mode orchestration | Compose Praxis tools while intermediate data stays local to the interpreter | Local Monty worker with only declared tool stubs | `run_script` |
+| Code-mode orchestration | Compose Praxis tools while intermediate data stays local to the interpreter | Local Monty worker with only declared tool stubs | `run_workflow` |
 | Provider-native compute (plan 059) | Perform pandas-class or file-heavy computation in a provider sandbox | Model provider or later external executor | `run_code` |
 
 Neither sandbox may invoke the other.
@@ -53,7 +53,7 @@ is an architecture re-verification event before dependent work proceeds.
 
 ### D-2 — Trust boundary: the framework `ToolManager` is the only nested invocation path
 
-The bridge is a small Praxis wrapper toolset. It exposes only `run_script` to
+The bridge is a small Praxis wrapper toolset. It exposes only `run_workflow` to
 the model and retains eligible tools internally as a `FunctionToolset` built
 from their existing Pydantic AI `Tool` objects.
 
@@ -64,9 +64,9 @@ For each nested call it:
    capability, the run context, and the prepared tools returned by
    `toolset.get_tools(ctx)`;
 2. synthesizes a nested `ToolCallPart` with its own call id and the outer
-   `run_script` call as parent;
+   `run_workflow` call as parent;
 3. calls `ToolManager.handle_call(..., wrap_validation_errors=False)`;
-4. converts a returned `ToolDenied` into an in-script exception; and
+4. converts a returned `ToolDenied` into an in-workflow exception; and
 5. adds only Praxis-owned concerns around that call: serial locking,
    parent linkage, byte limits, snapshot control, trace metadata, audit
    metadata, and client events.
@@ -83,7 +83,7 @@ Praxis must not reproduce the Tool-layer pipeline. Direct/nested parity is
 required for effective arguments, custom validation, context, timeouts,
 authorization, envelope decisions, hook reachability, and handler execution.
 Outer presentation intentionally differs: nested raw failures remain
-in-script, nested calls do not consume the agent retry budget, and deferrals
+inside the workflow, nested calls do not consume the agent retry budget, and deferrals
 are translated by the lane slice that owns them.
 
 ### D-3 — Trust boundary: no ambient authority and every boundary is bounded
@@ -134,7 +134,7 @@ designed trust boundary.
 
 Snapshot load or compatibility failure branches on the completed prefix:
 
-- **Read-only prefix**: settle `run_script` with a structured model-visible
+- **Read-only prefix**: settle `run_workflow` with a structured model-visible
   failure so the model may redraft. Existing approvals, audits, and evidence
   remain intact.
 - **Any completed effectful nested call**: fail closed to explicit operator
@@ -151,7 +151,7 @@ follow-up.
 The operator approves the familiar nested tool action and effective arguments;
 the Python script is collapsed context, not a consent artifact. One decision
 authorizes exactly one nested tool-call id once. Approval of call N must never
-leak to N+1 merely because the outer `run_script` call resumed as approved.
+leak to N+1 merely because the outer `run_workflow` call resumed as approved.
 
 When a nested call requires approval, the outer tool suspends through the
 existing deferred-tool machinery. The approval card uses the nested tool's
@@ -164,7 +164,7 @@ staged-content cleanup because generic approval helpers can see only the outer
 message-history call. Each record and cleanup occurs exactly once.
 
 Batch consent is expressed as one list-shaped tool call whose existing
-`records` presentation shows the complete bounded row set. Script-scoped
+`records` presentation shows the complete bounded row set. Workflow-scoped
 grants are not part of this lane because they would approve future arguments
 the operator has not reviewed.
 
@@ -179,7 +179,7 @@ the trade is accepted so the request does not pay for both schemas.
 Every `RuntimeToolDefinition` declares `code_eligible: bool`. Eligibility is
 never inferred from effect, provider, schema, or policy. Import-time validation
 forbids `True` on runtime machinery such as delegation, always-mounted
-internals, `report_completion`, `run_script`, provider-native `run_code`, and
+internals, `report_completion`, `run_workflow`, provider-native `run_code`, and
 capability-loading tools.
 
 An eligible tool must:
@@ -194,23 +194,29 @@ Gmail message reading, helper-native web/media tools, conversational acts,
 memory tools, planning tools, skill loading, delegation, and completion
 reporting remain direct. Plan 110 initially wraps eligible auto-read tools;
 approval-default and envelope-gated writes remain direct until plan 112 makes
-durable mid-script approval available.
+durable mid-workflow approval available.
 
 Unsupported schemas remain direct rather than receiving a lossy stub.
-Non-serializable or over-budget returns become structured in-script failures.
+Non-serializable or over-budget returns become structured in-workflow failures.
 `build_runtime_tools` stays the sole mounting authority and applies the split
 after agent selection, workspace disables, deferred loading, and integration
 context filtering.
 
 ### D-8 — Naming and classification: explicit enablement
 
-The outer tool is `run_script` and declares:
+The outer tool is `run_workflow` and declares:
 
 - `effect="read"`;
 - `effect_scope="internal"`;
 - `egress="none"`;
 - `default_policy="auto"`; and
 - `configurable=False`.
+
+The operator renamed the tool from the pre-implementation `run_script` proposal
+on 2026-08-13. “Workflow” names Praxis-side tool composition; “script” remains
+reserved for one-shot provider sandbox computation. The executable payload is
+still Python code, but the product capability is the governed workflow it
+orchestrates.
 
 The outer tool has no effect of its own. Every nested effect is independently
 classified, authorized, audited, and approved. The corresponding threat-model
@@ -219,7 +225,7 @@ bypass nested enforcement.
 
 Code mode is an agent capability controlled by
 `agents.code_mode_enabled`. The agent form places one checkbox above the tool
-list with explanatory copy; `run_script` is never a catalog row. There is no
+list with explanatory copy; `run_workflow` is never a catalog row. There is no
 workspace-global switch and no automatic threshold-based activation in v1.
 
 ### D-9 — Threat model and governance: taint survives transformations
@@ -238,7 +244,7 @@ The bridge therefore applies conservative whole-interpreter taint:
 3. keep taint sticky through caught exceptions and, in plan 112, suspension;
 4. wrap a tainted script's final value and captured print output in one
    server-minted `UntrustedNode` with
-   `source_kind="code_mode_script"` and `source_ref` equal to the outer call
+   `source_kind="code_mode_workflow"` and `source_ref` equal to the outer call
    id; and
 5. carry the complete bounded source list in nested-trace/audit/event metadata,
    and later `code_mode_state`, rather than overloading the singular node
@@ -290,7 +296,7 @@ allowed in v1.
 Bridge-internal calls are not Pydantic AI message parts. Live SSE and audit
 events are observation channels, not replay sources. The durable
 representation is therefore bounded, redacted trace metadata attached to the
-outer `run_script` result.
+outer `run_workflow` result.
 
 Each nested entry contains:
 
@@ -312,7 +318,7 @@ hidden behind a collapsed container.
 
 ```text
 model
-  -> run_script (only directly visible orchestration tool)
+  -> run_workflow (only directly visible orchestration tool)
     -> Monty worker (no ambient OS, files, network, DB, or credentials)
       -> generated eligible-tool stub
         -> inner Pydantic AI ToolManager
@@ -540,7 +546,7 @@ plan before implementation:
 | In-sandbox discovery (`search_tools` / `describe_tool`) | Measured catalogs show even concise stub text materially harms requests or routing |
 | Enablement suggestion in the agent form | On/off measurements plus observed multi-call turns identify a useful, non-surprising suggestion rule |
 | Workspace-level controls | A workspace governance need cannot be served by per-agent opt-in and existing tool grants |
-| Script-scoped tool grants | A concrete workload cannot use batch arguments, and consent can constrain future arguments to an operator-reviewed target/value set |
+| Workflow-scoped tool grants | A concrete workload cannot use batch arguments, and consent can constrain future arguments to an operator-reviewed target/value set |
 | Durable deduplicating execution ledger | Product evidence justifies replaying past executed writes instead of D-5's fail-closed recovery branch |
 | Object-storage snapshot offload | Measured bounded snapshots create material Postgres storage pressure |
 

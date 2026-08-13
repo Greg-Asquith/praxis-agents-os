@@ -64,8 +64,26 @@ const validEventCases = [
   ],
   ["message.delta", { ...envelope, message_id: "message-1", text: "Hello" }],
   ["message.end", { ...envelope, message_id: "message-1" }],
-  ["tool.call", { ...envelope, tool_call_id: "tool-1", name: "search", args: null }],
-  ["tool.result", { ...envelope, tool_call_id: "tool-1", name: null, result: ["result"] }],
+  [
+    "tool.call",
+    {
+      ...envelope,
+      tool_call_id: "tool-1",
+      parent_tool_call_id: "workflow-1",
+      name: "search",
+      args: null,
+    },
+  ],
+  [
+    "tool.result",
+    {
+      ...envelope,
+      tool_call_id: "tool-1",
+      parent_tool_call_id: "workflow-1",
+      name: null,
+      result: ["result"],
+    },
+  ],
   [
     "tool.approval_required",
     {
@@ -82,6 +100,16 @@ const validEventCases = [
         child_run_id: "run-2",
         pending_approval_count: 1,
       },
+    },
+  ],
+  [
+    "workflow.state",
+    {
+      ...envelope,
+      tool_call_id: "workflow-1",
+      state: "completed",
+      output_excerpt: "two rows",
+      error_excerpt: null,
     },
   ],
   ["error", { ...envelope, code: "provider_failure", message: "Provider failed." }],
@@ -157,6 +185,39 @@ describe("parseSseStream", () => {
     ])
   })
 
+  it("accepts a live workflow sequence with parented nested calls", async () => {
+    const events = [
+      ["workflow.state", { ...envelope, seq: 1, tool_call_id: "workflow-1", state: "started" }],
+      [
+        "tool.call",
+        {
+          ...envelope,
+          seq: 2,
+          tool_call_id: "workflow-1:1",
+          parent_tool_call_id: "workflow-1",
+          name: "search",
+          args: { query: "status" },
+        },
+      ],
+      [
+        "tool.result",
+        {
+          ...envelope,
+          seq: 3,
+          tool_call_id: "workflow-1:1",
+          parent_tool_call_id: "workflow-1",
+          name: "search",
+          result: { count: 1 },
+        },
+      ],
+      ["workflow.state", { ...envelope, seq: 4, tool_call_id: "workflow-1", state: "completed" }],
+    ] as const
+
+    await expect(
+      collectEvents(events.map(([event, data]) => eventFrame(event, data)))
+    ).resolves.toEqual(events.map(([event, data]) => ({ event, data })))
+  })
+
   it("handles CRLF separators", async () => {
     await expect(
       collectEvents([
@@ -210,6 +271,7 @@ describe("parseSseStream", () => {
     const events = [
       ["message.start", { ...envelope, message_id: "message-1", role: "assistant" }],
       ["tool.result", { ...envelope, tool_call_id: "tool-1", result: null }],
+      ["workflow.state", { ...envelope, tool_call_id: "workflow-1", state: "started" }],
       [
         "tool.approval_required",
         {
@@ -260,6 +322,7 @@ describe("parseSseStream", () => {
     ["message.end", { ...envelope, message_id: null }, "data.message_id"],
     ["tool.call", { ...envelope, tool_call_id: "tool-1", name: "search" }, "data.args"],
     ["tool.result", { ...envelope, tool_call_id: "tool-1" }, "data.result"],
+    ["workflow.state", { ...envelope, tool_call_id: "workflow-1" }, "data.state"],
     [
       "tool.approval_required",
       {
@@ -286,6 +349,18 @@ describe("parseSseStream", () => {
       "data.channel",
     ],
     ["tool.result", { ...envelope, tool_call_id: "tool-1", name: 10, result: null }, "data.name"],
+    [
+      "tool.call",
+      {
+        ...envelope,
+        tool_call_id: "tool-1",
+        parent_tool_call_id: "",
+        name: "search",
+        args: {},
+      },
+      "data.parent_tool_call_id",
+    ],
+    ["workflow.state", { ...envelope, tool_call_id: "workflow-1", state: "paused" }, "data.state"],
     [
       "tool.approval_required",
       {
