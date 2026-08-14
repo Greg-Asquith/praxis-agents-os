@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { agentIdentityIndex } from "@/lib/agent-identity"
+import { agentIdentityColorIndex, agentIdentityIndex } from "@/lib/agent-identity"
 
 describe("agentIdentityIndex", () => {
   it("keeps the FNV-1a palette assignment stable", () => {
@@ -19,5 +19,22 @@ describe("agentIdentityIndex", () => {
       expect(agentIdentityIndex(id)).toBeGreaterThanOrEqual(0)
       expect(agentIdentityIndex(id)).toBeLessThan(8)
     }
+  })
+})
+
+describe("agentIdentityColorIndex", () => {
+  it("maps a stored one-based color to the zero-based palette index", () => {
+    expect(agentIdentityColorIndex({ identity_color: 1 })).toBe(0)
+    expect(agentIdentityColorIndex({ identity_color: 8 })).toBe(7)
+  })
+
+  it("ignores missing or invalid stored colors", () => {
+    expect(agentIdentityColorIndex(null)).toBeNull()
+    expect(agentIdentityColorIndex(undefined)).toBeNull()
+    expect(agentIdentityColorIndex({})).toBeNull()
+    expect(agentIdentityColorIndex({ identity_color: 0 })).toBeNull()
+    expect(agentIdentityColorIndex({ identity_color: 9 })).toBeNull()
+    expect(agentIdentityColorIndex({ identity_color: 2.5 })).toBeNull()
+    expect(agentIdentityColorIndex({ identity_color: "3" })).toBeNull()
   })
 })

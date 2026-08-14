@@ -4,6 +4,7 @@ import type { StreamEvent } from "@/features/conversations/stream/protocol"
 import {
   agentStreamReducer,
   initialAgentStreamState,
+  selectChildToolCalls,
   selectLiveTimeline,
   type AgentStreamState,
 } from "@/features/conversations/stream/reducer"
@@ -367,6 +368,195 @@ describe("agentStreamReducer", () => {
     ).toEqual(["text:text-1", "tool:tool-1", "text:text-2"])
     expect(afterResult.toolCalls["tool-1"]?.timelineSequence).toBe(sequenceBeforeResult)
     expect(afterResult.toolCalls["tool-1"]?.status).toBe("completed")
+  })
+
+  it("keeps nested workflow calls normalized and out of the top-level timeline", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "workflow-1",
+          name: "run_workflow",
+          args: { code: "await read_file(file_id='file-1')" },
+        },
+      },
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "workflow-1:1",
+          parent_tool_call_id: "workflow-1",
+          name: "read_file",
+          args: { file_id: "file-1" },
+        },
+      },
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(3),
+          tool_call_id: "workflow-1:1",
+          parent_tool_call_id: "workflow-1",
+          name: "read_file",
+          result: { text: "Contents" },
+        },
+      },
+    ])
+
+    expect(Object.keys(state.toolCalls)).toEqual(["workflow-1", "workflow-1:1"])
+    expect(selectChildToolCalls(Object.values(state.toolCalls), "workflow-1")).toEqual([
+      expect.objectContaining({
+        parentToolCallId: "workflow-1",
+        status: "completed",
+        tool_call_id: "workflow-1:1",
+      }),
+    ])
+    expect(
+      selectLiveTimeline([], Object.values(state.toolCalls)).map(
+        (item) => item.kind === "tool" && item.toolCall.tool_call_id
+      )
+    ).toEqual(["workflow-1"])
+  })
+
+  it("preserves parent routing when a nested result arrives before its call", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "workflow-1:1",
+          parent_tool_call_id: "workflow-1",
+          name: "read_file",
+          result: { text: "Contents" },
+        },
+      },
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "workflow-1",
+          name: "run_workflow",
+          args: { code: "'done'" },
+        },
+      },
+    ])
+
+    expect(state.toolCalls["workflow-1:1"]?.parentToolCallId).toBe("workflow-1")
+    expect(selectChildToolCalls(Object.values(state.toolCalls), "workflow-1")).toHaveLength(1)
+  })
+
+  it("routes a nested approval to its workflow even without an earlier call event", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.approval_required",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "workflow-1:3",
+          parent_tool_call_id: "workflow-1",
+          name: "send_email",
+          args: { subject: "Campaign update" },
+        },
+      },
+    ])
+
+    expect(state.toolCalls["workflow-1:3"]).toMatchObject({
+      parentToolCallId: "workflow-1",
+      status: "awaiting_approval",
+    })
+    expect(selectLiveTimeline([], Object.values(state.toolCalls))).toEqual([])
+  })
+
+  it("uses the nested result envelope to show failed and denied steps accurately", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "workflow-1:1",
+          parent_tool_call_id: "workflow-1",
+          name: "read_file",
+          result: { status: "failed", error: "File unavailable" },
+        },
+      },
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "workflow-1:2",
+          parent_tool_call_id: "workflow-1",
+          name: "send_email",
+          result: { status: "denied", error: "Operator declined" },
+        },
+      },
+    ])
+
+    expect(state.toolCalls["workflow-1:1"]?.status).toBe("failed")
+    expect(state.toolCalls["workflow-1:2"]?.status).toBe("denied")
+  })
+
+  it("tracks workflow state and bounded outcome excerpts on the outer call", () => {
+    const state = reduceEvents([
+      {
+        event: "workflow.state",
+        data: { ...eventWithSeq(1), tool_call_id: "workflow-1", state: "started" },
+      },
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "workflow-1",
+          name: "run_workflow",
+          args: { code: "'done'", ignored_future_field: true },
+        },
+      },
+      {
+        event: "workflow.state",
+        data: {
+          ...eventWithSeq(3),
+          tool_call_id: "workflow-1",
+          state: "completed",
+          output_excerpt: "finished",
+        },
+      },
+    ])
+
+    expect(state.toolCalls["workflow-1"]).toMatchObject({
+      args: { code: "'done'", ignored_future_field: true },
+      status: "completed",
+      timelineSequence: 0,
+      workflowOutputExcerpt: "finished",
+      workflowState: "completed",
+    })
+  })
+
+  it("marks a failed workflow without discarding its call arguments", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.call",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "workflow-1",
+          name: "run_workflow",
+          args: { code: "raise ValueError('no')", reason: "Check the report" },
+        },
+      },
+      {
+        event: "workflow.state",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "workflow-1",
+          state: "failed",
+          error_excerpt: "The workflow could not finish.",
+        },
+      },
+    ])
+
+    expect(state.toolCalls["workflow-1"]).toMatchObject({
+      args: { code: "raise ValueError('no')", reason: "Check the report" },
+      status: "failed",
+      workflowErrorExcerpt: "The workflow could not finish.",
+      workflowState: "failed",
+    })
   })
 
   it("marks error events as failed and stores the stream error", () => {

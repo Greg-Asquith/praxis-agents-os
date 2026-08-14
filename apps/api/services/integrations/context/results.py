@@ -3,39 +3,67 @@
 """Published result envelope for integration context execution."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+from services.integrations.context.domain import ResolvedContextEntry
 
 
-class IntegrationFanOutEntry(BaseModel):
-    integration_resource_id: UUID
-    connection_id: UUID
-    provider_key: str
-    external_id: str
-    display_name: str
+@dataclass(frozen=True)
+class IntegrationContextResult:
+    """Internal execution result retaining the authorized context entry."""
+
+    entry: ResolvedContextEntry
     status: Literal["success", "error"]
     data: Any | None = None
     error_code: str | None = None
     error_message: str | None = None
 
+    @property
+    def integration_resource_id(self) -> UUID:
+        return self.entry.integration_resource_id
+
+    @property
+    def connection_id(self) -> UUID:
+        return self.entry.connection_id
+
+
+class IntegrationFanOutEntry(BaseModel):
+    """Safe model-facing result for one provider-owned resource scope."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider_key: str = Field(pattern=r"^[a-z][a-z0-9_-]*$", max_length=64)
+    external_id: str = Field(
+        min_length=1,
+        max_length=512,
+        description="Provider-owned resource scope identifier.",
+    )
+    display_name: str = Field(min_length=1, max_length=500)
+    status: Literal["success", "error"]
+    data: Any | None = None
+    error_code: str | None = Field(default=None, max_length=128)
+    error_message: str | None = Field(default=None, max_length=1000)
+
 
 class IntegrationFanOutOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     results: list[IntegrationFanOutEntry]
 
 
 def serialize_fan_out_results(
-    items: Sequence[IntegrationFanOutEntry],
+    items: Sequence[IntegrationContextResult],
 ) -> list[dict[str, Any]]:
-    """Serialize the stable nine-field outer envelope."""
+    """Publish safe provider fields without internal authorization identifiers."""
     return [
         {
-            "integration_resource_id": item.integration_resource_id,
-            "connection_id": item.connection_id,
-            "provider_key": item.provider_key,
-            "external_id": item.external_id,
-            "display_name": item.display_name,
+            "provider_key": item.entry.provider_key,
+            "external_id": item.entry.external_id,
+            "display_name": item.entry.display_name,
             "status": item.status,
             "data": item.data,
             "error_code": item.error_code,

@@ -3,11 +3,13 @@
 """Tests for preparing claimed schedule runs."""
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from runpy import run_path
 from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
@@ -16,6 +18,7 @@ from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import Conversation
+from models.integration_context import ActiveContextSelection
 from models.workspace import WorkspaceMembership
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import prepare_schedule_run_execution
@@ -25,9 +28,21 @@ from services.agent_schedules.runs import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
 )
-from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.factories import (
+    build_integration_context_group,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 
 pytestmark = pytest.mark.asyncio
+
+SCHEDULED_CONTEXT_BACKFILL_SQL = run_path(
+    str(
+        Path(__file__).resolve().parents[3]
+        / "alembic/versions/core/0041_backfill_scheduled_conversation_context.py"
+    )
+)["SCHEDULED_CONTEXT_BACKFILL_SQL"]
 
 
 async def _schedule_context(
@@ -35,6 +50,7 @@ async def _schedule_context(
     *,
     default_prompt: str | None = "Run the scheduled task",
     execution_params: dict[str, Any] | None = None,
+    active_context: dict[str, Any] | None = None,
     status: str = RUN_STATUS_CLAIMED,
 ):
     now = datetime.now(UTC)
@@ -66,6 +82,7 @@ async def _schedule_context(
         next_run_at=now - timedelta(minutes=1),
         default_prompt=default_prompt,
         execution_params=execution_params,
+        active_context=active_context,
     )
     db.add(schedule)
     await db.flush()
@@ -114,6 +131,66 @@ async def test_prepare_claimed_run_creates_conversation_and_agent_run(
     assert run.trigger == RUN_TRIGGER_SCHEDULED
     assert run.metadata_json["envelope"] == {"side_effect_policy": "require_approval"}
     assert schedule_run.agent_run_id == run.id
+
+
+async def test_prepare_claimed_run_copies_active_context_to_conversation(
+    db_session: AsyncSession,
+) -> None:
+    user, workspace, _agent, schedule, schedule_run = await _schedule_context(db_session)
+    group = build_integration_context_group(workspace=workspace, user=user)
+    db_session.add(group)
+    await db_session.flush()
+    schedule.active_context = {
+        "targets": [{"type": "context_group", "context_group_id": str(group.id)}]
+    }
+
+    prepared = await prepare_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+    )
+
+    selection = await db_session.scalar(
+        select(ActiveContextSelection).where(
+            ActiveContextSelection.conversation_id == prepared.conversation_id
+        )
+    )
+    assert selection is not None
+    assert selection.workspace_id == workspace.id
+    assert selection.context_group_id == group.id
+    assert selection.integration_resource_id is None
+
+
+async def test_core_0041_backfills_existing_scheduled_conversation_context(
+    db_session: AsyncSession,
+) -> None:
+    user, workspace, agent, schedule, schedule_run = await _schedule_context(db_session)
+    group = build_integration_context_group(workspace=workspace, user=user)
+    db_session.add(group)
+    await db_session.flush()
+    schedule.active_context = {
+        "targets": [{"type": "context_group", "context_group_id": str(group.id)}]
+    }
+    conversation = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        source="scheduled",
+        schedule_id=schedule.id,
+        schedule_run_id=schedule_run.id,
+        active_agent_id=agent.id,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+
+    await db_session.execute(text(str(SCHEDULED_CONTEXT_BACKFILL_SQL)))
+
+    selection = await db_session.scalar(
+        select(ActiveContextSelection).where(
+            ActiveContextSelection.conversation_id == conversation.id
+        )
+    )
+    assert selection is not None
+    assert selection.context_group_id == group.id
 
 
 async def test_prepare_claimed_run_stamps_explicit_side_effect_grant(

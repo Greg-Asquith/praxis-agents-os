@@ -9,6 +9,7 @@ import type {
   MessageChannel,
   StreamEvent,
   StreamEventName,
+  WorkflowState,
 } from "@/features/conversations/stream/protocol"
 import { isRecord } from "@/lib/guards"
 
@@ -29,6 +30,7 @@ const CONVERSATION_SOURCES: ReadonlySet<string> = new Set([
 ])
 
 const MESSAGE_CHANNELS: ReadonlySet<string> = new Set(["text", "thinking"])
+const WORKFLOW_STATES: ReadonlySet<string> = new Set(["started", "completed", "failed"])
 
 type StreamEnvelope = {
   run_id: string
@@ -100,7 +102,8 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           message_id: requiredNonEmptyString(eventName, "data.message_id", data["message_id"]),
         },
       }
-    case "tool.call":
+    case "tool.call": {
+      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       return {
         event: "tool.call",
         data: {
@@ -112,10 +115,13 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           name: requiredNonEmptyString(eventName, "data.name", data["name"]),
           args: requiredField(eventName, data, "args"),
+          ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
         },
       }
+    }
     case "tool.result": {
       const name = optionalNullableNonEmptyString(eventName, data, "name")
+      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       return {
         event: "tool.result",
         data: {
@@ -127,12 +133,16 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           ...(name === undefined ? {} : { name }),
           result: requiredField(eventName, data, "result"),
+          ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
         },
       }
     }
     case "tool.approval_required": {
       const replayArgs = optionalField(data, "replay_args")
+      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       const delegation = optionalNullableDelegation(eventName, data)
+      const derivedFromUntrusted = optionalBoolean(eventName, data, "derived_from_untrusted")
+      const taintSources = optionalTaintSources(eventName, data)
       return {
         event: "tool.approval_required",
         data: {
@@ -144,8 +154,37 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           name: requiredNonEmptyString(eventName, "data.name", data["name"]),
           args: requiredField(eventName, data, "args"),
+          ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
           ...(replayArgs.present ? { replay_args: replayArgs.value } : {}),
           ...(delegation === undefined ? {} : { delegation }),
+          ...(derivedFromUntrusted === undefined
+            ? {}
+            : { derived_from_untrusted: derivedFromUntrusted }),
+          ...(taintSources === undefined ? {} : { taint_sources: taintSources }),
+        },
+      }
+    }
+    case "workflow.state": {
+      const outputExcerpt = optionalNullableString(eventName, data, "output_excerpt")
+      const errorExcerpt = optionalNullableString(eventName, data, "error_excerpt")
+      return {
+        event: "workflow.state",
+        data: {
+          ...envelope,
+          tool_call_id: requiredNonEmptyString(
+            eventName,
+            "data.tool_call_id",
+            data["tool_call_id"]
+          ),
+          state: requiredEnum(
+            eventName,
+            "data.state",
+            data["state"],
+            WORKFLOW_STATES,
+            "a supported workflow state"
+          ) as WorkflowState,
+          ...(outputExcerpt === undefined ? {} : { output_excerpt: outputExcerpt }),
+          ...(errorExcerpt === undefined ? {} : { error_excerpt: errorExcerpt }),
         },
       }
     }
@@ -167,6 +206,33 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         },
       }
   }
+}
+
+function optionalTaintSources(eventName: StreamEventName, data: Record<string, unknown>) {
+  if (!("taint_sources" in data)) {
+    return undefined
+  }
+  const value = data["taint_sources"]
+  if (!Array.isArray(value)) {
+    invalidField(eventName, "data.taint_sources", "must be an array")
+  }
+  return value.map((source, index) => {
+    if (!isRecord(source)) {
+      invalidField(eventName, `data.taint_sources[${String(index)}]`, "must be an object")
+    }
+    return {
+      source_kind: requiredNonEmptyString(
+        eventName,
+        `data.taint_sources[${String(index)}].source_kind`,
+        source["source_kind"]
+      ),
+      source_ref: requiredNonEmptyString(
+        eventName,
+        `data.taint_sources[${String(index)}].source_ref`,
+        source["source_ref"]
+      ),
+    }
+  })
 }
 
 function parseEnvelope(eventName: StreamEventName, data: Record<string, unknown>): StreamEnvelope {
@@ -436,6 +502,17 @@ function optionalEnum(
   return requiredEnum(eventName, `data.${key}`, record[key], values, expectation)
 }
 
+function optionalBoolean(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): boolean | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  return requiredBoolean(eventName, `data.${key}`, record[key])
+}
+
 function optionalNullableNonEmptyString(
   eventName: StreamEventName,
   record: Record<string, unknown>,
@@ -446,6 +523,28 @@ function optionalNullableNonEmptyString(
   }
   const value = record[key]
   return value === null ? null : requiredNonEmptyString(eventName, `data.${key}`, value)
+}
+
+function optionalNonEmptyString(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): string | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  return requiredNonEmptyString(eventName, `data.${key}`, record[key])
+}
+
+function optionalNullableString(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): string | null | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  return requiredNullableString(eventName, `data.${key}`, record[key])
 }
 
 function optionalNullableDelegation(

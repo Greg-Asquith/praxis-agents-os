@@ -35,8 +35,8 @@ def _choice(entry, message: Mapping[str, Any]) -> EntityChoice:
     message_id = str(message.get("message_id", "")).strip()
     return EntityChoice.from_reference(
         GmailMessageReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id=message_id,
+            mailbox_id=entry.external_id,
+            message_id=message_id,
             label=subject[:500],
             description=" · ".join(value for value in (sender, date) if value),
             scope_label=entry.display_name,
@@ -86,22 +86,22 @@ async def search_gmail_messages(ctx, search, _dependent_args, page_size, cursor)
 
 
 async def resolve_gmail_messages(ctx, values: Sequence[Any], _dependent_args):
-    entries = {
-        entry.integration_resource_id: entry
-        for entry in ctx.active_context.compatible_entries(GMAIL_BINDING)
-    }
-    grouped: dict[Any, list[GmailMessageReference]] = defaultdict(list)
+    entries_by_mailbox: dict[str, list[Any]] = defaultdict(list)
+    for entry in ctx.active_context.compatible_entries(GMAIL_BINDING):
+        entries_by_mailbox[entry.external_id].append(entry)
+    grouped: dict[str, list[GmailMessageReference]] = defaultdict(list)
     for value in values:
         try:
             reference = GmailMessageReference.model_validate(value)
         except ValueError:
             continue
-        if reference.integration_resource_id in entries:
-            grouped[reference.integration_resource_id].append(reference)
+        matching = entries_by_mailbox.get(reference.mailbox_id, ())
+        if len(matching) == 1:
+            grouped[reference.mailbox_id].append(reference)
 
     choices: list[EntityChoice] = []
-    for resource_id, references in grouped.items():
-        entry = entries[resource_id]
+    for mailbox_id, references in grouped.items():
+        entry = entries_by_mailbox[mailbox_id][0]
         client = await gmail_client_for_principal(
             ctx.db,
             actor=ctx.actor,
@@ -110,7 +110,7 @@ async def resolve_gmail_messages(ctx, values: Sequence[Any], _dependent_args):
         )
         for reference in references[:25]:
             try:
-                message = await get_message_metadata(client, reference.external_id)
+                message = await get_message_metadata(client, reference.message_id)
             except IntegrationNotFoundError:
                 # Messages can disappear between selection and exact hydration.
                 # An omitted choice makes the stale reference unavailable without

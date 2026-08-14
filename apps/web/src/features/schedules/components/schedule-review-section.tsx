@@ -55,6 +55,7 @@ export function ScheduleReviewSection({
                 <AgentIdentityIcon
                   agentId={selectedAgent.id}
                   decorative
+                  metadata={selectedAgent.metadata}
                   name={selectedAgent.name}
                   size="sm"
                 />

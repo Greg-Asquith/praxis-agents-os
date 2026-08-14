@@ -2,7 +2,7 @@
 
 """Typed Gmail tool-result contracts."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from integrations.gmail.references import GmailMessageReference
 from services.agents.runtime.untrusted import UntrustedNode
@@ -14,7 +14,11 @@ from services.integrations.context.results import (
 type UntrustedText = str | UntrustedNode
 
 
-class GmailMessageSummary(BaseModel):
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class GmailMessageSummary(_StrictModel):
     message_id: str
     reference: GmailMessageReference
     sender: UntrustedText
@@ -24,12 +28,12 @@ class GmailMessageSummary(BaseModel):
     snippet: UntrustedText
 
 
-class GmailSearchData(BaseModel):
+class GmailSearchData(_StrictModel):
     messages: list[GmailMessageSummary]
     total: int
 
 
-class GmailMessageData(BaseModel):
+class GmailMessageData(_StrictModel):
     message_id: str
     sender: UntrustedText
     to: UntrustedText
@@ -39,7 +43,7 @@ class GmailMessageData(BaseModel):
     truncated: bool
 
 
-class GmailSendData(BaseModel):
+class GmailSendData(_StrictModel):
     message_id: str
 
 

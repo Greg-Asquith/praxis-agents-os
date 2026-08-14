@@ -3,6 +3,13 @@
 import { MailPlusIcon } from "lucide-react"
 
 import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
+import {
   Card,
   CardAction,
   CardContent,
@@ -33,10 +40,35 @@ import { formatDateTime } from "@/lib/format"
 
 type WorkspaceInvitation = WorkspaceInvitationsListResponse["invitations"][number]
 
+const columnHelper = createAppColumnHelper<WorkspaceInvitation>()
+
+const columns = columnHelper.columns([
+  columnHelper.accessor("email", {
+    header: ({ header }) => <header.ColumnHeader />,
+    meta: { label: "Email" },
+  }),
+  columnHelper.accessor("role", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => <WorkspaceRoleBadge role={getValue()} />,
+    meta: { label: "Role" },
+  }),
+  columnHelper.accessor("expires_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => formatDateTime(getValue()),
+    meta: { label: "Expires" },
+  }),
+  columnHelper.accessor("created_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => formatDateTime(getValue()),
+    meta: { label: "Created" },
+  }),
+])
+
 export function InvitationsTable() {
   const { workspace } = useActiveWorkspace()
   const { data } = useWorkspaceInvitationsQuery(workspace.id)
   const hasInvitations = data.invitations.length > 0
+  const table = useAppTable({ columns, data: data.invitations })
 
   return (
     <Card className="border-0 bg-transparent shadow-none ring-0">
@@ -58,30 +90,9 @@ export function InvitationsTable() {
               ))}
             </ResponsiveList>
 
-            <div className="hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Created</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.invitations.map((invitation) => (
-                    <TableRow key={invitation.id}>
-                      <TableCell>{invitation.email}</TableCell>
-                      <TableCell>
-                        <WorkspaceRoleBadge role={invitation.role} />
-                      </TableCell>
-                      <TableCell>{formatDateTime(invitation.expires_at)}</TableCell>
-                      <TableCell>{formatDateTime(invitation.created_at)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <table.AppTable>
+              <InvitationsDesktopTable />
+            </table.AppTable>
           </>
         ) : (
           <EmptyState
@@ -94,6 +105,53 @@ export function InvitationsTable() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function InvitationsDesktopTable() {
+  const table = useTableContext<WorkspaceInvitation>()
+
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <table.AppHeader header={header} key={header.id}>
+                  {() => <InvitationHeaderCell />}
+                </table.AppHeader>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <table.AppCell cell={cell} key={cell.id}>
+                  {() => <InvitationBodyCell />}
+                </table.AppCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function InvitationHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function InvitationBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell>
+      <cell.FlexRender />
+    </TableCell>
   )
 }
 

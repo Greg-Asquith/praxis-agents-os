@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import WebSearch
 from pydantic_ai.messages import ModelMessage, ModelResponse, NativeToolReturnPart, TextPart
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.settings import settings
 from models.agent import Agent as AgentModel
@@ -42,6 +42,8 @@ from services.agents.runtime.tools import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.ai_usage.domain import PURPOSE_WEB_SEARCH, AIUsageEventData
+from services.ai_usage.run_metered_helper import run_metered_helper
 from utils.validation import normalize_optional_text
 
 NativeWebSearchProvider = Literal["anthropic", "google", "openai"]
@@ -54,7 +56,7 @@ SUPPORTED_NATIVE_SEARCH_PROVIDERS = (
 
 DEFAULT_NATIVE_SEARCH_MODELS = {
     PROVIDER_ANTHROPIC: "claude-sonnet-5",
-    PROVIDER_GOOGLE: "gemini-3.5-flash",
+    PROVIDER_GOOGLE: "gemini-3.7-flash",
     PROVIDER_OPENAI: "gpt-5.6-luna",
 }
 
@@ -117,6 +119,7 @@ class NativeWebSearchResult(BaseModel):
     name="web_search",
     provider="native",
     label="Web Search",
+    code_eligible=False,
     description=(
         "Search the web with a provider-native helper model. The helper model "
         "provider and model can be selected per call from the available native "
@@ -199,7 +202,11 @@ async def web_search(
         model_provider=model_provider,
         model=model,
     )
-    search_result = await run_native_web_search(query=normalized_query, model_spec=model_spec)
+    search_result = await run_native_web_search(
+        deps=ctx.deps,
+        query=normalized_query,
+        model_spec=model_spec,
+    )
     return {
         "query": normalized_query,
         "answer": search_result.answer,
@@ -242,7 +249,12 @@ def resolve_web_search_model(
     )
 
 
-async def run_native_web_search(*, query: str, model_spec: ResolvedModel) -> NativeWebSearchResult:
+async def run_native_web_search(
+    *,
+    deps: RuntimeDeps,
+    query: str,
+    model_spec: ResolvedModel,
+) -> NativeWebSearchResult:
     """Run a short helper-agent search turn on the selected native model."""
     if model_spec.provider == PROVIDER_OPENAI:
         model_spec = replace(
@@ -260,9 +272,26 @@ async def run_native_web_search(*, query: str, model_spec: ResolvedModel) -> Nat
         output_type=str,
         capabilities=[WebSearch(native=True, local=False)],
     )
-    result = await helper.run(
-        f"Search the web for this query and answer it:\n\n{query}",
-        usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+
+    async def call(usage: RunUsage):
+        return await helper.run(
+            f"Search the web for this query and answer it:\n\n{query}",
+            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+            usage=usage,
+        )
+
+    result = await run_metered_helper(
+        AIUsageEventData(
+            workspace_id=deps.workspace.id,
+            provider=model_spec.provider,
+            model=model_spec.model,
+            purpose=PURPOSE_WEB_SEARCH,
+            agent_id=deps.agent.id,
+            user_id=deps.user.id,
+            run_id=deps.run.id,
+            conversation_id=deps.conversation.id,
+        ),
+        call,
     )
     return NativeWebSearchResult(
         answer=result.output,

@@ -28,8 +28,8 @@ def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
     name = str(campaign.get("name", "")).strip() or "(unnamed campaign)"
     return EntityChoice.from_reference(
         GoogleAdsCampaignReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id=campaign_id,
+            customer_id=entry.external_id,
+            campaign_id=campaign_id,
             label=name[:500],
             description=status.title() if status else "Campaign",
             scope_label=entry.display_name,
@@ -98,7 +98,7 @@ async def resolve_google_ads_campaigns(ctx, values: Sequence[Any], _dependent_ar
     choices: list[EntityChoice] = []
     grouped = group_scoped_references(ctx, GOOGLE_ADS_BINDING, values, GoogleAdsCampaignReference)
     for entry, references in grouped:
-        ids = [reference.external_id for reference in references]
+        ids = [reference.campaign_id for reference in references]
         campaigns = await _query(
             ctx,
             entry,

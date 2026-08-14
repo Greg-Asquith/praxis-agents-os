@@ -3,6 +3,13 @@
 import { Link } from "@tanstack/react-router"
 import { PencilIcon, PlusIcon, SparklesIcon } from "lucide-react"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -23,7 +30,75 @@ import { skillDisplayName } from "@/features/skills/format"
 import type { Skill } from "@/features/skills/types"
 import { formatDateTime, pluralize } from "@/lib/format"
 
+const columnHelper = createAppColumnHelper<Skill>()
+
+const columns = columnHelper.columns([
+  columnHelper.display({
+    id: "name",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => (
+      <div className="flex min-w-40 flex-col gap-1">
+        <Link
+          className="font-medium hover:underline"
+          params={{ skillId: row.original.id }}
+          to="/skills/$skillId"
+        >
+          {skillDisplayName(row.original)}
+        </Link>
+        {row.original.is_favorite ? (
+          <span className="text-muted-foreground text-xs">Favorite</span>
+        ) : null}
+      </div>
+    ),
+    meta: { label: "Name" },
+  }),
+  columnHelper.accessor("description", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground block max-w-md truncate text-sm">{getValue()}</span>
+    ),
+    meta: { label: "Description" },
+  }),
+  columnHelper.display({
+    id: "documents",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => {
+      const documentCount = Object.keys(row.original.documentation_refs).length
+      return `${String(documentCount)} ${pluralize(documentCount, "document")}`
+    },
+    meta: { label: "Documents" },
+  }),
+  columnHelper.display({
+    id: "status",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => <SkillStatusBadges skill={row.original} />,
+    meta: { label: "Status" },
+  }),
+  columnHelper.accessor("last_used_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => formatDateTime(getValue()),
+    meta: { label: "Last used" },
+  }),
+  columnHelper.display({
+    id: "actions",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => (
+      <Button
+        render={<Link params={{ skillId: row.original.id }} to="/skills/$skillId" />}
+        size="sm"
+        variant="outline"
+      >
+        <PencilIcon data-icon="inline-start" />
+        Edit
+      </Button>
+    ),
+    meta: { label: "Actions", labelClassName: "sr-only" },
+  }),
+])
+
 export function SkillsTable({ skills }: { skills: Skill[] }) {
+  const table = useAppTable({ columns, data: skills })
+
   if (skills.length === 0) {
     return (
       <EmptyState
@@ -49,69 +124,57 @@ export function SkillsTable({ skills }: { skills: Skill[] }) {
         ))}
       </ResponsiveList>
 
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Documents</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Last used</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {skills.map((skill) => {
-              const documentCount = Object.keys(skill.documentation_refs).length
-
-              return (
-                <TableRow key={skill.id}>
-                  <TableCell>
-                    <div className="flex min-w-40 flex-col gap-1">
-                      <Link
-                        className="font-medium hover:underline"
-                        params={{ skillId: skill.id }}
-                        to="/skills/$skillId"
-                      >
-                        {skillDisplayName(skill)}
-                      </Link>
-                      {skill.is_favorite ? (
-                        <span className="text-muted-foreground text-xs">Favorite</span>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground block max-w-md truncate text-sm">
-                      {skill.description}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {documentCount} {pluralize(documentCount, "document")}
-                  </TableCell>
-                  <TableCell>
-                    <SkillStatusBadges skill={skill} />
-                  </TableCell>
-                  <TableCell>{formatDateTime(skill.last_used_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      render={<Link to="/skills/$skillId" params={{ skillId: skill.id }} />}
-                    >
-                      <PencilIcon data-icon="inline-start" />
-                      Edit
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
+      <table.AppTable>
+        <SkillsDesktopTable />
+      </table.AppTable>
     </div>
+  )
+}
+
+function SkillsDesktopTable() {
+  const table = useTableContext<Skill>()
+
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <table.AppHeader header={header} key={header.id}>
+                  {() => <SkillHeaderCell />}
+                </table.AppHeader>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <table.AppCell cell={cell} key={cell.id}>
+                  {() => <SkillBodyCell />}
+                </table.AppCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function SkillHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function SkillBodyCell() {
+  const cell = useCellContext()
+  return (
+    <TableCell className={cell.column.id === "actions" ? "text-right" : undefined}>
+      <cell.FlexRender />
+    </TableCell>
   )
 }
 

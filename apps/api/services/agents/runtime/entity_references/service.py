@@ -306,14 +306,16 @@ async def authorize_entity_field(
         else EMPTY_ACTIVE_CONTEXT
     )
     disabled = await get_disabled_tools(db, workspace)
+    wrapped_tool_names: list[str] = []
     mounted = build_runtime_tools(
         agent,
         include_delegation=bool(agent.allowed_agent_ids),
         active_context=active_context,
+        wrapped_tool_names=wrapped_tool_names,
         workspace=workspace,
         disabled_tool_names=disabled,
     )
-    mounted_names = {tool.name for tool in mounted}
+    mounted_names = {tool.name for tool in mounted}.union(wrapped_tool_names)
     if tool_name not in mounted_names:
         raise AppValidationError(
             "Tool is not available in this conversation",

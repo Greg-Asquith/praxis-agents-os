@@ -125,6 +125,13 @@ export type PendingToolApproval = {
   args: unknown
   replay_args?: unknown
   delegation?: PendingDelegatedApproval | null
+  derived_from_untrusted?: boolean
+  taint_sources?: TaintSource[]
+}
+
+export type TaintSource = {
+  source_kind: string
+  source_ref: string
 }
 
 export type PendingDelegatedApproval = {
@@ -141,6 +148,27 @@ export type AgentRunApprovalStateResponse = {
   conversation_id: string
   approvals: PendingToolApproval[]
   delegations: PendingDelegatedApproval[]
+  workflow?: PendingWorkflowState | null
+}
+
+type NestedWorkflowTraceEntry = {
+  tool_call_id: string
+  tool_name: string
+  summary: string
+  status: "succeeded" | "failed" | "pending" | "denied"
+  result_excerpt: string | null
+  position: number
+}
+
+export type PendingWorkflowState = {
+  outer_tool_call_id: string
+  code: string
+  reason: string | null
+  status: "suspended"
+  nested_trace: NestedWorkflowTraceEntry[]
+  trace_truncated: boolean
+  pending: PendingToolApproval & { parent_tool_call_id: string }
+  recovery: null
 }
 
 type PendingApprovalRun = {

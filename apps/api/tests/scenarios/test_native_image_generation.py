@@ -58,7 +58,8 @@ async def test_generate_image_approval_resumes_with_edited_prompt(
     _enable_google(monkeypatch)
     generated_prompts: list[str] = []
 
-    async def fake_generate(*, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
+    async def fake_generate(*, deps, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
+        del deps
         generated_prompts.append(prompt)
         assert aspect_ratio == "3:2"
         assert model_spec.model == "gemini-3.1-flash-image"
@@ -134,7 +135,8 @@ async def test_generate_image_auto_policy_persists_workspace_scoped_file(
 ) -> None:
     _enable_google(monkeypatch)
 
-    async def fake_generate(*, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
+    async def fake_generate(*, deps, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
+        del deps
         assert prompt == "A paper-cut mountain at sunrise"
         assert aspect_ratio is None
         assert model_spec.provider == "google"
@@ -222,8 +224,8 @@ async def test_generate_image_policy_refusal_is_model_visible_and_audited(
 ) -> None:
     _enable_google(monkeypatch)
 
-    async def fake_generate(*, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
-        del prompt, aspect_ratio, model_spec
+    async def fake_generate(*, deps, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
+        del deps, prompt, aspect_ratio, model_spec
         raise ModelRetry(
             "The image provider declined this prompt under its content policy. "
             "Revise the prompt and try again."

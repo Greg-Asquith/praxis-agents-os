@@ -11,6 +11,7 @@ from pydantic_ai import Agent as PydanticAgent, DeferredToolResults
 from pydantic_ai.messages import ModelMessage, UserContent
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.agent_runs.domain import (
@@ -36,6 +37,9 @@ from services.agents.runtime.persistence import (
     persist_eager_user_prompt,
 )
 from services.agents.runtime.sinks import EventSink, NullSink
+from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
+from services.ai_usage.domain import PURPOSE_AGENT_RUN, AIUsageEventData
+from services.ai_usage.utils import sum_response_usage, usage_values
 from services.conversation_summaries.safe_enqueue_history_summary import (
     safe_enqueue_history_summary,
 )
@@ -98,6 +102,12 @@ async def execute_run_with_builders(
     run_workspace_id = run.workspace_id
     run_user_id = run.user_id
     started = False
+    usage_accumulator = usage if usage is not None else RunUsage()
+    invocation_started_at = await db.scalar(select(func.clock_timestamp()))
+    if invocation_started_at is None:
+        raise RuntimeError("Database did not return an invocation timestamp")
+    usage_baseline = usage_values(usage_accumulator)
+    metering: AgentRunMeteringContext | None = None
 
     try:
         validate_execution_preconditions(
@@ -160,6 +170,14 @@ async def execute_run_with_builders(
             run_envelope_builder=run_envelope_builder,
         )
         built_agent = prepared.built_agent
+        resolved_model = built_agent.runtime_agent.resolved_model
+        metering = AgentRunMeteringContext(
+            invocation_started_at=invocation_started_at,
+            baseline=usage_baseline,
+            usage=usage_accumulator,
+            provider=resolved_model.provider,
+            model=resolved_model.model,
+        )
         eager_tool_return_ids = await persist_eager_denied_tool_results(
             db,
             conversation=conversation,
@@ -180,7 +198,7 @@ async def execute_run_with_builders(
                 deferred_tool_results=deferred_tool_results,
                 conversation_id=str(conversation.id),
                 usage_limits=built_agent.runtime_agent.usage_limits,
-                usage=usage,
+                usage=usage_accumulator,
             ) as stream:
                 terminal_result = await consume_stream(
                     stream,
@@ -195,6 +213,18 @@ async def execute_run_with_builders(
         if terminal_result is None:
             raise RuntimeError("Pydantic AI stream ended without a terminal result")
 
+        usage_event = AIUsageEventData(
+            workspace_id=run.workspace_id,
+            provider=resolved_model.provider,
+            model=resolved_model.model,
+            purpose=PURPOSE_AGENT_RUN,
+            agent_id=run.agent_id,
+            user_id=run.user_id,
+            run_id=run.id,
+            conversation_id=conversation.id,
+            **sum_response_usage(list(terminal_result.new_messages())),
+        )
+
         result = await finalize_terminal_run(
             db,
             event_sink=event_sink,
@@ -208,6 +238,7 @@ async def execute_run_with_builders(
             skip_initial_user_prompt=user_prompt_persisted,
             live_deferred_result_ids=live_deferred_result_ids,
             eager_tool_return_ids=eager_tool_return_ids,
+            usage_event=usage_event,
         )
         watermark_key = built_agent.runtime_agent.history_trimmer.watermark_key
         if result.run.status == RUN_STATUS_COMPLETED and watermark_key is not None:
@@ -236,6 +267,7 @@ async def execute_run_with_builders(
                 run_id=run_id,
                 workspace_id=run_workspace_id,
                 user_id=run_user_id,
+                metering=metering,
             )
         )
         try:
@@ -252,6 +284,7 @@ async def execute_run_with_builders(
             started=started,
             run_id=run_id,
             exc=exc,
+            metering=metering,
         )
         raise
     finally:

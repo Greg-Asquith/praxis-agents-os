@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai.models import Model
+from pydantic_ai.usage import RunUsage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,8 @@ from models.jobs import Job
 from services.agents.models import build_model, resolve_history_summary_model
 from services.agents.runtime.persistence import load_message_history_span
 from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
+from services.ai_usage.domain import PURPOSE_HISTORY_SUMMARY, AIUsageEventData
+from services.ai_usage.run_metered_helper import run_metered_helper
 from services.conversation_summaries.domain import HistorySummaryOutput
 
 logger = logging.getLogger(__name__)
@@ -125,7 +128,23 @@ async def summarize_history_job(
         output_type=HistorySummaryOutput,
         instructions=_SUMMARY_INSTRUCTIONS,
     )
-    result = await summary_agent.run(_SUMMARY_PROMPT.format(span=framed_span))
+    provider = resolved_model.provider if resolved_model is not None else model.system
+    model_name = resolved_model.model if resolved_model is not None else model.model_name
+
+    async def call(usage: RunUsage):
+        return await summary_agent.run(_SUMMARY_PROMPT.format(span=framed_span), usage=usage)
+
+    result = await run_metered_helper(
+        AIUsageEventData(
+            workspace_id=conversation.workspace_id,
+            provider=provider,
+            model=model_name,
+            purpose=PURPOSE_HISTORY_SUMMARY,
+            user_id=job.initiated_by_user_id or conversation.user_id,
+            conversation_id=conversation.id,
+        ),
+        call,
+    )
     content = " ".join(result.output.summary.split())
     content = content[: settings.AGENT_HISTORY_SUMMARY_MAX_CHARS].rstrip()
     if not content:

@@ -7,9 +7,12 @@ import importlib
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import set_session_tenant_context
 from models.agent_run import AgentRun
+from models.ai_usage_event import AIUsageEvent
 from services.agent_runs import cancel_agent_run
 from services.agents.runtime.cancellation import request_agent_run_task_cancel
 from services.agents.runtime.sinks import CollectingSink
@@ -46,16 +49,23 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
         )
     )
     await _wait_for_run_status(committed_db_session_factory, context.run_id, "running")
+    await _wait_for_sink_event(sink, "tool.call")
     request_agent_run_task_cancel(task, run_id=context.run_id)
 
     with pytest.raises(asyncio.CancelledError):
         await task
 
     async with committed_db_session_factory() as db:
+        await set_session_tenant_context(db, workspace_id=context.workspace_id)
         run = await db.get(AgentRun, context.run_id)
         assert run is not None
         assert run.status == "cancelled"
         assert run.error_code is None
+        [usage_event] = (
+            await db.scalars(select(AIUsageEvent).where(AIUsageEvent.run_id == context.run_id))
+        ).all()
+        assert usage_event.requests == 1
+        assert usage_event.details == {"usage_source": "accumulator_delta"}
     assert [(event.event, event.data["status"]) for event in sink.events[-2:]] == [
         ("run.status", "cancelled"),
         ("done", "cancelled"),
@@ -149,3 +159,11 @@ async def _wait_for_run_status(session_factory, run_id, expected: str) -> None:
                 return
         await asyncio.sleep(0.01)
     raise AssertionError(f"Run did not reach {expected}")
+
+
+async def _wait_for_sink_event(sink: CollectingSink, event_name: str) -> None:
+    for _ in range(100):
+        if any(event.event == event_name for event in sink.events):
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"Sink did not receive {event_name}")

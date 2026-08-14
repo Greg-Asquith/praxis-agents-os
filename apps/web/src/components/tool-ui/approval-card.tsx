@@ -31,6 +31,7 @@ export { ApprovalRequestFields } from "./approval-request-fields"
 
 const NO_FIELDS: ApprovalField[] = []
 const NO_FALLBACK_FIELDS: ApprovalFallbackField[] = []
+const NO_TAINT_SOURCES: { source_kind: string; source_ref: string }[] = []
 
 export function ToolApprovalDecisionCard({
   activityId,
@@ -45,6 +46,8 @@ export function ToolApprovalDecisionCard({
   prompt,
   title = label,
   toolName,
+  derivedFromUntrusted = false,
+  taintSources = NO_TAINT_SOURCES,
 }: {
   activityId: string
   approveLabel?: string
@@ -58,6 +61,8 @@ export function ToolApprovalDecisionCard({
   prompt?: string
   title?: string
   toolName: string
+  derivedFromUntrusted?: boolean
+  taintSources?: { source_kind: string; source_ref: string }[]
 }) {
   const [isDeclining, setIsDeclining] = useState(false)
   const [denialMessage, setDenialMessage] = useState("")
@@ -129,19 +134,22 @@ export function ToolApprovalDecisionCard({
           value={denialMessage}
         />
       ) : (
-        <ApprovalRequestFields
-          activityId={activityId}
-          args={args}
-          decision={controls.decision}
-          disabled={disabled || isDecided}
-          fallbackFields={fallbackFields}
-          fields={fields}
-          onEditsChange={(edits) => {
-            controls.onDecisionChange({ decision: "pending", edits, message: "" })
-          }}
-          onEntityValidityChange={handleEntityValidityChange}
-          toolName={toolName}
-        />
+        <>
+          {derivedFromUntrusted ? <UntrustedDataNotice sources={taintSources} /> : null}
+          <ApprovalRequestFields
+            activityId={activityId}
+            args={args}
+            decision={controls.decision}
+            disabled={disabled || isDecided}
+            fallbackFields={fallbackFields}
+            fields={fields}
+            onEditsChange={(edits) => {
+              controls.onDecisionChange({ decision: "pending", edits, message: "" })
+            }}
+            onEntityValidityChange={handleEntityValidityChange}
+            toolName={toolName}
+          />
+        </>
       )}
       {controls.decision.decision === "denied" && controls.decision.message ? (
         <ApprovalStaticField
@@ -155,6 +163,24 @@ export function ToolApprovalDecisionCard({
       ) : null}
       {children}
     </ToolApprovalCard>
+  )
+}
+
+function UntrustedDataNotice({
+  sources,
+}: {
+  sources: { source_kind: string; source_ref: string }[]
+}) {
+  const references = sources.map((source) => source.source_ref).filter(Boolean)
+  return (
+    <Alert className="border-warning/40 bg-warning/5">
+      <AlertTitle>Based on external data</AlertTitle>
+      <AlertDescription>
+        Review the action carefully. Its arguments were derived from external content that may not
+        be accurate.
+        {references.length > 0 ? ` Sources: ${references.join(", ")}.` : ""}
+      </AlertDescription>
+    </Alert>
   )
 }
 
@@ -179,11 +205,11 @@ export function ToolApprovalCard({
     <section
       aria-label={`Approval request: ${title}`}
       className={cn(
-        "bg-card w-full min-w-0 overflow-hidden rounded-lg border shadow-xs",
+        "bg-card flex w-full min-w-0 flex-col overflow-hidden rounded-lg border shadow-xs in-data-[slot=tool-result-card]:max-h-140",
         awaitingDecision && "border-warning/40"
       )}
     >
-      <div className="flex min-w-0 items-start gap-3 px-4 pt-4">
+      <div className="flex min-w-0 shrink-0 items-start gap-3 px-4 pt-4">
         <div className="bg-muted text-muted-foreground mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg">
           {icon ?? <WrenchIcon className="size-4" />}
         </div>
@@ -205,8 +231,12 @@ export function ToolApprovalCard({
           ) : null}
         </div>
       </div>
-      <div className="flex min-w-0 flex-col gap-3 px-4 py-4">{children}</div>
-      <div className="border-border flex min-w-0 flex-col gap-2 border-t px-4 py-3">{footer}</div>
+      <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto px-4 py-4">
+        {children}
+      </div>
+      <div className="border-border flex min-w-0 shrink-0 flex-col gap-2 border-t px-4 py-3">
+        {footer}
+      </div>
     </section>
   )
 }

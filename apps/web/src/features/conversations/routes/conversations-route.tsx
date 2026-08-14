@@ -35,7 +35,11 @@ export function ConversationsRoute() {
       />
 
       {hasConversations ? (
-        <ConversationList conversations={conversations} selectedConversationId={null} />
+        <ConversationList
+          className="lg:grid-cols-2"
+          conversations={conversations}
+          selectedConversationId={null}
+        />
       ) : (
         <ConversationEmptyState />
       )}

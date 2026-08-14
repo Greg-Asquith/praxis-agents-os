@@ -18,6 +18,7 @@ from pydantic_ai import DeferredToolResults
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.usage import RunUsage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -99,6 +100,7 @@ async def build_scenario_agent(
     trigger: Literal["interactive", "scheduled", "delegated"] = "interactive",
     metadata: dict[str, Any] | None = None,
     role: WorkspaceRole = WorkspaceRole.MEMBER,
+    code_mode_enabled: bool = False,
 ) -> ScenarioContext:
     """Persist the minimum real workspace graph needed by ``execute_run``."""
     async with session_factory() as db:
@@ -122,6 +124,7 @@ async def build_scenario_agent(
             created_by=user.id,
             tool_names=list(tool_names),
             tool_policies=dict(tool_policies) if tool_policies else None,
+            code_mode_enabled=code_mode_enabled,
             allowed_agent_ids=[str(value) for value in allowed_agent_ids],
             model_provider="openai",
             model="gpt-5.4-mini",
@@ -242,6 +245,7 @@ async def run_scenario(
     expected_status: str | None = RUN_STATUS_PENDING,
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
+    usage: RunUsage | None = None,
     attachment_file_ids: Sequence[UUID] = (),
     sink: CollectingSink | None = None,
 ) -> ScenarioResult:
@@ -262,6 +266,7 @@ async def run_scenario(
             expected_status=expected_status,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
+            usage=usage,
         )
 
     async with session_factory() as db:

@@ -27,6 +27,7 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND_KEY,
     DELEGATED_APPROVAL_PENDING_APPROVALS_KEY,
 )
+from services.agents.runtime.code_mode.approval import code_mode_nested_call
 from services.agents.runtime.events import (
     EVENT_TOOL_APPROVAL_REQUIRED,
     EVENT_TOOL_CALL,
@@ -110,6 +111,43 @@ async def emit_approval_required_events(
         if delegated_approvals is not None:
             for delegated_approval in delegated_approvals:
                 await sink.emit(EVENT_TOOL_APPROVAL_REQUIRED, delegated_approval)
+            continue
+
+        nested_call = code_mode_nested_call(metadata)
+        if nested_call is not None:
+            replay_args = tool_replay_args_for_editing(
+                tool_name=nested_call.tool_name,
+                args=nested_call.args,
+            )
+            await sink.emit(
+                EVENT_TOOL_APPROVAL_REQUIRED,
+                {
+                    "tool_call_id": nested_call.tool_call_id,
+                    "parent_tool_call_id": approval.tool_call_id,
+                    "name": nested_call.tool_name,
+                    "args": to_jsonable_python(
+                        tool_args_for_display(
+                            tool_name=nested_call.tool_name,
+                            args=nested_call.args,
+                            metadata=metadata,
+                        )
+                    ),
+                    **(
+                        {"replay_args": to_jsonable_python(replay_args)}
+                        if replay_args is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "derived_from_untrusted": True,
+                            "taint_sources": metadata.get("taint_sources", []),
+                        }
+                        if isinstance(metadata, dict)
+                        and metadata.get("derived_from_untrusted") is True
+                        else {}
+                    ),
+                },
+            )
             continue
 
         replay_args = tool_replay_args_for_editing(

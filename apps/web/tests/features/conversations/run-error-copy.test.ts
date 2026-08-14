@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   approvalExpiryOutcome,
   conversationApprovalExpiryOutcome,
+  runInterruptionOutcome,
 } from "@/features/conversations/run-error-copy"
 import type { AgentRun } from "@/features/conversations/types"
 
@@ -46,5 +47,44 @@ describe("approvalExpiryOutcome", () => {
     const activeRun = { ...failedRun("provider_error"), id: "run-2", status: "running" as const }
 
     expect(conversationApprovalExpiryOutcome(activeRun, failedRun("approval_expired"))).toBeNull()
+  })
+
+  it("promotes code mode recovery with bounded completed actions", () => {
+    const run = failedRun("code_mode_resume_requires_recovery")
+    run.error_message = null
+    run.completion_json = {
+      error_code: "code_mode_resume_requires_recovery",
+      executed_effects: [
+        { tool_name: "update_campaign_status", args_sha256: "hidden" },
+        { tool_name: "write_file", args_sha256: "hidden" },
+      ],
+    }
+
+    expect(runInterruptionOutcome(run)).toEqual({
+      kind: "code_mode_recovery",
+      title: "Workflow Needs Review",
+      message:
+        "This workflow couldn't resume safely after completing an action. Review what completed, then send a new instruction to continue.",
+      completedActions: [
+        { id: "update_campaign_status:1", toolName: "update_campaign_status" },
+        { id: "write_file:1", toolName: "write_file" },
+      ],
+      actionsTruncated: false,
+    })
+  })
+
+  it("degrades cleanly for malformed, legacy, and truncated evidence", () => {
+    const malformed = failedRun("code_mode_resume_requires_recovery")
+    malformed.completion_json = { executed_effects: "not-a-list" }
+    expect(runInterruptionOutcome(malformed)?.completedActions).toEqual([])
+
+    const truncated = failedRun("code_mode_resume_requires_recovery")
+    truncated.completion_json = {
+      executed_effects: Array.from({ length: 30 }, (_, index) => ({
+        tool_name: `tool_${String(index)}`,
+      })),
+    }
+    expect(runInterruptionOutcome(truncated)?.completedActions).toHaveLength(25)
+    expect(runInterruptionOutcome(truncated)?.actionsTruncated).toBe(true)
   })
 })

@@ -1,8 +1,10 @@
 // apps/web/src/integrations/gmail/components/search-message-row.tsx
-import { useState } from "react"
+
+import { use, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { MessageDetailSkeleton, MessageListRow } from "@/components/tool-ui/message"
+import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import {
   Popover,
   PopoverContent,
@@ -24,16 +26,18 @@ export type GmailMessageSummary = {
 }
 
 export function GmailSearchMessageRow({
-  connectionId,
+  mailboxId,
   message,
 }: {
-  connectionId: string
+  mailboxId: string
   message: GmailMessageSummary
 }) {
   const queryClient = useQueryClient()
+  const conversationId = use(ToolConversationContext)
   const [open, setOpen] = useState(false)
   const selectMessage = gmailSearchMessageSelectHandler({
-    connectionId,
+    conversationId,
+    mailboxId,
     messageId: message.messageId,
     onOpen: () => {
       setOpen(true)
@@ -63,7 +67,7 @@ export function GmailSearchMessageRow({
             </PopoverDescription>
           </PopoverHeader>
           <GmailMessageView
-            connectionId={connectionId}
+            mailboxId={mailboxId}
             errorFallback={
               <p className="text-destructive py-4 text-center text-sm">
                 This message preview could not be loaded.

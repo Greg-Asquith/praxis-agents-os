@@ -19,7 +19,6 @@ from services.audit_events import (
     AuditActorType,
     AuditResourceType,
     AuditStatus,
-    record_workspace_audit_event,
     safe_record_independent_operation_audit_event,
 )
 from services.integrations.connections.utils import (
@@ -61,27 +60,19 @@ async def get_integration_preview(
         if content_type == "html":
             content = sanitize_preview_html(content)
     except Exception as exc:
-        await _record_preview_audit(
-            db,
+        await _record_preview_failure_audit(
             connection=connection,
             workspace=workspace,
             actor=actor,
             ref=ref,
             operation=definition.operation,
-            status=AuditStatus.FAILURE,
             error_code=exc.__class__.__name__,
         )
         raise
 
-    await _record_preview_audit(
-        db,
-        connection=connection,
-        workspace=workspace,
-        actor=actor,
-        ref=ref,
-        operation=definition.operation,
-        status=AuditStatus.SUCCESS,
-    )
+    # Successful previews stay unaudited: the governed tool call that surfaced the
+    # content already produced the durable audit row, and per-render read events
+    # would only bury it in noise.
     return IntegrationPreviewRead(
         kind=definition.kind,
         content_type=content_type,
@@ -108,48 +99,31 @@ def _get_preview_definition(
     )
 
 
-async def _record_preview_audit(
-    db: AsyncSession,
+async def _record_preview_failure_audit(
     *,
     connection: IntegrationConnection,
     workspace: Workspace,
     actor: User,
     ref: str,
     operation: str,
-    status: AuditStatus,
-    error_code: str | None = None,
+    error_code: str,
 ) -> None:
     # Audit rows carry the external ref, never provider content.
-    details = {
-        "provider_key": connection.provider_key,
-        "provider_operation": operation,
-        "external_ref": ref,
-        **({"error_code": error_code} if error_code else {}),
-    }
-    if status == AuditStatus.FAILURE:
-        await safe_record_independent_operation_audit_event(
-            workspace_id=workspace.id,
-            action=AuditAction.READ,
-            resource_type=AuditResourceType.INTEGRATION_CONNECTION,
-            resource_id=connection.id,
-            actor_type=AuditActorType.USER,
-            actor_id=actor.id,
-            actor_display=actor.email,
-            requested_by_user_id=actor.id,
-            status=status,
-            details=details,
-            request=None,
-        )
-        return
-
-    await record_workspace_audit_event(
-        db,
-        request=None,
+    await safe_record_independent_operation_audit_event(
         workspace_id=workspace.id,
         action=AuditAction.READ,
         resource_type=AuditResourceType.INTEGRATION_CONNECTION,
         resource_id=connection.id,
-        actor=actor,
-        status=status,
-        details=details,
+        actor_type=AuditActorType.USER,
+        actor_id=actor.id,
+        actor_display=actor.email,
+        requested_by_user_id=actor.id,
+        status=AuditStatus.FAILURE,
+        details={
+            "provider_key": connection.provider_key,
+            "provider_operation": operation,
+            "external_ref": ref,
+            "error_code": error_code,
+        },
+        request=None,
     )

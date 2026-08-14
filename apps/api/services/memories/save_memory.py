@@ -70,6 +70,8 @@ async def save_memory(
         workspace_id=workspace.id,
         title=title,
         content_md=content_md,
+        agent_id=agent.id,
+        user_id=user.id,
     )
     await lock_memory_scope(
         db,

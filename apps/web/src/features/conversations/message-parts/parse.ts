@@ -5,6 +5,7 @@ import type {
   ParsedMessagePart,
   ParsedMessageRole,
   ParsedAttachment,
+  CodeModeScriptActivity,
   ToolActivity,
   ToolActivityStatus,
   ToolApprovalDecision,
@@ -27,12 +28,14 @@ import {
   isRunStatusPolling,
   normalizeToolArgs,
   safeJsonPreview,
+  traceExcerptResult,
   toolActivityIdentity,
 } from "@/features/conversations/message-parts/utils"
 import type {
   AgentRun,
   ConversationMessage,
   PendingDelegatedApproval,
+  PendingWorkflowState,
 } from "@/features/conversations/types"
 import { titleCaseToken } from "@/lib/format"
 import { isRecord, stringValue } from "@/lib/guards"
@@ -40,15 +43,17 @@ import { isRecord, stringValue } from "@/lib/guards"
 const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "native-tool-return"])
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
 
-type LiveToolResult = {
+export type LiveToolResult = {
   result: unknown
+  status: "running" | "completed" | "failed" | "denied"
 }
 
 export function parseConversationMessages(
   messages: ConversationMessage[],
   activeRun?: Pick<AgentRun, "id" | "status"> | null,
   pendingDelegations: PendingDelegatedApproval[] = [],
-  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
+  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>,
+  pendingWorkflow?: PendingWorkflowState | null
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
@@ -82,15 +87,32 @@ export function parseConversationMessages(
         const activityWithDelegate = activityDelegate
           ? { ...activity, delegate: activityDelegate }
           : activity
+        const activityWithPendingWorkflow =
+          pendingWorkflow &&
+          belongsToActiveRun &&
+          activity.id === pendingWorkflow.outer_tool_call_id
+            ? {
+                ...activityWithDelegate,
+                script: codeModeScriptFromPendingWorkflow(
+                  pendingWorkflow,
+                  activity.agentRunId ?? null,
+                  liveResultsByCallIdentity
+                ),
+              }
+            : activityWithDelegate
 
         const result = resultsByCallKey.get(toolActivityKey(messageIndex, activityIndex))
         if (result) {
           const delegate = mergeDelegationDetails(activityDelegate, result.delegate)
+          const script = result.script
+            ? mergeCodeModeScriptArgs(result.script, activity.args)
+            : activityWithPendingWorkflow.script
           const mergedActivity: ToolActivity = {
-            ...activity,
+            ...activityWithPendingWorkflow,
             outcome: result.outcome ?? null,
             result: result.result,
             status: result.status,
+            ...(script ? { script: { ...script, status: result.status } } : {}),
           }
           if (delegate) {
             mergedActivity.delegate = delegate
@@ -108,27 +130,37 @@ export function parseConversationMessages(
         const liveResult = belongsToActiveRun
           ? liveResultsByCallIdentity?.get(toolActivityIdentity(activity.agentRunId, activity.id))
           : undefined
-        if (liveResult) {
+        if (liveResult?.status === "completed") {
           return {
-            ...activityWithDelegate,
+            ...activityWithPendingWorkflow,
             result: liveResult.result,
             status: "completed" as const,
           }
         }
         if (belongsToActiveRun && runAwaitsApproval) {
           return {
-            ...activityWithDelegate,
+            ...activityWithPendingWorkflow,
             kind: "approval" as const,
             status: "awaiting_approval" as const,
           }
         }
         if (belongsToActiveRun && runStoppedBeforeToolResult) {
-          return { ...activityWithDelegate, status: "failed" as const }
+          return (
+            stoppedWorkflowActivity(activityWithPendingWorkflow) ?? {
+              ...activityWithPendingWorkflow,
+              status: "failed" as const,
+            }
+          )
         }
         if (!belongsToActiveRun || !runIsExecuting) {
-          return { ...activityWithDelegate, status: "unknown" as const }
+          return (
+            stoppedWorkflowActivity(activityWithPendingWorkflow) ?? {
+              ...activityWithPendingWorkflow,
+              status: "unknown" as const,
+            }
+          )
         }
-        return activityWithDelegate
+        return activityWithPendingWorkflow
       })
       const resolvedActivitiesByOriginal = new Map<ToolActivity, ToolActivity | null>()
       const visibleActivities: ToolActivity[] = []
@@ -272,6 +304,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const toolKind = stringValue(part["tool_kind"])
       const partMetadata = isRecord(part["metadata"]) ? part["metadata"] : null
       const hasPublicResult = partMetadata !== null && Object.hasOwn(partMetadata, "public_result")
+      const script = codeModeScriptFromMetadata(partMetadata, statusFromOutcome(outcome))
       const activity: ToolActivity = {
         id: toolCallId,
         agentRunId,
@@ -280,6 +313,7 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
         name,
         result: hasPublicResult ? partMetadata["public_result"] : part["content"],
         outcome,
+        ...(script ? { script } : {}),
         ...(toolKind ? { toolKind } : {}),
       }
       const delegate = delegationDetailsForToolActivity(name, undefined, part["content"])
@@ -336,6 +370,177 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
   })
 
   return parsed
+}
+
+function codeModeScriptFromMetadata(
+  metadata: Record<string, unknown> | null,
+  status: ToolActivityStatus = "completed"
+): CodeModeScriptActivity | null {
+  if (!metadata) {
+    return null
+  }
+  const trace = metadata["code_mode_trace"]
+  if (!isRecord(trace) || !Array.isArray(trace["calls"])) {
+    return null
+  }
+
+  const children = trace["calls"].flatMap((value): ToolActivity[] => {
+    if (!isRecord(value)) {
+      return []
+    }
+    const id = stringValue(value["tool_call_id"])
+    const name = stringValue(value["tool_name"])
+    if (!id || !name) {
+      return []
+    }
+    const traceStatus = codeModeTraceStatus(value["status"])
+    const excerpt = stringValue(value["excerpt"])
+    const hasPresentationResult = Object.hasOwn(value, "presentation_result")
+    return [
+      {
+        id,
+        kind: traceStatus === "awaiting_approval" ? "approval" : "result",
+        name,
+        status: traceStatus,
+        ...(hasPresentationResult
+          ? {
+              result: value["presentation_result"],
+              ...(excerpt === null ? {} : { resultExcerpt: excerpt }),
+            }
+          : excerpt === null
+            ? {}
+            : {
+                result: traceExcerptResult(excerpt),
+                resultExcerpt: excerpt,
+              }),
+      },
+    ]
+  })
+
+  return {
+    children,
+    code: null,
+    error: null,
+    output: stringValue(trace["output_excerpt"]),
+    reason: null,
+    status,
+  }
+}
+
+function codeModeScriptFromPendingWorkflow(
+  workflow: PendingWorkflowState,
+  agentRunId: string | null,
+  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
+): CodeModeScriptActivity {
+  const children = workflow.nested_trace.map((entry): ToolActivity => ({
+    id: entry.tool_call_id,
+    agentRunId,
+    kind: entry.status === "pending" ? "approval" : "result",
+    name: entry.tool_name,
+    status: codeModeTraceStatus(entry.status),
+    ...(entry.result_excerpt === null
+      ? {}
+      : {
+          result: traceExcerptResult(entry.result_excerpt),
+          resultExcerpt: entry.result_excerpt,
+        }),
+  }))
+  const pendingIndex = children.findIndex((child) => child.id === workflow.pending.tool_call_id)
+  const pendingFields = {
+    args: normalizeToolArgs(workflow.pending.args),
+    ...(workflow.pending.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
+    ...(workflow.pending.taint_sources === undefined
+      ? {}
+      : { taintSources: workflow.pending.taint_sources }),
+  }
+  if (pendingIndex === -1) {
+    children.push({
+      ...pendingFields,
+      id: workflow.pending.tool_call_id,
+      agentRunId,
+      kind: "approval",
+      name: workflow.pending.name,
+      status: "awaiting_approval",
+    })
+  } else {
+    const pendingChild = children[pendingIndex]
+    if (pendingChild) {
+      children[pendingIndex] = { ...pendingChild, ...pendingFields }
+    }
+  }
+  // After an approval is submitted the suspended snapshot stays cached, so live
+  // stream progress for the resumed nested calls must win over its stale states.
+  const mergedChildren = children.map((child): ToolActivity => {
+    const live = liveResultsByCallIdentity?.get(toolActivityIdentity(agentRunId, child.id))
+    if (!live) {
+      return child
+    }
+    return {
+      ...child,
+      kind: live.status === "running" ? "call" : "result",
+      status: live.status,
+      ...(live.result === undefined ? {} : { result: live.result }),
+    }
+  })
+  return {
+    children: mergedChildren,
+    code: workflow.code,
+    error: null,
+    output: null,
+    reason: workflow.reason,
+    status: "awaiting_approval",
+  }
+}
+
+// A workflow call the run never answered renders as a stopped workflow card,
+// not as a generic completed tool row.
+function stoppedWorkflowActivity(activity: ToolActivity): ToolActivity | null {
+  if (activity.name !== "run_workflow" || activity.script) {
+    return null
+  }
+  const args = isRecord(activity.args) ? activity.args : null
+  return {
+    ...activity,
+    status: "failed",
+    script: {
+      children: [],
+      code: args ? stringValue(args["code"]) : null,
+      error: null,
+      output: null,
+      reason: args ? stringValue(args["reason"]) : null,
+      status: "failed",
+    },
+  }
+}
+
+function mergeCodeModeScriptArgs(
+  script: CodeModeScriptActivity,
+  args: unknown
+): CodeModeScriptActivity {
+  if (!isRecord(args)) {
+    return script
+  }
+  return {
+    ...script,
+    code: stringValue(args["code"]),
+    reason: stringValue(args["reason"]),
+  }
+}
+
+function codeModeTraceStatus(value: unknown): ToolActivityStatus {
+  if (value === "succeeded") {
+    return "completed"
+  }
+  if (value === "failed") {
+    return "failed"
+  }
+  if (value === "pending") {
+    return "awaiting_approval"
+  }
+  if (value === "denied") {
+    return "denied"
+  }
+  return "unknown"
 }
 
 function resolveOrderedToolParts(

@@ -32,6 +32,20 @@ behind good defaults and progressive disclosure, not in their face.
   authoritative under cancellation/finalization races. Schedules may also
   require a bounded completion report against operator-authored criteria;
   pass, fail, and missing-report verdicts remain separate from lifecycle status.
+  AI usage is recorded in a forced-RLS, runtime-append-only ledger with one row
+  per logical agent, helper, or embedding invocation, not per provider request.
+  Successful and suspended agent invocations record atomically with their run
+  transition; failure/cancellation and helper/embedding paths use best-effort
+  durable recording through a distinct bounded runtime-role connection pool.
+  Owner/admin usage routes apply effective-dated public prices to UTC daily
+  buckets and expose estimated workspace cost, trends, attribution breakdowns,
+  and explicit pricing coverage. Super admins can use a separately gated,
+  database-read-only maintenance view to see the same measures across all
+  workspaces, including workspace and cross-workspace user attribution.
+  Image-generation events retain known output
+  metadata so GPT Image 2 and Gemini 3.1 Flash Image estimates are added
+  separately from the mainline helper model. This ledger is observability only:
+  it does not enforce budgets or admission.
 - `apps/web` is the Vite + React single-page frontend (TanStack Router +
   TanStack Query). It talks to the API over REST and consumes agent turns over
   SSE.
@@ -52,11 +66,13 @@ Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,
 sessions), users, workspaces (memberships, invitations), agents, conversations
 (SSE chat with tool calls and approvals), agent runs (durable approval resume,
 configurable approval expiry, and staged-input cleanup), the
-LLM model catalog, files and storage (signed uploads, revisions, background
+LLM model catalog, AI usage and estimated public-rate costs, files and storage
+(signed uploads, revisions, background
 markdown extraction), skills, knowledge base, agent memories, the context hub,
 schedules, integrations (OAuth, API-key, and service-account connections),
 artifacts (dedicated immutable revisions, approval-gated agent
-tools, workspace management UI, append-only edit/restore flows, and
+tools, agent list/read/update across conversations, workspace management UI,
+append-only edit/restore flows, and
 version-pinned anonymous share links with CSP-locked serving), the tool
 catalog, and the audit/security event viewers.
 

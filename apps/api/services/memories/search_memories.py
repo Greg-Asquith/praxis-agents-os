@@ -15,6 +15,7 @@ from models.agent import Agent
 from models.agent_memories import AgentMemory
 from models.user import User
 from models.workspace import Workspace
+from services.ai_usage.domain import PURPOSE_EMBEDDING_MEMORY_SEARCH
 from services.embeddings import embed_texts
 from services.embeddings.domain import (
     EmbeddingConfigurationError,
@@ -92,6 +93,9 @@ async def search_memories(
             db,
             [normalized_query],
             workspace_id=workspace.id,
+            purpose=PURPOSE_EMBEDDING_MEMORY_SEARCH,
+            agent_id=agent.id,
+            user_id=user.id,
             provider=provider,
         )
         query_vector = embedded.vectors[0]

@@ -147,11 +147,12 @@ function writeFailure(
         details={airtableRecordDetails(activity.args)}
         entries={[
           {
-            connectionId: activity.id,
             data: null,
             displayName: "Selected Airtable base",
             errorMessage: description,
             externalId: "Selected Airtable base",
+            providerKey: "airtable",
+            renderKey: `airtable:failure:${activity.id}`,
             status: "failed",
           },
         ]}

@@ -89,16 +89,41 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- Code-mode workflows render as one collapsed outer row whose children recurse
+  through the standard `ToolCallRow`; keep live state normalized by parent id,
+  rebuild replay only from the persisted nested trace, and auto-expand any
+  nested approval so operator consent is never hidden. Label the children as
+  tool calls, not workflow steps: interpreter-side filtering, aggregation, and
+  branching are meaningful work but are not separate trace children. Prefer a trace's
+  structured presentation result over its excerpt so provider presenters work
+  after reload. The presentation result is complete relative to the governed
+  nested tool return: pagination may control the visible page, but must not
+  discard rows, and copy/export actions use the complete retained result. A
+  truncated legacy excerpt gets explanatory fallback copy, not malformed JSON.
+  Settled workflow rows also expose the complete outer tool result under an
+  explicitly labelled model-output disclosure so operators can distinguish
+  what the model received from the richer nested results retained for them.
+  When nested results contain exact mutation counts, summarize the settled
+  container in outcome language and keep applied, skipped, failed, and declined
+  outcomes distinct. Derive this only from retained structured results; do not
+  infer effects from proposed arguments or a model-authored reason.
 - Complete transcript-only tool results may arrive through the persisted
   tool-return `public_result` metadata while the model-facing content remains
   bounded. Present the complete result rather than its model summary; use the
   shared `DataTable` client pagination for large bounded row sets so copy and
   CSV export still operate over all rows.
+- Artifact create, list, read, and update results share the dedicated
+  `ArtifactToolRow`. Discovery rows must preserve structured artifact
+  references as links to the management surface; reads default to the shared
+  typed rendered view with an adjacent raw-content tab, show only the bounded current
+  version returned by the tool, and keep image reads metadata-only without
+  signed URLs.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
-  use the shared Base UI combobox for editable targets, preserve structured
-  reference values, and fail closed as “Target unavailable” rather than
-  exposing a raw ID.
+  use the server-supplied canonical identity for provider-neutral comparison,
+  and keep provider field names out of shared tool UI. Use the shared Base UI
+  combobox for editable targets, preserve structured reference values, and fail
+  closed as “Target unavailable” rather than exposing a raw ID.
 - Editable record approvals use the server-declared `min_rows` and column
   `required` constraints. Keep editor feedback, approval gating, and decision
   merge on the shared record-validity helper, and give repeated controls

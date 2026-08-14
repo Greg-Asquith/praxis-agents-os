@@ -5,7 +5,9 @@ import { useQuery } from "@tanstack/react-query"
 import {
   ExternalLinkIcon,
   FileCode2Icon,
+  FilesIcon,
   FileTextIcon,
+  ImageIcon,
   RefreshCwIcon,
   Table2Icon,
   WorkflowIcon,
@@ -17,6 +19,7 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { createArtifactViewUrl } from "@/features/artifacts/api/create-view-url"
 import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
 import { artifactVersionContentQueryOptions } from "@/features/artifacts/api/get-artifact-version-content"
@@ -28,11 +31,19 @@ import { ActivityStatusBadge } from "@/features/conversations/components/tool-ac
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   CREATE_ARTIFACT_TOOL_NAME,
+  LIST_ARTIFACTS_TOOL_NAME,
+  READ_ARTIFACT_TOOL_NAME,
   UPDATE_ARTIFACT_TOOL_NAME,
+  type ArtifactToolSummary,
+  artifactListToolResult,
+  artifactReadToolResult,
+  artifactReferenceArg,
+  artifactSearchArg,
   artifactTitleArg,
   artifactToolResult,
 } from "@/features/conversations/native-tools/artifact-tools"
 import { getErrorMessage } from "@/lib/api/errors"
+import { formatBytes, formatCompactDate, pluralize } from "@/lib/format"
 import { openSignedResource } from "@/lib/open-signed-resource"
 
 type ArtifactToolRowProps = {
@@ -46,12 +57,12 @@ export function ArtifactToolRow({ activity, defaultOpen }: ArtifactToolRowProps)
     return null
   }
   if (activity.status === "running" || activity.status === "awaiting_approval") {
-    const title = artifactTitleArg(activity.args)
+    const summary = artifactPendingSummary(activity)
     return (
       <FanOutSkeleton
         heading={<ArtifactHeading icon={state.icon}>{state.heading}</ArtifactHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
-        {...(title ? { summary: title } : {})}
+        {...(summary ? { summary } : {})}
       />
     )
   }
@@ -63,6 +74,13 @@ export function ArtifactToolRow({ activity, defaultOpen }: ArtifactToolRowProps)
     return <ArtifactFailureRow activity={activity} state={state} />
   }
 
+  if (activity.name === LIST_ARTIFACTS_TOOL_NAME) {
+    return <ArtifactListRow activity={activity} defaultOpen={defaultOpen} />
+  }
+  if (activity.name === READ_ARTIFACT_TOOL_NAME) {
+    return <ArtifactReadRow activity={activity} defaultOpen={defaultOpen} />
+  }
+
   const result = artifactToolResult(activity.result)
   return result ? (
     <CompletedArtifactRow
@@ -72,6 +90,146 @@ export function ArtifactToolRow({ activity, defaultOpen }: ArtifactToolRowProps)
       state={state}
     />
   ) : null
+}
+
+function ArtifactListRow({ activity, defaultOpen }: ArtifactToolRowProps) {
+  const result = artifactListToolResult(activity.result)
+  if (!result) {
+    return null
+  }
+  const search = artifactSearchArg(activity.args)
+  const resultLabel = `${String(result.total)} ${pluralize(result.total, "Artifact")}`
+  return (
+    <ToolResultCard
+      ariaLabel={search ? `Artifacts matching ${search}` : "Workspace artifacts"}
+      defaultOpen={defaultOpen}
+      details={[
+        ...(search ? [{ label: "Search", value: search }] : []),
+        { label: "Found", value: String(result.total) },
+        ...(result.returned < result.total
+          ? [{ label: "Showing", summary: false, value: String(result.returned) }]
+          : []),
+      ]}
+      heading={<ArtifactHeading icon={FilesIcon}>Artifacts</ArtifactHeading>}
+      trailing={<Badge variant="success">{resultLabel}</Badge>}
+    >
+      {result.items.length > 0 ? (
+        <ol aria-label="Artifact results" className="divide-border divide-y rounded-lg border">
+          {result.items.map((artifact) => (
+            <ArtifactSummaryItem artifact={artifact} key={artifact.reference.entity_id} />
+          ))}
+        </ol>
+      ) : (
+        <p className="text-muted-foreground px-4 py-6 text-center text-sm">
+          {search ? "No artifacts matched this search." : "This workspace has no artifacts yet."}
+        </p>
+      )}
+    </ToolResultCard>
+  )
+}
+
+function ArtifactSummaryItem({ artifact }: { artifact: ArtifactToolSummary }) {
+  return (
+    <li className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+      <span className="bg-primary/8 text-primary flex size-9 shrink-0 items-center justify-center rounded-md">
+        <ArtifactTypeIcon type={artifact.artifact_type} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <ArtifactEntityLink artifactId={artifact.reference.entity_id} title={artifact.title} />
+        <span className="text-muted-foreground block truncate text-xs">
+          {String(artifact.version_count)} {pluralize(artifact.version_count, "version")} · Updated{" "}
+          {formatCompactDate(artifact.updated_at)}
+        </span>
+      </span>
+      <Badge variant="secondary">{artifactTypeLabel(artifact.artifact_type)}</Badge>
+    </li>
+  )
+}
+
+function ArtifactReadRow({ activity, defaultOpen }: ArtifactToolRowProps) {
+  const result = artifactReadToolResult(activity.result)
+  if (!result) {
+    return null
+  }
+  return (
+    <ToolResultCard
+      ariaLabel={`Read artifact ${result.title}`}
+      defaultOpen={defaultOpen}
+      details={[
+        { label: "Artifact", value: result.title },
+        { label: "Revision", value: String(result.revision_number) },
+        { label: "Size", value: formatBytes(result.size_bytes) },
+        { label: "Updated", summary: false, value: formatCompactDate(result.updated_at) },
+      ]}
+      heading={<ArtifactHeading icon={FileTextIcon}>Read Artifact</ArtifactHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      <div className="grid min-w-0 gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="bg-primary/8 text-primary flex size-9 shrink-0 items-center justify-center rounded-md">
+            <ArtifactTypeIcon type={result.artifact_type} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <ArtifactEntityLink artifactId={result.reference.entity_id} title={result.title} />
+            <span className="text-muted-foreground block truncate text-xs">
+              {artifactTypeLabel(result.artifact_type)} · Revision {String(result.revision_number)}
+            </span>
+          </span>
+          <Badge variant="secondary">{artifactTypeLabel(result.artifact_type)}</Badge>
+        </div>
+        {result.truncated ? (
+          <p className="text-muted-foreground text-xs">
+            Showing the first part of this artifact. Open it to view the complete version.
+          </p>
+        ) : null}
+        <Tabs className="min-w-0 gap-2" defaultValue="rendered">
+          <TabsList aria-label="Artifact content view" className="self-start" variant="micro">
+            <TabsTrigger value="rendered">Rendered</TabsTrigger>
+            <TabsTrigger value="raw">Raw</TabsTrigger>
+          </TabsList>
+          <TabsContent value="rendered">
+            {result.content === null ? (
+              <ArtifactBinaryContent />
+            ) : (
+              <ArtifactPreviewFrame
+                artifactType={result.artifact_type}
+                content={{
+                  content: result.content,
+                  content_type: result.content_type,
+                  download_url: null,
+                  size_bytes: result.size_bytes,
+                }}
+                title={`${result.title} rendered preview`}
+                versionId={`${result.id}:${String(result.revision_number)}`}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="raw">
+            {result.content === null ? (
+              <ArtifactBinaryContent />
+            ) : (
+              <div className="border-border overflow-hidden rounded-lg border">
+                <pre className="max-h-96 min-w-0 overflow-auto px-3 py-2 font-mono text-xs leading-5 wrap-break-word whitespace-pre-wrap">
+                  {result.content}
+                </pre>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </ToolResultCard>
+  )
+}
+
+function ArtifactBinaryContent() {
+  return (
+    <div className="border-border bg-muted/20 rounded-lg border px-3 py-5 text-center">
+      <p className="text-sm font-medium">Preview this image in Artifacts</p>
+      <p className="text-muted-foreground mt-1 text-xs">
+        Binary artifact content is not included in the conversation.
+      </p>
+    </div>
+  )
 }
 
 function CompletedArtifactRow({
@@ -213,8 +371,12 @@ function ArtifactFailureRow({ activity, state }: { activity: ToolActivity; state
     typeof activity.result === "string" && activity.result.trim()
       ? activity.result
       : activity.status === "denied"
-        ? "This artifact change was declined. Nothing was saved."
-        : "The artifact change did not finish. No result was confirmed."
+        ? state.kind === "change"
+          ? "This artifact change was declined. Nothing was saved."
+          : "This artifact lookup was declined. Nothing was read."
+        : state.kind === "change"
+          ? "The artifact change did not finish. No result was confirmed."
+          : "The artifact lookup did not finish. No result was confirmed."
   return (
     <ToolResultCard
       ariaLabel={`${state.heading} failed`}
@@ -236,6 +398,7 @@ function ArtifactFailureRow({ activity, state }: { activity: ToolActivity; state
 type ArtifactState = {
   heading: string
   icon: LucideIcon
+  kind: "change" | "lookup"
   pastTense: string
   runningLabel: string
   waitingLabel: string
@@ -246,21 +409,64 @@ function artifactState(toolName: string): ArtifactState | null {
     return {
       heading: "Create Artifact",
       icon: FileCode2Icon,
+      kind: "change",
       pastTense: "Created",
       runningLabel: "Creating artifact…",
       waitingLabel: "Waiting to create artifact…",
+    }
+  }
+  if (toolName === LIST_ARTIFACTS_TOOL_NAME) {
+    return {
+      heading: "List Artifacts",
+      icon: FilesIcon,
+      kind: "lookup",
+      pastTense: "Listed",
+      runningLabel: "Finding artifacts…",
+      waitingLabel: "Waiting to list artifacts…",
+    }
+  }
+  if (toolName === READ_ARTIFACT_TOOL_NAME) {
+    return {
+      heading: "Read Artifact",
+      icon: FileTextIcon,
+      kind: "lookup",
+      pastTense: "Read",
+      runningLabel: "Reading artifact…",
+      waitingLabel: "Waiting to read artifact…",
     }
   }
   if (toolName === UPDATE_ARTIFACT_TOOL_NAME) {
     return {
       heading: "Update Artifact",
       icon: RefreshCwIcon,
+      kind: "change",
       pastTense: "Updated",
       runningLabel: "Updating artifact…",
       waitingLabel: "Waiting to update artifact…",
     }
   }
   return null
+}
+
+function artifactPendingSummary(activity: ToolActivity) {
+  if (activity.name === LIST_ARTIFACTS_TOOL_NAME) {
+    return artifactSearchArg(activity.args)
+  }
+  if (activity.name === READ_ARTIFACT_TOOL_NAME) {
+    return artifactReferenceArg(activity.args)?.label ?? null
+  }
+  return artifactTitleArg(activity.args)
+}
+
+function ArtifactEntityLink({ artifactId, title }: { artifactId: string; title: string }) {
+  return (
+    <a
+      className="block min-w-0 truncate text-sm font-medium hover:underline"
+      href={`/artifacts/${encodeURIComponent(artifactId)}`}
+    >
+      {title}
+    </a>
+  )
 }
 
 function ArtifactHeading({ children, icon: Icon }: { children: string; icon: LucideIcon }) {
@@ -281,6 +487,9 @@ function ArtifactTypeIcon({ type }: { type: ArtifactType }) {
   }
   if (type === "mermaid") {
     return <WorkflowIcon className="size-4" />
+  }
+  if (type === "image-ref") {
+    return <ImageIcon className="size-4" />
   }
   return <FileTextIcon className="size-4" />
 }

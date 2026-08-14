@@ -24,9 +24,15 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import ImageGeneration
-from pydantic_ai.messages import BinaryContent, BinaryImage, ModelMessage, ModelResponse
+from pydantic_ai.messages import (
+    BinaryContent,
+    BinaryImage,
+    ModelMessage,
+    ModelResponse,
+    NativeToolReturnPart,
+)
 from pydantic_ai.native_tools import ImageAspectRatio
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
@@ -50,6 +56,8 @@ from services.agents.runtime.tools import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.ai_usage.domain import PURPOSE_IMAGE_GENERATION, AIUsageEventData
+from services.ai_usage.run_metered_helper import run_metered_helper
 from services.files import write_generated_image
 from utils.validation import normalize_optional_text
 
@@ -63,6 +71,8 @@ DEFAULT_NATIVE_IMAGE_MODELS = {
     PROVIDER_OPENAI: "gpt-5.6-luna",
 }
 DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_GOOGLE_IMAGE_QUALITY = "standard"
+DEFAULT_GOOGLE_IMAGE_SIZE = "1k"
 
 IMAGE_GENERATION_HELPER_INSTRUCTIONS = """\
 Generate exactly one new image from the user's prompt using the native image
@@ -128,6 +138,7 @@ class GenerateImageOutput(BaseModel):
     name="generate_image",
     provider="native",
     label="Generate Image",
+    code_eligible=False,
     description=(
         "Generate one new image and save it to workspace Files using a provider-native helper "
         "model. The UI displays the saved image automatically; do not construct Markdown, data, "
@@ -225,6 +236,7 @@ async def generate_image(
 
     model_spec = resolve_image_generation_model(model_provider=model_provider, model=model)
     image = await run_native_image_generation(
+        deps=ctx.deps,
         prompt=normalized_prompt,
         aspect_ratio=aspect_ratio,
         model_spec=model_spec,
@@ -280,10 +292,11 @@ def resolve_image_generation_model(
 
 async def run_native_image_generation(
     *,
+    deps: RuntimeDeps,
     prompt: str,
     aspect_ratio: ImageAspectRatio | None,
     model_spec: ResolvedModel,
-    action: Literal["generate", "edit"] = "generate",
+    action: Literal["generate", "edit", "video_to_image"] = "generate",
     input_media: Sequence[BinaryContent] = (),
     output_format: Literal["png", "webp", "jpeg"] | None = None,
 ) -> BinaryImage:
@@ -302,7 +315,7 @@ async def run_native_image_generation(
     capability = ImageGeneration(
         native=True,
         local=False,
-        action=action,
+        action="edit" if action == "edit" else "generate",
         moderation="auto",
         output_format=output_format,
         aspect_ratio=aspect_ratio,
@@ -337,9 +350,39 @@ async def run_native_image_generation(
     user_content: str | list[str | BinaryContent] = f"{task}:\n\n{prompt}"
     if input_media:
         user_content = [user_content, *input_media]
-    result = await helper.run(
-        user_content,
-        usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+
+    metering_details = {"action": action}
+    if model_spec.provider == PROVIDER_OPENAI:
+        metering_details["image_model"] = DEFAULT_OPENAI_IMAGE_MODEL
+    elif model_spec.provider == PROVIDER_GOOGLE:
+        metering_details.update(
+            image_model=model_spec.model,
+            image_quality=DEFAULT_GOOGLE_IMAGE_QUALITY,
+            image_size=DEFAULT_GOOGLE_IMAGE_SIZE,
+        )
+
+    async def call(usage: RunUsage):
+        result = await helper.run(
+            user_content,
+            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+            usage=usage,
+        )
+        _capture_image_output_metering(metering_details, result.all_messages())
+        return result
+
+    result = await run_metered_helper(
+        AIUsageEventData(
+            workspace_id=deps.workspace.id,
+            provider=model_spec.provider,
+            model=model_spec.model,
+            purpose=PURPOSE_IMAGE_GENERATION,
+            agent_id=deps.agent.id,
+            user_id=deps.user.id,
+            run_id=deps.run.id,
+            conversation_id=deps.conversation.id,
+            details=metering_details,
+        ),
+        call,
     )
     messages = result.all_messages()
     images = [
@@ -362,6 +405,26 @@ async def run_native_image_generation(
     raise ModelRetry(
         "The image provider completed without returning an image. Try again or choose another provider."
     )
+
+
+def _capture_image_output_metering(
+    details: dict[str, str],
+    messages: list[ModelMessage],
+) -> None:
+    """Retain provider-returned metadata needed for image output estimates."""
+    for message in messages:
+        if not isinstance(message, ModelResponse):
+            continue
+        for part in message.parts:
+            if not isinstance(part, NativeToolReturnPart) or part.tool_name != "image_generation":
+                continue
+            content = part.content
+            if not isinstance(content, dict) or content.get("status") != "completed":
+                continue
+            for source, target in (("quality", "image_quality"), ("size", "image_size")):
+                value = content.get(source)
+                if isinstance(value, str) and value:
+                    details[target] = value.lower()
 
 
 def _was_content_policy_refusal(messages: list[ModelMessage]) -> bool:

@@ -41,6 +41,7 @@ class WriteFileOutput(BaseModel):
     name="write_file",
     provider="core",
     label="Save File",
+    code_eligible=True,
     description=(
         "Create or edit a durable UTF-8 file in the workspace's document store. "
         "Use for data, notes, and working documents the workspace keeps for "

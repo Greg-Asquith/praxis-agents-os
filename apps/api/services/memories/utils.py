@@ -16,6 +16,7 @@ from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.agent_memories import AgentMemory
 from models.user import User
+from services.ai_usage.domain import PURPOSE_EMBEDDING_MEMORY_DEDUP
 from services.audit_events.enums import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.embeddings import embed_texts
@@ -257,6 +258,8 @@ async def try_embed_memory(
     workspace_id: UUID,
     title: str,
     content_md: str,
+    agent_id: UUID | None = None,
+    user_id: UUID | None = None,
 ) -> EmbeddingBatch | None:
     """Embed a write within the bounded synchronous budget."""
     try:
@@ -265,6 +268,9 @@ async def try_embed_memory(
                 db,
                 [memory_text(title=title, content_md=content_md)],
                 workspace_id=workspace_id,
+                purpose=PURPOSE_EMBEDDING_MEMORY_DEDUP,
+                agent_id=agent_id,
+                user_id=user_id,
             ),
             timeout=settings.MEMORY_EMBED_WRITE_TIMEOUT_SECONDS,
         )

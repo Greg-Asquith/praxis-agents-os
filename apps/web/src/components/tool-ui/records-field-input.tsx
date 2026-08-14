@@ -88,7 +88,7 @@ export function RecordsFieldInput({
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="w-full min-w-max border-separate border-spacing-0 text-left text-xs">
-          <thead className="bg-muted/30 text-muted-foreground sticky top-0 z-10">
+          <thead className="bg-card text-muted-foreground sticky top-0 z-10">
             <tr>
               {columns.map((column) => (
                 <th

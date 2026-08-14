@@ -54,44 +54,43 @@ async def stage_write_file_approval_content(
 
     provider = get_storage_provider()
     for approval in deferred_tool_requests.approvals:
+        from services.agents.runtime.code_mode.approval import code_mode_nested_call
+
+        nested_call = code_mode_nested_call(metadata.get(approval.tool_call_id))
+        if nested_call is not None:
+            nested_args = _mapping_args(nested_call.args)
+            if _needs_staging(nested_call, nested_args):
+                staged_args, display_args = await _stage_write_args(
+                    provider=provider,
+                    workspace_id=workspace_id,
+                    run_id=run_id,
+                    tool_call_id=nested_call.tool_call_id,
+                    args=nested_args,
+                )
+                metadata[approval.tool_call_id] = {
+                    **metadata.get(approval.tool_call_id, {}),
+                    "nested_args": staged_args,
+                    _DISPLAY_ARGS_METADATA_KEY: display_args,
+                }
+            continue
         args = _mapping_args(approval.args)
         if not _needs_staging(approval, args):
             continue
 
-        content = args["content"]
-        data = content.encode("utf-8")
-        content_hash = hashlib.sha256(data).hexdigest()
-        object_key = _staged_write_object_key(
+        staged_args, display_args = await _stage_write_args(
+            provider=provider,
             workspace_id=workspace_id,
             run_id=run_id,
             tool_call_id=approval.tool_call_id,
-            content_hash=content_hash,
+            args=args,
         )
-        await provider.put_object(
-            private_ref_from_key(object_key),
-            data,
-            content_type="text/plain",
-            metadata={
-                "tool_name": WRITE_FILE_TOOL_NAME,
-                "tool_call_id": approval.tool_call_id,
-                "content_sha256": content_hash,
-            },
-        )
-
-        staged_args = dict(args)
-        staged_args.pop("content", None)
-        staged_args[WRITE_FILE_CONTENT_REF_ARG] = object_key
         staged_args_by_call_id[approval.tool_call_id] = staged_args
         metadata[approval.tool_call_id] = {
             **metadata.get(approval.tool_call_id, {}),
-            _DISPLAY_ARGS_METADATA_KEY: _safe_write_file_args(
-                args,
-                content_bytes=len(data),
-                content_sha256=content_hash,
-            ),
+            _DISPLAY_ARGS_METADATA_KEY: display_args,
         }
 
-    if not staged_args_by_call_id:
+    if not staged_args_by_call_id and metadata == deferred_tool_requests.metadata:
         return StagedDeferredToolContent(
             new_messages=list(new_messages),
             all_messages=list(all_messages),
@@ -151,6 +150,16 @@ def staged_write_content_refs(requests: DeferredToolRequests) -> list[str]:
     refs: list[str] = []
     seen: set[str] = set()
     for approval in requests.approvals:
+        from services.agents.runtime.code_mode.approval import code_mode_nested_call
+
+        nested_call = code_mode_nested_call(requests.metadata.get(approval.tool_call_id))
+        if nested_call is not None:
+            args = _mapping_args(nested_call.args)
+            content_ref = args.get(WRITE_FILE_CONTENT_REF_ARG) if args is not None else None
+            if isinstance(content_ref, str) and content_ref not in seen:
+                refs.append(content_ref)
+                seen.add(content_ref)
+            continue
         if approval.tool_name != WRITE_FILE_TOOL_NAME:
             continue
         args = _mapping_args(approval.args)
@@ -184,9 +193,26 @@ def staged_write_content_refs_from_metadata(
     refs: list[str] = []
     seen: set[str] = set()
     for approval in approvals:
-        if not isinstance(approval, Mapping) or approval.get("tool_name") != WRITE_FILE_TOOL_NAME:
+        if not isinstance(approval, Mapping):
             continue
+        tool_name = approval.get("tool_name")
         args = _mapping_args(approval.get("args"))
+        if tool_name != WRITE_FILE_TOOL_NAME:
+            metadata = deferred_requests.get("metadata")
+            nested_metadata = (
+                metadata.get(approval.get("tool_call_id"))
+                if isinstance(metadata, Mapping)
+                else None
+            )
+            if (
+                not isinstance(nested_metadata, Mapping)
+                or nested_metadata.get("kind") != "code_mode"
+            ):
+                continue
+            tool_name = nested_metadata.get("nested_tool_name")
+            args = _mapping_args(nested_metadata.get("nested_args"))
+        if tool_name != WRITE_FILE_TOOL_NAME:
+            continue
         content_ref = args.get(WRITE_FILE_CONTENT_REF_ARG) if args is not None else None
         if not isinstance(content_ref, str) or content_ref in seen:
             continue
@@ -232,6 +258,43 @@ async def delete_staged_write_content(
         content_ref=content_ref,
     )
     await get_storage_provider().delete_object(private_ref_from_key(object_key))
+
+
+async def _stage_write_args(
+    *,
+    provider: Any,
+    workspace_id: UUID,
+    run_id: UUID,
+    tool_call_id: str,
+    args: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    content = args["content"]
+    data = content.encode("utf-8")
+    content_hash = hashlib.sha256(data).hexdigest()
+    object_key = _staged_write_object_key(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        tool_call_id=tool_call_id,
+        content_hash=content_hash,
+    )
+    await provider.put_object(
+        private_ref_from_key(object_key),
+        data,
+        content_type="text/plain",
+        metadata={
+            "tool_name": WRITE_FILE_TOOL_NAME,
+            "tool_call_id": tool_call_id,
+            "content_sha256": content_hash,
+        },
+    )
+    staged_args = dict(args)
+    staged_args.pop("content", None)
+    staged_args[WRITE_FILE_CONTENT_REF_ARG] = object_key
+    return staged_args, _safe_write_file_args(
+        args,
+        content_bytes=len(data),
+        content_sha256=content_hash,
+    )
 
 
 def _needs_staging(approval: ToolCallPart, args: Mapping[str, Any] | None) -> bool:

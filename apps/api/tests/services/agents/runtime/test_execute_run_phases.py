@@ -284,12 +284,14 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
             *,
             workspace_id: UUID,
             user_id: UUID,
+            metering=None,
         ):
             await asyncio.sleep(0.05)
             return await real_persist_cancelled_run(
                 run_id,
                 workspace_id=workspace_id,
                 user_id=user_id,
+                metering=metering,
             )
 
         async def slow_stream(

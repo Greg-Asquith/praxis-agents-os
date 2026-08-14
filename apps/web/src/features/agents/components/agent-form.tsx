@@ -174,12 +174,26 @@ export function AgentForm(props: AgentFormProps) {
                 validationEntries={validationEntries}
               />
               {activeStepId === "profile" ? (
+                <AgentProfileSection
+                  fieldErrors={{
+                    instructions: fieldErrors["agent-instructions"],
+                    name: fieldErrors["agent-name"],
+                  }}
+                  setField={setField}
+                  state={state}
+                />
+              ) : null}
+              {activeStepId === "model" ? (
                 <div className="flex flex-col gap-6">
-                  <AgentProfileSection
+                  <AgentModelSection
+                    advancedOpen={advancedOpen}
                     fieldErrors={{
-                      instructions: fieldErrors["agent-instructions"],
-                      name: fieldErrors["agent-name"],
+                      maxSteps: fieldErrors["agent-max-steps"],
+                      modelSelection: fieldErrors["agent-model"],
                     }}
+                    modelOptions={modelOptions}
+                    onAdvancedOpenChange={setAdvancedOpen}
+                    selectedModelLabel={selectedModelOption?.label ?? "Workspace default"}
                     setField={setField}
                     state={state}
                   />
@@ -190,22 +204,11 @@ export function AgentForm(props: AgentFormProps) {
                   />
                 </div>
               ) : null}
-              {activeStepId === "model" ? (
-                <AgentModelSection
-                  advancedOpen={advancedOpen}
-                  fieldErrors={{
-                    maxSteps: fieldErrors["agent-max-steps"],
-                    modelSelection: fieldErrors["agent-model"],
-                  }}
-                  modelOptions={modelOptions}
-                  onAdvancedOpenChange={setAdvancedOpen}
-                  selectedModelLabel={selectedModelOption?.label ?? "Workspace default"}
-                  setField={setField}
-                  state={state}
-                />
-              ) : null}
               {activeStepId === "tools" ? (
                 <AgentToolsSection
+                  onCodeModeEnabledChange={(enabled) => {
+                    setField("codeModeEnabled", enabled)
+                  }}
                   onToolModeChange={setToolMode}
                   state={state}
                   toolCatalog={toolCatalog.tools}

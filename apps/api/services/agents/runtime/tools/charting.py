@@ -291,6 +291,7 @@ class ChartAck(BaseModel):
     name="build_chart",
     provider="core",
     label="Build Chart",
+    code_eligible=False,
     description=(
         "Present structured data as a chart. Supply chart type, title, X axis, series, and "
         "data. Omit Y axes, colors, and options unless the chart needs multiple scales, "

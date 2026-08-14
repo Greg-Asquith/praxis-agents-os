@@ -14,6 +14,7 @@ from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import CONVERSATION_SOURCE_SCHEDULED, Conversation
+from models.integration_context import ActiveContextSelection
 from services.agent_runs import create_agent_run, link_schedule_run
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules.runs import (
@@ -28,6 +29,7 @@ from services.completion_contract import (
     serialized_completion_contract,
 )
 from services.conversations.naming import fallback_conversation_title
+from services.integrations.context.schemas import ActiveContextTargets
 from services.workspaces.utils import get_active_membership
 from utils.dates import normalize_utc_datetime
 
@@ -249,6 +251,18 @@ async def _ensure_conversation(
     )
     db.add(conversation)
     await db.flush()
+    if schedule.active_context is not None:
+        targets = ActiveContextTargets.model_validate(schedule.active_context)
+        db.add_all(
+            ActiveContextSelection(
+                conversation_id=conversation.id,
+                workspace_id=schedule.workspace_id,
+                integration_resource_id=target.integration_resource_id,
+                context_group_id=target.context_group_id,
+            )
+            for target in targets.targets
+        )
+        await db.flush()
     schedule_run.conversation_id = conversation.id
     return conversation
 

@@ -3,6 +3,7 @@
 """Shared integration-tool registry and fan-out invariants."""
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -68,7 +69,6 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             "approval",
             True,
         ),
-        "google_ads_list_accounts": ("read", "internal", "auto", False),
         "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
         "google_ads_update_campaign_status": ("write", "external", "approval", True),
@@ -105,6 +105,43 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         assert definition.presentation.running_label
         assert definition.presentation.completed_label
         assert definition.presentation.failed_label
+
+
+def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> None:
+    definitions = (
+        *TOOL_DEFINITIONS,
+        *GOOGLE_ADS_TOOL_DEFINITIONS,
+        *AIRTABLE_TOOL_DEFINITIONS,
+        *BIGQUERY_TOOL_DEFINITIONS,
+    )
+
+    for definition in definitions:
+        assert definition.output_model is not None, definition.name
+        for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
+            assert any(
+                marker in path
+                for marker in (
+                    ".properties.fields",
+                    ".properties.rows.items",
+                    "JsonValue.anyOf",
+                )
+            ), (definition.name, path)
+
+
+def _dynamic_object_paths(value: Any, path: str = "$") -> list[str]:
+    if isinstance(value, dict):
+        additional = value.get("additionalProperties")
+        paths = [path] if additional is True or isinstance(additional, dict) else []
+        for key, item in value.items():
+            paths.extend(_dynamic_object_paths(item, f"{path}.{key}"))
+        return paths
+    if isinstance(value, list):
+        return [
+            item_path
+            for index, item in enumerate(value)
+            for item_path in _dynamic_object_paths(item, f"{path}[{index}]")
+        ]
+    return []
 
 
 def test_gmail_tool_contract_matrix_and_schemas() -> None:
@@ -148,7 +185,6 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
         "google_ads_create_negative_keyword_list",
-        "google_ads_list_accounts",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
         "google_ads_remove_ad_group_negative_keywords",
@@ -156,7 +192,6 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_run_report",
         "google_ads_update_campaign_status",
     }
-    assert definitions["google_ads_list_accounts"].effect == "read"
     assert definitions["google_ads_run_report"].effect == "read"
     for name in (
         "google_ads_add_ad_group_negative_keywords",

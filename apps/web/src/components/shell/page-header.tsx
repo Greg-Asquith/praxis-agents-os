@@ -14,7 +14,7 @@ export function PageHeader({ actions, description, title }: PageHeaderProps) {
       <div className="min-w-0">
         <h1 className="font-heading text-2xl font-semibold tracking-tight">{title}</h1>
         {description ? (
-          <p className="text-muted-foreground mt-1 max-w-2xl text-sm">{description}</p>
+          <p className="text-muted-foreground mt-1 max-w-3xl text-sm">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="shrink-0">{actions}</div> : null}

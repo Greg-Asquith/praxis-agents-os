@@ -36,7 +36,7 @@ import {
 } from "@/features/conversations/format"
 import { pendingMessagesForConversation } from "@/features/conversations/message-parts"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
-import { conversationApprovalExpiryOutcome } from "@/features/conversations/run-error-copy"
+import { conversationRunInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import {
   EMPTY_CONVERSATION_MESSAGES,
   streamActiveRunFromState,
@@ -146,8 +146,8 @@ function ConversationDetail({
   })
   const activeRun = streamActiveRun ?? activeRunQuery.data.active_run
   const latestRun = activeRunQuery.data.latest_run
-  const approvalExpiryMessage = conversationApprovalExpiryOutcome(activeRun, latestRun)
-  const transcriptRun = activeRun ?? (approvalExpiryMessage ? latestRun : null)
+  const runInterruption = conversationRunInterruptionOutcome(activeRun, latestRun)
+  const transcriptRun = activeRun ?? (runInterruption ? latestRun : null)
   const [agentQuery, modelCatalogQuery] = useSuspenseQueries({
     queries: [agentQueryOptions(conversation.active_agent_id ?? ""), modelCatalogQueryOptions()],
   })
@@ -249,7 +249,7 @@ function ConversationDetail({
             <MessageList
               activeRun={transcriptRun}
               approvalError={approvalError}
-              approvalExpiryMessage={approvalExpiryMessage}
+              runInterruption={runInterruption}
               approvals={pendingApprovals}
               assistantAgentId={assistantAgentId}
               assistantLabel={assistantLabel}
@@ -260,6 +260,7 @@ function ConversationDetail({
               messages={messagesQuery.data.messages}
               onApprovalSubmit={handleApprovalSubmit}
               pendingDelegations={pendingDelegations}
+              pendingWorkflow={approvalStateQuery.data?.workflow ?? null}
               pendingUserMessages={visiblePendingUserMessages}
               streamApprovals={visibleStreamApprovals}
               streamConversationId={shouldRenderStream ? stream.conversationId : null}

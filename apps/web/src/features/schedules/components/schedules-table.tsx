@@ -1,9 +1,16 @@
 // apps/web/src/features/schedules/components/schedules-table.tsx
 
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { CalendarClockIcon, CircleAlertIcon, PencilIcon, PlusIcon } from "lucide-react"
 
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +43,57 @@ import type { AgentSchedule } from "@/features/schedules/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime, titleCaseToken } from "@/lib/format"
 
+const columnHelper = createAppColumnHelper<AgentSchedule>()
+
+const columns = columnHelper.columns([
+  columnHelper.display({
+    id: "name",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => <span className="truncate font-medium">{scheduleTitle(row.original)}</span>,
+    meta: { label: "Name" },
+  }),
+  columnHelper.display({
+    id: "cadence",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => (
+      <div className="flex min-w-0 flex-col gap-1">
+        <ScheduleCadenceTooltip schedule={row.original} />
+        {row.original.schedule_type !== "interval" ? (
+          <span className="text-muted-foreground truncate text-xs">{row.original.timezone}</span>
+        ) : null}
+      </div>
+    ),
+    meta: { label: "Cadence" },
+  }),
+  columnHelper.accessor("health", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => <ScheduleHealthBadge health={getValue()} />,
+    meta: { label: "Status" },
+  }),
+  columnHelper.accessor("is_active", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: () => null,
+    meta: { label: "On" },
+  }),
+  columnHelper.accessor("next_run_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => formatScheduleNextRun(row.original),
+    meta: { label: "Next run" },
+  }),
+  columnHelper.display({
+    id: "last_run",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => formatLatestRun(row.original),
+    meta: { label: "Last run" },
+  }),
+  columnHelper.display({
+    id: "actions",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: () => null,
+    meta: { label: "Actions", labelClassName: "sr-only" },
+  }),
+])
+
 export function SchedulesTable({
   agents,
   schedules,
@@ -48,7 +106,11 @@ export function SchedulesTable({
   const pendingScheduleIdsRef = useRef(new Set<string>())
   const [pendingScheduleIds, setPendingScheduleIds] = useState<ReadonlySet<string>>(() => new Set())
   const [actionError, setActionError] = useState<string | null>(null)
-  const agentNameById = new Map(agents.map((agent) => [agent.id, agent.name]))
+  const agentNameById = useMemo(
+    () => new Map(agents.map((agent) => [agent.id, agent.name])),
+    [agents]
+  )
+  const table = useAppTable({ columns, data: schedules })
 
   async function handleActiveChange(schedule: AgentSchedule, isActive: boolean) {
     if (isActive === schedule.is_active || pendingScheduleIdsRef.current.has(schedule.id)) {
@@ -117,84 +179,133 @@ export function SchedulesTable({
       </ResponsiveList>
 
       <TooltipProvider>
-        <div className="hidden md:block">
-          <Table className="min-w-5xl table-fixed">
-            <colgroup>
-              <col className="w-56" />
-              <col className="w-44" />
-              <col className="w-32" />
-              <col className="w-16" />
-              <col className="w-40" />
-              <col className="w-52" />
-              <col className="w-24" />
-            </colgroup>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Cadence</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>On</TableHead>
-                <TableHead>Next run</TableHead>
-                <TableHead>Last run</TableHead>
-                <TableHead>
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {schedules.map((schedule) => (
-                <TableRow key={schedule.id}>
-                  <TableCell>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate font-medium">{scheduleTitle(schedule)}</span>
-                      <span className="text-muted-foreground truncate text-xs">
-                        {agentNameById.get(schedule.agent_id) ?? "Unknown agent"}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="overflow-hidden">
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <ScheduleCadenceTooltip schedule={schedule} />
-                      {schedule.schedule_type !== "interval" ? (
-                        <span className="text-muted-foreground truncate text-xs">
-                          {schedule.timezone}
-                        </span>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <ScheduleHealthBadge health={schedule.health} />
-                  </TableCell>
-                  <TableCell>
-                    <ScheduleActiveSwitch
-                      disabled={pendingScheduleIds.has(schedule.id)}
-                      onCheckedChange={(isActive) => {
-                        void handleActiveChange(schedule, isActive)
-                      }}
-                      schedule={schedule}
-                    />
-                  </TableCell>
-                  <TableCell className="truncate">{formatScheduleNextRun(schedule)}</TableCell>
-                  <TableCell className="truncate">{formatLatestRun(schedule)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      render={
-                        <Link to="/schedules/$scheduleId" params={{ scheduleId: schedule.id }} />
-                      }
-                    >
-                      <PencilIcon data-icon="inline-start" />
-                      Edit
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <table.AppTable>
+          <SchedulesDesktopTable
+            agentNameById={agentNameById}
+            onActiveChange={(schedule, isActive) => {
+              void handleActiveChange(schedule, isActive)
+            }}
+            pendingScheduleIds={pendingScheduleIds}
+          />
+        </table.AppTable>
       </TooltipProvider>
     </div>
+  )
+}
+
+function SchedulesDesktopTable({
+  agentNameById,
+  onActiveChange,
+  pendingScheduleIds,
+}: {
+  agentNameById: ReadonlyMap<string, string>
+  onActiveChange: (schedule: AgentSchedule, isActive: boolean) => void
+  pendingScheduleIds: ReadonlySet<string>
+}) {
+  const table = useTableContext<AgentSchedule>()
+
+  return (
+    <div className="hidden md:block">
+      <Table className="min-w-5xl table-fixed">
+        <colgroup>
+          <col className="w-56" />
+          <col className="w-44" />
+          <col className="w-32" />
+          <col className="w-16" />
+          <col className="w-40" />
+          <col className="w-52" />
+          <col className="w-24" />
+        </colgroup>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <table.AppHeader header={header} key={header.id}>
+                  {() => <ScheduleHeaderCell />}
+                </table.AppHeader>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <table.AppCell cell={cell} key={cell.id}>
+                  {() => (
+                    <ScheduleBodyCell
+                      agentNameById={agentNameById}
+                      onActiveChange={onActiveChange}
+                      pendingScheduleIds={pendingScheduleIds}
+                    />
+                  )}
+                </table.AppCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function ScheduleHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function ScheduleBodyCell({
+  agentNameById,
+  onActiveChange,
+  pendingScheduleIds,
+}: {
+  agentNameById: ReadonlyMap<string, string>
+  onActiveChange: (schedule: AgentSchedule, isActive: boolean) => void
+  pendingScheduleIds: ReadonlySet<string>
+}) {
+  const cell = useCellContext()
+  const schedule = useTableContext<AgentSchedule>().getRow(cell.row.id).original
+
+  return (
+    <TableCell
+      className={
+        cell.column.id === "actions"
+          ? "text-right"
+          : cell.column.id === "cadence"
+            ? "overflow-hidden"
+            : cell.column.id === "next_run_at" || cell.column.id === "last_run"
+              ? "truncate"
+              : undefined
+      }
+    >
+      {cell.column.id === "name" ? (
+        <div className="flex min-w-0 flex-col gap-1">
+          <cell.FlexRender />
+          <span className="text-muted-foreground truncate text-xs">
+            {agentNameById.get(schedule.agent_id) ?? "Unknown agent"}
+          </span>
+        </div>
+      ) : cell.column.id === "is_active" ? (
+        <ScheduleActiveSwitch
+          disabled={pendingScheduleIds.has(schedule.id)}
+          onCheckedChange={(isActive) => {
+            onActiveChange(schedule, isActive)
+          }}
+          schedule={schedule}
+        />
+      ) : cell.column.id === "actions" ? (
+        <Button
+          render={<Link params={{ scheduleId: schedule.id }} to="/schedules/$scheduleId" />}
+          size="sm"
+          variant="outline"
+        >
+          <PencilIcon data-icon="inline-start" />
+          Edit
+        </Button>
+      ) : (
+        <cell.FlexRender />
+      )}
+    </TableCell>
   )
 }
 

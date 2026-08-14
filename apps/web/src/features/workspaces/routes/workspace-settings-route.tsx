@@ -3,6 +3,7 @@
 import { PageHeader } from "@/components/shell/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AuditSettingsPanel } from "@/features/audit/components/audit-settings-panel"
+import { UsageSettingsPanel } from "@/features/usage/components/usage-dashboard-panel"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { InvitationsTable } from "@/features/workspaces/components/invitations-table"
 import { MembersTable } from "@/features/workspaces/components/members-table"
@@ -18,8 +19,8 @@ export function WorkspaceSettingsRoute() {
     <div className="flex flex-col gap-6">
       <PageHeader
         actions={<WorkspaceRoleBadge role={workspace.current_user_role} />}
-        description="Manage workspace details, members, invitations, and audit history."
-        title="Workspace settings"
+        description="Manage workspace details, members, invitations, usage, and audit history."
+        title="Workspace Settings"
       />
 
       <Tabs defaultValue="details">
@@ -27,6 +28,7 @@ export function WorkspaceSettingsRoute() {
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           {canManageWorkspace ? <TabsTrigger value="invitations">Invitations</TabsTrigger> : null}
+          {canManageWorkspace ? <TabsTrigger value="usage">AI Usage</TabsTrigger> : null}
           {canManageWorkspace ? <TabsTrigger value="audit">Audit Log</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="details">
@@ -38,6 +40,11 @@ export function WorkspaceSettingsRoute() {
         {canManageWorkspace ? (
           <TabsContent value="invitations">
             <InvitationsTable />
+          </TabsContent>
+        ) : null}
+        {canManageWorkspace ? (
+          <TabsContent value="usage">
+            <UsageSettingsPanel />
           </TabsContent>
         ) : null}
         {canManageWorkspace ? (

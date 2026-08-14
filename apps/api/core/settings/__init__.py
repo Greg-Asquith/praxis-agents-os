@@ -20,6 +20,7 @@ from core.settings.auth import AuthSettingsMixin
 from core.settings.aws import AwsSettingsMixin
 from core.settings.azure import AzureSettingsMixin
 from core.settings.base import SettingsBase
+from core.settings.code_mode import CodeModeSettingsMixin
 from core.settings.database import DatabaseSettingsMixin
 from core.settings.email import EmailSettingsMixin
 from core.settings.embeddings import EmbeddingsSettingsMixin
@@ -50,6 +51,7 @@ _LOCAL_EXAMPLE_ENCRYPTION_KEY = "bm90LWEtc2VjcmV0LWxvY2FsLWRldi1rZXktMDAwMDA="
 class Settings(
     SettingsBase,
     AgentRunSettingsMixin,
+    CodeModeSettingsMixin,
     AppSettingsMixin,
     ArtifactSettingsMixin,
     AuthSettingsMixin,

@@ -72,6 +72,7 @@ DEFINITION = RuntimeToolDefinition(
     ),
     provider="bigquery",
     label="List BigQuery Tables",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     output_model=BigQueryListTablesOutput,

@@ -90,6 +90,19 @@ per-agent `tool_policies`; this section is the policy law:
   dispatch reloads the initiating user's active membership and requires
   `EDITOR_ROLES` before every `effect="write"` invocation; read-only members
   may continue conversations and use `effect="read"` tools. *(enforced)*
+- Code mode never aggregates or weakens tool decisions. The outer
+  `run_workflow` tool has no side effect; every nested call independently
+  retains its declared effect and egress, active membership and role check,
+  run-envelope verdict, approval policy, output contract, bounds, and audit
+  record through the same dispatch choke point as a direct call. A nested
+  approval carries the same staged-content, expiry, and audit treatment as a
+  direct call's approval. Eligible gated and write tools may therefore be
+  exposed as workflow stubs; every decision remains scoped to one nested call
+  and its validated effective arguments. *(enforced)*
+- Batch consent is one list-shaped call whose complete bounded row set the
+  operator reviews and may edit before approval. The edited set is what
+  executes and what the audit digest records. No Code Mode mechanism approves
+  arguments the operator has not seen. *(enforced)*
 - Anything that **spends money** (e.g. Google Ads mutations) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. *(enforced)*

@@ -1,11 +1,22 @@
 // apps/web/src/features/agents/components/agent-tools-section.tsx
 
 import { useMemo, useState } from "react"
-import { SearchIcon } from "lucide-react"
+import { InfoIcon, SearchIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
-import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field"
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverHeader, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -15,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import type { AgentFormState } from "@/features/agents/components/agent-form-model"
 import {
   ALL_TOOL_PROVIDERS_VALUE,
@@ -30,10 +42,12 @@ import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { ToolCatalogEntry } from "@/features/tools/types"
 
 export function AgentToolsSection({
+  onCodeModeEnabledChange,
   onToolModeChange,
   state,
   toolCatalog,
 }: {
+  onCodeModeEnabledChange: (enabled: boolean) => void
   onToolModeChange: (toolName: string, mode: RuntimeToolMode) => void
   state: AgentFormState
   toolCatalog: ToolCatalogEntry[]
@@ -41,21 +55,31 @@ export function AgentToolsSection({
   const [search, setSearch] = useState("")
   const [providerFilter, setProviderFilter] = useState(ALL_TOOL_PROVIDERS_VALUE)
   const [providerOpenOverrides, setProviderOpenOverrides] = useState<Record<string, boolean>>({})
+  const configurableToolCatalog = useMemo(
+    () => toolCatalog.filter((tool) => tool.name !== "run_workflow"),
+    [toolCatalog]
+  )
   const normalizedSearch = search.trim().toLowerCase()
-  const providerOptions = useMemo(() => providerFilterOptions(toolCatalog), [toolCatalog])
+  const providerOptions = useMemo(
+    () => providerFilterOptions(configurableToolCatalog),
+    [configurableToolCatalog]
+  )
   const filteredCatalog = useMemo(
-    () => filterTools(toolCatalog, providerFilter, normalizedSearch),
-    [toolCatalog, providerFilter, normalizedSearch]
+    () => filterTools(configurableToolCatalog, providerFilter, normalizedSearch),
+    [configurableToolCatalog, providerFilter, normalizedSearch]
   )
   const toolGroups = useMemo(() => groupToolsByProvider(filteredCatalog), [filteredCatalog])
   const catalogToolNames = useMemo(
-    () => new Set(toolCatalog.map((tool) => tool.name)),
-    [toolCatalog]
+    () => new Set(configurableToolCatalog.map((tool) => tool.name)),
+    [configurableToolCatalog]
   )
   const allUnavailableToolNames = useMemo(
     () =>
       Object.keys(state.toolModes).filter(
-        (toolName) => !catalogToolNames.has(toolName) && state.toolModes[toolName] !== "off"
+        (toolName) =>
+          toolName !== "run_workflow" &&
+          !catalogToolNames.has(toolName) &&
+          state.toolModes[toolName] !== "off"
       ),
     [catalogToolNames, state.toolModes]
   )
@@ -77,7 +101,7 @@ export function AgentToolsSection({
     providerFilter === UNAVAILABLE_TOOL_PROVIDER_VALUE
       ? unavailableToolNames.length
       : 0)
-  const totalToolCount = toolCatalog.length + allUnavailableToolNames.length
+  const totalToolCount = configurableToolCatalog.length + allUnavailableToolNames.length
   const hasActiveFilter = normalizedSearch.length > 0 || providerFilter !== ALL_TOOL_PROVIDERS_VALUE
   return (
     <FormSection
@@ -86,6 +110,36 @@ export function AgentToolsSection({
       title="Tools and approval policy"
     >
       <FieldGroup>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <div className="flex items-center gap-1.5">
+              <FieldTitle>Let this agent combine tools in one workflow</FieldTitle>
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      aria-label="About combining tools"
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    />
+                  }
+                >
+                  <InfoIcon />
+                </PopoverTrigger>
+                <CodeModeInfoContent />
+              </Popover>
+            </div>
+            <FieldDescription>
+              The agent can work through several enabled tools as one clear workflow.
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            aria-label="Let this agent combine tools in one workflow"
+            checked={state.codeModeEnabled}
+            onCheckedChange={onCodeModeEnabledChange}
+          />
+        </Field>
         <FieldSet>
           <FieldLegend>Choose tools</FieldLegend>
           <p className="text-muted-foreground text-sm">
@@ -209,5 +263,32 @@ export function AgentToolsSection({
         </FieldSet>
       </FieldGroup>
     </FormSection>
+  )
+}
+
+function CodeModeInfoContent() {
+  return (
+    <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))]">
+      <CodeModeInfoBody />
+    </PopoverContent>
+  )
+}
+
+export function CodeModeInfoBody() {
+  return (
+    <>
+      <PopoverHeader>
+        <h3 className="font-medium">Combine tools in one workflow</h3>
+        <p className="text-muted-foreground">
+          Lets the agent combine several tools in one workflow, working through data without
+          back-and-forth.
+        </p>
+      </PopoverHeader>
+      <p className="text-muted-foreground text-sm">
+        Use it for agents that run reports, reconcile, or act on many items at once — for example,
+        run an ads report, work out the weakest campaigns, and pause them. Leave it off for simple
+        chat or single-action agents.
+      </p>
+    </>
   )
 }

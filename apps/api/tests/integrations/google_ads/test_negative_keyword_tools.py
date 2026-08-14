@@ -84,8 +84,8 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
     result = await google_ads_add_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [
@@ -178,8 +178,8 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
     await google_ads_add_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
             member_count=7,
         ),
@@ -349,8 +349,8 @@ async def test_add_negative_keywords_classifies_audit_outcome(
     await google_ads_add_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [NegativeKeywordEntry(**item) for item in requested],
@@ -407,8 +407,8 @@ async def test_add_negative_keywords_fails_closed_when_list_is_missing(monkeypat
     result = await google_ads_add_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Removed list",
         ),
         [NegativeKeywordEntry(text="term", match_type="EXACT")],
@@ -440,8 +440,8 @@ async def test_add_negative_keywords_rejects_target_outside_active_context() -> 
         await google_ads_add_negative_keywords(
             ctx,
             GoogleAdsSharedSetReference(
-                integration_resource_id=uuid4(),
-                external_id="50",
+                customer_id="999",
+                shared_set_id="50",
                 label="Other account list",
             ),
             [NegativeKeywordEntry(text="term", match_type="EXACT")],
@@ -487,8 +487,8 @@ async def test_add_negative_keywords_write_denial_is_audited_before_provider_cal
     result = await google_ads_add_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [NegativeKeywordEntry(text="term", match_type="EXACT")],
@@ -549,8 +549,8 @@ async def test_remove_negative_keywords_normalizes_any_and_targets_one_account(
     await google_ads_remove_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [
@@ -607,8 +607,8 @@ async def test_remove_negative_keywords_fails_closed_when_list_is_missing(
     result = await google_ads_remove_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Removed list",
         ),
         [NegativeKeywordRemovalEntry(text="term", match_type="ANY")],
@@ -658,8 +658,8 @@ async def test_remove_negative_keywords_write_denial_is_audited_before_provider_
     result = await google_ads_remove_negative_keywords(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [NegativeKeywordRemovalEntry(text="term", match_type="EXACT")],

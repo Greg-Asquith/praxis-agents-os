@@ -311,12 +311,23 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               entry({
-                resource_names: ["customers/1234567890/campaigns/10"],
-                campaign_errors: [
+                requested_status: "PAUSED",
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Summer Sale",
+                    requested_status: "PAUSED",
+                    outcome: "updated",
+                    external_ref: "customers/1234567890/campaigns/10",
+                  },
                   {
                     campaign_id: "20",
+                    campaign_name: "Brand Awareness",
+                    requested_status: "PAUSED",
+                    outcome: "failed",
                     message: "Campaign is removed.",
                     error_code: "CANNOT_MODIFY_REMOVED_CAMPAIGN",
+                    external_ref: null,
                   },
                 ],
               }),
@@ -405,7 +416,7 @@ describe("Google Ads tool presenters", () => {
               entry({
                 action: "LINK",
                 negative_list: {
-                  external_id: "50",
+                  reference: sharedSetReference("50", "Persisted Brand Protection"),
                   name: "Persisted Brand Protection",
                   member_count: 17,
                 },
@@ -487,7 +498,7 @@ describe("Google Ads tool presenters", () => {
               entry({
                 action: "LINK",
                 negative_list: {
-                  external_id: "50",
+                  reference: sharedSetReference("50", "Brand Protection"),
                   name: "Brand Protection",
                   member_count: 12,
                 },
@@ -524,7 +535,7 @@ describe("Google Ads tool presenters", () => {
               entry({
                 action: "UNLINK",
                 negative_list: {
-                  external_id: "50",
+                  reference: sharedSetReference("50", "Brand Protection"),
                   name: "Brand Protection",
                   member_count: null,
                 },
@@ -589,12 +600,21 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               entry({
-                created_names: ["New exclusions"],
-                resource_names: ["customers/1234567890/sharedSets/10"],
-                skipped_existing: ["Existing exclusions"],
-                list_errors: [
+                outcomes: [
+                  {
+                    name: "New exclusions",
+                    outcome: "created",
+                    reference: sharedSetReference("10", "New exclusions"),
+                  },
+                  {
+                    name: "Existing exclusions",
+                    outcome: "already_exists",
+                    reference: sharedSetReference("11", "Existing exclusions"),
+                  },
                   {
                     name: "Rejected exclusions",
+                    outcome: "failed",
+                    reference: null,
                     message: "This list name is not allowed.",
                     error_code: "INVALID_NAME",
                   },
@@ -628,13 +648,18 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               entry({
-                created_names: ["Straße", "Other"],
-                resource_names: [
-                  "customers/1234567890/sharedSets/10",
-                  "customers/1234567890/sharedSets/11",
+                outcomes: [
+                  {
+                    name: "Straße",
+                    outcome: "created",
+                    reference: sharedSetReference("10", "Straße"),
+                  },
+                  {
+                    name: "Other",
+                    outcome: "created",
+                    reference: sharedSetReference("11", "Other"),
+                  },
                 ],
-                skipped_existing: [],
-                list_errors: [],
               }),
             ],
           },
@@ -1395,12 +1420,20 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               entry({
-                resource_names: ["customers/1234567890/campaigns/10"],
-                campaign_errors: [],
+                requested_status: "PAUSED",
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Summer Sale",
+                    requested_status: "PAUSED",
+                    outcome: "updated",
+                    external_ref: "customers/1234567890/campaigns/10",
+                  },
+                ],
               }),
               {
-                ...entry({ resource_names: "malformed", campaign_errors: [] }),
-                connection_id: "connection-2",
+                ...entry({ requested_status: "PAUSED", campaigns: "malformed" }),
+                provider_key: "google_ads",
                 display_name: "Second account",
                 external_id: "2222222222",
               },
@@ -1685,8 +1718,8 @@ function campaignReference(externalId: string, label: string) {
   return {
     version: 1,
     entity_kind: "google_ads_campaign",
-    integration_resource_id: "resource-1",
-    external_id: externalId,
+    customer_id: "1234567890",
+    campaign_id: externalId,
     label,
   }
 }
@@ -1695,8 +1728,9 @@ function adGroupReference(externalId: string, label: string, campaign: string) {
   return {
     version: 1,
     entity_kind: "google_ads_ad_group",
-    integration_resource_id: "resource-1",
-    external_id: externalId,
+    customer_id: "1234567890",
+    campaign_id: "100",
+    ad_group_id: externalId,
     label,
     scope_label: campaign,
   }
@@ -1706,15 +1740,15 @@ function sharedSetReference(externalId: string, label: string) {
   return {
     version: 1,
     entity_kind: "google_ads_shared_set",
-    integration_resource_id: "resource-1",
-    external_id: externalId,
+    customer_id: "1234567890",
+    shared_set_id: externalId,
     label,
   }
 }
 
 function entry(data: unknown) {
   return {
-    connection_id: "connection-1",
+    provider_key: "google_ads",
     display_name: "Client account",
     external_id: "1234567890",
     status: "success",

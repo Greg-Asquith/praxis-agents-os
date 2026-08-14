@@ -56,6 +56,7 @@ _RLS_WORKSPACE_TABLES = frozenset(
         "agent_schedule_runs",
         "agent_schedules",
         "agents",
+        "ai_usage_events",
         "artifact_revisions",
         "artifact_shares",
         "artifacts",
@@ -339,6 +340,12 @@ async def db_session_factory(
         )
         monkeypatch.setattr(database_module, "_async_engine", engine)
         monkeypatch.setattr(database_module, "_async_session_factory", runtime_session_factory)
+        monkeypatch.setattr(database_module, "_ai_usage_async_engine", engine)
+        monkeypatch.setattr(
+            database_module,
+            "_ai_usage_async_session_factory",
+            runtime_session_factory,
+        )
         maintenance_session_factory = async_sessionmaker(
             bind=connection,
             class_=AsyncSession,
@@ -392,6 +399,22 @@ async def committed_db_session_factory(
     )
     monkeypatch.setattr(database_module, "_async_engine", engine)
     monkeypatch.setattr(database_module, "_async_session_factory", runtime_session_factory)
+    ai_usage_engine = create_async_engine(
+        make_async_test_database_url(migrated_test_database),
+        pool_size=2,
+        max_overflow=0,
+    )
+    ai_usage_session_factory = async_sessionmaker(
+        bind=ai_usage_engine,
+        class_=_RlsTestAsyncSession,
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr(database_module, "_ai_usage_async_engine", ai_usage_engine)
+    monkeypatch.setattr(
+        database_module,
+        "_ai_usage_async_session_factory",
+        ai_usage_session_factory,
+    )
     maintenance_session_factory = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
@@ -408,6 +431,7 @@ async def committed_db_session_factory(
     try:
         yield session_factory
     finally:
+        await ai_usage_engine.dispose()
         await engine.dispose()
 
 

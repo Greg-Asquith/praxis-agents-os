@@ -420,14 +420,14 @@ describe("approval decision helpers", () => {
     const first = {
       version: 1 as const,
       entity_kind: "google_ads_campaign",
-      integration_resource_id: "account-1",
-      external_id: "111",
+      customer_id: "1234567890",
+      campaign_id: "111",
       label: "Spring campaign",
     }
     const second = {
       ...first,
-      integration_resource_id: "account-2",
-      external_id: "222",
+      customer_id: "2222222222",
+      campaign_id: "222",
       label: "Summer campaign",
     }
     const approval: PendingToolApproval = {

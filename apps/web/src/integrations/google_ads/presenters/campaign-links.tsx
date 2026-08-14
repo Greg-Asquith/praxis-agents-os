@@ -83,10 +83,10 @@ function campaignLinkArgs(value: unknown): CampaignLinkArgs | null {
   const campaignIds: string[] = []
   const campaignLabels: string[] = []
   for (const campaign of value["campaign_ids"]) {
-    if (!isRecord(campaign) || typeof campaign["external_id"] !== "string") {
+    if (!isRecord(campaign) || typeof campaign["campaign_id"] !== "string") {
       return null
     }
-    const campaignId = campaign["external_id"].trim()
+    const campaignId = campaign["campaign_id"].trim()
     if (!campaignId) {
       return null
     }
@@ -96,7 +96,7 @@ function campaignLinkArgs(value: unknown): CampaignLinkArgs | null {
   }
   const list = value["negative_list"]
   const listName = typeof list["label"] === "string" ? list["label"].trim() : ""
-  const listId = typeof list["external_id"] === "string" ? list["external_id"].trim() : ""
+  const listId = typeof list["shared_set_id"] === "string" ? list["shared_set_id"].trim() : ""
   const memberCount =
     typeof list["member_count"] === "number" &&
     Number.isInteger(list["member_count"]) &&
@@ -138,7 +138,8 @@ function campaignLinkResult(value: unknown): CampaignLinkResult | null {
   }
   const list = value["negative_list"]
   if (
-    typeof list["external_id"] !== "string" ||
+    !isRecord(list["reference"]) ||
+    typeof list["reference"]["shared_set_id"] !== "string" ||
     typeof list["name"] !== "string" ||
     (list["member_count"] !== null &&
       (typeof list["member_count"] !== "number" ||
@@ -187,9 +188,9 @@ function campaignLinkResult(value: unknown): CampaignLinkResult | null {
     action,
     campaigns,
     negativeList: {
-      externalId: list["external_id"],
+      externalId: list["reference"]["shared_set_id"],
       memberCount: list["member_count"],
-      name: list["name"] || list["external_id"],
+      name: list["name"] || list["reference"]["shared_set_id"],
     },
   }
 }

@@ -89,25 +89,25 @@ async def search_airtable_records(ctx, search, dependent_args, page_size, cursor
 
 async def resolve_airtable_records(ctx, values: Sequence[Any], dependent_args):
     table = str(dependent_args.get("table") or "").strip()
-    entries = {
-        entry.integration_resource_id: entry
-        for entry in ctx.active_context.compatible_entries(AIRTABLE_BINDING)
-    }
-    grouped: dict[Any, list[AirtableRecordReference]] = defaultdict(list)
+    entries_by_base: dict[str, list[Any]] = defaultdict(list)
+    for entry in ctx.active_context.compatible_entries(AIRTABLE_BINDING):
+        entries_by_base[entry.external_id].append(entry)
+    grouped: dict[str, list[AirtableRecordReference]] = defaultdict(list)
     for value in values:
         try:
             reference = AirtableRecordReference.model_validate(value)
         except ValueError:
             continue
-        if reference.integration_resource_id not in entries:
+        matching = entries_by_base.get(reference.base_id, ())
+        if len(matching) != 1:
             continue
         if table and not airtable_tables_match(reference.table, table):
             continue
-        grouped[reference.integration_resource_id].append(reference)
+        grouped[reference.base_id].append(reference)
 
     choices: list[EntityChoice] = []
-    for resource_id, references in grouped.items():
-        entry = entries[resource_id]
+    for base_id, references in grouped.items():
+        entry = entries_by_base[base_id][0]
         client = await airtable_client_for_principal(
             ctx.db,
             actor=ctx.actor,
@@ -120,7 +120,7 @@ async def resolve_airtable_records(ctx, values: Sequence[Any], dependent_args):
                     client,
                     base_id=entry.external_id,
                     table=reference.table,
-                    record_id=reference.external_id,
+                    record_id=reference.record_id,
                 )
             except IntegrationNotFoundError:
                 # Records can disappear between selection and exact hydration.

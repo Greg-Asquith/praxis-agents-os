@@ -86,12 +86,8 @@ export function EntityFieldInput({
   )
   const selected = useMemo(() => {
     const hydrated = hydration.data?.choices ?? []
-    if (hydrated.length === (exactValues ?? []).length) {
-      return hydrated
-    }
-    const wanted = new Set((exactValues ?? []).map(referenceKey))
-    return choices.filter((choice) => wanted.has(referenceKey(choice.value)))
-  }, [choices, exactValues, hydration.data?.choices])
+    return hydrated.length === (exactValues ?? []).length ? hydrated : []
+  }, [exactValues, hydration.data?.choices])
   const unresolved =
     !invalidShape &&
     exactValues.length > 0 &&
@@ -118,7 +114,7 @@ export function EntityFieldInput({
     disabled,
     filter: null,
     isItemEqualToValue: (left: EntityChoice, right: EntityChoice) =>
-      referenceKey(left.value) === referenceKey(right.value),
+      referenceKey(left) === referenceKey(right),
     itemToStringLabel: (choice: EntityChoice) => choice.label,
     items: choices,
     onInputValueChange: setSearchInput,
@@ -146,7 +142,7 @@ export function EntityFieldInput({
           >
             <ComboboxChips>
               {selected.map((choice) => (
-                <ComboboxChip key={referenceKey(choice.value)}>
+                <ComboboxChip key={referenceKey(choice)}>
                   <span className="truncate">{choice.label}</span>
                   <ComboboxChipRemove aria-label={`Remove ${choice.label}`} />
                 </ComboboxChip>
@@ -206,7 +202,7 @@ function ChoiceContent({
   return (
     <ComboboxContent>
       {choices.map((choice) => (
-        <ComboboxItem key={referenceKey(choice.value)} value={choice}>
+        <ComboboxItem key={referenceKey(choice)} value={choice}>
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate font-medium">{choice.label}</span>
             {choice.description || choice.scope_label ? (

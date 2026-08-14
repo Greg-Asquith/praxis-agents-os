@@ -1022,7 +1022,11 @@ async def test_execute_run_has_no_open_transaction_while_streaming(
 
     fake_runtime_agent = SimpleNamespace(
         agent=BlockingAgent(),
-        resolved_model=SimpleNamespace(qualified_id="openai:gpt-5.4-mini"),
+        resolved_model=SimpleNamespace(
+            qualified_id="openai:gpt-5.4-mini",
+            provider="openai",
+            model="gpt-5.4-mini",
+        ),
         usage_limits=None,
     )
     monkeypatch.setattr(

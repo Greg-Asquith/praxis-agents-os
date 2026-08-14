@@ -28,6 +28,7 @@ LIST_DELEGATE_AGENTS_DEFINITION = RuntimeToolDefinition(
         f"Call this before {DELEGATE_TO_AGENT_TOOL_NAME} and use the exact returned id."
     ),
     label="Find Delegate Agents",
+    code_eligible=False,
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     supports_approval=False,
@@ -50,6 +51,7 @@ DELEGATE_TO_AGENT_DEFINITION = RuntimeToolDefinition(
         "agent, and give the delegate complete instructions and context."
     ),
     label="Delegate Task",
+    code_eligible=False,
     effect=TOOL_EFFECT_WRITE,
     takes_ctx=True,
     timeout=None,

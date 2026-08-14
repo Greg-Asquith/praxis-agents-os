@@ -51,6 +51,10 @@ from services.agents.runtime.persistence import (
     without_tool_returns,
 )
 from services.agents.runtime.staged_tool_content import stage_write_file_approval_content
+from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
+from services.ai_usage.domain import AIUsageEventData
+from services.ai_usage.record_agent_run_fallback import record_agent_run_fallback
+from services.ai_usage.record_in_transaction import record_ai_usage_in_transaction
 from services.completion_contract import completion_contract_from_run_metadata
 
 logger = logging.getLogger(__name__)
@@ -67,6 +71,7 @@ async def persist_suspended_run(
     client_message_id: str | None,
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
+    usage_event: AIUsageEventData | None = None,
 ) -> tuple[AgentRun, int, DeferredToolRequests]:
     """Store messages and suspend a running run for human tool approval."""
     run, conversation, _agent = await load_run_context(
@@ -115,6 +120,8 @@ async def persist_suspended_run(
         persisted_messages_count=len(persisted_messages),
     )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
+    if usage_event is not None:
+        await record_ai_usage_in_transaction(db, usage_event)
     run.metadata_json = build_suspended_run_metadata(
         run=run,
         conversation=conversation,
@@ -136,6 +143,7 @@ async def persist_successful_run(
     tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] | None = None,
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
+    usage_event: AIUsageEventData | None = None,
 ) -> tuple[AgentRun, int]:
     """Store messages and complete a running run."""
     run, conversation, _agent = await load_run_context(
@@ -145,16 +153,6 @@ async def persist_successful_run(
         populate_existing=True,
         lock_run=True,
     )
-    if is_terminal(run.status):
-        await db.commit()
-        return run, 0
-    if run.status != RUN_STATUS_RUNNING:
-        raise ConflictError(
-            "Agent run is no longer running",
-            conflicting_resource="agent_run",
-            details={"run_id": str(run.id), "run_status": run.status},
-        )
-
     new_messages = terminal_result.new_messages()
     messages_to_persist = (
         without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
@@ -163,6 +161,34 @@ async def persist_successful_run(
         messages_to_persist,
         tool_call_ids=eager_tool_return_ids or set(),
     )
+    if is_terminal(run.status):
+        # Another actor settled the run mid-flight; keep its verdict but still
+        # persist the record of what this execution actually did.
+        logger.warning(
+            "Agent run was settled terminally during execution; persisting messages only",
+            extra={"run_id": str(run.id), "run_status": run.status},
+        )
+        persisted_messages = await persist_new_messages(
+            db,
+            conversation=conversation,
+            run_id=run.id,
+            messages=messages_to_persist,
+            client_message_id=client_message_id,
+            tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
+        )
+        await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
+        if usage_event is not None:
+            await record_ai_usage_in_transaction(db, usage_event)
+        run.metadata_json = clear_suspended_run_metadata(run)
+        await db.commit()
+        return run, len(persisted_messages)
+    if run.status != RUN_STATUS_RUNNING:
+        raise ConflictError(
+            "Agent run is no longer running",
+            conflicting_resource="agent_run",
+            details={"run_id": str(run.id), "run_status": run.status},
+        )
+
     persisted_messages = await persist_new_messages(
         db,
         conversation=conversation,
@@ -177,6 +203,8 @@ async def persist_successful_run(
         persisted_messages_count=len(persisted_messages),
     )
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
+    if usage_event is not None:
+        await record_ai_usage_in_transaction(db, usage_event)
     run.metadata_json = clear_suspended_run_metadata(run)
     outcome, completion_json = _successful_run_completion(run)
     await complete_agent_run(
@@ -196,6 +224,7 @@ async def persist_failed_run(
     error_code: str,
     error_message: str,
     completion_json: dict[str, Any] | None = None,
+    metering: AgentRunMeteringContext | None = None,
 ) -> AgentRun | None:
     """Mark a started run failed without losing diagnostic state."""
     run = await db.scalar(
@@ -212,6 +241,7 @@ async def persist_failed_run(
         return run
 
     run.metadata_json = clear_suspended_run_metadata(run)
+    await record_agent_run_fallback(db, run=run, metering=metering)
     await fail_agent_run(
         db,
         run,
@@ -229,6 +259,7 @@ async def persist_cancelled_run(
     *,
     workspace_id: UUID,
     user_id: UUID,
+    metering: AgentRunMeteringContext | None = None,
 ) -> AgentRun | None:
     """Mark a run cancelled in an isolated transaction without raising to unwind code."""
     try:
@@ -254,6 +285,7 @@ async def persist_cancelled_run(
                 return run
 
             run.metadata_json = clear_suspended_run_metadata(run)
+            await record_agent_run_fallback(db, run=run, metering=metering)
             await cancel_agent_run(db, run, outcome=RUN_OUTCOME_CANCELLED)
             await db.commit()
             return run

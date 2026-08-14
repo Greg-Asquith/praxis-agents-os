@@ -31,10 +31,14 @@ def _choice(entry, row: Mapping[str, Any]) -> EntityChoice | None:
         return None
     name = str(ad_group.get("name", "")).strip() or "(unnamed ad group)"
     campaign_name = str(campaign.get("name", "")).strip() or "(unnamed campaign)"
+    campaign_id = str(campaign.get("id", "")).strip()
+    if not campaign_id.isdigit():
+        return None
     return EntityChoice.from_reference(
         GoogleAdsAdGroupReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id=ad_group_id,
+            customer_id=entry.external_id,
+            campaign_id=campaign_id,
+            ad_group_id=ad_group_id,
             label=name[:500],
             description=status.title() if status else "Ad group",
             scope_label=campaign_name[:500],
@@ -103,7 +107,7 @@ async def resolve_google_ads_ad_groups(ctx, values: Sequence[Any], _dependent_ar
     choices: list[EntityChoice] = []
     grouped = group_scoped_references(ctx, GOOGLE_ADS_BINDING, values, GoogleAdsAdGroupReference)
     for entry, references in grouped:
-        ids = [reference.external_id for reference in references]
+        ids = [reference.ad_group_id for reference in references]
         rows = await _query(
             ctx,
             entry,

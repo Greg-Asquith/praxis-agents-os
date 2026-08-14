@@ -68,6 +68,7 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
         "effect": "read",
         "effect_scope": "internal",
         "egress": "provider_query",
+        "code_eligible": False,
         "default_policy": "approval",
         "supported_policies": ["approval", "auto"],
         "defer_loading": False,
@@ -301,6 +302,18 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
         "name",
         "bytes_written",
     ]
+    for tool_name in ("list_artifacts", "read_artifact"):
+        artifact_read_entry = next(tool for tool in body["tools"] if tool["name"] == tool_name)
+        assert artifact_read_entry["effect"] == "read"
+        assert artifact_read_entry["effect_scope"] == "internal"
+        assert artifact_read_entry["egress"] == "none"
+        assert artifact_read_entry["default_policy"] == "auto"
+    list_artifacts_entry = next(tool for tool in body["tools"] if tool["name"] == "list_artifacts")
+    assert list_artifacts_entry["ui"]["icon"] == "files"
+    assert [field["key"] for field in list_artifacts_entry["ui"]["result_fields"]] == ["items"]
+    read_artifact_entry = next(tool for tool in body["tools"] if tool["name"] == "read_artifact")
+    assert read_artifact_entry["ui"]["icon"] == "file"
+    assert read_artifact_entry["ui"]["arg_fields"][0]["entity_kind"] == "artifact"
     web_search_entry = next(tool for tool in body["tools"] if tool["name"] == "web_search")
     assert web_search_entry["ui"]["approve_label"] == "Approve & Search"
     assert web_search_entry["ui"]["arg_fields"] == [
@@ -351,6 +364,9 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     ]
     read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
     assert read_todos_entry["ui"]["icon"] == "list-todo"
+    workflow_entry = next(tool for tool in body["tools"] if tool["name"] == "run_workflow")
+    assert workflow_entry["ui"]["icon"] == "workflow"
+    assert workflow_entry["ui"]["completed_label"] == "Completed Workflow"
     delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
     assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
     delegate_fields = {field["key"]: field for field in delegate_entry["ui"]["arg_fields"]}

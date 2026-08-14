@@ -146,6 +146,15 @@ _CATALOG: tuple[ModelInfo, ...] = (
     # Google (Gemini Developer API or Vertex AI; selection is a settings concern)
     ModelInfo(
         provider=PROVIDER_GOOGLE,
+        model="gemini-3.7-flash",
+        display_name="Gemini 3.7 Flash",
+        context_window=1_048_576,
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
         model="gemini-3.6-flash",
         display_name="Gemini 3.6 Flash",
         context_window=1_048_576,

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from integrations.airtable.references import AirtableRecordReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -27,7 +28,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.create_record import create_record
-from .schemas import AirtableOutput
+from .schemas import AirtableRecordMutationOutput
 from .utils import (
     AIRTABLE_WRITE_BINDING,
     RESULTS_FIELD,
@@ -62,6 +63,14 @@ async def airtable_create_record(
                 fields=fields,
             )
             external_ref = str(result.get("record_id", "")) or None
+            result["reference"] = AirtableRecordReference(
+                base_id=entry.external_id,
+                table=normalized_table,
+                record_id=external_ref or "",
+                label=external_ref or "Created record",
+                description=f"Record in {normalized_table}",
+                scope_label=entry.display_name,
+            )
             return IntegrationAuditOutcome(
                 result,
                 external_ref=external_ref,
@@ -94,13 +103,14 @@ DEFINITION = RuntimeToolDefinition(
     description="Create one record in a table in every writable Airtable base in context.",
     provider="airtable",
     label="Create Airtable Record",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
     default_policy=TOOL_POLICY_APPROVAL,
     takes_ctx=True,
     timeout=60,
-    output_model=AirtableOutput,
+    output_model=AirtableRecordMutationOutput,
     integration_binding=AIRTABLE_WRITE_BINDING,
     presentation=ToolPresentation(
         icon="airtable",

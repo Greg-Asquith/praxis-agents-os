@@ -3,12 +3,13 @@
 import { isRecord } from "@/lib/guards"
 
 export type FanOutEntry = {
-  connectionId: string
   data: unknown
   displayName: string
   errorCode?: string | null
   errorMessage: string | null
   externalId: string
+  providerKey: string
+  renderKey: string
   status: string
 }
 
@@ -22,13 +23,13 @@ export function fanOutEntries(value: unknown): FanOutEntry[] | null {
     return null
   }
   const entries: FanOutEntry[] = []
-  for (const item of value["results"]) {
+  for (const [index, item] of value["results"].entries()) {
     if (
       !isRecord(item) ||
-      typeof item["connection_id"] !== "string" ||
+      typeof item["provider_key"] !== "string" ||
       typeof item["display_name"] !== "string" ||
       typeof item["external_id"] !== "string" ||
-      typeof item["status"] !== "string" ||
+      (item["status"] !== "success" && item["status"] !== "error") ||
       (item["error_code"] !== null &&
         item["error_code"] !== undefined &&
         typeof item["error_code"] !== "string") ||
@@ -39,12 +40,13 @@ export function fanOutEntries(value: unknown): FanOutEntry[] | null {
       return null
     }
     entries.push({
-      connectionId: item["connection_id"],
       data: item["data"],
       displayName: item["display_name"],
       errorCode: typeof item["error_code"] === "string" ? item["error_code"] : null,
       errorMessage: typeof item["error_message"] === "string" ? item["error_message"] : null,
       externalId: item["external_id"],
+      providerKey: item["provider_key"],
+      renderKey: `${item["provider_key"]}:${item["external_id"]}:${String(index)}`,
       status: item["status"],
     })
   }

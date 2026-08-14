@@ -16,11 +16,14 @@ import {
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
+import { useToolLabels } from "@/features/tools/use-tool-labels"
+import type { RunInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import type {
   AgentRun,
   AgentRunResumeDecision,
   ConversationMessage,
   PendingDelegatedApproval,
+  PendingWorkflowState,
   PendingToolApproval,
 } from "@/features/conversations/types"
 import {
@@ -29,17 +32,17 @@ import {
   type ChatMessageDraft,
   type ToolCallState,
 } from "@/features/conversations/stream/reducer"
-import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skills/skill-activation"
 import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"
+import { buildLiveToolActivities } from "@/features/conversations/live-tool-activities"
 import {
   groupConversationRenderItems,
   parseConversationMessages,
   delegationDetailsForToolActivity,
   delegationDetailsForPendingApproval,
-  mergeDelegationDetails,
   normalizeToolArgs,
   toolActivityIdentity,
   type ConversationRenderItem,
+  type LiveToolResult,
   type PendingUserMessage,
   type ToolActivity,
 } from "@/features/conversations/message-parts"
@@ -49,7 +52,7 @@ type MessageListProps = {
   messages: ConversationMessage[]
   activeRun: AgentRun | null
   approvalError: string | null
-  approvalExpiryMessage: string | null
+  runInterruption: RunInterruptionOutcome | null
   approvals: PendingToolApproval[]
   assistantAgentId: string
   assistantLabel: string
@@ -65,6 +68,7 @@ type MessageListProps = {
   isStreaming: boolean
   onApprovalSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
   pendingDelegations: PendingDelegatedApproval[]
+  pendingWorkflow: PendingWorkflowState | null
 }
 
 export function MessageList({
@@ -72,10 +76,11 @@ export function MessageList({
   messages,
   activeRun,
   approvalError,
-  approvalExpiryMessage,
+  runInterruption,
   approvals,
   assistantAgentId,
   pendingDelegations,
+  pendingWorkflow,
   assistantLabel,
   isApprovalLoading,
   isApprovalSubmitting,
@@ -89,25 +94,34 @@ export function MessageList({
   isStreaming,
   onApprovalSubmit,
 }: MessageListProps) {
+  const toolLabel = useToolLabels()
   const shouldShowStream = streamConversationId === conversationId
   const liveResultsByCallIdentity = useMemo(() => {
-    const results = new Map<string, { result: unknown }>()
+    const results = new Map<string, LiveToolResult>()
     if (!shouldShowStream) {
       return results
     }
     for (const toolCall of streamToolCalls) {
-      if (toolCall.status === "completed") {
-        results.set(toolActivityIdentity(streamRunId, toolCall.tool_call_id), {
-          result: toolCall.result,
-        })
+      if (toolCall.status === "awaiting_approval") {
+        continue
       }
+      results.set(toolActivityIdentity(streamRunId, toolCall.tool_call_id), {
+        result: toolCall.result,
+        status: toolCall.status,
+      })
     }
     return results
   }, [shouldShowStream, streamRunId, streamToolCalls])
   const parsedMessages = useMemo(
     () =>
-      parseConversationMessages(messages, activeRun, pendingDelegations, liveResultsByCallIdentity),
-    [messages, activeRun, pendingDelegations, liveResultsByCallIdentity]
+      parseConversationMessages(
+        messages,
+        activeRun,
+        pendingDelegations,
+        liveResultsByCallIdentity,
+        pendingWorkflow
+      ),
+    [messages, activeRun, pendingDelegations, liveResultsByCallIdentity, pendingWorkflow]
   )
   const renderItems = useMemo(() => groupConversationRenderItems(parsedMessages), [parsedMessages])
   const visiblePendingUserMessages = pendingUserMessages
@@ -173,6 +187,7 @@ export function MessageList({
     }
     const renderedAwaitingIds = new Set(
       [...parsedMessages.flatMap((message) => message.toolActivities), ...liveToolActivities]
+        .flatMap((activity) => [activity, ...(activity.script?.children ?? [])])
         .filter((activity) => activity.status === "awaiting_approval")
         .map((activity) => toolActivityIdentity(activity.agentRunId, activity.id))
     )
@@ -261,11 +276,26 @@ export function MessageList({
             <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
           )}
 
-          {approvalExpiryMessage && (
+          {runInterruption && (
             <div className="w-full px-1 py-2">
               <Alert variant="destructive">
-                <AlertTitle>Approval Expired</AlertTitle>
-                <AlertDescription>{approvalExpiryMessage}</AlertDescription>
+                <AlertTitle>{runInterruption.title}</AlertTitle>
+                <AlertDescription>
+                  <p>{runInterruption.message}</p>
+                  {runInterruption.completedActions.length > 0 ? (
+                    <div className="mt-2">
+                      <p className="font-medium">Completed Actions</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {runInterruption.completedActions.map((action) => (
+                          <li key={action.id}>{toolLabel(action.toolName)}</li>
+                        ))}
+                      </ul>
+                      {runInterruption.actionsTruncated ? (
+                        <p className="mt-1">More completed actions are recorded in the run.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </AlertDescription>
               </Alert>
             </div>
           )}
@@ -325,6 +355,8 @@ function orphanApprovalActivity(
     status: "awaiting_approval",
     name: approval.name,
     args,
+    ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
+    ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
   }
   const delegate = approval.delegation
     ? delegationDetailsForPendingApproval(approval.delegation, args)
@@ -333,84 +365,4 @@ function orphanApprovalActivity(
     activity.delegate = delegate
   }
   return activity
-}
-
-function buildLiveToolActivities(
-  toolCalls: ToolCallState[],
-  approvals: ApprovalState[],
-  agentRunId: string | null
-): ToolActivity[] {
-  const activities = toolCalls.map((toolCall): ToolActivity => {
-    const args = normalizeToolArgs(toolCall.args)
-    const activity: ToolActivity = {
-      id: toolCall.tool_call_id,
-      agentRunId,
-      kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
-      status: toolCall.status,
-      name: toolCall.name,
-      args,
-      result: toolCall.result,
-      ...(toolCall.name === LOAD_CAPABILITY_TOOL_NAME ? { toolKind: "capability-load" } : {}),
-    }
-    const delegate = delegationDetailsForToolActivity(toolCall.name, args, toolCall.result)
-    if (delegate) {
-      activity.delegate = delegate
-    }
-    return activity
-  })
-  const activityIndexesById = new Map(activities.map((activity, index) => [activity.id, index]))
-
-  for (const delegation of approvals
-    .map((approval) => approval.delegation)
-    .filter((value): value is PendingDelegatedApproval => Boolean(value))) {
-    const existingIndex = activityIndexesById.get(delegation.parent_tool_call_id)
-    if (existingIndex === undefined) {
-      activities.push({
-        id: delegation.parent_tool_call_id,
-        agentRunId,
-        kind: "approval",
-        status: "awaiting_approval",
-        name: "delegate_to_agent",
-        delegate: delegationDetailsForPendingApproval(delegation),
-      })
-      activityIndexesById.set(delegation.parent_tool_call_id, activities.length - 1)
-      continue
-    }
-
-    const existing = activities[existingIndex]
-    if (existing === undefined) {
-      continue
-    }
-    const pendingDelegate = delegationDetailsForPendingApproval(delegation, existing.args)
-    const delegate = mergeDelegationDetails(existing.delegate, pendingDelegate) ?? pendingDelegate
-    activities[existingIndex] = {
-      ...existing,
-      delegate,
-      kind: "approval",
-      status: "awaiting_approval",
-    }
-  }
-
-  for (const approval of approvals) {
-    if (activities.some((activity) => activity.id === approval.tool_call_id)) {
-      continue
-    }
-
-    const args = normalizeToolArgs(approval.args)
-    const activity: ToolActivity = {
-      id: approval.tool_call_id,
-      agentRunId,
-      kind: "approval",
-      status: "awaiting_approval",
-      name: approval.name,
-      args,
-    }
-    const delegate = delegationDetailsForToolActivity(approval.name, args)
-    if (delegate) {
-      activity.delegate = delegate
-    }
-    activities.push(activity)
-  }
-
-  return activities
 }

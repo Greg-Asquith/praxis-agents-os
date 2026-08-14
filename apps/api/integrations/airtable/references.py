@@ -13,11 +13,23 @@ from services.integrations.entity_references import ScopedEntityReference
 
 class AirtableRecordReference(ScopedEntityReference):
     entity_kind: Literal["airtable_record"] = "airtable_record"
+    base_id: str = Field(min_length=1, max_length=256, description="Airtable base ID.")
     table: str = Field(min_length=1, max_length=256)
+    record_id: str = Field(min_length=1, max_length=256, description="Airtable record ID.")
     identity_fields: ClassVar[tuple[str, ...]] = (
         *ScopedEntityReference.identity_fields,
+        "base_id",
         "table",
+        "record_id",
     )
+
+    @property
+    def provider_scope_id(self) -> str:
+        return self.base_id
+
+    @property
+    def provider_entity_id(self) -> str:
+        return self.record_id
 
 
 def airtable_tables_match(left: str, right: str) -> bool:
@@ -52,8 +64,8 @@ def airtable_record_reference(
     fields = record.get("fields")
     label = _record_label_text(fields) or "(unnamed record)"
     return AirtableRecordReference(
-        integration_resource_id=entry.integration_resource_id,
-        external_id=record_id,
+        base_id=entry.external_id,
+        record_id=record_id,
         label=label[:500],
         description=f"Record in {table}",
         scope_label=entry.display_name,

@@ -96,6 +96,7 @@ layer tests whether a model resists the content.
 | **(f) Provider-native URL fetch** | A fetched page can inject instructions into the helper output; a compromised prompt can also encode conversation data in the approved URL query string. The provider, not Praxis, opens the URL. | `fetch_url` remains a registry function tool through dispatch, approval-default with the complete URL editable and visible before egress. HTTP(S)-only validation, one URL per call, provider/content bounds, dispatch truncation, and `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` apply. Praxis pre-checks the denylist and makes Google unavailable while it is configured because Google URL Context does not enforce domain filtering, including for provider-controlled retrieval. The extracted text crosses dispatch as a `web_fetch` provenance node and receives the shared model-only frame. Workspaces may opt into `auto` only by accepting the residual URL-exfiltration risk. | Shared hostile-page fixtures prove the returned text is one structured node, forged markers are neutralized at model rendering, blocked domains retry before provider dispatch, providers without domain-filter enforcement are unavailable under a denylist, and the approval request preserves the exact exfiltration-shaped URL until an operator edits it. | `injection_web_fetch_reports_embedded_instructions` summarizes the page without following it or issuing its exfiltration request. |
 
 | **(g) Provider-native image inputs** | Text or visual instructions embedded in a workspace image or video can attempt to redirect the short-lived image helper. | `edit_image` and `generate_image_from_video` accept only current revisions from workspace Files, preserve exact input file/revision provenance, default to approval, and instruct the helper to treat media as untrusted content. Google edits accept at most 14 ordered images; video input is Google-only and bounded below the provider's inline request ceiling. | Deterministic helper probes pin ordered `BinaryContent` delivery, workspace/category/MIME/size gates, cross-workspace blindness, approval resume, and persisted provenance. Manual provider smokes confirm the result conditions on the supplied media. | The helper follows the approved operator prompt and ignores instructions encoded in the media. |
+| **(j) Tool outputs consumed by model-authored code** | A hostile read result can steer later workflow control flow or arguments without an intervening model request, and ordinary Python transformations can erase node shape before the final value returns to the model. | Code mode has no ambient authority and exposes only the run's declared eligible stubs. Every nested call still crosses the Pydantic AI `ToolManager`, runtime Hooks, and the dispatch choke point with its own role, envelope, approval, audit, and bounds. Whole-interpreter taint is sticky: any nested `UntrustedNode` causes the final value and captured output to be wrapped in a server-minted `code_mode_workflow` node with bounded contributing-source metadata. A tainted effectful call always suspends even under an unattended allow envelope. Batch consent never widens this boundary: every mutating call exposes its complete bounded effective arguments for operator review, edited arguments are revalidated, and one decision authorizes only that nested call. No workflow grant approves unseen future arguments. | `tests/scenarios/test_code_mode.py` uses `hostile_tool_result.json` to prove transformed hostile output remains framed, a tainted or policy-gated write suspends without a partial effect, and the nested role check denies a read-only member. Its batch scenarios prove a complete row set reaches one approval, edited rows alone execute and bind the terminal audit digest, and the declared 500-row maximum remains one approval and one terminal audit. The bridge taint matrix separately covers extraction, concatenation, filtering, caught exceptions, structured values, print output, and the untainted negative case. | `injection_code_mode_hostile_intermediate_blocks_external_action` reports the embedded instruction without selecting `write_file` or copying the exfiltration canary into tool arguments. |
 
 A new channel means any new path that places attacker-influenced text in model
 context, whether directly, through storage, or after transformation. The change
@@ -234,3 +235,28 @@ session. Defenses are layered and both layers are asserted independently:
 Hostile-HTML coverage lives in `tests/routes/integrations/test_preview_routes.py`
 (script, event handler, form, meta refresh, `javascript:` link, nested iframe)
 and the Gmail provider operation tests.
+
+## 7. Code-Mode Composition Contract
+
+Code mode changes how already-authorized tools compose; it does not create a
+new authority tier. The outer `run_workflow` call is read/internal/auto because
+it has no side effect of its own. Every nested tool retains its own effect,
+egress, policy, active membership and role check, run-envelope verdict, output
+contract, bounds, and audit record. The bridge reaches those controls only
+through Pydantic AI's prepared inner `ToolManager`; direct dispatch calls or a
+Praxis copy of Tool-layer validation would be a review failure.
+
+The Monty interpreter receives no filesystem, environment, clock, network,
+database, credential, OS handler, or mount. Wrapped host tools retain their
+normal authority, which is why eligibility never substitutes for dispatch.
+Nested execution is serial and every value crossing the interpreter boundary
+is independently JSON-safe and byte-bounded.
+
+Provenance enforcement is conservative rather than a claim of data-flow
+tracking. Once any nested result contains an untrusted node, taint remains for
+the workflow lifetime even when code extracts, concatenates, filters, catches
+an exception, or reshapes the content. Final results and captured output are
+wrapped with `source_kind="code_mode_workflow"`; the bounded source list and
+overflow count remain operator-facing trace metadata. Plan 112 must persist the
+same taint state across approval suspension before write stubs can enter the
+wrapped catalog.

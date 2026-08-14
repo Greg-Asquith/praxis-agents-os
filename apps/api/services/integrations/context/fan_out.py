@@ -9,7 +9,7 @@ from pydantic_ai import ModelRetry
 
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.execution import _run_authorized_entries
-from services.integrations.context.results import IntegrationFanOutEntry
+from services.integrations.context.results import IntegrationContextResult
 from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 from services.integrations.manifest import PROVIDER_MANIFESTS
 
@@ -25,7 +25,7 @@ async def run_context_fan_out(
     *,
     binding: "IntegrationToolBinding",
     operation: Callable[[ResolvedContextEntry], Awaitable[Any]],
-) -> list[IntegrationFanOutEntry]:
+) -> list[IntegrationContextResult]:
     """Run an operation once per compatible entry and isolate failures."""
     active_context = ctx.deps.active_context
     entries = (

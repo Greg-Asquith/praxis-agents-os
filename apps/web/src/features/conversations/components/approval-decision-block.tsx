@@ -51,6 +51,10 @@ export function ApprovalDecisionBlock({
       label={label}
       title={title}
       toolName={activity.name}
+      {...(activity.derivedFromUntrusted === undefined
+        ? {}
+        : { derivedFromUntrusted: activity.derivedFromUntrusted })}
+      {...(activity.taintSources === undefined ? {} : { taintSources: activity.taintSources })}
       {...(prompt ? { prompt } : {})}
     >
       {children}

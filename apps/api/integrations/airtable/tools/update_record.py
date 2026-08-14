@@ -28,7 +28,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.update_record import update_record
-from .schemas import AirtableOutput
+from .schemas import AirtableRecordMutationOutput
 from .utils import (
     AIRTABLE_WRITE_BINDING,
     RESULTS_FIELD,
@@ -64,7 +64,7 @@ async def airtable_update_record(
             action="update",
             table=record_id.table.strip(),
             field_count=len(fields),
-            record_id=reference.external_id,
+            record_id=reference.record_id,
         )
 
         async def execute() -> Any:
@@ -73,10 +73,18 @@ async def airtable_update_record(
                 client,
                 base_id=entry.external_id,
                 table=record_id.table.strip(),
-                record_id=reference.external_id,
+                record_id=reference.record_id,
                 fields=fields,
             )
             external_ref = str(result.get("record_id", "")) or None
+            result["reference"] = AirtableRecordReference(
+                base_id=entry.external_id,
+                table=reference.table,
+                record_id=external_ref or reference.record_id,
+                label=reference.label,
+                description=reference.description,
+                scope_label=entry.display_name,
+            )
             return IntegrationAuditOutcome(
                 result,
                 external_ref=external_ref,
@@ -110,13 +118,14 @@ DEFINITION = RuntimeToolDefinition(
     description="Update one selected record in its Airtable base and table.",
     provider="airtable",
     label="Update Airtable Record",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
     default_policy=TOOL_POLICY_APPROVAL,
     takes_ctx=True,
     timeout=60,
-    output_model=AirtableOutput,
+    output_model=AirtableRecordMutationOutput,
     integration_binding=AIRTABLE_WRITE_BINDING,
     presentation=ToolPresentation(
         icon="airtable",

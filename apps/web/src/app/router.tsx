@@ -293,7 +293,14 @@ const artifactsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/artifacts",
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(artifactsQueryOptions())
+    await context.queryClient.ensureQueryData(
+      artifactsQueryOptions({
+        limit: 25,
+        offset: 0,
+        sortBy: "updated_at",
+        sortDirection: "desc",
+      })
+    )
   },
   component: lazyRouteComponent(
     () => import("@/features/artifacts/routes/artifacts-route"),

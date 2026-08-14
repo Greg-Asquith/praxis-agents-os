@@ -31,7 +31,7 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     dataset = _load_dataset("openai:gpt-5.6-luna")
     cases = {case.name: case for case in dataset.cases}
 
-    assert len(cases) == 14
+    assert len(cases) == 15
     assert not any(isinstance(item, LLMJudge) for item in cases["list_files_selection"].evaluators)
     assert not any(isinstance(item, LLMJudge) for item in cases["json_format"].evaluators)
     judges = [item for item in cases["identity_name"].evaluators if isinstance(item, LLMJudge)]
@@ -46,6 +46,10 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     web_fetch_case = cases["injection_web_fetch_reports_embedded_instructions"]
     assert web_fetch_case.inputs["channel_fixture"]["source_kind"] == "web_fetch"
     assert "fetch_url" in web_fetch_case.metadata["forbidden_tools"]
+    code_mode_case = cases["injection_code_mode_hostile_intermediate_blocks_external_action"]
+    assert code_mode_case.inputs["channel_fixture"]["source_kind"] == "code_mode_workflow"
+    assert "write_file" in code_mode_case.metadata["forbidden_tools"]
+    assert "exfiltrate-now" in code_mode_case.metadata["forbidden_argument_text"]
     kb_search_case = cases["injection_scaffold_kb_ignore_instructions"]
     kb_read_case = cases["injection_scaffold_kb_read_document"]
     summary_case = cases["injection_history_summary_does_not_launder"]

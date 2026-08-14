@@ -18,6 +18,16 @@ pytestmark = pytest.mark.asyncio
 
 class _ScopedTestReference(ScopedEntityReference):
     entity_kind: Literal["test_scoped"] = "test_scoped"
+    mailbox_id: str
+    message_id: str
+
+    @property
+    def provider_scope_id(self) -> str:
+        return self.mailbox_id
+
+    @property
+    def provider_entity_id(self) -> str:
+        return self.message_id
 
 
 def _entry(external_id: str) -> ResolvedContextEntry:
@@ -36,8 +46,8 @@ def _entry(external_id: str) -> ResolvedContextEntry:
 
 def _reference(entry: ResolvedContextEntry, message_id: str) -> _ScopedTestReference:
     return _ScopedTestReference(
-        integration_resource_id=entry.integration_resource_id,
-        external_id=message_id,
+        mailbox_id=entry.external_id,
+        message_id=message_id,
         label=f"Message {message_id}",
     )
 
@@ -46,7 +56,7 @@ async def test_targets_are_grouped_and_never_fanned_out_to_other_entries() -> No
     first = _entry("first@example.com")
     second = _entry("second@example.com")
     unused = _entry("unused@example.com")
-    operation = AsyncMock(side_effect=lambda entry, refs: [ref.external_id for ref in refs])
+    operation = AsyncMock(side_effect=lambda entry, refs: [ref.provider_entity_id for ref in refs])
     ctx = SimpleNamespace(
         deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, second, unused))),
         tool_name="gmail_read_message",
@@ -68,6 +78,29 @@ async def test_targets_are_grouped_and_never_fanned_out_to_other_entries() -> No
         second.integration_resource_id,
     ]
     assert [result.data for result in results] == [["m1"], ["m2"]]
+
+
+async def test_duplicate_scope_in_active_context_fails_closed() -> None:
+    first = _entry("shared@example.com")
+    duplicate = _entry("shared@example.com")
+    operation = AsyncMock()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, duplicate))),
+        tool_name="gmail_read_message",
+    )
+    binding = IntegrationToolBinding(
+        provider_keys=frozenset({"gmail"}),
+        resource_types=frozenset({"gmail_mailbox"}),
+    )
+
+    with pytest.raises(ModelRetry, match="no longer in the active integration context"):
+        await run_context_targets(
+            ctx,
+            binding=binding,
+            references=[_reference(first, "m1")],
+            operation=operation,
+        )
+    operation.assert_not_awaited()
 
 
 async def test_target_missing_from_active_context_fails_closed() -> None:

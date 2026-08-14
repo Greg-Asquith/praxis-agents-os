@@ -26,3 +26,19 @@ export function stringValue(value: unknown): string | null {
 export function optionalString(value: unknown): string | null {
   return typeof value === "string" ? value : null
 }
+
+export function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+}
+
+export function isPositiveInteger(value: unknown): value is number {
+  return isNonNegativeInteger(value) && value > 0
+}
+
+export function isDateTimeString(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value))
+}
+
+export function isNullableString(value: unknown): value is string | null {
+  return typeof value === "string" || value === null
+}

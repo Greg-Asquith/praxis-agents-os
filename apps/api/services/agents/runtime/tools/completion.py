@@ -29,6 +29,7 @@ CompletionEvidence = Annotated[
     name=REPORT_COMPLETION_TOOL_NAME,
     provider="core",
     label="Report Completion",
+    code_eligible=False,
     description=(
         "File the required verdict for this unattended run. Use pass only when every "
         "declared completion criterion is satisfied; otherwise use fail. "

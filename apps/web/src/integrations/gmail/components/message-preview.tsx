@@ -1,10 +1,11 @@
 // apps/web/src/integrations/gmail/components/message-preview.tsx
 
-import type { ReactNode } from "react"
+import { use, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { MailsIcon, TagIcon } from "lucide-react"
 
 import { HtmlContentFrame } from "@/components/tool-ui/html-content-frame"
+import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { Badge } from "@/components/ui/badge"
 import {
   gmailMessagePreviewQueryOptions,
@@ -12,17 +13,18 @@ import {
 } from "@/integrations/gmail/api/message-preview"
 
 export function GmailMessageView({
-  connectionId,
+  mailboxId,
   errorFallback,
   fallback,
   messageId,
 }: {
-  connectionId: string
+  mailboxId: string
   errorFallback?: ReactNode
   fallback: ReactNode
   messageId: string
 }) {
-  const preview = useQuery(gmailMessagePreviewQueryOptions(connectionId, messageId))
+  const conversationId = use(ToolConversationContext)
+  const preview = useQuery(gmailMessagePreviewQueryOptions(conversationId, mailboxId, messageId))
 
   // The tool result's plain text renders instantly; the fetched full email
   // replaces it when it arrives, and stays the fallback if the fetch fails.

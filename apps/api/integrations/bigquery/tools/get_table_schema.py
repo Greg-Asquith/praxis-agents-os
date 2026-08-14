@@ -130,6 +130,7 @@ DEFINITION = RuntimeToolDefinition(
     ),
     provider="bigquery",
     label="Get BigQuery Table Schema",
+    code_eligible=True,
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     output_model=BigQueryTableSchemaOutput,

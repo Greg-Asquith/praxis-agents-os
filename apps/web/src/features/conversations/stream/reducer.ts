@@ -4,11 +4,13 @@ import type {
   AgentRunStatus,
   Conversation,
   PendingDelegatedApproval,
+  TaintSource,
 } from "@/features/conversations/types"
 import type {
   MessageChannel,
   StreamError,
   StreamEvent,
+  WorkflowState,
 } from "@/features/conversations/stream/protocol"
 
 type AgentStreamStatus = "idle" | AgentRunStatus
@@ -27,8 +29,12 @@ export type ToolCallState = {
   name: string
   args: unknown
   result: unknown
-  status: "running" | "awaiting_approval" | "completed"
+  status: "running" | "awaiting_approval" | "completed" | "failed" | "denied"
   timelineSequence: number
+  parentToolCallId?: string
+  workflowState?: WorkflowState
+  workflowOutputExcerpt?: string | null
+  workflowErrorExcerpt?: string | null
 }
 
 export type ApprovalState = {
@@ -37,6 +43,8 @@ export type ApprovalState = {
   args: unknown
   replay_args?: unknown
   delegation?: PendingDelegatedApproval | null
+  derived_from_untrusted?: boolean
+  taint_sources?: TaintSource[]
   status: "pending"
 }
 
@@ -194,6 +202,18 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             status: "running",
             timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
+            ...(streamEvent.data.parent_tool_call_id === undefined
+              ? {}
+              : { parentToolCallId: streamEvent.data.parent_tool_call_id }),
+            ...(existing?.workflowState === undefined
+              ? {}
+              : { workflowState: existing.workflowState }),
+            ...(existing?.workflowOutputExcerpt === undefined
+              ? {}
+              : { workflowOutputExcerpt: existing.workflowOutputExcerpt }),
+            ...(existing?.workflowErrorExcerpt === undefined
+              ? {}
+              : { workflowErrorExcerpt: existing.workflowErrorExcerpt }),
           },
         },
       }
@@ -201,6 +221,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
     case "tool.result": {
       const existing = nextState.toolCalls[streamEvent.data.tool_call_id]
       const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
+      const parentToolCallId = streamEvent.data.parent_tool_call_id ?? existing?.parentToolCallId
       return {
         ...nextState,
         nextTimelineSequence: existing
@@ -212,9 +233,19 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             args: existing?.args,
             name: streamEvent.data.name ?? existing?.name ?? "tool",
             result: streamEvent.data.result,
-            status: "completed",
+            status: nestedResultStatus(streamEvent.data.result, parentToolCallId),
             timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
+            ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+            ...(existing?.workflowState === undefined
+              ? {}
+              : { workflowState: existing.workflowState }),
+            ...(existing?.workflowOutputExcerpt === undefined
+              ? {}
+              : { workflowOutputExcerpt: existing.workflowOutputExcerpt }),
+            ...(existing?.workflowErrorExcerpt === undefined
+              ? {}
+              : { workflowErrorExcerpt: existing.workflowErrorExcerpt }),
           },
         },
       }
@@ -222,6 +253,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
     case "tool.approval_required": {
       const existing = nextState.toolCalls[streamEvent.data.tool_call_id]
       const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
+      const parentToolCallId = streamEvent.data.parent_tool_call_id ?? existing?.parentToolCallId
       const approval = {
         args: streamEvent.data.args,
         delegation: streamEvent.data.delegation ?? null,
@@ -229,6 +261,12 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
         ...(streamEvent.data.replay_args !== undefined
           ? { replay_args: streamEvent.data.replay_args }
           : {}),
+        ...(streamEvent.data.derived_from_untrusted === undefined
+          ? {}
+          : { derived_from_untrusted: streamEvent.data.derived_from_untrusted }),
+        ...(streamEvent.data.taint_sources === undefined
+          ? {}
+          : { taint_sources: streamEvent.data.taint_sources }),
         status: "pending" as const,
         tool_call_id: streamEvent.data.tool_call_id,
       }
@@ -252,6 +290,48 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             status: "awaiting_approval",
             timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
+            ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+          },
+        },
+      }
+    }
+    case "workflow.state": {
+      const existing = nextState.toolCalls[streamEvent.data.tool_call_id]
+      const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
+      const workflowStatus =
+        streamEvent.data.state === "failed"
+          ? "failed"
+          : streamEvent.data.state === "completed"
+            ? "completed"
+            : "running"
+      return {
+        ...nextState,
+        nextTimelineSequence: existing
+          ? nextState.nextTimelineSequence
+          : nextState.nextTimelineSequence + 1,
+        toolCalls: {
+          ...nextState.toolCalls,
+          [streamEvent.data.tool_call_id]: {
+            args: existing?.args,
+            name: existing?.name ?? "run_workflow",
+            result: existing?.result ?? null,
+            status: workflowStatus,
+            timelineSequence,
+            tool_call_id: streamEvent.data.tool_call_id,
+            workflowState: streamEvent.data.state,
+            ...(existing?.parentToolCallId === undefined
+              ? {}
+              : { parentToolCallId: existing.parentToolCallId }),
+            ...(streamEvent.data.output_excerpt === undefined
+              ? existing?.workflowOutputExcerpt === undefined
+                ? {}
+                : { workflowOutputExcerpt: existing.workflowOutputExcerpt }
+              : { workflowOutputExcerpt: streamEvent.data.output_excerpt }),
+            ...(streamEvent.data.error_excerpt === undefined
+              ? existing?.workflowErrorExcerpt === undefined
+                ? {}
+                : { workflowErrorExcerpt: existing.workflowErrorExcerpt }
+              : { workflowErrorExcerpt: streamEvent.data.error_excerpt }),
           },
         },
       }
@@ -331,14 +411,59 @@ export function selectLiveTimeline(
         message,
         sequence: message.timelineSequence,
       })),
-    ...toolCalls.map((toolCall) => ({
-      kind: "tool" as const,
-      toolCall,
-      sequence: toolCall.timelineSequence,
-    })),
+    ...toolCalls
+      .filter((toolCall) => !toolCall.parentToolCallId)
+      .map((toolCall) => ({
+        kind: "tool" as const,
+        toolCall,
+        sequence: toolCall.timelineSequence,
+      })),
   ]
 
   return timeline.sort((left, right) => left.sequence - right.sequence)
+}
+
+export function selectChildToolCalls(
+  toolCalls: ToolCallState[],
+  parentToolCallId: string
+): ToolCallState[] {
+  let childrenByParent = childToolCallCache.get(toolCalls)
+  if (!childrenByParent) {
+    childrenByParent = new Map<string, ToolCallState[]>()
+    for (const toolCall of toolCalls) {
+      if (!toolCall.parentToolCallId) {
+        continue
+      }
+      const children = childrenByParent.get(toolCall.parentToolCallId) ?? []
+      children.push(toolCall)
+      childrenByParent.set(toolCall.parentToolCallId, children)
+    }
+    for (const children of childrenByParent.values()) {
+      children.sort((left, right) => left.timelineSequence - right.timelineSequence)
+    }
+    childToolCallCache.set(toolCalls, childrenByParent)
+  }
+  return childrenByParent.get(parentToolCallId) ?? EMPTY_TOOL_CALLS
+}
+
+const childToolCallCache = new WeakMap<ToolCallState[], Map<string, ToolCallState[]>>()
+const EMPTY_TOOL_CALLS: ToolCallState[] = []
+
+function nestedResultStatus(
+  result: unknown,
+  parentToolCallId: string | undefined
+): ToolCallState["status"] {
+  if (!parentToolCallId || typeof result !== "object" || result === null || Array.isArray(result)) {
+    return "completed"
+  }
+  const status = (result as Record<string, unknown>)["status"]
+  if (status === "failed" || status === "denied") {
+    return status
+  }
+  if (status === "pending") {
+    return "awaiting_approval"
+  }
+  return "completed"
 }
 
 function completeMessage(messages: ChatMessageDraft[], messageId: string): ChatMessageDraft[] {

@@ -1,11 +1,8 @@
 // apps/web/src/features/files/components/files-table.tsx
 
 import { useState, type KeyboardEvent, type ReactNode } from "react"
+import type { OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table"
 import {
-  ArrowDownIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
-  CheckIcon,
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
@@ -15,19 +12,29 @@ import {
 } from "lucide-react"
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+  createAppColumnHelper,
+  useAppTable,
+  useCellContext,
+  useHeaderContext,
+  useTableContext,
+} from "@/components/data-table/table"
+import {
+  paginationStateFromServer,
+  paginationStateToServer,
+  sortingStateFromServer,
+  sortingStateToServer,
+} from "@/components/data-table/server-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/ui/empty-state"
-import { PaginationControls } from "@/components/ui/pagination-controls"
 import {
   ResponsiveList,
   ResponsiveListItem,
@@ -60,14 +67,81 @@ const SORT_LABELS: Record<FileSortField, string> = {
   updated_at: "Updated",
 }
 
-const SORT_FIELDS: FileSortField[] = [
+const SORT_FIELDS = new Set<FileSortField>([
   "name",
   "extension",
   "size_bytes",
   "processing_status",
   "created_at",
   "updated_at",
-]
+])
+
+const columnHelper = createAppColumnHelper<WorkspaceFile>()
+
+const columns = columnHelper.columns([
+  columnHelper.accessor("name", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => (
+      <div className="flex min-w-56 items-center gap-3">
+        <FileThumbnail file={row.original} />
+        <div className="min-w-0">
+          <p className="truncate font-medium">{row.original.name}</p>
+          {row.original.description ? (
+            <p className="text-muted-foreground truncate text-xs">{row.original.description}</p>
+          ) : null}
+        </div>
+      </div>
+    ),
+    enableSorting: true,
+    meta: { label: SORT_LABELS.name },
+    sortDescFirst: false,
+  }),
+  columnHelper.accessor("extension", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ row }) => <Badge variant="outline">{fileTypeLabel(row.original)}</Badge>,
+    enableSorting: true,
+    meta: { label: SORT_LABELS.extension },
+    sortDescFirst: false,
+  }),
+  columnHelper.accessor("size_bytes", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => formatBytes(getValue()),
+    enableSorting: true,
+    meta: { label: SORT_LABELS.size_bytes },
+    sortDescFirst: true,
+  }),
+  columnHelper.accessor("processing_status", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => <FileStatusBadge status={getValue()} />,
+    enableSorting: true,
+    meta: { label: SORT_LABELS.processing_status },
+    sortDescFirst: false,
+  }),
+  columnHelper.accessor("created_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => (
+      <span title={formatDateTime(getValue())}>{formatCompactDate(getValue())}</span>
+    ),
+    enableSorting: true,
+    meta: { label: SORT_LABELS.created_at },
+    sortDescFirst: true,
+  }),
+  columnHelper.accessor("updated_at", {
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: ({ getValue }) => (
+      <span title={formatDateTime(getValue())}>{formatCompactDate(getValue())}</span>
+    ),
+    enableSorting: true,
+    meta: { label: SORT_LABELS.updated_at },
+    sortDescFirst: true,
+  }),
+  columnHelper.display({
+    id: "actions",
+    header: ({ header }) => <header.ColumnHeader />,
+    cell: () => null,
+    meta: { label: "Actions", labelClassName: "sr-only" },
+  }),
+])
 
 export function FilesTable({
   emptyAction,
@@ -98,6 +172,8 @@ export function FilesTable({
   const [error, setError] = useState<string | null>(null)
   const [fileToDelete, setFileToDelete] = useState<WorkspaceFile | null>(null)
   const [fileToRename, setFileToRename] = useState<WorkspaceFile | null>(null)
+  const pagination = paginationStateFromServer({ limit, offset }, total)
+  const sorting = sortingStateFromServer({ sort_by: sortBy, sort_direction: sortDirection })
 
   async function handleOpen(file: WorkspaceFile, forceDownload: boolean) {
     setError(null)
@@ -139,6 +215,28 @@ export function FilesTable({
     onOpenFile(fileId)
   }
 
+  const table = useAppTable({
+    columns,
+    data: files,
+    enableSortingRemoval: false,
+    manualPagination: true,
+    manualSorting: true,
+    onPaginationChange: ((updater) => {
+      const nextPagination = resolveUpdater(updater, pagination)
+      onPageChange(paginationStateToServer(nextPagination).offset)
+    }) satisfies OnChangeFn<PaginationState>,
+    onSortingChange: ((updater) => {
+      const nextSorting = resolveUpdater(updater, sorting)
+      const nextParams = sortingStateToServer(nextSorting, SORT_FIELDS, {
+        sort_by: sortBy,
+        sort_direction: sortDirection,
+      })
+      onSortChange(nextParams.sort_by, nextParams.sort_direction)
+    }) satisfies OnChangeFn<SortingState>,
+    rowCount: total,
+    state: { pagination, sorting },
+  })
+
   if (files.length === 0 && total === 0) {
     return (
       <EmptyState
@@ -152,266 +250,145 @@ export function FilesTable({
   }
 
   return (
-    <div aria-busy={isChangingView} className="flex flex-col gap-3">
-      {error ? <p className="text-destructive text-sm">{error}</p> : null}
-      <ConfirmDialog
-        confirmIcon={<Trash2Icon data-icon="inline-start" />}
-        confirmLabel="Delete File"
-        confirmPendingLabel="Deleting"
-        description={
-          fileToDelete ? `This deletes ${fileToDelete.name}.` : "This deletes the selected file."
-        }
-        isPending={deleteMutation.isPending}
-        onConfirm={confirmDeleteFile}
-        onOpenChange={(open) => {
-          if (!open) {
-            setFileToDelete(null)
+    <table.AppTable>
+      <div aria-busy={isChangingView} className="flex flex-col gap-3">
+        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        <ConfirmDialog
+          confirmIcon={<Trash2Icon data-icon="inline-start" />}
+          confirmLabel="Delete File"
+          confirmPendingLabel="Deleting"
+          description={
+            fileToDelete ? `This deletes ${fileToDelete.name}.` : "This deletes the selected file."
           }
-        }}
-        open={fileToDelete !== null}
-        title="Delete file?"
-      />
-      <RenameFileDialog
-        file={fileToRename}
-        onOpenChange={(open) => {
-          if (!open) {
-            setFileToRename(null)
-          }
-        }}
-      />
-      <MobileSortMenu
-        disabled={isChangingView}
-        onSortChange={onSortChange}
-        sortBy={sortBy}
-        sortDirection={sortDirection}
-      />
-      <ResponsiveList className={isChangingView ? "opacity-60" : undefined}>
-        {files.map((file) => (
-          <FileMobileRow
-            file={file}
-            isDeleting={deleteMutation.isPending}
-            key={file.id}
-            onDelete={handleDelete}
-            onOpen={handleOpen}
-            onOpenFile={onOpenFile}
-          />
-        ))}
-      </ResponsiveList>
-
-      <div className="hidden md:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <SortableTableHead
-                direction={sortDirection}
-                field="name"
-                onSortChange={onSortChange}
-                sortBy={sortBy}
-              />
-              <SortableTableHead
-                direction={sortDirection}
-                field="extension"
-                onSortChange={onSortChange}
-                sortBy={sortBy}
-              />
-              <SortableTableHead
-                direction={sortDirection}
-                field="size_bytes"
-                onSortChange={onSortChange}
-                sortBy={sortBy}
-              />
-              <SortableTableHead
-                direction={sortDirection}
-                field="processing_status"
-                onSortChange={onSortChange}
-                sortBy={sortBy}
-              />
-              <SortableTableHead
-                direction={sortDirection}
-                field="created_at"
-                onSortChange={onSortChange}
-                sortBy={sortBy}
-              />
-              <SortableTableHead
-                direction={sortDirection}
-                field="updated_at"
-                onSortChange={onSortChange}
-                sortBy={sortBy}
-              />
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className={isChangingView ? "opacity-60" : undefined}>
-            {files.map((file) => (
-              <TableRow
-                aria-label={`Open Details for ${file.name}`}
-                className="hover:bg-muted/50 focus-visible:ring-ring cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
-                key={file.id}
-                onClick={() => {
-                  onOpenFile(file.id)
-                }}
-                onKeyDown={(event) => {
-                  handleOpenFileKeyDown(event, file.id)
-                }}
-                tabIndex={0}
-              >
-                <TableCell>
-                  <div className="flex min-w-56 items-center gap-3">
-                    <FileThumbnail file={file} />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{file.name}</p>
-                      {file.description ? (
-                        <p className="text-muted-foreground truncate text-xs">{file.description}</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{fileTypeLabel(file)}</Badge>
-                </TableCell>
-                <TableCell>{formatBytes(file.size_bytes)}</TableCell>
-                <TableCell>
-                  <FileStatusBadge status={file.processing_status} />
-                </TableCell>
-                <TableCell title={formatDateTime(file.created_at)}>
-                  {formatCompactDate(file.created_at)}
-                </TableCell>
-                <TableCell title={formatDateTime(file.updated_at)}>
-                  {formatCompactDate(file.updated_at)}
-                </TableCell>
-                <TableCell
-                  className="text-right"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                  }}
-                >
-                  <FileActions
-                    file={file}
-                    isDeleting={deleteMutation.isPending}
-                    onDelete={handleDelete}
-                    onOpen={handleOpen}
-                    onRename={setFileToRename}
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <PaginationControls
-        disabled={isChangingView}
-        limit={limit}
-        offset={offset}
-        onPageChange={onPageChange}
-        total={total}
-      />
-    </div>
-  )
-}
-
-function SortableTableHead({
-  direction,
-  field,
-  onSortChange,
-  sortBy,
-}: {
-  direction: FileSortDirection
-  field: FileSortField
-  onSortChange: (field: FileSortField, direction: FileSortDirection) => void
-  sortBy: FileSortField
-}) {
-  const isActive = sortBy === field
-  const ariaSort = isActive ? (direction === "asc" ? "ascending" : "descending") : "none"
-  const SortIcon = isActive ? (direction === "asc" ? ArrowUpIcon : ArrowDownIcon) : ArrowUpDownIcon
-
-  return (
-    <TableHead aria-sort={ariaSort}>
-      <Button
-        className="-ml-2"
-        onClick={() => {
-          onSortChange(
-            field,
-            isActive ? (direction === "asc" ? "desc" : "asc") : defaultDirection(field)
-          )
-        }}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        {SORT_LABELS[field]}
-        <SortIcon data-icon="inline-end" />
-      </Button>
-    </TableHead>
-  )
-}
-
-function MobileSortMenu({
-  disabled,
-  onSortChange,
-  sortBy,
-  sortDirection,
-}: {
-  disabled: boolean
-  onSortChange: (field: FileSortField, direction: FileSortDirection) => void
-  sortBy: FileSortField
-  sortDirection: FileSortDirection
-}) {
-  return (
-    <div className="flex justify-end md:hidden">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button disabled={disabled} size="sm" type="button" variant="outline">
-              <ArrowUpDownIcon data-icon="inline-start" />
-              Sort: {SORT_LABELS[sortBy]}
-            </Button>
-          }
+          isPending={deleteMutation.isPending}
+          onConfirm={confirmDeleteFile}
+          onOpenChange={(open) => {
+            if (!open) {
+              setFileToDelete(null)
+            }
+          }}
+          open={fileToDelete !== null}
+          title="Delete file?"
         />
-        <DropdownMenuContent align="end">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-            {SORT_FIELDS.map((field) => (
-              <DropdownMenuItem
-                key={field}
-                onClick={() => {
-                  onSortChange(field, field === sortBy ? sortDirection : defaultDirection(field))
-                }}
-              >
-                {SORT_LABELS[field]}
-                {sortBy === field ? <CheckIcon className="ml-auto" /> : null}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Direction</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => {
-                onSortChange(sortBy, "asc")
-              }}
-            >
-              Ascending
-              {sortDirection === "asc" ? <CheckIcon className="ml-auto" /> : null}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                onSortChange(sortBy, "desc")
-              }}
-            >
-              Descending
-              {sortDirection === "desc" ? <CheckIcon className="ml-auto" /> : null}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+        <RenameFileDialog
+          file={fileToRename}
+          onOpenChange={(open) => {
+            if (!open) {
+              setFileToRename(null)
+            }
+          }}
+        />
+        <table.SortMenu className="md:hidden" disabled={isChangingView} />
+        <ResponsiveList className={isChangingView ? "opacity-60" : undefined}>
+          {files.map((file) => (
+            <FileMobileRow
+              file={file}
+              isDeleting={deleteMutation.isPending}
+              key={file.id}
+              onDelete={handleDelete}
+              onOpen={handleOpen}
+              onOpenFile={onOpenFile}
+            />
+          ))}
+        </ResponsiveList>
+
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <table.AppHeader header={header} key={header.id}>
+                      {() => <FileHeaderCell />}
+                    </table.AppHeader>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className={isChangingView ? "opacity-60" : undefined}>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow
+                  aria-label={`Open Details for ${row.original.name}`}
+                  className="hover:bg-muted/50 focus-visible:ring-ring cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
+                  key={row.id}
+                  onClick={() => {
+                    onOpenFile(row.original.id)
+                  }}
+                  onKeyDown={(event) => {
+                    handleOpenFileKeyDown(event, row.original.id)
+                  }}
+                  tabIndex={0}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <table.AppCell cell={cell} key={cell.id}>
+                      {() => (
+                        <FileBodyCell
+                          isDeleting={deleteMutation.isPending}
+                          onDelete={handleDelete}
+                          onOpen={handleOpen}
+                          onRename={setFileToRename}
+                        />
+                      )}
+                    </table.AppCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <table.Pagination disabled={isChangingView} total={total} />
+      </div>
+    </table.AppTable>
   )
 }
 
-function defaultDirection(field: FileSortField): FileSortDirection {
-  return field === "name" || field === "extension" || field === "processing_status" ? "asc" : "desc"
+function FileHeaderCell() {
+  const header = useHeaderContext()
+  return header.isPlaceholder ? <TableHead /> : <header.ColumnHeader />
+}
+
+function FileBodyCell({
+  isDeleting,
+  onDelete,
+  onOpen,
+  onRename,
+}: {
+  isDeleting: boolean
+  onDelete: (file: WorkspaceFile) => void
+  onOpen: (file: WorkspaceFile, forceDownload: boolean) => Promise<void>
+  onRename: (file: WorkspaceFile) => void
+}) {
+  const cell = useCellContext()
+  const row = useTableContext<WorkspaceFile>().getRow(cell.row.id)
+  const isActions = cell.column.id === "actions"
+  return (
+    <TableCell
+      className={isActions ? "text-right" : undefined}
+      onClick={
+        isActions
+          ? (event) => {
+              event.stopPropagation()
+            }
+          : undefined
+      }
+    >
+      {isActions ? (
+        <FileActions
+          file={row.original}
+          isDeleting={isDeleting}
+          onDelete={onDelete}
+          onOpen={onOpen}
+          onRename={onRename}
+        />
+      ) : (
+        <cell.FlexRender />
+      )}
+    </TableCell>
+  )
+}
+
+function resolveUpdater<T>(updater: T | ((previous: T) => T), previous: T): T {
+  return typeof updater === "function" ? (updater as (value: T) => T)(previous) : updater
 }
 
 function FileMobileRow({

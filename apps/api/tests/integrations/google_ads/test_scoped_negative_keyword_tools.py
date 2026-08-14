@@ -892,7 +892,7 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
         family="campaign_negative_keywords",
         action="add",
         parent_fields=[
-            {"campaign_id": campaign.external_id, **keyword}
+            {"campaign_id": campaign.campaign_id, **keyword}
             for campaign in campaigns
             for keyword in keywords
         ],
@@ -1014,7 +1014,7 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
         family="ad_group_negative_keywords",
         action="remove",
         parent_fields=[
-            {"ad_group_id": ad_group.external_id, **keyword}
+            {"ad_group_id": ad_group.ad_group_id, **keyword}
             for ad_group in ad_groups
             for keyword in keywords
         ],
@@ -1107,10 +1107,10 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
     ]
     added = [
         {
-            "campaign_id": campaign.external_id,
+            "campaign_id": campaign.campaign_id,
             **keyword,
             "resource_name": (
-                f"customers/111/campaignCriteria/{campaign.external_id}~{keyword_index}"
+                f"customers/111/campaignCriteria/{campaign.campaign_id}~{keyword_index}"
             ),
         }
         for campaign in campaigns
@@ -1140,7 +1140,7 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
     parent_fields = [
-        {"campaign_id": campaign.external_id, **keyword}
+        {"campaign_id": campaign.campaign_id, **keyword}
         for campaign in campaigns
         for keyword in keywords
     ]

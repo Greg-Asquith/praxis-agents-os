@@ -14,6 +14,8 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelMessagesTypeAdapter,
     ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
     UserContent,
@@ -34,16 +36,21 @@ async def load_message_history(
     *,
     conversation_id: UUID,
 ) -> list[ModelMessage]:
-    """Load persisted Pydantic AI history for a conversation."""
+    """Load persisted Pydantic AI history for a conversation.
+
+    Dangling tool calls left by interrupted runs are closed with synthesized
+    returns so providers accept the history on the next turn.
+    """
     if settings.AGENT_HISTORY_MAX_TURNS is None:
-        return await _load_full_message_history(db, conversation_id=conversation_id)
+        messages = await _load_full_message_history(db, conversation_id=conversation_id)
+        return close_dangling_tool_calls(messages)
 
     rows = await _load_windowed_message_rows(
         db,
         conversation_id=conversation_id,
         limit=settings.AGENT_HISTORY_DB_MAX_MESSAGES,
     )
-    return _messages_from_rows(rows)
+    return close_dangling_tool_calls(_messages_from_rows(rows))
 
 
 async def _load_full_message_history(
@@ -90,6 +97,72 @@ def _messages_from_rows(rows: Sequence[ConversationMessage]) -> list[ModelMessag
     if not rows:
         return []
     return list(ModelMessagesTypeAdapter.validate_python([row.parts for row in rows]))
+
+
+SYNTHESIZED_TOOL_RETURN_CONTENT = (
+    "Tool call ended without a recorded result because its run was interrupted."
+)
+
+
+def close_dangling_tool_calls(messages: list[ModelMessage]) -> list[ModelMessage]:
+    """Synthesize returns for tool calls that never got a recorded result.
+
+    An interrupted run can persist a response whose tool calls have no matching
+    return; providers reject such histories outright, wedging the conversation.
+    Synthesized returns reuse the response timestamp so repairs stay
+    deterministic across turns.
+    """
+    open_calls: dict[str, int] = {}
+    calls_by_response: dict[int, list[ToolCallPart]] = {}
+    for index, message in enumerate(messages):
+        if isinstance(message, ModelResponse):
+            for part in message.parts:
+                if isinstance(part, ToolCallPart) and part.tool_call_id:
+                    open_calls[part.tool_call_id] = index
+                    calls_by_response.setdefault(index, []).append(part)
+        elif isinstance(message, ModelRequest):
+            for part in message.parts:
+                if isinstance(part, ToolReturnPart | RetryPromptPart) and part.tool_call_id:
+                    open_calls.pop(part.tool_call_id, None)
+    if not open_calls:
+        return messages
+
+    repaired: list[ModelMessage] = []
+    pending_returns: list[ToolReturnPart] = []
+    for index, message in enumerate(messages):
+        if pending_returns:
+            if isinstance(message, ModelRequest):
+                # Keep the synthesized returns next to the request's real ones.
+                insert_at = 0
+                for position, part in enumerate(message.parts):
+                    if isinstance(part, ToolReturnPart | RetryPromptPart):
+                        insert_at = position + 1
+                message = replace(
+                    message,
+                    parts=[
+                        *message.parts[:insert_at],
+                        *pending_returns,
+                        *message.parts[insert_at:],
+                    ],
+                )
+            else:
+                repaired.append(ModelRequest(parts=list(pending_returns)))
+            pending_returns = []
+        repaired.append(message)
+        if isinstance(message, ModelResponse):
+            pending_returns = [
+                ToolReturnPart(
+                    tool_name=part.tool_name,
+                    content=SYNTHESIZED_TOOL_RETURN_CONTENT,
+                    tool_call_id=part.tool_call_id,
+                    timestamp=message.timestamp,
+                )
+                for part in calls_by_response.get(index, [])
+                if open_calls.get(part.tool_call_id) == index
+            ]
+    if pending_returns:
+        repaired.append(ModelRequest(parts=list(pending_returns)))
+    return repaired
 
 
 async def load_history_watermark_keys(

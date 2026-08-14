@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import WebFetch
 from pydantic_ai.messages import ModelMessage, ModelResponse, NativeToolReturnPart, TextPart
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.settings import settings
 from models.agent import Agent as AgentModel
@@ -49,6 +49,8 @@ from services.agents.runtime.tools import (
 )
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
+from services.ai_usage.domain import PURPOSE_WEB_FETCH, AIUsageEventData
+from services.ai_usage.run_metered_helper import run_metered_helper
 from utils.validation import normalize_optional_text
 
 NativeWebFetchProvider = Literal["anthropic", "google"]
@@ -57,7 +59,7 @@ SUPPORTED_NATIVE_FETCH_PROVIDERS = (PROVIDER_ANTHROPIC, PROVIDER_GOOGLE)
 
 DEFAULT_NATIVE_FETCH_MODELS = {
     PROVIDER_ANTHROPIC: "claude-sonnet-5",
-    PROVIDER_GOOGLE: "gemini-3.5-flash",
+    PROVIDER_GOOGLE: "gemini-3.7-flash",
 }
 
 WEB_FETCH_HELPER_INSTRUCTIONS = """\
@@ -130,6 +132,7 @@ class NativeWebFetchResult(BaseModel):
     name="fetch_url",
     provider="native",
     label="Fetch URL",
+    code_eligible=False,
     description=(
         "Read one public web page for the current turn with a provider-native helper model. "
         "Use knowledge-base URL ingestion instead when the user wants the page remembered "
@@ -217,7 +220,11 @@ async def fetch_url(
         model_provider=model_provider,
         model=model,
     )
-    fetch_result = await run_native_web_fetch(url=normalized_url, model_spec=model_spec)
+    fetch_result = await run_native_web_fetch(
+        deps=ctx.deps,
+        url=normalized_url,
+        model_spec=model_spec,
+    )
     content = _truncate_fetched_content(fetch_result.content)
     return {
         "url": normalized_url,
@@ -265,7 +272,12 @@ def resolve_web_fetch_model(
     )
 
 
-async def run_native_web_fetch(*, url: str, model_spec: ResolvedModel) -> NativeWebFetchResult:
+async def run_native_web_fetch(
+    *,
+    deps: RuntimeDeps,
+    url: str,
+    model_spec: ResolvedModel,
+) -> NativeWebFetchResult:
     """Run one bounded helper-agent fetch on the selected native model."""
     helper = PydanticAgent(
         build_model(model_spec),
@@ -283,9 +295,27 @@ async def run_native_web_fetch(*, url: str, model_spec: ResolvedModel) -> Native
             )
         ],
     )
-    result = await helper.run(
-        f"Fetch this exact URL and return its page content:\n\n{url}",
-        usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+
+    async def call(usage: RunUsage):
+        return await helper.run(
+            f"Fetch this exact URL and return its page content:\n\n{url}",
+            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+            usage=usage,
+        )
+
+    result = await run_metered_helper(
+        AIUsageEventData(
+            workspace_id=deps.workspace.id,
+            provider=model_spec.provider,
+            model=model_spec.model,
+            purpose=PURPOSE_WEB_FETCH,
+            agent_id=deps.agent.id,
+            user_id=deps.user.id,
+            run_id=deps.run.id,
+            conversation_id=deps.conversation.id,
+            details={"url": url[:2048]},
+        ),
+        call,
     )
     messages = result.all_messages()
     failure = _web_fetch_failure(messages)

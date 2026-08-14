@@ -9,15 +9,31 @@ afterEach(() => {
 })
 
 describe("Gmail API query keys", () => {
-  it("nests previews under connection details and scopes them to the active workspace", () => {
+  it("nests previews under the conversation and scopes them to the active workspace", () => {
     setActiveWorkspaceSlug("acme")
-    const acmeConnectionDetailKey = baseIntegrationQueryKeys.detail("connection-1")
-    const acmeKey = gmailMessagePreviewQueryOptions("connection-1", "message-1").queryKey
+    const acmeBaseKey = baseIntegrationQueryKeys.workspace()
+    const acmeKey = gmailMessagePreviewQueryOptions(
+      "conversation-1",
+      "hello@example.com",
+      "message-1"
+    ).queryKey
 
     setActiveWorkspaceSlug("globex")
-    const globexKey = gmailMessagePreviewQueryOptions("connection-1", "message-1").queryKey
+    const globexKey = gmailMessagePreviewQueryOptions(
+      "conversation-1",
+      "hello@example.com",
+      "message-1"
+    ).queryKey
 
-    expect(acmeKey).toEqual([...acmeConnectionDetailKey, "gmail", "message-preview", "message-1"])
+    expect(acmeKey).toEqual([
+      ...acmeBaseKey,
+      "conversation",
+      "conversation-1",
+      "gmail",
+      "message-preview",
+      "hello@example.com",
+      "message-1",
+    ])
     expect(globexKey).not.toEqual(acmeKey)
   })
 })

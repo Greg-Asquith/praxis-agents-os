@@ -38,6 +38,7 @@ class ListFilesOutput(BaseModel):
     name="list_files",
     provider="core",
     label="List Files",
+    code_eligible=True,
     description="List workspace files readable by the current agent.",
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,

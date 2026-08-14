@@ -59,6 +59,7 @@ class IntegrationError(Exception):
         self.operation = operation
         self.original_error = original_error
         self.failure_disposition = failure_disposition
+        self.user_message = message
 
         # Build detailed message
         parts = [message]

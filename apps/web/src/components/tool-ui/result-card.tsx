@@ -44,10 +44,14 @@ export function ToolResultCard({
   return (
     <section
       aria-label={ariaLabel}
-      className="border-border max-h-120 min-w-0 overflow-y-auto rounded-lg border"
+      className="border-border flex max-h-160 min-w-0 flex-col overflow-hidden rounded-lg border in-data-[slot=tool-result-card]:max-h-140"
+      data-slot="tool-result-card"
     >
       <header
-        className={cn("flex min-w-0 items-center gap-2 p-1", expandable && open && "border-b")}
+        className={cn(
+          "flex min-w-0 shrink-0 items-center gap-2 p-1",
+          expandable && open && "border-b"
+        )}
       >
         {expandable ? (
           <Button
@@ -74,7 +78,9 @@ export function ToolResultCard({
         {expandable ? <ToolResultDetailsPopover details={details} /> : null}
         {trailing}
       </header>
-      {expandable && open ? <div className="min-w-0 p-3">{children}</div> : null}
+      {expandable && open ? (
+        <div className="min-h-0 min-w-0 overflow-y-auto p-3">{children}</div>
+      ) : null}
     </section>
   )
 }

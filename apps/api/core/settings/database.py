@@ -38,6 +38,18 @@ class DatabaseSettingsMixin:
     DB_POOL_MAX_OVERFLOW: int = Field(
         default=10, ge=0, le=100, description="Max overflow connections beyond the pool size"
     )
+    AI_USAGE_DB_POOL_SIZE: int = Field(
+        default=2,
+        ge=1,
+        le=20,
+        description="Dedicated runtime-role AI usage writer pool size per process",
+    )
+    AI_USAGE_DB_POOL_MAX_OVERFLOW: int = Field(
+        default=0,
+        ge=0,
+        le=20,
+        description="Dedicated AI usage writer overflow connections per process",
+    )
 
     @field_validator("DATABASE_URL", "DATABASE_MAINTENANCE_URL")
     @classmethod

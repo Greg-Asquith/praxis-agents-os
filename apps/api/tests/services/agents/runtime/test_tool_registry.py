@@ -2,6 +2,8 @@
 
 """Unit tests for the runtime tool registry contract."""
 
+import ast
+from pathlib import Path
 from typing import get_args, get_type_hints
 from uuid import uuid4
 
@@ -158,6 +160,7 @@ def _agent(
     *,
     tool_names: list[str] | None = None,
     tool_policies: dict[str, str] | None = None,
+    code_mode_enabled: bool = False,
 ) -> Agent:
     return Agent(
         name="Tool Test Agent",
@@ -167,6 +170,7 @@ def _agent(
         created_by=uuid4(),
         tool_names=tool_names or [],
         tool_policies=tool_policies,
+        code_mode_enabled=code_mode_enabled,
         model_provider="openai",
         model="gpt-5.4-mini",
     )
@@ -187,6 +191,7 @@ def test_runtime_tool_decorator_registers_definition_with_derived_label(
     assert definition.effect == "read"
     assert definition.effect_scope == "internal"
     assert definition.egress == TOOL_EGRESS_NONE
+    assert definition.code_eligible is False
     assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO, TOOL_POLICY_APPROVAL})
     assert definition.version == 1
     assert definition.serialized_input_schema() == {
@@ -303,6 +308,28 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             effect=TOOL_EFFECT_WRITE,
             egress="provider_query",
         ),
+        RuntimeToolDefinition(
+            name="run_script",
+            function=_noop,
+            description="Machinery cannot be wrapped.",
+            code_eligible=True,
+        ),
+        RuntimeToolDefinition(
+            name="bad_code_always_allowed",
+            function=_noop,
+            description="Always-allowed machinery cannot be wrapped.",
+            code_eligible=True,
+            configurable=False,
+            always_allowed_when_mounted=True,
+            supports_approval=False,
+        ),
+        RuntimeToolDefinition(
+            name="bad_code_deferred",
+            function=_noop,
+            description="Deferred tools cannot be wrapped in v1.",
+            code_eligible=True,
+            defer_loading=True,
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_invariants(
@@ -384,7 +411,6 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "gmail_send_message": "external_write",
         "google_ads_add_ad_group_negative_keywords": "external_write",
         "google_ads_add_campaign_negative_keywords": "external_write",
-        "google_ads_list_accounts": "provider_query",
         "google_ads_add_negative_keywords": "external_write",
         "google_ads_create_negative_keyword_list": "external_write",
         "google_ads_link_negative_keyword_list": "external_write",
@@ -394,11 +420,14 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_run_report": "provider_query",
         "google_ads_update_campaign_status": "external_write",
         "list_delegate_agents": "none",
+        "list_artifacts": "none",
         "list_files": "none",
+        "read_artifact": "none",
         "read_document": "none",
         "read_file": "none",
         "read_todos": "none",
         "report_completion": "none",
+        "run_workflow": "none",
         "save_memory": "none",
         "search_knowledge": "none",
         "search_memory": "none",
@@ -410,6 +439,88 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
     }
 
     assert {name: definition.egress for name, definition in definitions.items()} == expected
+
+
+def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
+    definitions = {
+        definition.name: definition
+        for definition in (
+            *(
+                definition
+                for definition in RUNTIME_TOOL_CATALOG.values()
+                if definition.integration_binding is None
+                and not definition.name.startswith("test_")
+            ),
+            *AIRTABLE_TOOL_DEFINITIONS,
+            *BIGQUERY_TOOL_DEFINITIONS,
+            *GMAIL_TOOL_DEFINITIONS,
+            *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *DELEGATION_TOOL_DEFINITIONS,
+        )
+    }
+    expected_eligible = {
+        "airtable_create_record",
+        "airtable_get_record",
+        "airtable_list_records",
+        "airtable_update_record",
+        "bigquery_get_table_schema",
+        "bigquery_list_tables",
+        "bigquery_run_query",
+        "gmail_search_messages",
+        "google_ads_add_ad_group_negative_keywords",
+        "google_ads_add_campaign_negative_keywords",
+        "google_ads_add_negative_keywords",
+        "google_ads_create_negative_keyword_list",
+        "google_ads_link_negative_keyword_list",
+        "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_negative_keywords",
+        "google_ads_remove_negative_keywords",
+        "google_ads_run_report",
+        "google_ads_update_campaign_status",
+        "list_files",
+        "read_file",
+        "write_file",
+    }
+
+    assert {name for name, definition in definitions.items() if definition.code_eligible} == (
+        expected_eligible
+    )
+
+
+def test_first_party_tool_definitions_declare_code_eligibility() -> None:
+    api_root = Path(__file__).resolve().parents[4]
+    source_roots = (
+        api_root / "integrations",
+        api_root / "services" / "agents" / "runtime",
+    )
+    missing: list[str] = []
+
+    for source_root in source_roots:
+        for path in source_root.rglob("*.py"):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                calls: list[ast.Call] = []
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "RuntimeToolDefinition"
+                ):
+                    calls.append(node)
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    calls.extend(
+                        decorator
+                        for decorator in node.decorator_list
+                        if isinstance(decorator, ast.Call)
+                        and isinstance(decorator.func, ast.Name)
+                        and decorator.func.id == "runtime_tool"
+                    )
+                missing.extend(
+                    f"{path.relative_to(api_root)}:{call.lineno}"
+                    for call in calls
+                    if not any(keyword.arg == "code_eligible" for keyword in call.keywords)
+                )
+
+    assert missing == []
 
 
 def test_validate_definition_rejects_editable_result_fields() -> None:
@@ -1146,7 +1257,9 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         "build_chart",
         "create_artifact",
         "forget_memory",
+        "list_artifacts",
         "list_files",
+        "read_artifact",
         "read_document",
         "read_file",
         "read_todos",
@@ -1175,6 +1288,8 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         False,
         False,
         False,
+        False,
+        False,
         True,
         False,
     ]
@@ -1182,7 +1297,9 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         5,
         30,
         15,
+        15,
         10.0,
+        30,
         15,
         30.0,
         5,
@@ -1197,6 +1314,8 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         5,
     ]
     assert [tool.max_retries for tool in default_tools] == [
+        None,
+        None,
         None,
         None,
         None,
@@ -1229,9 +1348,207 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         False,
         False,
         False,
+        False,
+        False,
         True,
         True,
     ]
+
+
+def test_code_mode_replaces_every_eligible_non_deferred_tool_with_workflow_stubs(
+    cleanup_test_tools,
+) -> None:
+    @runtime_tool(
+        name="test_code_read",
+        description="Read composable data.",
+        code_eligible=True,
+    )
+    def code_read(query: str) -> str:
+        return query
+
+    @runtime_tool(
+        name="test_code_write",
+        description="Write composable data.",
+        code_eligible=True,
+        effect=TOOL_EFFECT_WRITE,
+    )
+    def code_write(value: str) -> str:
+        return value
+
+    @runtime_tool(
+        name="test_direct_read",
+        description="Read conversational data.",
+        code_eligible=False,
+    )
+    def direct_read(query: str) -> str:
+        return query
+
+    agent = _agent(
+        tool_names=["test_code_read", "test_code_write", "test_direct_read"],
+        code_mode_enabled=True,
+    )
+
+    tools = build_runtime_tools(agent)
+    names = {tool.name for tool in tools}
+    workflow = next(tool for tool in tools if tool.name == "run_workflow")
+
+    assert "test_code_read" not in names
+    assert {"test_direct_read", "run_workflow"}.issubset(names)
+    assert "test_code_write" not in names
+    assert "async def test_code_read(*, query: str)" in workflow.description
+    assert "async def test_code_write" in workflow.description
+    assert "async def test_direct_read" not in workflow.description
+    assert workflow.requires_approval is False
+    assert workflow.max_retries == 1
+
+
+def test_run_workflow_registration_is_internal_read_only_machinery() -> None:
+    definition = get_runtime_tool_definition("run_workflow")
+
+    assert definition is not None
+    assert definition.configurable is False
+    assert definition.auto_mount is False
+    assert definition.code_eligible is False
+    assert definition.effect == "read"
+    assert definition.effect_scope == "internal"
+    assert definition.egress == "none"
+    assert definition.default_policy == "auto"
+    assert definition.supports_approval is True
+    assert "run_workflow" not in {
+        item.name for item in list_allowed_tool_definitions(workspace=None)
+    }
+
+
+def test_code_mode_flag_off_preserves_direct_mounting(cleanup_test_tools) -> None:
+    @runtime_tool(
+        name="test_flag_off_read",
+        description="Read composable data.",
+        code_eligible=True,
+    )
+    def flag_off_read(query: str) -> str:
+        return query
+
+    tools = build_runtime_tools(_agent(tool_names=["test_flag_off_read"]))
+
+    names = {tool.name for tool in tools}
+    assert "test_flag_off_read" in names
+    assert "run_workflow" not in names
+
+
+def test_code_mode_wraps_approval_policy_but_keeps_deferred_tools_direct(
+    cleanup_test_tools,
+) -> None:
+    @runtime_tool(
+        name="test_approval_read",
+        description="Read only after approval.",
+        code_eligible=True,
+    )
+    def approval_read(query: str) -> str:
+        return query
+
+    @runtime_tool(
+        name="test_deferred_read",
+        description="Read after capability loading.",
+        code_eligible=False,
+        defer_loading=True,
+    )
+    def deferred_read(query: str) -> str:
+        return query
+
+    tools = build_runtime_tools(
+        _agent(
+            tool_names=["test_approval_read", "test_deferred_read"],
+            tool_policies={"test_approval_read": TOOL_POLICY_APPROVAL},
+            code_mode_enabled=True,
+        )
+    )
+
+    by_name = {tool.name: tool for tool in tools}
+    assert "test_approval_read" not in by_name
+    assert by_name["test_deferred_read"].defer_loading is True
+    assert "async def test_approval_read" in by_name["run_workflow"].description
+    assert "async def test_deferred_read" not in by_name["run_workflow"].description
+
+
+def test_code_mode_unsupported_schema_stays_direct_and_warns(
+    cleanup_test_tools,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    @runtime_tool(
+        name="test_unsupported_code_schema",
+        description="Read data with an unsupported schema.",
+        code_eligible=True,
+    )
+    def unsupported_code_schema(value: str) -> str:
+        return value
+
+    definition = RUNTIME_TOOL_CATALOG["test_unsupported_code_schema"]
+    object.__setattr__(
+        definition,
+        "_serialized_input_schema",
+        {
+            "type": "object",
+            "properties": {"value": {"type": "string", "not": {"const": "blocked"}}},
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+    )
+
+    tools = build_runtime_tools(_agent(tool_names=[definition.name], code_mode_enabled=True))
+
+    names = {tool.name for tool in tools}
+    assert definition.name in names
+    assert "cannot be rendered" in caplog.text
+
+
+def test_code_mode_applies_integration_context_filter_before_both_mount_paths(
+    cleanup_test_tools,
+    google_ads_manifest,
+) -> None:
+    @runtime_tool(
+        name="test_context_code_read",
+        description="Read scoped composable data.",
+        code_eligible=True,
+        integration_binding=GOOGLE_ADS_BINDING,
+    )
+    def context_code_read(query: str) -> str:
+        return query
+
+    @runtime_tool(
+        name="test_context_direct_read",
+        description="Read scoped conversational data.",
+        code_eligible=False,
+        integration_binding=GOOGLE_ADS_BINDING,
+    )
+    def context_direct_read(query: str) -> str:
+        return query
+
+    class _ActiveContext:
+        def __init__(self, compatible: bool) -> None:
+            self.compatible = compatible
+
+        def compatible_entries(self, _binding) -> list[object]:
+            return [object()] if self.compatible else []
+
+    agent = _agent(
+        tool_names=["test_context_code_read", "test_context_direct_read"],
+        code_mode_enabled=True,
+    )
+    without_context = build_runtime_tools(agent, active_context=_ActiveContext(False))
+    wrapped_tool_names: list[str] = []
+    with_context = build_runtime_tools(
+        agent,
+        active_context=_ActiveContext(True),
+        wrapped_tool_names=wrapped_tool_names,
+    )
+
+    absent_workflow = next(tool for tool in without_context if tool.name == "run_workflow")
+    present_workflow = next(tool for tool in with_context if tool.name == "run_workflow")
+    assert "test_context_code_read" not in absent_workflow.description
+    assert "test_context_direct_read" not in {tool.name for tool in without_context}
+    assert "test_context_code_read" in present_workflow.description
+    assert "test_context_code_read" in wrapped_tool_names
+    assert "test_context_direct_read" in {tool.name for tool in with_context}
 
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
@@ -1249,7 +1566,9 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
         "build_chart",
         "create_artifact",
         "forget_memory",
+        "list_artifacts",
         "list_files",
+        "read_artifact",
         "read_document",
         "read_file",
         "read_todos",

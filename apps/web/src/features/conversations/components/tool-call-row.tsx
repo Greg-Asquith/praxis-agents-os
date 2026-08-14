@@ -8,6 +8,10 @@ import { ApprovalDecisionContext } from "@/features/conversations/approval-decis
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import {
+  ToolCallRowRendererContext,
+  type ToolCallRowRenderProps,
+} from "@/features/conversations/components/tool-call-row-renderer"
 import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
 import { ToolSurfaceCard } from "@/features/conversations/components/tool-surface-card"
 import {
@@ -37,12 +41,7 @@ import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 import { providerKeyForToolName, useIntegrationUiModule } from "@/integrations/registry"
 import { normalizeOptionalText } from "@/lib/format"
 
-type ToolCallRowProps = {
-  activity: ToolActivity
-  compact?: boolean
-  defaultOpen?: boolean
-  live?: boolean
-}
+type ToolCallRowProps = ToolCallRowRenderProps
 
 export function ToolCallRow({
   activity,
@@ -87,7 +86,9 @@ export function ToolCallRow({
     activity.status === "completed" && ui?.result_fields[0]
       ? shortOutcomeMetric(resolveUiFields([ui.result_fields[0]], activity.result))
       : null
-  const resultText = resultFields.length === 0 ? friendlyResultText(activity.result) : null
+  const resultText =
+    (resultFields.length === 0 ? displayResultExcerpt(activity.resultExcerpt) : null) ??
+    (resultFields.length === 0 ? friendlyResultText(activity.result) : null)
   const approvalPrompt = ui
     ? (toolUiApprovalPrompt(ui, activity) ?? fallbackApprovalPrompt(title))
     : fallbackApprovalPrompt(title)
@@ -148,7 +149,12 @@ export function ToolCallRow({
             <ToolFieldGrid fields={resultFields} urlActions />
             {resultText ? (
               <ToolField
-                field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
+                field={{
+                  key: "result",
+                  label: activity.resultExcerpt ? "Recorded result" : "Result",
+                  value: resultText,
+                  format: "multiline",
+                }}
               />
             ) : null}
             <ToolFieldGrid fields={argFields} />
@@ -164,7 +170,12 @@ export function ToolCallRow({
             <ToolFieldGrid fields={resultFields} />
             {resultText ? (
               <ToolField
-                field={{ key: "result", label: "Result", value: resultText, format: "multiline" }}
+                field={{
+                  key: "result",
+                  label: activity.resultExcerpt ? "Recorded result" : "Result",
+                  value: resultText,
+                  format: "multiline",
+                }}
               />
             ) : null}
           </>
@@ -173,13 +184,28 @@ export function ToolCallRow({
     )
   }
 
-  return customRow ? (
+  const row = customRow ? (
     <ToolPresenterErrorBoundary fallback={defaultRow} key={`${activity.id}:${activity.status}`}>
       {customRow}
     </ToolPresenterErrorBoundary>
   ) : (
     defaultRow
   )
+  return <ToolCallRowRendererContext value={renderToolCallRow}>{row}</ToolCallRowRendererContext>
+}
+
+function displayResultExcerpt(value: string | undefined): string | null {
+  if (!value) {
+    return null
+  }
+  if (value.includes("…[excerpt truncated]…")) {
+    return "Detailed result preview was truncated. The workflow used the complete result."
+  }
+  return value
+}
+
+function renderToolCallRow(props: ToolCallRowRenderProps) {
+  return <ToolCallRow {...props} />
 }
 
 class ToolPresenterErrorBoundary extends Component<

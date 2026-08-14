@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
+from services.ai_usage.domain import PURPOSE_EMBEDDING_KB_SEARCH
 from services.embeddings import embed_texts
 from services.embeddings.domain import (
     EmbeddingConfigurationError,
@@ -141,6 +142,7 @@ async def search_chunks(
     *,
     workspace_id: UUID,
     user_id: UUID,
+    agent_id: UUID | None = None,
     query: str,
     top_k: int | None = None,
     source_types: Sequence[str] | None = None,
@@ -181,6 +183,9 @@ async def search_chunks(
             db,
             [normalized_query],
             workspace_id=workspace_id,
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
+            agent_id=agent_id,
+            user_id=user_id,
             provider=provider,
         )
         query_vector = embedded.vectors[0]

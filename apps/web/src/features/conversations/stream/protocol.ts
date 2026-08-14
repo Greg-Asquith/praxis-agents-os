@@ -4,6 +4,7 @@ import type {
   AgentRunStatus,
   Conversation,
   PendingDelegatedApproval,
+  TaintSource,
 } from "@/features/conversations/types"
 
 export const STREAM_PROTOCOL_VERSION = "1"
@@ -19,6 +20,7 @@ const STREAM_EVENT_NAMES = [
   "tool.call",
   "tool.result",
   "tool.approval_required",
+  "workflow.state",
   "error",
   "done",
 ] as const
@@ -34,6 +36,8 @@ type StreamEnvelope = {
 }
 
 export type MessageChannel = "text" | "thinking"
+
+export type WorkflowState = "started" | "completed" | "failed"
 
 export type StreamError = {
   code: string
@@ -71,7 +75,12 @@ export type StreamEvent =
     }
   | {
       event: "tool.call"
-      data: StreamEnvelope & { tool_call_id: string; name: string; args: unknown }
+      data: StreamEnvelope & {
+        tool_call_id: string
+        name: string
+        args: unknown
+        parent_tool_call_id?: string
+      }
     }
   | {
       event: "tool.result"
@@ -79,6 +88,7 @@ export type StreamEvent =
         tool_call_id: string
         name?: string | null
         result: unknown
+        parent_tool_call_id?: string
       }
     }
   | {
@@ -88,7 +98,19 @@ export type StreamEvent =
         name: string
         args: unknown
         replay_args?: unknown
+        parent_tool_call_id?: string
         delegation?: PendingDelegatedApproval | null
+        derived_from_untrusted?: boolean
+        taint_sources?: TaintSource[]
+      }
+    }
+  | {
+      event: "workflow.state"
+      data: StreamEnvelope & {
+        tool_call_id: string
+        state: WorkflowState
+        output_excerpt?: string | null
+        error_excerpt?: string | null
       }
     }
   | {

@@ -291,7 +291,12 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   names are customer-defined. Turn-count trimming remains the floor.
   `load_message_history` retains its byte-identical persisted-history contract,
   and summary watermark ids travel beside the provider-visible messages rather
-  than inside them.
+  than inside them. Before either the runtime model or history-summary model
+  receives reconstructed history, a model-boundary sanitizer removes legacy
+  `integration_resource_id` and `connection_id` keys from integration tool
+  calls/results, including Code Mode nested metadata. It does not rewrite
+  stored conversation rows, replay payloads, audit data, or arbitrary user and
+  non-integration content.
 - Use built-in capabilities such as `Thinking`, `WebSearch`, `WebFetch`, and
   `MCP` when they fit. For every optional or specialist capability, explicitly
   consider `defer_loading=True` so long-tail instructions and schemas do not bloat
@@ -304,19 +309,9 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   traces as diagnostic data and avoid full HTTP payload capture except for
   targeted debugging.
 
-Use Pydantic AI Harness selectively:
-
-- `CodeMode` is useful when an agent would otherwise make many sequential tool
-  calls, aggregate intermediate results, or parallelize safe calls with
-  `asyncio.gather`.
-- Do not put approval-required, deferred, or high-risk side-effect tools behind
-  Code Mode. Harness excludes approval/deferred tools from the sandbox, and the
-  product policy still requires external-system actions to be permissioned,
-  observable, and reversible where practical.
-- If wrapping MCP tools with Code Mode, construct them with `native=False`; native
-  provider-side tools bypass the local sandbox.
-- Install `pydantic-ai-harness[codemode]` only once a concrete Code Mode use case
-  exists.
+Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
+builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
+design reference only.
 
 ## The SSE wire protocol (custom, owned by us)
 
@@ -403,7 +398,6 @@ skills, files, knowledge retrieval, memory, audited tool dispatch, and opt-in
 OpenTelemetry/Logfire instrumentation. The web app exposes the corresponding
 conversation, approval, agent, schedule, tool-catalog, and audit surfaces.
 
-Pydantic AI Harness Code Mode is deliberately not part of the runtime today: it
-should ship only for toolsets where collapsing many safe tool calls into
-sandboxed Python is demonstrably useful, and only where measured tool-use
-patterns justify the additional sandbox and orchestration machinery.
+Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
+builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
+design reference only.

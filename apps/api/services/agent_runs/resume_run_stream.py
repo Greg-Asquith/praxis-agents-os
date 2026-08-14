@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_ai.messages import ToolCallPart
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -138,6 +139,11 @@ async def _build_deferred_tool_results(
     suspended_state: SuspendedRunState,
     decisions: list[AgentRunResumeDecision],
 ) -> DeferredToolResults:
+    from services.agents.runtime.code_mode.approval import (
+        build_code_mode_decision_metadata,
+        code_mode_nested_call,
+    )
+
     by_id: dict[str, AgentRunResumeDecision] = {}
     duplicate_ids = []
     for decision in decisions:
@@ -157,6 +163,7 @@ async def _build_deferred_tool_results(
         str,
         tuple[dict[str, object], AgentRun, SuspendedRunState],
     ] = {}
+    code_mode_states: dict[str, tuple[dict[str, object], ToolCallPart]] = {}
     direct_calls = {
         approval.tool_call_id: approval
         for approval in suspended_state.deferred_tool_requests.approvals
@@ -164,6 +171,10 @@ async def _build_deferred_tool_results(
 
     for approval in suspended_state.deferred_tool_requests.approvals:
         metadata = suspended_state.deferred_tool_requests.metadata.get(approval.tool_call_id)
+        nested_call = code_mode_nested_call(metadata)
+        if nested_call is not None and isinstance(metadata, dict):
+            code_mode_states[approval.tool_call_id] = (metadata, nested_call)
+            continue
         child_run = await load_delegated_child_run_for_approval(
             db,
             parent_run=run,
@@ -183,6 +194,7 @@ async def _build_deferred_tool_results(
         )
 
     expected = set(direct_pending_tool_call_ids)
+    expected.update(call.tool_call_id for _metadata, call in code_mode_states.values())
     for _metadata, _child_run, child_state in delegated_child_states.values():
         expected.update(child_state.pending_tool_call_ids)
 
@@ -208,6 +220,33 @@ async def _build_deferred_tool_results(
             run=run,
             tool_call=direct_calls[tool_call_id],
             decision=by_id[tool_call_id],
+        )
+
+    for outer_tool_call_id, (approval_metadata, nested_call) in code_mode_states.items():
+        from services.agents.runtime.dispatch import digest_args
+
+        decision = by_id[nested_call.tool_call_id]
+        canonical_override = None
+        if decision.decision == "approved":
+            canonical_override = await validate_and_canonicalize_override_args(
+                db,
+                actor=actor,
+                workspace=workspace,
+                membership=membership,
+                run=run,
+                tool_call=nested_call,
+                override_args=decision.override_args,
+            )
+        original_args = nested_call.args_as_dict()
+        effective_args = canonical_override if canonical_override is not None else original_args
+        args_sha256, _args_bytes = digest_args(effective_args)
+        approvals[outer_tool_call_id] = ToolApproved()
+        metadata_by_parent_tool_call_id[outer_tool_call_id] = build_code_mode_decision_metadata(
+            approval_metadata=approval_metadata,
+            decision=decision.decision,
+            effective_args=effective_args,
+            args_sha256=args_sha256,
+            message=decision.message,
         )
 
     for parent_tool_call_id, (

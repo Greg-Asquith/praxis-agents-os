@@ -100,11 +100,12 @@ export const gmailSendPresenter: ToolRowPresenter = {
 function sendFailure(activityId: string, args: unknown, description: string, defaultOpen: boolean) {
   const entries = [
     {
-      connectionId: activityId,
       data: null,
       displayName: "Selected mailbox",
       errorMessage: description,
       externalId: "Selected mailbox",
+      providerKey: "gmail",
+      renderKey: `gmail:failure:${activityId}`,
       status: "failed",
     },
   ]

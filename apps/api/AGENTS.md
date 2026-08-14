@@ -49,6 +49,29 @@ Repo-wide expectations are in the root `AGENTS.md`.
   predicates, and be added to `tests/security/test_workspace_rls.py`.
   Missing GUCs must continue to fail closed. Never grant the runtime role
   `BYPASSRLS`, ownership, or superuser privileges.
+- `ai_usage_events` is runtime append-only: `praxis_app` may select and insert,
+  but may not update or delete. Its exact cardinality is one row per logical
+  agent-run invocation (including each approval resume), helper invocation, or
+  embedding API batch; `requests` sums provider requests within that row.
+  Successful/suspended agent usage is transactional with the terminal or parked
+  transition. Failure/cancellation fallback and helper/embedding usage are
+  best-effort durable writes through the separate bounded runtime-role AI usage
+  pool, so metering cannot consume the normal pool's overflow capacity. Usage
+  details must remain bounded, and the ledger must not become a budget or
+  admission-enforcement mechanism.
+- Workspace usage reads use the ordinary tenant runtime session, retain an
+  explicit workspace predicate, and price UTC-day buckets before wider folds.
+  The `/usage` router is owner/admin-only. Costs are read-time estimates from
+  effective-dated public rates; unknown models remain unpriced. Native image
+  helpers retain known model/quality/size metadata so GPT Image 2 and Gemini
+  3.1 Flash Image output estimates are added to, not substituted for, mainline
+  helper-model token cost. Unavailable image-model input remains disclosed
+  rather than guessed.
+- Platform usage reads are confined to `services/ai_usage/platform_queries.py`,
+  use the sanctioned maintenance session, and set each transaction read-only
+  before its first query. The `/platform-usage` router is super-admin-only;
+  it exposes aggregate usage and workspace/user/model/purpose attribution but
+  never workspace content. RLS remains unchanged.
 
 ## Agent Runtime And Providers
 
@@ -100,6 +123,33 @@ Repo-wide expectations are in the root `AGENTS.md`.
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
   not execute tool logic around it.
+- Code-mode execution lives under `services/agents/runtime/code_mode/` and
+  uses the dedicated `core/settings/code_mode.py` mixin. Its lazily created
+  Monty subprocess pool must close in API, worker, and test lifecycles. The
+  sandbox has no OS handler or mount; nested calls are serial and must use the
+  parent's prepared `ToolManager` so validation, approval, hooks, dispatch,
+  and audit remain the framework-owned path. Durable nested approvals persist
+  a version-stamped Monty snapshot in workspace-confidential run metadata.
+  Bound the pre-base64 snapshot with `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` and
+  the complete serialized artifact with `AGENT_CODE_MODE_STATE_MAX_BYTES`;
+  suspension-only presentation evidence is trimmed oldest-first before an
+  oversized artifact fails closed. A decision authorizes only the matching
+  nested call and validated effective arguments. Captured print
+  output is persisted cumulatively across suspensions, and every resume uses
+  only the remaining output budget. Keep script arguments, nested results,
+  final values, and print output independently bounded. Generated
+  stubs render faithful input signatures and declared `output_model` return
+  shapes; tools without a declared output model remain explicitly `Any`.
+  Completed-run nested traces retain each complete normalized nested result as
+  application-only presentation evidence, with no additional UI sampling or
+  truncation. Suspended artifacts may omit the oldest presentation values only
+  to meet the aggregate state ceiling, while retaining their trace summaries
+  and explicit truncation markers. When a nested tool supplies a governed
+  `public_result`, that richer value is the presentation evidence while only
+  `return_value` enters the sandbox. That evidence must never enter model context. The governed
+  nested-value and provider product bounds remain authoritative. Keep the 
+  workflow's model-facing final-result bound materially tighter than the
+  nested value bound so a faulty reduction cannot flood every later request.
 - Tools that need richer transcript evidence than the model should receive may
   return `ToolReturn` with the bounded, output-model-validated payload in
   `return_value` and an explicitly safe `public_result` in metadata. The
@@ -113,13 +163,20 @@ Repo-wide expectations are in the root `AGENTS.md`.
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and
   publish only through the generic integrations seam. Scoped provider tools
-  must revalidate the referenced active-context resource and target only that
-  resource, never fan an entity ID out across compatible accounts.
+  expose provider-owned scope/entity IDs only, resolve the provider scope to
+  the canonical compatible active-context resource at execution, and target
+  only that resource. Never serialize integration-resource or connection UUIDs
+  in a scoped reference, bypass active-context resolution, or fan an entity ID
+  out across compatible accounts.
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorized immediately before resume.
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
+  A `code_eligible=True` write backed by a provider batch operation must expose
+  that operation as one bounded list-shaped call with a faithful editable
+  presentation. The complete reviewed row set is the consent boundary; do not
+  replace it with sequential single-row calls or workflow-scoped grants.
 - Provider packages keep each agent tool in its own module under a `tools/`
   tree. The tree may share schemas and provider-local helpers, while its
   `__init__.py` only composes exported definitions; do not accumulate a
@@ -128,9 +185,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `services/integrations/`: context fan-out/targeting share one authorization
   and failure-isolation loop, `run_audited_integration_operation` derives
   external-write durability from the registered `RuntimeToolDefinition`, and
-  `serialize_fan_out_results` owns the nine-field outer envelope. Providers
+  `serialize_fan_out_results` owns the safe provider-key/scope outer envelope
+  and never publishes internal resource or connection UUIDs. Providers
   return one `IntegrationAuditOutcome`, supply bounded pending detail for
   external writes, and subclass the shared result models only to narrow data.
+  Every fixed integration tool declares an operation-specific output model;
+  dynamic objects are limited to report/query rows and provider-defined record
+  field values.
   Pending integration-operation evidence contains requested intent only;
   successful writes must return the one canonical terminal detail with exactly
   aligned intent outcomes and concrete provider effects. Intent and effect

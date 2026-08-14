@@ -20,7 +20,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsAddCampaignKeywordOutput
 from .schemas.negative_keyword import NegativeKeywordEntry
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
@@ -64,6 +64,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Add negative keywords directly to selected Google Ads campaigns.",
     provider="google_ads",
     label="Add Google Ads Campaign Negative Keywords",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
@@ -71,7 +72,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=False,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsAddCampaignKeywordOutput,
     max_public_result_chars=MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,

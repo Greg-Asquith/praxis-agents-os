@@ -18,6 +18,36 @@ class ArtifactToolResult(BaseModel):
     reference: ArtifactReference
 
 
+class ArtifactToolSummary(BaseModel):
+    id: str
+    reference: ArtifactReference
+    title: str
+    artifact_type: str
+    version_count: int
+    updated_at: datetime
+    conversation_id: UUID | None
+
+
+class ArtifactListToolResult(BaseModel):
+    items: list[ArtifactToolSummary]
+    total: int
+    returned: int
+
+
+class ArtifactReadToolResult(BaseModel):
+    id: str
+    reference: ArtifactReference
+    title: str
+    artifact_type: str
+    revision_number: int
+    updated_at: datetime
+    content: str | None
+    truncated: bool
+    size_bytes: int
+    content_type: str
+    note: str | None = None
+
+
 class ArtifactVersionRead(BaseModel):
     id: UUID
     created_at: datetime

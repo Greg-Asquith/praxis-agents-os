@@ -50,10 +50,10 @@ describe("Airtable tool presenters", () => {
                 total: 1,
               }),
               entry(null, {
-                connection_id: "connection-2",
+                provider_key: "airtable",
                 display_name: "Archive base",
                 external_id: "app-archive",
-                status: "failed",
+                status: "error",
                 error_message: "Access needs to be renewed.",
               }),
             ],
@@ -358,7 +358,7 @@ function toolUi(argFields: ToolUiField[]): ToolUi {
 function entry(
   data: unknown,
   overrides: Partial<{
-    connection_id: string
+    provider_key: string
     display_name: string
     external_id: string
     status: string
@@ -366,7 +366,7 @@ function entry(
   }> = {}
 ) {
   return {
-    connection_id: "connection-1",
+    provider_key: "airtable",
     display_name: "Projects base",
     external_id: "app-projects",
     status: "success",

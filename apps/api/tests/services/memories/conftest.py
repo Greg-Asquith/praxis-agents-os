@@ -73,6 +73,7 @@ def install_fake_embeddings(monkeypatch, *, fail: bool = False) -> None:
         *,
         workspace_id,
         provider=None,
+        **_attribution,
     ) -> EmbeddingBatch:
         del workspace_id, provider
         if fail:

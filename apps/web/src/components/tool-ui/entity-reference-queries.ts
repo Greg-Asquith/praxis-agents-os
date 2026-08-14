@@ -94,18 +94,11 @@ export function mergeEntityChoices(
 ): EntityChoice[] {
   const choices = new Map<string, EntityChoice>()
   for (const choice of [...hydrated, ...pages.flatMap((page) => page.choices)]) {
-    choices.set(entityReferenceKey(choice.value), choice)
+    choices.set(entityReferenceKey(choice), choice)
   }
   return [...choices.values()]
 }
 
-// Identity excludes defaulted fields (entity_kind, version): model-issued args
-// may omit them while server-canonical choices always carry them.
-export function entityReferenceKey(value: EntityReferenceValue): string {
-  return JSON.stringify([
-    value["entity_id"],
-    value["integration_resource_id"],
-    value["external_id"],
-    value["table"],
-  ])
+export function entityReferenceKey(choice: EntityChoice): string {
+  return JSON.stringify(choice.identity)
 }

@@ -466,6 +466,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
                     <AgentIdentityIcon
                       agentId={props.agent.id}
                       decorative
+                      metadata={props.agent.metadata}
                       name={props.agent.name}
                       size="sm"
                     />
@@ -529,6 +530,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
               <AgentIdentityIcon
                 agentId={props.agent.id}
                 decorative
+                metadata={props.agent.metadata}
                 name={props.agent.name}
                 size="sm"
               />
@@ -554,6 +556,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
                 <AgentIdentityIcon
                   agentId={composerAgent.id}
                   decorative
+                  metadata={composerAgent.metadata}
                   name={composerAgent.name}
                   size="sm"
                 />
@@ -663,6 +666,7 @@ function ComposerAgentSelect({
                 <AgentIdentityIcon
                   agentId={selectedAgent.id}
                   decorative
+                  metadata={selectedAgent.metadata}
                   name={selectedAgent.name}
                   size="sm"
                 />

@@ -78,6 +78,12 @@ from services.workspaces.utils import EDITOR_ROLES
 from utils.json_safe import json_safe_value
 from utils.tokens import estimate_tokens
 
+CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY = "praxis_code_mode_parent_tool_call_id"
+CODE_MODE_HANDLER_STARTED_METADATA_KEY = "praxis_code_mode_handler_started"
+CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY = "praxis_code_mode_derived_from_untrusted"
+CODE_MODE_TAINT_SOURCES_METADATA_KEY = "praxis_code_mode_taint_sources"
+CODE_MODE_PENDING_AUDIT_RECORDED_ATTR = "_praxis_code_mode_pending_audit_recorded"
+
 Handler = Callable[[Mapping[str, Any]], Awaitable[Any]]
 
 MUTATION_OUTPUT_WARNING = (
@@ -315,6 +321,8 @@ async def dispatch_tool_execution(
     args_sha256, args_bytes = digest_args(args)
     started = monotonic()
     tool_call_id = call.tool_call_id
+    parent_tool_call_id = _parent_tool_call_id(getattr(ctx, "tool_call_metadata", None))
+    taint_audit = _taint_audit_details(getattr(ctx, "tool_call_metadata", None))
     approval_ref = call.tool_call_id if getattr(ctx, "tool_call_approved", False) else None
 
     active_role = await _active_workspace_role(ctx.deps)
@@ -329,9 +337,11 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="denied_authorization",
             approval_ref=approval_ref,
             error_code="WorkspaceMembershipRevoked",
+            **taint_audit,
         )
         raise ModelRetry(MEMBERSHIP_DENIAL_MESSAGE)
 
@@ -351,9 +361,11 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="denied_authorization",
             approval_ref=approval_ref,
             error_code="WorkspaceRoleDenied",
+            **taint_audit,
         )
         raise ModelRetry(ROLE_DENIAL_MESSAGE)
 
@@ -369,8 +381,10 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="denied_envelope",
             approval_ref=approval_ref,
+            **taint_audit,
         )
         raise ModelRetry(envelope_verdict.denied_message)
     if envelope_verdict.requires_approval and not getattr(ctx, "tool_call_approved", False):
@@ -384,16 +398,20 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="approval_requested",
             approval_ref=call.tool_call_id,
+            **taint_audit,
         )
-        raise ApprovalRequired(
+        approval_required = ApprovalRequired(
             metadata={
                 "side_effect_policy": ctx.deps.envelope.side_effect_policy,
                 "effect_scope": envelope_verdict.effect_scope,
                 "egress": definition.egress,
             }
         )
+        setattr(approval_required, CODE_MODE_PENDING_AUDIT_RECORDED_ATTR, True)
+        raise approval_required
 
     try:
         await raise_if_agent_run_cancelled(
@@ -401,8 +419,11 @@ async def dispatch_tool_execution(
             workspace_id=ctx.deps.workspace.id,
             user_id=ctx.deps.user.id,
         )
+        metadata = getattr(ctx, "tool_call_metadata", None)
+        if isinstance(metadata, dict) and parent_tool_call_id is not None:
+            metadata[CODE_MODE_HANDLER_STARTED_METADATA_KEY] = True
         result = await handler(args)
-    except ApprovalRequired:
+    except ApprovalRequired as exc:
         await record_invocation(
             deps=ctx.deps,
             tool_name=tool_name,
@@ -413,9 +434,12 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="approval_requested",
             approval_ref=call.tool_call_id,
+            **taint_audit,
         )
+        setattr(exc, CODE_MODE_PENDING_AUDIT_RECORDED_ATTR, True)
         raise
     except asyncio.CancelledError as exc:
         if is_agent_run_cancel_request(exc, run_id=ctx.deps.run.id):
@@ -430,9 +454,11 @@ async def dispatch_tool_execution(
                     args_bytes=args_bytes,
                     started=started,
                     tool_call_id=tool_call_id,
+                    parent_tool_call_id=parent_tool_call_id,
                     outcome="cancelled",
                     approval_ref=approval_ref,
                     error_code="CancelledError",
+                    **taint_audit,
                 )
         raise
     except Exception as exc:
@@ -446,9 +472,11 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome="failed",
             approval_ref=approval_ref,
             error_code=exc.__class__.__name__,
+            **taint_audit,
         )
         raise
 
@@ -473,9 +501,11 @@ async def dispatch_tool_execution(
             args_bytes=args_bytes,
             started=started,
             tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
             outcome=exc.outcome,
             approval_ref=approval_ref,
             error_code="OutputContractValidationError",
+            **taint_audit,
         )
         raise ModelRetry(exc.retry_message) from exc
 
@@ -518,11 +548,13 @@ async def dispatch_tool_execution(
         args_bytes=args_bytes,
         started=started,
         tool_call_id=tool_call_id,
+        parent_tool_call_id=parent_tool_call_id,
         outcome="completed",
         approval_ref=approval_ref,
         result_chars=result_size.chars if result_size.oversized else None,
         result_truncated=result_size.truncated if result_size.oversized else None,
         result_original_chars=result_size.original_chars,
+        **taint_audit,
     )
     return result
 
@@ -568,7 +600,7 @@ async def record_denied_approval_audit_events(
             approval_ref=tool_call_id,
             error_code="ToolDenied",
         )
-        await _cleanup_denied_staged_content(deps=deps, tool_name=tool_name, args=args)
+        await cleanup_staged_tool_content(deps=deps, tool_name=tool_name, args=args)
 
 
 async def record_policy_approval_request_audit_events(
@@ -604,7 +636,7 @@ async def record_policy_approval_request_audit_events(
         )
 
 
-async def _cleanup_denied_staged_content(
+async def cleanup_staged_tool_content(
     *,
     deps: RuntimeDeps,
     tool_name: str,
@@ -623,7 +655,7 @@ async def _cleanup_denied_staged_content(
         )
     except Exception:
         logger.warning(
-            "Failed to delete staged write_file content for denied approval",
+            "Failed to delete staged write_file content after approval settlement",
             extra={"run_id": str(deps.run.id), "tool_name": tool_name},
             exc_info=True,
         )
@@ -675,6 +707,9 @@ async def record_invocation(
     result_chars: int | None = None,
     result_truncated: bool | None = None,
     result_original_chars: int | None = None,
+    parent_tool_call_id: str | None = None,
+    derived_from_untrusted: bool | None = None,
+    taint_sources: list[dict[str, str]] | None = None,
 ) -> None:
     """Assemble and persist one invocation audit event."""
     await record_tool_invocation_audit_event(
@@ -696,7 +731,36 @@ async def record_invocation(
         result_chars=result_chars,
         result_truncated=result_truncated,
         result_original_chars=result_original_chars,
+        parent_tool_call_id=parent_tool_call_id,
+        derived_from_untrusted=derived_from_untrusted,
+        taint_sources=taint_sources,
     )
+
+
+def _parent_tool_call_id(metadata: Any) -> str | None:
+    if not isinstance(metadata, Mapping):
+        return None
+    value = metadata.get(CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY)
+    return value if isinstance(value, str) and value else None
+
+
+def _taint_audit_details(metadata: Any) -> dict[str, Any]:
+    if not isinstance(metadata, Mapping):
+        return {}
+    derived = metadata.get(CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY)
+    if not isinstance(derived, bool):
+        return {}
+    raw_sources = metadata.get(CODE_MODE_TAINT_SOURCES_METADATA_KEY)
+    sources = []
+    if isinstance(raw_sources, list):
+        for item in raw_sources:
+            if not isinstance(item, Mapping):
+                continue
+            source_kind = item.get("source_kind")
+            source_ref = item.get("source_ref")
+            if isinstance(source_kind, str) and isinstance(source_ref, str):
+                sources.append({"source_kind": source_kind, "source_ref": source_ref})
+    return {"derived_from_untrusted": derived, "taint_sources": sources}
 
 
 def _tool_provider(

@@ -109,13 +109,13 @@ function AuditEventsPanel() {
 
   return (
     <Card className="border-0 bg-transparent shadow-none ring-0">
-      <CardHeader>
+      <CardHeader className="px-1">
         <CardTitle>Workspace events</CardTitle>
         <CardDescription>
           Review user and agent operations recorded for this workspace.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-col gap-4 px-1">
         <AuditFilterBar
           filters={filters}
           memberships={membershipsQuery.data.memberships}

@@ -96,7 +96,9 @@ async def run_negative_keyword_tool(
                 f"{spec.selection_plural_label.capitalize()} multiplied by keyword rows must not "
                 f"exceed {spec.max_operations:,} per account. Split the request into smaller groups."
             )
-        normalized_entity_ids = sorted({reference.external_id for reference in entity_references})
+        normalized_entity_ids = sorted(
+            {reference.provider_entity_id for reference in entity_references}
+        )
         if any(not entity_id.isdigit() for entity_id in normalized_entity_ids):
             raise ModelRetry(f"A selected Google Ads {spec.selection_label} reference is invalid.")
 
@@ -178,15 +180,15 @@ def pending_operation_detail(
         target=_account_target(entry),
         intent_groups=[
             IntegrationOperationIntentGroup(
-                key=f"{spec.operation_entity}:{reference.external_id}:{action}-keywords",
+                key=(f"{spec.operation_entity}:{reference.provider_entity_id}:{action}-keywords"),
                 action=action,
                 entity_type=spec.entity_type,
-                external_id=reference.external_id,
+                external_id=reference.provider_entity_id,
                 display_name=reference.label,
                 fields=spec.reference_fields(reference),
                 items=[
                     IntegrationOperationIntent(
-                        fields={spec.entity_id_key: reference.external_id, **keyword}
+                        fields={spec.entity_id_key: reference.provider_entity_id, **keyword}
                     )
                     for keyword in keywords
                 ],
@@ -230,15 +232,15 @@ def entity_result(
         )
     entity_rows = []
     for reference in references[:max_entities]:
-        errors = errors_by_entity.get(reference.external_id, [])
+        errors = errors_by_entity.get(reference.provider_entity_id, [])
         entity_row: dict[str, Any] = {
             **spec.reference_fields(reference),
-            "counts": counts[reference.external_id],
+            "counts": counts[reference.provider_entity_id],
             spec.errors_key: errors[:_MAX_ERRORS_PER_ENTITY],
             "errors_truncated": len(errors) > _MAX_ERRORS_PER_ENTITY,
         }
         if include_keyword_outcomes:
-            entity_row["keyword_outcomes"] = outcomes[reference.external_id]
+            entity_row["keyword_outcomes"] = outcomes[reference.provider_entity_id]
         entity_rows.append(entity_row)
     return {
         "counts": {
@@ -256,10 +258,10 @@ def _deduplicate_references(
     *,
     spec: NegativeKeywordToolSpec,
 ) -> list[ScopedEntityReference]:
-    unique: dict[tuple[object, str], ScopedEntityReference] = {}
+    unique: dict[tuple[str, str], ScopedEntityReference] = {}
     for reference in references:
         unique.setdefault(
-            (reference.integration_resource_id, reference.external_id),
+            (reference.provider_scope_id, reference.provider_entity_id),
             reference,
         )
     if not unique:
@@ -288,7 +290,7 @@ def _entity_counts(
     applied_key = "added" if action == "add" else "removed"
     skipped_key = "skipped_existing" if action == "add" else "not_found"
     counts = {
-        reference.external_id: {applied_key: 0, skipped_key: 0, "failed": 0}
+        reference.provider_entity_id: {applied_key: 0, skipped_key: 0, "failed": 0}
         for reference in references
     }
     for key, items in (
@@ -328,9 +330,9 @@ def _keyword_outcomes(
     # provider operations always return a validated ledger before reaching here.
     applied_key = "added" if action == "add" else "removed"
     skipped_key = "skipped_existing" if action == "add" else "not_found"
-    outcomes = {reference.external_id: [] for reference in references}
+    outcomes = {reference.provider_entity_id: [] for reference in references}
     requested = [
-        (reference.external_id, keyword["text"], keyword["match_type"])
+        (reference.provider_entity_id, keyword["text"], keyword["match_type"])
         for reference in references
         for keyword in keywords
     ]

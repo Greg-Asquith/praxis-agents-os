@@ -1,6 +1,19 @@
 // apps/web/src/lib/agent-identity.ts
 
-const AGENT_IDENTITY_COUNT = 8
+export const AGENT_IDENTITY_COUNT = 8
+
+export function agentIdentityColorIndex(
+  metadata: Record<string, unknown> | null | undefined
+): number | null {
+  const value = metadata?.["identity_color"]
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return null
+  }
+  if (value < 1 || value > AGENT_IDENTITY_COUNT) {
+    return null
+  }
+  return value - 1
+}
 
 export function agentIdentityIndex(id: string): number {
   let hash = 0x811c9dc5

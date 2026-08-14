@@ -34,8 +34,8 @@ def _choice(entry, shared_set: Mapping[str, Any]) -> EntityChoice | None:
         member_count = None
     return EntityChoice.from_reference(
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id=shared_set_id,
+            customer_id=entry.external_id,
+            shared_set_id=shared_set_id,
             label=name[:500],
             description=(
                 f"{member_count} negative keyword{'s' if member_count != 1 else ''}"
@@ -106,7 +106,7 @@ async def resolve_google_ads_shared_sets(ctx, values: Sequence[Any], _dependent_
     choices: list[EntityChoice] = []
     grouped = group_scoped_references(ctx, GOOGLE_ADS_BINDING, values, GoogleAdsSharedSetReference)
     for entry, references in grouped:
-        ids = [reference.external_id for reference in references]
+        ids = [reference.shared_set_id for reference in references]
         shared_sets = await _query(ctx, entry, shared_set_ids=ids, limit=len(ids))
         choices.extend(
             choice

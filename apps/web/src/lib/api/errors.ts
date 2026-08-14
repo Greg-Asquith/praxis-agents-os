@@ -52,7 +52,9 @@ export function getErrorMessage(error: unknown) {
 
 async function parseProblem(response: Response) {
   const contentType = response.headers.get("content-type") ?? ""
-  if (!contentType.includes("application/json")) {
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? ""
+  const isJson = mediaType === "application/json" || mediaType.endsWith("+json")
+  if (!isJson) {
     return null
   }
 

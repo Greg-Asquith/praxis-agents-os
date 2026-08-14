@@ -49,6 +49,7 @@ const agent: Agent = {
   instructions: "Plan the work carefully.",
   workspace_id: "workspace-1",
   created_by: "user-1",
+  code_mode_enabled: true,
   tool_names: ["read_file", "missing_tool"],
   tool_policies: { read_file: "approval" },
   skill_ids: ["skill-1"],
@@ -72,11 +73,14 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
   return {
     allowedAgentIds: ["agent-2"],
     azureDeployment: "",
+    codeModeEnabled: false,
     description: "  Helps plan launches.  ",
+    identityColor: "Auto",
     instructions: "  Use the playbook.  ",
     isActive: "true",
     isFavorite: "false",
     maxSteps: "25",
+    metadataJson: {},
     modelSelection: "openai:gpt-5.4-mini",
     modelSettings: { temperature: 0.1 },
     name: "  Launch planner  ",
@@ -97,11 +101,14 @@ describe("initialAgentFormState", () => {
     expect(state).toEqual({
       allowedAgentIds: [],
       azureDeployment: "",
+      codeModeEnabled: false,
       description: "",
+      identityColor: "Auto",
       instructions: "",
       isActive: "true",
       isFavorite: "false",
       maxSteps: "20",
+      metadataJson: {},
       modelSelection: "Default",
       modelSettings: {},
       name: "",
@@ -120,11 +127,14 @@ describe("initialAgentFormState", () => {
     expect(state).toEqual({
       allowedAgentIds: ["agent-2"],
       azureDeployment: "",
+      codeModeEnabled: true,
       description: "Plans work",
+      identityColor: "Auto",
       instructions: "Plan the work carefully.",
       isActive: "false",
       isFavorite: "true",
       maxSteps: "12",
+      metadataJson: {},
       modelSelection: "openai:gpt-5.4-mini",
       modelSettings: { temperature: 0.2, thinking: "high" },
       name: "Planner",
@@ -136,6 +146,16 @@ describe("initialAgentFormState", () => {
         send_email: "off",
       },
     })
+  })
+
+  it("restores a stored identity color", () => {
+    const state = initialAgentFormState(
+      { ...agent, metadata: { identity_color: 5, note: "keep" } },
+      toolCatalog
+    )
+
+    expect(state.identityColor).toBe("5")
+    expect(state.metadataJson).toEqual({ identity_color: 5, note: "keep" })
   })
 })
 
@@ -174,11 +194,13 @@ describe("buildAgentPayload", () => {
     expect(buildAgentPayload(validState(), "create")).toEqual({
       allowed_agent_ids: ["agent-2"],
       azure_deployment: null,
+      code_mode_enabled: false,
       description: "Helps plan launches.",
       instructions: "Use the playbook.",
       is_active: true,
       is_favorite: false,
       max_steps: 25,
+      metadata: null,
       model: "gpt-5.4-mini",
       model_provider: "openai",
       model_settings: { temperature: 0.1, thinking: "low" },
@@ -199,6 +221,20 @@ describe("buildAgentPayload", () => {
     expect(buildAgentPayload(validState(), "edit")).not.toHaveProperty("slug")
   })
 
+  it("stores a chosen identity color without dropping other metadata", () => {
+    expect(
+      buildAgentPayload(validState({ identityColor: "3", metadataJson: { note: "keep" } }), "edit")
+    ).toMatchObject({
+      metadata: { identity_color: 3, note: "keep" },
+    })
+    expect(
+      buildAgentPayload(
+        validState({ identityColor: "Auto", metadataJson: { identity_color: 3 } }),
+        "edit"
+      )
+    ).toMatchObject({ metadata: null })
+  })
+
   it("returns the first validation error string for invalid state", () => {
     expect(buildAgentPayload(validState({ name: "" }), "create")).toBe("Name is required.")
     expect(buildAgentPayload(validState({ maxSteps: "0" }), "create")).toBe(
@@ -213,6 +249,7 @@ describe("isAgentFormDirty", () => {
 
     expect(isAgentFormDirty(initial, initial)).toBe(false)
     expect(isAgentFormDirty({ ...initial, name: "Planner v2" }, initial)).toBe(true)
+    expect(isAgentFormDirty({ ...initial, codeModeEnabled: false }, initial)).toBe(true)
   })
 })
 

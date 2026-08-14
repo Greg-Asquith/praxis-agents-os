@@ -11,8 +11,10 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import set_session_tenant_context
 from models.agent_memories import AgentMemory
 from models.agent_run import AgentRun
+from models.ai_usage_event import AIUsageEvent
 from models.conversation import Conversation
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
 from services.agents.runtime.entity_references.domain import AgentReference
@@ -59,6 +61,7 @@ async def test_parent_delegates_to_child_run_and_receives_result(
 
     assert result.output == "parent final"
     async with committed_db_session_factory() as db:
+        await set_session_tenant_context(db, workspace_id=context.workspace_id)
         child_run = await db.scalar(
             select(AgentRun).where(AgentRun.parent_run_id == context.run_id)
         )
@@ -69,6 +72,13 @@ async def test_parent_delegates_to_child_run_and_receives_result(
         child_conversation = await db.get(Conversation, child_run.conversation_id)
         assert child_conversation is not None
         assert child_conversation.source == "delegated"
+        usage_events = (
+            await db.scalars(
+                select(AIUsageEvent).where(AIUsageEvent.run_id.in_([context.run_id, child_run.id]))
+            )
+        ).all()
+        assert {event.run_id for event in usage_events} == {context.run_id, child_run.id}
+        assert sum(event.requests for event in usage_events) == 4
     assert any("Delegate-only context" in request for request in child_requests)
 
 

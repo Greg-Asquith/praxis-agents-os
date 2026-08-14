@@ -10,10 +10,12 @@ import type {
 } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import type { ToolCatalogEntry } from "@/features/tools/types"
+import { agentIdentityColorIndex } from "@/lib/agent-identity"
 import type { FormValidationEntry } from "@/lib/forms"
 
 const DEFAULT_MODEL_SELECTION = "Default"
 export const NO_AGENT_SELECTION = "None"
+export const IDENTITY_COLOR_AUTO = "Auto"
 const THINKING_DEFAULT = "Default"
 
 export const THINKING_OPTIONS = [
@@ -64,11 +66,14 @@ type ThinkingSelection = (typeof THINKING_OPTIONS)[number]["value"]
 export type AgentFormState = {
   allowedAgentIds: string[]
   azureDeployment: string
+  codeModeEnabled: boolean
   description: string
+  identityColor: string
   instructions: string
   isActive: "true" | "false"
   isFavorite: "true" | "false"
   maxSteps: string
+  metadataJson: Record<string, unknown>
   modelSelection: string
   modelSettings: Record<string, unknown>
   name: string
@@ -102,11 +107,14 @@ export function initialAgentFormState(
   return {
     allowedAgentIds: agent?.allowed_agent_ids ?? [],
     azureDeployment: agent?.azure_deployment ?? "",
+    codeModeEnabled: agent?.code_mode_enabled ?? false,
     description: agent?.description ?? "",
+    identityColor: identityColorFromMetadata(agent?.metadata ?? null),
     instructions: agent?.instructions ?? "",
     isActive: agent?.is_active === false ? "false" : "true",
     isFavorite: agent?.is_favorite ? "true" : "false",
     maxSteps: String(agent?.max_steps ?? 20),
+    metadataJson: { ...(agent?.metadata ?? {}) },
     modelSelection: modelSelectionFromAgent(agent),
     modelSettings: { ...(agent?.model_settings ?? {}) },
     name: agent?.name ?? "",
@@ -178,11 +186,13 @@ export function buildAgentPayload(
   const basePayload = {
     allowed_agent_ids: state.allowedAgentIds,
     azure_deployment: modelSelection.azure_deployment,
+    code_mode_enabled: state.codeModeEnabled,
     description: optionalText(state.description),
     instructions,
     is_active: state.isActive === "true",
     is_favorite: state.isFavorite === "true",
     max_steps: maxSteps,
+    metadata: buildMetadataJson(state),
     model: modelSelection.model,
     model_provider: modelSelection.model_provider,
     model_settings: modelSettings,
@@ -242,10 +252,12 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.instructions !== initial.instructions ||
     current.modelSelection !== initial.modelSelection ||
     current.azureDeployment !== initial.azureDeployment ||
+    current.codeModeEnabled !== initial.codeModeEnabled ||
     current.maxSteps !== initial.maxSteps ||
     current.isActive !== initial.isActive ||
     current.isFavorite !== initial.isFavorite ||
     current.thinking !== initial.thinking ||
+    current.identityColor !== initial.identityColor ||
     !stringArraysEqual(current.allowedAgentIds, initial.allowedAgentIds) ||
     !stringArraysEqual(current.skillIds, initial.skillIds) ||
     !toolModesEqual(current.toolModes, initial.toolModes) ||
@@ -346,6 +358,23 @@ function buildToolPayload(toolModes: AgentFormState["toolModes"]) {
     tool_names: toolNames,
     tool_policies: Object.keys(toolPolicies).length > 0 ? toolPolicies : null,
   }
+}
+
+function identityColorFromMetadata(metadata: Record<string, unknown> | null): string {
+  const colorIndex = agentIdentityColorIndex(metadata)
+  return colorIndex === null ? IDENTITY_COLOR_AUTO : String(colorIndex + 1)
+}
+
+function buildMetadataJson(state: AgentFormState) {
+  const metadata = { ...state.metadataJson }
+
+  if (state.identityColor === IDENTITY_COLOR_AUTO) {
+    delete metadata["identity_color"]
+  } else {
+    metadata["identity_color"] = Number(state.identityColor)
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : null
 }
 
 function buildModelSettings(state: AgentFormState) {

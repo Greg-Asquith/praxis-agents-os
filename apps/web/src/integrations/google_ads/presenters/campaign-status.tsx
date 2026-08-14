@@ -54,7 +54,7 @@ function campaignArgs(value: unknown): Record<string, unknown> | null {
     value["campaign_ids"].length > 0 &&
     value["campaign_ids"].every(
       (item) =>
-        isRecord(item) && typeof item["external_id"] === "string" && item["external_id"].length > 0
+        isRecord(item) && typeof item["campaign_id"] === "string" && item["campaign_id"].length > 0
     ) &&
     (value["status"] === "ENABLED" || value["status"] === "PAUSED")
     ? value
@@ -62,36 +62,31 @@ function campaignArgs(value: unknown): Record<string, unknown> | null {
 }
 
 function campaignResult(value: unknown): CampaignStatusResult | null {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value["resource_names"]) ||
-    !value["resource_names"].every((item) => typeof item === "string") ||
-    !Array.isArray(value["campaign_errors"])
-  ) {
+  if (!isRecord(value) || !Array.isArray(value["campaigns"])) {
     return null
   }
   const errors: CampaignError[] = []
-  for (const item of value["campaign_errors"]) {
+  const succeededIds: string[] = []
+  for (const item of value["campaigns"]) {
     if (
       !isRecord(item) ||
       typeof item["campaign_id"] !== "string" ||
-      typeof item["message"] !== "string"
+      (item["outcome"] !== "updated" && item["outcome"] !== "failed")
     ) {
       return null
     }
-    errors.push({
-      campaignId: item["campaign_id"],
-      errorCode:
-        typeof item["error_code"] === "string"
-          ? item["error_code"]
-          : JSON.stringify(item["error_code"] ?? ""),
-      message: item["message"],
-    })
+    if (item["outcome"] === "updated") {
+      succeededIds.push(item["campaign_id"])
+    } else {
+      errors.push({
+        campaignId: item["campaign_id"],
+        errorCode: typeof item["error_code"] === "string" ? item["error_code"] : "",
+        message: typeof item["message"] === "string" ? item["message"] : "Update failed.",
+      })
+    }
   }
   return {
     errors,
-    succeededIds: value["resource_names"].map((resourceName) =>
-      resourceName.slice(resourceName.lastIndexOf("/") + 1)
-    ),
+    succeededIds,
   }
 }

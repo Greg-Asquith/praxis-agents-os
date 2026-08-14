@@ -8,6 +8,7 @@ import pytest
 
 from core.settings import settings
 from services.agents.models.domain import PROVIDER_GOOGLE, PROVIDER_OPENAI
+from services.ai_usage.domain import PURPOSE_EMBEDDING_KB_SEARCH
 from services.embeddings.domain import (
     EMBEDDING_PROVIDER_GOOGLE,
     EMBEDDING_PROVIDER_OPENAI,
@@ -53,5 +54,6 @@ async def test_non_truncatable_model_rejects_non_native_dimensions(
             None,  # type: ignore[arg-type] - validation fails before DB access
             ["text"],
             workspace_id=uuid4(),
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
             provider=FakeEmbeddingProvider(dimensions=512),
         )

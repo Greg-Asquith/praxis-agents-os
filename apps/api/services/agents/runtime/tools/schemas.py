@@ -112,6 +112,9 @@ class ToolPresentationEntry(BaseModel):
     provider: str
     label: str
     effect: str
+    effect_scope: str
+    egress: str
+    default_policy: str
     ui: ToolPresentationRead
 
     @classmethod
@@ -121,6 +124,9 @@ class ToolPresentationEntry(BaseModel):
             provider=definition.provider,
             label=definition.label,
             effect=definition.effect,
+            effect_scope=definition.effect_scope,
+            egress=definition.egress,
+            default_policy=definition.default_policy,
             ui=ToolPresentationRead.from_presentation(definition.presentation),
         )
 
@@ -139,6 +145,7 @@ class ToolCatalogEntry(BaseModel):
     effect: str
     effect_scope: str
     egress: str
+    code_eligible: bool
     default_policy: str
     supported_policies: list[str]
     defer_loading: bool
@@ -158,6 +165,7 @@ class ToolCatalogEntry(BaseModel):
             effect=definition.effect,
             effect_scope=definition.effect_scope,
             egress=definition.egress,
+            code_eligible=definition.code_eligible,
             default_policy=definition.default_policy,
             supported_policies=sorted(definition.allowed_policies()),
             defer_loading=definition.defer_loading,

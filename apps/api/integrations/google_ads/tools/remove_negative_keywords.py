@@ -33,7 +33,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.remove_negative_keywords import remove_negative_keywords
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsRemoveNegativeKeywordsOutput
 from .schemas.negative_keyword import NegativeKeywordRemovalEntry
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
@@ -74,6 +74,7 @@ async def google_ads_remove_negative_keywords(
     ) -> Any:
         reference = references[0] if references else negative_list
         pending_detail = _pending_operation_detail(
+            entry,
             reference,
             [keyword.model_dump() for keyword in normalized_keywords],
         )
@@ -81,19 +82,19 @@ async def google_ads_remove_negative_keywords(
         async def execute() -> Any:
             if len(references) != 1:
                 raise ModelRetry("Choose one negative keyword list.")
-            if not reference.external_id.isdigit():
+            if not reference.shared_set_id.isdigit():
                 raise ModelRetry("The selected negative keyword list reference is invalid.")
             client = await google_ads_client(ctx, entry)
             await verify_shared_sets(
                 client,
                 entry=entry,
-                shared_set_ids=(reference.external_id,),
+                shared_set_ids=(reference.shared_set_id,),
             )
             ledger = await remove_negative_keywords(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
-                shared_set_id=reference.external_id,
+                shared_set_id=reference.shared_set_id,
                 keywords=[keyword.model_dump() for keyword in normalized_keywords],
             )
             result = ledger.result()
@@ -128,17 +129,18 @@ async def google_ads_remove_negative_keywords(
 
 
 def _pending_operation_detail(
+    entry: ResolvedContextEntry,
     reference: GoogleAdsSharedSetReference,
     keywords: list[dict[str, str]],
 ) -> PendingIntegrationOperationDetail:
     return PendingIntegrationOperationDetail(
-        target=_operation_target(reference),
+        target=_operation_target(entry, reference),
         intent_groups=[
             IntegrationOperationIntentGroup(
-                key=f"shared-set:{reference.external_id}:remove-keywords",
+                key=f"shared-set:{reference.shared_set_id}:remove-keywords",
                 action="remove",
                 entity_type="negative_keyword",
-                external_id=reference.external_id,
+                external_id=reference.shared_set_id,
                 display_name=reference.label,
                 items=[IntegrationOperationIntent(fields=keyword) for keyword in keywords],
             )
@@ -147,13 +149,14 @@ def _pending_operation_detail(
 
 
 def _operation_target(
+    entry: ResolvedContextEntry,
     reference: GoogleAdsSharedSetReference,
 ) -> IntegrationOperationTarget:
     return IntegrationOperationTarget(
         entity_type=reference.entity_kind,
-        external_id=reference.external_id,
+        external_id=reference.shared_set_id,
         display_name=reference.label,
-        integration_resource_id=str(reference.integration_resource_id),
+        integration_resource_id=str(entry.integration_resource_id),
         attributes={"member_count": reference.member_count},
     )
 
@@ -164,6 +167,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Remove negative keywords from a selected Google Ads negative keyword list.",
     provider="google_ads",
     label="Remove Google Ads Negative Keywords",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
@@ -171,7 +175,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=False,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsRemoveNegativeKeywordsOutput,
     max_public_result_chars=MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,

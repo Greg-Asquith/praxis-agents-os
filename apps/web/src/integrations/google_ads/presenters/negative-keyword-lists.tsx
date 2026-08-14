@@ -53,39 +53,35 @@ function negativeKeywordListArgs(value: unknown): Record<string, unknown> | null
 }
 
 function negativeKeywordListResult(value: unknown): NegativeKeywordListResult | null {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value["created_names"]) ||
-    !value["created_names"].every((item) => typeof item === "string") ||
-    !Array.isArray(value["resource_names"]) ||
-    !value["resource_names"].every((item) => typeof item === "string") ||
-    !Array.isArray(value["skipped_existing"]) ||
-    !value["skipped_existing"].every((item) => typeof item === "string") ||
-    !Array.isArray(value["list_errors"])
-  ) {
+  if (!isRecord(value) || !Array.isArray(value["outcomes"])) {
     return null
   }
   const errors: NegativeKeywordListError[] = []
-  for (const item of value["list_errors"]) {
+  const createdNames: string[] = []
+  const skippedNames: string[] = []
+  for (const item of value["outcomes"]) {
     if (
       !isRecord(item) ||
       typeof item["name"] !== "string" ||
-      typeof item["message"] !== "string"
+      !["created", "already_exists", "failed"].includes(String(item["outcome"]))
     ) {
       return null
     }
-    errors.push({
-      errorCode:
-        typeof item["error_code"] === "string"
-          ? item["error_code"]
-          : JSON.stringify(item["error_code"] ?? ""),
-      message: item["message"],
-      name: item["name"],
-    })
+    if (item["outcome"] === "created") {
+      createdNames.push(item["name"])
+    } else if (item["outcome"] === "already_exists") {
+      skippedNames.push(item["name"])
+    } else {
+      errors.push({
+        errorCode: typeof item["error_code"] === "string" ? item["error_code"] : "",
+        message: typeof item["message"] === "string" ? item["message"] : "Creation failed.",
+        name: item["name"],
+      })
+    }
   }
   return {
-    createdNames: value["created_names"],
+    createdNames,
     errors,
-    skippedNames: value["skipped_existing"],
+    skippedNames,
   }
 }

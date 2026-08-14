@@ -4,10 +4,14 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
-class BigQueryTableSummary(BaseModel):
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class BigQueryTableSummary(_StrictModel):
     table: str
     table_type: str
     description: str | None = None
@@ -15,29 +19,35 @@ class BigQueryTableSummary(BaseModel):
     last_synced_at: datetime
 
 
-class BigQueryDatasetTables(BaseModel):
+class BigQueryDatasetTables(_StrictModel):
     dataset: str
     display_name: str
     tables: list[BigQueryTableSummary]
 
 
-class BigQueryListTablesOutput(BaseModel):
+class BigQueryListTablesOutput(_StrictModel):
     datasets: list[BigQueryDatasetTables]
 
 
-class BigQuerySchemaField(BaseModel):
+class BigQuerySchemaField(_StrictModel):
     name: str
     type: str
     mode: str
     description: str | None = None
 
 
-class BigQueryTableSchemaOutput(BaseModel):
+class BigQueryPartitioning(_StrictModel):
+    type: str | None = None
+    field: str | None = None
+    require_partition_filter: bool = False
+
+
+class BigQueryTableSchemaOutput(_StrictModel):
     table: str
     table_type: str
     description: str | None = None
     fields: list[BigQuerySchemaField]
-    partitioning: dict[str, object]
+    partitioning: BigQueryPartitioning
     clustering_fields: list[str]
     row_count: int | None = None
     size_bytes: int | None = None
@@ -45,7 +55,7 @@ class BigQueryTableSchemaOutput(BaseModel):
     requires_partition_filter: bool
 
 
-class BigQueryRunQueryOutput(BaseModel):
+class BigQueryRunQueryOutput(_StrictModel):
     rows: list[dict[str, str | None]]
     total_rows: int
     truncated: bool

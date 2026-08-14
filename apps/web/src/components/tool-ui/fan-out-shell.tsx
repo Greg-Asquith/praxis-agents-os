@@ -68,7 +68,7 @@ export function FanOutShell({
           externalLabel={externalLabel}
           formatContextValue={formatContextValue}
           heading={heading}
-          key={`${entry.connectionId}:${entry.externalId}`}
+          key={entry.renderKey}
         >
           {entry.status === "success" ? (
             children(entry, index)

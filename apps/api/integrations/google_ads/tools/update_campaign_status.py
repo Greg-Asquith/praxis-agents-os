@@ -33,7 +33,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.update_campaign_status import update_campaign_status
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsCampaignStatusOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
@@ -65,11 +65,11 @@ async def google_ads_update_campaign_status(
     ) -> Any:
         references_by_id: dict[str, GoogleAdsCampaignReference] = {}
         for reference in references:
-            references_by_id.setdefault(reference.external_id, reference)
+            references_by_id.setdefault(reference.campaign_id, reference)
         normalized_references = [
             references_by_id[campaign_id] for campaign_id in sorted(references_by_id)
         ]
-        normalized_ids = [reference.external_id for reference in normalized_references]
+        normalized_ids = [reference.campaign_id for reference in normalized_references]
         pending_detail = _pending_operation_detail(entry, normalized_references, status)
 
         async def execute() -> Any:
@@ -98,7 +98,7 @@ async def google_ads_update_campaign_status(
                 operation_detail=operation_detail,
             )
 
-        return await run_audited_integration_operation(
+        result = await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_update_campaign_status",
@@ -106,6 +106,7 @@ async def google_ads_update_campaign_status(
             execute=execute,
             pending_operation_detail=pending_detail,
         )
+        return _campaign_status_result(normalized_references, status, result)
 
     results = await run_context_targets(
         ctx,
@@ -132,7 +133,7 @@ def _pending_operation_detail(
                 items=[
                     IntegrationOperationIntent(
                         fields={
-                            "campaign_id": campaign.external_id,
+                            "campaign_id": campaign.campaign_id,
                             "campaign_name": campaign.label,
                         }
                     )
@@ -152,6 +153,35 @@ def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
     )
 
 
+def _campaign_status_result(
+    campaigns: list[GoogleAdsCampaignReference],
+    status: Literal["ENABLED", "PAUSED"],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    applied_by_id = {
+        _campaign_id_from_resource(resource_name): resource_name
+        for resource_name in result["resource_names"]
+    }
+    errors_by_id = {error["campaign_id"]: error for error in result["campaign_errors"]}
+    if set(applied_by_id) | set(errors_by_id) != {campaign.campaign_id for campaign in campaigns}:
+        raise ValueError("Google Ads returned contradictory campaign status accounting")
+    return {
+        "requested_status": status,
+        "campaigns": [
+            {
+                "campaign_id": campaign.campaign_id,
+                "campaign_name": campaign.label,
+                "requested_status": status,
+                "outcome": "updated" if campaign.campaign_id in applied_by_id else "failed",
+                "external_ref": applied_by_id.get(campaign.campaign_id),
+                "message": errors_by_id.get(campaign.campaign_id, {}).get("message"),
+                "error_code": errors_by_id.get(campaign.campaign_id, {}).get("error_code"),
+            }
+            for campaign in campaigns
+        ],
+    }
+
+
 def _campaign_id_from_resource(resource_name: str) -> str:
     return resource_name.rsplit("/", 1)[-1]
 
@@ -162,6 +192,7 @@ DEFINITION = RuntimeToolDefinition(
     description="Pause or enable named campaigns in selected Google Ads accounts.",
     provider="google_ads",
     label="Update Google Ads Campaign Status",
+    code_eligible=True,
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
@@ -169,7 +200,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=False,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsCampaignStatusOutput,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
     presentation=ToolPresentation(
