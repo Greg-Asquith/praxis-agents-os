@@ -127,6 +127,76 @@ async def test_google_ads_malformed_mutation_response_is_ambiguous() -> None:
     assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
 
 
+async def test_google_ads_query_rejection_preserves_actionable_provider_message() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            400,
+            json={
+                "error": {
+                    "code": 400,
+                    "message": "Request contains an invalid argument.",
+                    "status": "INVALID_ARGUMENT",
+                    "details": [
+                        {
+                            "@type": (
+                                "type.googleapis.com/google.ads.googleads.v24.errors."
+                                "GoogleAdsFailure"
+                            ),
+                            "errors": [
+                                {
+                                    "errorCode": {"queryError": "UNRECOGNIZED_FIELD"},
+                                    "message": ("Unrecognized field in the query: 'keyword.text'."),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(
+            _static_token,
+            developer_token=SecretStr("developer-secret"),
+            client=http_client,
+        )
+        with pytest.raises(IntegrationValidationError) as exc_info:
+            await client.post(
+                "customers/333/googleAds:searchStream",
+                operation="run_report",
+                policy=IntegrationRequestPolicy.READ,
+                json={"query": "SELECT keyword.text FROM campaign_criterion"},
+            )
+
+    assert exc_info.value.user_message == (
+        "Google Ads rejected the query: Unrecognized field in the query: 'keyword.text'."
+    )
+
+
+async def test_google_ads_query_rejection_has_actionable_fallback() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(400, content=b"not-json", request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(
+            _static_token,
+            developer_token=SecretStr("developer-secret"),
+            client=http_client,
+        )
+        with pytest.raises(IntegrationValidationError) as exc_info:
+            await client.post(
+                "customers/333/googleAds:searchStream",
+                operation="run_report",
+                policy=IntegrationRequestPolicy.READ,
+                json={"query": "SELECT keyword.text FROM campaign_criterion"},
+            )
+
+    assert exc_info.value.user_message == (
+        "Google Ads rejected the query. Check that its fields and filters are valid GAQL."
+    )
+
+
 async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:
     client = _DiscoveryClient()
     resources = await discover_google_ads_resources(

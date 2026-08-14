@@ -16,6 +16,8 @@ import {
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
+import { useToolLabels } from "@/features/tools/use-tool-labels"
+import type { RunInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import type {
   AgentRun,
   AgentRunResumeDecision,
@@ -40,6 +42,7 @@ import {
   normalizeToolArgs,
   toolActivityIdentity,
   type ConversationRenderItem,
+  type LiveToolResult,
   type PendingUserMessage,
   type ToolActivity,
 } from "@/features/conversations/message-parts"
@@ -49,7 +52,7 @@ type MessageListProps = {
   messages: ConversationMessage[]
   activeRun: AgentRun | null
   approvalError: string | null
-  approvalExpiryMessage: string | null
+  runInterruption: RunInterruptionOutcome | null
   approvals: PendingToolApproval[]
   assistantAgentId: string
   assistantLabel: string
@@ -73,7 +76,7 @@ export function MessageList({
   messages,
   activeRun,
   approvalError,
-  approvalExpiryMessage,
+  runInterruption,
   approvals,
   assistantAgentId,
   pendingDelegations,
@@ -91,18 +94,21 @@ export function MessageList({
   isStreaming,
   onApprovalSubmit,
 }: MessageListProps) {
+  const toolLabel = useToolLabels()
   const shouldShowStream = streamConversationId === conversationId
   const liveResultsByCallIdentity = useMemo(() => {
-    const results = new Map<string, { result: unknown }>()
+    const results = new Map<string, LiveToolResult>()
     if (!shouldShowStream) {
       return results
     }
     for (const toolCall of streamToolCalls) {
-      if (toolCall.status === "completed") {
-        results.set(toolActivityIdentity(streamRunId, toolCall.tool_call_id), {
-          result: toolCall.result,
-        })
+      if (toolCall.status === "awaiting_approval") {
+        continue
       }
+      results.set(toolActivityIdentity(streamRunId, toolCall.tool_call_id), {
+        result: toolCall.result,
+        status: toolCall.status,
+      })
     }
     return results
   }, [shouldShowStream, streamRunId, streamToolCalls])
@@ -181,6 +187,7 @@ export function MessageList({
     }
     const renderedAwaitingIds = new Set(
       [...parsedMessages.flatMap((message) => message.toolActivities), ...liveToolActivities]
+        .flatMap((activity) => [activity, ...(activity.script?.children ?? [])])
         .filter((activity) => activity.status === "awaiting_approval")
         .map((activity) => toolActivityIdentity(activity.agentRunId, activity.id))
     )
@@ -269,11 +276,26 @@ export function MessageList({
             <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
           )}
 
-          {approvalExpiryMessage && (
+          {runInterruption && (
             <div className="w-full px-1 py-2">
               <Alert variant="destructive">
-                <AlertTitle>Approval Expired</AlertTitle>
-                <AlertDescription>{approvalExpiryMessage}</AlertDescription>
+                <AlertTitle>{runInterruption.title}</AlertTitle>
+                <AlertDescription>
+                  <p>{runInterruption.message}</p>
+                  {runInterruption.completedActions.length > 0 ? (
+                    <div className="mt-2">
+                      <p className="font-medium">Completed Actions</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {runInterruption.completedActions.map((action) => (
+                          <li key={action.id}>{toolLabel(action.toolName)}</li>
+                        ))}
+                      </ul>
+                      {runInterruption.actionsTruncated ? (
+                        <p className="mt-1">More completed actions are recorded in the run.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </AlertDescription>
               </Alert>
             </div>
           )}
@@ -333,6 +355,8 @@ function orphanApprovalActivity(
     status: "awaiting_approval",
     name: approval.name,
     args,
+    ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
+    ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
   }
   const delegate = approval.delegation
     ? delegationDetailsForPendingApproval(approval.delegation, args)

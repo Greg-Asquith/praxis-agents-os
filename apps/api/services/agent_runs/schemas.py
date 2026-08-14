@@ -60,6 +60,32 @@ class PendingToolApprovalRead(BaseModel):
     args: Any
     replay_args: Any | None = None
     delegation: PendingDelegatedApprovalRead | None = None
+    derived_from_untrusted: bool = False
+    taint_sources: list[dict[str, str]] = Field(default_factory=list)
+
+
+class NestedTraceEntryRead(BaseModel):
+    tool_call_id: str
+    tool_name: str
+    summary: str
+    status: Literal["succeeded", "failed", "pending", "denied"]
+    result_excerpt: str | None = None
+    position: int = Field(ge=1)
+
+
+class PendingWorkflowToolApprovalRead(PendingToolApprovalRead):
+    parent_tool_call_id: str
+
+
+class PendingWorkflowStateRead(BaseModel):
+    outer_tool_call_id: str
+    code: str
+    reason: str | None = None
+    status: Literal["suspended"] = "suspended"
+    nested_trace: list[NestedTraceEntryRead]
+    trace_truncated: bool
+    pending: PendingWorkflowToolApprovalRead
+    recovery: None = None
 
 
 class AgentRunApprovalStateResponse(BaseModel):
@@ -67,6 +93,7 @@ class AgentRunApprovalStateResponse(BaseModel):
     conversation_id: UUID
     approvals: list[PendingToolApprovalRead]
     delegations: list[PendingDelegatedApprovalRead] = Field(default_factory=list)
+    workflow: PendingWorkflowStateRead | None = None
 
 
 class PendingApprovalRunRead(BaseModel):

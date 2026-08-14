@@ -54,6 +54,8 @@ async def record_tool_invocation_audit_event(
     result_truncated: bool | None = None,
     result_original_chars: int | None = None,
     parent_tool_call_id: str | None = None,
+    derived_from_untrusted: bool | None = None,
+    taint_sources: list[dict[str, str]] | None = None,
 ) -> None:
     """Record one tool invocation in an independent committed transaction."""
     try:
@@ -101,6 +103,14 @@ async def record_tool_invocation_audit_event(
                         **(
                             {"parent_tool_call_id": parent_tool_call_id}
                             if parent_tool_call_id is not None
+                            else {}
+                        ),
+                        **(
+                            {
+                                "derived_from_untrusted": derived_from_untrusted,
+                                "taint_sources": taint_sources or [],
+                            }
+                            if derived_from_untrusted is not None
                             else {}
                         ),
                         **(

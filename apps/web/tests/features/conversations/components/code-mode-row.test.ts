@@ -140,6 +140,30 @@ describe("CodeModeRow", () => {
     expect(html).toContain("Show all 25 tool calls")
     expect(html.match(/content-visibility:auto/g)).toHaveLength(13)
   })
+
+  it("summarizes a paused workflow as waiting for review, never completed", () => {
+    const html = renderWorkflow(
+      workflow([child(1), child(2, "awaiting_approval")]),
+      false,
+      false,
+      "workflow-1:2"
+    )
+
+    expect(html).toContain("Waiting for your review")
+    expect(html).not.toContain("Completed with")
+  })
+
+  it("warns when a pending workflow action was derived from untrusted data", () => {
+    const pending = child(1, "awaiting_approval")
+    pending.derivedFromUntrusted = true
+    pending.taintSources = [{ source_kind: "gmail_message", source_ref: "message-1" }]
+
+    const html = renderWorkflow(workflow([pending]), false, false, pending.id)
+
+    expect(html).toContain("Based on external data")
+    expect(html).toContain("message-1")
+    expect(html).toContain("file-1")
+  })
 })
 
 function workflow(children: ToolActivity[], overrides: Partial<ToolActivity> = {}): ToolActivity {

@@ -8,10 +8,9 @@ from dataclasses import replace
 from typing import Annotated
 
 from pydantic import StringConstraints
-from pydantic_ai import ModelRetry, RunContext, Tool, ToolDefinition, ToolReturn
+from pydantic_ai import ModelRetry, RunContext, Tool, ToolReturn
 from pydantic_monty import MontyError
 
-from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
 from services.agents.runtime.code_mode.bridge import (
     CodeModeBoundaryError,
     execute_code_mode_workflow,
@@ -81,9 +80,6 @@ def build_run_workflow_tool(catalog: CodeModeCatalog) -> Tool[RuntimeDeps]:
         code: str,
         reason: _REASON | None = None,
     ) -> ToolReturn:
-        del reason
-        if ctx.deps.run.trigger != RUN_TRIGGER_INTERACTIVE:
-            raise ModelRetry("Code mode is available only in interactive conversations.")
         if ctx.tool_call_id is None:
             raise ModelRetry("The workflow call is missing its runtime identity.")
         _stamp_wrapped_catalog(ctx, catalog)
@@ -93,6 +89,7 @@ def build_run_workflow_tool(catalog: CodeModeCatalog) -> Tool[RuntimeDeps]:
                 wrapped_toolset=catalog.wrapped_toolset,
                 outer_tool_call_id=ctx.tool_call_id,
                 code=code,
+                reason=reason,
             )
         except (CodeModeBoundaryError, MontyError, TimeoutError) as exc:
             raise ModelRetry(f"The sandboxed workflow failed: {exc}") from exc
@@ -102,19 +99,7 @@ def build_run_workflow_tool(catalog: CodeModeCatalog) -> Tool[RuntimeDeps]:
         function=run_workflow,
         description=catalog.tool_description,
     )
-    tool = definition.to_pydantic_tool()
-    tool.prepare = _prepare_for_interactive_run
-    return tool
-
-
-def _prepare_for_interactive_run(
-    ctx: RunContext[RuntimeDeps],
-    tool_definition: ToolDefinition,
-) -> ToolDefinition | None:
-    """Hide code-mode workflows from unattended principals in v1."""
-    if ctx.deps.run.trigger != RUN_TRIGGER_INTERACTIVE:
-        return None
-    return tool_definition
+    return definition.to_pydantic_tool()
 
 
 def _stamp_wrapped_catalog(ctx: RunContext[RuntimeDeps], catalog: CodeModeCatalog) -> None:

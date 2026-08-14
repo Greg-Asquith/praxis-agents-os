@@ -78,6 +78,9 @@ The core platform is wired end to end (API, worker, and UI):
   updates, first-party conversation cards, workspace list/detail/version
   management, append-only edit and restore flows, and expiring, revocable
   anonymous share links served cookie-free behind a self-contained CSP.
+- Code Mode: agents can run sandboxed multi-tool scripts whose nested tool
+  calls go through the same approval, audit, and provenance rules, pausing
+  durably for mid-workflow approvals and resuming across restarts.
 - Operations: agent schedules with a leased background worker, a generic jobs
   worker, audit and security event viewers, rotatable application encryption
   with an old-key removal proof, and an LLM model catalog.
@@ -413,9 +416,9 @@ for every production deployment.
 
 ## Project Direction
 
-The core platform is in place. Current work is focused on what agents can do
-next: sandboxed code execution (Code Mode) and user-developed apps that live
-inside Praxis under the same identity, approval, and audit boundaries.
+The core platform is in place, including sandboxed code execution (Code Mode).
+Current work is focused on what agents can do next: user-developed apps that
+live inside Praxis under the same identity, approval, and audit boundaries.
 
 ## Contributing
 

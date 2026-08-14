@@ -44,6 +44,28 @@ def test_openai_price_cuts_are_effective_from_july_30() -> None:
     ) == (Decimal("0.2"), Decimal("0.02"), Decimal("0.25"), Decimal("1.2"))
 
 
+def test_gemini_3_7_flash_introductory_pricing_expires_in_2027() -> None:
+    before_release = find_price("google", "gemini-3.7-flash", date(2026, 8, 12))
+    introductory = find_price("google", "gemini-3.7-flash", date(2026, 8, 13))
+    standard = find_price("google", "gemini-3.7-flash", date(2027, 1, 1))
+
+    assert before_release is None
+    assert introductory is not None
+    assert (
+        introductory.input_usd_per_mtok,
+        introductory.cache_read_usd_per_mtok,
+        introductory.cache_write_usd_per_mtok,
+        introductory.output_usd_per_mtok,
+    ) == (Decimal("0.75"), Decimal("0.075"), Decimal("0.75"), Decimal("3.75"))
+    assert standard is not None
+    assert (
+        standard.input_usd_per_mtok,
+        standard.cache_read_usd_per_mtok,
+        standard.cache_write_usd_per_mtok,
+        standard.output_usd_per_mtok,
+    ) == (Decimal("1.5"), Decimal("0.15"), Decimal("1.5"), Decimal("7.5"))
+
+
 def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
     assert find_price("azure", "customer-deployment", date(2026, 8, 12)) is None
     assert find_price("openai", "gpt-5.6-sol", date(2026, 7, 8)) is None

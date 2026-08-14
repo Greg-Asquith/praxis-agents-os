@@ -53,9 +53,10 @@ def build_suspended_run_metadata(
 
 
 def clear_suspended_run_metadata(run: AgentRun) -> dict[str, Any] | None:
-    """Return run metadata with approval state removed."""
+    """Return run metadata with every approval resume artifact removed."""
     metadata = dict(run.metadata_json or {})
     metadata.pop(APPROVAL_STATE_METADATA_KEY, None)
+    metadata.pop("code_mode_state", None)
     return metadata or None
 
 

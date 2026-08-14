@@ -94,9 +94,11 @@ per-agent `tool_policies`; this section is the policy law:
   `run_workflow` tool has no side effect; every nested call independently
   retains its declared effect and egress, active membership and role check,
   run-envelope verdict, approval policy, output contract, bounds, and audit
-  record through the same dispatch choke point as a direct call. Plan 110
-  exposes only eligible auto-read stubs; gated and write tools remain direct
-  until durable nested approvals land. *(enforced)*
+  record through the same dispatch choke point as a direct call. A nested
+  approval carries the same staged-content, expiry, and audit treatment as a
+  direct call's approval. Eligible gated and write tools may therefore be
+  exposed as workflow stubs; every decision remains scoped to one nested call
+  and its validated effective arguments. *(enforced)*
 - Anything that **spends money** (e.g. Google Ads mutations) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. *(enforced)*

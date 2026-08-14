@@ -73,7 +73,19 @@ export function buildLiveToolActivities(
   }
 
   for (const approval of approvals) {
-    if (activities.some((activity) => activity.id === approval.tool_call_id)) {
+    const existingIndex = activityIndexesById.get(approval.tool_call_id)
+    if (existingIndex !== undefined) {
+      const existing = activities[existingIndex]
+      if (
+        existing &&
+        (approval.derived_from_untrusted === true || approval.taint_sources !== undefined)
+      ) {
+        activities[existingIndex] = {
+          ...existing,
+          ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
+          ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
+        }
+      }
       continue
     }
     const args = normalizeToolArgs(approval.args)
@@ -84,6 +96,8 @@ export function buildLiveToolActivities(
       status: "awaiting_approval",
       name: approval.name,
       args,
+      ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
+      ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
     }
     const delegate = delegationDetailsForToolActivity(approval.name, args)
     if (delegate) {

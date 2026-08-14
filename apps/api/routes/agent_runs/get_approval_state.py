@@ -14,7 +14,7 @@ from services.agent_runs.schemas import AgentRunApprovalStateResponse
 router = APIRouter()
 
 
-@router.get("/{run_id}/approval-state")
+@router.get("/{run_id}/approval-state", response_model_exclude_none=True)
 async def get_approval_state(
     db: AsyncDbSessionDep,
     actor: CurrentUserDep,

@@ -85,7 +85,7 @@ async def reap_abandoned_runs(
             db,
             run,
             error_code=RUN_ABANDONED_ERROR_CODE,
-            error_message=_abandoned_message(run),
+            error_message=_abandoned_message(run, now_utc=now_utc),
         )
         failed_run_ids.append(run.id)
 
@@ -129,9 +129,12 @@ def _abandoned_condition(
     )
 
 
-def _abandoned_message(run: AgentRun) -> str:
-    if run.lease_expires_at is not None:
-        return f"Agent run lease expired at {run.lease_expires_at.isoformat()}"
-    if run.status == RUN_STATUS_PENDING:
+def _abandoned_message(run: AgentRun, *, now_utc: datetime) -> str:
+    # Only blame the lease when it actually lapsed; a fresh lease means the
+    # run matched a duration deadline instead.
+    lease = normalize_utc_datetime(run.lease_expires_at, field="lease_expires_at")
+    if lease is not None and lease <= now_utc:
+        return f"Agent run lease expired at {lease.isoformat()}"
+    if run.status == RUN_STATUS_PENDING and run.lease_expires_at is None:
         return "Agent run stayed pending beyond the allowed grace period"
     return "Agent run exceeded the allowed maximum duration"

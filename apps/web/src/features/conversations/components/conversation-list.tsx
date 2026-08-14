@@ -1,23 +1,26 @@
 // apps/web/src/features/conversations/components/conversation-list.tsx
 
-import type { ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import {
   CalendarClockIcon,
-  ClockIcon,
+  Clock3Icon,
   CornerDownRightIcon,
   MessageSquareTextIcon,
   WebhookIcon,
 } from "lucide-react"
 
 import { EmptyState } from "@/components/ui/empty-state"
+import { useAgentsQuery } from "@/features/agents/api/list-agents"
+import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
 import { conversationAgentLabel } from "@/features/conversations/format"
 import type { Conversation } from "@/features/conversations/types"
-import { formatDateTime } from "@/lib/format"
+import { relativeDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type ConversationListProps = {
+  className?: string
   conversations: Conversation[]
   emptyState?: ReactNode
   selectedConversationId?: string | null
@@ -25,11 +28,18 @@ type ConversationListProps = {
 }
 
 export function ConversationList({
+  className,
   conversations,
   emptyState,
   selectedConversationId,
   showRunStatus = false,
 }: ConversationListProps) {
+  const { data: agentsData } = useAgentsQuery({ includeInactive: true, limit: 100 })
+  const agentsById = useMemo(
+    () => new Map(agentsData.agents.map((agent) => [agent.id, agent])),
+    [agentsData.agents]
+  )
+
   if (conversations.length === 0) {
     return (
       emptyState ?? (
@@ -44,7 +54,7 @@ export function ConversationList({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className={cn("grid gap-1", className)}>
       {conversations.map((conversation) => {
         const isSelected = conversation.id === selectedConversationId
 
@@ -54,27 +64,36 @@ export function ConversationList({
             to="/conversations/$conversationId"
             params={{ conversationId: conversation.id }}
             className={cn(
-              "hover:bg-muted flex min-w-0 flex-col gap-2 rounded-lg border border-transparent px-3 py-2 text-left transition-colors",
+              "hover:bg-muted flex min-w-0 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left transition-colors",
               isSelected && "bg-muted border-border"
             )}
           >
-            <div className="flex min-w-0 flex-col justify-between gap-2 md:flex-row md:items-start">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {conversation.title ?? "Untitled conversation"}
-                </p>
-                <p className="text-muted-foreground truncate text-xs">
-                  {conversationAgentLabel(conversation)}
-                </p>
-              </div>
-              <ConversationBadges
-                conversation={conversation}
-                runStatus={showRunStatus ? conversation.active_run_status : null}
-              />
-            </div>
-            <div className="text-muted-foreground flex items-center gap-1 text-xs">
-              <ClockIcon aria-hidden="true" className="size-3" />
-              <span>{formatDateTime(conversation.last_message_at ?? conversation.updated_at)}</span>
+            <AgentIdentityIcon
+              agentId={conversation.active_agent_id ?? conversation.id}
+              decorative
+              metadata={
+                conversation.active_agent_id
+                  ? agentsById.get(conversation.active_agent_id)?.metadata
+                  : null
+              }
+              name={conversationAgentLabel(conversation)}
+              size="md"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">
+                {conversation.title ?? "Untitled conversation"}
+              </span>
+              <span className="text-muted-foreground block truncate text-xs">
+                {conversationAgentLabel(conversation)}
+              </span>
+            </span>
+            <ConversationBadges
+              conversation={conversation}
+              runStatus={showRunStatus ? conversation.active_run_status : null}
+            />
+            <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+              <Clock3Icon aria-hidden="true" className="size-3" />
+              {relativeDateTime(conversation.last_message_at ?? conversation.updated_at)}
               {conversation.source === "scheduled" ? (
                 <>
                   <CalendarClockIcon aria-hidden="true" className="ml-1 size-3" />
@@ -93,7 +112,7 @@ export function ConversationList({
                   <span className="sr-only">Triggered by an event</span>
                 </>
               ) : null}
-            </div>
+            </span>
           </Link>
         )
       })}

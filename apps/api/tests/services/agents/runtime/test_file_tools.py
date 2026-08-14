@@ -41,6 +41,7 @@ from models.files import File, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
+from services.agents.runtime.code_mode.approval import build_code_mode_approval_metadata
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.envelope import RunEnvelope
@@ -160,6 +161,52 @@ async def test_stages_write_file_approval_content_without_persisting_body(
         )
         == "sensitive draft body"
     )
+
+
+async def test_stages_nested_code_mode_write_content_in_trusted_metadata(
+    local_storage_settings: None,
+) -> None:
+    workspace_id = uuid4()
+    run_id = uuid4()
+    nested = ToolCallPart(
+        tool_name="write_file",
+        tool_call_id="workflow-call:1",
+        args={"name": "nested.md", "content": "nested sensitive body"},
+    )
+    outer = ToolCallPart(
+        tool_name="run_workflow",
+        tool_call_id="workflow-call",
+        args={"code": "await write_file(...)"},
+    )
+    staged = await stage_write_file_approval_content(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        new_messages=[ModelResponse(parts=[outer])],
+        all_messages=[ModelResponse(parts=[outer])],
+        deferred_tool_requests=DeferredToolRequests(
+            approvals=[outer],
+            metadata={
+                outer.tool_call_id: build_code_mode_approval_metadata(
+                    outer_tool_call_id=outer.tool_call_id,
+                    nested_call=nested,
+                    reason="Review the nested write.",
+                )
+            },
+        ),
+    )
+
+    metadata = staged.deferred_tool_requests.metadata[outer.tool_call_id]
+    assert "content" not in metadata["nested_args"]
+    content_ref = metadata["nested_args"][WRITE_FILE_CONTENT_REF_ARG]
+    assert (
+        await resolve_staged_write_content(
+            workspace_id=workspace_id,
+            run_id=run_id,
+            content_ref=content_ref,
+        )
+        == "nested sensitive body"
+    )
+    assert metadata["display_args"]["content"] == "[staged for approval; content omitted]"
 
 
 async def test_rejects_invalid_staged_write_content_ref() -> None:

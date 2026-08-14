@@ -180,6 +180,10 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
 ) -> None:
     now = datetime.now(UTC)
     expired = await _park_approval(db_session, now=now, age_days=8)
+    expired.run.metadata_json = {
+        **(expired.run.metadata_json or {}),
+        "code_mode_state": {"snapshot_b64": "opaque"},
+    }
     surviving = await _park_approval(
         db_session,
         now=now,
@@ -188,6 +192,8 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
         workspace=expired.workspace,
         agent=expired.agent,
     )
+    expired.run.updated_at = now - timedelta(days=8)
+    await db_session.flush()
 
     result = await sweep_expired_agent_run_approvals(
         db_session,
@@ -204,6 +210,7 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
     assert expired.run.completion_json == {"error_code": APPROVAL_EXPIRED_ERROR_CODE}
     assert "after 7 days" in (expired.run.error_message or "")
     assert APPROVAL_STATE_METADATA_KEY not in (expired.run.metadata_json or {})
+    assert "code_mode_state" not in (expired.run.metadata_json or {})
     assert surviving.run.status == "awaiting_approval"
     pending = await list_pending_agent_run_approvals(
         db_session,

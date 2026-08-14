@@ -332,6 +332,39 @@ describe("parseConversationMessages", () => {
     })
   })
 
+  it("renders a workflow call the run never answered as a stopped workflow card", () => {
+    const dangling = [
+      message(
+        "message-1",
+        "assistant",
+        1,
+        [
+          {
+            part_kind: "tool-call",
+            tool_call_id: "workflow-1",
+            tool_name: "run_workflow",
+            args: { code: "r = await tool()", reason: "Adding keywords" },
+          },
+        ],
+        { agent_run_id: "run-1" }
+      ),
+    ]
+
+    for (const activeRun of [null, run("run-1", "failed")]) {
+      const parsed = parseConversationMessages(dangling, activeRun)
+      expect(parsed[0]?.toolActivities[0]).toMatchObject({
+        name: "run_workflow",
+        status: "failed",
+        script: {
+          children: [],
+          code: "r = await tool()",
+          reason: "Adding keywords",
+          status: "failed",
+        },
+      })
+    }
+  })
+
   it("rebuilds a suspended workflow from the typed approval-state contract fixture", () => {
     const parsed = parseConversationMessages(
       [
@@ -364,10 +397,21 @@ describe("parseConversationMessages", () => {
             tool_call_id: "workflow-1:1",
             tool_name: "check_report",
           },
+          {
+            position: 2,
+            result_excerpt: null,
+            status: "pending",
+            summary: "Send email",
+            tool_call_id: "workflow-1:2",
+            tool_name: "send_email",
+          },
         ],
         outer_tool_call_id: "workflow-1",
         pending: {
           args: { subject: "Campaign update" },
+          replay_args: { subject: "Campaign update" },
+          derived_from_untrusted: true,
+          taint_sources: [{ source_kind: "gmail_message", source_ref: "message-1" }],
           name: "send_email",
           parent_tool_call_id: "workflow-1",
           tool_call_id: "workflow-1:2",
@@ -393,6 +437,8 @@ describe("parseConversationMessages", () => {
             id: "workflow-1:2",
             name: "send_email",
             status: "awaiting_approval",
+            derivedFromUntrusted: true,
+            taintSources: [{ source_kind: "gmail_message", source_ref: "message-1" }],
           },
         ],
       },
@@ -501,6 +547,59 @@ describe("parseConversationMessages", () => {
         reason: "Share the update",
       },
     })
+  })
+
+  it("advances an approved workflow child from live stream progress", () => {
+    const pendingWorkflow = {
+      code: "await send_email(subject='Update')",
+      nested_trace: [],
+      outer_tool_call_id: "workflow-1",
+      pending: {
+        args: { subject: "Update" },
+        name: "send_email",
+        parent_tool_call_id: "workflow-1",
+        tool_call_id: "workflow-1:1",
+      },
+      reason: "Share the update",
+      recovery: null,
+      status: "suspended" as const,
+      trace_truncated: false,
+    }
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              args: { code: "await send_email(subject='Update')" },
+              part_kind: "tool-call",
+              tool_call_id: "workflow-1",
+              tool_name: "run_workflow",
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
+      ],
+      run("run-1", "awaiting_approval"),
+      [],
+      new Map([
+        [
+          toolActivityIdentity("run-1", "workflow-1:1"),
+          { result: { ok: true }, status: "completed" as const },
+        ],
+      ]),
+      pendingWorkflow
+    )
+
+    const workflow = parsed[0]?.toolActivities[0]
+    expect(workflow?.script?.children).toMatchObject([
+      { id: "workflow-1:1", status: "completed", result: { ok: true } },
+    ])
+    expect(workflow?.script?.children.some((child) => child.status === "awaiting_approval")).toBe(
+      false
+    )
   })
 
   it("preserves capability-load metadata for skill activation rows", () => {
@@ -793,7 +892,12 @@ describe("parseConversationMessages", () => {
       ],
       run("run-1", "running"),
       [],
-      new Map([[toolActivityIdentity("run-1", "tool-call-1"), { result: { results: [] } }]])
+      new Map([
+        [
+          toolActivityIdentity("run-1", "tool-call-1"),
+          { result: { results: [] }, status: "completed" as const },
+        ],
+      ])
     )
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
@@ -823,7 +927,12 @@ describe("parseConversationMessages", () => {
       ],
       run("run-1", "running"),
       [],
-      new Map([[toolActivityIdentity("run-1", "other-call"), { result: "done" }]])
+      new Map([
+        [
+          toolActivityIdentity("run-1", "other-call"),
+          { result: "done", status: "completed" as const },
+        ],
+      ])
     )
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
@@ -869,7 +978,7 @@ describe("parseConversationMessages", () => {
       new Map([
         [
           toolActivityIdentity("run-active", "reused-call"),
-          { result: { answer: "active result" } },
+          { result: { answer: "active result" }, status: "completed" as const },
         ],
       ])
     )

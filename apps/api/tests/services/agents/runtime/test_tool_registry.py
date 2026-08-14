@@ -1343,7 +1343,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     ]
 
 
-def test_code_mode_replaces_only_eligible_auto_reads_with_workflow_stubs(
+def test_code_mode_replaces_every_eligible_non_deferred_tool_with_workflow_stubs(
     cleanup_test_tools,
 ) -> None:
     @runtime_tool(
@@ -1381,9 +1381,10 @@ def test_code_mode_replaces_only_eligible_auto_reads_with_workflow_stubs(
     workflow = next(tool for tool in tools if tool.name == "run_workflow")
 
     assert "test_code_read" not in names
-    assert {"test_code_write", "test_direct_read", "run_workflow"}.issubset(names)
+    assert {"test_direct_read", "run_workflow"}.issubset(names)
+    assert "test_code_write" not in names
     assert "async def test_code_read(*, query: str)" in workflow.description
-    assert "async def test_code_write" not in workflow.description
+    assert "async def test_code_write" in workflow.description
     assert "async def test_direct_read" not in workflow.description
     assert workflow.requires_approval is False
     assert workflow.max_retries == 1
@@ -1422,7 +1423,7 @@ def test_code_mode_flag_off_preserves_direct_mounting(cleanup_test_tools) -> Non
     assert "run_workflow" not in names
 
 
-def test_code_mode_keeps_approval_policy_and_deferred_tools_direct(
+def test_code_mode_wraps_approval_policy_but_keeps_deferred_tools_direct(
     cleanup_test_tools,
 ) -> None:
     @runtime_tool(
@@ -1451,9 +1452,9 @@ def test_code_mode_keeps_approval_policy_and_deferred_tools_direct(
     )
 
     by_name = {tool.name: tool for tool in tools}
-    assert by_name["test_approval_read"].requires_approval is True
+    assert "test_approval_read" not in by_name
     assert by_name["test_deferred_read"].defer_loading is True
-    assert "async def test_approval_read" not in by_name["run_workflow"].description
+    assert "async def test_approval_read" in by_name["run_workflow"].description
     assert "async def test_deferred_read" not in by_name["run_workflow"].description
 
 
@@ -1522,13 +1523,19 @@ def test_code_mode_applies_integration_context_filter_before_both_mount_paths(
         code_mode_enabled=True,
     )
     without_context = build_runtime_tools(agent, active_context=_ActiveContext(False))
-    with_context = build_runtime_tools(agent, active_context=_ActiveContext(True))
+    wrapped_tool_names: list[str] = []
+    with_context = build_runtime_tools(
+        agent,
+        active_context=_ActiveContext(True),
+        wrapped_tool_names=wrapped_tool_names,
+    )
 
     absent_workflow = next(tool for tool in without_context if tool.name == "run_workflow")
     present_workflow = next(tool for tool in with_context if tool.name == "run_workflow")
     assert "test_context_code_read" not in absent_workflow.description
     assert "test_context_direct_read" not in {tool.name for tool in without_context}
     assert "test_context_code_read" in present_workflow.description
+    assert "test_context_code_read" in wrapped_tool_names
     assert "test_context_direct_read" in {tool.name for tool in with_context}
 
 

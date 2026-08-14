@@ -125,6 +125,13 @@ export type PendingToolApproval = {
   args: unknown
   replay_args?: unknown
   delegation?: PendingDelegatedApproval | null
+  derived_from_untrusted?: boolean
+  taint_sources?: TaintSource[]
+}
+
+export type TaintSource = {
+  source_kind: string
+  source_ref: string
 }
 
 export type PendingDelegatedApproval = {

@@ -38,6 +38,7 @@ from services.agent_runs import (
     start_agent_run_with_lease,
 )
 from services.agent_runs.domain import (
+    RUN_OUTCOME_BLOCKED,
     RUN_OUTCOME_BUDGET_EXHAUSTED,
     RUN_OUTCOME_CANCELLED,
     RUN_OUTCOME_ERROR,
@@ -315,6 +316,22 @@ async def test_awaiting_approval_then_resume(
     assert run.status == RUN_STATUS_RUNNING
 
 
+async def test_resume_restarts_runtime_clock(
+    db_session: AsyncSession, run_context: RunContext
+) -> None:
+    run = await _create(db_session, run_context)
+    await start_agent_run(db_session, run)
+    stale_started_at = datetime.now(UTC) - timedelta(hours=1)
+    run.started_at = stale_started_at
+    await db_session.flush()
+    await mark_run_awaiting_approval(db_session, run)
+
+    await start_agent_run(db_session, run)
+
+    assert run.started_at is not None
+    assert run.started_at > stale_started_at + timedelta(minutes=30)
+
+
 async def test_invalid_transition_from_pending_raises(
     db_session: AsyncSession, run_context: RunContext
 ) -> None:
@@ -376,8 +393,18 @@ async def test_terminal_outcome_is_written_once(
     assert run.completion_json == {"summary": "first terminal evidence"}
 
 
+@pytest.mark.parametrize(
+    ("left_target", "right_target"),
+    [
+        (RUN_STATUS_COMPLETED, RUN_STATUS_CANCELLED),
+        ("code_mode_recovery", RUN_STATUS_CANCELLED),
+        ("code_mode_recovery", RUN_STATUS_COMPLETED),
+    ],
+)
 async def test_competing_terminal_transitions_preserve_first_outcome(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
+    left_target: str,
+    right_target: str,
 ) -> None:
     suffix = uuid4().hex
     user = build_user(email=f"terminal-race-{suffix}@example.com")
@@ -424,7 +451,18 @@ async def test_competing_terminal_transitions_preserve_first_outcome(
             assert stale_run is not None
             await asyncio.wait_for(barrier.wait(), timeout=5)
             try:
-                if target == RUN_STATUS_COMPLETED:
+                if target == "code_mode_recovery":
+                    await fail_agent_run(
+                        db,
+                        stale_run,
+                        error_code="code_mode_resume_requires_recovery",
+                        completion_json={
+                            "error_code": "code_mode_resume_requires_recovery",
+                            "degradation_reason": "resume_crash",
+                            "executed_effects": [],
+                        },
+                    )
+                elif target == RUN_STATUS_COMPLETED:
                     await complete_agent_run(db, stale_run)
                 else:
                     await cancel_agent_run(db, stale_run)
@@ -437,8 +475,8 @@ async def test_competing_terminal_transitions_preserve_first_outcome(
     try:
         results = await asyncio.wait_for(
             asyncio.gather(
-                finish(RUN_STATUS_COMPLETED),
-                finish(RUN_STATUS_CANCELLED),
+                finish(left_target),
+                finish(right_target),
                 return_exceptions=True,
             ),
             timeout=10,
@@ -455,12 +493,23 @@ async def test_competing_terminal_transitions_preserve_first_outcome(
             )
             stored = await verify_db.get(AgentRun, run.id)
             assert stored is not None
-            assert stored.status == winning_status
-            assert stored.outcome == (
-                RUN_OUTCOME_SUCCESS
-                if winning_status == RUN_STATUS_COMPLETED
-                else RUN_OUTCOME_CANCELLED
+            expected_status = (
+                RUN_STATUS_FAILED if winning_status == "code_mode_recovery" else winning_status
             )
+            assert stored.status == expected_status
+            expected_outcomes = {
+                "code_mode_recovery": RUN_OUTCOME_BLOCKED,
+                RUN_STATUS_COMPLETED: RUN_OUTCOME_SUCCESS,
+                RUN_STATUS_CANCELLED: RUN_OUTCOME_CANCELLED,
+            }
+            assert stored.outcome == expected_outcomes[winning_status]
+            if winning_status == "code_mode_recovery":
+                assert stored.error_code == "code_mode_resume_requires_recovery"
+                assert stored.completion_json == {
+                    "error_code": "code_mode_resume_requires_recovery",
+                    "degradation_reason": "resume_crash",
+                    "executed_effects": [],
+                }
     finally:
         async with committed_db_session_factory() as cleanup_db:
             await set_session_tenant_context(
@@ -587,12 +636,18 @@ async def test_cancelled_run_stamps_cancelled_outcome(
 ) -> None:
     run = await _create(db_session, run_context)
     await start_agent_run(db_session, run)
+    run.metadata_json = {
+        "approval_state": {"version": 1},
+        "code_mode_state": {"snapshot_b64": "opaque"},
+        "retained": True,
+    }
 
     await cancel_agent_run(db_session, run)
 
     assert run.status == RUN_STATUS_CANCELLED
     assert run.outcome == RUN_OUTCOME_CANCELLED
     assert run.completion_json is None
+    assert run.metadata_json == {"retained": True}
 
 
 async def test_record_usage_sets_hot_columns_and_json(

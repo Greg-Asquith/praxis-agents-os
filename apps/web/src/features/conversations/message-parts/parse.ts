@@ -43,8 +43,9 @@ import { isRecord, stringValue } from "@/lib/guards"
 const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "native-tool-return"])
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
 
-type LiveToolResult = {
+export type LiveToolResult = {
   result: unknown
+  status: "running" | "completed" | "failed" | "denied"
 }
 
 export function parseConversationMessages(
@@ -92,7 +93,11 @@ export function parseConversationMessages(
           activity.id === pendingWorkflow.outer_tool_call_id
             ? {
                 ...activityWithDelegate,
-                script: codeModeScriptFromPendingWorkflow(pendingWorkflow),
+                script: codeModeScriptFromPendingWorkflow(
+                  pendingWorkflow,
+                  activity.agentRunId ?? null,
+                  liveResultsByCallIdentity
+                ),
               }
             : activityWithDelegate
 
@@ -125,7 +130,7 @@ export function parseConversationMessages(
         const liveResult = belongsToActiveRun
           ? liveResultsByCallIdentity?.get(toolActivityIdentity(activity.agentRunId, activity.id))
           : undefined
-        if (liveResult) {
+        if (liveResult && liveResult.status === "completed") {
           return {
             ...activityWithPendingWorkflow,
             result: liveResult.result,
@@ -140,10 +145,20 @@ export function parseConversationMessages(
           }
         }
         if (belongsToActiveRun && runStoppedBeforeToolResult) {
-          return { ...activityWithPendingWorkflow, status: "failed" as const }
+          return (
+            stoppedWorkflowActivity(activityWithPendingWorkflow) ?? {
+              ...activityWithPendingWorkflow,
+              status: "failed" as const,
+            }
+          )
         }
         if (!belongsToActiveRun || !runIsExecuting) {
-          return { ...activityWithPendingWorkflow, status: "unknown" as const }
+          return (
+            stoppedWorkflowActivity(activityWithPendingWorkflow) ?? {
+              ...activityWithPendingWorkflow,
+              status: "unknown" as const,
+            }
+          )
         }
         return activityWithPendingWorkflow
       })
@@ -412,9 +427,14 @@ function codeModeScriptFromMetadata(
   }
 }
 
-function codeModeScriptFromPendingWorkflow(workflow: PendingWorkflowState): CodeModeScriptActivity {
+function codeModeScriptFromPendingWorkflow(
+  workflow: PendingWorkflowState,
+  agentRunId: string | null,
+  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
+): CodeModeScriptActivity {
   const children = workflow.nested_trace.map((entry): ToolActivity => ({
     id: entry.tool_call_id,
+    agentRunId,
     kind: entry.status === "pending" ? "approval" : "result",
     name: entry.tool_name,
     status: codeModeTraceStatus(entry.status),
@@ -425,22 +445,71 @@ function codeModeScriptFromPendingWorkflow(workflow: PendingWorkflowState): Code
           resultExcerpt: entry.result_excerpt,
         }),
   }))
-  if (!children.some((child) => child.id === workflow.pending.tool_call_id)) {
+  const pendingIndex = children.findIndex((child) => child.id === workflow.pending.tool_call_id)
+  const pendingFields = {
+    args: normalizeToolArgs(workflow.pending.args),
+    ...(workflow.pending.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
+    ...(workflow.pending.taint_sources === undefined
+      ? {}
+      : { taintSources: workflow.pending.taint_sources }),
+  }
+  if (pendingIndex === -1) {
     children.push({
-      args: normalizeToolArgs(workflow.pending.args),
+      ...pendingFields,
       id: workflow.pending.tool_call_id,
+      agentRunId,
       kind: "approval",
       name: workflow.pending.name,
       status: "awaiting_approval",
     })
+  } else {
+    const pendingChild = children[pendingIndex]
+    if (pendingChild) {
+      children[pendingIndex] = { ...pendingChild, ...pendingFields }
+    }
   }
+  // After an approval is submitted the suspended snapshot stays cached, so live
+  // stream progress for the resumed nested calls must win over its stale states.
+  const mergedChildren = children.map((child): ToolActivity => {
+    const live = liveResultsByCallIdentity?.get(toolActivityIdentity(agentRunId, child.id))
+    if (!live) {
+      return child
+    }
+    return {
+      ...child,
+      kind: live.status === "running" ? "call" : "result",
+      status: live.status,
+      ...(live.result === undefined ? {} : { result: live.result }),
+    }
+  })
   return {
-    children,
+    children: mergedChildren,
     code: workflow.code,
     error: null,
     output: null,
     reason: workflow.reason,
     status: "awaiting_approval",
+  }
+}
+
+// A workflow call the run never answered renders as a stopped workflow card,
+// not as a generic completed tool row.
+function stoppedWorkflowActivity(activity: ToolActivity): ToolActivity | null {
+  if (activity.name !== "run_workflow" || activity.script) {
+    return null
+  }
+  const args = isRecord(activity.args) ? activity.args : null
+  return {
+    ...activity,
+    status: "failed",
+    script: {
+      children: [],
+      code: args ? stringValue(args["code"]) : null,
+      error: null,
+      output: null,
+      reason: args ? stringValue(args["reason"]) : null,
+      status: "failed",
+    },
   }
 }
 

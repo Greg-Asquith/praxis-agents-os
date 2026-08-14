@@ -41,6 +41,8 @@ _BUDGET_KINDS = {
 
 def public_run_error(exc: Exception) -> PublicRunError:
     """Return the explicit public mapping for an execute-run exception."""
+    from services.agents.runtime.code_mode.state import CodeModeResumeRequiresRecoveryError
+
     if isinstance(exc, ModelConfigurationError):
         return PublicRunError(
             code=str(getattr(exc, "error_code", "model_configuration_error")),
@@ -60,6 +62,15 @@ def public_run_error(exc: Exception) -> PublicRunError:
                 "error_code": "usage_limit_exceeded",
                 **({"tripped_budget": tripped_budget} if tripped_budget is not None else {}),
             },
+        )
+    if isinstance(exc, CodeModeResumeRequiresRecoveryError):
+        return PublicRunError(
+            code="code_mode_resume_requires_recovery",
+            message=(
+                "This workflow stopped because its saved state could not be restored after "
+                "one or more actions completed. Review the completed actions before continuing."
+            ),
+            completion_json=exc.completion_json,
         )
     return PublicRunError(
         code=DEFAULT_RUN_ERROR_CODE,

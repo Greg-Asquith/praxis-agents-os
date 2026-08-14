@@ -153,16 +153,6 @@ async def persist_successful_run(
         populate_existing=True,
         lock_run=True,
     )
-    if is_terminal(run.status):
-        await db.commit()
-        return run, 0
-    if run.status != RUN_STATUS_RUNNING:
-        raise ConflictError(
-            "Agent run is no longer running",
-            conflicting_resource="agent_run",
-            details={"run_id": str(run.id), "run_status": run.status},
-        )
-
     new_messages = terminal_result.new_messages()
     messages_to_persist = (
         without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
@@ -171,6 +161,34 @@ async def persist_successful_run(
         messages_to_persist,
         tool_call_ids=eager_tool_return_ids or set(),
     )
+    if is_terminal(run.status):
+        # Another actor settled the run mid-flight; keep its verdict but still
+        # persist the record of what this execution actually did.
+        logger.warning(
+            "Agent run was settled terminally during execution; persisting messages only",
+            extra={"run_id": str(run.id), "run_status": run.status},
+        )
+        persisted_messages = await persist_new_messages(
+            db,
+            conversation=conversation,
+            run_id=run.id,
+            messages=messages_to_persist,
+            client_message_id=client_message_id,
+            tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
+        )
+        await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
+        if usage_event is not None:
+            await record_ai_usage_in_transaction(db, usage_event)
+        run.metadata_json = clear_suspended_run_metadata(run)
+        await db.commit()
+        return run, len(persisted_messages)
+    if run.status != RUN_STATUS_RUNNING:
+        raise ConflictError(
+            "Agent run is no longer running",
+            conflicting_resource="agent_run",
+            details={"run_id": str(run.id), "run_status": run.status},
+        )
+
     persisted_messages = await persist_new_messages(
         db,
         conversation=conversation,

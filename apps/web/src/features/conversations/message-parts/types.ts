@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/message-parts/types.ts
 
 import type { MessageAttachment } from "@/features/conversations/attachments"
+import type { TaintSource } from "@/features/conversations/types"
 
 export type ParsedMessageRole = "user" | "assistant" | "tool" | "system" | "unknown"
 export type ParsedAttachment = MessageAttachment
@@ -48,6 +49,8 @@ export type ToolActivity = {
   outcome?: string | null
   script?: CodeModeScriptActivity
   toolKind?: string
+  derivedFromUntrusted?: boolean
+  taintSources?: TaintSource[]
 }
 
 type UnsupportedMessagePart = {

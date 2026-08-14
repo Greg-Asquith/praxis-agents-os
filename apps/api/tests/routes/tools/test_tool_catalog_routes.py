@@ -353,8 +353,8 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
     assert read_todos_entry["ui"]["icon"] == "list-todo"
     workflow_entry = next(tool for tool in body["tools"] if tool["name"] == "run_workflow")
-    assert workflow_entry["ui"]["icon"] == "code"
-    assert workflow_entry["ui"]["completed_label"] == "Completed workflow"
+    assert workflow_entry["ui"]["icon"] == "workflow"
+    assert workflow_entry["ui"]["completed_label"] == "Completed Workflow"
     delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
     assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
     delegate_fields = {field["key"]: field for field in delegate_entry["ui"]["arg_fields"]}

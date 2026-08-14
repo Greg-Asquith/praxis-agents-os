@@ -8,6 +8,7 @@ export {
 export { pendingMessagesForConversation } from "@/features/conversations/message-parts/pending-messages"
 export { groupConversationRenderItems } from "@/features/conversations/message-parts/group-render-items"
 export { parseConversationMessages } from "@/features/conversations/message-parts/parse"
+export type { LiveToolResult } from "@/features/conversations/message-parts/parse"
 export {
   isRunStatusPolling,
   normalizeToolArgs,

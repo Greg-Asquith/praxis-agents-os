@@ -5,7 +5,7 @@
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
-from core.exceptions.integration import IntegrationFailureDisposition
+from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import IntegrationFanOutEntry
 from services.integrations.context.utils import sanitize_context_error
@@ -67,7 +67,9 @@ async def _run_authorized_entries[T](
                     **base,
                     status="error",
                     error_code=error_code,
-                    error_message=sanitize_context_error(str(exc)),
+                    error_message=sanitize_context_error(
+                        exc.user_message if isinstance(exc, IntegrationError) else str(exc)
+                    ),
                 )
             )
         else:

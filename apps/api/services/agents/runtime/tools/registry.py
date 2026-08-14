@@ -138,6 +138,7 @@ def build_runtime_tools(
     include_delegation: bool = False,
     active_context: "ResolvedActiveContext | None" = None,
     skipped_tool_names: list[str] | None = None,
+    wrapped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
     additional_tool_names: Sequence[str] = (),
@@ -222,13 +223,7 @@ def build_runtime_tools(
             if definition.auto_mount
             else policies.get(name, definition.default_policy)
         )
-        if (
-            code_mode_enabled
-            and definition.code_eligible
-            and definition.effect == TOOL_EFFECT_READ
-            and effective_policy == TOOL_POLICY_AUTO
-            and not definition.defer_loading
-        ):
+        if code_mode_enabled and definition.code_eligible and not definition.defer_loading:
             try:
                 render_tool_stub(definition)
             except UnsupportedCodeModeSchemaError as exc:
@@ -244,6 +239,8 @@ def build_runtime_tools(
                 )
             else:
                 wrapped_entries.append((definition, effective_policy))
+                if wrapped_tool_names is not None:
+                    wrapped_tool_names.append(definition.name)
                 continue
         tools.append(definition.to_pydantic_tool(policy=effective_policy))
 

@@ -1,6 +1,6 @@
 # Code-Mode Orchestration
 
-- **Status**: adopted architecture; Plans 109–111 complete, measured exit gate and Plans 112–113 pending
+- **Status**: adopted architecture; Plans 109–112 complete, Plan 113 pending
 - **Owner**: agent runtime
 - **Rule**: implementation work cites the decision it consumes. A change that
   deviates records the deviation here in the same pull request.
@@ -104,6 +104,10 @@ The complete resource obligation is binding:
 - captured print and final-output size;
 - a separate 32,768-byte model-facing final-result limit, tighter than the
   general 262,144-byte nested boundary-value limit;
+- the pre-base64 interpreter snapshot and the complete JSON-serialized durable
+  resume artifact, independently bounded by
+  `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` and
+  `AGENT_CODE_MODE_STATE_MAX_BYTES`;
 - a hard serialized-byte limit on every value crossing into or out of Monty;
 - cumulative budgets preserved across approval suspension and resume; and
 - ordinary per-call model/provider spend through existing usage accounting and
@@ -147,6 +151,21 @@ The resume artifact carries a bounded executed-effects ledger containing the
 nested call id, tool name, and effective-arguments digest. A durable,
 deduplicating execution ledger is the heavier alternative and remains a
 follow-up.
+
+Every persisted trace entry is validated as trusted resume state. If a
+suspension artifact exceeds its aggregate bound, application-only nested
+presentation results are removed oldest-first while status and excerpts remain
+available and each affected entry is marked `presentation_truncated`. The live
+and completed-run trace remains unchanged. If the artifact still cannot fit,
+the suspension is classified as `snapshot_too_large`: its stale state is
+cleared, the pending nested audit is closed with failure evidence, and the run
+follows the same read-only-redraft versus effectful-operator-recovery law above.
+
+A run holds at most one suspended workflow. If a second workflow would suspend
+while another workflow's resume artifact is persisted, it fails closed with a
+structured model-visible failure instead of overwriting the first snapshot,
+and the nested-call budget setting is capped at the durable trace and effect
+bounds so a valid configuration can never exceed the resume artifact's limits.
 
 ### D-6 — Durable approvals: one nested call, one decision
 
@@ -253,6 +272,10 @@ The bridge therefore applies conservative whole-interpreter taint:
    and later `code_mode_state`, rather than overloading the singular node
    schema.
 
+The same resume artifact retains bounded print output and its truncation flag.
+Each continuation appends only within the remaining output budget, so approval
+waits cannot erase earlier output or reset the configured limit.
+
 The existing marker vocabulary and `render_untrusted_frames()` remain
 unchanged. The frame tells the model that the value is data; trace metadata
 gives operators per-source detail. This is intentionally not data-flow
@@ -313,12 +336,15 @@ Each nested entry contains:
 - status: succeeded, failed, pending, or denied; and
 - a bounded result or failure excerpt.
 
-The trace also retains the complete normalized nested result as application-only
-presentation evidence. Presentation values never enter model context and receive
-no additional UI sampling or truncation: replay shows exactly the governed value
-that the sandbox received, including every returned fan-out resource and row. If
-a nested tool has the richer governed `public_result` contract, replay and live
-SSE use that complete user-only value while only `return_value` enters Monty.
+The completed-run trace also retains the complete normalized nested result as
+application-only presentation evidence. Presentation values never enter model
+context and receive no additional UI sampling or truncation: completed replay
+shows exactly the governed value that the sandbox received, including every
+returned fan-out resource and row. A suspension-only artifact may omit oldest
+presentation values under D-5's aggregate ceiling, retaining explicit
+truncation markers and the bounded excerpts for reload. If a nested tool has
+the richer governed `public_result` contract, completed replay and live SSE use
+that complete user-only value while only `return_value` enters Monty.
 The existing 262,144-byte per-value boundary and each provider tool's product
 bounds remain authoritative. The compact excerpt remains useful for summaries
 and legacy traces, but the web always prefers the complete presentation value.
@@ -356,16 +382,18 @@ independent controls.
 
 The binding order is:
 
-`109 (DONE) → 110 → 111 → measured exit gate → 112 → 113`
+`109 (DONE) → 110 → 111 → maintainer acceptance (DONE 2026-08-13) → 112 → 113`
 
 - Plan 110 must deploy client protocol acceptance before the server emits any
   new script event. The web SSE parser rejects unknown names, so client-first
   is a deployment law, not permission to ship both sides in an unsafe order.
 - Plan 111 supplies the operator configuration and complete live/replay UI.
-- Plan 112 has three hard prerequisites: 110 complete, 111 complete, and the
-  measured exit gate recorded as passing in §6.
-- A missed exit threshold stops the lane at 111. Only the maintainer may choose
-  revision and re-measurement or register a D16 revisit in the roadmap.
+- Plan 112's prerequisites are 110 complete, 111 complete, and a maintainer
+  decision on the §6 evidence boundary. The maintainer accepted the available
+  live evidence and explicitly unblocked Plan 112 on 2026-08-13; §7.3 records
+  the scope and limits of that decision.
+- Without an explicit maintainer decision, a missed or unrun exit threshold
+  stops the lane at 111. An executor cannot waive or reinterpret that boundary.
 - Plan 113 follows 112 and uses the already-landed `records` presentation
   format; it does not redesign that format.
 
@@ -437,10 +465,11 @@ does not make that run pass.
 
 ### Failure decision
 
-A missed threshold stops the lane. Plan 112 does not start. The maintainer
-either revises plans 110/111 and repeats the full gate or records a D16 revisit
-in `docs/plans/000_MASTER_ROADMAP.md`. Proceeding despite a miss is not an
-executor decision.
+A missed or unrun threshold stops the lane unless the maintainer explicitly
+records a different decision. The maintainer may revise Plans 110/111 and
+repeat the full gate, register a D16 revisit, or accept named evidence and
+authorize the lane to continue. Proceeding despite a miss or absent formal run
+is never an executor decision. The current decision is recorded in §7.3.
 
 ## 7. Evidence appendix
 
@@ -533,7 +562,8 @@ wall-clock, call-count, value, and output budgets.
 
 ### 7.3 Measured gate record
 
-**Status: formal gate not run.** Plans 110 and 111 completed 2026-08-13 on
+**Status: accepted by maintainer for the Plan 112 lane boundary on 2026-08-13;
+the formal five-run-per-arm comparison was not run.** Plans 110 and 111 completed 2026-08-13 on
 their deterministic and full repository gates. A single diagnostic
 `gpt-5.6-luna` smoke ran against conversation
 `92d0604d-32c3-4494-a179-01396b521bfb`: seven model requests recorded 77,892
@@ -541,8 +571,8 @@ input tokens (58,431 cache reads; 19,440 cache writes) and 2,811 output tokens.
 The model used four workflows but returned large raw report payloads for later
 model-side reasoning instead of reducing them in the sandbox. This is not an
 on/off arm and therefore supplies no gate verdict; it drove stronger
-intermediate-variable/compact-output guidance. The five-run-per-arm measured
-exit gate is the next lane boundary and remains a hard prerequisite for Plan 112.
+intermediate-variable/compact-output guidance. At that point the
+five-run-per-arm comparison remained the next lane boundary.
 
 A second diagnostic `gpt-5.6-luna` smoke against conversation
 `1032be41-7d3e-4807-878d-50edc6abf1c2` used seven model requests, 69,989 input
@@ -587,6 +617,53 @@ Then append one row per raw run:
 Record both arm medians, success rates, the threshold verdict for every metric,
 and the maintainer's dated **PASS** or **STOP** decision below the raw table.
 
+#### Maintainer decision — 2026-08-13
+
+**ACCEPT TO PROCEED WITH PLAN 112.** After reviewing the diagnostics above and
+the following two live conversations, the maintainer explicitly accepted the
+observed Code Mode behavior as sufficient product evidence for this lane and
+authorized Plan 112 to begin:
+
+- `76c2c89e-e121-457c-b6b8-d1cdd1af8fba` completed successfully with
+  `openai:gpt-5.6-luna`: 8 model requests, 99,993 input tokens, 5,772 output
+  tokens, 65.4 seconds, three successful workflows, and four successful nested
+  Google Ads report calls. It adapted from an empty asset-level result to a
+  qualified, decision-ready ad-copy analysis.
+- `e79deb36-cb86-485d-97a2-591677bd6402` demonstrated two successful analytical
+  workflows followed by the existing direct write-approval flow. It was still
+  awaiting approval when reviewed, so it is supporting approval-path evidence,
+  not a completed benchmark result.
+
+This decision is deliberately not represented as a threshold **PASS**: the
+matched five-run on/off arms and the formal G6 gate were not executed, so no
+request, token, latency, redraft, or G6 threshold verdict can be inferred.
+The maintainer has waived that formal comparison as a prerequisite for Plan
+112 only. The §6 benchmark remains available as non-blocking follow-up evidence
+and must not be cited later as having passed.
+
+### 7.4 Plan 112 completion evidence — 2026-08-13
+
+Plan 112 implemented durable mid-workflow approval snapshots, one-call nested
+decision grants, denial injection, staged `write_file` content, nested audit
+ownership, taint persistence, unattended-envelope behavior, and the
+read-prefix/effectful-prefix recovery split. The deterministic gate uses real
+Monty workers and PostgreSQL: it suspends twice in one script, closes and
+recreates the executor between decisions, executes each approved write once,
+and verifies nested staged-content round trips and denial cleanup. Terminal
+race tests cover recovery against cancellation and normal finalization through
+the shared row-locked transition path. The focused backend gate passed 219
+tests. The complete gate, most recently re-run 2026-08-14 after the
+eight-finding corrective review and the follow-up hardening (single-suspension
+guard, nested-call budget cap, settlement-failure classification), passed
+2,191 API tests with 9 configured skips and 125 web files / 724 tests, with
+clean lint, format, migration-drift, dependency-architecture, and
+production-build checks.
+
+No credentialed manual provider smoke was run for this implementation. The
+cross-process deterministic scenario is the restart evidence for the runtime
+contract; §7.3 remains the accepted live-product evidence and is still not a
+formal quantitative threshold pass.
+
 ## 8. Follow-ups register
 
 These are deliberately outside plans 110–113 and require their own decision or
@@ -608,9 +685,9 @@ plan before implementation:
 
 | Plan | Contract consumed                                                     | Status                                                            |
 | ---- | --------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| 110  | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate    | Complete 2026-08-13; post-111 measured exit gate remains separate |
-| 111  | D-8, D-10, D-11; operator enablement and live/replay presentation     | Complete 2026-08-13; measured exit gate remains separate          |
-| 112  | D-3–D-6, D-9, D-11; durable approvals, taint persistence, write tools | Pending; hard-gated by §6                                         |
+| 110  | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate    | Complete 2026-08-13                                                |
+| 111  | D-8, D-10, D-11; operator enablement and live/replay presentation     | Complete 2026-08-13                                                |
+| 112  | D-3–D-6, D-9, D-11; durable approvals, taint persistence, write tools | Complete 2026-08-13                                               |
 | 113  | D-6, D-7, D-11; faithful batch approvals over landed `records`        | Pending                                                           |
 | 059  | Compute/orchestration delineation and no sandbox nesting              | Pending                                                           |
 | 094  | Deferred-loading exclusion and joint revisit                          | Pending                                                           |

@@ -23,17 +23,29 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import RunUsage
 
+from core.settings import settings
 from services.agents.runtime.capabilities import build_runtime_capabilities
+from services.agents.runtime.code_mode.approval import (
+    CODE_MODE_DECISION_KEY,
+    build_code_mode_decision_metadata,
+)
 from services.agents.runtime.code_mode.bridge import (
     CODE_MODE_TRACE_EXCERPT_MAX_CHARS,
     CODE_MODE_TRACE_METADATA_KEY,
     CodeModeBoundaryError,
     CodeModeBridge,
+    _recoverable_effects,
     execute_code_mode_workflow,
 )
 from services.agents.runtime.code_mode.executor import MontyExecutor, ScriptExecution
+from services.agents.runtime.code_mode.state import (
+    CODE_MODE_STATE_EFFECT_LIMIT,
+    CODE_MODE_STATE_METADATA_KEY,
+    CodeModeResumeRequiresRecoveryError,
+)
 from services.agents.runtime.dispatch import digest_args
 from services.agents.runtime.envelope import RunEnvelope
+from services.agents.runtime.events import EVENT_TOOL_RESULT
 from services.agents.runtime.sinks import SinkEvent
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -47,6 +59,7 @@ from services.agents.runtime.untrusted import (
     UntrustedNode,
     render_untrusted_frames,
 )
+from services.audit_events.enums import AuditStatus
 
 
 @pytest.fixture
@@ -78,6 +91,13 @@ def _ctx(
     resolved_deps = deps or SimpleNamespace(marker="deps")
     if not hasattr(resolved_deps, "sink"):
         resolved_deps.sink = _RecordingSink()
+    if not hasattr(resolved_deps, "run"):
+        resolved_deps.run = SimpleNamespace(
+            id=uuid4(),
+            conversation_id=uuid4(),
+            agent_id=uuid4(),
+            metadata_json={},
+        )
     ctx = RunContext(
         deps=resolved_deps,
         model=TestModel(),
@@ -101,6 +121,367 @@ class _RecordingSink:
 
     async def close(self) -> None:
         return None
+
+
+def _effect(call_id: str = "outer:1") -> dict[str, str]:
+    return {
+        "nested_call_id": call_id,
+        "tool_name": "write",
+        "args_sha256": "a" * 64,
+    }
+
+
+def _effect_metadata(*, primary: object = None, fallback: object = None) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    if primary is not None:
+        metadata[CODE_MODE_STATE_METADATA_KEY] = {"executed_effects": primary}
+    if fallback is not None:
+        metadata["approval_state"] = {
+            "deferred_tool_requests": {
+                "metadata": {"outer": {"kind": "code_mode", "executed_effects": fallback}}
+            }
+        }
+    return metadata
+
+
+@pytest.mark.parametrize(
+    "primary",
+    [
+        [{"nested_call_id": "outer:1", "tool_name": "write"}],
+        ["invalid"],
+        "invalid",
+        [_effect(str(index)) for index in range(CODE_MODE_STATE_EFFECT_LIMIT + 1)],
+    ],
+)
+def test_malformed_effect_evidence_is_invalid(primary: object) -> None:
+    effects, evidence_valid = _recoverable_effects(_effect_metadata(primary=primary))
+
+    assert evidence_valid is False
+    assert effects == []
+
+
+def test_invalid_primary_salvages_valid_fallback_but_still_fails_closed() -> None:
+    effects, evidence_valid = _recoverable_effects(
+        _effect_metadata(primary="invalid", fallback=[_effect()])
+    )
+
+    assert effects[0].nested_call_id == "outer:1"
+    assert evidence_valid is False
+
+
+def test_malformed_state_container_is_invalid_effect_evidence() -> None:
+    effects, evidence_valid = _recoverable_effects({CODE_MODE_STATE_METADATA_KEY: "invalid"})
+
+    assert effects == []
+    assert evidence_valid is False
+
+
+def test_conflicting_valid_effect_ledgers_return_union_as_invalid_evidence() -> None:
+    effects, evidence_valid = _recoverable_effects(
+        _effect_metadata(primary=[_effect("outer:1")], fallback=[_effect("outer:2")])
+    )
+
+    assert [effect.nested_call_id for effect in effects] == ["outer:1", "outer:2"]
+    assert evidence_valid is False
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {},
+        _effect_metadata(primary=[]),
+        _effect_metadata(primary=[], fallback=[]),
+    ],
+)
+def test_empty_or_absent_effect_evidence_remains_recoverable(metadata: dict[str, Any]) -> None:
+    effects, evidence_valid = _recoverable_effects(metadata)
+
+    assert effects == []
+    assert evidence_valid is True
+
+
+def test_valid_nonempty_effect_evidence_is_preserved() -> None:
+    effects, evidence_valid = _recoverable_effects(_effect_metadata(primary=[_effect()]))
+
+    assert effects[0].tool_name == "write"
+    assert evidence_valid is True
+
+
+async def test_read_only_oversized_suspension_returns_direct_call_guidance(
+    executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES", 1)
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer",
+        code="await gated()",
+        executor=executor,
+    )
+
+    assert result.return_value["status"] == "failed"
+    assert "Call the tool directly" in result.return_value["error"]
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+
+
+async def test_effectful_oversized_suspension_requires_operator_recovery(
+    executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_name = f"code_mode_write_{uuid4().hex}"
+
+    async def write() -> str:
+        return "written"
+
+    definition = RuntimeToolDefinition(
+        name=tool_name,
+        function=write,
+        description="Write before approval.",
+        effect=TOOL_EFFECT_WRITE,
+    )
+    RUNTIME_TOOL_CATALOG[tool_name] = definition
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES", 1)
+    toolset = FunctionToolset(
+        [definition.to_pydantic_tool(), Tool(lambda: "ok", name="gated", requires_approval=True)]
+    )
+    ctx = _ctx(toolset)
+    try:
+        with pytest.raises(CodeModeResumeRequiresRecoveryError) as exc_info:
+            await execute_code_mode_workflow(
+                ctx=ctx,
+                wrapped_toolset=toolset,
+                outer_tool_call_id="outer",
+                code=f"await {tool_name}()\nawait gated()",
+                executor=executor,
+            )
+    finally:
+        RUNTIME_TOOL_CATALOG.pop(tool_name, None)
+
+    assert exc_info.value.reason == "snapshot_too_large"
+    assert exc_info.value.executed_effects[0].tool_name == tool_name
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+
+
+async def test_oversized_second_suspension_clears_previous_state(
+    executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda value: value, name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "await gated(value=1)\nawait gated(value=2)"
+    with pytest.raises(ApprovalRequired) as first:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code=code,
+            executor=executor,
+        )
+    args_sha256, _ = digest_args({"value": 1})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=first.value.metadata,
+        decision="approved",
+        effective_args={"value": 1},
+        args_sha256=args_sha256,
+        message=None,
+    )
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES", 1)
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer",
+        code=code,
+        executor=executor,
+    )
+
+    assert result.return_value["status"] == "failed"
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+
+
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+@pytest.mark.parametrize("effectful", [False, True], ids=["read_only", "effectful"])
+async def test_load_failure_settles_decision_evidence_and_staged_cleanup(
+    executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    effectful: bool,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code="await gated()",
+            executor=executor,
+        )
+    digest, _ = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision=decision,
+        effective_args={},
+        args_sha256=digest,
+        message="No" if decision == "denied" else None,
+    )
+    ctx.deps.workspace = SimpleNamespace(id=uuid4())
+    dispatch_module = __import__("services.agents.runtime.dispatch", fromlist=["record_invocation"])
+    record_invocation = AsyncMock()
+    cleanup = AsyncMock()
+    monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
+    monkeypatch.setattr(dispatch_module, "cleanup_staged_tool_content", cleanup)
+    if effectful:
+        ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["executed_effects"] = [
+            {
+                "nested_call_id": "outer:completed",
+                "tool_name": "write",
+                "args_sha256": "a" * 64,
+            }
+        ]
+    ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["snapshot_b64"] = "invalid"
+
+    if effectful:
+        with pytest.raises(CodeModeResumeRequiresRecoveryError) as exc_info:
+            await execute_code_mode_workflow(
+                ctx=ctx,
+                wrapped_toolset=toolset,
+                outer_tool_call_id="outer",
+                code="await gated()",
+                executor=executor,
+            )
+        assert exc_info.value.reason == "snapshot_corrupt"
+    else:
+        result = await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code="await gated()",
+            executor=executor,
+        )
+        assert result.return_value["degradation_reason"] == "snapshot_corrupt"
+    cleanup.assert_awaited_once()
+    if decision == "denied":
+        record_invocation.assert_awaited_once()
+        assert record_invocation.await_args.kwargs["status"] == AuditStatus.DENIED
+    else:
+        record_invocation.assert_not_awaited()
+
+
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+@pytest.mark.parametrize("effectful", [False, True], ids=["read_only", "effectful"])
+async def test_resume_failure_settles_decision_evidence_and_staged_cleanup(
+    executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    effectful: bool,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code="await gated()",
+            executor=executor,
+        )
+    digest, _ = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision=decision,
+        effective_args={},
+        args_sha256=digest,
+        message="No" if decision == "denied" else None,
+    )
+    ctx.deps.workspace = SimpleNamespace(id=uuid4())
+    dispatch_module = __import__("services.agents.runtime.dispatch", fromlist=["record_invocation"])
+    record_invocation = AsyncMock()
+    cleanup = AsyncMock()
+    monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
+    monkeypatch.setattr(dispatch_module, "cleanup_staged_tool_content", cleanup)
+    if effectful:
+        ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["executed_effects"] = [
+            {
+                "nested_call_id": "outer:completed",
+                "tool_name": "write",
+                "args_sha256": "a" * 64,
+            }
+        ]
+    failed_executor = SimpleNamespace(resume=AsyncMock(side_effect=TimeoutError("crashed")))
+
+    if effectful:
+        with pytest.raises(CodeModeResumeRequiresRecoveryError) as exc_info:
+            await execute_code_mode_workflow(
+                ctx=ctx,
+                wrapped_toolset=toolset,
+                outer_tool_call_id="outer",
+                code="await gated()",
+                executor=failed_executor,  # type: ignore[arg-type]
+            )
+        assert exc_info.value.reason == "resume_crash"
+    else:
+        result = await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code="await gated()",
+            executor=failed_executor,  # type: ignore[arg-type]
+        )
+        assert result.return_value["degradation_reason"] == "resume_crash"
+    cleanup.assert_awaited_once()
+    if decision == "denied":
+        record_invocation.assert_awaited_once()
+    else:
+        record_invocation.assert_not_awaited()
+
+
+async def test_stale_denial_does_not_settle_evidence(
+    executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code="await gated()",
+            executor=executor,
+        )
+    digest, _ = digest_args({})
+    decision_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="denied",
+        effective_args={},
+        args_sha256=digest,
+        message="No",
+    )
+    decision_metadata[CODE_MODE_DECISION_KEY]["nested_tool_call_id"] = "stale"
+    ctx.tool_call_metadata = decision_metadata
+    ctx.deps.workspace = SimpleNamespace(id=uuid4())
+    dispatch_module = __import__("services.agents.runtime.dispatch", fromlist=["record_invocation"])
+    record_invocation = AsyncMock()
+    cleanup = AsyncMock()
+    monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
+    monkeypatch.setattr(dispatch_module, "cleanup_staged_tool_content", cleanup)
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer",
+        code="await gated()",
+        executor=executor,
+    )
+
+    assert result.return_value["degradation_reason"] == "schema_mismatch"
+    record_invocation.assert_not_awaited()
+    cleanup.assert_not_awaited()
 
 
 async def _bridge(
@@ -502,11 +883,6 @@ async def test_tool_denied_is_not_treated_as_a_success() -> None:
     ("tool_factory", "message", "expected_status"),
     [
         (
-            lambda: Tool(lambda value: value, name="gated", requires_approval=True),
-            "tool requires approval",
-            "pending",
-        ),
-        (
             lambda: Tool(lambda value: (_ for _ in ()).throw(ModelRetry("retry me")), name="retry"),
             "retry me",
             "failed",
@@ -545,6 +921,700 @@ async def test_nested_control_flow_becomes_catchable_script_error(
     assert trace_entry["status"] == expected_status
     assert message in trace_entry["excerpt"]
     assert ctx.retries == {}
+
+
+async def test_nested_approval_suspends_instead_of_becoming_script_error(
+    executor: MontyExecutor,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda value: value, name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+
+    with pytest.raises(ApprovalRequired) as exc_info:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated(value='x')",
+            executor=executor,
+        )
+
+    assert exc_info.value.metadata["kind"] == "code_mode"
+    assert exc_info.value.metadata["nested_tool_call_id"] == "outer-call:1"
+    assert "code_mode_state" in ctx.deps.run.metadata_json
+
+
+async def test_nested_approval_resumes_from_snapshot_in_fresh_executor(
+    executor: MontyExecutor,
+) -> None:
+    calls: list[int] = []
+
+    async def gated(value: int) -> int:
+        calls.append(value)
+        return value * 2
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "value = await gated(value=21)\nvalue"
+    with pytest.raises(ApprovalRequired) as exc_info:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    approval_metadata = exc_info.value.metadata
+    args_sha256, _args_bytes = digest_args({"value": 21})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=approval_metadata,
+        decision="approved",
+        effective_args={"value": 21},
+        args_sha256=args_sha256,
+        message=None,
+    )
+    await executor.close()
+    fresh_executor = MontyExecutor(
+        pool_size=1,
+        timeout_seconds=1,
+        checkout_timeout_seconds=0.2,
+        request_timeout_seconds=2,
+        output_max_chars=100,
+        memory_max_bytes=64 * 1024 * 1024,
+        max_recursion_depth=100,
+        gc_interval=1_000,
+    )
+    try:
+        result = await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=fresh_executor,
+        )
+    finally:
+        await fresh_executor.close()
+
+    assert result.return_value == 42
+    assert calls == [21]
+
+
+async def test_settled_workflow_does_not_turn_next_outer_call_into_continuation(
+    executor: MontyExecutor,
+) -> None:
+    calls: list[int] = []
+
+    async def gated(value: int) -> int:
+        calls.append(value)
+        return value
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as first:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="first-outer",
+            code="await gated(value=1)",
+            executor=executor,
+        )
+    first_digest, _ = digest_args({"value": 1})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=first.value.metadata,
+        decision="approved",
+        effective_args={"value": 1},
+        args_sha256=first_digest,
+        message=None,
+    )
+    await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="first-outer",
+        code="await gated(value=1)",
+        executor=executor,
+    )
+    ctx.tool_call_metadata = {}
+
+    with pytest.raises(ApprovalRequired):
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="second-outer",
+            code="await gated(value=2)",
+            executor=executor,
+        )
+
+    assert calls == [1]
+    assert (
+        ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["outer_tool_call_id"]
+        == "second-outer"
+    )
+
+
+async def test_second_workflow_suspension_fails_closed_without_overwriting_first(
+    executor: MontyExecutor,
+) -> None:
+    calls: list[int] = []
+
+    async def gated(value: int) -> int:
+        calls.append(value)
+        return value
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as first:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="first-outer",
+            code="value = await gated(value=1)\nvalue",
+            executor=executor,
+        )
+    persisted = dict(ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY])
+
+    refused = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="second-outer",
+        code="value = await gated(value=2)\nvalue",
+        executor=executor,
+    )
+
+    assert refused.return_value["status"] == "failed"
+    assert "already paused" in refused.return_value["error"]
+    assert ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY] == persisted
+
+    first_digest, _ = digest_args({"value": 1})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=first.value.metadata,
+        decision="approved",
+        effective_args={"value": 1},
+        args_sha256=first_digest,
+        message=None,
+    )
+    resumed = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="first-outer",
+        code="value = await gated(value=1)\nvalue",
+        executor=executor,
+    )
+
+    assert resumed.return_value == 1
+    assert calls == [1]
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+
+
+@pytest.mark.parametrize("decision_metadata", [{}, {CODE_MODE_DECISION_KEY: "invalid"}])
+async def test_persisted_read_only_continuation_without_valid_decision_fails_closed(
+    executor: MontyExecutor,
+    decision_metadata: dict[str, Any],
+) -> None:
+    calls = 0
+
+    async def gated() -> str:
+        nonlocal calls
+        calls += 1
+        return "unexpected"
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired):
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated()",
+            executor=executor,
+        )
+    ctx.tool_call_metadata = decision_metadata
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code="await gated()",
+        executor=executor,
+    )
+
+    assert result.return_value["degradation_reason"] == "schema_mismatch"
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+    assert calls == 0
+
+
+@pytest.mark.parametrize("decision_metadata", [{}, {CODE_MODE_DECISION_KEY: "invalid"}])
+async def test_persisted_effectful_continuation_without_valid_decision_requires_recovery(
+    executor: MontyExecutor,
+    decision_metadata: dict[str, Any],
+) -> None:
+    calls = 0
+
+    async def gated() -> str:
+        nonlocal calls
+        calls += 1
+        return "unexpected"
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired):
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated()",
+            executor=executor,
+        )
+    state = ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]
+    state["executed_effects"] = [
+        {"nested_call_id": "outer-call:0", "tool_name": "write", "args_sha256": "a" * 64}
+    ]
+    ctx.tool_call_metadata = decision_metadata
+
+    with pytest.raises(CodeModeResumeRequiresRecoveryError) as exc_info:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated()",
+            executor=executor,
+        )
+
+    assert exc_info.value.reason == "schema_mismatch"
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+    assert calls == 0
+
+
+async def test_resume_preserves_print_output_before_and_after_approval(
+    executor: MontyExecutor,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda: "approved", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "print('before')\nvalue = await gated()\nprint('after')\nvalue"
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    args_sha256, _ = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="approved",
+        effective_args={},
+        args_sha256=args_sha256,
+        message=None,
+    )
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code=code,
+        executor=executor,
+    )
+
+    assert result.return_value == {"output": "before\nafter\n", "result": "approved"}
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+
+
+async def test_two_approvals_accumulate_all_print_segments(
+    executor: MontyExecutor,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda value: value, name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = (
+        "print('first')\n"
+        "await gated(value=1)\n"
+        "print('middle')\n"
+        "await gated(value=2)\n"
+        "print('last')\n"
+        "'done'"
+    )
+    with pytest.raises(ApprovalRequired) as first:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    first_digest, _ = digest_args({"value": 1})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=first.value.metadata,
+        decision="approved",
+        effective_args={"value": 1},
+        args_sha256=first_digest,
+        message=None,
+    )
+    with pytest.raises(ApprovalRequired) as second:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    second_digest, _ = digest_args({"value": 2})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=second.value.metadata,
+        decision="approved",
+        effective_args={"value": 2},
+        args_sha256=second_digest,
+        message=None,
+    )
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code=code,
+        executor=executor,
+    )
+
+    assert result.return_value == {
+        "output": "first\nmiddle\nlast\n",
+        "result": "done",
+    }
+
+
+async def test_print_output_budget_does_not_reset_after_resume() -> None:
+    bounded_executor = MontyExecutor(
+        pool_size=1,
+        timeout_seconds=1,
+        checkout_timeout_seconds=0.2,
+        request_timeout_seconds=2,
+        output_max_chars=10,
+        memory_max_bytes=64 * 1024 * 1024,
+        max_recursion_depth=100,
+        gc_interval=1_000,
+    )
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "print('1234567890')\nawait gated()\nprint('overflow')\n'done'"
+    try:
+        with pytest.raises(ApprovalRequired) as pending:
+            await execute_code_mode_workflow(
+                ctx=ctx,
+                wrapped_toolset=toolset,
+                outer_tool_call_id="outer-call",
+                code=code,
+                executor=bounded_executor,
+            )
+        args_sha256, _ = digest_args({})
+        ctx.tool_call_metadata = build_code_mode_decision_metadata(
+            approval_metadata=pending.value.metadata,
+            decision="approved",
+            effective_args={},
+            args_sha256=args_sha256,
+            message=None,
+        )
+        result = await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=bounded_executor,
+        )
+    finally:
+        await bounded_executor.close()
+
+    assert result.return_value == {"output": "1234567890", "result": "done"}
+    assert result.metadata[CODE_MODE_TRACE_METADATA_KEY]["output_truncated"] is True
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [PermissionError("membership changed"), ToolFailed("provider rejected the write")],
+)
+async def test_approved_handler_failure_is_catchable_in_script(
+    executor: MontyExecutor,
+    failure: Exception,
+) -> None:
+    async def denied() -> str:
+        raise failure
+
+    toolset = FunctionToolset([Tool(denied, requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "try:\n    await denied()\nexcept RuntimeError as exc:\n    result = str(exc)\nresult"
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    args_sha256, _ = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="approved",
+        effective_args={},
+        args_sha256=args_sha256,
+        message=None,
+    )
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code=code,
+        executor=executor,
+    )
+
+    assert str(failure) in result.return_value
+    [trace_entry] = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+    assert trace_entry["status"] == "failed"
+
+
+async def test_approved_argument_validation_failure_is_catchable_without_effect(
+    executor: MontyExecutor,
+) -> None:
+    calls = 0
+
+    async def gated(value: int) -> int:
+        nonlocal calls
+        calls += 1
+        return value
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "try:\n    await gated(value=1)\nexcept RuntimeError:\n    result = 'alternate'\nresult"
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    invalid_digest, _ = digest_args({"value": "invalid"})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="approved",
+        effective_args={"value": "invalid"},
+        args_sha256=invalid_digest,
+        message=None,
+    )
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code=code,
+        executor=executor,
+    )
+
+    assert result.return_value == "alternate"
+    assert calls == 0
+
+
+async def test_stale_nested_decision_keeps_schema_mismatch_reason(
+    executor: MontyExecutor,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated()",
+            executor=executor,
+        )
+    args_sha256, _ = digest_args({})
+    decision = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="approved",
+        effective_args={},
+        args_sha256=args_sha256,
+        message=None,
+    )
+    decision[CODE_MODE_DECISION_KEY]["nested_tool_call_id"] = "stale"
+    ctx.tool_call_metadata = decision
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code="await gated()",
+        executor=executor,
+    )
+
+    assert result.return_value["degradation_reason"] == "schema_mismatch"
+
+
+class _FailingResultSink(_RecordingSink):
+    async def emit(self, event: str, payload: Any = None) -> None:
+        if event == EVENT_TOOL_RESULT:
+            raise RuntimeError("event sink offline")
+        await super().emit(event, payload)
+
+
+async def test_operational_failure_during_settlement_is_labeled_resume_crash(
+    executor: MontyExecutor,
+) -> None:
+    toolset = FunctionToolset([Tool(lambda: "ok", name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated()",
+            executor=executor,
+        )
+    args_sha256, _ = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="approved",
+        effective_args={},
+        args_sha256=args_sha256,
+        message=None,
+    )
+    ctx.deps.sink = _FailingResultSink()
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code="await gated()",
+        executor=executor,
+    )
+
+    assert result.return_value["degradation_reason"] == "resume_crash"
+    assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+
+
+async def test_approved_nested_tool_preserves_public_result_on_resume(
+    executor: MontyExecutor,
+) -> None:
+    public_result = {"rows": [{"id": 1}, {"id": 2}]}
+
+    async def gated() -> ToolReturn[dict[str, str]]:
+        return ToolReturn(
+            return_value={"summary": "2 rows"},
+            metadata={"public_result": public_result},
+        )
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as exc_info:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code="await gated()",
+            executor=executor,
+        )
+    args_sha256, _args_bytes = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=exc_info.value.metadata,
+        decision="approved",
+        effective_args={},
+        args_sha256=args_sha256,
+        message=None,
+    )
+
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code="await gated()",
+        executor=executor,
+    )
+
+    [trace_entry] = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+    tool_result = next(
+        event for event in reversed(ctx.deps.sink.events) if event.event == "tool.result"
+    )
+    assert result.return_value == {"summary": "2 rows"}
+    assert trace_entry["presentation_result"] == public_result
+    assert tool_result.data["result"] == public_result
+
+
+async def test_one_nested_decision_does_not_approve_the_next_call(
+    executor: MontyExecutor,
+) -> None:
+    calls: list[int] = []
+
+    async def gated(value: int) -> int:
+        calls.append(value)
+        return value
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = "first = await gated(value=1)\nsecond = await gated(value=2)\nfirst + second"
+    with pytest.raises(ApprovalRequired) as first:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    first_digest, _ = digest_args({"value": 1})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=first.value.metadata,
+        decision="approved",
+        effective_args={"value": 1},
+        args_sha256=first_digest,
+        message=None,
+    )
+    with pytest.raises(ApprovalRequired) as second:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+
+    assert second.value.metadata["nested_tool_call_id"] == "outer-call:2"
+    assert calls == [1]
+
+
+async def test_nested_denial_is_catchable_and_does_not_invoke_handler(
+    executor: MontyExecutor,
+) -> None:
+    handler_calls = 0
+
+    async def handler(value: int) -> str:
+        nonlocal handler_calls
+        handler_calls += 1
+        return "unexpected"
+
+    toolset = FunctionToolset([Tool(handler, name="gated", requires_approval=True)])
+    ctx = _ctx(toolset)
+    code = (
+        "try:\n    await gated(value=1)\nexcept PermissionError:\n    result = 'alternate'\nresult"
+    )
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer-call",
+            code=code,
+            executor=executor,
+        )
+    denied_digest, _ = digest_args({"value": 1})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="denied",
+        effective_args={"value": 1},
+        args_sha256=denied_digest,
+        message="Not now",
+    )
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer-call",
+        code=code,
+        executor=executor,
+    )
+
+    assert result.return_value == "alternate"
+    assert handler_calls == 0
 
 
 async def test_raw_argument_validation_is_catchable_without_retry_budget(
@@ -812,8 +1882,12 @@ async def test_nested_calls_reach_praxis_authorization_and_envelope_hooks(
     )
 
     try:
-        with pytest.raises(CodeModeBoundaryError, match=expected):
-            await bridge.external_lookup()[tool_name]()
+        if side_effect_policy == "require_approval":
+            with pytest.raises(ApprovalRequired):
+                await bridge.external_lookup()[tool_name]()
+        else:
+            with pytest.raises(CodeModeBoundaryError, match=expected):
+                await bridge.external_lookup()[tool_name]()
         assert handler_calls == 0
         outcomes = [call.kwargs["outcome"] for call in record_invocation.await_args_list]
         assert len(outcomes) == 2

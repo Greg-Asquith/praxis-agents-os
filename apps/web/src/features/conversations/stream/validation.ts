@@ -141,6 +141,8 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
       const replayArgs = optionalField(data, "replay_args")
       const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
       const delegation = optionalNullableDelegation(eventName, data)
+      const derivedFromUntrusted = optionalBoolean(eventName, data, "derived_from_untrusted")
+      const taintSources = optionalTaintSources(eventName, data)
       return {
         event: "tool.approval_required",
         data: {
@@ -155,6 +157,10 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
           ...(replayArgs.present ? { replay_args: replayArgs.value } : {}),
           ...(delegation === undefined ? {} : { delegation }),
+          ...(derivedFromUntrusted === undefined
+            ? {}
+            : { derived_from_untrusted: derivedFromUntrusted }),
+          ...(taintSources === undefined ? {} : { taint_sources: taintSources }),
         },
       }
     }
@@ -200,6 +206,33 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         },
       }
   }
+}
+
+function optionalTaintSources(eventName: StreamEventName, data: Record<string, unknown>) {
+  if (!("taint_sources" in data)) {
+    return undefined
+  }
+  const value = data["taint_sources"]
+  if (!Array.isArray(value)) {
+    invalidField(eventName, "data.taint_sources", "must be an array")
+  }
+  return value.map((source, index) => {
+    if (!isRecord(source)) {
+      invalidField(eventName, `data.taint_sources[${String(index)}]`, "must be an object")
+    }
+    return {
+      source_kind: requiredNonEmptyString(
+        eventName,
+        `data.taint_sources[${String(index)}].source_kind`,
+        source["source_kind"]
+      ),
+      source_ref: requiredNonEmptyString(
+        eventName,
+        `data.taint_sources[${String(index)}].source_ref`,
+        source["source_ref"]
+      ),
+    }
+  })
 }
 
 function parseEnvelope(eventName: StreamEventName, data: Record<string, unknown>): StreamEnvelope {
@@ -467,6 +500,17 @@ function optionalEnum(
     return undefined
   }
   return requiredEnum(eventName, `data.${key}`, record[key], values, expectation)
+}
+
+function optionalBoolean(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): boolean | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  return requiredBoolean(eventName, `data.${key}`, record[key])
 }
 
 function optionalNullableNonEmptyString(

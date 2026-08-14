@@ -4,6 +4,7 @@ import type {
   AgentRunStatus,
   Conversation,
   PendingDelegatedApproval,
+  TaintSource,
 } from "@/features/conversations/types"
 import type {
   MessageChannel,
@@ -42,6 +43,8 @@ export type ApprovalState = {
   args: unknown
   replay_args?: unknown
   delegation?: PendingDelegatedApproval | null
+  derived_from_untrusted?: boolean
+  taint_sources?: TaintSource[]
   status: "pending"
 }
 
@@ -258,6 +261,12 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
         ...(streamEvent.data.replay_args !== undefined
           ? { replay_args: streamEvent.data.replay_args }
           : {}),
+        ...(streamEvent.data.derived_from_untrusted === undefined
+          ? {}
+          : { derived_from_untrusted: streamEvent.data.derived_from_untrusted }),
+        ...(streamEvent.data.taint_sources === undefined
+          ? {}
+          : { taint_sources: streamEvent.data.taint_sources }),
         status: "pending" as const,
         tool_call_id: streamEvent.data.tool_call_id,
       }

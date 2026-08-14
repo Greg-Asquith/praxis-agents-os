@@ -45,24 +45,17 @@ async def test_run_workflow_closes_over_catalog_and_stamps_run_metadata(
         wrapped_toolset=catalog.wrapped_toolset,
         outer_tool_call_id="workflow-call",
         code="{'done': True}",
+        reason="Compose reads",
     )
 
 
 @pytest.mark.parametrize("trigger", ["scheduled", "delegated", "event"])
-async def test_run_workflow_rejects_non_interactive_principals(trigger: str) -> None:
-    tool = code_mode.build_run_workflow_tool(CodeModeCatalog.build(()))
-
-    with pytest.raises(ModelRetry, match="only in interactive conversations"):
-        await tool.function(_ctx(trigger=trigger), code="1")
-
-
-@pytest.mark.parametrize("trigger", ["scheduled", "delegated", "event"])
-async def test_run_workflow_is_hidden_from_non_interactive_principals(trigger: str) -> None:
+async def test_run_workflow_is_available_to_unattended_principals(trigger: str) -> None:
     tool = code_mode.build_run_workflow_tool(CodeModeCatalog.build(()))
 
     prepared = await FunctionToolset([tool]).get_tools(_ctx(trigger=trigger))
 
-    assert prepared == {}
+    assert set(prepared) == {"run_workflow"}
 
 
 async def test_run_workflow_is_available_to_interactive_principals() -> None:

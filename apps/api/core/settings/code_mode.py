@@ -1,6 +1,10 @@
+# apps/api/settings/code_mode.py
+
 """Sandboxed code-mode execution settings."""
 
 from pydantic import Field, model_validator
+
+CODE_MODE_STATE_MIN_HEADROOM_BYTES = 64 * 1024
 
 
 class CodeModeSettingsMixin:
@@ -27,6 +31,7 @@ class CodeModeSettingsMixin:
     AGENT_CODE_MODE_MAX_NESTED_CALLS: int = Field(
         default=25,
         ge=1,
+        le=25,
         description="Maximum serial nested tool calls in one script execution.",
     )
     AGENT_CODE_MODE_OUTPUT_MAX_CHARS: int = Field(
@@ -43,6 +48,16 @@ class CodeModeSettingsMixin:
         default=32_768,
         ge=1,
         description="Maximum serialized bytes returned from one workflow to the model.",
+    )
+    AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES: int = Field(
+        default=512 * 1024,
+        ge=1,
+        description="Maximum pre-base64 bytes retained for a suspended Monty interpreter.",
+    )
+    AGENT_CODE_MODE_STATE_MAX_BYTES: int = Field(
+        default=2 * 1024 * 1024,
+        ge=1,
+        description="Maximum JSON-serialized bytes retained for Code Mode resume state.",
     )
     AGENT_CODE_MODE_MEMORY_MAX_BYTES: int = Field(
         default=64 * 1024 * 1024,
@@ -71,5 +86,14 @@ class CodeModeSettingsMixin:
         if self.AGENT_CODE_MODE_RESULT_MAX_BYTES > self.AGENT_CODE_MODE_VALUE_MAX_BYTES:
             raise ValueError(
                 "AGENT_CODE_MODE_RESULT_MAX_BYTES cannot exceed AGENT_CODE_MODE_VALUE_MAX_BYTES"
+            )
+        minimum_state_bytes = (
+            4 * ((self.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES + 2) // 3)
+            + CODE_MODE_STATE_MIN_HEADROOM_BYTES
+        )
+        if minimum_state_bytes > self.AGENT_CODE_MODE_STATE_MAX_BYTES:
+            raise ValueError(
+                "AGENT_CODE_MODE_STATE_MAX_BYTES must cover the base64 snapshot "
+                "plus durable-state headroom"
             )
         return self

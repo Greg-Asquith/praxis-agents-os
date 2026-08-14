@@ -144,6 +144,10 @@ class GoogleAdsClient:
                 policy=policy,
                 client=self._client,
                 headers=headers,
+                validation_error_detail=lambda response: _google_ads_error_detail(
+                    response,
+                    operation=operation,
+                ),
                 **kwargs,
             )
         except IntegrationError as exc:
@@ -151,6 +155,62 @@ class GoogleAdsClient:
             # token beyond this provider boundary in exception context.
             exc.original_error = None
             raise
+
+
+def _google_ads_error_detail(
+    response: httpx2.Response,
+    *,
+    operation: str,
+) -> str:
+    """Extract a bounded, actionable message from a Google Ads error response."""
+    subject = "query" if operation == "run_report" else "request"
+    fallback = (
+        "Google Ads rejected the query. Check that its fields and filters are valid GAQL."
+        if operation == "run_report"
+        else "Google Ads rejected the request."
+    )
+    try:
+        payload = response.json()
+    except ValueError:
+        return fallback
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return fallback
+
+    messages: list[str] = []
+    details = error.get("details")
+    if isinstance(details, list):
+        for detail in details:
+            provider_errors = detail.get("errors") if isinstance(detail, dict) else None
+            if not isinstance(provider_errors, list):
+                continue
+            for provider_error in provider_errors:
+                message = (
+                    provider_error.get("message") if isinstance(provider_error, dict) else None
+                )
+                normalized = _bounded_provider_message(message)
+                if normalized and normalized not in messages:
+                    messages.append(normalized)
+                if len(messages) == 3:
+                    break
+            if len(messages) == 3:
+                break
+
+    if not messages:
+        fallback = _bounded_provider_message(error.get("message"))
+        if fallback:
+            messages.append(fallback)
+    if not messages:
+        return fallback
+
+    return f"Google Ads rejected the {subject}: {' '.join(messages)}"[:1000]
+
+
+def _bounded_provider_message(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split())
+    return normalized[:800] or None
 
 
 def normalize_customer_id(value: str) -> str:

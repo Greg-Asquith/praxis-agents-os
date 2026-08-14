@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from pydantic_ai import ModelRetry
 
-from core.exceptions.integration import IntegrationRateLimitError
+from core.exceptions.integration import IntegrationRateLimitError, IntegrationValidationError
 from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
@@ -71,6 +71,23 @@ async def test_fan_out_isolates_partial_failure() -> None:
     assert [result.status for result in results] == ["success", "error", "success"]
     assert results[1].error_code == "IntegrationRateLimitError"
     assert results[2].data == {"name": "Three"}
+
+
+async def test_fan_out_exposes_plain_integration_error_without_internal_context() -> None:
+    ctx = _ctx((_entry("One"),))
+
+    async def operation(_entry: ResolvedContextEntry):
+        raise IntegrationValidationError(
+            "Google Ads rejected the query: Unrecognized field 'keyword.text'.",
+            provider_key="google_ads",
+            operation="run_report",
+        )
+
+    results = await run_context_fan_out(ctx, binding=_binding(), operation=operation)
+
+    assert results[0].error_message == (
+        "Google Ads rejected the query: Unrecognized field 'keyword.text'."
+    )
 
 
 async def test_fan_out_write_gate_does_not_call_operation(monkeypatch) -> None:

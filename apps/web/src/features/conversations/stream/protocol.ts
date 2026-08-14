@@ -4,6 +4,7 @@ import type {
   AgentRunStatus,
   Conversation,
   PendingDelegatedApproval,
+  TaintSource,
 } from "@/features/conversations/types"
 
 export const STREAM_PROTOCOL_VERSION = "1"
@@ -99,6 +100,8 @@ export type StreamEvent =
         replay_args?: unknown
         parent_tool_call_id?: string
         delegation?: PendingDelegatedApproval | null
+        derived_from_untrusted?: boolean
+        taint_sources?: TaintSource[]
       }
     }
   | {

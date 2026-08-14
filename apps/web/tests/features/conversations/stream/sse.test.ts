@@ -93,6 +93,8 @@ const validEventCases = [
       name: "send_email",
       args: { to: "operator@example.com" },
       replay_args: null,
+      derived_from_untrusted: true,
+      taint_sources: [{ source_kind: "gmail_message", source_ref: "message-1" }],
       delegation: {
         parent_tool_call_id: "parent-tool-1",
         child_agent_id: "agent-2",

@@ -35,12 +35,14 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND,
     DELEGATED_APPROVAL_KIND_KEY,
 )
+from services.agents.runtime.approval_state import clear_suspended_run_metadata
 from services.completion_contract import validate_completion_json
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
 BLOCKED_ERROR_CODES = frozenset(
     {
         "approval_expired",
+        "code_mode_resume_requires_recovery",
         "schedule_execution_abandoned",
     }
 )
@@ -123,8 +125,13 @@ async def transition_run_status(
         )
 
     now = datetime.now(UTC)
+    source_status = run.status
     run.status = target
-    if target == RUN_STATUS_RUNNING and run.started_at is None:
+    # Resuming restarts the runtime clock so approval wait time never counts
+    # toward the max-duration reap deadline.
+    if target == RUN_STATUS_RUNNING and (
+        run.started_at is None or source_status == RUN_STATUS_AWAITING_APPROVAL
+    ):
         run.started_at = now
     elif target == RUN_STATUS_COMPLETED:
         run.completed_at = now
@@ -133,6 +140,7 @@ async def transition_run_status(
         run.error_code = error_code
         run.error_message = sanitize_error_message(error_message)
     if target in TERMINAL_RUN_STATUSES:
+        run.metadata_json = clear_suspended_run_metadata(run)
         run.outcome = resolved_outcome
         run.completion_json = validated_completion_json
         run.lease_expires_at = None

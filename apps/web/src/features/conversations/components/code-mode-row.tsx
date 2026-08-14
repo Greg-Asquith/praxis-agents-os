@@ -63,7 +63,7 @@ export function CodeModeRow({
     return null
   }
   const childCount = script.children.length
-  const reason = script.reason ?? workflowStatusSummary(activity, childCount)
+  const reason = script.reason ?? workflowStatusSummary(activity, childCount, Boolean(pendingChild))
   const modelResult =
     activity.status === "completed" && activity.result !== undefined
       ? formatWorkflowModelResult(activity.result)
@@ -79,9 +79,7 @@ export function CodeModeRow({
     <ToolResultCard
       ariaLabel={pendingChild ? "Workflow review needed" : workflowAriaLabel(activity, childCount)}
       defaultOpen={defaultOpen || Boolean(pendingChild)}
-      details={[
-        { label: "Summary", value: reason },
-      ]}
+      details={[{ label: "Summary", value: reason }]}
       heading={<CodeModeHeading />}
       key={pendingChildId ?? `settled:${activity.status}`}
       trailing={<WorkflowStatus activity={activity} pending={Boolean(pendingChild)} />}
@@ -168,14 +166,19 @@ function WorkflowStatus({ activity, pending }: { activity: ToolActivity; pending
   if (activity.status === "failed") {
     return <Badge variant="destructive">Couldn’t finish</Badge>
   }
-  if (activity.status === "running") {
+  // An answered approval keeps the outer call in awaiting_approval until the
+  // resumed run status lands, so it reads as working, never done.
+  if (activity.status === "running" || activity.status === "awaiting_approval") {
     return <Badge variant="secondary">Working</Badge>
   }
   return <Badge variant="success">Done</Badge>
 }
 
-function workflowStatusSummary(activity: ToolActivity, childCount: number) {
-  if (activity.status === "running") {
+function workflowStatusSummary(activity: ToolActivity, childCount: number, pending = false) {
+  if (pending) {
+    return "Waiting for your review"
+  }
+  if (activity.status === "running" || activity.status === "awaiting_approval") {
     return childCount === 0
       ? "Preparing workflow"
       : `Using ${String(childCount)} ${pluralize(childCount, "tool call")}…`

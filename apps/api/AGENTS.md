@@ -128,17 +128,27 @@ Repo-wide expectations are in the root `AGENTS.md`.
   Monty subprocess pool must close in API, worker, and test lifecycles. The
   sandbox has no OS handler or mount; nested calls are serial and must use the
   parent's prepared `ToolManager` so validation, approval, hooks, dispatch,
-  and audit remain the framework-owned path. Keep script arguments, nested
-  results, final values, and print output independently bounded. Generated
+  and audit remain the framework-owned path. Durable nested approvals persist
+  a version-stamped Monty snapshot in workspace-confidential run metadata.
+  Bound the pre-base64 snapshot with `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` and
+  the complete serialized artifact with `AGENT_CODE_MODE_STATE_MAX_BYTES`;
+  suspension-only presentation evidence is trimmed oldest-first before an
+  oversized artifact fails closed. A decision authorizes only the matching
+  nested call and validated effective arguments. Captured print
+  output is persisted cumulatively across suspensions, and every resume uses
+  only the remaining output budget. Keep script arguments, nested results,
+  final values, and print output independently bounded. Generated
   stubs render faithful input signatures and declared `output_model` return
   shapes; tools without a declared output model remain explicitly `Any`.
-  Persisted nested traces retain each complete normalized nested result as 
-  application- only presentation evidence, with no additional UI sampling or 
-  truncation; when a nested tool supplies a governed `public_result`, that 
-  richer value is the presentation evidence while only `return_value` enters 
-  the sandbox. That evidence must never enter model context. The governed 
+  Completed-run nested traces retain each complete normalized nested result as
+  application-only presentation evidence, with no additional UI sampling or
+  truncation. Suspended artifacts may omit the oldest presentation values only
+  to meet the aggregate state ceiling, while retaining their trace summaries
+  and explicit truncation markers. When a nested tool supplies a governed
+  `public_result`, that richer value is the presentation evidence while only
+  `return_value` enters the sandbox. That evidence must never enter model context. The governed
   nested-value and provider product bounds remain authoritative. Keep the 
-  workflow's model- facing final-result bound materially tighter than the 
+  workflow's model-facing final-result bound materially tighter than the
   nested value bound so a faulty reduction cannot flood every later request.
 - Tools that need richer transcript evidence than the model should receive may
   return `ToolReturn` with the bounded, output-model-validated payload in
