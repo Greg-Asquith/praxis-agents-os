@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.results import IntegrationFanOutEntry
+from services.integrations.context.results import IntegrationContextResult
 from services.integrations.context.utils import sanitize_context_error
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ async def _run_authorized_entries[T](
     binding: "IntegrationToolBinding",
     selected: Sequence[tuple[ResolvedContextEntry, T]],
     operation: Callable[[ResolvedContextEntry, T], Awaitable[Any]],
-) -> list[IntegrationFanOutEntry]:
+) -> list[IntegrationContextResult]:
     """Execute selected entries with one authorization and isolation loop."""
     from services.integrations.operations import _resolve_dispatched_integration_definition
 
@@ -31,22 +31,15 @@ async def _run_authorized_entries[T](
     if definition.integration_binding != binding:
         raise RuntimeError("Context binding does not match the dispatched integration tool")
 
-    results: list[IntegrationFanOutEntry] = []
+    results: list[IntegrationContextResult] = []
     for entry, operation_input in selected:
-        base = {
-            "integration_resource_id": entry.integration_resource_id,
-            "connection_id": entry.connection_id,
-            "provider_key": entry.provider_key,
-            "external_id": entry.external_id,
-            "display_name": entry.display_name,
-        }
         if binding.requires_write and not entry.write_allowed:
             from services.integrations.operations import record_integration_write_denial
 
             await record_integration_write_denial(ctx, entry)
             results.append(
-                IntegrationFanOutEntry(
-                    **base,
+                IntegrationContextResult(
+                    entry=entry,
                     status="error",
                     error_code="write_not_permitted",
                     error_message="This resource does not permit writes.",
@@ -63,8 +56,8 @@ async def _run_authorized_entries[T](
                 else exc.__class__.__name__
             )
             results.append(
-                IntegrationFanOutEntry(
-                    **base,
+                IntegrationContextResult(
+                    entry=entry,
                     status="error",
                     error_code=error_code,
                     error_message=sanitize_context_error(
@@ -73,5 +66,5 @@ async def _run_authorized_entries[T](
                 )
             )
         else:
-            results.append(IntegrationFanOutEntry(**base, status="success", data=data))
+            results.append(IntegrationContextResult(entry=entry, status="success", data=data))
     return results

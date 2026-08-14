@@ -121,6 +121,7 @@ class GoogleAdsMutationLedger(Mapping[str, Any]):
     action: str
     parents: tuple[GoogleAdsMutationParent, ...]
     projection: GoogleAdsMutationProjection
+    skipped_external_refs: tuple[tuple[FrozenFields, str], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.family or not self.action or not self.parents:
@@ -135,6 +136,14 @@ class GoogleAdsMutationLedger(Mapping[str, Any]):
         concrete = [effect.fields for effect in effects]
         if len(set(concrete)) != len(concrete):
             raise ValueError("Google Ads mutation effects must have unique concrete identities")
+        skipped_identities = {
+            parent.identity for parent in self.parents if parent.decision == "skipped"
+        }
+        if any(
+            identity not in skipped_identities or not external_ref
+            for identity, external_ref in self.skipped_external_refs
+        ):
+            raise ValueError("Skipped Google Ads references must identify skipped parents")
 
     @property
     def effects(self) -> tuple[GoogleAdsMutationEffect, ...]:
@@ -173,6 +182,9 @@ class GoogleAdsMutationLedger(Mapping[str, Any]):
         """Fail after dispatch when any concrete provider slot remains ambiguous."""
         if any(effect.outcome == "unverified" for effect in self.effects):
             raise ValueError("Google Ads mutation outcome could not be verified exactly")
+
+    def skipped_external_ref(self, parent: GoogleAdsMutationParent) -> str | None:
+        return dict(self.skipped_external_refs).get(parent.identity)
 
     def keyword_outcomes(self, *, entity_id_key: str) -> dict[str, list[dict[str, str]]]:
         """Project ordered exact keyword evidence for scoped transcript/audit rows."""
@@ -266,7 +278,14 @@ class GoogleAdsMutationLedger(Mapping[str, Any]):
                 self.action,
                 self.parents,
                 self.projection,
-            ) == (other.family, other.action, other.parents, other.projection)
+                self.skipped_external_refs,
+            ) == (
+                other.family,
+                other.action,
+                other.parents,
+                other.projection,
+                other.skipped_external_refs,
+            )
         if isinstance(other, Mapping):
             return self.result() == dict(other)
         return NotImplemented

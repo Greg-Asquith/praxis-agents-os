@@ -84,7 +84,7 @@ export function campaignNegativeKeywordArgs(
     !Array.isArray(value["keywords"]) ||
     value["keywords"].length === 0 ||
     !value["campaign_ids"].every(
-      (campaign) => isRecord(campaign) && typeof campaign["external_id"] === "string"
+      (campaign) => isRecord(campaign) && typeof campaign["campaign_id"] === "string"
     ) ||
     !value["keywords"].every((keyword) => parseKeyword(keyword, allowAny) !== null)
   ) {
@@ -206,14 +206,14 @@ export function adGroupNegativeKeywordArgs(
   }
   const selectionLabels: string[] = []
   for (const adGroup of value["ad_group_ids"]) {
-    if (!isRecord(adGroup) || typeof adGroup["external_id"] !== "string") {
+    if (!isRecord(adGroup) || typeof adGroup["ad_group_id"] !== "string") {
       return null
     }
     const label = typeof adGroup["label"] === "string" ? adGroup["label"].trim() : ""
     const scopeLabel =
       typeof adGroup["scope_label"] === "string" ? adGroup["scope_label"].trim() : ""
     selectionLabels.push(
-      [label || `Ad group ${adGroup["external_id"]}`, scopeLabel].filter(Boolean).join(" — ")
+      [label || `Ad group ${adGroup["ad_group_id"]}`, scopeLabel].filter(Boolean).join(" — ")
     )
   }
   return {

@@ -1,38 +1,30 @@
-# apps/api/integrations/google_ads/tools/schemas/__init__.py
+"""Operation-specific Google Ads tool-result contracts."""
 
-"""Provider-wide Google Ads tool-result contracts."""
-
-from pydantic import BaseModel
-
-from services.integrations.context.results import (
-    IntegrationFanOutEntry,
-    IntegrationFanOutOutput,
+from .campaign_links import GoogleAdsCampaignLinkOutput
+from .campaign_status import GoogleAdsCampaignStatusOutput
+from .create_negative_keyword_list import GoogleAdsCreateNegativeKeywordListOutput
+from .negative_keywords import (
+    GoogleAdsAddNegativeKeywordsOutput,
+    GoogleAdsRemoveNegativeKeywordsOutput,
+)
+from .run_report import GoogleAdsJsonValue, GoogleAdsRunReportOutput
+from .scoped_negative_keywords import (
+    GoogleAdsAddAdGroupKeywordOutput,
+    GoogleAdsAddCampaignKeywordOutput,
+    GoogleAdsRemoveAdGroupKeywordOutput,
+    GoogleAdsRemoveCampaignKeywordOutput,
 )
 
-type GoogleAdsJsonValue = (
-    str | int | float | bool | list["GoogleAdsJsonValue"] | dict[str, "GoogleAdsJsonValue"] | None
-)
-
-
-class GoogleAdsFanOutEntry(IntegrationFanOutEntry):
-    data: dict[str, GoogleAdsJsonValue] | None = None
-
-
-class GoogleAdsOutput(IntegrationFanOutOutput):
-    results: list[GoogleAdsFanOutEntry]
-
-
-class GoogleAdsReportData(BaseModel):
-    currency_code: str
-    rows: list[dict[str, GoogleAdsJsonValue]]
-    row_count: int
-    truncated: bool
-    truncation_note: str | None
-
-
-class GoogleAdsRunReportEntry(IntegrationFanOutEntry):
-    data: GoogleAdsReportData | None = None
-
-
-class GoogleAdsRunReportOutput(IntegrationFanOutOutput):
-    results: list[GoogleAdsRunReportEntry]
+__all__ = [
+    "GoogleAdsAddAdGroupKeywordOutput",
+    "GoogleAdsAddCampaignKeywordOutput",
+    "GoogleAdsAddNegativeKeywordsOutput",
+    "GoogleAdsCampaignLinkOutput",
+    "GoogleAdsCampaignStatusOutput",
+    "GoogleAdsCreateNegativeKeywordListOutput",
+    "GoogleAdsJsonValue",
+    "GoogleAdsRemoveAdGroupKeywordOutput",
+    "GoogleAdsRemoveCampaignKeywordOutput",
+    "GoogleAdsRemoveNegativeKeywordsOutput",
+    "GoogleAdsRunReportOutput",
+]

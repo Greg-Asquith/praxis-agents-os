@@ -20,7 +20,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsRemoveCampaignKeywordOutput
 from .schemas.negative_keyword import NegativeKeywordRemovalEntry
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
@@ -72,7 +72,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=False,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsRemoveCampaignKeywordOutput,
     max_public_result_chars=MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,

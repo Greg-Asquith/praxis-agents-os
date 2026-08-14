@@ -4,6 +4,7 @@
 
 import re
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from services.integrations.http import IntegrationRequestPolicy
@@ -13,6 +14,7 @@ from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
+    freeze_fields,
 )
 from .utils import grouped_partial_failure_errors, stream_rows
 
@@ -42,23 +44,28 @@ async def create_negative_keyword_list(
             )
         },
     )
-    existing_names = {
-        str(shared_set.get("name", "")).casefold()
+    existing_by_name = {
+        str(shared_set.get("name", "")).casefold(): str(shared_set.get("id", ""))
         for row in stream_rows(existing_payload)
         if isinstance((shared_set := row.get("sharedSet")), dict)
         and str(shared_set.get("name", ""))
+        and str(shared_set.get("id", "")).isdigit()
     }
     skipped_indices = {
         index: "already_exists"
         for index, name in enumerate(names)
-        if name.casefold() in existing_names
+        if name.casefold() in existing_by_name
     }
     submitted = [
         (index, {"name": name}) for index, name in enumerate(names) if index not in skipped_indices
     ]
     create_names = [fields["name"] for _, fields in submitted]
     if not create_names:
-        return _ledger(names, skipped_indices=skipped_indices, submitted=(), outcomes=())
+        return _with_existing_refs(
+            _ledger(names, skipped_indices=skipped_indices, submitted=(), outcomes=()),
+            names,
+            existing_by_name,
+        )
 
     payload = await client.post(
         f"customers/{normalized_customer_id}/sharedSets:mutate",
@@ -82,14 +89,18 @@ async def create_negative_keyword_list(
     results = payload.get("results") if isinstance(payload, dict) else None
     if unattributed_errors:
         diagnostic = unattributed_errors[0]
-        return _ledger(
+        return _with_existing_refs(
+            _ledger(
+                names,
+                skipped_indices=skipped_indices,
+                submitted=submitted,
+                outcomes=[
+                    ("unverified", None, diagnostic["error_code"], diagnostic["message"])
+                    for _ in create_names
+                ],
+            ),
             names,
-            skipped_indices=skipped_indices,
-            submitted=submitted,
-            outcomes=[
-                ("unverified", None, diagnostic["error_code"], diagnostic["message"])
-                for _ in create_names
-            ],
+            existing_by_name,
         )
     if not _valid_results(
         results,
@@ -97,27 +108,31 @@ async def create_negative_keyword_list(
         operation_count=len(create_names),
         indexed_errors=indexed_errors,
     ):
-        return _ledger(
+        return _with_existing_refs(
+            _ledger(
+                names,
+                skipped_indices=skipped_indices,
+                submitted=submitted,
+                outcomes=[
+                    (
+                        "failed" if index in indexed_errors else "unverified",
+                        None,
+                        (
+                            indexed_errors[index]["error_code"]
+                            if index in indexed_errors
+                            else _UNACCOUNTED_RESPONSE_CODE
+                        ),
+                        (
+                            indexed_errors[index]["message"]
+                            if index in indexed_errors
+                            else _UNACCOUNTED_RESPONSE_MESSAGE
+                        ),
+                    )
+                    for index in range(len(create_names))
+                ],
+            ),
             names,
-            skipped_indices=skipped_indices,
-            submitted=submitted,
-            outcomes=[
-                (
-                    "failed" if index in indexed_errors else "unverified",
-                    None,
-                    (
-                        indexed_errors[index]["error_code"]
-                        if index in indexed_errors
-                        else _UNACCOUNTED_RESPONSE_CODE
-                    ),
-                    (
-                        indexed_errors[index]["message"]
-                        if index in indexed_errors
-                        else _UNACCOUNTED_RESPONSE_MESSAGE
-                    ),
-                )
-                for index in range(len(create_names))
-            ],
+            existing_by_name,
         )
 
     outcomes = []
@@ -126,7 +141,26 @@ async def create_negative_keyword_list(
             outcomes.append(("failed", None, error["error_code"], error["message"]))
         else:
             outcomes.append(("applied", item["resourceName"], None, None))
-    return _ledger(names, skipped_indices=skipped_indices, submitted=submitted, outcomes=outcomes)
+    return _with_existing_refs(
+        _ledger(names, skipped_indices=skipped_indices, submitted=submitted, outcomes=outcomes),
+        names,
+        existing_by_name,
+    )
+
+
+def _with_existing_refs(
+    ledger: GoogleAdsMutationLedger,
+    names: list[str],
+    existing_by_name: Mapping[str, str],
+) -> GoogleAdsMutationLedger:
+    return replace(
+        ledger,
+        skipped_external_refs=tuple(
+            (freeze_fields({"name": name}), f"sharedSets/{existing_by_name[name.casefold()]}")
+            for name in names
+            if name.casefold() in existing_by_name
+        ),
+    )
 
 
 def _ledger(

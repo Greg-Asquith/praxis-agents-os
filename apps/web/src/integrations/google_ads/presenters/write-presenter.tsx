@@ -204,12 +204,13 @@ function writeFailure<Args>(
   variant: GoogleAdsWriteVariant<Args, unknown>
 ) {
   const entry: FanOutEntry = {
-    connectionId: activityId,
     data: null,
     displayName: "Selected Google Ads account",
     errorCode: null,
     errorMessage: description,
     externalId: "Selected Google Ads account",
+    providerKey: "google_ads",
+    renderKey: `google_ads:failure:${activityId}`,
     status: "failed",
   }
   return (

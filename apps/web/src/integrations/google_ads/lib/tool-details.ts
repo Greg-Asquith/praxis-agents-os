@@ -30,8 +30,8 @@ export function campaignReferenceLabels(args: unknown): string[] {
       return []
     }
     const label = typeof item["label"] === "string" ? item["label"].trim() : ""
-    const externalId = typeof item["external_id"] === "string" ? item["external_id"].trim() : ""
-    const value = label || externalId
+    const campaignId = typeof item["campaign_id"] === "string" ? item["campaign_id"].trim() : ""
+    const value = label || campaignId
     return value ? [value] : []
   })
 }

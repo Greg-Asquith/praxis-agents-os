@@ -17,17 +17,17 @@ describe("FanOutShell", () => {
       {
         results: [
           {
-            connection_id: "connection-1",
+            provider_key: "gmail",
             display_name: "Inbox",
             external_id: "hello@example.com",
             status: "success",
             data: { count: 2 },
           },
           {
-            connection_id: "connection-2",
+            provider_key: "gmail",
             display_name: "Support",
             external_id: "support@example.com",
-            status: "failed",
+            status: "error",
             data: { count: "not parsed" },
             error_message: "Mailbox access expired.",
           },
@@ -52,7 +52,7 @@ describe("FanOutShell", () => {
         {
           results: [
             {
-              connection_id: "connection-1",
+              provider_key: "gmail",
               display_name: "Inbox",
               external_id: "hello@example.com",
               status: "success",
@@ -69,17 +69,17 @@ describe("FanOutShell", () => {
     const entries = fanOutEntries({
       results: [
         {
-          connection_id: "connection-1",
+          provider_key: "gmail",
           display_name: "Inbox",
           external_id: "hello@example.com",
           status: "success",
           data: { count: 2 },
         },
         {
-          connection_id: "connection-2",
+          provider_key: "gmail",
           display_name: "Support",
           external_id: "support@example.com",
-          status: "failed",
+          status: "error",
           data: null,
           error_message: "Mailbox access expired.",
         },
@@ -122,18 +122,18 @@ describe("FanOutShell", () => {
     const entries = fanOutEntries({
       results: [
         {
-          connection_id: "connection-1",
+          provider_key: "gmail",
           display_name: "Inbox",
           external_id: "hello@example.com",
-          status: "failed",
+          status: "error",
           data: null,
           error_message: "Mailbox access expired.",
         },
         {
-          connection_id: "connection-2",
+          provider_key: "gmail",
           display_name: "Support",
           external_id: "support@example.com",
-          status: "failed",
+          status: "error",
           data: null,
           error_message: "Mailbox access expired.",
         },
@@ -156,7 +156,7 @@ describe("FanOutShell", () => {
     const entries = fanOutEntries({
       results: [
         {
-          connection_id: "connection-1",
+          provider_key: "google_ads",
           display_name: "1234567890",
           external_id: "1234567890",
           status: "success",

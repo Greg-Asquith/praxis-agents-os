@@ -58,7 +58,7 @@ export const gmailSearchPresenter: ToolRowPresenter = {
                 >
                   {entryMessages.map((message) => (
                     <div className="min-w-0" key={message.messageId} role="listitem">
-                      <GmailSearchMessageRow connectionId={entry.connectionId} message={message} />
+                      <GmailSearchMessageRow mailboxId={entry.externalId} message={message} />
                     </div>
                   ))}
                 </div>

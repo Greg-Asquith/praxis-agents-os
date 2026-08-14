@@ -163,8 +163,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and
   publish only through the generic integrations seam. Scoped provider tools
-  must revalidate the referenced active-context resource and target only that
-  resource, never fan an entity ID out across compatible accounts.
+  expose provider-owned scope/entity IDs only, resolve the provider scope to
+  the canonical compatible active-context resource at execution, and target
+  only that resource. Never serialize integration-resource or connection UUIDs
+  in a scoped reference, bypass active-context resolution, or fan an entity ID
+  out across compatible accounts.
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorized immediately before resume.
@@ -182,9 +185,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `services/integrations/`: context fan-out/targeting share one authorization
   and failure-isolation loop, `run_audited_integration_operation` derives
   external-write durability from the registered `RuntimeToolDefinition`, and
-  `serialize_fan_out_results` owns the nine-field outer envelope. Providers
+  `serialize_fan_out_results` owns the safe provider-key/scope outer envelope
+  and never publishes internal resource or connection UUIDs. Providers
   return one `IntegrationAuditOutcome`, supply bounded pending detail for
   external writes, and subclass the shared result models only to narrow data.
+  Every fixed integration tool declares an operation-specific output model;
+  dynamic objects are limited to report/query rows and provider-defined record
+  field values.
   Pending integration-operation evidence contains requested intent only;
   successful writes must return the one canonical terminal detail with exactly
   aligned intent outcomes and concrete provider effects. Intent and effect

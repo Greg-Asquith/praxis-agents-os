@@ -25,7 +25,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.get_record import get_record
-from .schemas import AirtableOutput
+from .schemas import AirtableGetRecordOutput
 from .utils import (
     AIRTABLE_BINDING,
     RESULTS_FIELD,
@@ -56,9 +56,17 @@ async def airtable_get_record(
                 client,
                 base_id=entry.external_id,
                 table=record_id.table.strip(),
-                record_id=reference.external_id,
+                record_id=reference.record_id,
             )
-            return IntegrationAuditOutcome(result, external_ref=reference.external_id)
+            result["reference"] = AirtableRecordReference(
+                base_id=entry.external_id,
+                table=reference.table,
+                record_id=reference.record_id,
+                label=reference.label,
+                description=reference.description,
+                scope_label=entry.display_name,
+            )
+            return IntegrationAuditOutcome(result, external_ref=reference.record_id)
 
         return await run_audited_integration_operation(
             ctx,
@@ -88,7 +96,7 @@ DEFINITION = RuntimeToolDefinition(
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=60,
-    output_model=AirtableOutput,
+    output_model=AirtableGetRecordOutput,
     integration_binding=AIRTABLE_BINDING,
     presentation=ToolPresentation(
         icon="airtable",

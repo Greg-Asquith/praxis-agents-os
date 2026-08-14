@@ -25,7 +25,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.list_records import MAX_RECORDS, list_records
-from .schemas import AirtableOutput
+from .schemas import AirtableListRecordsOutput
 from .utils import (
     AIRTABLE_BINDING,
     RESULTS_FIELD,
@@ -91,7 +91,7 @@ DEFINITION = RuntimeToolDefinition(
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=60,
-    output_model=AirtableOutput,
+    output_model=AirtableListRecordsOutput,
     integration_binding=AIRTABLE_BINDING,
     presentation=ToolPresentation(
         icon="airtable",

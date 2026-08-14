@@ -87,9 +87,10 @@ async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkey
     )
     entry = _writable_google_ads_entry()
     detail = _pending_negative_keyword_operation_detail(
+        entry,
         GoogleAdsSharedSetReference(
-            integration_resource_id=uuid4(),
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [{"text": "brand", "match_type": "EXACT"}],
@@ -259,9 +260,10 @@ def test_negative_keyword_removal_results_bound_model_data_and_keep_safe_display
 
 
 def test_negative_keyword_audit_detail_retains_all_applied_rows() -> None:
+    entry = _writable_google_ads_entry()
     reference = GoogleAdsSharedSetReference(
-        integration_resource_id=uuid4(),
-        external_id="50",
+        customer_id=entry.external_id,
+        shared_set_id="50",
         label="Brand Protection",
     )
     provider_result = {
@@ -278,6 +280,7 @@ def test_negative_keyword_audit_detail_retains_all_applied_rows() -> None:
     }
 
     pending = _pending_negative_keyword_operation_detail(
+        entry,
         reference,
         [
             {"text": item["text"], "match_type": item["match_type"]}
@@ -426,8 +429,8 @@ async def test_add_negative_keywords_retries_above_bulk_bound() -> None:
         await google_ads_add_negative_keywords(
             None,  # type: ignore[arg-type]
             GoogleAdsSharedSetReference(
-                integration_resource_id=uuid4(),
-                external_id="50",
+                customer_id="111",
+                shared_set_id="50",
                 label="Brand Protection",
             ),
             [
@@ -751,13 +754,13 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
         ctx,
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=entries[0].integration_resource_id,
-                external_id="10",
+                customer_id=entries[0].external_id,
+                campaign_id="10",
                 label="First campaign",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=entries[1].integration_resource_id,
-                external_id="20",
+                customer_id=entries[1].external_id,
+                campaign_id="20",
                 label="Second campaign",
             ),
         ],
@@ -1025,13 +1028,13 @@ async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
         ctx,
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="10",
+                customer_id=entry.external_id,
+                campaign_id="10",
                 label="Still available",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="20",
+                customer_id=entry.external_id,
+                campaign_id="20",
                 label="Deleted before approval",
             ),
         ],
@@ -1047,8 +1050,6 @@ async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
 async def test_negative_list_campaign_links_reject_cross_account_references(
     monkeypatch,
 ) -> None:
-    list_resource_id = uuid4()
-    campaign_resource_id = uuid4()
     ctx = SimpleNamespace(deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=())))
     provider_client = AsyncMock()
     monkeypatch.setattr(
@@ -1060,14 +1061,14 @@ async def test_negative_list_campaign_links_reject_cross_account_references(
         await google_ads_link_negative_keyword_list(
             ctx,
             GoogleAdsSharedSetReference(
-                integration_resource_id=list_resource_id,
-                external_id="50",
+                customer_id="111",
+                shared_set_id="50",
                 label="Brand Protection",
             ),
             [
                 GoogleAdsCampaignReference(
-                    integration_resource_id=campaign_resource_id,
-                    external_id="10",
+                    customer_id="222",
+                    campaign_id="10",
                     label="Search",
                 )
             ],
@@ -1139,14 +1140,14 @@ async def test_negative_list_campaign_links_fail_closed_for_stale_references(
     result = await google_ads_link_negative_keyword_list(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="10",
+                customer_id=entry.external_id,
+                campaign_id="10",
                 label="Search",
             )
         ],
@@ -1228,25 +1229,25 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
     result = await google_ads_link_negative_keyword_list(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
             member_count=17,
         ),
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="20",
+                customer_id=entry.external_id,
+                campaign_id="20",
                 label="Shopping",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="10",
+                customer_id=entry.external_id,
+                campaign_id="10",
                 label="Search",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="30",
+                customer_id=entry.external_id,
+                campaign_id="30",
                 label="Legacy",
             ),
         ],
@@ -1262,18 +1263,14 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
         "action": "LINK",
     }
     assert result["results"][0]["data"] == {
-        "resource_names": ["customers/111/campaignSharedSets/10~50"],
-        "skipped_existing": ["20"],
-        "campaign_errors": [
-            {
-                "campaign_id": "30",
-                "message": "Campaign is removed",
-                "error_code": "CAMPAIGN_REMOVED",
-            }
-        ],
         "action": "LINK",
         "negative_list": {
-            "external_id": "50",
+            "reference": GoogleAdsSharedSetReference(
+                customer_id="111",
+                shared_set_id="50",
+                label="Brand Protection",
+                member_count=17,
+            ),
             "name": "Brand Protection",
             "member_count": 17,
         },
@@ -1311,27 +1308,26 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
 
 
 def test_negative_list_campaign_link_result_uses_unlink_outcomes() -> None:
-    resource_id = uuid4()
     result = _campaign_link_result(
         GoogleAdsSharedSetReference(
-            integration_resource_id=resource_id,
-            external_id="50",
+            customer_id="111",
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=resource_id,
-                external_id="10",
+                customer_id="111",
+                campaign_id="10",
                 label="Search",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=resource_id,
-                external_id="20",
+                customer_id="111",
+                campaign_id="20",
                 label="Shopping",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=resource_id,
-                external_id="30",
+                customer_id="111",
+                campaign_id="30",
                 label="Legacy",
             ),
         ],
@@ -1358,21 +1354,20 @@ def test_negative_list_campaign_link_result_uses_unlink_outcomes() -> None:
 
 
 def test_negative_list_campaign_link_result_rejects_contradictory_accounting() -> None:
-    resource_id = uuid4()
     negative_list = GoogleAdsSharedSetReference(
-        integration_resource_id=resource_id,
-        external_id="50",
+        customer_id="111",
+        shared_set_id="50",
         label="Brand Protection",
     )
     campaigns = [
         GoogleAdsCampaignReference(
-            integration_resource_id=resource_id,
-            external_id="10",
+            customer_id="111",
+            campaign_id="10",
             label="Search",
         ),
         GoogleAdsCampaignReference(
-            integration_resource_id=resource_id,
-            external_id="20",
+            customer_id="111",
+            campaign_id="20",
             label="Shopping",
         ),
     ]
@@ -1438,14 +1433,14 @@ async def test_negative_list_campaign_links_audit_write_denial_before_provider(
     result = await google_ads_link_negative_keyword_list(
         ctx,
         GoogleAdsSharedSetReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="50",
+            customer_id=entry.external_id,
+            shared_set_id="50",
             label="Brand Protection",
         ),
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="10",
+                customer_id=entry.external_id,
+                campaign_id="10",
                 label="Search",
             )
         ],

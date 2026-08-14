@@ -43,6 +43,7 @@ export type ToolUiField = {
 export type EntityReferenceValue = Record<string, unknown>
 
 export type EntityChoice = {
+  identity: string[]
   value: EntityReferenceValue
   label: string
   description?: string | null

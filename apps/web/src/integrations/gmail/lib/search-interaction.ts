@@ -5,18 +5,24 @@ import type { QueryClient } from "@tanstack/react-query"
 import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
 
 export function gmailSearchMessageSelectHandler({
-  connectionId,
+  conversationId,
+  mailboxId,
   messageId,
   onOpen,
   queryClient,
 }: {
-  connectionId: string
+  conversationId: string | null
+  mailboxId: string
   messageId: string
   onOpen: () => void
   queryClient: QueryClient
 }) {
   return () => {
     onOpen()
-    void queryClient.prefetchQuery(gmailMessagePreviewQueryOptions(connectionId, messageId))
+    if (conversationId !== null) {
+      void queryClient.prefetchQuery(
+        gmailMessagePreviewQueryOptions(conversationId, mailboxId, messageId)
+      )
+    }
   }
 }

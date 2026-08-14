@@ -1,5 +1,6 @@
 """Google Ads entity resolver, ordering, cursor, and scope contracts."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -52,7 +53,7 @@ from tests.integrations.google_ads.support import (
 
 def test_campaign_reference_truncates_long_name() -> None:
     choice = campaign_choice(
-        SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
+        SimpleNamespace(external_id="111", display_name="Ads account"),
         {"id": "10", "name": "x" * 800, "status": "ENABLED"},
     )
 
@@ -63,7 +64,7 @@ def test_campaign_reference_truncates_long_name() -> None:
 
 def test_campaign_reference_rejects_removed_campaign() -> None:
     choice = campaign_choice(
-        SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
+        SimpleNamespace(external_id="111", display_name="Ads account"),
         {"id": "10", "name": "Removed campaign", "status": "REMOVED"},
     )
 
@@ -72,12 +73,17 @@ def test_campaign_reference_rejects_removed_campaign() -> None:
 
 def test_scoped_reference_grouping_is_context_ordered_deduplicated_and_bounded() -> None:
     first = _writable_google_ads_entry()
-    second = _writable_google_ads_entry()
+    second = replace(
+        first,
+        integration_resource_id=uuid4(),
+        external_id="222",
+        connection_id=uuid4(),
+    )
     incompatible = ResolvedContextEntry(
         integration_resource_id=uuid4(),
         provider_key="gmail",
         resource_type="gmail_mailbox",
-        external_id="owner@example.com",
+        external_id="333",
         display_name="Mailbox",
         connection_id=uuid4(),
         connection_label="Gmail",
@@ -103,10 +109,10 @@ def test_scoped_reference_grouping_is_context_ordered_deduplicated_and_bounded()
     )
 
     assert [entry for entry, _references in grouped] == [first, second]
-    assert [reference.external_id for reference in grouped[0][1]] == sorted(
+    assert [reference.campaign_id for reference in grouped[0][1]] == sorted(
         {str(index) for index in range(1, 61)}
     )[:50]
-    assert [reference.external_id for reference in grouped[1][1]] == ["900"]
+    assert [reference.campaign_id for reference in grouped[1][1]] == ["900"]
 
 
 def test_entity_cursor_round_trips_at_worst_case_within_generic_bound() -> None:
@@ -185,7 +191,7 @@ def test_entity_cursor_search_and_active_context_fingerprints_fail_closed() -> N
 
 def test_shared_set_choice_carries_member_count() -> None:
     choice = shared_set_choice(
-        SimpleNamespace(integration_resource_id=uuid4(), display_name="Ads account"),
+        SimpleNamespace(external_id="111", display_name="Ads account"),
         {"id": "50", "name": "Brand Protection", "memberCount": "312"},
     )
 
@@ -196,29 +202,37 @@ def test_shared_set_choice_carries_member_count() -> None:
 
 
 def test_shared_set_reference_canonicalizes_google_resource_name() -> None:
-    resource_id = uuid4()
-
     reference = GoogleAdsSharedSetReference.model_validate(
         {
             "entity_kind": "google_ads_shared_set",
-            "integration_resource_id": resource_id,
-            "external_id": "customers/9308708411/sharedSets/12186751748",
-            "entity_id": "12186751748",
+            "customer_id": "930-870-8411",
+            "shared_set_id": "customers/9308708411/sharedSets/12186751748",
             "label": "Testing 2",
         }
     )
 
-    assert reference.external_id == "12186751748"
-    assert "entity_id" not in reference.model_dump()
+    assert reference.shared_set_id == "12186751748"
+    assert reference.customer_id == "9308708411"
 
 
-def test_shared_set_reference_rejects_conflicting_redundant_id() -> None:
-    with pytest.raises(ValidationError, match="entity_id"):
+def test_shared_set_reference_rejects_internal_or_legacy_ids() -> None:
+    with pytest.raises(ValidationError, match="integration_resource_id"):
         GoogleAdsSharedSetReference.model_validate(
             {
+                "customer_id": "9308708411",
+                "shared_set_id": "12186751748",
                 "integration_resource_id": uuid4(),
-                "external_id": "customers/9308708411/sharedSets/12186751748",
-                "entity_id": "999",
+                "label": "Testing 2",
+            }
+        )
+
+
+def test_customer_id_rejects_non_digit_values_at_validation() -> None:
+    with pytest.raises(ValidationError, match="customer_id"):
+        GoogleAdsSharedSetReference.model_validate(
+            {
+                "customer_id": "customers/9308708411",
+                "shared_set_id": "12186751748",
                 "label": "Testing 2",
             }
         )
@@ -285,17 +299,17 @@ async def test_shared_set_search_uses_global_tuple_order_and_reaches_every_accou
 
     choices = [choice for page in pages for choice in page.choices]
     identities = [
-        (choice.value["integration_resource_id"], choice.value["external_id"]) for choice in choices
+        (choice.value["customer_id"], choice.value["shared_set_id"]) for choice in choices
     ]
     assert len(choices) == 10
     assert len(identities) == len(set(identities))
     expected = {
-        (entity_id, str(entry.integration_resource_id))
+        (entity_id, entry.external_id)
         for entry in entries
         for entity_id in rows_by_resource[entry.integration_resource_id]
     }
     assert identities == [
-        (resource_id, str(entity_id)) for entity_id, resource_id in sorted(expected)
+        (customer_id, str(entity_id)) for entity_id, customer_id in sorted(expected)
     ]
     assert all(len(page.choices) <= 2 for page in pages)
     assert pages[-1].next_cursor is None
@@ -336,12 +350,8 @@ async def test_shared_set_tie_cursor_uses_exclusive_then_inclusive_account_bound
     first = await search_google_ads_shared_sets(ctx, "", {}, 1, None)
     second = await search_google_ads_shared_sets(ctx, "", {}, 1, first.next_cursor)
 
-    assert first.choices[0].value["integration_resource_id"] == str(
-        entries[0].integration_resource_id
-    )
-    assert second.choices[0].value["integration_resource_id"] == str(
-        entries[1].integration_resource_id
-    )
+    assert first.choices[0].value["customer_id"] == entries[0].external_id
+    assert second.choices[0].value["customer_id"] == entries[1].external_id
     continuation_calls = query.await_args_list[2:]
     assert continuation_calls[0].kwargs["minimum_id"] == 10
     assert continuation_calls[0].kwargs["minimum_id_inclusive"] is False
@@ -370,7 +380,7 @@ async def test_shared_set_search_restarts_stale_cursor_and_propagates_provider_f
 
     restarted = await search_google_ads_shared_sets(ctx, "new", {}, 1, first.next_cursor)
 
-    assert restarted.choices[0].value["external_id"] == "1"
+    assert restarted.choices[0].value["shared_set_id"] == "1"
     assert query.await_args.kwargs["minimum_id"] is None
 
     query.side_effect = RuntimeError("provider unavailable")
@@ -405,26 +415,20 @@ async def test_shared_set_hydration_drops_invalid_and_inactive_ids(monkeypatch) 
         [
             {
                 "entity_kind": "google_ads_shared_set",
-                "integration_resource_id": str(active.integration_resource_id),
-                "external_id": "customers/111/sharedSets/50",
-                "entity_id": "50",
+                "customer_id": "111",
+                "shared_set_id": "customers/111/sharedSets/50",
                 "label": "Current list",
             },
             GoogleAdsSharedSetReference(
-                integration_resource_id=active.integration_resource_id,
-                external_id="not-digits",
-                label="Invalid list",
-            ),
-            GoogleAdsSharedSetReference(
-                integration_resource_id=uuid4(),
-                external_id="60",
+                customer_id="999",
+                shared_set_id="60",
                 label="Inactive list",
             ),
         ],
         {},
     )
 
-    assert [choice.value["external_id"] for choice in choices] == ["50"]
+    assert [choice.value["shared_set_id"] for choice in choices] == ["50"]
     assert query.await_args.kwargs["shared_set_ids"] == ["50"]
     assert query.await_args.kwargs["limit"] == 1
 
@@ -494,7 +498,7 @@ async def test_campaign_targeted_search_reaches_match_beyond_old_101_prefix(monk
 
     page = await search_google_ads_campaigns(ctx, "Needle", {}, 25, None)
 
-    assert [choice.value["external_id"] for choice in page.choices] == ["150", "150"]
+    assert [choice.value["campaign_id"] for choice in page.choices] == ["150", "150"]
     assert page.next_cursor is None
 
 
@@ -529,7 +533,7 @@ async def test_shared_set_targeted_search_reaches_match_beyond_provider_page_pre
 
     page = await search_google_ads_shared_sets(ctx, "Needle", {}, 25, None)
 
-    assert [choice.value["external_id"] for choice in page.choices] == ["10050"]
+    assert [choice.value["shared_set_id"] for choice in page.choices] == ["10050"]
     assert page.next_cursor is None
 
 
@@ -559,25 +563,25 @@ async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) 
         ctx,
         [
             GoogleAdsCampaignReference(
-                integration_resource_id=active.integration_resource_id,
-                external_id="10",
+                customer_id=active.external_id,
+                campaign_id="10",
                 label="Current campaign",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=active.integration_resource_id,
-                external_id="20",
+                customer_id=active.external_id,
+                campaign_id="20",
                 label="Deleted campaign",
             ),
             GoogleAdsCampaignReference(
-                integration_resource_id=uuid4(),
-                external_id="30",
+                customer_id="999",
+                campaign_id="30",
                 label="Inactive account",
             ),
         ],
         {},
     )
 
-    assert [choice.value["external_id"] for choice in choices] == ["10"]
+    assert [choice.value["campaign_id"] for choice in choices] == ["10"]
     query.assert_awaited_once()
     assert query.await_args.kwargs == {
         "campaign_ids": ["10", "20"],
@@ -588,7 +592,12 @@ async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) 
 
 async def test_ad_group_search_fans_out_and_labels_campaign_scope(monkeypatch) -> None:
     active = _writable_google_ads_entry()
-    second_active = _writable_google_ads_entry()
+    second_active = replace(
+        active,
+        integration_resource_id=uuid4(),
+        external_id="222",
+        connection_id=uuid4(),
+    )
     incompatible = ResolvedContextEntry(
         integration_resource_id=uuid4(),
         provider_key="gmail",
@@ -610,7 +619,7 @@ async def test_ad_group_search_fans_out_and_labels_campaign_scope(monkeypatch) -
         return_value=[
             {
                 "adGroup": {"id": "10", "name": "Exact", "status": "ENABLED"},
-                "campaign": {"name": "Brand"},
+                "campaign": {"id": "1", "name": "Brand"},
             }
         ]
     )
@@ -646,7 +655,7 @@ async def test_ad_group_hydration_drops_stale_and_out_of_context_values(monkeypa
         return_value=[
             {
                 "adGroup": {"id": "10", "name": "Exact", "status": "ENABLED"},
-                "campaign": {"name": "Brand"},
+                "campaign": {"id": "1", "name": "Brand"},
             }
         ]
     )
@@ -658,15 +667,16 @@ async def test_ad_group_hydration_drops_stale_and_out_of_context_values(monkeypa
             _ad_group_reference(active, "10"),
             _ad_group_reference(active, "20"),
             GoogleAdsAdGroupReference(
-                integration_resource_id=uuid4(),
-                external_id="30",
+                customer_id="999",
+                campaign_id="1",
+                ad_group_id="30",
                 label="Inactive ad group",
             ),
         ],
         {},
     )
 
-    assert [choice.value["external_id"] for choice in choices] == ["10"]
+    assert [choice.value["ad_group_id"] for choice in choices] == ["10"]
     assert choices[0].value["scope_label"] == "Brand"
     assert query.await_args.kwargs == {
         "ad_group_ids": ["10", "20"],
@@ -691,7 +701,7 @@ async def test_campaign_and_ad_group_resolvers_call_canonical_operations(monkeyp
         return_value=[
             {
                 "adGroup": {"id": "20", "name": "Exact", "status": "ENABLED"},
-                "campaign": {"name": "Brand"},
+                "campaign": {"id": "1", "name": "Brand"},
             }
         ]
     )

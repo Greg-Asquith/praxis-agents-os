@@ -120,9 +120,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   signed URLs.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
-  use the shared Base UI combobox for editable targets, preserve structured
-  reference values, and fail closed as “Target unavailable” rather than
-  exposing a raw ID.
+  use the server-supplied canonical identity for provider-neutral comparison,
+  and keep provider field names out of shared tool UI. Use the shared Base UI
+  combobox for editable targets, preserve structured reference values, and fail
+  closed as “Target unavailable” rather than exposing a raw ID.
 - Editable record approvals use the server-declared `min_rows` and column
   `required` constraints. Keep editor feedback, approval gating, and decision
   merge on the shared record-validity helper, and give repeated controls

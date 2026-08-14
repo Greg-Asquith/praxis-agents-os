@@ -135,7 +135,7 @@ async def search_scoped_entities(
         choices: list[tuple[tuple[int, str], EntityChoice]] = []
         for row in rows:
             choice = choice_for_row(entry, row)
-            external_id = choice.value.get("external_id") if choice is not None else None
+            external_id = _google_ads_choice_entity_id(choice) if choice is not None else None
             if choice is None or not isinstance(external_id, str) or not external_id.isdigit():
                 continue
             entity_id = int(external_id)
@@ -172,6 +172,18 @@ async def search_scoped_entities(
     )
 
 
+def _google_ads_choice_entity_id(choice: EntityChoice) -> str | None:
+    """Read the provider-specific entity id from one Google Ads public choice."""
+    key_by_kind = {
+        "google_ads_ad_group": "ad_group_id",
+        "google_ads_campaign": "campaign_id",
+        "google_ads_shared_set": "shared_set_id",
+    }
+    key = key_by_kind.get(str(choice.value.get("entity_kind")))
+    value = choice.value.get(key) if key is not None else None
+    return value if isinstance(value, str) else None
+
+
 def group_scoped_references[ReferenceT: ScopedEntityReference](
     ctx: _ResolverContext,
     binding: IntegrationBinding,
@@ -180,24 +192,33 @@ def group_scoped_references[ReferenceT: ScopedEntityReference](
 ) -> tuple[tuple[ResolvedContextEntry, tuple[ReferenceT, ...]], ...]:
     """Validate and group exact references in compatible context-entry order."""
     entries = ctx.active_context.compatible_entries(binding)
-    grouped: dict[UUID, dict[str, ReferenceT]] = {
-        entry.integration_resource_id: {} for entry in entries
-    }
+    entries_by_scope: dict[str, list[ResolvedContextEntry]] = {}
+    for entry in entries:
+        entries_by_scope.setdefault(entry.external_id, []).append(entry)
+    grouped: dict[UUID, dict[str, ReferenceT]] = {}
+    entry_by_resource_id: dict[UUID, ResolvedContextEntry] = {}
+    for scope_entries in entries_by_scope.values():
+        if len(scope_entries) != 1:
+            continue
+        entry = scope_entries[0]
+        grouped[entry.integration_resource_id] = {}
+        entry_by_resource_id[entry.integration_resource_id] = entry
     for value in values:
         try:
             reference = reference_type.model_validate(value)
         except ValueError:
             continue
-        references = grouped.get(reference.integration_resource_id)
-        if references is None or not reference.external_id.isdigit():
+        scope_entries = entries_by_scope.get(reference.provider_scope_id, ())
+        if len(scope_entries) != 1 or not reference.provider_entity_id.isdigit():
             continue
-        references.setdefault(reference.external_id, reference)
+        references = grouped[scope_entries[0].integration_resource_id]
+        references.setdefault(reference.provider_entity_id, reference)
 
     return tuple(
         (
-            entry,
+            entry_by_resource_id[entry.integration_resource_id],
             tuple(grouped[entry.integration_resource_id][external_id] for external_id in ids),
         )
         for entry in entries
-        if (ids := sorted(grouped[entry.integration_resource_id])[:MAX_EXACT_REFERENCES])
+        if (ids := sorted(grouped.get(entry.integration_resource_id, {}))[:MAX_EXACT_REFERENCES])
     )

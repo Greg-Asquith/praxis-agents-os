@@ -291,7 +291,12 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   names are customer-defined. Turn-count trimming remains the floor.
   `load_message_history` retains its byte-identical persisted-history contract,
   and summary watermark ids travel beside the provider-visible messages rather
-  than inside them.
+  than inside them. Before either the runtime model or history-summary model
+  receives reconstructed history, a model-boundary sanitizer removes legacy
+  `integration_resource_id` and `connection_id` keys from integration tool
+  calls/results, including Code Mode nested metadata. It does not rewrite
+  stored conversation rows, replay payloads, audit data, or arbitrary user and
+  non-integration content.
 - Use built-in capabilities such as `Thinking`, `WebSearch`, `WebFetch`, and
   `MCP` when they fit. For every optional or specialist capability, explicitly
   consider `defer_loading=True` so long-tail instructions and schemas do not bloat
@@ -304,10 +309,9 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   traces as diagnostic data and avoid full HTTP payload capture except for
   targeted debugging.
 
-Code-mode orchestration is designed in
-[`code-mode.md`](code-mode.md): Lane M builds on raw `pydantic-monty`, not
-Pydantic AI Harness, and plans 110–113 own its implementation. Harness remains
-a design reference only.
+Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
+builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
+design reference only.
 
 ## The SSE wire protocol (custom, owned by us)
 
@@ -394,7 +398,6 @@ skills, files, knowledge retrieval, memory, audited tool dispatch, and opt-in
 OpenTelemetry/Logfire instrumentation. The web app exposes the corresponding
 conversation, approval, agent, schedule, tool-catalog, and audit surfaces.
 
-Code-mode orchestration is designed in
-[`code-mode.md`](code-mode.md): Lane M builds on raw `pydantic-monty`, not
-Pydantic AI Harness, and plans 110–113 own its implementation. Harness remains
-a design reference only.
+Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
+builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
+design reference only.

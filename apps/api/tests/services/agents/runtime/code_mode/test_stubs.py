@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
@@ -63,6 +63,38 @@ def test_stub_catalog_renders_keyword_only_signatures_and_named_shapes() -> None
     )
 
 
+def test_output_definitions_unify_shared_types_and_prefix_only_conflicts() -> None:
+    shape_a = create_model("SharedShape", value=(str, ...))
+    shape_b = create_model("SharedShape", value=(int, ...))
+    outputs = {
+        "first_tool": create_model("FirstOutput", shape=(shape_a, ...)),
+        "second_tool": create_model("SecondOutput", shape=(shape_b, ...)),
+        "third_tool": create_model("ThirdOutput", shape=(shape_a, ...)),
+    }
+
+    def _noop() -> dict[str, object]:
+        return {}
+
+    rendered = render_stub_catalog(
+        tuple(
+            RuntimeToolDefinition(
+                name=name,
+                function=_noop,
+                description="Conflict probe.",
+                code_eligible=True,
+                output_model=model,
+            )
+            for name, model in outputs.items()
+        )
+    )
+
+    assert rendered.count("class SharedShape(TypedDict):") == 1
+    assert "class SecondOutputSharedShape(TypedDict):" in rendered
+    assert "ThirdOutputSharedShape" not in rendered
+    assert "shape: SharedShape" in rendered
+    assert "shape: SecondOutputSharedShape" in rendered
+
+
 def test_catalog_description_uses_probe_pinned_workflow_guidance() -> None:
     catalog = CodeModeCatalog.build(((SCHEMA_MATRIX_DEFINITION, "auto"),))
 
@@ -93,8 +125,8 @@ def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
 
     rendered = render_tool_stub(definition)
 
-    assert "class GoogleAdsRunReportOutputGoogleAdsReportData(TypedDict):" in rendered
-    assert "rows: list[dict[str, GoogleAdsRunReportOutputGoogleAdsJsonValue]]" in rendered
+    assert "class GoogleAdsReportData(TypedDict):" in rendered
+    assert "rows: list[dict[str, GoogleAdsJsonValue]]" in rendered
     assert "row_count: int" in rendered
     assert "class GoogleAdsRunReportOutput(TypedDict):" in rendered
     assert "async def google_ads_run_report(*, query: str) -> GoogleAdsRunReportOutput" in rendered
@@ -126,7 +158,16 @@ def test_every_first_party_eligible_schema_renders() -> None:
         if definition.output_model is not None:
             assert "-> Any" not in signature
 
-    assert rendered.count("class AirtableOutput(TypedDict):") == 1
+    assert "class GoogleAdsCreateListOutcome(TypedDict):" in rendered
+    # Created references render as the exact type the consumer tools accept.
+    assert "reference: NotRequired[GoogleAdsSharedSetReference | None]" in rendered
+    assert "negative_list: GoogleAdsSharedSetReference" in rendered
+    assert "customer_id: str" in rendered
+    assert "shared_set_id: str" in rendered
+    assert "mailbox_id: str" in rendered
+    assert "base_id: str" in rendered
+    assert "integration_resource_id" not in rendered
+    assert "connection_id" not in rendered
 
 
 def test_unsupported_schema_keyword_fails_closed() -> None:

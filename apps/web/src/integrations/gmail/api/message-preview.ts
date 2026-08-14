@@ -22,22 +22,30 @@ export type GmailMessagePreview = {
 }
 
 const gmailQueryKeys = {
-  messagePreview: (connectionId: string, messageId: string) =>
+  messagePreview: (conversationId: string, mailboxId: string, messageId: string) =>
     [
-      ...baseIntegrationQueryKeys.detail(connectionId),
+      ...baseIntegrationQueryKeys.workspace(),
+      "conversation",
+      conversationId,
       "gmail",
       "message-preview",
+      mailboxId,
       messageId,
     ] as const,
 }
 
-export function gmailMessagePreviewQueryOptions(connectionId: string, messageId: string) {
+export function gmailMessagePreviewQueryOptions(
+  conversationId: string | null,
+  mailboxId: string,
+  messageId: string
+) {
   return queryOptions({
-    queryKey: gmailQueryKeys.messagePreview(connectionId, messageId),
+    queryKey: gmailQueryKeys.messagePreview(conversationId ?? "unavailable", mailboxId, messageId),
+    enabled: conversationId !== null,
     queryFn: () =>
       apiRequest<GmailMessagePreview>(
-        `/integrations/connections/${connectionId}/previews/gmail_message`,
-        { query: { ref: messageId } }
+        `/integrations/conversations/${conversationId ?? "unavailable"}/previews/gmail_message`,
+        { query: { provider_key: "gmail", ref: messageId, scope_id: mailboxId } }
       ),
     staleTime: Number.POSITIVE_INFINITY,
     retry: 1,

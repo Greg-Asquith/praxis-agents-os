@@ -10,8 +10,8 @@ describe("ToolField", () => {
     const reference = {
       version: 1 as const,
       entity_kind: "gmail_message",
-      integration_resource_id: "mailbox-1",
-      external_id: "opaque-message-id",
+      mailbox_id: "mailbox-1",
+      message_id: "opaque-message-id",
       label: "Invoice from Acme",
       description: "billing@acme.test",
       scope_label: "Finance mailbox",
@@ -38,15 +38,15 @@ describe("ToolField", () => {
         {
           version: 1,
           entity_kind: "google_ads_campaign",
-          integration_resource_id: "account-1",
-          external_id: "111",
+          customer_id: "1234567890",
+          campaign_id: "111",
           label: "Spring campaign",
         },
         {
           version: 1,
           entity_kind: "google_ads_campaign",
-          integration_resource_id: "account-2",
-          external_id: "222",
+          customer_id: "2222222222",
+          campaign_id: "222",
           label: "Summer campaign",
         },
       ]

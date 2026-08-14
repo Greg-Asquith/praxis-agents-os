@@ -80,6 +80,23 @@ Goals, in priority order:
    and rejects it above the declared budget before Pydantic AI persists or
    streams it. The ordinary `return_value` remains the only model-visible
    result. Provider code owns safe row construction; core owns enforcement.
+7. **Provider-scoped references are provider-native.** A scoped reference
+   serializes the provider-owned scope and entity IDs needed to reuse it (for
+   example Google Ads customer + campaign/shared-set ID, Gmail mailbox +
+   message ID, or Airtable base + table + record ID). It never serializes a
+   Praxis integration-resource or connection UUID. At execution and approval
+   resume, the shared context runtime resolves the provider scope through the
+   canonical active context; unavailable scopes fail closed. Active-context
+   resolution deterministically consolidates duplicate provider resources
+   before tool execution.
+   Internal UUIDs remain server-side for credentials, authorization, cursors,
+   and audit evidence.
+8. **Fixed integration outputs are concrete contracts.** Every integration
+   tool declares an operation-specific Pydantic output model. Free-form object
+   values are confined to provider/query-defined leaves such as report rows,
+   BigQuery rows, and Airtable record fields. The shared fan-out envelope
+   publishes provider key, provider scope, display name, status, data, and
+   bounded error fields only; it never publishes connection/resource UUIDs.
 
 ## 3. What stays centralized (deliberately)
 
@@ -91,7 +108,7 @@ Goals, in priority order:
 | Secrets provider abstraction | `services/secrets/` | governance §5 |
 | OAuth connect flows, api-key connect, state signing | `routes/integrations/` + engine services | one hardened flow, parameterized by manifest |
 | Discovery job harness, status machine, sweeps | `services/integrations/discovery/` | one lifecycle; providers supply only `discover_resources` |
-| Active-context resolution + fan-out | `services/integrations/context/` | one place that decides what agents operate on |
+| Active-context resolution + provider-native targeting + safe fan-out | `services/integrations/context/` | one place that maps public provider scopes to exactly one authorized internal resource and publishes results without platform UUIDs |
 | SSE protocol, `ToolActivity` shape, presentation schema, public-result enforcement | stream/protocol + tool contract | stale-client safety; closed vocabularies; bounded transcript evidence |
 
 The presentation field-format vocabulary is closed:
@@ -163,7 +180,9 @@ Each provider package's `__init__.py` exports exactly one
 boring — data plus bounded callable contributions. Preview definitions
 contain a kind, audit operation name, and raw-content fetch function; the
 engine retains connection scoping, response bounds, HTML sanitization, and
-audit. Anything a provider needs
+failure auditing. Successful preview renders are not audited: the governed
+tool call that surfaced the content is the durable audit record, and
+per-render read events would only add noise. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
 don't grow the contract ad hoc. The optional metadata job kind lets a
 warehouse-style provider trigger provider-owned cache refresh from discovery

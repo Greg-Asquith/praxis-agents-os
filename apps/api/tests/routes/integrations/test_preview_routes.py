@@ -105,7 +105,7 @@ async def test_preview_sanitizes_html_and_returns_meta(
     assert body["meta"]["thread_message_count"] == 3
 
 
-async def test_preview_writes_audit_row_with_ref_and_no_content(
+async def test_successful_preview_records_no_audit_row(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     integration_identity: dict[str, object],
@@ -124,17 +124,13 @@ async def test_preview_writes_audit_row_with_ref_and_no_content(
     )
     assert response.status_code == 200, response.text
 
+    # The governed tool call already audited the read; per-render previews stay quiet.
     events = (
         await db_session.scalars(
             select(AuditEvent).where(AuditEvent.resource_id == str(connection.id))
         )
     ).all()
-    assert len(events) == 1
-    details = events[0].details or {}
-    assert details["provider_operation"] == "preview_gmail_message"
-    assert details["external_ref"] == "message-9"
-    assert "secret body text" not in str(details)
-    assert "secret body text" not in str(events[0].summary)
+    assert events == []
 
 
 async def test_failed_preview_commits_failure_audit_before_request_rollback(

@@ -35,7 +35,7 @@ export function UsageTrendChart({ daily }: { daily: DailyUsagePoint[] }) {
           <h3 className="font-heading font-medium" id="usage-trend-heading">
             Daily usage
           </h3>
-          <p className="text-muted-foreground mt-1 text-xs">UTC calendar days</p>
+          <p className="text-muted-foreground mt-1 text-xs">Timezone: UTC</p>
         </div>
         <Tabs
           value={metric}

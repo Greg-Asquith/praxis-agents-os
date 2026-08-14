@@ -368,7 +368,7 @@ async def test_preview_falls_back_to_plain_text_and_survives_enrichment_failures
 
 def test_message_reference_truncates_long_subject() -> None:
     choice = gmail_message_choice(
-        SimpleNamespace(integration_resource_id=uuid4(), display_name="Mailbox"),
+        SimpleNamespace(external_id="owner@example.com", display_name="Mailbox"),
         {"message_id": "m1", "subject": "x" * 501},
     )
 
@@ -413,8 +413,8 @@ async def test_message_hydration_omits_stale_item_without_aborting_batch(monkeyp
         ctx,
         [
             GmailMessageReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id=message_id,
+                mailbox_id=entry.external_id,
+                message_id=message_id,
                 label=message_id,
                 scope_label=entry.display_name,
             )
@@ -422,15 +422,15 @@ async def test_message_hydration_omits_stale_item_without_aborting_batch(monkeyp
         ]
         + [
             GmailMessageReference(
-                integration_resource_id=uuid4(),
-                external_id="foreign-mailbox",
+                mailbox_id="foreign@example.com",
+                message_id="foreign-mailbox",
                 label="Foreign mailbox",
             )
         ],
         {},
     )
 
-    assert [choice.value["external_id"] for choice in choices] == ["first", "last"]
+    assert [choice.value["message_id"] for choice in choices] == ["first", "last"]
 
 
 async def test_message_search_bounds_pagination_and_filters_active_scope(monkeypatch) -> None:
@@ -483,7 +483,7 @@ async def test_message_search_bounds_pagination_and_filters_active_scope(monkeyp
 
     assert len(page.choices) == 5
     assert page.next_cursor is None
-    assert [choice.value["external_id"] for choice in page.choices] == [
+    assert [choice.value["message_id"] for choice in page.choices] == [
         f"m{index}" for index in range(20, 25)
     ]
     client_factory.assert_awaited_once()
@@ -582,15 +582,16 @@ async def test_read_message_targets_only_the_referenced_mailbox(monkeypatch) -> 
     result = await gmail_read_message(
         ctx,
         GmailMessageReference(
-            integration_resource_id=entries[1].integration_resource_id,
-            external_id="m2",
+            mailbox_id=entries[1].external_id,
+            message_id="m2",
             label="Selected",
             scope_label=entries[1].display_name,
         ),
     )
 
     assert len(result["results"]) == 1
-    assert result["results"][0]["integration_resource_id"] == entries[1].integration_resource_id
+    assert result["results"][0]["external_id"] == entries[1].external_id
+    assert "integration_resource_id" not in result["results"][0]
     provider_read.assert_awaited_once_with(client, message_id="m2")
 
 

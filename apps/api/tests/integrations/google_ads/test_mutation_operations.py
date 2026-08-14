@@ -1,7 +1,5 @@
 """Google Ads low-level mutation-operation contracts."""
 
-from uuid import uuid4
-
 import pytest
 
 from core.exceptions.integration import IntegrationValidationError
@@ -34,6 +32,7 @@ from tests.integrations.google_ads.support import (
     _NegativeKeywordClient,
     _NegativeKeywordListClient,
     _OperationClient,
+    _writable_google_ads_entry,
 )
 
 
@@ -950,13 +949,15 @@ async def test_remove_negative_keywords_maps_partial_failures_to_resolved_rows()
 
 
 def test_remove_negative_keyword_audit_detail_retains_removed_resource_names() -> None:
+    entry = _writable_google_ads_entry()
     reference = GoogleAdsSharedSetReference(
-        integration_resource_id=uuid4(),
-        external_id="50",
+        customer_id="111",
+        shared_set_id="50",
         label="Brand Protection",
     )
 
     pending = pending_removal_operation_detail(
+        entry,
         reference,
         [
             {"text": "brand term", "match_type": "EXACT"},

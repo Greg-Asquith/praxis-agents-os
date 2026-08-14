@@ -67,7 +67,7 @@ export const gmailReadPresenter: ToolRowPresenter = {
               <MessageDetail
                 body={
                   <GmailMessageView
-                    connectionId={entry.connectionId}
+                    mailboxId={entry.externalId}
                     fallback={plainBody}
                     messageId={message.messageId}
                   />

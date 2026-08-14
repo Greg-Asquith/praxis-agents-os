@@ -59,10 +59,9 @@ def test_manifest_declares_and_exposes_discovery_and_pat_scope_help(monkeypatch)
 
 
 def test_record_reference_identity_is_provider_owned_and_ignores_display_hints() -> None:
-    resource_id = uuid4()
     original = AirtableRecordReference(
-        integration_resource_id=resource_id,
-        external_id="rec-one",
+        base_id="app-one",
+        record_id="rec-one",
         table="Contacts",
         label="Original label",
     )
@@ -222,7 +221,6 @@ async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypa
         workspace=object(),
         active_context=ResolvedActiveContext(entries=(entry,)),
     )
-    foreign_resource_id = uuid4()
 
     async def record(_client, *, record_id, **_kwargs):
         if record_id == "rec-deleted":
@@ -239,8 +237,8 @@ async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypa
         ctx,
         [
             AirtableRecordReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id=record_id,
+                base_id=entry.external_id,
+                record_id=record_id,
                 table="Contacts",
                 label=record_id,
                 scope_label=entry.display_name,
@@ -249,14 +247,14 @@ async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypa
         ]
         + [
             AirtableRecordReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="rec-wrong-table",
+                base_id=entry.external_id,
+                record_id="rec-wrong-table",
                 table="Orders",
                 label="Wrong table",
             ),
             AirtableRecordReference(
-                integration_resource_id=foreign_resource_id,
-                external_id="rec-foreign-base",
+                base_id="app-foreign",
+                record_id="rec-foreign-base",
                 table="Contacts",
                 label="Foreign base",
             ),
@@ -264,7 +262,7 @@ async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypa
         {"table": "Contacts"},
     )
 
-    assert [choice.value["external_id"] for choice in choices] == [
+    assert [choice.value["record_id"] for choice in choices] == [
         "rec-first",
         "rec-last",
     ]
@@ -383,10 +381,10 @@ async def test_list_records_attaches_each_base_scope_to_returned_references(monk
     result = await airtable_list_records(ctx, "Contacts")
 
     references = [item["data"]["records"][0]["reference"] for item in result["results"]]
-    assert [reference.integration_resource_id for reference in references] == [
-        entry.integration_resource_id for entry in entries
+    assert [reference.base_id for reference in references] == [
+        entry.external_id for entry in entries
     ]
-    assert [reference.external_id for reference in references] == [
+    assert [reference.record_id for reference in references] == [
         "rec-app-one",
         "rec-app-two",
     ]
@@ -433,8 +431,8 @@ async def test_record_tools_target_only_the_referenced_base(
     monkeypatch.setattr(f"{module_path}.{operation_name}", provider_operation)
     monkeypatch.setattr(f"{module_path}.run_audited_integration_operation", passthrough_audit)
     reference = AirtableRecordReference(
-        integration_resource_id=entries[1].integration_resource_id,
-        external_id="rec-selected",
+        base_id=entries[1].external_id,
+        record_id="rec-selected",
         table="Contacts",
         label="Selected",
     )
@@ -445,7 +443,8 @@ async def test_record_tools_target_only_the_referenced_base(
         result = await tool(ctx, "Contacts", reference)
 
     assert len(result["results"]) == 1
-    assert result["results"][0]["integration_resource_id"] == entries[1].integration_resource_id
+    assert result["results"][0]["external_id"] == entries[1].external_id
+    assert "integration_resource_id" not in result["results"][0]
     assert provider_operation.await_args.kwargs["base_id"] == "app-two"
     assert provider_operation.await_args.kwargs["record_id"] == "rec-selected"
 
@@ -474,8 +473,8 @@ async def test_update_record_rejects_table_reference_mismatch_before_dispatch(mo
             ctx,
             "Contacts",
             AirtableRecordReference(
-                integration_resource_id=entry.integration_resource_id,
-                external_id="rec-one",
+                base_id=entry.external_id,
+                record_id="rec-one",
                 table="Orders",
                 label="Order",
             ),
@@ -520,8 +519,8 @@ async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch
         ctx,
         "  contacts  ",
         AirtableRecordReference(
-            integration_resource_id=entry.integration_resource_id,
-            external_id="rec-one",
+            base_id=entry.external_id,
+            record_id="rec-one",
             table="Contacts",
             label="Contact",
         ),

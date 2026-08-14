@@ -42,16 +42,17 @@ class InternalEntityReference(EntityReference):
 
 
 class ScopedEntityReference(EntityReference):
-    """Reference to a provider entity within one active-context resource."""
+    """Provider-owned entity reference resolved against active context at use time."""
 
-    integration_resource_id: UUID
-    external_id: str = Field(min_length=1, max_length=512)
+    @property
+    def provider_scope_id(self) -> str:
+        """Return the provider-owned resource scope used for authorization lookup."""
+        raise NotImplementedError
 
-    identity_fields: ClassVar[tuple[str, ...]] = (
-        *EntityReference.identity_fields,
-        "integration_resource_id",
-        "external_id",
-    )
+    @property
+    def provider_entity_id(self) -> str:
+        """Return the provider-owned entity identifier used for exact hydration."""
+        raise NotImplementedError
 
 
 class AgentReference(InternalEntityReference):
@@ -79,6 +80,7 @@ class EntityChoice(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    identity: tuple[str, ...]
     value: dict[str, Any]
     label: str
     description: str | None = None
@@ -90,6 +92,7 @@ class EntityChoice(BaseModel):
         cls, reference: EntityReference, *, icon: str | None = None
     ) -> "EntityChoice":
         return cls(
+            identity=reference.identity(),
             value=reference.model_dump(mode="json"),
             label=reference.label,
             description=reference.description,

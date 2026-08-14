@@ -81,7 +81,7 @@ async def _mutate_targets(
 
 def _reference_fields(reference: ScopedEntityReference) -> dict[str, str]:
     return {
-        "ad_group_id": reference.external_id,
+        "ad_group_id": reference.ad_group_id,
         "ad_group_name": reference.label,
         "campaign_name": reference.scope_label or "",
     }

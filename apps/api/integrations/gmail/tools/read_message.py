@@ -46,8 +46,8 @@ async def gmail_read_message(
 
         async def execute() -> Any:
             client = await gmail_client(ctx, entry)
-            result = await read_message(client, message_id=reference.external_id)
-            return IntegrationAuditOutcome(result, external_ref=reference.external_id)
+            result = await read_message(client, message_id=reference.message_id)
+            return IntegrationAuditOutcome(result, external_ref=reference.message_id)
 
         return await run_audited_integration_operation(
             ctx,

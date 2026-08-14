@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
+import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { parseConversationMessages } from "@/features/conversations/message-parts/parse"
 import {
   agentStreamReducer,
@@ -56,10 +57,10 @@ describe("Gmail tool presenters", () => {
               total: 1,
             }),
             entry(null, {
-              connection_id: "connection-2",
+              provider_key: "gmail",
               display_name: "Support inbox",
               external_id: "support@example.com",
-              status: "failed",
+              status: "error",
               error_message: "Access needs to be renewed.",
             }),
           ],
@@ -111,7 +112,8 @@ describe("Gmail tool presenters", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const onOpen = vi.fn()
     const selectMessage = gmailSearchMessageSelectHandler({
-      connectionId: "connection-1",
+      conversationId: "conversation-1",
+      mailboxId: "hello@example.com",
       messageId: "message-1",
       onOpen,
       queryClient,
@@ -121,7 +123,8 @@ describe("Gmail tool presenters", () => {
     await vi.waitFor(() => {
       expect(
         queryClient.getQueryData(
-          gmailMessagePreviewQueryOptions("connection-1", "message-1").queryKey
+          gmailMessagePreviewQueryOptions("conversation-1", "hello@example.com", "message-1")
+            .queryKey
         )
       ).toMatchObject({ content: "Full message" })
     })
@@ -129,7 +132,7 @@ describe("Gmail tool presenters", () => {
     expect(onOpen).toHaveBeenCalledOnce()
     expect(fetchPreview).toHaveBeenCalledOnce()
     expect(String(fetchPreview.mock.calls[0]?.[0])).toContain(
-      "/integrations/connections/connection-1/previews/gmail_message?ref=message-1"
+      "/integrations/conversations/conversation-1/previews/gmail_message?provider_key=gmail&ref=message-1&scope_id=hello%40example.com"
     )
     vi.unstubAllGlobals()
   })
@@ -157,10 +160,7 @@ describe("Gmail tool presenters", () => {
           name: "gmail_search_messages",
           status: "completed",
           result: {
-            results: [
-              entry({ messages: [], total: 0 }),
-              entry(null, { connection_id: "connection-2" }),
-            ],
+            results: [entry({ messages: [], total: 0 }), entry(null, { provider_key: "gmail" })],
           },
         })
       )
@@ -218,43 +218,50 @@ describe("Gmail tool presenters", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, enabled: false } },
     })
-    client.setQueryData(gmailMessagePreviewQueryOptions("connection-1", "message-1").queryKey, {
-      kind: "gmail_message",
-      content_type: "html",
-      content: "<b>Rich body</b>",
-      meta: {
-        subject: "Quarterly update",
-        labels: ["Inbox", "Clients"],
-        thread_message_count: 3,
-      },
-    })
+    client.setQueryData(
+      gmailMessagePreviewQueryOptions("conversation-1", "hello@example.com", "message-1").queryKey,
+      {
+        kind: "gmail_message",
+        content_type: "html",
+        content: "<b>Rich body</b>",
+        meta: {
+          subject: "Quarterly update",
+          labels: ["Inbox", "Clients"],
+          thread_message_count: 3,
+        },
+      }
+    )
     const html = renderToStaticMarkup(
       createElement(
         QueryClientProvider,
         { client },
         createElement(
-          "div",
-          null,
-          gmailReadPresenter.render(
-            props({
-              id: "read-1",
-              kind: "result",
-              name: "gmail_read_message",
-              status: "completed",
-              result: {
-                results: [
-                  entry({
-                    message_id: "message-1",
-                    sender: NODE("Ada <ada@example.com>"),
-                    to: NODE("team@example.com"),
-                    subject: NODE("Quarterly update"),
-                    date: NODE("2026-07-22T09:00:00Z"),
-                    body: NODE("Plain fallback body"),
-                    truncated: false,
-                  }),
-                ],
-              },
-            })
+          ToolConversationContext,
+          { value: "conversation-1" },
+          createElement(
+            "div",
+            null,
+            gmailReadPresenter.render(
+              props({
+                id: "read-1",
+                kind: "result",
+                name: "gmail_read_message",
+                status: "completed",
+                result: {
+                  results: [
+                    entry({
+                      message_id: "message-1",
+                      sender: NODE("Ada <ada@example.com>"),
+                      to: NODE("team@example.com"),
+                      subject: NODE("Quarterly update"),
+                      date: NODE("2026-07-22T09:00:00Z"),
+                      body: NODE("Plain fallback body"),
+                      truncated: false,
+                    }),
+                  ],
+                },
+              })
+            )
           )
         )
       )
@@ -292,7 +299,7 @@ describe("Gmail tool presenters", () => {
                 body: NODE("Plain body"),
                 truncated: false,
               }),
-              entry(null, { connection_id: "connection-2" }),
+              entry(null, { provider_key: "gmail" }),
             ],
           },
         })
@@ -434,10 +441,7 @@ describe("Gmail tool presenters", () => {
           name: "gmail_send_message",
           status: "completed",
           result: {
-            results: [
-              entry({ message_id: "message-1" }),
-              entry(null, { connection_id: "connection-2" }),
-            ],
+            results: [entry({ message_id: "message-1" }), entry(null, { provider_key: "gmail" })],
           },
         })
       )
@@ -634,7 +638,7 @@ function toolUi(argFields: ToolUiField[]): ToolUi {
 function entry(
   data: unknown,
   overrides: Partial<{
-    connection_id: string
+    provider_key: string
     display_name: string
     error_message: string | null
     external_id: string
@@ -642,7 +646,7 @@ function entry(
   }> = {}
 ) {
   return {
-    connection_id: "connection-1",
+    provider_key: "gmail",
     display_name: "Primary inbox",
     external_id: "hello@example.com",
     status: "success",

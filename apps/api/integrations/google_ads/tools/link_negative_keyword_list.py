@@ -38,7 +38,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.link_negative_keyword_list import link_negative_keyword_list
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsCampaignLinkOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
@@ -71,11 +71,11 @@ async def google_ads_link_negative_keyword_list(
         raise ModelRetry("Choose at least one Google Ads campaign.")
     if len(campaign_ids) > 50:
         raise ModelRetry("Choose at most 50 Google Ads campaigns per call.")
-    resource_ids = {
-        negative_list.integration_resource_id,
-        *(campaign.integration_resource_id for campaign in campaign_ids),
+    customer_ids = {
+        negative_list.customer_id,
+        *(campaign.customer_id for campaign in campaign_ids),
     }
-    if len(resource_ids) != 1:
+    if len(customer_ids) != 1:
         raise ModelRetry(
             "The negative keyword list and campaigns must belong to the same Google Ads account. "
             "Ask the user to choose them again."
@@ -99,16 +99,17 @@ async def google_ads_link_negative_keyword_list(
             raise ModelRetry("Choose one negative keyword list and its campaigns again.")
         list_reference = list_references[0]
         normalized_campaign_ids = sorted(
-            {reference.external_id for reference in campaign_references}
+            {reference.campaign_id for reference in campaign_references}
         )
         pending_detail = _pending_operation_detail(
+            entry,
             list_reference,
             campaign_references,
             action,
         )
 
         async def execute() -> Any:
-            if not list_reference.external_id.isdigit() or any(
+            if not list_reference.shared_set_id.isdigit() or any(
                 not campaign_id.isdigit() for campaign_id in normalized_campaign_ids
             ):
                 raise ModelRetry("A selected Google Ads reference is invalid.")
@@ -116,7 +117,7 @@ async def google_ads_link_negative_keyword_list(
             await verify_shared_sets(
                 client,
                 entry=entry,
-                shared_set_ids=(list_reference.external_id,),
+                shared_set_ids=(list_reference.shared_set_id,),
             )
             await verify_campaigns(
                 client,
@@ -128,7 +129,7 @@ async def google_ads_link_negative_keyword_list(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
-                shared_set_id=list_reference.external_id,
+                shared_set_id=list_reference.shared_set_id,
                 campaign_ids=normalized_campaign_ids,
                 action=action,
             )
@@ -171,7 +172,7 @@ def _campaign_link_result(
     action: Literal["LINK", "UNLINK"],
     result: dict[str, Any],
 ) -> dict[str, Any]:
-    requested_by_id = {campaign.external_id: campaign for campaign in campaigns}
+    requested_by_id = {campaign.campaign_id: campaign for campaign in campaigns}
     if len(requested_by_id) != len(campaigns):
         raise ValueError("Google Ads campaign references must be unique")
 
@@ -206,7 +207,7 @@ def _campaign_link_result(
     skipped_outcome = "already_linked" if action == "LINK" else "not_linked"
     campaign_results: list[dict[str, Any]] = []
     for campaign in campaigns:
-        campaign_id = campaign.external_id
+        campaign_id = campaign.campaign_id
         row: dict[str, Any] = {
             "campaign_id": campaign_id,
             "campaign_name": campaign.label,
@@ -224,10 +225,9 @@ def _campaign_link_result(
         campaign_results.append(row)
 
     return {
-        **result,
         "action": action,
         "negative_list": {
-            "external_id": negative_list.external_id,
+            "reference": negative_list,
             "name": negative_list.label,
             "member_count": negative_list.member_count,
         },
@@ -236,24 +236,25 @@ def _campaign_link_result(
 
 
 def _pending_operation_detail(
+    entry: ResolvedContextEntry,
     negative_list: GoogleAdsSharedSetReference,
     campaigns: Sequence[GoogleAdsCampaignReference],
     action: Literal["LINK", "UNLINK"],
 ) -> PendingIntegrationOperationDetail:
     operation = "link" if action == "LINK" else "unlink"
     return PendingIntegrationOperationDetail(
-        target=_operation_target(negative_list),
+        target=_operation_target(entry, negative_list),
         intent_groups=[
             IntegrationOperationIntentGroup(
-                key=f"shared-set:{negative_list.external_id}:{operation}-campaigns",
+                key=f"shared-set:{negative_list.shared_set_id}:{operation}-campaigns",
                 action=operation,
                 entity_type="google_ads_campaign",
-                external_id=negative_list.external_id,
+                external_id=negative_list.shared_set_id,
                 display_name=negative_list.label,
                 items=[
                     IntegrationOperationIntent(
                         fields={
-                            "campaign_id": campaign.external_id,
+                            "campaign_id": campaign.campaign_id,
                             "campaign_name": campaign.label,
                         }
                     )
@@ -265,13 +266,14 @@ def _pending_operation_detail(
 
 
 def _operation_target(
+    entry: ResolvedContextEntry,
     reference: GoogleAdsSharedSetReference,
 ) -> IntegrationOperationTarget:
     return IntegrationOperationTarget(
         entity_type=reference.entity_kind,
-        external_id=reference.external_id,
+        external_id=reference.shared_set_id,
         display_name=reference.label,
-        integration_resource_id=str(reference.integration_resource_id),
+        integration_resource_id=str(entry.integration_resource_id),
         attributes={"member_count": reference.member_count},
     )
 
@@ -294,7 +296,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=False,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsCampaignLinkOutput,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
     presentation=ToolPresentation(

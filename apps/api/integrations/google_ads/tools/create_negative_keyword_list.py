@@ -7,6 +7,11 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from integrations.google_ads.operations.mutation_outcomes import (
+    GoogleAdsMutationLedger,
+    thaw_fields,
+)
+from integrations.google_ads.references import GoogleAdsSharedSetReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -32,7 +37,7 @@ from services.integrations.operations import (
 )
 
 from ..operations.create_negative_keyword_list import create_negative_keyword_list
-from .schemas import GoogleAdsOutput
+from .schemas import GoogleAdsCreateNegativeKeywordListOutput
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
@@ -66,13 +71,13 @@ async def google_ads_create_negative_keyword_list(
             result = ledger.result()
             operation_detail = terminal_operation_detail(pending_detail, ledger)
             return IntegrationAuditOutcome(
-                result,
+                ledger,
                 status=audit_status(operation_detail),
                 external_ref=",".join(result["resource_names"]) or None,
                 operation_detail=operation_detail,
             )
 
-        return await run_audited_integration_operation(
+        ledger = await run_audited_integration_operation(
             ctx,
             entry,
             tool_name="google_ads_create_negative_keyword_list",
@@ -80,6 +85,7 @@ async def google_ads_create_negative_keyword_list(
             execute=execute,
             pending_operation_detail=pending_detail,
         )
+        return _creation_result(entry, ledger)
 
     results = await run_context_fan_out(
         ctx,
@@ -133,10 +139,72 @@ def _normalize_names(names: list[str]) -> list[str]:
     return normalized
 
 
+def _creation_result(
+    entry: ResolvedContextEntry,
+    ledger: GoogleAdsMutationLedger,
+) -> dict[str, Any]:
+    outcomes: list[dict[str, Any]] = []
+    for parent in ledger.parents:
+        name = thaw_fields(parent.identity)["name"]
+        if parent.decision == "skipped":
+            external_ref = ledger.skipped_external_ref(parent)
+            if external_ref is None:
+                raise ValueError("Existing Google Ads list is missing its provider reference")
+            shared_set_id = external_ref.rsplit("/", 1)[-1]
+            outcomes.append(
+                {
+                    "name": name,
+                    "outcome": "already_exists",
+                    "reference": _shared_set_reference(entry, name, shared_set_id),
+                }
+            )
+            continue
+        effect = parent.effects[0]
+        if effect.outcome == "applied" and effect.external_ref is not None:
+            outcomes.append(
+                {
+                    "name": name,
+                    "outcome": "created",
+                    "reference": _shared_set_reference(
+                        entry,
+                        name,
+                        effect.external_ref.rsplit("/", 1)[-1],
+                    ),
+                }
+            )
+        else:
+            outcomes.append(
+                {
+                    "name": name,
+                    "outcome": "failed",
+                    "error_code": effect.error_code,
+                    "message": effect.message,
+                }
+            )
+    return {"outcomes": outcomes}
+
+
+def _shared_set_reference(
+    entry: ResolvedContextEntry,
+    name: str,
+    shared_set_id: str,
+) -> GoogleAdsSharedSetReference:
+    return GoogleAdsSharedSetReference(
+        customer_id=entry.external_id,
+        shared_set_id=shared_set_id,
+        label=name,
+        description="Negative keyword list",
+        scope_label=entry.display_name,
+    )
+
+
 DEFINITION = RuntimeToolDefinition(
     name="google_ads_create_negative_keyword_list",
     function=google_ads_create_negative_keyword_list,
-    description="Create named negative keyword lists in selected Google Ads accounts.",
+    description=(
+        "Create named negative keyword lists in selected Google Ads accounts and return reusable "
+        "negative-list references."
+    ),
     provider="google_ads",
     label="Create Google Ads Negative Keyword Lists",
     code_eligible=True,
@@ -147,7 +215,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=False,
     takes_ctx=True,
     timeout=60,
-    output_model=GoogleAdsOutput,
+    output_model=GoogleAdsCreateNegativeKeywordListOutput,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
     presentation=ToolPresentation(

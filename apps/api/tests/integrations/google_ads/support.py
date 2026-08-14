@@ -317,8 +317,8 @@ def _campaign_reference(
     campaign_id: str,
 ) -> GoogleAdsCampaignReference:
     return GoogleAdsCampaignReference(
-        integration_resource_id=entry.integration_resource_id,
-        external_id=campaign_id,
+        customer_id=entry.external_id,
+        campaign_id=campaign_id,
         label=f"Campaign {campaign_id}",
     )
 
@@ -328,8 +328,9 @@ def _ad_group_reference(
     ad_group_id: str,
 ) -> GoogleAdsAdGroupReference:
     return GoogleAdsAdGroupReference(
-        integration_resource_id=entry.integration_resource_id,
-        external_id=ad_group_id,
+        customer_id=entry.external_id,
+        campaign_id="1",
+        ad_group_id=ad_group_id,
         label=f"Ad Group {ad_group_id}",
         scope_label="Campaign 1",
     )

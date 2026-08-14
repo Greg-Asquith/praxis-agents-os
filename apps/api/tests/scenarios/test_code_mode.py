@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
+from integrations.google_ads.references import GoogleAdsSharedSetReference
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -80,6 +81,8 @@ _TOOL_NAMES = (
     "scenario_code_invalid_write",
     "scenario_code_oversized_public_write",
     "scenario_code_batch_write",
+    "scenario_code_create_negative_list",
+    "scenario_code_populate_negative_list",
 )
 
 
@@ -94,6 +97,14 @@ class _BatchRow(BaseModel):
 
 class _BatchWriteResult(BaseModel):
     applied: int
+
+
+class _CreatedNegativeList(BaseModel):
+    reference: GoogleAdsSharedSetReference
+
+
+class _CreateNegativeListResult(BaseModel):
+    outcomes: list[_CreatedNegativeList]
 
 
 @pytest.fixture
@@ -112,6 +123,7 @@ def code_mode_local_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def code_mode_scenario_tools() -> dict[str, Any]:
     effects: list[str] = []
     batch_effects: list[list[dict[str, str]]] = []
+    composed_references: list[GoogleAdsSharedSetReference] = []
     hostile_payload = json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
 
     async def read_first(*, value: str) -> dict[str, str]:
@@ -149,6 +161,27 @@ def code_mode_scenario_tools() -> dict[str, Any]:
         rows = [row.model_dump() for row in keywords]
         batch_effects.append(rows)
         return {"applied": len(rows)}
+
+    async def create_negative_list(*, name: str) -> dict[str, Any]:
+        return {
+            "outcomes": [
+                {
+                    "reference": GoogleAdsSharedSetReference(
+                        customer_id="1234567890",
+                        shared_set_id="77",
+                        label=name,
+                    )
+                }
+            ]
+        }
+
+    async def populate_negative_list(
+        *,
+        negative_list: GoogleAdsSharedSetReference,
+        keywords: list[_BatchRow],
+    ) -> dict[str, int]:
+        composed_references.append(negative_list)
+        return {"applied": len(keywords)}
 
     definitions = (
         RuntimeToolDefinition(
@@ -249,6 +282,24 @@ def code_mode_scenario_tools() -> dict[str, Any]:
                 )
             ),
         ),
+        RuntimeToolDefinition(
+            name="scenario_code_create_negative_list",
+            function=create_negative_list,
+            provider="test",
+            description="Create a provider-native negative keyword list reference.",
+            code_eligible=True,
+            configurable=False,
+            output_model=_CreateNegativeListResult,
+        ),
+        RuntimeToolDefinition(
+            name="scenario_code_populate_negative_list",
+            function=populate_negative_list,
+            provider="test",
+            description="Populate a provider-native negative keyword list reference.",
+            code_eligible=True,
+            configurable=False,
+            output_model=_BatchWriteResult,
+        ),
     )
     for definition in definitions:
         RUNTIME_TOOL_CATALOG[definition.name] = definition
@@ -257,6 +308,7 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             "definitions": definitions,
             "effects": effects,
             "batch_effects": batch_effects,
+            "composed_references": composed_references,
             "hostile_payload": hostile_payload,
         }
     finally:
@@ -319,6 +371,57 @@ async def test_multi_read_workflow_completes_with_nested_audits_and_replaced_sch
     assert all(len(row.details["args_sha256"]) == 64 for row in ordered_nested_audits)
     assert result.event_names().count("workflow.state") == 2
     assert result.output == "The compared value is NORTH."
+
+
+async def test_create_then_populate_composes_provider_reference_without_discovery(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+) -> None:
+    tool_names = [
+        "scenario_code_create_negative_list",
+        "scenario_code_populate_negative_list",
+    ]
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=tool_names,
+        code_mode_enabled=True,
+    )
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            RUN_WORKFLOW_TOOL_NAME,
+                            {
+                                "code": (
+                                    "created = await scenario_code_create_negative_list("
+                                    "name='Brand safety')\n"
+                                    "reference = created['outcomes'][0]['reference']\n"
+                                    "await scenario_code_populate_negative_list("
+                                    "negative_list=reference, keywords=[{'text': 'free', "
+                                    "'match_type': 'EXACT'}])"
+                                )
+                            },
+                            "workflow-call",
+                        ),
+                    )
+                ),
+                "The negative keyword list was created and populated.",
+            ]
+        ),
+    )
+
+    [reference] = code_mode_scenario_tools["composed_references"]
+    assert reference.customer_id == "1234567890"
+    assert reference.shared_set_id == "77"
+    assert {row.tool_name for row in result.audit_rows} >= set(tool_names)
+    assert not any(
+        "report" in row.tool_name or "discover" in row.tool_name for row in result.audit_rows
+    )
 
 
 async def test_production_catalog_wraps_explicitly_eligible_write_tools(

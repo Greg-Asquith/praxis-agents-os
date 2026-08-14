@@ -108,31 +108,33 @@ def render_tool_stub(definition: RuntimeToolDefinition) -> str:
 
 def render_stub_catalog(definitions: Sequence[RuntimeToolDefinition]) -> str:
     """Render deterministic input/output shapes and async function signatures."""
-    schemas: list[tuple[RuntimeToolDefinition, Mapping[str, Any], Mapping[str, Any] | None]] = []
+    inputs: list[tuple[RuntimeToolDefinition, Mapping[str, Any]]] = []
     merged_defs: dict[str, Any] = {}
     output_schemas: dict[type[Any], Mapping[str, Any]] = {}
     for definition in definitions:
-        input_schema = definition.serialized_input_schema()
-        if not isinstance(input_schema, Mapping):
+        raw_input_schema = definition.serialized_input_schema()
+        if not isinstance(raw_input_schema, Mapping):
             raise UnsupportedCodeModeSchemaError(f"{definition.name} has no object input schema")
+        input_schema = _strip_schema_titles(raw_input_schema)
         _validate_root_schema(definition.name, input_schema)
         _merge_definitions(merged_defs, input_schema, owner=definition.name)
+        inputs.append((definition, input_schema))
 
+    schemas: list[tuple[RuntimeToolDefinition, Mapping[str, Any], Mapping[str, Any] | None]] = []
+    for definition, input_schema in inputs:
         output_schema: Mapping[str, Any] | None = None
         if definition.output_model is not None:
             output_schema = output_schemas.get(definition.output_model)
             if output_schema is None:
                 output_model_name = _python_identifier(definition.output_model.__name__)
-                declared_schema = _namespace_schema_definitions(
-                    definition.output_model.model_json_schema(mode="serialization"),
-                    prefix=output_model_name,
-                )
-                _merge_definitions(
+                root_schema = _merge_output_definitions(
                     merged_defs,
-                    declared_schema,
+                    _strip_schema_titles(
+                        definition.output_model.model_json_schema(mode="serialization")
+                    ),
+                    prefix=output_model_name,
                     owner=f"{definition.name} output",
                 )
-                root_schema = _schema_without_definitions(declared_schema)
                 existing = merged_defs.get(output_model_name)
                 if existing is not None and existing != root_schema:
                     raise UnsupportedCodeModeSchemaError(
@@ -204,37 +206,87 @@ def _schema_without_definitions(schema: Mapping[str, Any]) -> Mapping[str, Any]:
     return {key: value for key, value in schema.items() if key != "$defs"}
 
 
-def _namespace_schema_definitions(
+def _merge_output_definitions(
+    merged: dict[str, Any],
     schema: Mapping[str, Any],
     *,
     prefix: str,
+    owner: str,
 ) -> Mapping[str, Any]:
-    definitions = _mapping(schema.get("$defs", {}), key=f"{prefix}.$defs")
-    renamed = {name: f"{prefix}{_python_identifier(name)}" for name in definitions}
+    """Merge output $defs under their own names, prefixing only genuine conflicts.
 
-    def rewrite(value: Any) -> Any:
-        if isinstance(value, list):
-            return [rewrite(item) for item in value]
-        if not isinstance(value, Mapping):
-            return value
-        rewritten: dict[str, Any] = {}
-        for key, item in value.items():
-            if key == "$defs":
-                rewritten[key] = {renamed[name]: rewrite(child) for name, child in item.items()}
-                continue
-            if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/"):
-                name = item.removeprefix("#/$defs/")
-                replacement = renamed.get(name)
-                if replacement is None:
-                    raise UnsupportedCodeModeSchemaError(
-                        f"{prefix} references missing $defs entry {name}"
-                    )
-                rewritten[key] = f"#/$defs/{replacement}"
-                continue
-            rewritten[key] = rewrite(item)
-        return rewritten
+    Shared entity types (e.g. provider references) keep one catalog-wide name so a
+    tool result visibly returns the same type another tool accepts. A definition is
+    prefixed with the output model's name only when a different schema already owns
+    its name; renames cascade because they change referencing definitions too.
+    """
+    definitions = _mapping(schema.get("$defs", {}), key=f"{owner}.$defs")
+    conflicted: set[str] = set()
+    while True:
+        renamed = {
+            name: f"{prefix}{_python_identifier(name)}"
+            if name in conflicted
+            else _python_identifier(name)
+            for name in definitions
+        }
+        rewritten = {
+            renamed[name]: _rewrite_references(value, renamed, owner=owner)
+            for name, value in definitions.items()
+        }
+        newly_conflicted = {
+            name
+            for name in definitions
+            if name not in conflicted
+            and renamed[name] in merged
+            and merged[renamed[name]] != rewritten[renamed[name]]
+        }
+        if not newly_conflicted:
+            break
+        conflicted |= newly_conflicted
+    for name, value in rewritten.items():
+        existing = merged.get(name)
+        if existing is not None and existing != value:
+            raise UnsupportedCodeModeSchemaError(f"{owner} has a conflicting $defs entry: {name}")
+        merged[name] = value
+    return _rewrite_references(_schema_without_definitions(schema), renamed, owner=owner)
 
-    return rewrite(schema)
+
+def _strip_schema_titles(value: Any) -> Any:
+    """Drop unused title metadata so structurally equal schemas merge under one name."""
+    if isinstance(value, list):
+        return [_strip_schema_titles(item) for item in value]
+    if not isinstance(value, Mapping):
+        return value
+    stripped: dict[str, Any] = {}
+    for key, item in value.items():
+        if key == "title":
+            continue
+        if key in {"properties", "$defs"} and isinstance(item, Mapping):
+            # Keys here are property/definition names, not schema keywords.
+            stripped[key] = {name: _strip_schema_titles(child) for name, child in item.items()}
+            continue
+        stripped[key] = _strip_schema_titles(item)
+    return stripped
+
+
+def _rewrite_references(value: Any, renamed: Mapping[str, str], *, owner: str) -> Any:
+    if isinstance(value, list):
+        return [_rewrite_references(item, renamed, owner=owner) for item in value]
+    if not isinstance(value, Mapping):
+        return value
+    rewritten: dict[str, Any] = {}
+    for key, item in value.items():
+        if key == "$ref" and isinstance(item, str) and item.startswith("#/$defs/"):
+            name = item.removeprefix("#/$defs/")
+            replacement = renamed.get(name)
+            if replacement is None:
+                raise UnsupportedCodeModeSchemaError(
+                    f"{owner} references missing $defs entry {name}"
+                )
+            rewritten[key] = f"#/$defs/{replacement}"
+            continue
+        rewritten[key] = _rewrite_references(item, renamed, owner=owner)
+    return rewritten
 
 
 class _SchemaRenderer:

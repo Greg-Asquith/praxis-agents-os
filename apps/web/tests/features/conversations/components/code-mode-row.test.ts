@@ -148,7 +148,7 @@ describe("CodeModeRow", () => {
       result: {
         results: [
           {
-            connection_id: "connection-1",
+            provider_key: "google_ads",
             data: {
               currency_code: "GBP",
               row_count: 1,

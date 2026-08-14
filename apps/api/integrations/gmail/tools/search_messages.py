@@ -53,8 +53,8 @@ async def gmail_search_messages(
                 sender = untrusted_content_text(message.get("sender"))
                 date = untrusted_content_text(message.get("date"))
                 message["reference"] = GmailMessageReference(
-                    integration_resource_id=entry.integration_resource_id,
-                    external_id=message["message_id"],
+                    mailbox_id=entry.external_id,
+                    message_id=message["message_id"],
                     label=subject,
                     description=" · ".join(value for value in (sender, date) if value),
                     scope_label=entry.display_name,

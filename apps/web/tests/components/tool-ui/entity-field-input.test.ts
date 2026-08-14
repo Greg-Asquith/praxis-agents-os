@@ -95,6 +95,7 @@ describe("EntityFieldInput", () => {
     }
     const html = renderEntityInput(value, [
       {
+        identity: ["1", "file", "opaque-file-id"],
         value: { ...value, label: "Quarterly plan.pdf" },
         label: "Quarterly plan.pdf",
         description: "PDF · updated today",
@@ -111,6 +112,7 @@ describe("EntityFieldInput", () => {
     const value = { entity_id: "opaque-file-id", label: "Model label" }
     const html = renderEntityInput(value, [
       {
+        identity: ["1", "file", "opaque-file-id"],
         value: {
           version: 1,
           entity_kind: "file",
@@ -129,17 +131,18 @@ describe("EntityFieldInput", () => {
 
   it("uses a canonical server-hydrated identity for a model-issued reference", () => {
     const value = {
-      integration_resource_id: "resource-1",
-      external_id: "customers/123/sharedSets/456",
+      customer_id: "123",
+      shared_set_id: "456",
       label: "Testing 2",
     }
     const html = renderEntityInput(value, [
       {
+        identity: ["1", "google_ads_shared_set", "123", "456"],
         value: {
           version: 1,
           entity_kind: "google_ads_shared_set",
-          integration_resource_id: "resource-1",
-          external_id: "456",
+          customer_id: "123",
+          shared_set_id: "456",
           label: "Testing 2",
         },
         label: "Testing 2",
@@ -154,6 +157,7 @@ describe("EntityFieldInput", () => {
 
   it("merges paged choices by identity", () => {
     const duplicate: EntityChoice = {
+      identity: ["1", "file", "duplicate-id"],
       value: {
         version: 1,
         entity_kind: "file",
