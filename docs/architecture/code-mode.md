@@ -1,6 +1,6 @@
 # Code-Mode Orchestration
 
-- **Status**: adopted architecture; Plans 109–112 complete, Plan 113 pending
+- **Status**: adopted architecture; Plans 109–112 complete; Plan 113 final gate pending
 - **Owner**: agent runtime
 - **Rule**: implementation work cites the decision it consumes. A change that
   deviates records the deviation here in the same pull request.
@@ -188,6 +188,15 @@ Batch consent is expressed as one list-shaped tool call whose existing
 `records` presentation shows the complete bounded row set. Workflow-scoped
 grants are not part of this lane because they would approve future arguments
 the operator has not reviewed.
+
+This is a declaration-time law for every `code_eligible=True` write tool. When
+the provider operation accepts a batch, the tool must accept that batch as one
+list-shaped argument and declare an editable presentation that exposes every
+bounded row before approval. The edited set is the effective argument set sent
+through dispatch and bound into the terminal audit digest. A new provider tool
+must name its provider batch operation, maximum batch size, and partial-failure
+semantics in its owning plan. Singular calls are not bundled artificially when
+the provider has no batch operation.
 
 ### D-7 — Catalog rules: wrapped tools replace direct mounting
 
@@ -664,6 +673,44 @@ cross-process deterministic scenario is the restart evidence for the runtime
 contract; §7.3 remains the accepted live-product evidence and is still not a
 formal quantitative threshold pass.
 
+### 7.5 Plan 113 batch-consent verification — 2026-08-14
+
+The landed `code_eligible=True` write sweep contains six tools with typed
+record-list arguments. All six declare an editable `keywords` field using the
+`records` presentation, require at least one row, and accept at most 500 rows
+through their Pydantic input contract:
+
+| Tool | Other editable scope | Faithful record columns |
+| --- | --- | --- |
+| `google_ads_add_negative_keywords` | one `google_ads_shared_set` reference | required `text`; required `match_type` (`EXACT`, `PHRASE`, `BROAD`) |
+| `google_ads_remove_negative_keywords` | one `google_ads_shared_set` reference | required `text`; required `match_type` (`EXACT`, `PHRASE`, `BROAD`, `ANY`) |
+| `google_ads_add_campaign_negative_keywords` | 1–50 `google_ads_campaign` references | required `text`; required `match_type` (`EXACT`, `PHRASE`, `BROAD`) |
+| `google_ads_remove_campaign_negative_keywords` | 1–50 `google_ads_campaign` references | required `text`; required `match_type` (`EXACT`, `PHRASE`, `BROAD`, `ANY`) |
+| `google_ads_add_ad_group_negative_keywords` | 1–50 `google_ads_ad_group` references | required `text`; required `match_type` (`EXACT`, `PHRASE`, `BROAD`) |
+| `google_ads_remove_ad_group_negative_keywords` | 1–50 `google_ads_ad_group` references | required `text`; required `match_type` (`EXACT`, `PHRASE`, `BROAD`, `ANY`) |
+
+The approval projection returns the complete nested `args`;
+`ApprovalRequestFields` passes the whole list to `RecordsFieldInput`, whose row
+mapping has no preview or sampling branch. Its two declared cells therefore
+render for every row. Resume sends the complete edited list through
+`validate_and_canonicalize_override_args`, which enforces the declared columns,
+required values, options, minimum, and shared 500-row ceiling before the inner
+`ToolManager` executes it. Deterministic PostgreSQL scenarios prove that one
+37-row call produces exactly one nested approval with all rows, an override
+that removes, adds, and edits rows executes only the edited list and changes
+the terminal audit digest of the validated equivalent accordingly, and a
+500-row call remains one pending plus one terminal audit row. The exhaustive
+declaration test pins the six-tool
+population and column vocabulary so a later eligible record write cannot enter
+silently.
+
+No eligible record-batch write masked, dropped, or failed to round-trip a row,
+so the Plan 113 STOP condition did not fire. The remaining eligible writes are
+singular operations, primitive-list operations, or editable entity-list
+operations rather than typed record batches. No provider-imposed singular
+operation with a dominant loop-shaped workload was found; workflow-scoped
+grants therefore remain behind the unchanged re-entry conditions in §8.
+
 ## 8. Follow-ups register
 
 These are deliberately outside plans 110–113 and require their own decision or
@@ -688,7 +735,7 @@ plan before implementation:
 | 110  | D-1–D-4, D-7–D-11; probe record and first safe read-only substrate    | Complete 2026-08-13                                                |
 | 111  | D-8, D-10, D-11; operator enablement and live/replay presentation     | Complete 2026-08-13                                                |
 | 112  | D-3–D-6, D-9, D-11; durable approvals, taint persistence, write tools | Complete 2026-08-13                                               |
-| 113  | D-6, D-7, D-11; faithful batch approvals over landed `records`        | Pending                                                           |
+| 113  | D-6, D-7, D-11; faithful batch approvals over landed `records`        | Implementation complete 2026-08-14; final gate pending            |
 | 059  | Compute/orchestration delineation and no sandbox nesting              | Pending                                                           |
 | 094  | Deferred-loading exclusion and joint revisit                          | Pending                                                           |
 | 095  | MCP exclusion and threat-model-gated joint revisit                    | Pending                                                           |

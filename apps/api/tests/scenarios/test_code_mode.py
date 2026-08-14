@@ -4,11 +4,11 @@ import asyncio
 import json
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import DeferredToolResults, Tool, ToolApproved, ToolReturn
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -50,6 +50,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
+    ToolFieldColumn,
     ToolFieldPresentation,
     ToolPresentation,
 )
@@ -78,11 +79,21 @@ _TOOL_NAMES = (
     "scenario_code_forced_write",
     "scenario_code_invalid_write",
     "scenario_code_oversized_public_write",
+    "scenario_code_batch_write",
 )
 
 
 class _WriteResult(BaseModel):
     ok: bool
+
+
+class _BatchRow(BaseModel):
+    text: str
+    match_type: Literal["EXACT", "PHRASE", "BROAD"]
+
+
+class _BatchWriteResult(BaseModel):
+    applied: int
 
 
 @pytest.fixture
@@ -100,6 +111,7 @@ def code_mode_local_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 @pytest.fixture
 def code_mode_scenario_tools() -> dict[str, Any]:
     effects: list[str] = []
+    batch_effects: list[list[dict[str, str]]] = []
     hostile_payload = json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
 
     async def read_first(*, value: str) -> dict[str, str]:
@@ -129,6 +141,14 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             return_value={"ok": True},
             metadata={"public_result": {"detail": "x" * 100}},
         )
+
+    async def batch_write(
+        *,
+        keywords: Annotated[list[_BatchRow], Field(min_length=1, max_length=500)],
+    ) -> dict[str, int]:
+        rows = [row.model_dump() for row in keywords]
+        batch_effects.append(rows)
+        return {"applied": len(rows)}
 
     definitions = (
         RuntimeToolDefinition(
@@ -196,11 +216,49 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             configurable=False,
             max_public_result_chars=20,
         ),
+        RuntimeToolDefinition(
+            name="scenario_code_batch_write",
+            function=batch_write,
+            provider="test",
+            description="Apply one bounded batch of test keyword rows.",
+            effect=TOOL_EFFECT_WRITE,
+            effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
+            egress=TOOL_EGRESS_EXTERNAL_WRITE,
+            code_eligible=True,
+            default_policy=TOOL_POLICY_APPROVAL,
+            configurable=False,
+            output_model=_BatchWriteResult,
+            presentation=ToolPresentation(
+                arg_fields=(
+                    ToolFieldPresentation(
+                        key="keywords",
+                        label="Keywords",
+                        format="records",
+                        editable=True,
+                        min_rows=1,
+                        columns=(
+                            ToolFieldColumn(key="text", label="Keyword", required=True),
+                            ToolFieldColumn(
+                                key="match_type",
+                                label="Match Type",
+                                options=("EXACT", "PHRASE", "BROAD"),
+                                required=True,
+                            ),
+                        ),
+                    ),
+                )
+            ),
+        ),
     )
     for definition in definitions:
         RUNTIME_TOOL_CATALOG[definition.name] = definition
     try:
-        yield {"definitions": definitions, "effects": effects, "hostile_payload": hostile_payload}
+        yield {
+            "definitions": definitions,
+            "effects": effects,
+            "batch_effects": batch_effects,
+            "hostile_payload": hostile_payload,
+        }
     finally:
         for name in _TOOL_NAMES:
             RUNTIME_TOOL_CATALOG.pop(name, None)
@@ -412,6 +470,229 @@ async def test_nested_decision_mapping_targets_nested_id_and_validates_override(
     decision = mapped.metadata["workflow-call"]["code_mode_decision"]
     assert decision["nested_tool_call_id"] == "workflow-call:1"
     assert decision["effective_args"] == {"value": "overridden"}
+
+
+def test_eligible_record_batch_write_declarations_are_complete_and_faithful() -> None:
+    expected = {
+        "google_ads_add_ad_group_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
+        "google_ads_add_campaign_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
+        "google_ads_add_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
+        "google_ads_remove_ad_group_negative_keywords": (
+            "EXACT",
+            "PHRASE",
+            "BROAD",
+            "ANY",
+        ),
+        "google_ads_remove_campaign_negative_keywords": (
+            "EXACT",
+            "PHRASE",
+            "BROAD",
+            "ANY",
+        ),
+        "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
+    }
+    actual: dict[str, tuple[str, ...]] = {}
+    for definition in RUNTIME_TOOL_CATALOG.values():
+        record_fields = [
+            field for field in definition.presentation.arg_fields if field.format == "records"
+        ]
+        if not (
+            definition.code_eligible and definition.effect == TOOL_EFFECT_WRITE and record_fields
+        ):
+            continue
+        assert len(record_fields) == 1
+        field = record_fields[0]
+        assert field.key == "keywords"
+        assert field.editable is True
+        assert field.min_rows == 1
+        assert [(column.key, column.required) for column in field.columns] == [
+            ("text", True),
+            ("match_type", True),
+        ]
+        schema = definition.serialized_input_schema()
+        assert schema is not None
+        keywords_schema = schema["properties"]["keywords"]
+        assert keywords_schema["minItems"] == 1
+        assert keywords_schema["maxItems"] == 500
+        actual[definition.name] = field.columns[1].options
+
+    assert actual == expected
+
+
+async def test_batch_write_suspends_once_with_every_row_in_the_approval_payload(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+) -> None:
+    definition = _definition(code_mode_scenario_tools, "scenario_code_batch_write")
+    rows = [{"text": f"keyword {index}", "match_type": "EXACT"} for index in range(1, 38)]
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=[definition.name],
+        code_mode_enabled=True,
+    )
+    suspended = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            RUN_WORKFLOW_TOOL_NAME,
+                            {"code": (f"await scenario_code_batch_write(keywords={rows!r})")},
+                            "workflow-call",
+                        ),
+                    )
+                )
+            ]
+        ),
+    )
+
+    async with db_session_factory() as db:
+        actor = await db.get(User, context.user_id)
+        workspace = await db.get(Workspace, context.workspace_id)
+        assert actor is not None and workspace is not None
+        approval_state = await get_agent_run_approval_state(
+            db,
+            actor=actor,
+            workspace=workspace,
+            run_id=context.run_id,
+        )
+
+    assert code_mode_scenario_tools["batch_effects"] == []
+    assert approval_state.workflow is not None
+    assert len(approval_state.approvals) == 1
+    assert approval_state.approvals[0].args == {"keywords": rows}
+    pending_audits = [
+        row
+        for row in suspended.audit_rows
+        if row.resource_id == "workflow-call:1" and row.status == "pending"
+    ]
+    assert len(pending_audits) == 1
+
+
+async def test_batch_override_executes_and_audits_only_the_edited_rows(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+) -> None:
+    definition = _definition(code_mode_scenario_tools, "scenario_code_batch_write")
+    proposed = [
+        {"text": "remove me", "match_type": "EXACT"},
+        {"text": "edit me", "match_type": "PHRASE"},
+    ]
+    edited = [
+        {"text": "edited", "match_type": "BROAD"},
+        {"text": "added", "match_type": "EXACT"},
+    ]
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=[definition.name],
+        code_mode_enabled=True,
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        RUN_WORKFLOW_TOOL_NAME,
+                        {"code": f"await scenario_code_batch_write(keywords={proposed!r})"},
+                        "workflow-call",
+                    ),
+                )
+            ),
+            "The edited batch was applied.",
+        ]
+    )
+    suspended = await run_scenario(db_session_factory, context, model=model)
+    state = load_suspended_run_state(suspended.run)
+    async with db_session_factory() as db:
+        actor = await db.get(User, context.user_id)
+        workspace = await db.get(Workspace, context.workspace_id)
+        run = await db.get(AgentRun, context.run_id)
+        membership = await db.scalar(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == context.workspace_id,
+                WorkspaceMembership.user_id == context.user_id,
+            )
+        )
+        assert actor is not None and workspace is not None and run is not None
+        assert membership is not None
+        deferred_results = await _build_deferred_tool_results(
+            db,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            run=run,
+            suspended_state=state,
+            decisions=[
+                AgentRunResumeDecision(
+                    tool_call_id="workflow-call:1",
+                    decision="approved",
+                    override_args={"keywords": edited},
+                )
+            ],
+        )
+
+    completed = await run_scenario(
+        db_session_factory,
+        context,
+        model=model,
+        prompt=None,
+        expected_status="awaiting_approval",
+        message_history=state.message_history,
+        deferred_tool_results=deferred_results,
+    )
+
+    assert code_mode_scenario_tools["batch_effects"] == [edited]
+    nested_audits = [row for row in completed.audit_rows if row.resource_id == "workflow-call:1"]
+    assert sorted(row.status for row in nested_audits) == ["pending", "success"]
+    success = next(row for row in nested_audits if row.status == "success")
+    validated_edited = {"keywords": [_BatchRow(**row) for row in edited]}
+    validated_proposed = {"keywords": [_BatchRow(**row) for row in proposed]}
+    assert success.details["args_sha256"] == digest_args(validated_edited)[0]
+    assert success.details["args_sha256"] != digest_args(validated_proposed)[0]
+
+
+async def test_maximum_batch_remains_one_approval_and_one_terminal_audit(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+) -> None:
+    definition = _definition(code_mode_scenario_tools, "scenario_code_batch_write")
+    rows = [{"text": f"keyword {index}", "match_type": "PHRASE"} for index in range(500)]
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=[definition.name],
+        code_mode_enabled=True,
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        RUN_WORKFLOW_TOOL_NAME,
+                        {"code": f"await scenario_code_batch_write(keywords={rows!r})"},
+                        "workflow-call",
+                    ),
+                )
+            ),
+            "The maximum batch was applied.",
+        ]
+    )
+    suspended = await run_scenario(db_session_factory, context, model=model)
+
+    assert suspended.run.status == "awaiting_approval"
+    assert len(load_suspended_run_state(suspended.run).pending_tool_call_ids) == 1
+    completed = await _resume_code_mode_scenario(
+        db_session_factory,
+        context,
+        suspended=suspended,
+        model=model,
+    )
+
+    assert code_mode_scenario_tools["batch_effects"] == [rows]
+    nested_audits = [row for row in completed.audit_rows if row.resource_id == "workflow-call:1"]
+    assert sum(row.status == "pending" for row in nested_audits) == 1
+    assert sum(row.status == "success" for row in nested_audits) == 1
 
 
 async def test_concurrent_duplicate_nested_resume_request_starts_one_continuation(

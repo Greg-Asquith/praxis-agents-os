@@ -8,6 +8,7 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ToolCallRowRendererContext } from "@/features/conversations/components/tool-call-row-renderer"
+import { workflowOutcomeSummary } from "@/features/conversations/components/workflow-outcome-summary"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { pluralize } from "@/lib/format"
 
@@ -63,7 +64,14 @@ export function CodeModeRow({
     return null
   }
   const childCount = script.children.length
-  const reason = script.reason ?? workflowStatusSummary(activity, childCount, Boolean(pendingChild))
+  const outcomeSummary =
+    activity.status === "completed" || activity.status === "failed"
+      ? workflowOutcomeSummary(script.children)
+      : null
+  const reason =
+    outcomeSummary ??
+    script.reason ??
+    workflowStatusSummary(activity, childCount, Boolean(pendingChild))
   const modelResult =
     activity.status === "completed" && activity.result !== undefined
       ? formatWorkflowModelResult(activity.result)

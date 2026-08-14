@@ -112,6 +112,9 @@ class ToolPresentationEntry(BaseModel):
     provider: str
     label: str
     effect: str
+    effect_scope: str
+    egress: str
+    default_policy: str
     ui: ToolPresentationRead
 
     @classmethod
@@ -121,6 +124,9 @@ class ToolPresentationEntry(BaseModel):
             provider=definition.provider,
             label=definition.label,
             effect=definition.effect,
+            effect_scope=definition.effect_scope,
+            egress=definition.egress,
+            default_policy=definition.default_policy,
             ui=ToolPresentationRead.from_presentation(definition.presentation),
         )
 

@@ -130,7 +130,7 @@ export function parseConversationMessages(
         const liveResult = belongsToActiveRun
           ? liveResultsByCallIdentity?.get(toolActivityIdentity(activity.agentRunId, activity.id))
           : undefined
-        if (liveResult && liveResult.status === "completed") {
+        if (liveResult?.status === "completed") {
           return {
             ...activityWithPendingWorkflow,
             result: liveResult.result,

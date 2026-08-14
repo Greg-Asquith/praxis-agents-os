@@ -170,6 +170,10 @@ Repo-wide expectations are in the root `AGENTS.md`.
   that are reauthorized immediately before resume.
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
+  A `code_eligible=True` write backed by a provider batch operation must expose
+  that operation as one bounded list-shaped call with a faithful editable
+  presentation. The complete reviewed row set is the consent boundary; do not
+  replace it with sequential single-row calls or workflow-scoped grants.
 - Provider packages keep each agent tool in its own module under a `tools/`
   tree. The tree may share schemas and provider-local helpers, while its
   `__init__.py` only composes exported definitions; do not accumulate a

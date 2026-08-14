@@ -99,6 +99,10 @@ per-agent `tool_policies`; this section is the policy law:
   direct call's approval. Eligible gated and write tools may therefore be
   exposed as workflow stubs; every decision remains scoped to one nested call
   and its validated effective arguments. *(enforced)*
+- Batch consent is one list-shaped call whose complete bounded row set the
+  operator reviews and may edit before approval. The edited set is what
+  executes and what the audit digest records. No Code Mode mechanism approves
+  arguments the operator has not seen. *(enforced)*
 - Anything that **spends money** (e.g. Google Ads mutations) is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. *(enforced)*

@@ -40,6 +40,73 @@ describe("CodeModeRow", () => {
     expect(html).toContain("&quot;status&quot;: &quot;aggregated&quot;")
   })
 
+  it("aggregates settled batch effects in outcome language", () => {
+    const first = {
+      ...child(1),
+      name: "google_ads_add_negative_keywords",
+      result: { results: [{ data: { counts: { added: 45, failed: 0, skipped_existing: 1 } } }] },
+    }
+    const second = {
+      ...child(2),
+      name: "google_ads_add_negative_keywords",
+      result: { results: [{ data: { counts: { added: 2, failed: 0, skipped_existing: 1 } } }] },
+    }
+
+    const html = renderWorkflow(workflow([first, second]), true)
+
+    expect(html).toContain("Added 47 keywords · 2 skipped")
+    expect(html).not.toContain("Completed with 2 tool calls")
+  })
+
+  it("keeps applied, skipped, and failed batch outcomes distinct", () => {
+    const batch = {
+      ...child(1),
+      name: "google_ads_remove_campaign_negative_keywords",
+      result: { counts: { failed: 2, not_found: 3, removed: 11 } },
+    }
+
+    const html = renderWorkflow(workflow([batch]), true)
+
+    expect(html).toContain("Removed 11 keywords · 3 skipped · 2 failed")
+  })
+
+  it("reports a declined batch as its own outcome", () => {
+    const applied = {
+      ...child(1),
+      name: "google_ads_add_negative_keywords",
+      result: { counts: { added: 4, failed: 0, skipped_existing: 0 } },
+    }
+    const declined = {
+      ...child(2, "denied"),
+      kind: "approval" as const,
+      name: "google_ads_add_negative_keywords",
+      result: null,
+    }
+
+    const html = renderWorkflow(workflow([applied, declined]), true)
+
+    expect(html).toContain("Added 4 keywords · 1 action declined")
+  })
+
+  it("renders every proposed record inside a nested batch approval", () => {
+    const rows = Array.from({ length: 37 }, (_, index) => ({
+      match_type: "EXACT",
+      text: `keyword ${String(index + 1)}`,
+    }))
+    const pending = {
+      ...child(1, "awaiting_approval"),
+      args: { keywords: rows },
+      name: "scenario_code_batch_write",
+    }
+
+    const html = renderWorkflow(workflow([pending]), false, false, pending.id)
+
+    expect(html).toContain("37 rows")
+    expect(html).toContain('value="keyword 1"')
+    expect(html).toContain('value="keyword 37"')
+    expect(html).toContain('aria-label="Remove row 37"')
+  })
+
   it("does not claim a model-facing output before the workflow completes", () => {
     const html = renderWorkflow(workflow([], { result: null, status: "running" }), true, true)
 
@@ -220,6 +287,50 @@ function renderWorkflow(
           icon: "tool",
           result_fields: [],
           running_label: "Checking item…",
+        },
+      },
+      {
+        effect: "write",
+        label: "Apply Keyword Batch",
+        name: "scenario_code_batch_write",
+        provider: "test",
+        ui: {
+          approval_prompt: "Review every keyword before applying this batch.",
+          approval_title: "Apply Keyword Batch",
+          approve_label: "Approve & Apply",
+          arg_fields: [
+            {
+              columns: [
+                {
+                  key: "text",
+                  label: "Keyword",
+                  options: [],
+                  placeholder: "",
+                  required: true,
+                },
+                {
+                  key: "match_type",
+                  label: "Match Type",
+                  options: ["EXACT", "PHRASE", "BROAD"],
+                  placeholder: "",
+                  required: true,
+                },
+              ],
+              editable: true,
+              format: "records",
+              key: "keywords",
+              label: "Keywords",
+              min_rows: 1,
+              options: [],
+              placeholder: "",
+              secondary: false,
+            },
+          ],
+          completed_label: "Applied Keyword Batch",
+          failed_label: "Couldn’t Apply Keyword Batch",
+          icon: "tool",
+          result_fields: [],
+          running_label: "Applying Keyword Batch…",
         },
       },
     ],
