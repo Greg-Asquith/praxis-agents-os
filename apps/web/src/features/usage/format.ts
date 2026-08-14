@@ -4,6 +4,7 @@ import type { PricingCoverage, TokenCounts, UsageBreakdownRow } from "@/features
 
 export const AI_USAGE_PURPOSES = [
   "agent_run",
+  "classification",
   "conversation_naming",
   "history_summary",
   "kb_annotation",
@@ -21,6 +22,7 @@ export type AIUsagePurpose = (typeof AI_USAGE_PURPOSES)[number]
 
 export const AI_TYPE_LABEL_BY_PURPOSE = {
   agent_run: "Agent conversations",
+  classification: "Classification",
   conversation_naming: "Conversation housekeeping",
   history_summary: "Conversation housekeeping",
   kb_annotation: "Document processing",

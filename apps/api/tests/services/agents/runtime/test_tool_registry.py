@@ -399,6 +399,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "bigquery_list_tables": "none",
         "bigquery_run_query": "provider_query",
         "build_chart": "none",
+        "classify": "provider_query",
         "create_artifact": "external_write",
         "delegate_to_agent": "none",
         "edit_image": "none",
@@ -466,6 +467,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "bigquery_get_table_schema",
         "bigquery_list_tables",
         "bigquery_run_query",
+        "classify",
         "gmail_search_messages",
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
@@ -703,7 +705,7 @@ def test_validate_definition_rejects_blank_approve_label() -> None:
         validate_definition(definition)
 
 
-def test_validate_definition_accepts_url_and_list_result_fields() -> None:
+def test_validate_definition_accepts_rich_result_fields() -> None:
     definition = RuntimeToolDefinition(
         name="rich_results",
         function=_noop,
@@ -712,6 +714,12 @@ def test_validate_definition_accepts_url_and_list_result_fields() -> None:
             result_fields=(
                 ToolFieldPresentation(key="link", label="Link", format="url"),
                 ToolFieldPresentation(key="items", label="Items", format="list"),
+                ToolFieldPresentation(
+                    key="rows",
+                    label="Rows",
+                    format="records",
+                    columns=(ToolFieldColumn(key="value", label="Value"),),
+                ),
             )
         ),
     )
@@ -885,16 +893,6 @@ def test_validate_definition_accepts_editable_records_columns() -> None:
             ),
             None,
             "column required must be a boolean",
-        ),
-        (
-            None,
-            ToolFieldPresentation(
-                key="rows",
-                label="Rows",
-                format="records",
-                columns=(ToolFieldColumn(key="text", label="Text"),),
-            ),
-            "result presentation fields cannot use records",
         ),
     ],
 )

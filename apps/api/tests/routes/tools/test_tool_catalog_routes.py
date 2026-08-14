@@ -118,9 +118,18 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
     assert fetch_url["default_policy"] == "approval"
     assert fetch_url["supported_policies"] == ["approval", "auto"]
     assert fetch_url["input_schema"]["required"] == ["url"]
+    classifier = next(tool for tool in body["tools"] if tool["name"] == "classify")
+    assert classifier["provider"] == "native"
+    assert classifier["effect"] == "read"
+    assert classifier["effect_scope"] == "internal"
+    assert classifier["egress"] == "provider_query"
+    assert classifier["code_eligible"] is True
+    assert classifier["default_policy"] == "auto"
+    assert classifier["supported_policies"] == ["approval", "auto"]
+    assert classifier["input_schema"]["required"] == ["items", "labels"]
 
 
-async def test_tool_catalog_route_hides_web_search_without_provider_keys(
+async def test_tool_catalog_route_hides_helper_tools_without_provider_keys(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -133,7 +142,9 @@ async def test_tool_catalog_route_hides_web_search_without_provider_keys(
     response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
 
     assert response.status_code == 200
-    assert "web_search" not in {tool["name"] for tool in response.json()["tools"]}
+    names = {tool["name"] for tool in response.json()["tools"]}
+    assert "web_search" not in names
+    assert "classify" not in names
 
 
 @pytest.mark.parametrize("provider", ["google", "openai"])
@@ -361,6 +372,21 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     assert [field["key"] for field in fetch_url_entry["ui"]["result_fields"]] == [
         "content",
         "sources",
+    ]
+    classifier_entry = next(tool for tool in body["tools"] if tool["name"] == "classify")
+    assert classifier_entry["ui"]["icon"] == "sparkles"
+    assert classifier_entry["ui"]["running_label"] == "Classifying items"
+    assert classifier_entry["ui"]["completed_label"] == "Classified items"
+    assert [field["key"] for field in classifier_entry["ui"]["arg_fields"]] == [
+        "items",
+        "labels",
+        "instructions",
+    ]
+    assert classifier_entry["ui"]["result_fields"][0]["format"] == "records"
+    assert [column["key"] for column in classifier_entry["ui"]["result_fields"][0]["columns"]] == [
+        "index",
+        "value",
+        "label",
     ]
     read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
     assert read_todos_entry["ui"]["icon"] == "list-todo"

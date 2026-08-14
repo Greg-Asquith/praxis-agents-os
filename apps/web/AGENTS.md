@@ -118,6 +118,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   typed rendered view with an adjacent raw-content tab, show only the bounded current
   version returned by the tool, and keep image reads metadata-only without
   signed URLs.
+- Native classifier results use the dedicated compact classifier row: always
+  show the server-retained classified `value` beside its closed-set assigned
+  label, including replayed Code Mode children whose unrestricted arguments
+  are intentionally not persisted. Also show label distribution plus
+  provider/model details.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
   use the server-supplied canonical identity for provider-neutral comparison,

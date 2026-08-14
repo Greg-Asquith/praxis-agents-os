@@ -87,6 +87,39 @@ describe("renderCustomToolCallRow", () => {
     expect(html).toContain("Loading chart…")
   })
 
+  it("renders a completed classification through the native classifier presenter", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      defaultOpen: true,
+      activity: {
+        id: "classify-1",
+        kind: "result",
+        name: "classify",
+        status: "completed",
+        args: {
+          items: ["Refund requested", "Great support"],
+          labels: ["complaint", "praise", "other"],
+        },
+        result: {
+          model: "gpt-5.6-luna",
+          model_provider: "openai",
+          results: [
+            { index: 0, value: "Refund requested", label: "complaint" },
+            { index: 1, value: "Great support", label: "praise" },
+          ],
+        },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Classify")
+    expect(html).toContain("2 Classified")
+    expect(html).toContain("Refund requested")
+    expect(html).not.toContain("Ran classify")
+  })
+
   it("renders artifact discovery through the native artifact presenter", () => {
     integrationToolRowPresenters.mockReturnValue([])
 

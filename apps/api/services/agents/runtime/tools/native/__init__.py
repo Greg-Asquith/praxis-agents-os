@@ -3,11 +3,17 @@
 """Provider-native runtime tool registrations."""
 
 from services.agents.runtime.tools.native import (
+    classifier as classifier,
     image_editing as image_editing,
     image_generation as image_generation,
     video_to_image as video_to_image,
     web_fetch as web_fetch,
     web_search as web_search,
+)
+from services.agents.runtime.tools.native.classifier import (
+    ClassifyOutput,
+    resolve_classifier_model,
+    run_native_classifier,
 )
 from services.agents.runtime.tools.native.image_editing import (
     EditImageOutput,
@@ -34,18 +40,22 @@ from services.agents.runtime.tools.native.web_search import (
 )
 
 __all__ = [
+    "ClassifyOutput",
     "EditImageOutput",
     "GenerateImageOutput",
     "VideoToImageOutput",
     "WebFetchOutput",
     "WebSearchOutput",
+    "classifier",
     "image_editing",
     "image_generation",
+    "resolve_classifier_model",
     "resolve_image_editing_model",
     "resolve_image_generation_model",
     "resolve_video_to_image_model",
     "resolve_web_fetch_model",
     "resolve_web_search_model",
+    "run_native_classifier",
     "run_native_image_generation",
     "run_native_web_fetch",
     "run_native_web_search",

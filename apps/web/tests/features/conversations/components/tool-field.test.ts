@@ -158,6 +158,45 @@ describe("ToolField", () => {
     expect(longText).toContain("sm:col-span-2")
   })
 
+  it("renders declared result records as a bounded table", () => {
+    const field = resolveToolField(
+      {
+        key: "results",
+        label: "Classifications",
+        format: "records",
+        columns: [
+          { key: "index", label: "Index", options: [], placeholder: "", required: false },
+          {
+            key: "value",
+            label: "Classified value",
+            options: [],
+            placeholder: "",
+            required: false,
+          },
+          { key: "label", label: "Assigned label", options: [], placeholder: "", required: false },
+        ],
+      },
+      [
+        { index: 0, value: "Refund requested", label: "complaint" },
+        { index: 1, value: "Wonderful support", label: "praise" },
+      ]
+    )
+    if (!field) {
+      throw new Error("Expected result records to resolve")
+    }
+
+    const html = renderToStaticMarkup(createElement(ToolField, { field }))
+
+    expect(html).toContain("Classifications")
+    expect(html).toContain("Index")
+    expect(html).toContain("Classified value")
+    expect(html).toContain("Assigned label")
+    expect(html).toContain("Refund requested")
+    expect(html).toContain("complaint")
+    expect(html).toContain("praise")
+    expect(html).toContain("max-h-80")
+  })
+
   it("keeps custom content inside the same labeled well", () => {
     const html = renderToStaticMarkup(
       createElement(

@@ -47,6 +47,36 @@ class LLMSettingsMixin:
         default="gpt-5.6-luna",
         description="Model used to generate conversation titles.",
     )
+    NATIVE_CLASSIFIER_PROVIDER: str = Field(
+        default="openai",
+        description="Default provider for native classifier helper calls.",
+    )
+    NATIVE_CLASSIFIER_MODEL: str = Field(
+        default="gpt-5.6-luna",
+        description="Default model for native classifier helper calls.",
+    )
+    NATIVE_CLASSIFIER_MAX_ITEMS: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Maximum items accepted by one native classifier call.",
+    )
+    NATIVE_CLASSIFIER_MAX_ITEM_CHARS: int = Field(
+        default=4_000,
+        ge=1,
+        description="Maximum characters accepted in one native classifier item.",
+    )
+    NATIVE_CLASSIFIER_MAX_LABELS: int = Field(
+        default=50,
+        ge=2,
+        description="Maximum labels accepted by one native classifier call.",
+    )
+    NATIVE_CLASSIFIER_MAX_STEPS: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Maximum model requests for one native classifier helper run.",
+    )
     NATIVE_WEB_SEARCH_MAX_STEPS: int = Field(
         default=3,
         ge=1,

@@ -6,6 +6,7 @@ import {
 } from "@/features/conversations/components/delegation-tool-row"
 import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
 import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
+import { ClassifierToolRow } from "@/features/conversations/components/classifier-tool-row"
 import { CompletionReportRow } from "@/features/conversations/components/completion-report-row"
 import { CodeModeRow } from "@/features/conversations/components/code-mode-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
@@ -44,6 +45,10 @@ import {
   skillIdFromCapabilityArgs,
 } from "@/features/conversations/skills/skill-activation"
 import { BUILD_CHART_TOOL_NAME } from "@/features/conversations/native-tools/chart-tool"
+import {
+  CLASSIFY_TOOL_NAME,
+  classifierResult,
+} from "@/features/conversations/native-tools/classifier-tool"
 import {
   REPORT_COMPLETION_TOOL_NAME,
   completionReport,
@@ -113,6 +118,20 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
     matches: artifactToolRowMatches,
     render: ({ activity, defaultOpen }) => (
       <ArtifactToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
+  },
+  {
+    key: "classifier",
+    matches: (activity) =>
+      activity.name === CLASSIFY_TOOL_NAME &&
+      (activity.status === "running" ||
+        activity.status === "failed" ||
+        activity.status === "denied" ||
+        activity.status === "unknown" ||
+        (activity.status === "completed" &&
+          classifierResult(activity.args, activity.result) !== null)),
+    render: ({ activity, defaultOpen }) => (
+      <ClassifierToolRow activity={activity} defaultOpen={defaultOpen} />
     ),
   },
   {

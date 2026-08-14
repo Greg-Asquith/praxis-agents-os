@@ -537,8 +537,6 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
         if field.key in field.depends_on:
             raise RuntimeError("Runtime tool presentation fields cannot depend on themselves")
     for field in presentation.result_fields:
-        if field.format == "records":
-            raise RuntimeError("Runtime tool result presentation fields cannot use records")
         if field.editable:
             raise RuntimeError("Runtime tool result presentation fields cannot be editable")
         if field.secondary:

@@ -11,6 +11,7 @@ PURPOSE_AGENT_RUN = "agent_run"
 PURPOSE_CONVERSATION_NAMING = "conversation_naming"
 PURPOSE_HISTORY_SUMMARY = "history_summary"
 PURPOSE_KB_ANNOTATION = "kb_annotation"
+PURPOSE_CLASSIFICATION = "classification"
 PURPOSE_WEB_SEARCH = "web_search"
 PURPOSE_WEB_FETCH = "web_fetch"
 PURPOSE_IMAGE_GENERATION = "image_generation"
@@ -25,6 +26,7 @@ AI_USAGE_PURPOSES = (
     PURPOSE_CONVERSATION_NAMING,
     PURPOSE_HISTORY_SUMMARY,
     PURPOSE_KB_ANNOTATION,
+    PURPOSE_CLASSIFICATION,
     PURPOSE_WEB_SEARCH,
     PURPOSE_WEB_FETCH,
     PURPOSE_IMAGE_GENERATION,
@@ -42,6 +44,7 @@ type AIUsagePurpose = Literal[
     "conversation_naming",
     "history_summary",
     "kb_annotation",
+    "classification",
     "web_search",
     "web_fetch",
     "image_generation",

@@ -170,6 +170,21 @@ def test_every_first_party_eligible_schema_renders() -> None:
     assert "connection_id" not in rendered
 
 
+def test_classifier_is_rendered_in_the_code_mode_stub_catalog() -> None:
+    definition = RUNTIME_TOOL_CATALOG["classify"]
+
+    rendered = render_stub_catalog((definition,))
+
+    assert "class ClassifiedItem(TypedDict):" in rendered
+    assert "value: str" in rendered
+    assert "class ClassifyOutput(TypedDict):" in rendered
+    assert "results: list[ClassifiedItem]" in rendered
+    assert (
+        "async def classify(*, items: list[str], labels: list[str], instructions: str | None = None"
+    ) in rendered
+    assert "-> ClassifyOutput" in rendered
+
+
 def test_unsupported_schema_keyword_fails_closed() -> None:
     definition = RuntimeToolDefinition(
         name="unsupported_schema",

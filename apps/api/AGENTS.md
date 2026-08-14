@@ -239,6 +239,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   denylist is configured because URL Context cannot enforce domain filtering.
   Keep the full URL editable and visible under the default approval policy;
   never enable the local fetch fallback.
+- Native batch classification uses the code-eligible `classify` helper-tool
+  path for OpenAI, Anthropic, and Google. It always uses a configured cheap
+  helper independently from the calling agent, meters one ledger row per
+  batch, frames items as untrusted data, and accepts only ordered labels from
+  the caller's closed set. Public results pair each label with the exact
+  server-copied input `value`; the helper never authors that free-text field.
+  Keep its item, label, instruction, and helper-step bounds settings-owned;
+  adding helper-authored rationale or confidence output reopens the trust
+  decision.
 - Native image generation uses the governed `generate_image` helper-tool path
   for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
   helper run. The tool generates exactly one image, preserves provider-returned

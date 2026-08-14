@@ -150,6 +150,9 @@ rejects or converts over-budget and non-serializable boundary values — normal
 dispatch deliberately preserves structured results, so free-text truncation is
 not the interpreter boundary. Model/provider spend flows through the existing
 usage accounting and AI-usage ledger unchanged.
+One nested `classify` call is one helper-model request. Scripts stay inside the
+shared wall-clock and nested-call budgets by classifying bounded batches, not
+by looping over individual items.
 
 ## Durable approvals
 
@@ -260,6 +263,13 @@ multimodal producers, faithful-render surfaces (e.g. Gmail message reading),
 conversational acts, memory, planning, skill loading, delegation, and
 completion reporting stay direct — they are conversation-shaped, not
 data-shaped.
+
+Helper-native tools also stay direct unless they return text-only JSON-safe
+data and send content only to a configured model provider. `classify` is the
+first eligible helper-native tool: its server-enforced closed label set keeps
+the composable return data-shaped. Each result's `value` is copied exactly from
+the corresponding validated tool input after the helper returns; the helper
+can author only the index and closed-set label, never arbitrary result text.
 
 ## Trace and replay
 
