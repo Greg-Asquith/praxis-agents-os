@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.artifacts import Artifact
-from services.artifacts.schemas import ArtifactVersionContentRead
+from services.artifacts.schemas import ArtifactRead, ArtifactVersionContentRead
 from services.artifacts.utils import artifact_revision_ref, get_artifact_revision
 from services.storage.factory import get_storage_provider
 
@@ -16,7 +16,7 @@ from services.storage.factory import get_storage_provider
 async def get_version_content(
     db: AsyncSession,
     *,
-    artifact: Artifact,
+    artifact: Artifact | ArtifactRead,
     version_id: UUID,
 ) -> ArtifactVersionContentRead:
     revision = await get_artifact_revision(db, artifact=artifact, version_id=version_id)

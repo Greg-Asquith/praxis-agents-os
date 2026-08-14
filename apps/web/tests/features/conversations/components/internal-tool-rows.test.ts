@@ -267,6 +267,140 @@ describe("artifact tool rows", () => {
     expect(denied).toContain(">Declined<")
     expect(malformed).toBe("")
   })
+
+  it("renders artifact discovery as linked workspace entities", () => {
+    const html = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          args: { search: "quarterly" },
+          name: "list_artifacts",
+          result: {
+            items: [
+              {
+                id: "artifact-1",
+                reference: artifactReference("artifact-1", "Quarterly report"),
+                title: "Quarterly report",
+                artifact_type: "markdown",
+                version_count: 3,
+                updated_at: "2026-08-14T10:00:00Z",
+                conversation_id: "conversation-1",
+              },
+              {
+                id: "artifact-2",
+                reference: artifactReference("artifact-2", "Revenue chart"),
+                title: "Revenue chart",
+                artifact_type: "image-ref",
+                version_count: 1,
+                updated_at: "2026-08-13T10:00:00Z",
+                conversation_id: null,
+              },
+            ],
+            total: 4,
+            returned: 2,
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+
+    expect(html).toContain("Artifacts")
+    expect(html).toContain("4 Artifacts")
+    expect(html).toContain("Search: quarterly")
+    expect(html).toContain('aria-label="Artifact results"')
+    expect(html).toContain('href="/artifacts/artifact-1"')
+    expect(html).toContain("Quarterly report")
+    expect(html).toContain("3 versions")
+    expect(html).toContain("Revenue chart")
+    expect(html).toContain("Image")
+    expect(html).not.toContain('data-slot="tool-field-well"')
+  })
+
+  it("renders current artifact content and honest binary metadata", () => {
+    const text = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          name: "read_artifact",
+          result: {
+            id: "artifact-1",
+            reference: artifactReference("artifact-1", "Quarterly report"),
+            title: "Quarterly report",
+            artifact_type: "markdown",
+            revision_number: 3,
+            updated_at: "2026-08-14T10:00:00Z",
+            content: "# Revised report",
+            truncated: true,
+            size_bytes: 72_000,
+            content_type: "text/markdown",
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+    const image = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          name: "read_artifact",
+          result: {
+            id: "artifact-2",
+            reference: artifactReference("artifact-2", "Revenue chart"),
+            title: "Revenue chart",
+            artifact_type: "image-ref",
+            revision_number: 1,
+            updated_at: "2026-08-14T10:00:00Z",
+            content: null,
+            truncated: false,
+            size_bytes: 1024,
+            content_type: "image/png",
+          },
+        }),
+        defaultOpen: true,
+      })
+    )
+
+    expect(text).toContain("Read Artifact")
+    expect(text).toContain('href="/artifacts/artifact-1"')
+    expect(text).toContain("Revision 3")
+    expect(text).toContain("Showing the first part of this artifact")
+    expect(text).toContain('aria-label="Artifact content view"')
+    expect(text).toContain('aria-selected="true"')
+    expect(text).toContain("Rendered")
+    expect(text).toContain("Raw")
+    expect(text).toContain(">Revised report</h1>")
+    expect(image).toContain("Preview this image in Artifacts")
+    expect(image).toContain("Binary artifact content is not included")
+    expect(image).not.toContain("download_url")
+    expect(image).not.toContain("sig=")
+  })
+
+  it("renders discovery progress using the operator-visible artifact label", () => {
+    const listing = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          args: { search: "launch" },
+          name: "list_artifacts",
+          status: "running",
+          result: undefined,
+        }),
+        defaultOpen: false,
+      })
+    )
+    const reading = render(
+      createElement(ArtifactToolRow, {
+        activity: activity({
+          args: { artifact_id: artifactReference("artifact-1", "Launch map") },
+          name: "read_artifact",
+          status: "running",
+          result: undefined,
+        }),
+        defaultOpen: false,
+      })
+    )
+
+    expect(listing).toContain("Finding artifacts…")
+    expect(listing).toContain("launch")
+    expect(reading).toContain("Reading artifact…")
+    expect(reading).toContain("Launch map")
+  })
 })
 
 describe("skill tool rows", () => {
@@ -775,6 +909,17 @@ function activity(overrides: Partial<ToolActivity>): ToolActivity {
     name: "tool",
     status: "completed",
     ...overrides,
+  }
+}
+
+function artifactReference(entityId: string, label: string) {
+  return {
+    version: 1,
+    entity_kind: "artifact",
+    entity_id: entityId,
+    label,
+    description: "Artifact",
+    scope_label: null,
   }
 }
 

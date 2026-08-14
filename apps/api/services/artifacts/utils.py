@@ -136,7 +136,7 @@ async def get_artifact_for_serving(
 async def get_artifact_revision(
     db: AsyncSession,
     *,
-    artifact: Artifact,
+    artifact: Artifact | ArtifactRead,
     version_id: UUID,
 ) -> ArtifactRevision:
     revision = await db.scalar(

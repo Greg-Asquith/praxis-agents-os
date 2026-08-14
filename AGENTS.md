@@ -71,7 +71,8 @@ LLM model catalog, AI usage and estimated public-rate costs, files and storage
 markdown extraction), skills, knowledge base, agent memories, the context hub,
 schedules, integrations (OAuth, API-key, and service-account connections),
 artifacts (dedicated immutable revisions, approval-gated agent
-tools, workspace management UI, append-only edit/restore flows, and
+tools, agent list/read/update across conversations, workspace management UI,
+append-only edit/restore flows, and
 version-pinned anonymous share links with CSP-locked serving), the tool
 catalog, and the audit/security event viewers.
 

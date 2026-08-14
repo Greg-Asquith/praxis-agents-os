@@ -87,6 +87,50 @@ describe("renderCustomToolCallRow", () => {
     expect(html).toContain("Loading chart…")
   })
 
+  it("renders artifact discovery through the native artifact presenter", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      defaultOpen: true,
+      activity: {
+        id: "artifacts-1",
+        kind: "result",
+        name: "list_artifacts",
+        status: "completed",
+        args: { search: "quarterly" },
+        result: {
+          items: [
+            {
+              id: "artifact-1",
+              reference: {
+                version: 1,
+                entity_kind: "artifact",
+                entity_id: "artifact-1",
+                label: "Quarterly report",
+                description: "Markdown artifact",
+                scope_label: null,
+              },
+              title: "Quarterly report",
+              artifact_type: "markdown",
+              version_count: 2,
+              updated_at: "2026-08-14T10:00:00Z",
+              conversation_id: null,
+            },
+          ],
+          total: 1,
+          returned: 1,
+        },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Artifacts")
+    expect(html).toContain("Quarterly report")
+    expect(html).toContain('href="/artifacts/artifact-1"')
+    expect(html).not.toContain("Ran list_artifacts")
+  })
+
   it("does not let a matching presenter replace the default approval row without opting in", () => {
     const render = vi.fn(() => createElement("p", null, "Custom presenter"))
     integrationToolRowPresenters.mockReturnValue([

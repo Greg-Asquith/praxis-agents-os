@@ -302,6 +302,18 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
         "name",
         "bytes_written",
     ]
+    for tool_name in ("list_artifacts", "read_artifact"):
+        artifact_read_entry = next(tool for tool in body["tools"] if tool["name"] == tool_name)
+        assert artifact_read_entry["effect"] == "read"
+        assert artifact_read_entry["effect_scope"] == "internal"
+        assert artifact_read_entry["egress"] == "none"
+        assert artifact_read_entry["default_policy"] == "auto"
+    list_artifacts_entry = next(tool for tool in body["tools"] if tool["name"] == "list_artifacts")
+    assert list_artifacts_entry["ui"]["icon"] == "files"
+    assert [field["key"] for field in list_artifacts_entry["ui"]["result_fields"]] == ["items"]
+    read_artifact_entry = next(tool for tool in body["tools"] if tool["name"] == "read_artifact")
+    assert read_artifact_entry["ui"]["icon"] == "file"
+    assert read_artifact_entry["ui"]["arg_fields"][0]["entity_kind"] == "artifact"
     web_search_entry = next(tool for tool in body["tools"] if tool["name"] == "web_search")
     assert web_search_entry["ui"]["approve_label"] == "Approve & Search"
     assert web_search_entry["ui"]["arg_fields"] == [

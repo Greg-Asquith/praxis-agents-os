@@ -72,7 +72,11 @@ import {
 } from "@/features/conversations/native-tools/todo-tools"
 import {
   CREATE_ARTIFACT_TOOL_NAME,
+  LIST_ARTIFACTS_TOOL_NAME,
+  READ_ARTIFACT_TOOL_NAME,
   UPDATE_ARTIFACT_TOOL_NAME,
+  artifactListToolResult,
+  artifactReadToolResult,
   artifactToolResult,
 } from "@/features/conversations/native-tools/artifact-tools"
 import { integrationToolRowPresenters } from "@/integrations/registry"
@@ -225,10 +229,26 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   },
 ]
 
+const ARTIFACT_TOOL_NAMES = new Set([
+  CREATE_ARTIFACT_TOOL_NAME,
+  LIST_ARTIFACTS_TOOL_NAME,
+  READ_ARTIFACT_TOOL_NAME,
+  UPDATE_ARTIFACT_TOOL_NAME,
+])
+
 function artifactToolRowMatches(activity: ToolActivity) {
+  if (ARTIFACT_TOOL_NAMES.has(activity.name) && activity.status !== "completed") {
+    return true
+  }
   if (
-    (activity.name === CREATE_ARTIFACT_TOOL_NAME || activity.name === UPDATE_ARTIFACT_TOOL_NAME) &&
-    activity.status !== "completed"
+    activity.name === LIST_ARTIFACTS_TOOL_NAME &&
+    artifactListToolResult(activity.result) !== null
+  ) {
+    return true
+  }
+  if (
+    activity.name === READ_ARTIFACT_TOOL_NAME &&
+    artifactReadToolResult(activity.result) !== null
   ) {
     return true
   }

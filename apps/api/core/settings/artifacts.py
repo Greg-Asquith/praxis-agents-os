@@ -18,6 +18,11 @@ class ArtifactSettingsMixin:
         ge=1024,
         le=10_485_760,
     )
+    ARTIFACT_READ_TOOL_MAX_CHARS: int = Field(
+        default=50_000,
+        ge=1_000,
+        description="Maximum text characters returned by the artifact read tool.",
+    )
 
     @field_validator("ARTIFACT_ORIGIN")
     @classmethod
