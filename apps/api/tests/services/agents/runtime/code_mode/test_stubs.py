@@ -178,6 +178,8 @@ def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
     assert "rows: list[dict[str, GoogleAnalyticsValue]]" in realtime
     assert "async def google_analytics_run_realtime_report(" in realtime
     assert "-> GoogleAnalyticsRunRealtimeReportOutput" in realtime
+    assert "start_minutes_ago is the older boundary" in realtime
+    assert "the last 30 minutes is 29 through 0" in realtime
     assert "class GoogleAnalyticsFieldCompatibility(TypedDict):" in compatibility
     assert "incompatible_fields: list[str]" in compatibility
     assert "async def google_analytics_check_report_fields(" in compatibility

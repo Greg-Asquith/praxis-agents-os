@@ -24,12 +24,21 @@ class GoogleAnalyticsMinuteRange(GoogleAnalyticsStrictModel):
     start_minutes_ago: int = Field(
         ge=0,
         le=29,
-        description="Start of the realtime window, from 0 to 29 minutes ago.",
+        description=(
+            "Older boundary of the realtime window, from 0 to 29 minutes ago. "
+            "Must be greater than or equal to end_minutes_ago; use 29 for the older "
+            "boundary of the last 30 minutes."
+        ),
+        examples=[29],
     )
     end_minutes_ago: int = Field(
         ge=0,
         le=29,
-        description="End of the realtime window, from 0 to 29 minutes ago.",
+        description=(
+            "Newer boundary of the realtime window, from 0 to 29 minutes ago. "
+            "Must be less than or equal to start_minutes_ago; use 0 for now."
+        ),
+        examples=[0],
     )
     name: str | None = Field(
         default=None,
@@ -60,7 +69,13 @@ class GoogleAnalyticsRunRealtimeReportInput(GoogleAnalyticsStrictModel):
         default=None,
         min_length=1,
         max_length=2,
-        description="One or two minute ranges; defaults to the last 30 minutes.",
+        description=(
+            "One or two minute ranges. Each range runs from its older start_minutes_ago "
+            "boundary to its newer end_minutes_ago boundary, so start_minutes_ago must be "
+            "greater than or equal to end_minutes_ago. Omit this field for the default last "
+            "30 minutes (29 through 0)."
+        ),
+        examples=[[{"start_minutes_ago": 29, "end_minutes_ago": 0}]],
     )
     dimension_filter: list[GoogleAnalyticsFieldFilter] | None = Field(
         default=None,

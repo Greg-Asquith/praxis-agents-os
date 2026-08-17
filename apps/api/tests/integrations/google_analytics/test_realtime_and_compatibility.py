@@ -16,6 +16,7 @@ from integrations.google_analytics.tools.check_report_fields import (
     google_analytics_check_report_fields,
 )
 from integrations.google_analytics.tools.run_realtime_report import (
+    DEFINITION as RUN_REALTIME_REPORT_DEFINITION,
     google_analytics_run_realtime_report,
 )
 from integrations.google_analytics.tools.schemas import (
@@ -267,6 +268,25 @@ async def test_realtime_local_validation_returns_actionable_model_retry(
             _ctx(_entry("111"), tool_name="google_analytics_run_realtime_report"),
             **values,
         )
+
+
+def test_realtime_tool_schema_explains_minute_range_order() -> None:
+    schema = RUN_REALTIME_REPORT_DEFINITION.serialized_input_schema()
+
+    assert schema is not None
+    minute_ranges = schema["properties"]["minute_ranges"]
+    description = minute_ranges["description"]
+    assert "start_minutes_ago is the older boundary" in description
+    assert "greater than or equal to" in description
+    assert minute_ranges["examples"] == [[{"start_minutes_ago": 29, "end_minutes_ago": 0}]]
+
+    range_schema = schema["$defs"]["GoogleAnalyticsMinuteRange"]
+    start = range_schema["properties"]["start_minutes_ago"]
+    end = range_schema["properties"]["end_minutes_ago"]
+    assert "Older boundary" in start["description"]
+    assert start["examples"] == [29]
+    assert "Newer boundary" in end["description"]
+    assert end["examples"] == [0]
 
 
 async def test_realtime_defaults_to_last_thirty_minutes_and_audits_without_rows(

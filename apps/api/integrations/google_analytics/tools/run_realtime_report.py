@@ -64,7 +64,17 @@ async def google_analytics_run_realtime_report(
     ],
     minute_ranges: Annotated[
         list[GoogleAnalyticsMinuteRange] | None,
-        Field(description="One or two minute ranges; defaults to the last 30 minutes."),
+        Field(
+            min_length=1,
+            max_length=2,
+            description=(
+                "One or two minute ranges. start_minutes_ago is the older boundary and must "
+                "be greater than or equal to the newer end_minutes_ago boundary. For example, "
+                "the last 30 minutes is start_minutes_ago=29 and end_minutes_ago=0. Omit this "
+                "field to use that default."
+            ),
+            examples=[[{"start_minutes_ago": 29, "end_minutes_ago": 0}]],
+        ),
     ] = None,
     dimension_filter: Annotated[
         list[GoogleAnalyticsFieldFilter] | None,
@@ -177,7 +187,9 @@ DEFINITION = RuntimeToolDefinition(
         "property selected in Active Context. Prefer realtime metrics activeUsers, "
         "screenPageViews, eventCount, and keyEvents with dimensions unifiedScreenName, country, "
         "city, deviceCategory, eventName, minutesAgo, and platform. Standard-report dimensions "
-        "such as date and sessionSource are not valid here. Results are per selected property."
+        "such as date and sessionSource are not valid here. For custom minute ranges, "
+        "start_minutes_ago is the older boundary and must be greater than or equal to "
+        "end_minutes_ago; the last 30 minutes is 29 through 0. Results are per selected property."
     ),
     provider="google_analytics",
     label="Run Google Analytics Realtime Report",
