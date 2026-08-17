@@ -22,9 +22,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   (TanStack Query operations, one per file) when the provider calls the API.
   Follow this layout for new providers.
 - Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery, and
-  Google Analytics. Google Analytics currently contributes only its logo,
-  catalog description, and connection guidance; its report presenters land in
-  a later slice.
+  Google Analytics. Google Analytics contributes its logo, catalog description,
+  connection guidance, and guarded report, realtime, report-field, and
+  compatibility presenters over the shared fan-out and data-table kits.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; features do
   not import route shells; routes do not import `app/`. Fix violations by

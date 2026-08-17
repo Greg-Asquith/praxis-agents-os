@@ -2,6 +2,10 @@
 
 import { GoogleAnalyticsConnectHelp } from "@/integrations/google_analytics/components/connect-help"
 import { GoogleAnalyticsLogo } from "@/integrations/google_analytics/components/logo"
+import { compatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
+import { realtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
+import { reportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
+import { reportPresenter } from "@/integrations/google_analytics/presenters/report"
 import type { IntegrationUiModule } from "@/integrations/contract"
 
 export default {
@@ -10,5 +14,10 @@ export default {
   ConnectHelp: GoogleAnalyticsConnectHelp,
   icons: { google_analytics: GoogleAnalyticsLogo },
   providerKey: "google_analytics",
-  toolRowPresenters: [],
+  toolRowPresenters: [
+    reportPresenter,
+    realtimePresenter,
+    reportFieldsPresenter,
+    compatibilityPresenter,
+  ],
 } satisfies IntegrationUiModule

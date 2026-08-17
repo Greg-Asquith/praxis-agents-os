@@ -11,12 +11,19 @@ import {
 } from "@/integrations/registry"
 
 describe("Google Analytics integration module", () => {
-  it("loads lazily through the registry with its icon and no presenters", async () => {
+  it("loads lazily through the registry with its icon and presenters", async () => {
     await loadIntegrationUiModules(["google_analytics"])
 
     expect(providerKeyForToolName("google_analytics_run_report")).toBe("google_analytics")
     expect(integrationIcon("google_analytics")).toBe(googleAnalyticsModule.icons.google_analytics)
-    expect(integrationToolRowPresenters("google_analytics")).toEqual([])
+    expect(
+      integrationToolRowPresenters("google_analytics").map((presenter) => presenter.key)
+    ).toEqual([
+      "google-analytics-run-report",
+      "google-analytics-run-realtime-report",
+      "google-analytics-list-report-fields",
+      "google-analytics-check-report-fields",
+    ])
     expect(googleAnalyticsModule.catalogDescription).toContain("website and app performance")
   })
 

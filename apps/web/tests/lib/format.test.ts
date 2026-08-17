@@ -4,6 +4,7 @@ import {
   formatBytes,
   formatCompactDate,
   formatDateTime,
+  formatDuration,
   formatGoogleAdsAccountId,
   humanizeKey,
   initials,
@@ -21,6 +22,11 @@ describe("format helpers", () => {
     expect(formatBytes(1023)).toBe("1023 B")
     expect(formatBytes(1024)).toBe("1.0 KB")
     expect(formatBytes(1024 * 1024)).toBe("1.0 MB")
+  })
+
+  it("formats durations without rolling seconds up to 60", () => {
+    expect(formatDuration(90500, "milliseconds")).toBe("1 min 31 sec")
+    expect(formatDuration(119.9)).toBe("2 min")
   })
 
   it("pluralizes counts", () => {

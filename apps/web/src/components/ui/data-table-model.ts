@@ -1,7 +1,7 @@
 // apps/web/src/components/ui/data-table-model.ts
 
 import { nodeText } from "@/components/tool-ui/untrusted-node"
-import { formatCurrency, formatDateTime } from "@/lib/format"
+import { formatCurrency, formatDateTime, formatDuration } from "@/lib/format"
 import type { ExportTable } from "@/lib/table-export"
 
 export type DataColumnKind =
@@ -23,7 +23,7 @@ export type DataColumn = {
   key: string
   kind: DataColumnKind
   label: string
-  unit?: "micros"
+  unit?: "micros" | "milliseconds" | "seconds"
 }
 
 export type DataRow = Record<string, unknown>
@@ -57,7 +57,13 @@ export function formatDataCell(column: DataColumn, value: unknown): string {
   }
   if (column.kind === "number") {
     const numeric = finiteNumber(text)
-    return numeric === null ? text : new Intl.NumberFormat().format(numeric)
+    if (numeric === null) {
+      return text
+    }
+    if (column.unit === "milliseconds" || column.unit === "seconds") {
+      return formatDuration(numeric, column.unit)
+    }
+    return new Intl.NumberFormat().format(numeric)
   }
   if (column.kind === "date") {
     const date = new Date(`${text}T00:00:00`)
