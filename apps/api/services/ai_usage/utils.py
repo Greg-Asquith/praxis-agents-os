@@ -115,6 +115,13 @@ def resolve_usage_range(
     return UsageRange(from_=start, to=end)
 
 
+def usage_range_days(usage_range: UsageRange) -> list[date]:
+    """List every UTC calendar day touched by the half-open usage range."""
+    first = usage_range.from_.date()
+    last = (usage_range.to - timedelta(microseconds=1)).date()
+    return [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
+
+
 def bucket_cost(bucket: UsageBucket, price: ModelPrice) -> Decimal:
     return (
         Decimal(bucket.uncached_input_tokens) * price.input_usd_per_mtok
@@ -203,9 +210,10 @@ def build_usage_summary_response(
         daily_buckets[bucket.day].append((bucket, price))
         model_buckets[(bucket.provider, bucket.model)].append((bucket, price))
 
+    # One point per UTC day in the range so charts render quiet days as zero, not gaps.
     daily = []
-    for bucket_day, day_buckets in daily_buckets.items():
-        folded = fold_buckets(day_buckets)
+    for bucket_day in usage_range_days(usage_range):
+        folded = fold_buckets(daily_buckets.get(bucket_day, []))
         daily.append(
             DailyUsagePoint(
                 date=bucket_day,
