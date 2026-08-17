@@ -1,6 +1,7 @@
 // apps/web/src/features/artifacts/components/artifact-preview-frame.tsx
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
+import { MermaidDiagram } from "@/components/mermaid/mermaid-diagram"
 import type { ArtifactContent, ArtifactType } from "@/features/artifacts/types"
 import { parseCsv } from "@/lib/csv"
 import { buildHtmlFrameDocument, INTERACTIVE_HTML_FRAME_CSP } from "@/lib/html-frame-document"
@@ -51,6 +52,13 @@ export function ArtifactPreviewFrame({
   }
   if (artifactType === "csv" && content.content !== null) {
     return <CsvPreview content={content.content} />
+  }
+  if (artifactType === "mermaid" && content.content !== null) {
+    return (
+      <div className="bg-background max-h-128 overflow-auto rounded-lg border p-4">
+        <MermaidDiagram source={content.content} title={title} />
+      </div>
+    )
   }
   return (
     <pre className="bg-muted/30 max-h-128 overflow-auto rounded-lg border p-4 font-mono text-xs whitespace-pre-wrap">

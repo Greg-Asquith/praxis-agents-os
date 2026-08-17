@@ -44,6 +44,25 @@ describe("ArtifactPreviewFrame", () => {
     expect(markup).toContain("<pre")
   })
 
+  it("renders mermaid artifacts as diagrams instead of raw source", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ArtifactPreviewFrame, {
+        artifactType: "mermaid",
+        content: {
+          content: "graph TD\n  A --> B",
+          content_type: "text/plain",
+          download_url: null,
+          size_bytes: 18,
+        },
+        title: "Mermaid artifact",
+        versionId: "version-1",
+      })
+    )
+
+    expect(markup).not.toContain("<pre")
+    expect(markup).toContain('data-slot="skeleton"')
+  })
+
   it("preserves quoted newlines and escaped quotes in CSV cells", () => {
     const markup = renderToStaticMarkup(
       createElement(ArtifactPreviewFrame, {
