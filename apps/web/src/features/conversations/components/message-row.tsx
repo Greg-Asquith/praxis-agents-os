@@ -26,6 +26,7 @@ export type AssistantLiveTimelinePart =
 type MessageRowProps =
   | {
       assistantAgentId: string
+      assistantAgentMetadata?: Record<string, unknown> | null | undefined
       assistantLabel?: string
       message: ParsedConversationMessage
       pendingMessage?: never
@@ -33,6 +34,7 @@ type MessageRowProps =
     }
   | {
       assistantAgentId: string
+      assistantAgentMetadata?: Record<string, unknown> | null | undefined
       assistantLabel?: string
       message?: never
       pendingMessage: PendingUserMessage
@@ -41,6 +43,7 @@ type MessageRowProps =
 
 export function MessageRow({
   assistantAgentId,
+  assistantAgentMetadata,
   assistantLabel = "Agent",
   message,
   pendingMessage,
@@ -68,6 +71,7 @@ export function MessageRow({
     return (
       <AssistantMessageShell
         agentId={assistantAgentId}
+        agentMetadata={assistantAgentMetadata}
         copyText={messageCopyText([message])}
         createdAt={message.createdAt}
         label={assistantLabel}
@@ -87,12 +91,14 @@ export function MessageRow({
 
 export function AssistantLiveActivityRow({
   assistantAgentId,
+  assistantAgentMetadata,
   assistantLabel = "Agent",
   isStreaming,
   messages,
   timeline,
 }: {
   assistantAgentId: string
+  assistantAgentMetadata?: Record<string, unknown> | null | undefined
   assistantLabel?: string
   isStreaming: boolean
   messages: ChatMessageDraft[]
@@ -106,6 +112,7 @@ export function AssistantLiveActivityRow({
   return (
     <AssistantMessageShell
       agentId={assistantAgentId}
+      agentMetadata={assistantAgentMetadata}
       createdAt={null}
       label={assistantLabel}
       streaming={isStreaming}
@@ -129,11 +136,13 @@ export function AssistantLiveActivityRow({
 
 export function AssistantTurnRow({
   assistantAgentId,
+  assistantAgentMetadata,
   assistantLabel = "Agent",
   createdAt,
   messages,
 }: {
   assistantAgentId: string
+  assistantAgentMetadata?: Record<string, unknown> | null | undefined
   assistantLabel?: string
   createdAt: string
   messages: ParsedConversationMessage[]
@@ -146,6 +155,7 @@ export function AssistantTurnRow({
   return (
     <AssistantMessageShell
       agentId={assistantAgentId}
+      agentMetadata={assistantAgentMetadata}
       copyText={messageCopyText(messages)}
       createdAt={createdAt}
       label={assistantLabel}

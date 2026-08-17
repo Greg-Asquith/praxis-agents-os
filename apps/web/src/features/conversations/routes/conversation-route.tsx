@@ -199,6 +199,8 @@ function ConversationDetail({
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
   const assistantLabel = conversationAgentLabel(conversation, "Agent")
   const assistantAgentId = activeRun?.agent_id ?? conversation.active_agent_id ?? "unassigned-agent"
+  const assistantAgentMetadata =
+    agentQuery.data.id === assistantAgentId ? agentQuery.data.metadata : null
   const isReadOnlyTranscript = conversation.source === "delegated"
   const showScrollToBottom = shouldRenderStream && stream.isStreaming && isAwayFromBottom
 
@@ -252,6 +254,7 @@ function ConversationDetail({
               runInterruption={runInterruption}
               approvals={pendingApprovals}
               assistantAgentId={assistantAgentId}
+              assistantAgentMetadata={assistantAgentMetadata}
               assistantLabel={assistantLabel}
               conversationId={conversationId}
               isApprovalLoading={approvalStateQuery.isLoading}

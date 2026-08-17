@@ -64,6 +64,7 @@ export function UserMessageShell({
 
 export function AssistantMessageShell({
   agentId,
+  agentMetadata,
   children,
   copyText,
   createdAt,
@@ -71,6 +72,7 @@ export function AssistantMessageShell({
   streaming,
 }: {
   agentId: string
+  agentMetadata?: Record<string, unknown> | null | undefined
   children: ReactNode
   copyText?: string
   createdAt: string | null
@@ -81,7 +83,13 @@ export function AssistantMessageShell({
     <div className="group/message flex w-full justify-start px-1">
       <div className="flex w-full min-w-0 flex-col gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <AgentIdentityIcon agentId={agentId} decorative name={label} size="sm" />
+          <AgentIdentityIcon
+            agentId={agentId}
+            decorative
+            metadata={agentMetadata}
+            name={label}
+            size="sm"
+          />
           <span className="truncate text-sm font-medium">{label}</span>
           <div className="flex min-w-0 items-center gap-2 text-xs">
             {createdAt && <time className="text-muted-foreground">{formatTime(createdAt)}</time>}

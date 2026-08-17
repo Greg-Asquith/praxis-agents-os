@@ -55,6 +55,7 @@ type MessageListProps = {
   runInterruption: RunInterruptionOutcome | null
   approvals: PendingToolApproval[]
   assistantAgentId: string
+  assistantAgentMetadata: Record<string, unknown> | null
   assistantLabel: string
   isApprovalLoading: boolean
   isApprovalSubmitting: boolean
@@ -79,6 +80,7 @@ export function MessageList({
   runInterruption,
   approvals,
   assistantAgentId,
+  assistantAgentMetadata,
   pendingDelegations,
   pendingWorkflow,
   assistantLabel,
@@ -228,6 +230,7 @@ export function MessageList({
             <TranscriptRenderItem
               key={item.id}
               assistantAgentId={assistantAgentId}
+              assistantAgentMetadata={assistantAgentMetadata}
               assistantLabel={assistantLabel}
               item={item}
             />
@@ -237,6 +240,7 @@ export function MessageList({
             <MessageRow
               key={message.clientMessageId}
               assistantAgentId={assistantAgentId}
+              assistantAgentMetadata={assistantAgentMetadata}
               pendingMessage={message}
             />
           ))}
@@ -244,6 +248,7 @@ export function MessageList({
           {showLiveActivity && (
             <AssistantLiveActivityRow
               assistantAgentId={assistantAgentId}
+              assistantAgentMetadata={assistantAgentMetadata}
               assistantLabel={assistantLabel}
               isStreaming={isStreaming}
               messages={streamMessages}
@@ -254,6 +259,7 @@ export function MessageList({
           {orphanApprovalActivities.length > 0 && (
             <AssistantMessageShell
               agentId={assistantAgentId}
+              agentMetadata={assistantAgentMetadata}
               createdAt={null}
               label={assistantLabel}
             >
@@ -316,10 +322,12 @@ export function MessageList({
 
 function TranscriptRenderItem({
   assistantAgentId,
+  assistantAgentMetadata,
   assistantLabel,
   item,
 }: {
   assistantAgentId: string
+  assistantAgentMetadata: Record<string, unknown> | null
   assistantLabel: string
   item: ConversationRenderItem
 }) {
@@ -327,6 +335,7 @@ function TranscriptRenderItem({
     return (
       <AssistantTurnRow
         assistantAgentId={assistantAgentId}
+        assistantAgentMetadata={assistantAgentMetadata}
         assistantLabel={assistantLabel}
         createdAt={item.createdAt}
         messages={item.messages}
@@ -337,6 +346,7 @@ function TranscriptRenderItem({
   return (
     <MessageRow
       assistantAgentId={assistantAgentId}
+      assistantAgentMetadata={assistantAgentMetadata}
       assistantLabel={assistantLabel}
       message={item.message}
     />
