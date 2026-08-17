@@ -1,6 +1,5 @@
 """Google Analytics tool validation, fan-out, and audit behavior."""
 
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -12,10 +11,7 @@ from core.exceptions.integration import IntegrationAuthError
 from integrations.google_analytics.tools.list_report_fields import (
     google_analytics_list_report_fields,
 )
-from integrations.google_analytics.tools.run_report import (
-    _bound_report_results,
-    google_analytics_run_report,
-)
+from integrations.google_analytics.tools.run_report import google_analytics_run_report
 from integrations.google_analytics.tools.schemas import (
     GoogleAnalyticsDateRange,
     GoogleAnalyticsFieldFilter,
@@ -247,33 +243,6 @@ async def test_malformed_provider_response_fans_out_as_error_and_is_audited(monk
 class _MalformedClient:
     async def data_post(self, *_args, **_kwargs):
         return []
-
-
-def test_report_fan_out_applies_one_cumulative_serialized_budget() -> None:
-    results = [
-        {
-            "provider_key": "google_analytics",
-            "external_id": str(index),
-            "display_name": f"Property {index}",
-            "status": "success",
-            "data": {
-                "rows": [{"pagePath": "x" * 500}, {"pagePath": "y" * 500}],
-                "row_count": 2,
-                "truncated": False,
-                "truncation_note": None,
-            },
-            "error_code": None,
-            "error_message": None,
-        }
-        for index in range(2)
-    ]
-
-    bounded = _bound_report_results(results, max_result_chars=1000)
-
-    assert len(json.dumps({"results": bounded}, ensure_ascii=False, separators=(",", ":"))) <= 1000
-    assert sum(len(item["data"]["rows"]) for item in bounded) < 4
-    assert all(item["data"]["truncated"] for item in bounded)
-    assert all(item["data"]["truncation_note"] is not None for item in bounded)
 
 
 async def _async_value(value):

@@ -83,7 +83,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "bigquery_list_tables": ("read", "internal", "auto", False),
         "bigquery_get_table_schema": ("read", "internal", "auto", False),
         "bigquery_run_query": ("read", "internal", "auto", False),
+        "google_analytics_check_report_fields": ("read", "internal", "auto", False),
         "google_analytics_list_report_fields": ("read", "internal", "auto", False),
+        "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
         "google_analytics_run_report": ("read", "internal", "auto", False),
     }
     assert set(definitions) == set(expected)
@@ -129,7 +131,10 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
             ".properties.rows.items",
             "JsonValue.anyOf",
         ]
-        if definition.name == "google_analytics_run_report":
+        if definition.name in {
+            "google_analytics_run_realtime_report",
+            "google_analytics_run_report",
+        }:
             allowed_dynamic_markers.extend(
                 (
                     ".properties.totals.items",

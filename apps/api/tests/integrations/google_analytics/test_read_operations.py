@@ -1,6 +1,5 @@
 """Google Analytics report request compilation and response shaping."""
 
-import json
 from typing import Any
 
 import pytest
@@ -219,7 +218,6 @@ async def test_run_report_compiles_request_and_types_rows_aggregates_and_metadat
         property_id="123",
         request=request,
         max_rows=1000,
-        max_result_chars=16_000,
     )
 
     path, call = client.calls[0]
@@ -286,7 +284,6 @@ async def test_run_report_shapes_empty_response() -> None:
         property_id="123",
         request=request,
         max_rows=1000,
-        max_result_chars=16_000,
     )
 
     assert result["rows"] == []
@@ -408,7 +405,6 @@ async def test_report_operations_fail_closed_on_non_object_response(operation: s
                     ],
                 ),
                 max_rows=1000,
-                max_result_chars=16_000,
             )
         else:
             await list_report_fields(
@@ -419,36 +415,3 @@ async def test_report_operations_fail_closed_on_non_object_response(operation: s
                 custom_only=False,
                 limit=50,
             )
-
-
-async def test_run_report_applies_serialized_character_budget_to_rows() -> None:
-    client = _Client(
-        {
-            "dimensionHeaders": [{"name": "pagePath"}],
-            "metricHeaders": [{"name": "sessions", "type": "TYPE_INTEGER"}],
-            "rows": [
-                {
-                    "dimensionValues": [{"value": "x" * 1200}],
-                    "metricValues": [{"value": "1"}],
-                }
-            ],
-            "rowCount": 1,
-        }
-    )
-    result = await run_report(
-        client,
-        property_id="123",
-        request=GoogleAnalyticsRunReportInput(
-            metrics=["sessions"],
-            dimensions=["pagePath"],
-            date_ranges=[GoogleAnalyticsDateRange(start_date="yesterday", end_date="yesterday")],
-        ),
-        max_rows=1000,
-        max_result_chars=1000,
-    )
-
-    assert result["rows"] == []
-    assert result["row_count"] == 1
-    assert result["truncated"] is True
-    assert result["truncation_note"].startswith("Showing 0 of 1 rows")
-    assert len(json.dumps(result, ensure_ascii=False, separators=(",", ":"))) <= 1000

@@ -159,6 +159,33 @@ def test_google_analytics_report_stub_declares_typed_inputs_and_rows() -> None:
     assert "Use google_analytics_list_report_fields" in rendered
 
 
+def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
+    definitions = {
+        item.name: item
+        for item in GOOGLE_ANALYTICS_TOOL_DEFINITIONS
+        if item.name
+        in {
+            "google_analytics_check_report_fields",
+            "google_analytics_run_realtime_report",
+        }
+    }
+
+    realtime = render_tool_stub(definitions["google_analytics_run_realtime_report"])
+    compatibility = render_tool_stub(definitions["google_analytics_check_report_fields"])
+
+    assert "class GoogleAnalyticsMinuteRange(TypedDict):" in realtime
+    assert "class GoogleAnalyticsRealtimeReportData(TypedDict):" in realtime
+    assert "rows: list[dict[str, GoogleAnalyticsValue]]" in realtime
+    assert "async def google_analytics_run_realtime_report(" in realtime
+    assert "-> GoogleAnalyticsRunRealtimeReportOutput" in realtime
+    assert "class GoogleAnalyticsFieldCompatibility(TypedDict):" in compatibility
+    assert "incompatible_fields: list[str]" in compatibility
+    assert "async def google_analytics_check_report_fields(" in compatibility
+    assert "candidate_metrics: list[str]" in compatibility
+    assert "candidate_dimensions: list[str]" in compatibility
+    assert "-> GoogleAnalyticsCheckReportFieldsOutput" in compatibility
+
+
 def test_every_first_party_eligible_schema_renders() -> None:
     definitions = {
         definition.name: definition

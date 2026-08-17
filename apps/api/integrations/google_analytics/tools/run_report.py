@@ -2,7 +2,6 @@
 
 """Run Google Analytics report runtime tool."""
 
-import json
 import re
 from datetime import date
 from typing import Annotated, Any
@@ -29,7 +28,6 @@ from services.integrations.operations import (
 )
 
 from ..operations.run_report import run_report
-from ..settings import google_analytics_settings
 from .schemas import (
     GoogleAnalyticsDateRange,
     GoogleAnalyticsFieldFilter,
@@ -44,8 +42,12 @@ from .utils import (
     google_analytics_available,
     google_analytics_client,
 )
+from .utils.validation import (
+    validate_field_selection,
+    validate_filter_kinds,
+    validate_order_bys,
+)
 
-_FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_:]+$")
 _RELATIVE_DATE_PATTERN = re.compile(r"^(?:today|yesterday|[0-9]+daysAgo)$")
 _ABSOLUTE_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 _RESERVED_DATE_RANGE_PREFIXES = ("date_range_", "RESERVED_")
@@ -128,103 +130,18 @@ async def google_analytics_run_report(
         )
 
     results = await run_context_fan_out(ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation)
-    serialized = serialize_fan_out_results(results)
-    return {
-        "results": serialized
-    }
-
-
-def _bound_report_results(
-    results: list[dict[str, Any]],
-    *,
-    max_result_chars: int,
-) -> list[dict[str, Any]]:
-    row_sets: list[tuple[dict[str, Any], list[Any], bool, str | None]] = []
-    for item in results:
-        data = item.get("data")
-        if not isinstance(data, dict):
-            continue
-        rows = data.get("rows")
-        if not isinstance(rows, list) or not rows:
-            continue
-        row_sets.append(
-            (
-                data,
-                rows.copy(),
-                bool(data.get("truncated")),
-                data.get("truncation_note")
-                if isinstance(data.get("truncation_note"), str)
-                else None,
-            )
-        )
-        data["rows"] = []
-        data["truncated"] = True
-        data["truncation_note"] = _truncation_note(0, data.get("row_count"))
-
-    if _serialized_chars({"results": results}) > max_result_chars:
-        raise ModelRetry(
-            "The selected Google Analytics property metadata exceeds the safe result-size "
-            "limit. Ask the user to select fewer properties."
-        )
-
-    for data, rows, originally_truncated, original_note in row_sets:
-        bounded_rows = data["rows"]
-        all_rows_fit = True
-        for row in rows:
-            bounded_rows.append(row)
-            if _serialized_chars({"results": results}) > max_result_chars:
-                bounded_rows.pop()
-                all_rows_fit = False
-                break
-        if all_rows_fit:
-            data["truncated"] = originally_truncated
-            data["truncation_note"] = original_note
-        else:
-            data["truncation_note"] = _truncation_note(
-                len(bounded_rows),
-                data.get("row_count"),
-            )
-    return results
-
-
-def _truncation_note(shown_rows: int, row_count: Any) -> str:
-    total_rows = row_count if isinstance(row_count, int) and row_count >= 0 else shown_rows
-    return (
-        f"Showing {shown_rows:,} of {total_rows:,} rows; add filters, aggregate, "
-        "or narrow the date range."
-    )
-
-
-def _serialized_chars(value: object) -> int:
-    return len(
-        json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            default=str,
-        )
-    )
+    return {"results": serialize_fan_out_results(results)}
 
 
 def _validated_request(**values: Any) -> GoogleAnalyticsRunReportInput:
     metrics = values["metrics"]
     dimensions = values["dimensions"]
     date_ranges = values["date_ranges"]
-    if not 1 <= len(metrics) <= 10:
-        raise ModelRetry("Provide between 1 and 10 Google Analytics metrics.")
-    if len(dimensions) > 9:
-        raise ModelRetry("Provide no more than 9 Google Analytics dimensions.")
+    validate_field_selection(metrics, dimensions)
     if not 1 <= len(date_ranges) <= 4:
         raise ModelRetry("Provide between 1 and 4 Google Analytics date ranges.")
     if values["limit"] > settings.INTEGRATION_REPORT_MAX_ROWS:
         raise ModelRetry(f"Set limit to {settings.INTEGRATION_REPORT_MAX_ROWS} rows or fewer.")
-    for name in (*metrics, *dimensions):
-        if not _FIELD_NAME_PATTERN.fullmatch(name):
-            raise ModelRetry(
-                f"Use an exact Google Analytics API field name for {name!r}; only letters, "
-                "numbers, underscores, and colons are allowed."
-            )
     for item in date_ranges:
         for label, value in (("start_date", item.start_date), ("end_date", item.end_date)):
             if not _valid_date_token(value):
@@ -243,15 +160,9 @@ def _validated_request(**values: Any) -> GoogleAnalyticsRunReportInput:
             and absolute_start > absolute_end
         ):
             raise ModelRetry("Set each absolute start_date on or before its end_date.")
-    _validate_filter_kinds(values["dimension_filter"], metric=False)
-    _validate_filter_kinds(values["metric_filter"], metric=True)
-    for item in values["order_bys"] or []:
-        if item.metric is not None and item.metric not in metrics:
-            raise ModelRetry(f"Add metric {item.metric!r} to metrics before ordering by it.")
-        if item.dimension is not None and item.dimension not in dimensions:
-            raise ModelRetry(
-                f"Add dimension {item.dimension!r} to dimensions before ordering by it."
-            )
+    validate_filter_kinds(values["dimension_filter"], metric=False)
+    validate_filter_kinds(values["metric_filter"], metric=True)
+    validate_order_bys(values["order_bys"], metrics=metrics, dimensions=dimensions)
     try:
         return GoogleAnalyticsRunReportInput.model_validate(values)
     except ValidationError as exc:
@@ -272,22 +183,6 @@ def _absolute_date(value: str) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
-
-
-def _validate_filter_kinds(
-    filters: list[GoogleAnalyticsFieldFilter] | None,
-    *,
-    metric: bool,
-) -> None:
-    for item in filters or []:
-        if metric and (item.string_filter is not None or item.in_list_filter is not None):
-            raise ModelRetry(
-                f"Use numeric_filter or between_filter for metric filter {item.field_name!r}."
-            )
-        if not metric and (item.numeric_filter is not None or item.between_filter is not None):
-            raise ModelRetry(
-                f"Use string_filter or in_list_filter for dimension filter {item.field_name!r}."
-            )
 
 
 DEFINITION = RuntimeToolDefinition(
