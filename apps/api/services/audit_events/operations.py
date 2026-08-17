@@ -42,6 +42,7 @@ async def _record_operation_audit_event(
     resource_id: UUID | str | None = None,
     requested_by_user_id: UUID | str | None = None,
     details: Mapping[str, Any] | None = None,
+    summary: str | None = None,
     request: Request | None = None,
     request_id: str | None = None,
     ip_address: str | None = None,
@@ -49,6 +50,9 @@ async def _record_operation_audit_event(
     occurred_at: datetime | None = None,
 ) -> AuditEvent:
     """Persist one audit event using the caller-owned database session.
+
+    ``summary`` overrides the generic actor/action/target line when the
+    action alone would misdescribe the outcome.
 
     Private: callers use :func:`safe_record_operation_audit_event` so an audit
     write failure can never roll back the work being recorded.
@@ -62,7 +66,8 @@ async def _record_operation_audit_event(
         resource_type=resource_type,
         resource_id=_string_or_none(resource_id),
         status=status,
-        summary=_summary(
+        summary=summary
+        or _summary(
             actor_display=actor_display,
             actor_type=actor_type,
             action=action,

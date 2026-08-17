@@ -471,6 +471,131 @@ async def test_audit_event_list_rolls_up_before_pagination_and_uses_provider_sta
     assert second_page.json()["events"][0]["id"] == str(unrelated.id)
 
 
+async def test_run_code_bridge_evidence_stays_visible_beside_the_tool_call_rollup(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    from pydantic_ai import UploadedFile
+
+    from services.agents.runtime.tools.native import run_code_file_bridge as bridge
+    from services.files.contract import FileCategory
+
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    run_id = uuid4()
+    tool_call_id = "call-run-code"
+    base_time = datetime(2026, 3, 1, 9, 0, tzinfo=UTC)
+    deps = SimpleNamespace(
+        db=db_session,
+        workspace=workspace,
+        agent=SimpleNamespace(id=uuid4(), name="Analyst"),
+        user=actor,
+        run=SimpleNamespace(id=run_id),
+    )
+    uploads = []
+    for index, name in enumerate(("budget.xlsx", "notes.md"), start=1):
+        source = bridge.RunCodeInput(
+            file_id=uuid4(),
+            revision_id=uuid4(),
+            name=name,
+            sandbox_name=name,
+            content=b"bytes",
+            media_type="text/plain",
+            category=FileCategory.EDITABLE_TEXT,
+        )
+        uploads.append(
+            bridge.RunCodeBridgeUpload(
+                input=source,
+                provider_file_id=f"provider-file-{index}",
+                uploaded_file=UploadedFile(
+                    f"provider-file-{index}", provider_name="openai", media_type="text/plain"
+                ),
+            )
+        )
+    await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        resource_id=tool_call_id,
+        status=AuditStatus.PENDING,
+        occurred_at=base_time,
+        details={"run_id": str(run_id)},
+        tool_name="run_code",
+        tool_provider="native",
+    )
+    await bridge.audit_run_code_bridge(
+        deps,
+        provider="openai",
+        model="gpt-5.6-luna",
+        tool_call_id=tool_call_id,
+        uploads=uploads,
+        deletion_facts=(
+            {"provider_file_id": "provider-file-1", "delete_outcome": "deleted"},
+            {
+                "provider_file_id": "provider-file-2",
+                "delete_outcome": "failed",
+                "delete_error_code": "APIConnectionError",
+            },
+        ),
+    )
+    # Dispatch writes the terminal tool-call event after the bridge has cleaned up.
+    completed = await _seed_audit_event(
+        db_session,
+        workspace=workspace,
+        actor=actor,
+        action=AuditAction.EXECUTE,
+        resource_type=AuditResourceType.TOOL_CALL,
+        resource_id=tool_call_id,
+        status=AuditStatus.SUCCESS,
+        occurred_at=base_time + timedelta(minutes=1),
+        details={"run_id": str(run_id)},
+        tool_name="run_code",
+        tool_provider="native",
+    )
+    await db_session.commit()
+
+    response = await db_async_client.get("/api/v1/audit-events/", headers=headers)
+
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert response.json()["total"] == 3
+    tool_call = next(event for event in events if event["id"] == str(completed.id))
+    assert tool_call["status"] == "success"
+    assert tool_call["detail_event_id"] == str(completed.id)
+    file_events = {
+        event["resource_id"]: event
+        for event in events
+        if event["resource_type"] == AuditResourceType.FILE.value
+    }
+    assert set(file_events) == {str(upload.input.file_id) for upload in uploads}
+    succeeded = file_events[str(uploads[0].input.file_id)]
+    failed = file_events[str(uploads[1].input.file_id)]
+    assert succeeded["status"] == "success"
+    assert failed["status"] == "failure"
+    assert succeeded["summary"] == (
+        "Analyst shared file 'budget.xlsx' with the openai sandbox; provider copy deleted"
+    )
+    assert failed["summary"] == (
+        "Analyst shared file 'notes.md' with the openai sandbox; "
+        "provider copy deletion failed (APIConnectionError)"
+    )
+    for event in (succeeded, failed):
+        detail = await db_async_client.get(
+            f"/api/v1/audit-events/{event['detail_event_id']}", headers=headers
+        )
+        assert detail.status_code == 200
+        details = detail.json()["details"]
+        assert details["action"] == "run_code_file_bridge"
+        assert details["tool_call_id"] == tool_call_id
+    failed_detail = await db_async_client.get(
+        f"/api/v1/audit-events/{failed['detail_event_id']}", headers=headers
+    )
+    assert failed_detail.json()["details"]["provider_file_id"] == "provider-file-2"
+    assert failed_detail.json()["details"]["delete_outcome"] == "failed"
+    assert failed_detail.json()["details"]["delete_error_code"] == "APIConnectionError"
+
+
 async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

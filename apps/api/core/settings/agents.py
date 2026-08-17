@@ -101,6 +101,18 @@ class AgentRunSettingsMixin:
         le=20 * 1024 * 1024,
         description="Maximum combined UTF-8 workspace-file bytes inlined into run_code.",
     )
+    NATIVE_RUN_CODE_MAX_UPLOAD_BYTES: int = Field(
+        default=50 * 1024 * 1024,
+        ge=1,
+        le=100 * 1024 * 1024,
+        description="Maximum source bytes accepted for one run_code workspace input.",
+    )
+    NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES: int = Field(
+        default=100 * 1024 * 1024,
+        ge=1,
+        le=500 * 1024 * 1024,
+        description="Maximum combined source bytes accepted by one run_code invocation.",
+    )
     NATIVE_RUN_CODE_OUTPUT_MAX_CHARS: int = Field(
         default=16_000,
         ge=256,
@@ -131,11 +143,11 @@ class AgentRunSettingsMixin:
         description="Wall-clock timeout for one run_code invocation, including output retrieval.",
     )
     NATIVE_RUN_CODE_MAX_STEPS: int = Field(
-            default=3,
-            ge=1,
-            le=10,
-            description="Maximum model requests for one provider-native code-execution helper run.",
-        )
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum model requests for one provider-native code-execution helper run.",
+    )
     NATIVE_IMAGE_GENERATION_MAX_STEPS: int = Field(
         default=3,
         gt=0,

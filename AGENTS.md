@@ -38,8 +38,9 @@ behind good defaults and progressive disclosure, not in their face.
   transition; failure/cancellation and helper/embedding paths use best-effort
   durable recording through a distinct bounded runtime-role connection pool.
   Owner/admin usage routes apply effective-dated public prices to UTC daily
-  buckets and expose estimated workspace cost, trends, attribution breakdowns,
-  and explicit pricing coverage. Super admins can use a separately gated,
+  buckets and expose estimated workspace cost, trends (one zero-filled point
+  per UTC day in the requested range), attribution breakdowns, and explicit
+  pricing coverage. Super admins can use a separately gated,
   database-read-only maintenance view to see the same measures across all
   workspaces, including workspace and cross-workspace user attribution.
   Image-generation events retain known output
@@ -74,8 +75,9 @@ artifacts (dedicated immutable revisions, approval-gated agent
 tools, agent list/read/update across conversations, workspace management UI,
 append-only edit/restore flows, and
 version-pinned anonymous share links with CSP-locked serving), the tool
-catalog, provider-native isolated code execution for computation and new
-document generation, and the audit/security event viewers.
+catalog, provider-native isolated code execution for computation, new document
+generation, and append-only editing of existing workspace documents, and the
+audit/security event viewers.
 
 Backend-only for now: notifications (service exists, no routes or UI).
 Knowledge Base chunks and agent memories use `HALFVEC` embeddings with HNSW

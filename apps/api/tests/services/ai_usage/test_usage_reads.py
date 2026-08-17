@@ -73,6 +73,46 @@ async def test_summary_prices_utc_days_before_folding_and_sums_requests(
 
 
 @pytest.mark.asyncio
+async def test_summary_zero_fills_every_utc_day_in_range(db_session: AsyncSession) -> None:
+    workspace = build_workspace(slug=f"gaps-{uuid4().hex}")
+    db_session.add(workspace)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            _event(workspace.id, datetime(2026, 8, 12, 12, tzinfo=UTC), requests=1),
+            _event(workspace.id, datetime(2026, 8, 15, 12, tzinfo=UTC), requests=2),
+        ]
+    )
+    await db_session.flush()
+
+    summary = await get_usage_summary(
+        db_session,
+        workspace_id=workspace.id,
+        from_=datetime(2026, 8, 11, 9, 30, tzinfo=UTC),
+        to=datetime(2026, 8, 16, 9, 30, tzinfo=UTC),
+    )
+
+    assert [str(point.date) for point in summary.daily] == [
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-13",
+        "2026-08-14",
+        "2026-08-15",
+        "2026-08-16",
+    ]
+    assert [point.requests for point in summary.daily] == [0, 1, 0, 0, 2, 0]
+    assert [point.estimated_cost_usd for point in summary.daily] == [
+        Decimal("0"),
+        Decimal("2"),
+        Decimal("0"),
+        Decimal("0"),
+        Decimal("2"),
+        Decimal("0"),
+    ]
+    assert summary.totals.requests == 3
+
+
+@pytest.mark.asyncio
 async def test_summary_uses_half_open_range_and_exposes_unpriced_coverage(
     db_session: AsyncSession,
 ) -> None:

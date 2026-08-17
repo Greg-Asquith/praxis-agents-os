@@ -11,6 +11,11 @@ import type {
   ConversationMessagesResponse,
 } from "@/features/conversations/types"
 import type { StreamEvent } from "@/features/conversations/stream/protocol"
+import {
+  RUN_CODE_TOOL_NAME,
+  runCodeTouchedFileIds,
+} from "@/features/conversations/native-tools/run-code"
+import { filesQueryKeys } from "@/features/files/api/list-files"
 
 export const EMPTY_CONVERSATION_MESSAGES = {
   messages: [],
@@ -104,6 +109,65 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
       }
     }
   )
+}
+
+export function collectStreamTouchedFiles(touchedFileIds: Set<string>, streamEvent: StreamEvent) {
+  if (streamEvent.event === "tool.result" && streamEvent.data.name === RUN_CODE_TOOL_NAME) {
+    for (const fileId of runCodeTouchedFileIds(streamEvent.data.result)) {
+      touchedFileIds.add(fileId)
+    }
+  }
+}
+
+export async function invalidateStreamQueries(
+  queryClient: QueryClient,
+  {
+    conversationCreated,
+    conversationId,
+    status,
+    touchedFileIds,
+  }: {
+    conversationCreated: boolean
+    conversationId: string | null
+    status: AgentRunStatus | null
+    touchedFileIds: ReadonlySet<string>
+  }
+) {
+  const invalidations = [
+    queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
+  ]
+
+  // Files written by run_code commit with the run, so refresh them only after the stream ends.
+  if (touchedFileIds.size > 0) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }))
+    for (const fileId of touchedFileIds) {
+      // The detail key prefixes revisions, preview, and revision-content keys.
+      invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(fileId) }))
+    }
+  }
+
+  if (conversationId !== null && shouldInvalidateConversationDetails(status, conversationCreated)) {
+    invalidations.push(
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.detail(conversationId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.messages(conversationId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: conversationsQueryKeys.activeRun(conversationId),
+      })
+    )
+  }
+
+  await Promise.all(invalidations)
+}
+
+function shouldInvalidateConversationDetails(
+  status: AgentRunStatus | null,
+  conversationCreated: boolean
+) {
+  return !(status === "failed" && conversationCreated)
 }
 
 export function streamActiveRunFromState({

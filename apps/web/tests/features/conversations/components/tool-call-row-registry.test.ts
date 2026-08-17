@@ -1,5 +1,6 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
@@ -29,10 +30,55 @@ describe("renderCustomToolCallRow", () => {
     })
     const html = renderToStaticMarkup(row)
 
-    expect(html).toContain("Isolated Computation")
+    expect(html).toContain("Run Script")
     expect(html).toContain("Computing and preparing any requested files…")
     expect(html).not.toContain("A very long operator-authored presentation brief")
     expect(html).toContain('aria-busy="true"')
+  })
+
+  it("renders a declared run_code edit as a new revision of the source file", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+    const row = renderCustomToolCallRow({
+      ...props(),
+      defaultOpen: true,
+      activity: {
+        id: "run-code-edit-1",
+        kind: "result",
+        name: "run_code",
+        status: "completed",
+        result: {
+          model: "claude-sonnet-5",
+          model_provider: "anthropic",
+          outputs: [
+            {
+              kind: "file",
+              media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              name: "budget.xlsx",
+              reference: {
+                entity_id: "file-1",
+                entity_kind: "file",
+                label: "budget.xlsx",
+              },
+              revision_id: "revision-2",
+              revision_number: 2,
+              size_bytes: 8192,
+              updated_existing: true,
+            },
+          ],
+          result: "Added the totals column.",
+          skipped_outputs: [],
+        },
+      },
+    })
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: new QueryClient() }, row)
+    )
+
+    expect(html).toContain("1 updated")
+    expect(html).toContain("Updated")
+    expect(html).toContain("Revision 2")
+    expect(html).toContain("budget.xlsx")
+    expect(html).not.toContain("1 created")
   })
 
   it("renders a running Fetch URL call through the native web presenter", () => {

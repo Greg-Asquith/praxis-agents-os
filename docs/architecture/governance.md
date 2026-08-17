@@ -97,6 +97,43 @@ per-agent `tool_policies`; this section is the policy law:
   evidence is an operator-maintained verification record, not runtime package
   metadata or an application availability gate. *(enforced except manual
   re-probe discipline)*
+  A 2026-08-17 Plan 157 bridge probe on those same pinned versions confirmed
+  that Anthropic and OpenAI accepted an unchanged XLSX upload, mounted the real
+  workbook at `/files/input/<opaque>/input.xlsx` and
+  `/mnt/data/<opaque>-input.xlsx` respectively, and edited it with sandbox
+  `openpyxl`. OpenAI accepted `purpose="user_data"` with a one-hour
+  `expires_after` backstop. Both bridge-active sandboxes again failed DNS and
+  HTTPS access, and both uploaded inputs were deleted successfully and returned
+  404 on a subsequent metadata read; repeating either delete also returned the
+  provider's typed 404 `NotFoundError`, which pins the non-fatal deletion-failure
+  surface. The published provider ceilings are 500 MB per Anthropic file and
+  512 MB per OpenAI file; Praxis remains materially tighter at 50 MB per input
+  and 100 MB per invocation. Uploaded inputs are fresh for every invocation,
+  named in approval evidence, deleted in `finally`, and identified durably only
+  in one file-scoped workspace audit event per upload (kept outside the
+  tool-call roll-up so deletion outcomes stay visible). OpenAI additionally supplies a one-hour expiry
+  backstop, while Anthropic inputs persist until the deletion attempt and then
+  follow Anthropic's retention policy. The first pass exposed SDK response-shape
+  drift in 059's downloader: OpenAI requires awaiting `aiter_bytes()` before
+  iterating its result, while Anthropic exposes `iter_bytes()` directly. After
+  correcting and regression-testing both shapes, edited XLSX outputs from both
+  providers downloaded within the byte budget and passed package/formula
+  validation. The final smoke also confirmed that OpenAI lists the mounted input
+  beside generated container files; capture excludes known provider input ids
+  before output budgeting and source-byte hashes as a defensive fallback, so an
+  unchanged input is never duplicated as a generated Praxis File. A Google Files
+  API control probe supplied the same XLSX both as
+  prompt content and through `CodeExecutionTool.files`; Gemini rejected it with
+  `400 INVALID_ARGUMENT` because XLSX is not a supported code-execution MIME
+  type. A second probe uploaded bounded AnyDoc-derived Markdown successfully,
+  but that prompt attachment was not mounted in Gemini's code filesystem.
+  Google therefore retains the framed inline-text path: ingestible binary
+  documents may degrade to bounded, explicitly derived Markdown for read-only
+  computation, but binary revision editing remains unavailable. Scripted runtime
+  scenarios separately confirm agent-attributed revision append and
+  optimistic-conflict preservation through the production persistence seam;
+  the revision and file-bridge operation audit events are verified at the
+  service and route layers.
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. *(enforced for integration

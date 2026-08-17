@@ -26,7 +26,7 @@ export function RunCodeToolRow({
         heading={
           <span className="flex items-center gap-2">
             <FileCode2Icon className="size-4" />
-            Isolated Computation
+            Run Script
           </span>
         }
         label="Computing and preparing any requested files…"
@@ -38,6 +38,14 @@ export function RunCodeToolRow({
     return null
   }
   const outputCount = result.outputs.length
+  const updatedCount = result.outputs.filter((output) => output.updatedExisting).length
+  const createdCount = outputCount - updatedCount
+  const savedSummary = [
+    createdCount > 0 ? `${String(createdCount)} created` : null,
+    updatedCount > 0 ? `${String(updatedCount)} updated` : null,
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" · ")
   return (
     <ToolResultCard
       ariaLabel="Script result"
@@ -46,8 +54,8 @@ export function RunCodeToolRow({
         { label: "Provider", value: result.modelProvider },
         { label: "Model", value: result.model },
         {
-          label: "Created",
-          value: `${String(outputCount)} ${pluralize(outputCount, "output")}`,
+          label: "Saved",
+          value: savedSummary || `0 ${pluralize(outputCount, "output")}`,
         },
       ]}
       heading={
@@ -64,15 +72,26 @@ export function RunCodeToolRow({
           <div className="divide-border border-border divide-y rounded-lg border px-2">
             {result.outputs.map((output) =>
               output.kind === "file" ? (
-                <FileEntityRow
-                  file={{
-                    contentType: output.mediaType,
-                    fileId: output.reference.entityId,
-                    name: output.name,
-                    sizeBytes: output.sizeBytes,
-                  }}
-                  key={output.reference.entityId}
-                />
+                <div key={output.reference.entityId}>
+                  {output.updatedExisting ? (
+                    <div className="flex items-center gap-2 px-1.5 pt-2">
+                      <Badge variant="success">Updated</Badge>
+                      {output.revisionNumber !== null ? (
+                        <span className="text-muted-foreground text-xs">
+                          Revision {String(output.revisionNumber)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <FileEntityRow
+                    file={{
+                      contentType: output.mediaType,
+                      fileId: output.reference.entityId,
+                      name: output.name,
+                      sizeBytes: output.sizeBytes,
+                    }}
+                  />
+                </div>
               ) : (
                 <div
                   className="flex min-w-0 items-center gap-3 px-1.5 py-2"

@@ -13,7 +13,10 @@ type RunCodeStoredOutput = {
     entityKind: "artifact" | "file"
     label: string
   }
+  revisionId: string | null
+  revisionNumber: number | null
   sizeBytes: number
+  updatedExisting: boolean
 }
 
 export type RunCodeResult = {
@@ -54,6 +57,16 @@ export function runCodeResult(value: unknown): RunCodeResult | null {
   }
 }
 
+export function runCodeTouchedFileIds(value: unknown): string[] {
+  const parsed = runCodeResult(value)
+  if (parsed === null) {
+    return []
+  }
+  return parsed.outputs
+    .filter((output) => output.kind === "file")
+    .map((output) => output.reference.entityId)
+}
+
 function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
   if (!isRecord(value) || !isRecord(value["reference"])) {
     return null
@@ -61,6 +74,9 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
   const reference = value["reference"]
   const kind = value["kind"]
   const entityKind = reference["entity_kind"]
+  const revisionId = value["revision_id"]
+  const revisionNumber = value["revision_number"]
+  const updatedExisting = value["updated_existing"]
   if (
     (kind !== "artifact" && kind !== "file") ||
     entityKind !== kind ||
@@ -68,7 +84,12 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
     typeof value["size_bytes"] !== "number" ||
     typeof value["media_type"] !== "string" ||
     typeof reference["entity_id"] !== "string" ||
-    typeof reference["label"] !== "string"
+    typeof reference["label"] !== "string" ||
+    (revisionId !== undefined && revisionId !== null && typeof revisionId !== "string") ||
+    (revisionNumber !== undefined &&
+      revisionNumber !== null &&
+      typeof revisionNumber !== "number") ||
+    (updatedExisting !== undefined && typeof updatedExisting !== "boolean")
   ) {
     return null
   }
@@ -81,7 +102,10 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
       entityKind: kind,
       label: reference["label"],
     },
+    revisionId: typeof revisionId === "string" ? revisionId : null,
+    revisionNumber: typeof revisionNumber === "number" ? revisionNumber : null,
     sizeBytes: value["size_bytes"],
+    updatedExisting: updatedExisting === true,
   }
 }
 

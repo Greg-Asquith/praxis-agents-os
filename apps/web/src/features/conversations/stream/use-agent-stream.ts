@@ -1,9 +1,8 @@
 // apps/web/src/features/conversations/stream/use-agent-stream.ts
 
 import { useCallback, useEffect, useReducer, useRef } from "react"
-import { useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 
-import { conversationsQueryKeys } from "@/features/conversations/api/list-conversations"
 import { createConversationStream } from "@/features/conversations/api/create-conversation-stream"
 import { createTurnStream } from "@/features/conversations/api/create-turn-stream"
 import { resumeRunStream } from "@/features/conversations/api/resume-run-stream"
@@ -24,7 +23,11 @@ import {
   STREAM_VERSION_HEADER,
   type StreamError,
 } from "@/features/conversations/stream/protocol"
-import { seedStreamQueryCache } from "@/features/conversations/stream/query-cache"
+import {
+  collectStreamTouchedFiles,
+  invalidateStreamQueries,
+  seedStreamQueryCache,
+} from "@/features/conversations/stream/query-cache"
 import { ApiError, parseApiError } from "@/lib/api/errors"
 
 type SendTurnInput = {
@@ -81,6 +84,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       let observedDoneStatus: AgentRunStatus | null = null
       let observedConversationCreated = false
       let streamClosedNormally = false
+      const touchedFileIds = new Set<string>()
 
       try {
         const response = await request(abortController.signal)
@@ -93,6 +97,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
           }
           dispatch({ type: "event", event: streamEvent })
           seedStreamQueryCache(queryClient, streamEvent)
+          collectStreamTouchedFiles(touchedFileIds, streamEvent)
           if (streamEvent.event === "conversation.created") {
             observedConversationCreated = true
             onConversationCreated?.(streamEvent.data.conversation.id)
@@ -121,6 +126,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
           conversationCreated: observedConversationCreated,
           conversationId: observedConversationId,
           status: observedDoneStatus,
+          touchedFileIds,
         })
         // Route reconciliation clears settled drafts after their persisted replacement renders.
       }
@@ -191,39 +197,6 @@ function toStreamError(error: unknown): StreamError {
   return { code: "stream_failed", message: "The agent stream failed." }
 }
 
-async function invalidateStreamQueries(
-  queryClient: QueryClient,
-  {
-    conversationCreated,
-    conversationId,
-    status,
-  }: {
-    conversationCreated: boolean
-    conversationId: string | null
-    status: AgentRunStatus | null
-  }
-) {
-  const invalidations = [
-    queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
-  ]
-
-  if (conversationId !== null && shouldInvalidateConversationDetails(status, conversationCreated)) {
-    invalidations.push(
-      queryClient.invalidateQueries({
-        queryKey: conversationsQueryKeys.detail(conversationId),
-      }),
-      queryClient.invalidateQueries({
-        queryKey: conversationsQueryKeys.messages(conversationId),
-      }),
-      queryClient.invalidateQueries({
-        queryKey: conversationsQueryKeys.activeRun(conversationId),
-      })
-    )
-  }
-
-  await Promise.all(invalidations)
-}
-
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
 }
@@ -233,11 +206,4 @@ function shouldFinalizeAbort(
   abortedController: AbortController
 ) {
   return currentController === null || currentController === abortedController
-}
-
-function shouldInvalidateConversationDetails(
-  status: AgentRunStatus | null,
-  conversationCreated: boolean
-) {
-  return !(status === "failed" && conversationCreated)
 }

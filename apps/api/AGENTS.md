@@ -240,11 +240,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   Keep the full URL editable and visible under the default approval policy;
   never enable the local fetch fallback.
 - Provider-native `run_code` is a separate helper-model tool for heavy
-  computation and create-from-text document generation. It is an internal
+  computation, create-from-text document generation, and declared append-only
+  edits of existing workspace documents. It is an internal
   write, defaults to approval, never nests with `run_workflow`, and is offered
-  only for configured OpenAI, Anthropic, or Google providers. Workspace inputs
-  are current UTF-8 text revisions framed as untrusted; generated text
-  artifacts and governed Files persist directly. The dated provider-isolation
+  only for configured OpenAI, Anthropic, or Google providers. Anthropic and
+  OpenAI receive bounded current-revision bytes through the provider file
+  bridge; Google receives bounded framed text or AnyDoc-derived Markdown.
+  Generated text artifacts and governed Files persist directly. The dated provider-isolation
   probe record and re-probe policy live in `docs/architecture/governance.md`,
   not in the runtime module.
   Inner sandbox executions are audited even when the helper run fails
@@ -253,6 +255,27 @@ Repo-wide expectations are in the root `AGENTS.md`.
   and `NATIVE_RUN_CODE_MAX_OUTPUT_BYTES`, provider-named outputs win hash
   dedup over synthetic inline names, and `NATIVE_RUN_CODE_TIMEOUT_SECONDS`
   bounds the whole invocation.
+  Keep registry/orchestration in `native/run_code.py`, workspace-input transport
+  and provider-file lifecycle in `native/run_code_file_bridge.py`, and bounded
+  capture plus durable output persistence in `native/run_code_outputs.py`.
+  Anthropic/OpenAI inputs upload once per invocation under deterministic,
+  collision-free sandbox aliases (duplicate or normalized-colliding names get a
+  ` (n)` suffix; the edit instruction names the exact alias) and delete
+  best-effort in `finally`; provider ids and deletion outcomes persist only in
+  one file-scoped audit event per upload, deliberately outside the tool-call
+  roll-up so a failed deletion is never masked by the terminal tool event.
+  Exclude mounted inputs
+  from OpenAI container outputs by provider id before budgeting and by source
+  hash as a defensive fallback. Declared edits append an agent-attributed
+  revision only when capture yields exactly one output compatible with the
+  source file format; the scripting model chooses its descriptive filename.
+  Multiple compatible outputs fail closed as ambiguous. Retain the resolved
+  input revision as the optimistic-concurrency boundary. Google stays on the
+  bounded framed text/AnyDoc-Markdown read-only path. Contain helper `ModelAPIError`
+  and direct Anthropic/OpenAI SDK `APIError` failures (the file bridge calls the
+  SDKs outside Pydantic AI's wrapper) as safe tool failures after native-call
+  auditing, provider-file cleanup, and usage recording so a provider outage
+  cannot fail the parent agent run.
 - User-facing workspace File links use the stable Markdown target
   `/files?fileId=<uuid>`. Runtime instructions require agents to use that target
   when a tool returns a File reference and forbid bare download labels.

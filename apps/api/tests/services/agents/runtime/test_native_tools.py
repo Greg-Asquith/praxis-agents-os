@@ -2,6 +2,7 @@
 
 """Tests for provider-native runtime tool catalog entries."""
 
+import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import Conversation, ConversationMessage
+from models.files import FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
@@ -65,6 +67,8 @@ from services.agents.runtime.tools.native import (
     image_editing as image_editing_tools,
     image_generation as image_generation_tools,
     run_code as run_code_tools,
+    run_code_file_bridge as run_code_bridge_tools,
+    run_code_outputs as run_code_output_tools,
     video_to_image as video_to_image_tools,
     web_fetch as web_fetch_tools,
     web_search as web_search_tools,
@@ -82,10 +86,13 @@ from services.agents.runtime.untrusted import (
     serialize_untrusted_content,
 )
 from services.agents.utils import validate_tool_configuration
+from services.audit_events import AuditResourceType, AuditStatus
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
 from tests.factories import build_user, build_workspace
 from tests.support.storage import reset_storage_provider_cache
+
+_HOSTILE_RUN_CODE = Path("tests/fixtures/prompt_injection/hostile_run_code.csv").read_bytes()
 
 
 @dataclass(frozen=True)
@@ -103,12 +110,36 @@ def _metering_deps() -> RuntimeDeps:
         RuntimeDeps,
         SimpleNamespace(
             workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4(), name="Metering Agent"),
             user=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
             conversation=SimpleNamespace(id=uuid4()),
         ),
     )
+
+
+def _run_code_input(
+    *,
+    name: str = "data.csv",
+    content: bytes = b"a,b\n1,2\n",
+    media_type: str = "text/csv",
+    category: run_code_bridge_tools.FileCategory = run_code_bridge_tools.FileCategory.EDITABLE_TEXT,
+) -> run_code_tools.RunCodeInput:
+    return run_code_tools.RunCodeInput(
+        file_id=uuid4(),
+        revision_id=uuid4(),
+        name=name,
+        sandbox_name=run_code_bridge_tools.safe_sandbox_name(name),
+        content=content,
+        media_type=media_type,
+        category=category,
+    )
+
+
+def _bridge_provider_model(*, upload, delete) -> SimpleNamespace:
+    """Fake client exposing both the Anthropic beta and OpenAI files surfaces."""
+    files = SimpleNamespace(upload=upload, create=upload, delete=delete)
+    return SimpleNamespace(client=SimpleNamespace(files=files, beta=SimpleNamespace(files=files)))
 
 
 @pytest.fixture
@@ -198,6 +229,8 @@ def test_native_run_code_settings_defaults_and_bounds() -> None:
 
     assert resolved.NATIVE_RUN_CODE_MAX_STEPS == 3
     assert resolved.NATIVE_RUN_CODE_MAX_INPUT_BYTES == 2 * 1024 * 1024
+    assert resolved.NATIVE_RUN_CODE_MAX_UPLOAD_BYTES == 50 * 1024 * 1024
+    assert resolved.NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES == 100 * 1024 * 1024
     assert resolved.NATIVE_RUN_CODE_OUTPUT_MAX_CHARS == 16_000
     assert resolved.NATIVE_RUN_CODE_MAX_OUTPUT_FILES == 25
     assert resolved.NATIVE_RUN_CODE_MAX_OUTPUT_BYTES == 200 * 1024 * 1024
@@ -206,6 +239,8 @@ def test_native_run_code_settings_defaults_and_bounds() -> None:
     for values in (
         {"NATIVE_RUN_CODE_MAX_STEPS": 11},
         {"NATIVE_RUN_CODE_MAX_INPUT_BYTES": 0},
+        {"NATIVE_RUN_CODE_MAX_UPLOAD_BYTES": 0},
+        {"NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES": 0},
         {"NATIVE_RUN_CODE_OUTPUT_MAX_CHARS": 255},
         {"NATIVE_RUN_CODE_MAX_OUTPUT_FILES": 51},
         {"NATIVE_RUN_CODE_MAX_OUTPUT_BYTES": 0},
@@ -253,24 +288,305 @@ def test_run_code_requires_provider_with_explicit_model(
         )
 
 
-def test_run_code_prompt_frames_poisoned_file_as_untrusted() -> None:
-    content = Path("tests/fixtures/prompt_injection/hostile_run_code.csv").read_text()
-    prompt = run_code_tools._run_code_prompt(
+@pytest.mark.asyncio
+async def test_run_code_prompt_frames_poisoned_file_as_untrusted() -> None:
+    prompt = await run_code_tools._run_code_prompt(
         "Sum the amount column.",
-        (
-            run_code_tools.RunCodeInput(
-                file_id=uuid4(),
-                revision_id=uuid4(),
-                name="hostile.csv",
-                content=content,
-            ),
-        ),
+        (_run_code_input(name="hostile.csv", content=_HOSTILE_RUN_CODE),),
+        provider=PROVIDER_GOOGLE,
     )
 
     assert 'source_kind="run_code_input"' in prompt
     assert UNTRUSTED_CONTENT_START in prompt
     assert UNTRUSTED_CONTENT_END in prompt
     assert "exfiltrate" in prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_code_bridge_prompt_keeps_file_bytes_out_of_model_context() -> None:
+    prompt = await run_code_tools._run_code_prompt(
+        "Add a totals column.",
+        (_run_code_input(content=b"SECRET-CELL-VALUE"),),
+        provider=PROVIDER_OPENAI,
+        edit_target=run_code_tools.RunCodeEditTarget(
+            file_id=uuid4(),
+            revision_id=uuid4(),
+            name="data.csv",
+            sandbox_name="data (2).csv",
+            media_type="text/csv",
+        ),
+    )
+
+    assert "/mnt/data" in prompt
+    assert "Update the mounted file 'data (2).csv'" in prompt
+    assert "clear, task-appropriate filename" in prompt
+    assert "exactly one output" in prompt
+    assert "SECRET-CELL-VALUE" not in prompt
+
+
+def test_run_code_sandbox_names_are_deterministic_and_collision_free() -> None:
+    assert run_code_bridge_tools.sandbox_names_for(
+        ["report.xlsx", "reports/report.xlsx", "r\u00e9port.xlsx", "r_port.xlsx", "report.xlsx"]
+    ) == [
+        "report.xlsx",
+        "report (2).xlsx",
+        "r_port.xlsx",
+        "r_port (2).xlsx",
+        "report (3).xlsx",
+    ]
+
+
+def test_run_code_sandbox_names_keep_extensions_at_maximum_length() -> None:
+    long_name = f"{'a' * 250}.xlsx"
+
+    first, second = run_code_bridge_tools.sandbox_names_for([long_name, long_name])
+
+    assert first == long_name
+    assert len(second) == 255
+    assert second.endswith(" (2).xlsx")
+
+
+@pytest.mark.asyncio
+async def test_run_code_google_converts_documents_and_rejects_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    converted: list[dict[str, object]] = []
+
+    async def fake_convert(data: bytes, **kwargs) -> str:
+        converted.append({"data": data, **kwargs})
+        return "# Workbook\n\n| Total |\n| ---: |\n| 42 |"
+
+    monkeypatch.setattr(run_code_bridge_tools, "convert_document_to_markdown", fake_convert)
+    workbook = _run_code_input(
+        name="budget.xlsx",
+        content=b"xlsx-bytes",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        category=run_code_bridge_tools.FileCategory.INGESTIBLE_DOCUMENT,
+    )
+
+    prompt = await run_code_tools._run_code_prompt(
+        "Read the total.",
+        (workbook,),
+        provider=PROVIDER_GOOGLE,
+    )
+
+    assert "derived Markdown" in prompt
+    assert "Workbook" in prompt
+    assert converted[0]["filename"] == "budget.xlsx"
+
+    with pytest.raises(ModelRetry, match=r"cannot use chart\.png"):
+        await run_code_tools._run_code_prompt(
+            "Inspect the image.",
+            (
+                _run_code_input(
+                    name="chart.png",
+                    content=b"png",
+                    media_type="image/png",
+                    category=run_code_bridge_tools.FileCategory.IMAGE,
+                ),
+            ),
+            provider=PROVIDER_GOOGLE,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [PROVIDER_ANTHROPIC, PROVIDER_OPENAI])
+async def test_run_code_bridge_uploads_with_provider_specific_contract(provider: str) -> None:
+    calls: list[dict[str, object]] = []
+
+    async def upload(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(id=f"{provider}-file-1")
+
+    provider_model = (
+        SimpleNamespace(
+            client=SimpleNamespace(beta=SimpleNamespace(files=SimpleNamespace(upload=upload)))
+        )
+        if provider == PROVIDER_ANTHROPIC
+        else SimpleNamespace(client=SimpleNamespace(files=SimpleNamespace(create=upload)))
+    )
+    source = _run_code_input(name="budget.xlsx", content=b"xlsx")
+
+    [result] = await run_code_tools.upload_run_code_inputs(
+        provider_model,
+        provider=provider,
+        inputs=(source,),
+    )
+
+    assert result.provider_file_id == f"{provider}-file-1"
+    assert result.uploaded_file.provider_name == provider
+    assert result.uploaded_file.media_type == "text/csv"
+    assert calls[0]["file"] == ("budget.xlsx", b"xlsx", "text/csv")
+    if provider == PROVIDER_OPENAI:
+        assert calls[0]["purpose"] == "user_data"
+        assert calls[0]["expires_after"] == {"anchor": "created_at", "seconds": 3600}
+    else:
+        assert set(calls[0]) == {"file"}
+
+
+@pytest.mark.asyncio
+async def test_run_code_bridge_delete_failure_is_non_fatal_and_auditable() -> None:
+    async def fail_delete(_file_id):
+        raise RuntimeError("provider unavailable")
+
+    source = _run_code_input()
+    upload = run_code_tools.RunCodeBridgeUpload(
+        input=source,
+        provider_file_id="provider-file-1",
+        uploaded_file=run_code_bridge_tools.UploadedFile(
+            "provider-file-1",
+            provider_name=PROVIDER_OPENAI,
+            media_type=source.media_type,
+        ),
+    )
+    facts = await run_code_tools.delete_run_code_uploads(
+        SimpleNamespace(client=SimpleNamespace(files=SimpleNamespace(delete=fail_delete))),
+        provider=PROVIDER_OPENAI,
+        uploads=(upload,),
+    )
+
+    assert facts == [
+        {
+            "provider_file_id": "provider-file-1",
+            "delete_outcome": "failed",
+            "delete_error_code": "RuntimeError",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_code_bridge_audit_records_one_file_event_per_upload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, object]] = []
+
+    async def fake_record(_db, **kwargs) -> None:
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(run_code_bridge_tools, "safe_record_operation_audit_event", fake_record)
+    deps = _metering_deps()
+    deps.db = object()
+    first = _run_code_input(name="budget.xlsx")
+    second = _run_code_input(name="notes.md")
+    uploads = tuple(
+        run_code_tools.RunCodeBridgeUpload(
+            input=source,
+            provider_file_id=provider_file_id,
+            uploaded_file=run_code_bridge_tools.UploadedFile(
+                provider_file_id,
+                provider_name=PROVIDER_OPENAI,
+                media_type=source.media_type,
+            ),
+        )
+        for source, provider_file_id in ((first, "provider-file-1"), (second, "provider-file-2"))
+    )
+
+    await run_code_tools.audit_run_code_bridge(
+        deps,
+        provider=PROVIDER_OPENAI,
+        model="gpt-5.6-luna",
+        tool_call_id="run-code-1",
+        uploads=uploads,
+        deletion_facts=(
+            {"provider_file_id": "provider-file-1", "delete_outcome": "deleted"},
+            {
+                "provider_file_id": "provider-file-2",
+                "delete_outcome": "failed",
+                "delete_error_code": "APIConnectionError",
+            },
+        ),
+    )
+
+    # File-scoped events stay outside the tool-call roll-up, so deletion failures remain visible.
+    assert [event["resource_type"] for event in recorded] == [
+        AuditResourceType.FILE,
+        AuditResourceType.FILE,
+    ]
+    assert [event["resource_id"] for event in recorded] == [first.file_id, second.file_id]
+    assert [event["status"] for event in recorded] == [AuditStatus.SUCCESS, AuditStatus.FAILURE]
+    assert recorded[0]["summary"] == (
+        "Metering Agent shared file 'budget.xlsx' with the openai sandbox; provider copy deleted"
+    )
+    assert recorded[1]["summary"] == (
+        "Metering Agent shared file 'notes.md' with the openai sandbox; "
+        "provider copy deletion failed (APIConnectionError)"
+    )
+    assert recorded[0]["details"]["tool_call_id"] == "run-code-1"
+    assert recorded[0]["details"]["provider_file_id"] == "provider-file-1"
+    assert recorded[0]["details"]["delete_outcome"] == "deleted"
+    assert recorded[1]["details"]["provider_file_id"] == "provider-file-2"
+    assert recorded[1]["details"]["delete_error_code"] == "APIConnectionError"
+
+
+def test_run_code_edit_target_requires_selected_input_and_bridge_provider() -> None:
+    source = _run_code_input(name="budget.xlsx")
+    reference = FileReference(entity_id=source.file_id, label=source.name)
+
+    target = run_code_tools.resolve_run_code_edit_target(
+        (source,),
+        updates_file_id=reference,
+        provider=PROVIDER_OPENAI,
+    )
+
+    assert target is not None
+    assert target.file_id == source.file_id
+    assert target.revision_id == source.revision_id
+
+    with pytest.raises(ModelRetry, match="must also be included"):
+        run_code_tools.resolve_run_code_edit_target(
+            (source,),
+            updates_file_id=FileReference(entity_id=uuid4(), label="other.xlsx"),
+            provider=PROVIDER_OPENAI,
+        )
+    with pytest.raises(ModelRetry, match="cannot safely update"):
+        run_code_tools.resolve_run_code_edit_target(
+            (source,),
+            updates_file_id=reference,
+            provider=PROVIDER_GOOGLE,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_code_declared_edit_requires_one_compatible_sandbox_output() -> None:
+    source = _run_code_input(name="budget.xlsx")
+    target = run_code_tools.RunCodeEditTarget(
+        file_id=source.file_id,
+        revision_id=source.revision_id,
+        name=source.name,
+        sandbox_name=source.sandbox_name,
+        media_type=source.media_type,
+    )
+
+    with pytest.raises(run_code_tools.ToolFailed, match="did not produce an edited output"):
+        await run_code_tools.persist_sandbox_outputs(
+            _metering_deps(),
+            task="Edit the workbook",
+            captured=(),
+            input_file_ids=(source.file_id,),
+            input_revision_ids=(source.revision_id,),
+            edit_target=target,
+        )
+
+    with pytest.raises(run_code_tools.ToolFailed, match="multiple possible edits"):
+        await run_code_tools.persist_sandbox_outputs(
+            _metering_deps(),
+            task="Edit the workbook",
+            captured=(
+                run_code_tools.CapturedSandboxFile(
+                    name="budget-revised.xlsx",
+                    content=b"first",
+                    media_type=source.media_type,
+                ),
+                run_code_tools.CapturedSandboxFile(
+                    name="budget-final.xlsx",
+                    content=b"second",
+                    media_type=source.media_type,
+                ),
+            ),
+            input_file_ids=(source.file_id,),
+            input_revision_ids=(source.revision_id,),
+            edit_target=target,
+        )
 
 
 def test_run_code_output_is_bounded_with_marker(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -326,7 +642,7 @@ def test_run_code_rewrites_sandbox_links_to_durable_workspace_entities() -> None
 def test_run_code_collects_nested_anthropic_file_ids_in_order() -> None:
     file_ids: dict[str, None] = {}
 
-    run_code_tools._collect_file_ids(
+    run_code_output_tools._collect_file_ids(
         {"content": [{"type": "file", "file_id": "file-b"}, {"nested": {"file_id": "file-a"}}]},
         file_ids,
     )
@@ -449,8 +765,12 @@ async def test_run_code_helper_is_metered_with_output_counts(
     async def fake_audit(deps, messages) -> None:
         del deps, messages
 
-    async def fake_capture(provider_model, messages):
+    async def fake_capture(
+        provider_model, messages, *, excluded_hashes, excluded_provider_file_ids
+    ):
         del provider_model, messages
+        assert excluded_hashes == set()
+        assert excluded_provider_file_ids == set()
         return [
             run_code_tools.CapturedSandboxFile(
                 name="summary.csv",
@@ -489,6 +809,240 @@ async def test_run_code_helper_is_metered_with_output_counts(
         "captured_output_count": 1,
         "skipped_output_count": 1,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [PROVIDER_ANTHROPIC, PROVIDER_OPENAI])
+async def test_run_code_bridge_lifecycle_uploads_mounts_cleans_up_and_audits(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    uploaded: list[str] = []
+    deleted: list[str] = []
+    mounted: list[object] = []
+    audits: list[dict[str, object]] = []
+    captures: list[dict[str, object]] = []
+
+    async def upload(**kwargs):
+        uploaded.append(kwargs["file"][0])
+        return SimpleNamespace(id=f"{provider}-file-{len(uploaded)}")
+
+    async def delete(provider_file_id):
+        deleted.append(provider_file_id)
+
+    class FakeResult:
+        output = "Edited."
+
+        @staticmethod
+        def all_messages():
+            return []
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            del args
+            mounted.extend(kwargs["capabilities"][0].tool.files)
+
+        async def run(self, prompt, *, usage_limits, usage):
+            del prompt, usage_limits
+            usage.requests += 1
+            assert deleted == []
+            return FakeResult()
+
+    async def fake_audit(deps, messages) -> None:
+        del deps, messages
+
+    async def fake_capture(provider_model, messages, **kwargs):
+        del provider_model, messages
+        captures.append(kwargs)
+        return [], []
+
+    async def fake_bridge_audit(deps, **kwargs) -> None:
+        del deps
+        audits.append(kwargs)
+
+    async def fake_record(_event) -> bool:
+        return True
+
+    provider_model = _bridge_provider_model(upload=upload, delete=delete)
+    monkeypatch.setattr(run_code_tools, "PydanticAgent", FakeAgent)
+    monkeypatch.setattr(run_code_tools, "build_model", lambda _spec: provider_model)
+    monkeypatch.setattr(run_code_tools, "audit_native_code_parts", fake_audit)
+    monkeypatch.setattr(run_code_tools, "capture_sandbox_files", fake_capture)
+    monkeypatch.setattr(run_code_tools, "audit_run_code_bridge", fake_bridge_audit)
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+    inputs = (
+        _run_code_input(name="budget.xlsx", content=b"xlsx-bytes"),
+        _run_code_input(name="notes.md", content=b"# notes"),
+    )
+
+    result = await run_code_tools.run_native_code_execution(
+        deps=_metering_deps(),
+        task="Add totals",
+        inputs=inputs,
+        model_spec=ResolvedModel(
+            provider=provider, model="sandbox-model", settings={}, max_steps=3
+        ),
+        tool_call_id="run-code-1",
+    )
+
+    assert result[0] == "Edited."
+    assert uploaded == ["budget.xlsx", "notes.md"]
+    assert [file.identifier for file in mounted] == ["budget.xlsx", "notes.md"]
+    assert [file.provider_name for file in mounted] == [provider, provider]
+    assert captures[0]["excluded_provider_file_ids"] == {f"{provider}-file-1", f"{provider}-file-2"}
+    assert captures[0]["excluded_hashes"] == {
+        hashlib.sha256(item.content).hexdigest() for item in inputs
+    }
+    assert deleted == [f"{provider}-file-1", f"{provider}-file-2"]
+    assert audits[0]["tool_call_id"] == "run-code-1"
+    assert audits[0]["provider"] == provider
+    assert [item.provider_file_id for item in audits[0]["uploads"]] == deleted
+    assert [item["delete_outcome"] for item in audits[0]["deletion_facts"]] == ["deleted"] * 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [PROVIDER_ANTHROPIC, PROVIDER_OPENAI])
+async def test_run_code_helper_failure_after_mount_still_deletes_and_audits_uploads(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    from pydantic_ai.exceptions import ModelHTTPError
+
+    deleted: list[str] = []
+    audits: list[dict[str, object]] = []
+    audited_parts: list[list[object]] = []
+
+    async def upload(**kwargs):
+        return SimpleNamespace(id=f"{provider}-{kwargs['file'][0]}")
+
+    async def delete(provider_file_id):
+        deleted.append(provider_file_id)
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            del args
+            assert len(kwargs["capabilities"][0].tool.files) == 2
+
+        async def run(self, prompt, *, usage_limits, usage):
+            del prompt, usage_limits
+            usage.requests += 1
+            raise ModelHTTPError(500, "sandbox-model", {"error": "provider failed"})
+
+    async def fake_audit(deps, messages) -> None:
+        del deps
+        audited_parts.append(list(messages))
+
+    async def fake_bridge_audit(deps, **kwargs) -> None:
+        del deps
+        audits.append(kwargs)
+
+    async def fake_record(_event) -> bool:
+        return True
+
+    provider_model = _bridge_provider_model(upload=upload, delete=delete)
+    monkeypatch.setattr(run_code_tools, "PydanticAgent", FakeAgent)
+    monkeypatch.setattr(run_code_tools, "build_model", lambda _spec: provider_model)
+    monkeypatch.setattr(run_code_tools, "audit_native_code_parts", fake_audit)
+    monkeypatch.setattr(run_code_tools, "audit_run_code_bridge", fake_bridge_audit)
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+
+    with pytest.raises(run_code_tools.ToolFailed, match="could not complete the sandbox run"):
+        await run_code_tools.run_native_code_execution(
+            deps=_metering_deps(),
+            task="Add totals",
+            inputs=(
+                _run_code_input(name="budget.xlsx", content=b"xlsx-bytes"),
+                _run_code_input(name="notes.md", content=b"# notes"),
+            ),
+            model_spec=ResolvedModel(
+                provider=provider, model="sandbox-model", settings={}, max_steps=3
+            ),
+            tool_call_id="run-code-1",
+        )
+
+    assert len(audited_parts) == 1
+    assert deleted == [f"{provider}-budget.xlsx", f"{provider}-notes.md"]
+    assert [item.provider_file_id for item in audits[0]["uploads"]] == deleted
+    assert [item["delete_outcome"] for item in audits[0]["deletion_facts"]] == ["deleted"] * 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", [PROVIDER_ANTHROPIC, PROVIDER_OPENAI])
+async def test_run_code_partial_upload_failure_is_contained_and_cleaned_up(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    import httpx
+    from anthropic import APIConnectionError as AnthropicConnectionError
+    from openai import APIConnectionError as OpenAIConnectionError
+
+    error_type = (
+        AnthropicConnectionError if provider == PROVIDER_ANTHROPIC else OpenAIConnectionError
+    )
+    deleted: list[str] = []
+    audits: list[dict[str, object]] = []
+    agent_runs = 0
+
+    async def upload(**kwargs):
+        if kwargs["file"][0] == "notes.md":
+            raise error_type(request=httpx.Request("POST", "https://provider.example/files"))
+        return SimpleNamespace(id=f"{provider}-file-1")
+
+    async def delete(provider_file_id):
+        deleted.append(provider_file_id)
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            del args, kwargs
+
+        async def run(self, prompt, *, usage_limits, usage):
+            nonlocal agent_runs
+            del prompt, usage_limits, usage
+            agent_runs += 1
+            raise AssertionError("helper must not run after an upload failure")
+
+    async def fake_bridge_audit(deps, **kwargs) -> None:
+        del deps
+        audits.append(kwargs)
+
+    async def fake_record(_event) -> bool:
+        return True
+
+    provider_model = _bridge_provider_model(upload=upload, delete=delete)
+    monkeypatch.setattr(run_code_tools, "PydanticAgent", FakeAgent)
+    monkeypatch.setattr(run_code_tools, "build_model", lambda _spec: provider_model)
+    monkeypatch.setattr(run_code_tools, "audit_run_code_bridge", fake_bridge_audit)
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+
+    with pytest.raises(run_code_tools.ToolFailed, match="could not complete the sandbox run"):
+        await run_code_tools.run_native_code_execution(
+            deps=_metering_deps(),
+            task="Add totals",
+            inputs=(
+                _run_code_input(name="budget.xlsx", content=b"xlsx-bytes"),
+                _run_code_input(name="notes.md", content=b"# notes"),
+            ),
+            model_spec=ResolvedModel(
+                provider=provider, model="sandbox-model", settings={}, max_steps=3
+            ),
+            tool_call_id="run-code-1",
+        )
+
+    assert agent_runs == 0
+    assert deleted == [f"{provider}-file-1"]
+    assert [item.provider_file_id for item in audits[0]["uploads"]] == [f"{provider}-file-1"]
+    assert audits[0]["deletion_facts"] == [
+        {"provider_file_id": f"{provider}-file-1", "delete_outcome": "deleted"}
+    ]
 
 
 def test_run_code_catalog_contract() -> None:
@@ -596,11 +1150,68 @@ async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
         ),
         input_file_ids=[inputs[0].file_id],
         input_revision_ids=[inputs[0].revision_id],
+        edit_target=None,
     )
 
-    assert inputs[0].content == "campaign,amount\nSummer,42\n"
+    assert inputs[0].content == b"campaign,amount\nSummer,42\n"
     assert [output.kind for output in outputs] == ["artifact", "file"]
     assert skipped == []
+
+    edit_target = run_code_tools.resolve_run_code_edit_target(
+        inputs,
+        updates_file_id=FileReference(entity_id=input_file.file.id, label=input_file.file.name),
+        provider=PROVIDER_OPENAI,
+    )
+    assert edit_target is not None
+    edited_outputs, edit_skips = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Add a totals row",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="summer-campaign-with-totals.csv",
+                content=b"campaign,amount\nSummer,42\nTotal,42\n",
+                media_type="text/csv",
+            ),
+        ),
+        input_file_ids=[inputs[0].file_id],
+        input_revision_ids=[inputs[0].revision_id],
+        edit_target=edit_target,
+    )
+
+    [edited_output] = edited_outputs
+    assert edit_skips == []
+    assert edited_output.updated_existing is True
+    assert edited_output.reference.entity_id == input_file.file.id
+    assert edited_output.revision_number == 2
+    edited_revision = await db_session.get(FileRevision, edited_output.revision_id)
+    assert edited_revision is not None
+    assert edited_revision.created_by_agent_id == agent.id
+    assert edited_revision.revision_kind == "edit"
+    edit_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.resource_id == str(input_file.file.id),
+            AuditEvent.action == "update",
+        )
+    )
+    assert edit_audit is not None
+    assert edit_audit.details["revision_id"] == str(edited_revision.id)
+
+    with pytest.raises(run_code_tools.ConflictError, match="File has changed"):
+        await run_code_tools.persist_sandbox_outputs(
+            deps,
+            task="Apply a stale edit",
+            captured=(
+                run_code_tools.CapturedSandboxFile(
+                    name="stale-campaign-edit.csv",
+                    content=b"stale",
+                    media_type="text/csv",
+                ),
+            ),
+            input_file_ids=[inputs[0].file_id],
+            input_revision_ids=[inputs[0].revision_id],
+            edit_target=edit_target,
+        )
 
 
 @pytest.mark.asyncio
@@ -652,9 +1263,57 @@ async def test_run_code_audits_native_parts_when_helper_run_fails(
     assert events[0].requests == 1
 
 
+@pytest.mark.asyncio
+async def test_run_code_contains_provider_api_failure_as_tool_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydantic_ai.exceptions import ModelHTTPError
+
+    audited: list[list[object]] = []
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            del args, kwargs
+
+        async def run(self, prompt, *, usage_limits, usage):
+            del prompt, usage_limits
+            usage.requests += 1
+            raise ModelHTTPError(500, "claude-sonnet-5", {"error": "provider failed"})
+
+    async def fake_audit(deps, messages) -> None:
+        del deps
+        audited.append(list(messages))
+
+    async def fake_record(_event) -> bool:
+        return True
+
+    monkeypatch.setattr(run_code_tools, "PydanticAgent", FakeAgent)
+    monkeypatch.setattr(run_code_tools, "build_model", lambda _spec: object())
+    monkeypatch.setattr(run_code_tools, "audit_native_code_parts", fake_audit)
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+
+    with pytest.raises(run_code_tools.ToolFailed, match="could not complete the sandbox run"):
+        await run_code_tools.run_native_code_execution(
+            deps=_metering_deps(),
+            task="Edit the workbook",
+            inputs=(),
+            model_spec=ResolvedModel(
+                provider=PROVIDER_ANTHROPIC,
+                model="claude-sonnet-5",
+                settings={},
+                max_steps=3,
+            ),
+        )
+
+    assert len(audited) == 1
+
+
 def test_run_code_retrieval_budget_bounds_downloads() -> None:
     skipped: list[str] = []
-    budget = run_code_tools._RetrievalBudget(
+    budget = run_code_output_tools._RetrievalBudget(
         files_remaining=1,
         bytes_remaining=10,
         skipped=skipped,
@@ -674,7 +1333,9 @@ def test_run_code_retrieval_budget_bounds_downloads() -> None:
 @pytest.mark.asyncio
 async def test_run_code_retrieval_budget_streams_downloads_within_bounds() -> None:
     skipped: list[str] = []
-    budget = run_code_tools._RetrievalBudget(files_remaining=2, bytes_remaining=10, skipped=skipped)
+    budget = run_code_output_tools._RetrievalBudget(
+        files_remaining=2, bytes_remaining=10, skipped=skipped
+    )
     seen: list[int] = []
 
     async def chunks(*parts: bytes):
@@ -691,20 +1352,180 @@ async def test_run_code_retrieval_budget_streams_downloads_within_bounds() -> No
 
 
 @pytest.mark.asyncio
+async def test_run_code_openai_download_awaits_sdk_byte_iterator() -> None:
+    iterator_awaited = False
+
+    class FakeResponse:
+        async def aiter_bytes(self):
+            nonlocal iterator_awaited
+            iterator_awaited = True
+
+            async def chunks():
+                yield b"edited-"
+                yield b"workbook"
+
+            return chunks()
+
+    async def list_files(_container_id):
+        yield SimpleNamespace(id="output-1", path="edited.xlsx", bytes=15)
+
+    async def retrieve(_file_id, *, container_id):
+        assert container_id == "container-1"
+        return FakeResponse()
+
+    model = SimpleNamespace(
+        client=SimpleNamespace(
+            containers=SimpleNamespace(
+                files=SimpleNamespace(
+                    list=list_files,
+                    content=SimpleNamespace(retrieve=retrieve),
+                )
+            )
+        )
+    )
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolCallPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-1",
+                    args={"container_id": "container-1"},
+                )
+            ]
+        )
+    ]
+    budget = run_code_output_tools._RetrievalBudget(
+        files_remaining=1,
+        bytes_remaining=100,
+        skipped=[],
+    )
+
+    captured = await run_code_output_tools._openai_container_files(model, messages, budget)
+
+    assert iterator_awaited is True
+    assert [(item.name, item.content) for item in captured] == [("edited.xlsx", b"edited-workbook")]
+
+
+@pytest.mark.asyncio
+async def test_run_code_openai_skips_mounted_inputs_before_output_budgeting() -> None:
+    async def list_files(_container_id):
+        yield SimpleNamespace(id="input-file-1", path="input.xlsx", bytes=10_000)
+
+    async def retrieve(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("mounted input must not be downloaded as an output")
+
+    model = SimpleNamespace(
+        client=SimpleNamespace(
+            containers=SimpleNamespace(
+                files=SimpleNamespace(
+                    list=list_files,
+                    content=SimpleNamespace(retrieve=retrieve),
+                )
+            )
+        )
+    )
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolCallPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-1",
+                    args={"container_id": "container-1"},
+                )
+            ]
+        )
+    ]
+    budget = run_code_output_tools._RetrievalBudget(
+        files_remaining=1,
+        bytes_remaining=100,
+        skipped=[],
+    )
+
+    captured = await run_code_output_tools._openai_container_files(
+        model,
+        messages,
+        budget,
+        excluded_provider_file_ids={"input-file-1"},
+    )
+
+    assert captured == []
+    assert budget.files_remaining == 1
+    assert budget.bytes_remaining == 100
+
+
+@pytest.mark.asyncio
+async def test_run_code_anthropic_download_uses_sdk_byte_iterator() -> None:
+    iterator_requested = False
+
+    class FakeResponse:
+        async def iter_bytes(self):
+            nonlocal iterator_requested
+            iterator_requested = True
+            yield b"edited-"
+            yield b"slides"
+
+    async def retrieve_metadata(file_id):
+        assert file_id == "file-output-1"
+        return SimpleNamespace(
+            filename="edited.pptx",
+            size_bytes=13,
+            mime_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+
+    async def download(file_id):
+        assert file_id == "file-output-1"
+        return FakeResponse()
+
+    model = SimpleNamespace(
+        client=SimpleNamespace(
+            beta=SimpleNamespace(
+                files=SimpleNamespace(
+                    retrieve_metadata=retrieve_metadata,
+                    download=download,
+                )
+            )
+        )
+    )
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolReturnPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-1",
+                    content={"content": [{"type": "file", "file_id": "file-output-1"}]},
+                )
+            ]
+        )
+    ]
+    budget = run_code_output_tools._RetrievalBudget(
+        files_remaining=1,
+        bytes_remaining=100,
+        skipped=[],
+    )
+
+    captured = await run_code_output_tools._anthropic_output_files(model, messages, budget)
+
+    assert iterator_requested is True
+    assert [(item.name, item.content) for item in captured] == [("edited.pptx", b"edited-slides")]
+
+
+@pytest.mark.asyncio
 async def test_run_code_capture_prefers_provider_names_and_inline_identifiers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def container_files(model, messages, budget):
+    async def container_files(model, messages, budget, *, excluded_provider_file_ids):
         del model, messages, budget
+        assert excluded_provider_file_ids == set()
         return [
             run_code_tools.CapturedSandboxFile(
                 name="report.csv", content=b"a,b\n1,2\n", media_type="text/csv"
             )
         ]
 
-    monkeypatch.setattr(run_code_tools, "_openai_container_files", container_files)
-    provider_model = run_code_tools.OpenAIResponsesModel.__new__(
-        run_code_tools.OpenAIResponsesModel
+    monkeypatch.setattr(run_code_output_tools, "_openai_container_files", container_files)
+    provider_model = run_code_output_tools.OpenAIResponsesModel.__new__(
+        run_code_output_tools.OpenAIResponsesModel
     )
     messages = [
         ModelResponse(
@@ -723,6 +1544,40 @@ async def test_run_code_capture_prefers_provider_names_and_inline_identifiers(
     captured, skipped = await run_code_tools.capture_sandbox_files(provider_model, messages)
 
     assert [item.name for item in captured] == ["report.csv", "chart.png", "sandbox-output-3.txt"]
+    assert skipped == []
+
+
+@pytest.mark.asyncio
+async def test_run_code_capture_excludes_mounted_input_bytes() -> None:
+    source = b"mounted-workbook"
+    messages = [
+        ModelResponse(
+            parts=[
+                FilePart(
+                    content=BinaryContent(
+                        data=source,
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        identifier="input.xlsx",
+                    )
+                ),
+                FilePart(
+                    content=BinaryContent(
+                        data=b"edited-workbook",
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        identifier="edited.xlsx",
+                    )
+                ),
+            ]
+        )
+    ]
+
+    captured, skipped = await run_code_tools.capture_sandbox_files(
+        object(),
+        messages,
+        excluded_hashes={hashlib.sha256(source).hexdigest()},
+    )
+
+    assert [item.name for item in captured] == ["edited.xlsx"]
     assert skipped == []
 
 
@@ -771,13 +1626,14 @@ async def test_run_code_capture_enforces_output_byte_limit(
 async def test_run_code_capture_reports_provider_retrieval_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def failing_retrieval(model, messages, budget):
+    async def failing_retrieval(model, messages, budget, *, excluded_provider_file_ids):
         del model, messages, budget
+        assert excluded_provider_file_ids == set()
         raise RuntimeError("container listing failed")
 
-    monkeypatch.setattr(run_code_tools, "_openai_container_files", failing_retrieval)
-    provider_model = run_code_tools.OpenAIResponsesModel.__new__(
-        run_code_tools.OpenAIResponsesModel
+    monkeypatch.setattr(run_code_output_tools, "_openai_container_files", failing_retrieval)
+    provider_model = run_code_output_tools.OpenAIResponsesModel.__new__(
+        run_code_output_tools.OpenAIResponsesModel
     )
 
     captured, skipped = await run_code_tools.capture_sandbox_files(provider_model, [])
@@ -826,11 +1682,11 @@ async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
         extension=".png",
         actor=FileRevisionActor(user_id=user.id),
     )
-    with pytest.raises(ModelRetry, match="text files only"):
-        await run_code_tools.load_run_code_inputs(
-            ctx(),
-            [FileReference(entity_id=binary.file.id, label="chart.png")],
-        )
+    [binary_input] = await run_code_tools.load_run_code_inputs(
+        ctx(),
+        [FileReference(entity_id=binary.file.id, label="chart.png")],
+    )
+    assert binary_input.category == run_code_bridge_tools.FileCategory.IMAGE
 
     text = await create_file_with_revision(
         db_session,
@@ -842,10 +1698,10 @@ async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
         actor=FileRevisionActor(user_id=user.id),
     )
     text_reference = FileReference(entity_id=text.file.id, label="data.csv")
-    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_INPUT_BYTES", 4)
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES", 4)
     with pytest.raises(ModelRetry, match="too large together"):
         await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
-    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_INPUT_BYTES", 64)
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES", 64)
 
     class FakeStorage:
         payload = b"\xff\xfe"
@@ -855,9 +1711,9 @@ async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
             return self.payload
 
     storage = FakeStorage()
-    monkeypatch.setattr(run_code_tools, "get_storage_provider", lambda: storage)
-    with pytest.raises(ModelRetry, match="UTF-8 text files only"):
-        await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
+    monkeypatch.setattr(run_code_bridge_tools, "get_storage_provider", lambda: storage)
+    [binary_text_input] = await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
+    assert binary_text_input.content == b"\xff\xfe"
 
     storage.payload = b"x" * 65
     with pytest.raises(ModelRetry, match="exceed the configured total limit"):
