@@ -15,7 +15,7 @@ from models.workspace import WorkspaceRole
 from tests.routes.integrations.conftest import create_identity
 
 
-@pytest.mark.parametrize("provider_key", ["google_ads", "bigquery"])
+@pytest.mark.parametrize("provider_key", ["google_ads", "google_analytics", "bigquery"])
 async def test_service_account_is_persisted_by_reference_only(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

@@ -4,7 +4,7 @@
 - **Rule**: implementation work follows this note; a change that deviates
   records the deviation back into this note in the same PR. Every new
   provider follows the checklist in §8 — a provider that needs edits
-  outside its own package (beyond the two one-line registration points
+  outside its own package (beyond the four named shared edit points
   named in §8) is an architecture regression and a review failure.
 - This note contains **structure, not product scope**. What each provider
   does is its plan's business; where its code lives and what it may touch
@@ -22,8 +22,9 @@ the same monolith with better naming.
 
 Goals, in priority order:
 
-1. **Adding provider N+1 touches only its own package** (plus the two
-   one-line registration points in §8). No shared-file sprawl.
+1. **Adding provider N+1 touches only its own package** (plus the four
+   named shared edit points in §8 when applicable). No unnamed shared-file
+   sprawl.
 2. **Per-deployment enablement**: a deployment that wants only Gmail runs
    only Gmail — disabled providers contribute no tools, no manifest
    entries, no provider cards, no UI bytes.
@@ -224,9 +225,10 @@ def load_enabled_providers() -> None:
 - `INTEGRATIONS_ENABLED_PROVIDERS: list[str] = []` — the boot-time
   enablement list. Empty default: integrations are opt-in per deployment.
 - Per-provider operational settings (OAuth client ids, developer tokens)
-  stay in the core settings mixins as today — settings are deployment
-  config, not provider code. They are prerequisites for loading the provider,
-  not a second enablement mechanism.
+  live in provider-owned `BaseSettings` inside `integrations/<key>/`.
+  Provider configuration is deployment state, but keeping its schema in the
+  package preserves the import boundary. These values are prerequisites for
+  loading or using the provider, not a second enablement mechanism.
 
 ### 4.5 Optional dependencies
 
@@ -452,14 +454,16 @@ Adding a provider touches:
    discovery, operations, a one-module-per-tool tree with presentations,
    per-package tests).
 2. `apps/api/pyproject.toml` — an extra, only if it needs an SDK.
-3. Core settings mixin — its operational settings (client id, tokens),
-   only if OAuth/config-gated.
+3. Provider-owned `BaseSettings` in the package for operational values such
+   as client ids and tokens, only if OAuth/config-gated.
 4. Optionally contribute preview definitions from the provider package;
    do not add provider routes or branches to shared services.
 5. If the provider owns a metadata cache, register its handler through
    `services/jobs/registry.py` and declare only the kind on the plugin.
 6. Optionally `apps/web/src/integrations/<key>/` + **one line** in
-   `src/integrations/registry.ts` — only if it earns custom UI.
+   `src/integrations/registry.ts` — only if it earns custom UI. Add a semantic
+   token to the closed `VALID_TOOL_ICONS` set when its tool presentations need
+   a provider icon.
 7. Ask whether any tool returns content a person would want to **see** rather
    than read about. If so, name the engine-owned presenter kits and optional
    preview kinds the provider package composes; provider packages contribute
@@ -472,6 +476,10 @@ Adding a provider touches:
 10. Declare `IntegrationRequestPolicy` on every provider-client call. Query
     POSTs are reads; external writes are mutations unless a real provider
     idempotency mechanism is documented and covered.
+11. For Google OAuth providers, add the provider key to the shared Google
+    userinfo allowlist when `openid email` supplies the external principal.
+12. Extend test-only provider enumeration fixtures; these are coverage seams,
+    not runtime registration.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,
@@ -479,8 +487,8 @@ or any `features/` code. Reviewers hold the line here.
 
 ## 9. Current provider set
 
-The shipped providers are Gmail, Google Ads, and Airtable, plus BigQuery
-through the §8 N+1 checklist. There is no fake or sample provider in product
+The shipped providers are Gmail, Google Ads, Airtable, BigQuery, and Google
+Analytics through the §8 N+1 checklist. There is no fake or sample provider in product
 code: contract and loader tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
@@ -504,3 +512,13 @@ threat model. Its lazy frontend module supplies a BigQuery icon,
 plain-language connection guidance, and guarded table, schema, and query
 presenters; the shared service-account form stays manifest-driven and
 write-only.
+
+Google Analytics demonstrates the OAuth-plus-service-account variant. Its
+workspace-owned package uses its own Google Cloud OAuth client, requests only
+`analytics.readonly`, and discovers selectable GA4 properties from paged Admin
+API account summaries without per-property enrichment calls. Accounts remain
+display metadata rather than selectable resources. Its Data/Admin REST client
+uses bearer authorization, explicit read policies, bounded pagination, and the
+shared refresh-once credential seam. The lazy frontend module contributes the
+provider mark and setup guidance; reporting tools and presenters remain later
+slices.

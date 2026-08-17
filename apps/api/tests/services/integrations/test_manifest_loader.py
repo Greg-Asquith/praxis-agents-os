@@ -6,6 +6,7 @@ from pydantic import SecretStr
 from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
+from integrations.google_analytics.settings import google_analytics_settings
 from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.loader import _validate_plugin, load_enabled_providers
@@ -28,7 +29,9 @@ def clear_loaded_provider_state():
         if resolver.provider_key is not None:
             ENTITY_RESOLVERS.pop(kind)
     for name in tuple(RUNTIME_TOOL_CATALOG):
-        if name.startswith(("airtable_", "bigquery_", "gmail_", "google_ads_")):
+        if name.startswith(
+            ("airtable_", "bigquery_", "gmail_", "google_ads_", "google_analytics_")
+        ):
             RUNTIME_TOOL_CATALOG.pop(name)
     yield
     PROVIDER_MANIFESTS.clear()
@@ -37,7 +40,9 @@ def clear_loaded_provider_state():
         if resolver.provider_key is not None:
             ENTITY_RESOLVERS.pop(kind)
     for name in tuple(RUNTIME_TOOL_CATALOG):
-        if name.startswith(("airtable_", "bigquery_", "gmail_", "google_ads_")):
+        if name.startswith(
+            ("airtable_", "bigquery_", "gmail_", "google_ads_", "google_analytics_")
+        ):
             RUNTIME_TOOL_CATALOG.pop(name)
 
 
@@ -97,14 +102,16 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
     monkeypatch.setattr(
         settings,
         "INTEGRATIONS_ENABLED_PROVIDERS",
-        ["airtable", "bigquery", "gmail", "google_ads"],
+        ["airtable", "bigquery", "gmail", "google_ads", "google_analytics"],
     )
     load_enabled_providers()
-    assert sorted(PROVIDER_MANIFESTS) == ["airtable", "bigquery", "gmail", "google_ads"]
-    assert sorted(PROVIDER_PLUGINS) == ["airtable", "bigquery", "gmail", "google_ads"]
+    expected = ["airtable", "bigquery", "gmail", "google_ads", "google_analytics"]
+    assert sorted(PROVIDER_MANIFESTS) == expected
+    assert sorted(PROVIDER_PLUGINS) == expected
     assert not hasattr(settings, "INTEGRATIONS_AIRTABLE_ENABLED")
     assert not hasattr(settings, "GMAIL_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "GOOGLE_ADS_OAUTH_CLIENT_ID")
+    assert not hasattr(settings, "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID")
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
 
@@ -122,9 +129,31 @@ def test_loader_rejects_shared_oauth_client_ids(monkeypatch) -> None:
     PROVIDER_PLUGINS.clear()
 
 
+def test_loader_rejects_google_analytics_sharing_google_ads_client(monkeypatch) -> None:
+    PROVIDER_MANIFESTS.clear()
+    PROVIDER_PLUGINS.clear()
+    monkeypatch.setattr(
+        settings,
+        "INTEGRATIONS_ENABLED_PROVIDERS",
+        ["google_ads", "google_analytics"],
+    )
+    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_OAUTH_CLIENT_ID", "shared-client")
+    monkeypatch.setattr(
+        google_analytics_settings,
+        "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID",
+        "shared-client",
+    )
+
+    with pytest.raises(RuntimeError, match="isolated client IDs"):
+        load_enabled_providers()
+    PROVIDER_MANIFESTS.clear()
+    PROVIDER_PLUGINS.clear()
+
+
 def test_provider_packages_own_distinct_oauth_credentials(monkeypatch) -> None:
     from integrations.gmail import oauth_config as gmail_oauth_config
     from integrations.google_ads import oauth_config as google_ads_oauth_config
+    from integrations.google_analytics import oauth_config as google_analytics_oauth_config
 
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_ID", "gmail-client")
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_SECRET", SecretStr("gmail-secret"))
@@ -134,13 +163,26 @@ def test_provider_packages_own_distinct_oauth_credentials(monkeypatch) -> None:
         "GOOGLE_ADS_OAUTH_CLIENT_SECRET",
         SecretStr("ads-secret"),
     )
+    monkeypatch.setattr(
+        google_analytics_settings,
+        "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID",
+        "analytics-client",
+    )
+    monkeypatch.setattr(
+        google_analytics_settings,
+        "GOOGLE_ANALYTICS_OAUTH_CLIENT_SECRET",
+        SecretStr("analytics-secret"),
+    )
 
     gmail_config = gmail_oauth_config()
     ads_config = google_ads_oauth_config()
+    analytics_config = google_analytics_oauth_config()
     assert gmail_config.client_id == "gmail-client"
     assert ads_config.client_id == "ads-client"
     assert gmail_config.client_secret.get_secret_value() == "gmail-secret"
     assert ads_config.client_secret.get_secret_value() == "ads-secret"
+    assert analytics_config.client_id == "analytics-client"
+    assert analytics_config.client_secret.get_secret_value() == "analytics-secret"
 
 
 def test_loader_fails_fast_for_unknown_provider(monkeypatch) -> None:

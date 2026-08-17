@@ -1,6 +1,7 @@
 """RBAC ownership and unchanged CSRF posture for integration routes."""
 
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx2 import AsyncClient
@@ -68,6 +69,61 @@ async def test_read_only_can_list_but_cannot_mutate(
         json={"provider_key": "gmail", "owner_scope": "user", "label": "Denied"},
     )
     assert mutation.status_code == 403
+
+
+async def test_google_analytics_is_configured_and_requires_workspace_manager(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    providers = await db_async_client.get(
+        "/api/v1/integrations/providers",
+        headers=integration_identity["headers"],
+    )
+    assert providers.status_code == 200
+    analytics = next(
+        item for item in providers.json() if item["provider_key"] == "google_analytics"
+    )
+    assert analytics["configured"] is True
+    assert analytics["configured_auth_modes"] == {
+        "oauth": True,
+        "service_account": True,
+    }
+
+    _member, _workspace, _membership, member_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+        workspace=integration_identity["workspace"],
+    )
+    denied = await db_async_client.post(
+        "/api/v1/integrations/connections/oauth/start",
+        headers=member_headers,
+        json={
+            "provider_key": "google_analytics",
+            "owner_scope": "workspace",
+            "label": "Client analytics",
+        },
+    )
+    assert denied.status_code == 403
+
+    _admin, _workspace, _membership, admin_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.ADMIN,
+        workspace=integration_identity["workspace"],
+    )
+    started = await db_async_client.post(
+        "/api/v1/integrations/connections/oauth/start",
+        headers=admin_headers,
+        json={
+            "provider_key": "google_analytics",
+            "owner_scope": "workspace",
+            "label": "Client analytics",
+        },
+    )
+    assert started.status_code == 200, started.text
+    query = parse_qs(urlparse(started.json()["authorization_url"]).query)
+    assert query["client_id"] == ["google-analytics-integration-client"]
+    assert query["scope"] == ["openid email https://www.googleapis.com/auth/analytics.readonly"]
 
 
 async def test_non_owner_member_cannot_mutate_user_connection(

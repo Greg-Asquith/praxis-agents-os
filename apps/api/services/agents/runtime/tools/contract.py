@@ -134,6 +134,7 @@ VALID_TOOL_ICONS = frozenset(
         "mail",
         "gmail",
         "google_ads",
+        "google_analytics",
         "airtable",
         "bigquery",
         "chart",

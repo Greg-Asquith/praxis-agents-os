@@ -70,8 +70,9 @@ The core platform is wired end to end (API, worker, and UI):
   revisions, background markdown extraction, agent file tools, skill
   management with document pipelines, and pgvector-backed document retrieval
   with hybrid keyword and semantic search, agent tools, and an operator UI.
-- Integrations and context: Gmail and Google Ads over OAuth, Airtable with API
-  keys, and Google BigQuery plus Google Ads with service-account connections.
+- Integrations and context: Gmail Google Ads & Google Analytics over OAuth, Airtable with API
+  keys, and Google BigQuery, Google Ads, and Google Analytics with
+  service-account connections.
   Discovered resources can be combined in the context hub and selected for
   conversations and schedules.
 - Artifacts: dedicated immutable revisions, approval-gated agent creation and

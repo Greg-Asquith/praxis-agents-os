@@ -18,6 +18,9 @@ from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
+from integrations.google_analytics.tools import (
+    TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+)
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -46,6 +49,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *GOOGLE_ADS_TOOL_DEFINITIONS,
             *AIRTABLE_TOOL_DEFINITIONS,
             *BIGQUERY_TOOL_DEFINITIONS,
+            *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
         )
     }
     expected = {
