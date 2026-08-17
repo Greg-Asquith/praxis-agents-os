@@ -665,20 +665,32 @@ async def record_native_tool_invocation_audit_event(
     *,
     deps: RuntimeDeps,
     call_part: NativeToolCallPart | None,
-    return_part: NativeToolReturnPart,
+    return_part: NativeToolReturnPart | None,
 ) -> None:
-    """Audit one provider-native tool invocation observed in the event stream."""
+    """Audit one provider-native tool invocation observed in the event stream.
+
+    A call without a return part is audited as an incomplete failure so no
+    observed native execution goes unrecorded.
+    """
+    observed = return_part or call_part
+    if observed is None:
+        raise ValueError("Native tool audit requires a call or return part.")
     args = _tool_call_args_for_digest(getattr(call_part, "args", None))
     args_sha256, args_bytes = digest_args(args)
-    status, outcome = _native_audit_status_and_outcome(return_part)
+    if return_part is None:
+        status, outcome = AuditStatus.FAILURE, "failed"
+        error_code: str | None = "NativeToolIncomplete"
+    else:
+        status, outcome = _native_audit_status_and_outcome(return_part)
+        error_code = _native_error_code(return_part)
     await record_tool_invocation_audit_event(
         workspace_id=deps.workspace.id,
         agent=deps.agent,
         run=deps.run,
-        tool_name=return_part.tool_name,
+        tool_name=observed.tool_name,
         tool_provider="native",
-        tool_version=_tool_version(return_part.tool_name),
-        tool_call_id=return_part.tool_call_id,
+        tool_version=_tool_version(observed.tool_name),
+        tool_call_id=observed.tool_call_id,
         status=status,
         args=dict(args),
         args_sha256=args_sha256,
@@ -686,7 +698,7 @@ async def record_native_tool_invocation_audit_event(
         latency_ms=None,
         outcome=outcome,
         approval_ref=None,
-        error_code=_native_error_code(return_part),
+        error_code=error_code,
     )
 
 

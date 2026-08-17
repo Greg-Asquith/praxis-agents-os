@@ -51,6 +51,7 @@ async def test_prompt_blocks_keep_identity_planning_delegation_files_order(
         "memory",
         "active_context",
         "planning",
+        "file_links",
         "delegation",
         "available_files",
         "knowledge",

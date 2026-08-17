@@ -15,6 +15,7 @@ PURPOSE_CLASSIFICATION = "classification"
 PURPOSE_WEB_SEARCH = "web_search"
 PURPOSE_WEB_FETCH = "web_fetch"
 PURPOSE_IMAGE_GENERATION = "image_generation"
+PURPOSE_CODE_EXECUTION = "code_execution"
 PURPOSE_EMBEDDING_KB_INGEST = "embedding_kb_ingest"
 PURPOSE_EMBEDDING_KB_SEARCH = "embedding_kb_search"
 PURPOSE_EMBEDDING_MEMORY_WRITE = "embedding_memory_write"
@@ -30,6 +31,7 @@ AI_USAGE_PURPOSES = (
     PURPOSE_WEB_SEARCH,
     PURPOSE_WEB_FETCH,
     PURPOSE_IMAGE_GENERATION,
+    PURPOSE_CODE_EXECUTION,
     PURPOSE_EMBEDDING_KB_INGEST,
     PURPOSE_EMBEDDING_KB_SEARCH,
     PURPOSE_EMBEDDING_MEMORY_WRITE,
@@ -48,6 +50,7 @@ type AIUsagePurpose = Literal[
     "web_search",
     "web_fetch",
     "image_generation",
+    "code_execution",
     "embedding_kb_ingest",
     "embedding_kb_search",
     "embedding_memory_write",

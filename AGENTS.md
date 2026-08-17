@@ -74,7 +74,8 @@ artifacts (dedicated immutable revisions, approval-gated agent
 tools, agent list/read/update across conversations, workspace management UI,
 append-only edit/restore flows, and
 version-pinned anonymous share links with CSP-locked serving), the tool
-catalog, and the audit/security event viewers.
+catalog, provider-native isolated code execution for computation and new
+document generation, and the audit/security event viewers.
 
 Backend-only for now: notifications (service exists, no routes or UI).
 Knowledge Base chunks and agent memories use `HALFVEC` embeddings with HNSW

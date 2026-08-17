@@ -80,6 +80,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
         "memory",
         "active_context",
         "planning",
+        "file_links",
         "delegation",
         "available_files",
         "knowledge",

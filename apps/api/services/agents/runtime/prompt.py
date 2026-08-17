@@ -44,6 +44,12 @@ PLANNING_INSTRUCTIONS = """\
 - Only pass an empty list when the plan itself no longer applies.
 """
 
+FILE_LINK_INSTRUCTIONS = """\
+## Workspace File Links
+
+When a tool result includes a file reference, link that file in user-facing Markdown as `[label](/files?fileId=<entity_id>)`. The application turns this exact internal URL into an authenticated download. Never present text such as "Download the file" unless it has a real Markdown link target.
+"""
+
 KNOWLEDGE_INSTRUCTIONS = """\
 ## Knowledge Base
 
@@ -136,6 +142,7 @@ def runtime_prompt_blocks(
             PLANNING_INSTRUCTIONS,
             budget=settings.AGENT_PROMPT_PLANNING_BUDGET,
         ),
+        PromptBlock("file_links", FILE_LINK_INSTRUCTIONS),
         PromptBlock(
             "delegation",
             DELEGATION_INSTRUCTIONS if include_delegation else "",

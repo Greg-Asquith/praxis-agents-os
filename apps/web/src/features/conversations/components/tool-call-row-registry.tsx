@@ -12,6 +12,7 @@ import { CodeModeRow } from "@/features/conversations/components/code-mode-row"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
 import { MemoryToolRow } from "@/features/conversations/components/memory-tool-row"
+import { RunCodeToolRow } from "@/features/conversations/components/run-code-tool-row"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
 import { TodoListRow } from "@/features/conversations/components/todo-list-row"
@@ -75,6 +76,7 @@ import {
   WRITE_TODOS_TOOL_NAME,
   todoItemsFromActivity,
 } from "@/features/conversations/native-tools/todo-tools"
+import { RUN_CODE_TOOL_NAME, runCodeResult } from "@/features/conversations/native-tools/run-code"
 import {
   CREATE_ARTIFACT_TOOL_NAME,
   LIST_ARTIFACTS_TOOL_NAME,
@@ -95,6 +97,16 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 // runtime_tool definition.
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  {
+    key: "run-code",
+    matches: (activity) =>
+      activity.name === RUN_CODE_TOOL_NAME &&
+      (activity.status === "running" ||
+        (activity.status === "completed" && runCodeResult(activity.result) !== null)),
+    render: ({ activity, defaultOpen }) => (
+      <RunCodeToolRow activity={activity} defaultOpen={defaultOpen} />
+    ),
+  },
   {
     handlesApprovals: true,
     key: "code-mode-workflow",

@@ -14,6 +14,27 @@ afterEach(() => {
 })
 
 describe("renderCustomToolCallRow", () => {
+  it("renders a running run_code call without exposing the full script task", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      activity: {
+        id: "run-code-1",
+        kind: "call",
+        name: "run_code",
+        status: "running",
+        args: { task: "A very long operator-authored presentation brief" },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Isolated Computation")
+    expect(html).toContain("Computing and preparing any requested files…")
+    expect(html).not.toContain("A very long operator-authored presentation brief")
+    expect(html).toContain('aria-busy="true"')
+  })
+
   it("renders a running Fetch URL call through the native web presenter", () => {
     integrationToolRowPresenters.mockReturnValue([])
 

@@ -34,6 +34,7 @@ from services.agents.runtime.history import (
 )
 from services.agents.runtime.loop import _runtime_instructions
 from services.agents.runtime.prompt import (
+    FILE_LINK_INSTRUCTIONS,
     KNOWLEDGE_INSTRUCTIONS,
     MEMORY_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
@@ -300,6 +301,7 @@ async def test_cache_sensitive_static_prefix_inputs_are_deterministic() -> None:
 
     assert _runtime_instructions(agent, include_delegation=False).startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{FILE_LINK_INSTRUCTIONS.rstrip()}\n\n"
         f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )

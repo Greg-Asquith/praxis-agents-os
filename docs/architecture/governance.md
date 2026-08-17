@@ -82,6 +82,21 @@ per-agent `tool_policies`; this section is the policy law:
   Praxis-internal state and the tools are auto-mounted. The conditional check
   remains inside the tool body so an agent policy cannot weaken it.
   *(enforced)*
+- `run_code` is an internal-effect write because it can create durable Praxis
+  Files and artifacts. It defaults to `approval` but supports `auto`, including
+  unattended scheduled computations. Only OpenAI, Anthropic, and Google are
+  eligible, each after 2026-08-14 DNS and HTTPS canary probes showed no sandbox
+  egress. Those probes used Pydantic AI 2.28.0 with Anthropic 0.113.0,
+  google-genai 2.10.0, and OpenAI 2.50.0. OpenAI `gpt-5.6-luna`, Anthropic
+  `claude-sonnet-5` (code execution 20260120), and Google
+  `gemini-3.7-flash` accepted native code execution and exposed native
+  call/return parts. Generated office documents and images were recovered
+  through OpenAI container files, Anthropic beta files, and Google inline file
+  bytes. Re-run the capability, file-output, DNS, and HTTPS probes after a
+  relevant Pydantic AI, provider SDK, or provider API change. This dated probe
+  evidence is an operator-maintained verification record, not runtime package
+  metadata or an application availability gate. *(enforced except manual
+  re-probe discipline)*
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. *(enforced for integration

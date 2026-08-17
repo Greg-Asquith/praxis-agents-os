@@ -107,6 +107,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   container in outcome language and keep applied, skipped, failed, and declined
   outcomes distinct. Derive this only from retained structured results; do not
   infer effects from proposed arguments or a model-authored reason.
+- Provider-native `run_code` remains distinct from Code Mode: its settled row
+  presents the bounded computation result and retained generated Files or
+  artifacts, while pending approvals continue through the shared declarative
+  approval surface.
+- Conversation Markdown treats `/files?fileId=<uuid>` as an authenticated
+  download action: clicking it mints a fresh signed URL through the Files API.
+  Other internal and external Markdown links retain their normal behavior.
 - Complete transcript-only tool results may arrive through the persisted
   tool-return `public_result` metadata while the model-facing content remains
   bounded. Present the complete result rather than its model summary; use the

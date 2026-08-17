@@ -154,6 +154,42 @@ describe("assistant turn content order", () => {
     expect(html).toContain("Searching Praxis Agents…")
   })
 
+  it("turns an internal workspace-file Markdown link into a download action", () => {
+    const fileId = "245de7d6-0963-4ba4-9b63-45fe64526252"
+    const message: ParsedConversationMessage = {
+      id: "file-link-message",
+      role: "assistant",
+      sequence: 1,
+      agentRunId: "run-1",
+      clientMessageId: null,
+      createdAt: "2026-08-14T12:00:00Z",
+      parts: [
+        {
+          kind: "text",
+          id: "file-link-message:0",
+          content: `[Download the PowerPoint deck](/files?fileId=${fileId})`,
+        },
+      ],
+      text: [`[Download the PowerPoint deck](/files?fileId=${fileId})`],
+      thinking: [],
+      attachments: [],
+      toolActivities: [],
+      unsupportedParts: [],
+    }
+
+    const html = renderWithQuery(
+      createElement(AssistantTurnRow, {
+        assistantAgentId: "agent-1",
+        createdAt: message.createdAt,
+        messages: [message],
+      })
+    )
+
+    expect(html).toContain(`data-workspace-file-download="${fileId}"`)
+    expect(html).toContain(`href="/files?fileId=${fileId}"`)
+    expect(html).toContain("Download the PowerPoint deck")
+  })
+
   it("renders only the newest valid plan update in a persisted assistant turn", () => {
     const firstPlan = todoActivity("plan-1", "Draft the first version", "pending")
     const currentPlan = todoActivity("plan-2", "Review the current version", "in_progress")

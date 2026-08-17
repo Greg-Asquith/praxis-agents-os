@@ -239,6 +239,23 @@ Repo-wide expectations are in the root `AGENTS.md`.
   denylist is configured because URL Context cannot enforce domain filtering.
   Keep the full URL editable and visible under the default approval policy;
   never enable the local fetch fallback.
+- Provider-native `run_code` is a separate helper-model tool for heavy
+  computation and create-from-text document generation. It is an internal
+  write, defaults to approval, never nests with `run_workflow`, and is offered
+  only for configured OpenAI, Anthropic, or Google providers. Workspace inputs
+  are current UTF-8 text revisions framed as untrusted; generated text
+  artifacts and governed Files persist directly. The dated provider-isolation
+  probe record and re-probe policy live in `docs/architecture/governance.md`,
+  not in the runtime module.
+  Inner sandbox executions are audited even when the helper run fails
+  (calls without a return part audit as incomplete failures), provider
+  downloads stream into a buffer bounded by `NATIVE_RUN_CODE_MAX_OUTPUT_FILES`
+  and `NATIVE_RUN_CODE_MAX_OUTPUT_BYTES`, provider-named outputs win hash
+  dedup over synthetic inline names, and `NATIVE_RUN_CODE_TIMEOUT_SECONDS`
+  bounds the whole invocation.
+- User-facing workspace File links use the stable Markdown target
+  `/files?fileId=<uuid>`. Runtime instructions require agents to use that target
+  when a tool returns a File reference and forbid bare download labels.
 - Native batch classification uses the code-eligible `classify` helper-tool
   path for OpenAI, Anthropic, and Google. It always uses a configured cheap
   helper independently from the calling agent, meters one ledger row per

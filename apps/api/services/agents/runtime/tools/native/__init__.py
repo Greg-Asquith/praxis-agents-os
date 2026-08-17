@@ -6,6 +6,7 @@ from services.agents.runtime.tools.native import (
     classifier as classifier,
     image_editing as image_editing,
     image_generation as image_generation,
+    run_code as run_code,
     video_to_image as video_to_image,
     web_fetch as web_fetch,
     web_search as web_search,
@@ -24,6 +25,7 @@ from services.agents.runtime.tools.native.image_generation import (
     resolve_image_generation_model,
     run_native_image_generation,
 )
+from services.agents.runtime.tools.native.run_code import RunCodeOutput
 from services.agents.runtime.tools.native.video_to_image import (
     VideoToImageOutput,
     resolve_video_to_image_model,
@@ -43,6 +45,7 @@ __all__ = [
     "ClassifyOutput",
     "EditImageOutput",
     "GenerateImageOutput",
+    "RunCodeOutput",
     "VideoToImageOutput",
     "WebFetchOutput",
     "WebSearchOutput",
@@ -55,6 +58,7 @@ __all__ = [
     "resolve_video_to_image_model",
     "resolve_web_fetch_model",
     "resolve_web_search_model",
+    "run_code",
     "run_native_classifier",
     "run_native_image_generation",
     "run_native_web_fetch",

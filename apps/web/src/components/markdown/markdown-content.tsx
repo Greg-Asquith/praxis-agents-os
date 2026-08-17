@@ -1,9 +1,9 @@
 // apps/web/src/components/markdown/markdown-content.tsx
 
-import { isValidElement, memo, useMemo, type ReactNode } from "react"
+import { isValidElement, memo, useMemo, type ComponentPropsWithoutRef, type ReactNode } from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { marked } from "marked"
-import ReactMarkdown, { type Components, type Options } from "react-markdown"
+import ReactMarkdown, { type Components, type ExtraProps, type Options } from "react-markdown"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
@@ -38,11 +38,17 @@ const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [
 export const MarkdownContent = memo(function MarkdownContent({
   className,
   content,
+  linkComponent,
 }: {
   className?: string
   content: string
+  linkComponent?: Components["a"]
 }) {
   const shouldParseMarkdown = content.length <= MAX_MARKDOWN_LENGTH
+  const components = useMemo(
+    () => (linkComponent ? { ...MARKDOWN_COMPONENTS, a: linkComponent } : MARKDOWN_COMPONENTS),
+    [linkComponent]
+  )
   const blocks = useMemo(
     () => (shouldParseMarkdown ? parseMarkdownIntoBlocks(content) : []),
     [content, shouldParseMarkdown]
@@ -66,7 +72,7 @@ export const MarkdownContent = memo(function MarkdownContent({
       {blocks.map((block, index) => (
         <MemoizedMarkdownBlock
           key={`${String(index)}:${String(block.length)}`}
-          components={MARKDOWN_COMPONENTS}
+          components={components}
           content={block}
         />
       ))}
@@ -86,27 +92,14 @@ const MemoizedMarkdownBlock = memo(
       </ReactMarkdown>
     )
   },
-  (previous, next) => previous.content === next.content
+  (previous, next) => previous.content === next.content && previous.components === next.components
 )
 
 const MARKDOWN_COMPONENTS: Components = markdownComponents()
 
 function markdownComponents(): Components {
   return {
-    a: ({ children, href, ...props }) => {
-      const isExternal = typeof href === "string" && /^https?:\/\//i.test(href)
-      return (
-        <a
-          className="text-link hover:text-primary wrap-break-word underline underline-offset-2"
-          href={href}
-          rel={isExternal ? "noopener noreferrer" : undefined}
-          target={isExternal ? "_blank" : undefined}
-          {...props}
-        >
-          {children}
-        </a>
-      )
-    },
+    a: MarkdownAnchor,
     blockquote: ({ children, ...props }) => (
       <blockquote
         className="border-border text-muted-foreground my-4 border-l-2 pl-4 italic"
@@ -246,6 +239,23 @@ function markdownComponents(): Components {
       </ul>
     ),
   }
+}
+
+export type MarkdownAnchorProps = ComponentPropsWithoutRef<"a"> & ExtraProps
+
+export function MarkdownAnchor({ children, href, node: _node, ...props }: MarkdownAnchorProps) {
+  const isExternal = typeof href === "string" && /^https?:\/\//i.test(href)
+  return (
+    <a
+      className="text-link hover:text-primary wrap-break-word underline underline-offset-2"
+      href={href}
+      rel={isExternal ? "noopener noreferrer" : undefined}
+      target={isExternal ? "_blank" : undefined}
+      {...props}
+    >
+      {children}
+    </a>
+  )
 }
 
 function MarkdownCodeBlock({ code, language }: { code: string; language: string }) {

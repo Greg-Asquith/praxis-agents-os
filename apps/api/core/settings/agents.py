@@ -95,6 +95,47 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum free-text tool-result characters; None disables the bound.",
     )
+    NATIVE_RUN_CODE_MAX_INPUT_BYTES: int = Field(
+        default=2 * 1024 * 1024,
+        ge=1,
+        le=20 * 1024 * 1024,
+        description="Maximum combined UTF-8 workspace-file bytes inlined into run_code.",
+    )
+    NATIVE_RUN_CODE_OUTPUT_MAX_CHARS: int = Field(
+        default=16_000,
+        ge=256,
+        description="Maximum helper answer characters returned by run_code.",
+    )
+    NATIVE_RUN_CODE_MAX_OUTPUT_FILES: int = Field(
+        default=25,
+        ge=1,
+        le=50,
+        description=(
+            "Maximum generated sandbox files persisted by one run_code call. The default covers "
+            "document source, final deliverables, notes, and rendered previews."
+        ),
+    )
+    NATIVE_RUN_CODE_MAX_OUTPUT_BYTES: int = Field(
+        default=200 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=500 * 1024 * 1024,
+        description=(
+            "Maximum combined generated sandbox-output bytes retrieved by one run_code call, "
+            "enforced during provider download."
+        ),
+    )
+    NATIVE_RUN_CODE_TIMEOUT_SECONDS: float = Field(
+        default=600.0,
+        gt=0,
+        le=3600,
+        description="Wall-clock timeout for one run_code invocation, including output retrieval.",
+    )
+    NATIVE_RUN_CODE_MAX_STEPS: int = Field(
+            default=3,
+            ge=1,
+            le=10,
+            description="Maximum model requests for one provider-native code-execution helper run.",
+        )
     NATIVE_IMAGE_GENERATION_MAX_STEPS: int = Field(
         default=3,
         gt=0,

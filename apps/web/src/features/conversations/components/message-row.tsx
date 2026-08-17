@@ -3,7 +3,7 @@
 import { ChevronRightIcon } from "lucide-react"
 
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
-import { MarkdownContent } from "@/components/markdown/markdown-content"
+import { ConversationMarkdownContent } from "@/features/conversations/components/conversation-markdown-content"
 import {
   AssistantMessageShell,
   UserMessageShell,
@@ -49,7 +49,7 @@ export function MessageRow({
   if (pendingMessage) {
     return (
       <UserMessageShell copyText={pendingMessage.text} createdAt={pendingMessage.createdAt} pending>
-        <MarkdownContent content={pendingMessage.text} />
+        <ConversationMarkdownContent content={pendingMessage.text} />
         <AttachmentCards attachments={pendingMessage.attachments ?? []} />
       </UserMessageShell>
     )
@@ -169,7 +169,7 @@ function LiveMessageDraft({ message }: { message: ChatMessageDraft }) {
   return (
     <div>
       {message.text ? (
-        <MarkdownContent content={message.text} />
+        <ConversationMarkdownContent content={message.text} />
       ) : (
         <p className="text-muted-foreground animate-pulse text-sm motion-reduce:animate-none">
           Thinking…
@@ -248,11 +248,11 @@ function renderMessagePart(
   if (message.role === "tool") {
     return (
       <div key={part.id} className="text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 text-sm">
-        <MarkdownContent content={part.content} />
+        <ConversationMarkdownContent content={part.content} />
       </div>
     )
   }
-  return <MarkdownContent key={part.id} content={part.content} />
+  return <ConversationMarkdownContent key={part.id} content={part.content} />
 }
 
 function messageCopyText(messages: ParsedConversationMessage[]) {
@@ -285,7 +285,7 @@ function MessageTextParts({ message }: { message: ParsedConversationMessage }) {
   return (
     <>
       {message.text.map((text, index) => (
-        <MarkdownContent key={`${message.id}:text:${String(index)}`} content={text} />
+        <ConversationMarkdownContent key={`${message.id}:text:${String(index)}`} content={text} />
       ))}
     </>
   )
@@ -329,7 +329,7 @@ function ThinkingBlock({ content, idPrefix }: { content: string[]; idPrefix: str
       </summary>
       <div className="text-muted-foreground border-border mt-2 ml-1.5 border-l pl-3 text-sm italic">
         {content.map((thought, index) => (
-          <MarkdownContent key={`${idPrefix}:${String(index)}`} content={thought} />
+          <ConversationMarkdownContent key={`${idPrefix}:${String(index)}`} content={thought} />
         ))}
       </div>
     </details>

@@ -2,6 +2,7 @@
 
 """Tests for provider-native runtime tool catalog entries."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +11,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import SecretStr, ValidationError
-from pydantic_ai import ModelRetry
+from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.messages import (
     BinaryContent,
     BinaryImage,
@@ -24,6 +25,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
 )
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -62,6 +64,7 @@ from services.agents.runtime.tools.native import (
     classifier as classifier_tools,
     image_editing as image_editing_tools,
     image_generation as image_generation_tools,
+    run_code as run_code_tools,
     video_to_image as video_to_image_tools,
     web_fetch as web_fetch_tools,
     web_search as web_search_tools,
@@ -79,7 +82,10 @@ from services.agents.runtime.untrusted import (
     serialize_untrusted_content,
 )
 from services.agents.utils import validate_tool_configuration
+from services.files.create_file_with_revision import create_file_with_revision
+from services.files.revision_actor import FileRevisionActor
 from tests.factories import build_user, build_workspace
+from tests.support.storage import reset_storage_provider_cache
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,17 @@ def _metering_deps() -> RuntimeDeps:
             conversation=SimpleNamespace(id=uuid4()),
         ),
     )
+
+
+@pytest.fixture
+def local_storage_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
+    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
+    reset_storage_provider_cache()
+    try:
+        yield
+    finally:
+        reset_storage_provider_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -174,6 +191,682 @@ def test_native_classifier_settings_defaults_and_bounds() -> None:
     ):
         with pytest.raises(ValidationError):
             Settings(**values)
+
+
+def test_native_run_code_settings_defaults_and_bounds() -> None:
+    resolved = Settings()
+
+    assert resolved.NATIVE_RUN_CODE_MAX_STEPS == 3
+    assert resolved.NATIVE_RUN_CODE_MAX_INPUT_BYTES == 2 * 1024 * 1024
+    assert resolved.NATIVE_RUN_CODE_OUTPUT_MAX_CHARS == 16_000
+    assert resolved.NATIVE_RUN_CODE_MAX_OUTPUT_FILES == 25
+    assert resolved.NATIVE_RUN_CODE_MAX_OUTPUT_BYTES == 200 * 1024 * 1024
+    assert resolved.NATIVE_RUN_CODE_TIMEOUT_SECONDS == 600.0
+
+    for values in (
+        {"NATIVE_RUN_CODE_MAX_STEPS": 11},
+        {"NATIVE_RUN_CODE_MAX_INPUT_BYTES": 0},
+        {"NATIVE_RUN_CODE_OUTPUT_MAX_CHARS": 255},
+        {"NATIVE_RUN_CODE_MAX_OUTPUT_FILES": 51},
+        {"NATIVE_RUN_CODE_MAX_OUTPUT_BYTES": 0},
+        {"NATIVE_RUN_CODE_TIMEOUT_SECONDS": 0},
+    ):
+        with pytest.raises(ValidationError):
+            Settings(**values)
+
+
+def test_configured_native_run_code_providers_require_api_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_native_provider_keys(
+        monkeypatch,
+        anthropic="sk-ant-test",
+        google="google-test",
+        openai="sk-openai-test",
+    )
+    assert run_code_tools.configured_native_run_code_providers() == (
+        PROVIDER_ANTHROPIC,
+        PROVIDER_GOOGLE,
+        PROVIDER_OPENAI,
+    )
+
+
+def test_run_code_rejects_provider_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    with pytest.raises(ModelRetry, match="not configured for native run_code"):
+        run_code_tools.resolve_run_code_model(
+            _agent(tool_names=["run_code"]),
+            model_provider=PROVIDER_GOOGLE,
+        )
+
+
+def test_run_code_requires_provider_with_explicit_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+
+    with pytest.raises(ModelRetry, match="model requires model_provider"):
+        run_code_tools.resolve_run_code_model(
+            _agent(tool_names=["run_code"]),
+            model="gpt-5.6-luna",
+        )
+
+
+def test_run_code_prompt_frames_poisoned_file_as_untrusted() -> None:
+    content = Path("tests/fixtures/prompt_injection/hostile_run_code.csv").read_text()
+    prompt = run_code_tools._run_code_prompt(
+        "Sum the amount column.",
+        (
+            run_code_tools.RunCodeInput(
+                file_id=uuid4(),
+                revision_id=uuid4(),
+                name="hostile.csv",
+                content=content,
+            ),
+        ),
+    )
+
+    assert 'source_kind="run_code_input"' in prompt
+    assert UNTRUSTED_CONTENT_START in prompt
+    assert UNTRUSTED_CONTENT_END in prompt
+    assert "exfiltrate" in prompt.lower()
+
+
+def test_run_code_output_is_bounded_with_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_OUTPUT_MAX_CHARS", 256)
+
+    result = run_code_tools.truncate_run_code_output("x" * 1000)
+
+    assert len(result) == 256
+    assert result.endswith("[truncated]")
+
+
+def test_run_code_rewrites_sandbox_links_to_durable_workspace_entities() -> None:
+    file_id = uuid4()
+    artifact_id = uuid4()
+    outputs = [
+        run_code_tools.RunCodeStoredOutput(
+            kind="file",
+            name="quarterly deck.pptx",
+            size_bytes=123,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            reference={
+                "entity_kind": "file",
+                "entity_id": file_id,
+                "label": "quarterly deck.pptx",
+            },
+        ),
+        run_code_tools.RunCodeStoredOutput(
+            kind="artifact",
+            name="summary",
+            size_bytes=12,
+            media_type="text/markdown",
+            reference={
+                "entity_kind": "artifact",
+                "entity_id": artifact_id,
+                "label": "summary",
+            },
+        ),
+    ]
+
+    result = run_code_tools.rewrite_sandbox_links(
+        "[Deck](sandbox:/mnt/data/quarterly%20deck.pptx) "
+        "[Summary](sandbox:/mnt/data/summary) "
+        "[Missing](sandbox:/mnt/data/not-saved.pdf)",
+        outputs,
+    )
+
+    assert f"[Deck](/files?fileId={file_id})" in result
+    assert f"[Summary](/artifacts/{artifact_id})" in result
+    assert "[Missing] (sandbox output was not retained)" in result
+    assert "sandbox:" not in result
+
+
+def test_run_code_collects_nested_anthropic_file_ids_in_order() -> None:
+    file_ids: dict[str, None] = {}
+
+    run_code_tools._collect_file_ids(
+        {"content": [{"type": "file", "file_id": "file-b"}, {"nested": {"file_id": "file-a"}}]},
+        file_ids,
+    )
+
+    assert list(file_ids) == ["file-b", "file-a"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_audits_every_native_execution_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[tuple[str | None, str]] = []
+
+    async def fake_record(*, deps, call_part, return_part) -> None:
+        del deps
+        recorded.append(
+            (
+                call_part.tool_call_id if call_part is not None else None,
+                return_part.tool_call_id,
+            )
+        )
+
+    monkeypatch.setattr(
+        run_code_tools,
+        "record_native_tool_invocation_audit_event",
+        fake_record,
+    )
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolCallPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-1",
+                    args={"code": "1 + 1"},
+                ),
+                NativeToolReturnPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-1",
+                    content={"stdout": "2"},
+                ),
+                NativeToolCallPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-2",
+                    args={"code": "2 + 2"},
+                ),
+                NativeToolReturnPart(
+                    tool_name="code_execution",
+                    tool_call_id="code-2",
+                    content={"stdout": "4"},
+                ),
+            ]
+        )
+    ]
+
+    await run_code_tools.audit_native_code_parts(_metering_deps(), messages)
+
+    assert recorded == [("code-1", "code-1"), ("code-2", "code-2")]
+
+
+@pytest.mark.asyncio
+async def test_run_code_audits_calls_without_a_return_part_as_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, object]] = []
+
+    async def fake_record(**kwargs) -> None:
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(
+        "services.agents.runtime.dispatch.record_tool_invocation_audit_event", fake_record
+    )
+    messages = [
+        ModelResponse(
+            parts=[
+                NativeToolCallPart(
+                    tool_name="code_execution",
+                    tool_call_id="orphan-1",
+                    args={"code": "while True: pass"},
+                ),
+            ]
+        )
+    ]
+
+    await run_code_tools.audit_native_code_parts(_metering_deps(), messages)
+
+    [row] = recorded
+    assert row["tool_call_id"] == "orphan-1"
+    assert row["tool_provider"] == "native"
+    assert row["outcome"] == "failed"
+    assert row["error_code"] == "NativeToolIncomplete"
+    assert row["args_sha256"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_helper_is_metered_with_output_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = []
+
+    class FakeResult:
+        output = "Computed."
+
+        @staticmethod
+        def all_messages():
+            return []
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            del args, kwargs
+
+        async def run(self, prompt, *, usage_limits, usage):
+            del prompt, usage_limits
+            usage.requests += 1
+            return FakeResult()
+
+    async def fake_record(event) -> bool:
+        events.append(event)
+        return True
+
+    async def fake_audit(deps, messages) -> None:
+        del deps, messages
+
+    async def fake_capture(provider_model, messages):
+        del provider_model, messages
+        return [
+            run_code_tools.CapturedSandboxFile(
+                name="summary.csv",
+                content=b"total\n42\n",
+                media_type="text/csv",
+            )
+        ], ["overflow.txt: output file limit exceeded"]
+
+    monkeypatch.setattr(run_code_tools, "PydanticAgent", FakeAgent)
+    monkeypatch.setattr(run_code_tools, "build_model", lambda _spec: object())
+    monkeypatch.setattr(run_code_tools, "audit_native_code_parts", fake_audit)
+    monkeypatch.setattr(run_code_tools, "capture_sandbox_files", fake_capture)
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+
+    result = await run_code_tools.run_native_code_execution(
+        deps=_metering_deps(),
+        task="Sum the values",
+        inputs=(),
+        model_spec=ResolvedModel(
+            provider=PROVIDER_OPENAI,
+            model="gpt-5.6-luna",
+            settings={},
+            max_steps=3,
+        ),
+    )
+
+    assert result[0] == "Computed."
+    assert events[0].purpose == "code_execution"
+    assert events[0].requests == 1
+    assert events[0].details == {
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "captured_output_count": 1,
+        "skipped_output_count": 1,
+    }
+
+
+def test_run_code_catalog_contract() -> None:
+    definition = RUNTIME_TOOL_CATALOG["run_code"]
+
+    assert definition.effect == "write"
+    assert definition.effect_scope == "internal"
+    assert definition.egress == "none"
+    assert definition.default_policy == "approval"
+    assert definition.supports_auto is True
+    assert definition.code_eligible is False
+    assert definition.timeout == settings.NATIVE_RUN_CODE_TIMEOUT_SECONDS
+    file_field = next(
+        field for field in definition.presentation.arg_fields if field.key == "file_ids"
+    )
+    assert file_field.secondary is True
+
+
+@pytest.mark.asyncio
+async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    user = build_user(email=f"run-code-{uuid4().hex}@example.com")
+    workspace = build_workspace(slug=f"run-code-{uuid4().hex[:8]}")
+    db_session.add_all([user, workspace])
+    await db_session.flush()
+    agent = Agent(
+        name="Run Code Agent",
+        slug=f"run-code-agent-{uuid4().hex[:8]}",
+        instructions="Compute carefully.",
+        workspace_id=workspace.id,
+        created_by=user.id,
+        model_provider=PROVIDER_OPENAI,
+        model="gpt-5.6-luna",
+        tool_names=["run_code"],
+    )
+    db_session.add(agent)
+    await db_session.flush()
+    conversation = Conversation(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        created_by=user.id,
+        active_agent_id=agent.id,
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    run = await create_agent_run(
+        db_session,
+        conversation_id=conversation.id,
+        agent_id=agent.id,
+        workspace_id=workspace.id,
+        user_id=user.id,
+        trigger="interactive",
+    )
+    input_file = await create_file_with_revision(
+        db_session,
+        workspace=workspace,
+        name="spend.csv",
+        content=b"campaign,amount\nSummer,42\n",
+        content_type="text/csv",
+        extension=".csv",
+        actor=FileRevisionActor(user_id=user.id),
+    )
+    deps = RuntimeDeps(
+        db=db_session,
+        user=user,
+        workspace=workspace,
+        membership=WorkspaceMembership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role=WorkspaceRole.MEMBER.value,
+        ),
+        conversation=conversation,
+        agent=agent,
+        run=run,
+        sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
+        envelope=RunEnvelope(principal="interactive"),
+    )
+    ctx = RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+
+    inputs = await run_code_tools.load_run_code_inputs(
+        ctx,
+        [
+            FileReference(
+                entity_id=input_file.file.id,
+                label=input_file.file.name,
+            )
+        ],
+    )
+    outputs, skipped = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Build outputs",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="summary.csv",
+                content=b"campaign,total\nSummer,42\n",
+                media_type="text/csv",
+            ),
+            run_code_tools.CapturedSandboxFile(
+                name="summary.xlsx",
+                content=b"synthetic-xlsx-bytes",
+                media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
+        ),
+        input_file_ids=[inputs[0].file_id],
+        input_revision_ids=[inputs[0].revision_id],
+    )
+
+    assert inputs[0].content == "campaign,amount\nSummer,42\n"
+    assert [output.kind for output in outputs] == ["artifact", "file"]
+    assert skipped == []
+
+
+@pytest.mark.asyncio
+async def test_run_code_audits_native_parts_when_helper_run_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = []
+    audited: list[list[object]] = []
+
+    class FakeAgent:
+        def __init__(self, *args, **kwargs) -> None:
+            del args, kwargs
+
+        async def run(self, prompt, *, usage_limits, usage):
+            del prompt, usage_limits
+            usage.requests += 1
+            raise RuntimeError("provider failed after executing code")
+
+    async def fake_audit(deps, messages) -> None:
+        del deps
+        audited.append(list(messages))
+
+    async def fake_record(event) -> bool:
+        events.append(event)
+        return True
+
+    monkeypatch.setattr(run_code_tools, "PydanticAgent", FakeAgent)
+    monkeypatch.setattr(run_code_tools, "build_model", lambda _spec: object())
+    monkeypatch.setattr(run_code_tools, "audit_native_code_parts", fake_audit)
+    monkeypatch.setattr(
+        "services.ai_usage.run_metered_helper.record_ai_usage_durable",
+        fake_record,
+    )
+
+    with pytest.raises(RuntimeError, match="provider failed"):
+        await run_code_tools.run_native_code_execution(
+            deps=_metering_deps(),
+            task="Sum the values",
+            inputs=(),
+            model_spec=ResolvedModel(
+                provider=PROVIDER_OPENAI,
+                model="gpt-5.6-luna",
+                settings={},
+                max_steps=3,
+            ),
+        )
+
+    assert len(audited) == 1
+    assert events[0].requests == 1
+
+
+def test_run_code_retrieval_budget_bounds_downloads() -> None:
+    skipped: list[str] = []
+    budget = run_code_tools._RetrievalBudget(
+        files_remaining=1,
+        bytes_remaining=10,
+        skipped=skipped,
+    )
+
+    assert budget.admit("big.bin", 11) is False
+    assert budget.admit("ok.bin", 4) is True
+    assert budget.record("ok.bin", 4) is True
+    assert budget.admit("late.bin", 1) is False
+    assert budget.exhausted() is True
+    assert skipped == [
+        "big.bin: output byte limit exceeded",
+        "Further sandbox outputs were not retrieved: output limits reached",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_code_retrieval_budget_streams_downloads_within_bounds() -> None:
+    skipped: list[str] = []
+    budget = run_code_tools._RetrievalBudget(files_remaining=2, bytes_remaining=10, skipped=skipped)
+    seen: list[int] = []
+
+    async def chunks(*parts: bytes):
+        for index, part in enumerate(parts):
+            seen.append(index)
+            yield part
+
+    assert await budget.read("ok.bin", chunks(b"1234", b"5678")) == b"12345678"
+    assert budget.bytes_remaining == 2
+    seen.clear()
+    assert await budget.read("big.bin", chunks(b"12", b"3", b"never")) is None
+    assert seen == [0, 1]
+    assert skipped == ["big.bin: output byte limit exceeded"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_capture_prefers_provider_names_and_inline_identifiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def container_files(model, messages, budget):
+        del model, messages, budget
+        return [
+            run_code_tools.CapturedSandboxFile(
+                name="report.csv", content=b"a,b\n1,2\n", media_type="text/csv"
+            )
+        ]
+
+    monkeypatch.setattr(run_code_tools, "_openai_container_files", container_files)
+    provider_model = run_code_tools.OpenAIResponsesModel.__new__(
+        run_code_tools.OpenAIResponsesModel
+    )
+    messages = [
+        ModelResponse(
+            parts=[
+                FilePart(content=BinaryContent(data=b"a,b\n1,2\n", media_type="text/csv")),
+                FilePart(
+                    content=BinaryContent(
+                        data=b"chart", media_type="image/png", identifier="chart.png"
+                    )
+                ),
+                FilePart(content=BinaryContent(data=b"plain", media_type="text/plain")),
+            ]
+        )
+    ]
+
+    captured, skipped = await run_code_tools.capture_sandbox_files(provider_model, messages)
+
+    assert [item.name for item in captured] == ["report.csv", "chart.png", "sandbox-output-3.txt"]
+    assert skipped == []
+
+
+@pytest.mark.asyncio
+async def test_run_code_capture_enforces_output_count_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_OUTPUT_FILES", 2)
+    messages = [
+        ModelResponse(
+            parts=[
+                FilePart(content=BinaryContent(data=b"first", media_type="text/plain")),
+                FilePart(content=BinaryContent(data=b"second", media_type="text/plain")),
+                FilePart(content=BinaryContent(data=b"third", media_type="text/plain")),
+            ]
+        )
+    ]
+
+    captured, skipped = await run_code_tools.capture_sandbox_files(object(), messages)
+
+    assert [item.content for item in captured] == [b"first", b"second"]
+    assert skipped == ["sandbox-output-3.txt: output file limit exceeded"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_capture_enforces_output_byte_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_OUTPUT_BYTES", 8)
+    messages = [
+        ModelResponse(
+            parts=[
+                FilePart(content=BinaryContent(data=b"12345", media_type="text/plain")),
+                FilePart(content=BinaryContent(data=b"67890", media_type="text/plain")),
+            ]
+        )
+    ]
+
+    captured, skipped = await run_code_tools.capture_sandbox_files(object(), messages)
+
+    assert [item.content for item in captured] == [b"12345"]
+    assert skipped == ["sandbox-output-2.txt: output byte limit exceeded"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_capture_reports_provider_retrieval_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def failing_retrieval(model, messages, budget):
+        del model, messages, budget
+        raise RuntimeError("container listing failed")
+
+    monkeypatch.setattr(run_code_tools, "_openai_container_files", failing_retrieval)
+    provider_model = run_code_tools.OpenAIResponsesModel.__new__(
+        run_code_tools.OpenAIResponsesModel
+    )
+
+    captured, skipped = await run_code_tools.capture_sandbox_files(provider_model, [])
+
+    assert captured == []
+    assert skipped == ["Provider output retrieval failed: RuntimeError"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = build_user(email=f"run-code-gates-{uuid4().hex}@example.com")
+    workspace = build_workspace(slug=f"run-code-gates-{uuid4().hex[:8]}")
+    other_workspace = build_workspace(slug=f"run-code-other-{uuid4().hex[:8]}")
+    db_session.add_all([user, workspace, other_workspace])
+    await db_session.flush()
+
+    def ctx() -> RunContext[RuntimeDeps]:
+        deps = cast(RuntimeDeps, SimpleNamespace(db=db_session, workspace=workspace))
+        return RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+
+    foreign = await create_file_with_revision(
+        db_session,
+        workspace=other_workspace,
+        name="foreign.csv",
+        content=b"a,b\n1,2\n",
+        content_type="text/csv",
+        extension=".csv",
+        actor=FileRevisionActor(user_id=user.id),
+    )
+    with pytest.raises(ModelRetry, match="unavailable in this workspace"):
+        await run_code_tools.load_run_code_inputs(
+            ctx(),
+            [FileReference(entity_id=foreign.file.id, label="foreign.csv")],
+        )
+
+    binary = await create_file_with_revision(
+        db_session,
+        workspace=workspace,
+        name="chart.png",
+        content=b"\x89PNG\r\n\x1a\nnot-really-a-png",
+        content_type="image/png",
+        extension=".png",
+        actor=FileRevisionActor(user_id=user.id),
+    )
+    with pytest.raises(ModelRetry, match="text files only"):
+        await run_code_tools.load_run_code_inputs(
+            ctx(),
+            [FileReference(entity_id=binary.file.id, label="chart.png")],
+        )
+
+    text = await create_file_with_revision(
+        db_session,
+        workspace=workspace,
+        name="data.csv",
+        content=b"a,b\n1,2\n",
+        content_type="text/csv",
+        extension=".csv",
+        actor=FileRevisionActor(user_id=user.id),
+    )
+    text_reference = FileReference(entity_id=text.file.id, label="data.csv")
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_INPUT_BYTES", 4)
+    with pytest.raises(ModelRetry, match="too large together"):
+        await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
+    monkeypatch.setattr(settings, "NATIVE_RUN_CODE_MAX_INPUT_BYTES", 64)
+
+    class FakeStorage:
+        payload = b"\xff\xfe"
+
+        async def get_object(self, ref) -> bytes:
+            del ref
+            return self.payload
+
+    storage = FakeStorage()
+    monkeypatch.setattr(run_code_tools, "get_storage_provider", lambda: storage)
+    with pytest.raises(ModelRetry, match="UTF-8 text files only"):
+        await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
+
+    storage.payload = b"x" * 65
+    with pytest.raises(ModelRetry, match="exceed the configured total limit"):
+        await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
+
+    text.file.deleted = True
+    await db_session.flush()
+    with pytest.raises(ModelRetry, match="unavailable in this workspace"):
+        await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
 
 
 @pytest.mark.parametrize(

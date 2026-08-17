@@ -15,6 +15,7 @@ from services.agents.runtime.load_context import AvailableFile
 from services.agents.runtime.loop import _runtime_instructions
 from services.agents.runtime.prompt import (
     DELEGATION_INSTRUCTIONS,
+    FILE_LINK_INSTRUCTIONS,
     KNOWLEDGE_INSTRUCTIONS,
     MEMORY_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
@@ -60,12 +61,14 @@ def test_runtime_instructions_match_canonical_spacing() -> None:
 
     assert _runtime_instructions(agent, include_delegation=False).startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{FILE_LINK_INSTRUCTIONS.rstrip()}\n\n"
         f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
     assert _runtime_instructions(agent, include_delegation=True).startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
-        f"{DELEGATION_INSTRUCTIONS.rstrip()}\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n"
+        f"{FILE_LINK_INSTRUCTIONS.rstrip()}\n\n{DELEGATION_INSTRUCTIONS.rstrip()}\n\n"
+        f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n"
         f"{MEMORY_INSTRUCTIONS.rstrip()}\n\n{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
 
@@ -75,6 +78,7 @@ def test_runtime_instructions_adds_planning_block_without_tool_config() -> None:
 
     assert _runtime_instructions(agent, include_delegation=False).startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}\n\n"
+        f"{FILE_LINK_INSTRUCTIONS.rstrip()}\n\n"
         f"{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
@@ -189,9 +193,17 @@ def test_runtime_instructions_always_include_knowledge_guidance() -> None:
     assert prompt.index(MEMORY_INSTRUCTIONS) < prompt.index(UNTRUSTED_CONTENT_INSTRUCTIONS)
     assert prompt.startswith(
         f"Reply plainly.\n\n{PLANNING_INSTRUCTIONS.rstrip()}"
-        f"\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
+        f"\n\n{FILE_LINK_INSTRUCTIONS.rstrip()}\n\n{KNOWLEDGE_INSTRUCTIONS.rstrip()}"
+        f"\n\n{MEMORY_INSTRUCTIONS.rstrip()}\n\n"
         f"{UNTRUSTED_CONTENT_INSTRUCTIONS}"
     )
+
+
+def test_runtime_instructions_define_authenticated_workspace_file_links() -> None:
+    prompt = _runtime_instructions(_agent(instructions="Reply plainly."), include_delegation=False)
+
+    assert "[label](/files?fileId=<entity_id>)" in prompt
+    assert "Never present text" in prompt
 
 
 def _agent(*, instructions: str, tool_names: list[str] | None = None) -> Agent:

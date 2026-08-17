@@ -137,6 +137,7 @@ VALID_TOOL_ICONS = frozenset(
         "airtable",
         "bigquery",
         "chart",
+        "code",
         "workflow",
     }
 )

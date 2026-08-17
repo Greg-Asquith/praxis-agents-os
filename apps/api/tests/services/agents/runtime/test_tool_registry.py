@@ -428,6 +428,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "read_file": "none",
         "read_todos": "none",
         "report_completion": "none",
+        "run_code": "none",
         "run_workflow": "none",
         "save_memory": "none",
         "search_knowledge": "none",

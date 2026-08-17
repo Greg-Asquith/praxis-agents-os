@@ -51,6 +51,7 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
             "purpose IN ("
             "'agent_run', 'conversation_naming', 'history_summary', 'kb_annotation', "
             "'classification', 'web_search', 'web_fetch', 'image_generation', "
+            "'code_execution', "
             "'embedding_kb_ingest', "
             "'embedding_kb_search', 'embedding_memory_write', "
             "'embedding_memory_search', 'embedding_memory_dedup'"
