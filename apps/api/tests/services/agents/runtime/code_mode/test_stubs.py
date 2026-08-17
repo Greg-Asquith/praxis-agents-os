@@ -138,6 +138,27 @@ def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
     assert "mirrors the GAQL SELECT paths" in rendered
 
 
+def test_google_analytics_report_stub_declares_typed_inputs_and_rows() -> None:
+    definition = next(
+        item
+        for item in GOOGLE_ANALYTICS_TOOL_DEFINITIONS
+        if item.name == "google_analytics_run_report"
+    )
+
+    rendered = render_tool_stub(definition)
+
+    assert "class GoogleAnalyticsDateRange(TypedDict):" in rendered
+    assert "class GoogleAnalyticsFieldFilter(TypedDict):" in rendered
+    assert "class GoogleAnalyticsReportData(TypedDict):" in rendered
+    assert "rows: list[dict[str, GoogleAnalyticsValue]]" in rendered
+    assert (
+        "async def google_analytics_run_report(*, metrics: list[str], dimensions: list[str], "
+        "date_ranges: list[GoogleAnalyticsDateRange]"
+    ) in rendered
+    assert "-> GoogleAnalyticsRunReportOutput" in rendered
+    assert "Use google_analytics_list_report_fields" in rendered
+
+
 def test_every_first_party_eligible_schema_renders() -> None:
     definitions = {
         definition.name: definition

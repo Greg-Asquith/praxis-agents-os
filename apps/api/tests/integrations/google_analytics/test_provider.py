@@ -23,7 +23,10 @@ def test_manifest_declares_read_only_workspace_property_provider() -> None:
     assert manifest.requires_discovery is True
     assert manifest.capability_flags == frozenset({"read"})
     assert manifest.event_delivery == "none"
-    assert PROVIDER.tool_definitions == ()
+    assert {definition.name for definition in PROVIDER.tool_definitions} == {
+        "google_analytics_list_report_fields",
+        "google_analytics_run_report",
+    }
     assert "google_analytics" in GOOGLE_PROVIDER_KEYS
     assert "google_analytics" in VALID_TOOL_ICONS
     _validate_plugin(PROVIDER, expected_key="google_analytics")

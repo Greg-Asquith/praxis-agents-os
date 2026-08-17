@@ -48,6 +48,9 @@ from integrations.google_ads.tools.update_campaign_status import (
     google_ads_update_campaign_status,
 )
 from integrations.google_ads.tools.utils import GOOGLE_ADS_BINDING
+from integrations.google_analytics.tools import (
+    TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+)
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.delegation.build_delegation_tools import (
@@ -387,6 +390,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
             *BIGQUERY_TOOL_DEFINITIONS,
             *GMAIL_TOOL_DEFINITIONS,
             *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
             *DELEGATION_TOOL_DEFINITIONS,
         )
     }
@@ -420,6 +424,8 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_remove_campaign_negative_keywords": "external_write",
         "google_ads_run_report": "provider_query",
         "google_ads_update_campaign_status": "external_write",
+        "google_analytics_list_report_fields": "provider_query",
+        "google_analytics_run_report": "provider_query",
         "list_delegate_agents": "none",
         "list_artifacts": "none",
         "list_files": "none",
@@ -457,6 +463,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
             *BIGQUERY_TOOL_DEFINITIONS,
             *GMAIL_TOOL_DEFINITIONS,
             *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
             *DELEGATION_TOOL_DEFINITIONS,
         )
     }
@@ -480,6 +487,8 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_remove_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
+        "google_analytics_list_report_fields",
+        "google_analytics_run_report",
         "list_files",
         "read_file",
         "write_file",

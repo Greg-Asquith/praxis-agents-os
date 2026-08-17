@@ -70,9 +70,10 @@ The core platform is wired end to end (API, worker, and UI):
   revisions, background markdown extraction, agent file tools, skill
   management with document pipelines, and pgvector-backed document retrieval
   with hybrid keyword and semantic search, agent tools, and an operator UI.
-- Integrations and context: Gmail Google Ads & Google Analytics over OAuth, Airtable with API
-  keys, and Google BigQuery, Google Ads, and Google Analytics with
-  service-account connections.
+- Integrations and context: Gmail, Google Ads, and Google Analytics over OAuth;
+  Airtable with API keys; and BigQuery, Google Ads, and Google Analytics with
+  service-account connections. Google Analytics agents can discover exact
+  standard and custom report fields and run bounded, typed GA4 reports.
   Discovered resources can be combined in the context hub and selected for
   conversations and schedules.
 - Artifacts: dedicated immutable revisions, approval-gated agent creation and

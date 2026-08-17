@@ -83,6 +83,8 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "bigquery_list_tables": ("read", "internal", "auto", False),
         "bigquery_get_table_schema": ("read", "internal", "auto", False),
         "bigquery_run_query": ("read", "internal", "auto", False),
+        "google_analytics_list_report_fields": ("read", "internal", "auto", False),
+        "google_analytics_run_report": ("read", "internal", "auto", False),
     }
     assert set(definitions) == set(expected)
     denylisted = {
@@ -117,19 +119,29 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *GOOGLE_ADS_TOOL_DEFINITIONS,
         *AIRTABLE_TOOL_DEFINITIONS,
         *BIGQUERY_TOOL_DEFINITIONS,
+        *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
     )
 
     for definition in definitions:
         assert definition.output_model is not None, definition.name
-        for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
-            assert any(
-                marker in path
-                for marker in (
-                    ".properties.fields",
-                    ".properties.rows.items",
-                    "JsonValue.anyOf",
+        allowed_dynamic_markers = [
+            ".properties.fields",
+            ".properties.rows.items",
+            "JsonValue.anyOf",
+        ]
+        if definition.name == "google_analytics_run_report":
+            allowed_dynamic_markers.extend(
+                (
+                    ".properties.totals.items",
+                    ".properties.maximums.items",
+                    ".properties.minimums.items",
                 )
-            ), (definition.name, path)
+            )
+        for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
+            assert any(marker in path for marker in allowed_dynamic_markers), (
+                definition.name,
+                path,
+            )
 
 
 def _dynamic_object_paths(value: Any, path: str = "$") -> list[str]:
