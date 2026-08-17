@@ -25,6 +25,7 @@ def test_manifest_declares_read_only_workspace_property_provider() -> None:
     assert manifest.event_delivery == "none"
     assert {definition.name for definition in PROVIDER.tool_definitions} == {
         "google_analytics_check_report_fields",
+        "google_analytics_list_google_ads_links",
         "google_analytics_list_report_fields",
         "google_analytics_run_realtime_report",
         "google_analytics_run_report",

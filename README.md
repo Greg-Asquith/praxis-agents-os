@@ -75,7 +75,8 @@ The core platform is wired end to end (API, worker, and UI):
   service-account connections. Google Analytics agents can discover exact
   standard and custom report fields, check which fields can be added to a
   compatible standard report, and run bounded, typed standard and realtime GA4
-  reports.
+  reports. They can also verify which Google Ads accounts are linked to each
+  selected Analytics property before comparing cross-channel results.
   Discovered resources can be combined in the context hub and selected for
   conversations and schedules.
 - Artifacts: dedicated immutable revisions, approval-gated agent creation and

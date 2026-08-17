@@ -84,6 +84,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "bigquery_get_table_schema": ("read", "internal", "auto", False),
         "bigquery_run_query": ("read", "internal", "auto", False),
         "google_analytics_check_report_fields": ("read", "internal", "auto", False),
+        "google_analytics_list_google_ads_links": ("read", "internal", "auto", False),
         "google_analytics_list_report_fields": ("read", "internal", "auto", False),
         "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
         "google_analytics_run_report": ("read", "internal", "auto", False),

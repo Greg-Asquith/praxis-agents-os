@@ -23,8 +23,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   Follow this layout for new providers.
 - Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery, and
   Google Analytics. Google Analytics contributes its logo, catalog description,
-  connection guidance, and guarded report, realtime, report-field, and
-  compatibility presenters over the shared fan-out and data-table kits.
+  connection guidance, and guarded report, realtime, report-field,
+  compatibility, and linked-Google-Ads-account presenters over the shared
+  fan-out and table kits.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; features do
   not import route shells; routes do not import `app/`. Fix violations by

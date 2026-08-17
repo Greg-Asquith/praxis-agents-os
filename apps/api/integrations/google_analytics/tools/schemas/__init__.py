@@ -3,6 +3,7 @@
 """Google Analytics tool input and output contracts."""
 
 from .base import GoogleAnalyticsStrictModel, GoogleAnalyticsValue
+from .google_ads_links import GoogleAnalyticsListGoogleAdsLinksOutput
 from .realtime import (
     GoogleAnalyticsMinuteRange,
     GoogleAnalyticsRunRealtimeReportInput,
@@ -35,6 +36,7 @@ __all__ = [
     "GoogleAnalyticsFieldCompatibility",
     "GoogleAnalyticsFieldFilter",
     "GoogleAnalyticsInListFilter",
+    "GoogleAnalyticsListGoogleAdsLinksOutput",
     "GoogleAnalyticsListReportFieldsOutput",
     "GoogleAnalyticsMetricAggregation",
     "GoogleAnalyticsMinuteRange",

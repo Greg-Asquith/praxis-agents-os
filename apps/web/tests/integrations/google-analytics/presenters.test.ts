@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { compatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
+import { googleAdsLinksPresenter } from "@/integrations/google_analytics/presenters/google-ads-links"
 import { realtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
 import { reportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
 import { reportPresenter } from "@/integrations/google_analytics/presenters/report"
@@ -209,6 +210,56 @@ describe("Google Analytics tool presenters", () => {
     expect(incompatible).toContain("itemName")
   })
 
+  it("renders linked Google Ads accounts with operator-friendly ids and status", () => {
+    const html = render(
+      googleAdsLinksPresenter.render(
+        props({
+          id: "links-1",
+          kind: "result",
+          name: "google_analytics_list_google_ads_links",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                links: [
+                  {
+                    customer_id: "1234567890",
+                    can_manage_clients: true,
+                    ads_personalization_enabled: false,
+                    created_at: "2026-08-17T09:30:00Z",
+                  },
+                ],
+                link_count: 1,
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("List Linked Google Ads Accounts")
+    expect(html).toContain("123-456-7890")
+    expect(html).toContain("Manager")
+    expect(html).toContain("Disabled")
+    expect(html).toContain("1 linked account")
+  })
+
+  it("renders an honest empty linked-account state", () => {
+    const html = render(
+      googleAdsLinksPresenter.render(
+        props({
+          id: "links-empty",
+          kind: "result",
+          name: "google_analytics_list_google_ads_links",
+          status: "completed",
+          result: { results: [entry({ links: [], link_count: 0 })] },
+        })
+      )
+    )
+
+    expect(html).toContain("No Google Ads accounts are linked to this property")
+  })
+
   it("renders every loading state and falls back for malformed results", () => {
     for (const [presenter, name, label] of [
       [reportPresenter, "google_analytics_run_report", "Running Google Analytics report"],
@@ -222,6 +273,11 @@ describe("Google Analytics tool presenters", () => {
         compatibilityPresenter,
         "google_analytics_check_report_fields",
         "Checking Google Analytics report fields",
+      ],
+      [
+        googleAdsLinksPresenter,
+        "google_analytics_list_google_ads_links",
+        "Listing linked Google Ads accounts",
       ],
     ] as const) {
       expect(

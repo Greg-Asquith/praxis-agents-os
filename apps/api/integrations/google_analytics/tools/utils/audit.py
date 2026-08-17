@@ -19,6 +19,7 @@ def read_operation_detail(
     *,
     operation: str,
     fields: dict[str, AuditDetailValue],
+    entity_type: str = "google_analytics_report",
 ) -> TerminalIntegrationOperationDetail:
     pending = PendingIntegrationOperationDetail(
         target=IntegrationOperationTarget(
@@ -31,7 +32,7 @@ def read_operation_detail(
             IntegrationOperationIntentGroup(
                 key=operation,
                 action="read",
-                entity_type="google_analytics_report",
+                entity_type=entity_type,
                 items=[IntegrationOperationIntent(fields=fields)],
             )
         ],

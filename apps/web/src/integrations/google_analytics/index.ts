@@ -3,6 +3,7 @@
 import { GoogleAnalyticsConnectHelp } from "@/integrations/google_analytics/components/connect-help"
 import { GoogleAnalyticsLogo } from "@/integrations/google_analytics/components/logo"
 import { compatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
+import { googleAdsLinksPresenter } from "@/integrations/google_analytics/presenters/google-ads-links"
 import { realtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
 import { reportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
 import { reportPresenter } from "@/integrations/google_analytics/presenters/report"
@@ -19,5 +20,6 @@ export default {
     realtimePresenter,
     reportFieldsPresenter,
     compatibilityPresenter,
+    googleAdsLinksPresenter,
   ],
 } satisfies IntegrationUiModule

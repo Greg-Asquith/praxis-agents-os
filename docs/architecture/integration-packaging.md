@@ -520,9 +520,11 @@ API account summaries without per-property enrichment calls. Accounts remain
 display metadata rather than selectable resources. Its Data/Admin REST client
 uses bearer authorization, explicit read policies, bounded pagination, and the
 shared refresh-once credential seam. The lazy frontend module contributes the
-provider mark and setup guidance. Its four code-eligible read tools list bounded
+provider mark and setup guidance. Its five code-eligible read tools list bounded
 standard/custom report fields, check which candidate fields can be added to a
 compatible standard report per property, and run structured standard or
 realtime GA4 reports with typed metric values and the shared report row bound.
-Standard reports also surface access-restriction and sampling metadata; custom
-report presenters remain a later slice.
+They also expose each property's bounded Admin API Google Ads link list without
+creator email addresses so an agent can verify the provider-native bridge before
+comparing reports. Standard reports also surface access-restriction and sampling
+metadata.

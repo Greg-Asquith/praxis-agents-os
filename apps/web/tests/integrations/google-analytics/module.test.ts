@@ -23,6 +23,7 @@ describe("Google Analytics integration module", () => {
       "google-analytics-run-realtime-report",
       "google-analytics-list-report-fields",
       "google-analytics-check-report-fields",
+      "google-analytics-list-google-ads-links",
     ])
     expect(googleAnalyticsModule.catalogDescription).toContain("website and app performance")
   })

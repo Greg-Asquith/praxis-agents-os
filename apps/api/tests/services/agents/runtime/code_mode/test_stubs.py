@@ -188,6 +188,22 @@ def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
     assert "-> GoogleAnalyticsCheckReportFieldsOutput" in compatibility
 
 
+def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids() -> None:
+    definitions = (
+        *GOOGLE_ADS_TOOL_DEFINITIONS,
+        *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+    )
+
+    rendered = render_stub_catalog(definitions)
+
+    assert "async def google_ads_run_report(" in rendered
+    assert "async def google_analytics_list_google_ads_links(" in rendered
+    assert "class GoogleAnalyticsGoogleAdsLink(TypedDict):" in rendered
+    assert "customer_id: str" in rendered
+    assert "integration_resource_id" not in rendered
+    assert "connection_id" not in rendered
+
+
 def test_every_first_party_eligible_schema_renders() -> None:
     definitions = {
         definition.name: definition
