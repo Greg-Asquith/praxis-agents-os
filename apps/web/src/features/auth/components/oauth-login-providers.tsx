@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useSearch } from "@tanstack/react-router"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -13,9 +14,12 @@ import {
 } from "@/features/auth/api/oauth-login"
 import { OAuthProviderIcon } from "@/features/auth/components/oauth-provider-icon"
 import { getErrorMessage } from "@/lib/api/errors"
+import { safeRedirectPath } from "@/lib/safe-redirect"
 
 export function OAuthLoginProviders({ showSeparator = true }: { showSeparator?: boolean }) {
   const providersQuery = useQuery(oauthProvidersQueryOptions())
+  const search = useSearch({ strict: false })
+  const nextPath = safeRedirectPath(search.redirect)
   const startLoginMutation = useStartOauthLoginMutation()
   const startInFlightRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,19 +38,22 @@ export function OAuthLoginProviders({ showSeparator = true }: { showSeparator?: 
     setPendingProvider(provider)
     setShowPendingFeedback(false)
 
-    startLoginMutation.mutate(provider, {
-      onSuccess: (response) => {
-        window.sessionStorage.setItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY, response.provider)
-        window.location.assign(response.authorization_url)
-      },
-      onError: (mutationError) => {
-        startInFlightRef.current = false
-        window.sessionStorage.removeItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY)
-        setPendingProvider(null)
-        setShowPendingFeedback(false)
-        setError(getErrorMessage(mutationError))
-      },
-    })
+    startLoginMutation.mutate(
+      { provider, nextPath },
+      {
+        onSuccess: (response) => {
+          window.sessionStorage.setItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY, response.provider)
+          window.location.assign(response.authorization_url)
+        },
+        onError: (mutationError) => {
+          startInFlightRef.current = false
+          window.sessionStorage.removeItem(OAUTH_LOGIN_PROVIDER_STORAGE_KEY)
+          setPendingProvider(null)
+          setShowPendingFeedback(false)
+          setError(getErrorMessage(mutationError))
+        },
+      }
+    )
   }
 
   if (providers.length === 0) {

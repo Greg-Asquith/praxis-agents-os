@@ -39,6 +39,7 @@ import { ErrorRoute } from "@/routes/error-route"
 import { NotFoundRoute } from "@/routes/not-found"
 import { PendingRoute } from "@/routes/pending"
 import { RoutePendingFallback } from "@/routes/route-pending"
+import { safeRedirectPath, validateAuthRedirectSearch } from "@/lib/safe-redirect"
 import { setActiveUserId } from "@/lib/workspace"
 
 type RouterContext = {
@@ -57,10 +58,11 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 const authRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "auth",
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const user = await getOptionalCurrentUser(context.queryClient)
     if (user) {
-      throw redirect({ to: "/" })
+      const search = location.search as Record<string, unknown>
+      throw redirect({ href: safeRedirectPath(search["redirect"]) ?? "/" })
     }
   },
   component: lazyRouteComponent(() => import("@/routes/auth-layout"), "AuthLayoutRoute"),
@@ -69,12 +71,14 @@ const authRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => authRoute,
   path: "/login",
+  validateSearch: validateAuthRedirectSearch,
   component: lazyRouteComponent(() => import("@/features/auth/routes/login-route"), "LoginRoute"),
 })
 
 const registerRoute = createRoute({
   getParentRoute: () => authRoute,
   path: "/register",
+  validateSearch: validateAuthRedirectSearch,
   component: lazyRouteComponent(
     () => import("@/features/auth/routes/register-route"),
     "RegisterRoute"
@@ -98,10 +102,13 @@ const oauthLoginCallbackRoute = createRoute({
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const user = await getOptionalCurrentUser(context.queryClient)
     if (!user) {
-      throw redirect({ to: "/login" })
+      throw redirect({
+        to: "/login",
+        search: { redirect: `${location.pathname}${location.searchStr}` },
+      })
     }
 
     setActiveUserId(user.id)

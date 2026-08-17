@@ -19,6 +19,7 @@ from services.auth.oauth.utils import (
 from services.auth.schemas import AuthResponse, OAuthCallbackRequest
 from services.auth.utils import issue_auth_response, record_auth_security_event
 from services.security import SecurityEventType
+from utils.redirects import safe_next_path
 
 
 async def complete_oauth_login(
@@ -102,7 +103,7 @@ async def complete_oauth_login(
         if user.totp_enabled
         else SecurityEventType.AUTH_OAUTH_SUCCEEDED
     )
-    return await issue_auth_response(
+    auth_response = await issue_auth_response(
         db,
         request=request,
         response=response,
@@ -111,3 +112,6 @@ async def complete_oauth_login(
         details={"method": "oauth", "provider": provider_name, "requires_twofa": user.totp_enabled},
         require_twofa=user.totp_enabled,
     )
+    next_path = state_payload.get("next_path")
+    auth_response.next_path = safe_next_path(next_path if isinstance(next_path, str) else None)
+    return auth_response

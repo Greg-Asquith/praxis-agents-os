@@ -54,6 +54,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - Forms use native HTML forms plus `FormData` with the helpers in
   `src/lib/forms.ts` and hand-rolled validation models. Do not introduce a
   form or schema-validation library.
+- Protected-route redirects preserve a validated same-origin relative path in
+  the `redirect` search parameter. Login, registration, OAuth state/callback,
+  and post-TOTP navigation must carry that value; invalid or absolute targets
+  fall back to `/`. Invitation registration also derives its token only from a
+  validated `/invitations/accept?token=...` return path.
 
 ## UI
 

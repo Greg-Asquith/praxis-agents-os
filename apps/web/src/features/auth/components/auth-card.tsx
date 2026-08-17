@@ -34,9 +34,21 @@ export function AuthCard({ title, description, footer, children }: AuthCardProps
   )
 }
 
-export function AuthLink({ to, children }: { to: "/login" | "/register"; children: ReactNode }) {
+export function AuthLink({
+  to,
+  redirect,
+  children,
+}: {
+  to: "/login" | "/register"
+  redirect?: string
+  children: ReactNode
+}) {
   return (
-    <Link to={to} className="text-link font-medium underline-offset-4 hover:underline">
+    <Link
+      to={to}
+      search={redirect ? { redirect } : {}}
+      className="text-link font-medium underline-offset-4 hover:underline"
+    >
       {children}
     </Link>
   )

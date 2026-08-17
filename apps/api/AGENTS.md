@@ -396,6 +396,12 @@ Repo-wide expectations are in the root `AGENTS.md`.
   fail-closed for auth flows. Do not widen exempt lists casually.
 - OAuth login state is bound to the initiating browser with a short-lived,
   HttpOnly, host-only cookie. Keep that check at the API callback boundary.
+- Workspace invitations are delivered only through the operator-shared link;
+  neither email nor in-app notification delivery exists yet. A pending,
+  unexpired invitation permits account creation while `ALLOW_SIGNUP=false`:
+  OAuth matches a provider-verified email (Google, GitHub's verified-email
+  result, or Microsoft UPN), while password registration requires the raw
+  invitation token. Full OAuth sign-in auto-accepts matching invitations.
 - When `ARTIFACT_ORIGIN` is set, `ArtifactHostMiddleware` partitions routes by
   host: the artifact host serves only `/artifacts/view/*` and
   `/artifacts/shared/*`, and every other host refuses those paths.

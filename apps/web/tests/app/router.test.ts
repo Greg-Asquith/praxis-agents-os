@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query"
 import { describe, expect, it } from "vitest"
 
 import { createAppRouter } from "@/app/router"
+import { currentUserQueryKey } from "@/features/auth/api/get-current-user"
 
 describe("conversation route pending behavior", () => {
   it("keeps the current conversation visible while conversation loaders resolve", () => {
@@ -33,5 +34,32 @@ describe("conversation route pending behavior", () => {
     expect(validateSearch({ agent: agentId })).toEqual({ agent: agentId })
     expect(validateSearch({ agent: "not-an-agent-id" })).toEqual({})
     expect(validateSearch({})).toEqual({})
+  })
+
+  it("preserves an attempted invitation path in the login redirect", async () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(currentUserQueryKey, null)
+    const router = createAppRouter(queryClient)
+    const beforeLoad = router.routesByPath["/invitations/accept"].parentRoute.options.beforeLoad
+
+    expect(beforeLoad).toBeTypeOf("function")
+    if (typeof beforeLoad !== "function") {
+      throw new Error("Expected the app route auth guard")
+    }
+
+    await expect(
+      beforeLoad({
+        context: { queryClient },
+        location: {
+          pathname: "/invitations/accept",
+          searchStr: "?token=invite-token",
+        },
+      } as never)
+    ).rejects.toMatchObject({
+      options: {
+        search: { redirect: "/invitations/accept?token=invite-token" },
+        to: "/login",
+      },
+    })
   })
 })

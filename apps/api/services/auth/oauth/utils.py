@@ -25,6 +25,7 @@ from services.audit_events import (
     record_user_audit_event,
 )
 from services.auth.utils import get_user_by_email
+from services.workspaces.invitations import has_pending_invitation_for_email
 from services.workspaces.provisioning import provision_personal_workspace
 from utils.redirects import safe_next_path
 from utils.security import decrypt_data, encrypt_data
@@ -82,12 +83,25 @@ async def upsert_oauth_user(
 
     created_user = False
     if user is None:
+        email_is_verified = provider_email_verified(provider_name, profile)
         verified_super_admin_bootstrap = (
-            provider_email_verified(provider_name, profile)
-            and email in settings.super_admin_emails_list
+            email_is_verified and email in settings.super_admin_emails_list
         )
-        if not settings.ALLOW_SIGNUP and not verified_super_admin_bootstrap:
+        invited_signup = (
+            not settings.ALLOW_SIGNUP
+            and not verified_super_admin_bootstrap
+            and email_is_verified
+            and await has_pending_invitation_for_email(db, email=email)
+        )
+        if not settings.ALLOW_SIGNUP and not verified_super_admin_bootstrap and not invited_signup:
             raise AuthorizationError("Signup is disabled")
+        signup_via = (
+            "open"
+            if settings.ALLOW_SIGNUP
+            else "super_admin_bootstrap"
+            if verified_super_admin_bootstrap
+            else "invitation"
+        )
         user = User(
             email=email,
             display_name=provider_display_name(provider_name, profile),
@@ -108,6 +122,7 @@ async def upsert_oauth_user(
                 "source": "oauth",
                 "provider": provider_name,
                 "super_admin_bootstrap": verified_super_admin_bootstrap,
+                "signup_via": signup_via,
             },
             request=request,
         )
@@ -352,9 +367,14 @@ def provider_user_id_from_profile(provider_name: str, profile: dict[str, Any]) -
 
 
 def provider_email(provider_name: str, profile: dict[str, Any]) -> str | None:
+    if provider_name == "microsoft":
+        # Graph `mail` is admin-editable and unverified; UPN is domain-verified.
+        value = str(profile.get("userPrincipalName") or "").strip()
+        if "@" not in value or "#EXT#" in value.upper():
+            return None
+        return normalize_email(value)
+
     value = profile.get("email")
-    if not value and provider_name == "microsoft":
-        value = profile.get("mail") or profile.get("userPrincipalName")
     if not value:
         return None
     return normalize_email(str(value))

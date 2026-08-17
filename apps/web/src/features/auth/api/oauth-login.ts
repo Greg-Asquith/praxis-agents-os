@@ -10,6 +10,12 @@ export { OAUTH_LOGIN_PROVIDER_STORAGE_KEY } from "@/features/auth/oauth-login-co
 
 type OAuthRedirectPayload = {
   redirect_uri?: string
+  next_path?: string
+}
+
+type StartOauthLoginInput = {
+  provider: string
+  nextPath: string | null
 }
 
 type CompleteOauthLoginInput = {
@@ -22,15 +28,18 @@ function oauthLoginRedirectUri() {
   return `${window.location.origin}${OAUTH_LOGIN_CALLBACK_PATH}`
 }
 
-function oauthRedirectPayload(): OAuthRedirectPayload {
-  return { redirect_uri: oauthLoginRedirectUri() }
+function oauthRedirectPayload(nextPath?: string | null): OAuthRedirectPayload {
+  return {
+    redirect_uri: oauthLoginRedirectUri(),
+    ...(nextPath ? { next_path: nextPath } : {}),
+  }
 }
 
-async function startOauthLogin(provider: string) {
+export async function startOauthLogin({ provider, nextPath }: StartOauthLoginInput) {
   return apiRequest<OAuthAuthorizationUrlResponse>(
     `/auth/oauth/${encodeURIComponent(provider)}/authorization-url`,
     {
-      body: oauthRedirectPayload(),
+      body: oauthRedirectPayload(nextPath),
       method: "POST",
       sessionPolicy: "optional",
     }

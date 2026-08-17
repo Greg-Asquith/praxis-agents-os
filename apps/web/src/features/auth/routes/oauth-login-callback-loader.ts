@@ -14,6 +14,7 @@ import {
 import type { AuthResponse } from "@/features/auth/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { fullDocumentRedirect } from "@/lib/full-document-redirect"
+import { safeRedirectPath } from "@/lib/safe-redirect"
 
 const loginCompletionPromises = new Map<string, Promise<AuthResponse>>()
 
@@ -28,12 +29,14 @@ export async function loadOAuthLoginCallback({
   if (callback.providerError) {
     return {
       error: `The provider reported an error: ${callback.providerError}.`,
+      nextPath: null,
       twoFactorPending: false,
     }
   }
   if (!callback.provider || !callback.code || !callback.state) {
     return {
       error: "This sign-in link is missing required information. Please try signing in again.",
+      nextPath: null,
       twoFactorPending: false,
     }
   }
@@ -45,7 +48,7 @@ export async function loadOAuthLoginCallback({
   try {
     response = await completeLoginOnce(input)
   } catch (error) {
-    return { error: getErrorMessage(error), twoFactorPending: false }
+    return { error: getErrorMessage(error), nextPath: null, twoFactorPending: false }
   }
 
   if (response.user) {
@@ -53,11 +56,12 @@ export async function loadOAuthLoginCallback({
   }
   await queryClient.invalidateQueries({ queryKey: currentUserQueryOptions().queryKey })
 
+  const nextPath = safeRedirectPath(response.next_path)
   if (response.requires_twofa) {
-    return { error: null, twoFactorPending: true }
+    return { error: null, nextPath, twoFactorPending: true }
   }
 
-  return fullDocumentRedirect("/")
+  return fullDocumentRedirect(nextPath ?? "/")
 }
 
 function completeLoginOnce(input: OAuthCallbackInput) {

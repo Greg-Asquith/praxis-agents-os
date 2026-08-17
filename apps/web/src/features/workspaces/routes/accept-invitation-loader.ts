@@ -5,7 +5,7 @@ import type { QueryClient } from "@tanstack/react-query"
 import { acceptInvitation } from "@/features/workspaces/api/accept-invitation"
 import { workspacesQueryKey } from "@/features/workspaces/api/list-workspaces"
 import type { WorkspaceInvitationAcceptResponse } from "@/features/workspaces/types"
-import { getErrorMessage } from "@/lib/api/errors"
+import { ApiError, getErrorMessage } from "@/lib/api/errors"
 
 const acceptInvitationPromises = new Map<string, Promise<WorkspaceInvitationAcceptResponse>>()
 
@@ -18,18 +18,22 @@ export async function loadAcceptInvitation({
 }) {
   const token = rawToken?.trim() ?? ""
   if (!token) {
-    return { error: "This invitation link is missing a token.", result: null }
+    return { error: "This invitation link is missing a token.", errorReason: null, result: null }
   }
 
   let result: WorkspaceInvitationAcceptResponse
   try {
     result = await acceptInvitationOnce(token)
   } catch (error) {
-    return { error: getErrorMessage(error), result: null }
+    const errorReason =
+      error instanceof ApiError && error.problem?.["reason"] === "invitation_email_mismatch"
+        ? "invitation_email_mismatch"
+        : null
+    return { error: getErrorMessage(error), errorReason, result: null }
   }
 
   await queryClient.invalidateQueries({ queryKey: workspacesQueryKey })
-  return { error: null, result }
+  return { error: null, errorReason: null, result }
 }
 
 function acceptInvitationOnce(token: string) {

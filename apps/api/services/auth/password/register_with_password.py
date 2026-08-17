@@ -2,7 +2,10 @@
 
 """Register a user with email/password auth."""
 
+from datetime import UTC, datetime
+
 from fastapi import Request, Response
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +13,7 @@ from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import ConflictError
 from core.settings import settings
 from models.user import User
+from models.workspace import WorkspaceInvitation
 from services.audit_events import AuditAction, record_user_audit_event
 from services.auth.schemas import AuthResponse, RegisterRequest
 from services.auth.utils import (
@@ -18,6 +22,7 @@ from services.auth.utils import (
     record_auth_security_event,
 )
 from services.security import SecurityEventType
+from services.workspaces.invitations.accept_invitation_utils import accept_invitation
 from services.workspaces.provisioning import provision_personal_workspace
 from utils.validation import normalize_email, validate_email, validate_password_strength
 
@@ -29,15 +34,6 @@ async def register_with_password(
     response: Response,
     payload: RegisterRequest,
 ) -> AuthResponse:
-    if not settings.ALLOW_SIGNUP:
-        await record_auth_security_event(
-            event_type=SecurityEventType.AUTH_REGISTER_FAILED,
-            request=request,
-            user_email=payload.email,
-            details={"reason": "signup_disabled"},
-            committed=True,
-        )
-        raise AuthorizationError("Signup is disabled")
     if not settings.EMAIL_AUTH_ENABLED:
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_REGISTER_FAILED,
@@ -51,6 +47,31 @@ async def register_with_password(
     email = normalize_email(payload.email)
     validate_email(email)
     validate_password_strength(payload.password)
+
+    invitation = None
+    if not settings.ALLOW_SIGNUP and payload.invitation_token:
+        invitation = await db.scalar(
+            select(WorkspaceInvitation)
+            .where(
+                WorkspaceInvitation.token_hash
+                == WorkspaceInvitation.hash_raw_token(payload.invitation_token),
+                WorkspaceInvitation.email == email,
+                WorkspaceInvitation.accepted_at.is_(None),
+                WorkspaceInvitation.expires_at > datetime.now(UTC),
+                WorkspaceInvitation.deleted.is_(False),
+            )
+            .with_for_update()
+        )
+
+    if not settings.ALLOW_SIGNUP and invitation is None:
+        await record_auth_security_event(
+            event_type=SecurityEventType.AUTH_REGISTER_FAILED,
+            request=request,
+            user_email=payload.email,
+            details={"reason": "signup_disabled"},
+            committed=True,
+        )
+        raise AuthorizationError("Signup is disabled")
 
     existing = await get_user_by_email(db, email, include_deleted=True)
     if existing:
@@ -91,6 +112,15 @@ async def register_with_password(
         details={"source": "email_registration"},
         request=request,
     )
+
+    if invitation is not None:
+        await accept_invitation(
+            db,
+            actor=user,
+            invitation=invitation,
+            request=request,
+            invitation_token_verified=True,
+        )
 
     return await issue_auth_response(
         db,

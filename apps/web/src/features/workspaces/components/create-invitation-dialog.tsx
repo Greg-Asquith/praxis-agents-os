@@ -26,10 +26,11 @@ import {
 } from "@/components/ui/select"
 import { useCreateInvitationMutation } from "@/features/workspaces/api/create-invitation"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
-import type { WorkspaceRole } from "@/features/workspaces/types"
+import type { WorkspaceInvitationCreateResponse, WorkspaceRole } from "@/features/workspaces/types"
 import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formNumber, formString } from "@/lib/forms"
+import { formatDateTime } from "@/lib/format"
 
 const ROLE_OPTIONS: { label: string; value: WorkspaceRole }[] = [
   { label: "Admin", value: "admin" },
@@ -48,14 +49,16 @@ export function CreateInvitationDialog() {
   const copyLink = useClipboardCopy()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [token, setToken] = useState<string | null>(null)
+  const [createdInvitation, setCreatedInvitation] =
+    useState<WorkspaceInvitationCreateResponse | null>(null)
+  const token = createdInvitation?.token ?? null
   const [role, setRole] = useState<WorkspaceRole>("member")
 
   function handleOpenChange(next: boolean) {
     setOpen(next)
     if (!next) {
       setError(null)
-      setToken(null)
+      setCreatedInvitation(null)
       setRole("member")
     }
   }
@@ -63,7 +66,7 @@ export function CreateInvitationDialog() {
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    setToken(null)
+    setCreatedInvitation(null)
 
     const formData = new FormData(event.currentTarget)
 
@@ -78,7 +81,7 @@ export function CreateInvitationDialog() {
       },
       {
         onSuccess: (response) => {
-          setToken(response.token)
+          setCreatedInvitation(response)
         },
         onError: (mutationError) => {
           setError(getErrorMessage(mutationError))
@@ -108,14 +111,16 @@ export function CreateInvitationDialog() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            {token && (
+            {createdInvitation ? (
               <Alert>
                 <AlertTitle>Invitation created</AlertTitle>
                 <AlertDescription>
-                  Share this token with the invitee if the email doesn't arrive.
+                  Invitations are not emailed. Copy the link and send it to the invitee yourself —
+                  it works for {createdInvitation.invitation.email} only and expires on{" "}
+                  {formatDateTime(createdInvitation.invitation.expires_at)}.
                 </AlertDescription>
               </Alert>
-            )}
+            ) : null}
             {token && (
               <Field>
                 <FieldLabel htmlFor="invitation-token">Token</FieldLabel>

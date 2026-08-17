@@ -81,6 +81,7 @@ class AuthResponse(BaseModel):
     user: AuthUser | None = None
     session: AuthSession
     requires_twofa: bool = False
+    next_path: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -91,6 +92,7 @@ class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=1024)
     display_name: str | None = Field(default=None, max_length=255)
+    invitation_token: str | None = Field(default=None, max_length=512)
 
     @field_validator("email")
     @classmethod
@@ -100,6 +102,11 @@ class RegisterRequest(BaseModel):
     @field_validator("display_name")
     @classmethod
     def normalize_display_name(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value)
+
+    @field_validator("invitation_token")
+    @classmethod
+    def normalize_invitation_token(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
 
 

@@ -1,5 +1,6 @@
 """Security invariants for OAuth login state."""
 
+from datetime import UTC, datetime, timedelta
 from http.cookies import SimpleCookie
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -17,7 +18,7 @@ from services.auth.oauth.utils import (
     verify_oauth_login_browser_binding,
     verify_oauth_state,
 )
-from services.auth.schemas import OAuthCallbackRequest
+from services.auth.schemas import AuthResponse, AuthSession, OAuthCallbackRequest
 
 
 @pytest.mark.parametrize(
@@ -139,3 +140,72 @@ async def test_oauth_login_rejects_transferred_state_before_code_exchange(monkey
 
     provider.exchange_code.assert_not_awaited()
     record_security_event.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("state_next_path", "expected"),
+    [
+        ("/invitations/accept?token=x", "/invitations/accept?token=x"),
+        ("//attacker.example", None),
+        ("https://attacker.example", None),
+    ],
+)
+async def test_oauth_callback_returns_only_safe_state_next_path(
+    monkeypatch: pytest.MonkeyPatch,
+    state_next_path: str,
+    expected: str | None,
+) -> None:
+    provider = SimpleNamespace(
+        exchange_code=AsyncMock(return_value={"access_token": "provider-token"}),
+        get_user_info=AsyncMock(return_value={"sub": "provider-user"}),
+    )
+    issue_auth_response = AsyncMock(
+        return_value=AuthResponse(
+            session=AuthSession(
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+                twofa_verified=True,
+            )
+        )
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.oauth_registry.get_provider",
+        lambda _provider_name: provider,
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.verify_oauth_state",
+        lambda _state: {
+            "provider": "google",
+            "redirect_uri": "https://app.example/oauth/callback",
+            "next_path": state_next_path,
+        },
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.verify_oauth_login_browser_binding",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.resolve_provider_redirect_uri",
+        lambda *_args, **_kwargs: "https://app.example/oauth/callback",
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.upsert_oauth_user",
+        AsyncMock(return_value=SimpleNamespace(is_locked=False, totp_enabled=False, email="x@y.z")),
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.issue_auth_response",
+        issue_auth_response,
+    )
+
+    result = await complete_oauth_login(
+        AsyncMock(),
+        request=SimpleNamespace(cookies={}),
+        response=Response(),
+        provider_name="google",
+        payload=OAuthCallbackRequest(
+            code="provider-code",
+            state="signed-state",
+            redirect_uri="https://app.example/oauth/callback",
+        ),
+    )
+
+    assert result.next_path == expected

@@ -1,7 +1,7 @@
 // apps/web/src/features/auth/routes/login-route.tsx
 
 import { useState, type SyntheticEvent } from "react"
-import { useNavigate } from "@tanstack/react-router"
+import { getRouteApi } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { LogInIcon } from "lucide-react"
 
@@ -16,9 +16,13 @@ import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-prov
 import { TwoFactorVerificationForm } from "@/features/auth/components/two-factor-verification-form"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
+import { authSuccessPath } from "@/lib/safe-redirect"
+
+const routeApi = getRouteApi("/auth/login")
 
 export function LoginRoute() {
-  const navigate = useNavigate()
+  const { redirect } = routeApi.useSearch()
+  const nextPath = authSuccessPath(redirect)
   const loginMutation = useLoginMutation()
   const providersQuery = useQuery(oauthProvidersQueryOptions())
   const [formError, setFormError] = useState<string | null>(null)
@@ -43,7 +47,7 @@ export function LoginRoute() {
             setTwoFactorPending(true)
             return
           }
-          void navigate({ to: "/" })
+          window.location.replace(nextPath)
         },
         onError: (error) => {
           setFormError(getErrorMessage(error))
@@ -72,7 +76,9 @@ export function LoginRoute() {
           </Button>
         ) : emailAuthEnabled ? (
           <span>
-            <AuthLink to="/register">Create a New Account</AuthLink>
+            <AuthLink to="/register" {...(redirect ? { redirect } : {})}>
+              Create a New Account
+            </AuthLink>
           </span>
         ) : null
       }
@@ -80,7 +86,7 @@ export function LoginRoute() {
       {twoFactorPending ? (
         <TwoFactorVerificationForm
           onVerified={() => {
-            window.location.replace("/")
+            window.location.replace(nextPath)
           }}
         />
       ) : (

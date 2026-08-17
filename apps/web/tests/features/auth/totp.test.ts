@@ -28,6 +28,7 @@ const user: AuthUser = {
 }
 
 const verifiedResponse: AuthResponse = {
+  next_path: null,
   requires_twofa: false,
   session: {
     expires_at: "2026-07-31T00:00:00Z",

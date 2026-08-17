@@ -11,7 +11,7 @@ const routeApi = getRouteApi("/auth/oauth/callback")
 
 export function OAuthLoginCallbackRoute() {
   const navigate = useNavigate()
-  const { error, twoFactorPending } = routeApi.useLoaderData()
+  const { error, nextPath, twoFactorPending } = routeApi.useLoaderData()
 
   return (
     <AuthCard
@@ -40,7 +40,7 @@ export function OAuthLoginCallbackRoute() {
       ) : twoFactorPending ? (
         <TwoFactorVerificationForm
           onVerified={() => {
-            window.location.replace("/")
+            window.location.replace(nextPath ?? "/")
           }}
         />
       ) : null}

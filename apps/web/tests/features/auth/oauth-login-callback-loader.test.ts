@@ -4,17 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
 import type { AuthResponse } from "@/features/auth/types"
 
-const { completeOauthLogin } = vi.hoisted(() => ({
+const { completeOauthLogin, fullDocumentRedirect } = vi.hoisted(() => ({
   completeOauthLogin: vi.fn(),
+  fullDocumentRedirect: vi.fn((path: string) => ({ redirectedTo: path })),
 }))
 
 vi.mock("@/features/auth/api/oauth-login", () => ({ completeOauthLogin }))
+vi.mock("@/lib/full-document-redirect", () => ({ fullDocumentRedirect }))
 
 const storage = new Map<string, string>()
 
 beforeEach(() => {
   storage.clear()
   completeOauthLogin.mockReset()
+  fullDocumentRedirect.mockClear()
   vi.stubGlobal("window", {
     location: { origin: "https://praxis.example" },
     sessionStorage: {
@@ -38,6 +41,7 @@ describe("OAuth login callback loader", () => {
 
     expect(result).toEqual({
       error: "This sign-in link is missing required information. Please try signing in again.",
+      nextPath: null,
       twoFactorPending: false,
     })
     expect(completeOauthLogin).not.toHaveBeenCalled()
@@ -53,6 +57,7 @@ describe("OAuth login callback loader", () => {
 
     expect(result).toEqual({
       error: "This sign-in link is missing required information. Please try signing in again.",
+      nextPath: null,
       twoFactorPending: false,
     })
     expect(completeOauthLogin).not.toHaveBeenCalled()
@@ -68,6 +73,7 @@ describe("OAuth login callback loader", () => {
 
     expect(result).toEqual({
       error: "This sign-in link is missing required information. Please try signing in again.",
+      nextPath: null,
       twoFactorPending: false,
     })
     expect(completeOauthLogin).not.toHaveBeenCalled()
@@ -75,6 +81,7 @@ describe("OAuth login callback loader", () => {
 
   it("deduplicates a single-use code across loader reruns", async () => {
     const response: AuthResponse = {
+      next_path: "/invitations/accept?token=invite-token",
       requires_twofa: true,
       session: { expires_at: "2026-07-17T00:00:00Z", twofa_verified: false },
       user: null,
@@ -88,8 +95,32 @@ describe("OAuth login callback loader", () => {
     storage.set("praxis.oauthLoginProvider", "google")
     const second = await loadOAuthLoginCallback({ queryClient, search })
 
-    expect(first).toEqual({ error: null, twoFactorPending: true })
+    expect(first).toEqual({
+      error: null,
+      nextPath: "/invitations/accept?token=invite-token",
+      twoFactorPending: true,
+    })
     expect(second).toEqual(first)
     expect(completeOauthLogin).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ["/invitations/accept?token=invite-token", "/invitations/accept?token=invite-token"],
+    ["https://attacker.example", "/"],
+  ])("redirects a completed login through the safe return path", async (nextPath, expected) => {
+    completeOauthLogin.mockResolvedValue({
+      next_path: nextPath,
+      requires_twofa: false,
+      session: { expires_at: "2026-07-17T00:00:00Z", twofa_verified: true },
+      user: null,
+    } satisfies AuthResponse)
+    storage.set("praxis.oauthLoginProvider", "google")
+
+    await loadOAuthLoginCallback({
+      queryClient: new QueryClient(),
+      search: { code: `code-${nextPath}`, state: `state-${nextPath}` },
+    })
+
+    expect(fullDocumentRedirect).toHaveBeenLastCalledWith(expected)
   })
 })

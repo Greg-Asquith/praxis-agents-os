@@ -10,6 +10,9 @@ from services.workspaces.invitations.accept_pending_invitations_for_user import 
 from services.workspaces.invitations.create_invitation import create_invitation
 from services.workspaces.invitations.delete_invitation import delete_invitation
 from services.workspaces.invitations.get_invitation import get_invitation
+from services.workspaces.invitations.has_pending_invitation_for_email import (
+    has_pending_invitation_for_email,
+)
 from services.workspaces.invitations.list_invitations import list_invitations
 from services.workspaces.invitations.update_invitation import update_invitation
 
@@ -20,6 +23,7 @@ __all__ = [
     "create_invitation",
     "delete_invitation",
     "get_invitation",
+    "has_pending_invitation_for_email",
     "list_invitations",
     "update_invitation",
 ]

@@ -22,6 +22,7 @@ export type AuthResponse = {
   user: AuthUser | null
   session: AuthSession
   requires_twofa: boolean
+  next_path: string | null
 }
 
 type AuthIdentity = {
@@ -89,4 +90,5 @@ export type RegisterRequest = {
   email: string
   password: string
   display_name?: string | null
+  invitation_token?: string | null
 }

@@ -15,7 +15,6 @@ from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
-from services.notifications import mark_invitation_notifications_actioned
 from services.security import SecurityEventType
 from services.workspaces.schemas import (
     WorkspaceInvitationAcceptResponse,
@@ -68,6 +67,14 @@ async def get_verified_email_identity(
     )
 
 
+def mask_email(email: str) -> str:
+    """Mask an invitation address while retaining enough context to identify it."""
+    local, separator, domain = email.partition("@")
+    if not separator:
+        return "•••"
+    return f"{local[:1]}•••@{domain}"
+
+
 async def accept_invitation(
     db: AsyncSession,
     *,
@@ -90,7 +97,11 @@ async def accept_invitation(
     if not user_email:
         raise AuthorizationError("Your account does not have a verified email")
     if user_email != invite_email:
-        raise AuthorizationError("This invitation was sent to a different email address")
+        raise AuthorizationError(
+            f"This invitation was sent to {mask_email(invite_email)}. "
+            f"You are signed in as {actor.email}.",
+            details={"reason": "invitation_email_mismatch"},
+        )
     verified_identity = None
     if not invitation_token_verified:
         verified_identity = await get_verified_email_identity(
@@ -147,11 +158,6 @@ async def accept_invitation(
         status = "accepted"
         message = "Invitation accepted"
 
-    await mark_invitation_notifications_actioned(
-        db,
-        user=actor,
-        invitation_id=str(invitation.id),
-    )
     await record_workspace_audit_event(
         db,
         request=request,

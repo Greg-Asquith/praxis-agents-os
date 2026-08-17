@@ -244,8 +244,12 @@ enforcement second**. Values not marked *(enforced)* are
 ## 6. Notification Policy
 
 Target: the existing in-app substrate
-(`services/notifications/service.py` `create_notification`, used by
-invites). Email stays out until a digest exists. Rows not marked
+(`services/notifications/service.py` `create_notification`). Email stays out
+until a digest exists. Workspace invitations currently create neither email
+nor in-app notifications: the inviting operator shares the returned link.
+A pending, unexpired invitation may admit account creation while signup is
+closed; OAuth requires the provider-verified address and auto-accepts on full
+sign-in, while password registration requires the raw invitation token. Rows not marked
 *(enforced)* are `[default — confirm at review]`.
 
 | Event | Notify (in-app) | Recipient |

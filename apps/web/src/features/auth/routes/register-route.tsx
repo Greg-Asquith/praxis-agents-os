@@ -1,7 +1,7 @@
 // apps/web/src/features/auth/routes/register-route.tsx
 
 import { useState, type SyntheticEvent } from "react"
-import { useNavigate } from "@tanstack/react-router"
+import { getRouteApi } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { UserPlusIcon } from "lucide-react"
 
@@ -15,9 +15,14 @@ import { AuthCard, AuthLink } from "@/features/auth/components/auth-card"
 import { OAuthLoginProviders } from "@/features/auth/components/oauth-login-providers"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formString } from "@/lib/forms"
+import { authSuccessPath, invitationTokenFromRedirect } from "@/lib/safe-redirect"
+
+const routeApi = getRouteApi("/auth/register")
 
 export function RegisterRoute() {
-  const navigate = useNavigate()
+  const { redirect } = routeApi.useSearch()
+  const nextPath = authSuccessPath(redirect)
+  const invitationToken = invitationTokenFromRedirect(nextPath)
   const registerMutation = useRegisterMutation()
   const providersQuery = useQuery(oauthProvidersQueryOptions())
   const [formError, setFormError] = useState<string | null>(null)
@@ -36,10 +41,11 @@ export function RegisterRoute() {
         display_name: displayName.length > 0 ? displayName : null,
         email: formString(formData, "email"),
         password: formString(formData, "password"),
+        ...(invitationToken ? { invitation_token: invitationToken } : {}),
       },
       {
         onSuccess: () => {
-          void navigate({ to: "/" })
+          window.location.replace(nextPath)
         },
         onError: (error) => {
           setFormError(getErrorMessage(error))
@@ -54,7 +60,10 @@ export function RegisterRoute() {
       description="Start with a personal workspace. You can add more later."
       footer={
         <span>
-          Already have an account? <AuthLink to="/login">Sign In</AuthLink>
+          Already have an account?{" "}
+          <AuthLink to="/login" {...(redirect ? { redirect } : {})}>
+            Sign In
+          </AuthLink>
         </span>
       }
     >
@@ -63,6 +72,12 @@ export function RegisterRoute() {
 
         <form hidden={!emailAuthEnabled} onSubmit={handleSubmit}>
           <FieldGroup>
+            {invitationToken ? (
+              <Alert>
+                <AlertTitle>Workspace invitation</AlertTitle>
+                <AlertDescription>You're joining via an invitation.</AlertDescription>
+              </Alert>
+            ) : null}
             {formError && (
               <Alert variant="destructive">
                 <AlertTitle>Registration Failed</AlertTitle>

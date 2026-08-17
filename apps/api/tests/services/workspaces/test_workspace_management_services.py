@@ -884,13 +884,18 @@ async def test_accept_invitation_by_token_rejects_different_user_email(
     db_session.add_all([owner, wrong_user, workspace, owner_membership, invitation])
     await db_session.flush()
 
-    with pytest.raises(AuthorizationError, match="different email address"):
+    with pytest.raises(
+        AuthorizationError,
+        match=r"sent to i•••@example\.com.*signed in as wrong@example\.com",
+    ) as exc_info:
         await accept_invitation_by_token(
             db_session,
             request=None,
             actor=wrong_user,
             token=raw_token,
         )
+
+    assert exc_info.value.details["reason"] == "invitation_email_mismatch"
 
     assert invitation.accepted_at is None
     membership = await db_session.scalar(
