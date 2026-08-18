@@ -38,13 +38,13 @@ export function AgentIdentityIcon({
       aria-hidden={decorative ? true : undefined}
       aria-label={decorative ? undefined : name}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center bg-linear-to-br from-(--agent-color)/95 to-(--agent-color) text-white! shadow-xs",
+        "inline-flex shrink-0 items-center justify-center bg-linear-to-br from-(--agent-color)/95 to-(--agent-color) text-white shadow-xs",
         classes.container
       )}
       role={decorative ? undefined : "img"}
       style={style}
     >
-      <BotIcon aria-hidden="true" className={classes.icon} strokeWidth={2.25} />
+      <BotIcon aria-hidden="true" className={classes.icon + ` stroke-white!`} strokeWidth={2.25} />
     </span>
   )
 }

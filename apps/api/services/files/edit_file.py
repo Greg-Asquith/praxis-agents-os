@@ -19,6 +19,7 @@ from services.files.domain import FileEditRequest, FileRead
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import (
     file_to_read,
+    get_file_folder_name,
     get_file_for_workspace,
     require_file_write_access,
 )
@@ -67,4 +68,7 @@ async def edit_file(
         actor=actor,
         details={"action": "edit", "revision_id": str(result.revision.id)},
     )
-    return file_to_read(result.file)
+    return file_to_read(
+        result.file,
+        folder_name=await get_file_folder_name(db, workspace=workspace, file=result.file),
+    )

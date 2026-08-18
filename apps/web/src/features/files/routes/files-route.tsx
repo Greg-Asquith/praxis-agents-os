@@ -1,12 +1,16 @@
 // apps/web/src/features/files/routes/files-route.tsx
 
 import { useTransition } from "react"
-import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { Navigate, useNavigate, useRouterState } from "@tanstack/react-router"
+import { useSuspenseQueries } from "@tanstack/react-query"
 import { PageHeader } from "@/components/shell/page-header"
-import { useFilesQuery } from "@/features/files/api/list-files"
+import { filesQueryOptions } from "@/features/files/api/list-files"
+import { foldersQueryOptions } from "@/features/files/api/list-folders"
 import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { FileUploadButton } from "@/features/files/components/file-upload-button"
 import { FilesTable } from "@/features/files/components/files-table"
+import { FoldersGrid, NewFolderButton } from "@/features/files/components/folders-grid"
+import { FolderHeader } from "@/features/files/components/folder-header"
 import type { FilesSearch } from "@/features/files/search"
 import type { FileSortDirection, FileSortField } from "@/features/files/types"
 
@@ -21,22 +25,35 @@ export function FilesRoute() {
   const page = search.page ?? 1
   const sortBy = search.sort ?? "updated_at"
   const sortDirection = search.direction ?? "desc"
-  const { data } = useFilesQuery({
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
-    sortBy,
-    sortDirection,
+  const [{ data }, { data: folderData }] = useSuspenseQueries({
+    queries: [
+      filesQueryOptions({
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+        sortBy,
+        sortDirection,
+        ...(search.folder ? { folderId: search.folder } : { rootOnly: true }),
+      }),
+      foldersQueryOptions(),
+    ],
   })
-  const hasFiles = data.total > 0
+  const currentFolder = search.folder
+    ? (folderData.folders.find((folder) => folder.id === search.folder) ?? null)
+    : null
   const selectedFile = search.fileId
     ? (data.files.find((file) => file.id === search.fileId) ?? null)
     : null
+
+  if (search.folder && !currentFolder) {
+    return <Navigate replace search={{}} to="/files" />
+  }
 
   function setOpenFile(fileId: string | null) {
     void navigate({
       to: "/files",
       search: {
         ...(search.direction ? { direction: search.direction } : {}),
+        ...(search.folder ? { folder: search.folder } : {}),
         ...(fileId ? { fileId } : {}),
         ...(search.page ? { page: search.page } : {}),
         ...(search.sort ? { sort: search.sort } : {}),
@@ -51,6 +68,7 @@ export function FilesRoute() {
         search: {
           ...(nextDirection === "asc" ? { direction: nextDirection } : {}),
           ...(search.fileId ? { fileId: search.fileId } : {}),
+          ...(search.folder ? { folder: search.folder } : {}),
           ...(nextSort === "updated_at" ? {} : { sort: nextSort }),
         },
       })
@@ -64,6 +82,7 @@ export function FilesRoute() {
         search: {
           ...(search.direction ? { direction: search.direction } : {}),
           ...(search.fileId ? { fileId: search.fileId } : {}),
+          ...(search.folder ? { folder: search.folder } : {}),
           ...(nextOffset === 0 ? {} : { page: Math.floor(nextOffset / PAGE_SIZE) + 1 }),
           ...(search.sort ? { sort: search.sort } : {}),
         },
@@ -74,15 +93,50 @@ export function FilesRoute() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        actions={hasFiles ? <FileUploadButton /> : null}
-        description="Upload, inspect, and restore durable files shared with agents."
-        title="Files"
+        actions={
+          <div className="flex items-center gap-2">
+            {currentFolder ? (
+              <FolderHeader
+                folder={currentFolder}
+                onDeleted={() => {
+                  void navigate({ to: "/files", search: {} })
+                }}
+              />
+            ) : (
+              <NewFolderButton />
+            )}
+            <FileUploadButton folderId={currentFolder?.id ?? null} />
+          </div>
+        }
+        description={
+          currentFolder?.description ??
+          (currentFolder
+            ? "Files grouped in this folder."
+            : "Upload, inspect, and restore durable files shared with agents.")
+        }
+        title={currentFolder?.name ?? "Files"}
       />
+
+      {!currentFolder ? (
+        <FoldersGrid
+          folders={folderData.folders}
+          onOpenFolder={(folder) => {
+            void navigate({ to: "/files", search: { folder } })
+          }}
+        />
+      ) : null}
 
       <FilesTable
         files={data.files}
-        emptyAction={<FileUploadButton />}
+        emptyAction={<FileUploadButton folderId={currentFolder?.id ?? null} />}
+        {...(currentFolder
+          ? {
+              emptyDescription: "Nothing here yet — upload files or move them in.",
+              emptyTitle: "This folder is empty",
+            }
+          : {})}
         isChangingView={isChangingView}
+        folders={folderData.folders}
         limit={PAGE_SIZE}
         offset={(page - 1) * PAGE_SIZE}
         onPageChange={updatePage}
@@ -90,6 +144,7 @@ export function FilesRoute() {
           setOpenFile(fileId)
         }}
         onSortChange={updateSort}
+        selectionScope={[search.folder ?? "root", String(page), sortBy, sortDirection].join(":")}
         sortBy={sortBy}
         sortDirection={sortDirection}
         total={data.total}
@@ -99,6 +154,7 @@ export function FilesRoute() {
         fileId={search.fileId ?? null}
         initialFile={selectedFile}
         open={Boolean(search.fileId)}
+        folders={folderData.folders}
         onOpenChange={(open) => {
           if (!open) {
             setOpenFile(null)

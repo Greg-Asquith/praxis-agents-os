@@ -32,10 +32,13 @@ export function useRestoreFileRevisionMutation() {
   return useMutation({
     mutationFn: restoreFileRevision,
     onSuccess: async (file) => {
-      await queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() })
-      await queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(file.id) })
-      await queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisions(file.id) })
-      await queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisionContents(file.id) })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.folders() }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(file.id) }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisions(file.id) }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisionContents(file.id) }),
+      ])
     },
   })
 }

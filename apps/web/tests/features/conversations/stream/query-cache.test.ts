@@ -58,6 +58,7 @@ describe("stream query cache invalidation", () => {
     }
     for (const key of [
       filesQueryKeys.list({}),
+      filesQueryKeys.folders(),
       filesQueryKeys.detail("file-1"),
       filesQueryKeys.revisions("file-1"),
       filesQueryKeys.preview("file-1"),
@@ -79,6 +80,7 @@ describe("stream query cache invalidation", () => {
     const invalidated = (key: readonly unknown[]) =>
       queryClient.getQueryState(key)?.isInvalidated ?? false
     expect(invalidated(filesQueryKeys.list({}))).toBe(true)
+    expect(invalidated(filesQueryKeys.folders())).toBe(true)
     expect(invalidated(filesQueryKeys.detail("file-1"))).toBe(true)
     expect(invalidated(filesQueryKeys.revisions("file-1"))).toBe(true)
     expect(invalidated(filesQueryKeys.preview("file-1"))).toBe(true)

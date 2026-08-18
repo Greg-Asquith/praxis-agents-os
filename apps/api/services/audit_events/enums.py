@@ -41,6 +41,7 @@ class AuditResourceType(StrEnum):
     AGENT_SCHEDULE_RUN = "agent_schedule_run"
     SKILL = "skill"
     FILE = "file"
+    FILE_FOLDER = "file_folder"
     INTEGRATION_CONNECTION = "integration_connection"
     INTEGRATION_CREDENTIAL = "integration_credential"
     INTEGRATION_RESOURCE = "integration_resource"

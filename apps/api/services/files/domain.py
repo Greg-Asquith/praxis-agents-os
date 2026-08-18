@@ -77,6 +77,7 @@ class FileConfirmRequest(BaseModel):
     """Request body for confirming a direct-uploaded workspace file."""
 
     upload_token: str = Field(min_length=1, max_length=4096)
+    folder_id: UUID | None = None
 
     @field_validator("upload_token")
     @classmethod
@@ -99,6 +100,7 @@ class FileUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=4096)
+    folder_id: UUID | None = None
 
     @field_validator("name", "description")
     @classmethod
@@ -127,6 +129,8 @@ class FileRead(BaseModel):
     workspace_id: UUID
     name: str
     description: str | None = None
+    folder_id: UUID | None = None
+    folder_name: str | None = None
     category: str
     content_type: str
     extension: str
@@ -173,6 +177,46 @@ class FileListResponse(BaseModel):
 
     files: list[FileRead]
     total: int
+
+
+class FileFolderCreateRequest(BaseModel):
+    """Create one workspace file folder."""
+
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4096)
+
+
+class FileFolderUpdateRequest(BaseModel):
+    """Update a workspace file folder."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4096)
+
+
+class FileFolderRead(BaseModel):
+    """API representation of a workspace file folder."""
+
+    id: UUID
+    workspace_id: UUID
+    name: str
+    description: str | None = None
+    file_count: int = 0
+    total_bytes: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class FileFolderListResponse(BaseModel):
+    folders: list[FileFolderRead]
+
+
+class FileMoveRequest(BaseModel):
+    file_ids: list[UUID] = Field(min_length=1, max_length=100)
+    folder_id: UUID | None = None
+
+
+class FileMoveResponse(BaseModel):
+    files: list[FileRead]
 
 
 class FileRevisionsListResponse(BaseModel):

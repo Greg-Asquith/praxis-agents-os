@@ -30,6 +30,7 @@ DIRECT_TABLES = (
     "artifact_revisions",
     "artifact_shares",
     "files",
+    "file_folders",
     "file_revisions",
     "file_references",
     "file_uploads",
@@ -154,6 +155,8 @@ def _seed_values(
 
     if table.name in {"artifact_revisions", "file_revisions"}:
         values["created_by_system"] = True
+    if table.name == "file_folders":
+        values["created_by_user_id"] = uuid4()
     if table.name == "scratch_entries":
         values["conversation_id"] = uuid4()
     if table.name == "active_context_selections":

@@ -3,9 +3,10 @@
 """Runtime tool for writing approved durable files."""
 
 import logging
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import ApprovalRequired, ModelRetry, RunContext
 
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
@@ -24,7 +25,12 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
-from services.files import write_agent_file
+from services.files import (
+    create_conversation_file_references,
+    resolve_folder_by_name,
+    write_agent_file,
+)
+from utils.validation import normalize_optional_text
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +52,8 @@ class WriteFileOutput(BaseModel):
         "Create or edit a durable UTF-8 file in the workspace's document store. "
         "Use for data, notes, and working documents the workspace keeps for "
         "reference and later work; use create_artifact for reports and documents "
-        "the user will view, revise, or share."
+        "the user will view, revise, or share. New files can be placed in a named "
+        "folder; existing-file edits keep their current folder."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -77,6 +84,12 @@ class WriteFileOutput(BaseModel):
                 placeholder="Name this file",
             ),
             ToolFieldPresentation(
+                key="folder",
+                label="Folder",
+                editable=True,
+                secondary=True,
+            ),
+            ToolFieldPresentation(
                 key="file_id",
                 label="Existing File",
                 format="entity",
@@ -99,6 +112,16 @@ async def write_file(
     file_id: FileReference | None = None,
     expected_current_revision_id: UUID | None = None,
     content_ref: str | None = None,
+    folder: Annotated[
+        str | None,
+        Field(
+            max_length=255,
+            description=(
+                "Optional folder name for a newly created file. The folder is created if needed; "
+                "existing-file edits ignore this value."
+            ),
+        ),
+    ] = None,
 ) -> WriteFileOutput:
     """Write approved durable file content."""
     if content is not None and content_ref is not None:
@@ -131,15 +154,30 @@ async def write_file(
     if content is None:
         raise ModelRetry("content is required when writing a durable file.")
     try:
-        result = await write_agent_file(
-            ctx.deps.db,
-            workspace=ctx.deps.workspace,
-            agent=ctx.deps.agent,
-            name=name,
-            content=content,
-            file_id=internal_entity_id(file_id) if file_id is not None else None,
-            expected_current_revision_id=expected_current_revision_id,
-        )
+        internal_file_id = internal_entity_id(file_id) if file_id is not None else None
+        normalized_folder = normalize_optional_text(folder)
+        async with ctx.deps.db.begin_nested():
+            target_folder = (
+                await resolve_folder_by_name(
+                    ctx.deps.db,
+                    workspace=ctx.deps.workspace,
+                    agent=ctx.deps.agent,
+                    requested_by=ctx.deps.user,
+                    name=normalized_folder,
+                )
+                if internal_file_id is None and normalized_folder is not None
+                else None
+            )
+            result = await write_agent_file(
+                ctx.deps.db,
+                workspace=ctx.deps.workspace,
+                agent=ctx.deps.agent,
+                name=name,
+                content=content,
+                file_id=internal_file_id,
+                expected_current_revision_id=expected_current_revision_id,
+                folder_id=target_folder.id if target_folder is not None else None,
+            )
     except (AppValidationError, ConflictError, NotFoundError) as exc:
         raise ModelRetry(str(exc)) from exc
     if content_ref is not None:
@@ -155,6 +193,14 @@ async def write_file(
                 extra={"run_id": str(ctx.deps.run.id), "file_id": str(result.file.id)},
                 exc_info=True,
             )
+    if internal_file_id is None:
+        await create_conversation_file_references(
+            ctx.deps.db,
+            workspace_id=ctx.deps.workspace.id,
+            conversation_id=ctx.deps.conversation.id,
+            file_ids=[result.file.id],
+            created_by_user_id=ctx.deps.user.id,
+        )
     return WriteFileOutput(
         name=result.file.name,
         file_id=result.file.id,

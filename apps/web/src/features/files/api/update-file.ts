@@ -7,14 +7,15 @@ import type { WorkspaceFile } from "../types"
 import { apiRequest } from "@/lib/api/client"
 
 type UpdateFileInput = {
-  description: string | null
+  description?: string | null
   fileId: string
-  name: string
+  folderId?: string | null
+  name?: string
 }
 
-async function updateFile({ description, fileId, name }: UpdateFileInput) {
+async function updateFile({ description, fileId, folderId, name }: UpdateFileInput) {
   return apiRequest<WorkspaceFile>(`/files/${fileId}`, {
-    body: { description, name },
+    body: { description, folder_id: folderId, name },
     method: "PATCH",
   })
 }
@@ -26,7 +27,10 @@ export function useUpdateFileMutation() {
     mutationFn: updateFile,
     onSuccess: async (file) => {
       queryClient.setQueryData(filesQueryKeys.detail(file.id), file)
-      await queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.folders() }),
+      ])
     },
   })
 }

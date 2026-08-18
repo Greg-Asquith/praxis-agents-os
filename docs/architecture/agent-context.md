@@ -61,19 +61,29 @@ handing an agent a specific document to work on.
 - **Model.** `apps/api/models/files.py`: `files` (logical file),
   `file_revisions` (append-only, immutable), `file_references` (non-copying
   attachment to a conversation, artifact, agent, or schedule run), and
-  `file_uploads` (signed two-phase upload staging). Non-markdown formats get
-  background markdown extraction (job `files.extract`).
+  `file_uploads` (signed two-phase upload staging). Workspace-scoped
+  `file_folders` provide optional, single-level organisation through
+  `files.folder_id`; folders are not an authorization boundary. Non-markdown
+  formats get background markdown extraction (job `files.extract`).
 - **Runtime.** Three paths in:
   1. The `available_files` prompt block lists files referenced by the current
      conversation (capped and budgeted; see `core/settings/scratch.py`).
   2. Auto-mounted tools on every agent: `list_files`, `read_file` (returns
      images as native multimodal parts), and `write_file` (durable files;
-     auto by default, approval configurable). Artifact drafting and
-     versioning use `create_artifact`/`update_artifact`.
+     auto by default, approval configurable). File listing can be scoped by
+     folder name and new writes can resolve or create an explicitly named
+     folder. Provider-native `run_code` groups retained File outputs in one
+     lazily created folder per conversation unless the agent names a folder;
+     artifact-only runs do not create one. Generated Files retain a
+     conversation reference so they appear in `available_files`. Artifact
+     drafting and versioning use `create_artifact`/`update_artifact`.
   3. Turn attachments: attached file content is spliced directly into the
      user prompt (`services/files/resolve_chat_attachments.py`).
 - **Management.** `/files` routes, `services/files/`, web UI at `/files` with
-  revisions, diffs, previews, and restore.
+  root folder cards, folder-scoped search and upload, single/bulk move,
+  delete-with-contents, revisions, diffs, previews, and restore. Deleting a
+  folder uses the normal per-file soft-delete and audit lifecycle before the
+  existing sweeper purges both files and old folder tombstones.
 - **Scope note.** Attachment scopes what is *listed in the prompt*, but the
   file tools can reach any workspace file — attachment is salience, not a
   security boundary.

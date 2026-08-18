@@ -2,7 +2,13 @@
 
 import { Suspense, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { DownloadIcon, ExternalLinkIcon, PencilIcon, Trash2Icon } from "lucide-react"
+import {
+  DownloadIcon,
+  ExternalLinkIcon,
+  FolderInputIcon,
+  PencilIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
@@ -25,36 +31,50 @@ import { FileContentView } from "@/features/files/components/file-content-view"
 import { FileRevisionsList } from "@/features/files/components/file-revisions-list"
 import { FileStatusBadge } from "@/features/files/components/file-status-badge"
 import { RenameFileDialog } from "@/features/files/components/rename-file-dialog"
+import { MoveFilesDialog } from "@/features/files/components/move-files-dialog"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { fileCategoryLabel } from "@/features/files/format"
-import type { WorkspaceFile } from "@/features/files/types"
+import type { FileFolder, WorkspaceFile } from "@/features/files/types"
 import { ApiError, getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, formatDateTime } from "@/lib/format"
+
+const EMPTY_FOLDERS: FileFolder[] = []
 
 export function FileDetailModal({
   fileId,
   initialFile = null,
   open,
   onOpenChange,
+  folders = EMPTY_FOLDERS,
 }: {
   fileId: string | null
   initialFile?: WorkspaceFile | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  folders?: FileFolder[]
 }) {
   if (!open || !fileId) {
     return null
   }
 
-  return <FileDetailQuery fileId={fileId} initialFile={initialFile} onOpenChange={onOpenChange} />
+  return (
+    <FileDetailQuery
+      fileId={fileId}
+      folders={folders}
+      initialFile={initialFile}
+      onOpenChange={onOpenChange}
+    />
+  )
 }
 
 function FileDetailQuery({
   fileId,
+  folders,
   initialFile,
   onOpenChange,
 }: {
   fileId: string
+  folders: FileFolder[]
   initialFile: WorkspaceFile | null
   onOpenChange: (open: boolean) => void
 }) {
@@ -83,20 +103,23 @@ function FileDetailQuery({
     return <FileDetailLoadingDialog onOpenChange={onOpenChange} />
   }
 
-  return <FileDetailDialog file={fileQuery.data} onOpenChange={onOpenChange} />
+  return <FileDetailDialog file={fileQuery.data} folders={folders} onOpenChange={onOpenChange} />
 }
 
 function FileDetailDialog({
   file,
+  folders,
   onOpenChange,
 }: {
   file: WorkspaceFile
+  folders: FileFolder[]
   onOpenChange: (open: boolean) => void
 }) {
   const deleteMutation = useDeleteFileMutation()
   const [error, setError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false)
 
   async function handleOpen(forceDownload: boolean) {
     setError(null)
@@ -128,8 +151,8 @@ function FileDetailDialog({
           onOpenChange(open)
         }}
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl">
-          <DialogHeader className="border-b p-5 pr-12">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="min-w-0 overflow-hidden border-b p-5 pr-12">
             <div className="flex min-w-0 flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{fileCategoryLabel(file.category)}</Badge>
@@ -138,8 +161,10 @@ function FileDetailDialog({
                 ) : null}
               </div>
               <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <DialogTitle className="truncate text-xl">{file.name}</DialogTitle>
+                <div className="flex max-w-full min-w-0 items-center gap-2">
+                  <DialogTitle className="min-w-0 flex-1 truncate text-xl" title={file.name}>
+                    {file.name}
+                  </DialogTitle>
                   <Button
                     aria-label={`Rename ${file.name}`}
                     onClick={() => {
@@ -148,6 +173,7 @@ function FileDetailDialog({
                     size="icon-sm"
                     type="button"
                     variant="ghost"
+                    className="shrink-0"
                   >
                     <PencilIcon />
                   </Button>
@@ -157,13 +183,18 @@ function FileDetailDialog({
                   {formatDateTime(file.updated_at)}
                 </DialogDescription>
                 {file.description ? (
-                  <p className="text-muted-foreground mt-2 text-sm">{file.description}</p>
+                  <p className="text-muted-foreground mt-2 text-sm wrap-break-word">
+                    {file.description}
+                  </p>
                 ) : null}
+                <p className="text-muted-foreground mt-2 text-sm">
+                  Folder: {file.folder_name ?? "Root"}
+                </p>
               </div>
             </div>
           </DialogHeader>
 
-          <div className="min-h-0 space-y-6 overflow-auto p-5">
+          <div className="min-h-0 max-w-full min-w-0 space-y-6 overflow-auto p-5">
             {error ? <p className="text-destructive text-sm">{error}</p> : null}
             <Suspense fallback={<PreviewSkeleton />}>
               <FilePreview file={file} />
@@ -180,7 +211,17 @@ function FileDetailDialog({
             <TechnicalDetails file={file} />
           </div>
 
-          <DialogFooter className="mr-1 mb-1 rounded-none">
+          <DialogFooter className="m-0 min-w-0 flex-wrap rounded-none">
+            <Button
+              onClick={() => {
+                setMoveDialogOpen(true)
+              }}
+              type="button"
+              variant="outline"
+            >
+              <FolderInputIcon data-icon="inline-start" />
+              Move to…
+            </Button>
             <Button
               disabled={deleteMutation.isPending}
               onClick={() => {
@@ -216,6 +257,12 @@ function FileDetailDialog({
         </DialogContent>
       </Dialog>
       <RenameFileDialog file={renameDialogOpen ? file : null} onOpenChange={setRenameDialogOpen} />
+      <MoveFilesDialog
+        fileIds={[file.id]}
+        folders={folders}
+        open={moveDialogOpen}
+        onOpenChange={setMoveDialogOpen}
+      />
       <ConfirmDialog
         confirmIcon={<Trash2Icon data-icon="inline-start" />}
         confirmLabel="Delete File"
@@ -386,12 +433,16 @@ function SignedMediaPreview({ file }: { file: WorkspaceFile }) {
   }
 
   return (
-    <iframe
-      className="h-96 w-full rounded-lg border"
-      sandbox=""
-      src={previewUrl}
-      title={file.name}
-    />
+    <object
+      aria-label={`Preview of ${file.name}`}
+      className="block h-96 max-w-full min-w-0 rounded-lg border"
+      data={previewUrl}
+      type="application/pdf"
+    >
+      <p className="text-muted-foreground p-4 text-sm">
+        PDF preview isn&apos;t available — use Open or Download.
+      </p>
+    </object>
   )
 }
 

@@ -2,11 +2,13 @@
 
 """List workspace files."""
 
+from uuid import UUID
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
-from models.files import File
+from models.files import File, FileFolder
 from models.workspace import Workspace
 from services.files.contract import FileCategory
 from services.files.domain import FileListResponse
@@ -32,6 +34,8 @@ async def list_files(
     sort_direction: str = "desc",
     limit: int = 50,
     offset: int = 0,
+    folder_id: UUID | None = None,
+    root_only: bool = False,
 ) -> FileListResponse:
     """List non-deleted files in a workspace."""
     stmt = select(File).where(File.workspace_id == workspace.id, File.deleted.is_(False))
@@ -43,6 +47,14 @@ async def list_files(
             File.deleted.is_(False),
         )
     )
+    if folder_id is not None and root_only:
+        raise AppValidationError("folder_id and root_only cannot be combined", field="folder_id")
+    if folder_id is not None:
+        stmt = stmt.where(File.folder_id == folder_id)
+        count_stmt = count_stmt.where(File.folder_id == folder_id)
+    elif root_only:
+        stmt = stmt.where(File.folder_id.is_(None))
+        count_stmt = count_stmt.where(File.folder_id.is_(None))
     if category is not None:
         try:
             normalized_category = FileCategory(category).value
@@ -64,6 +76,22 @@ async def list_files(
 
     order = sort_column.asc() if sort_direction == "asc" else sort_column.desc()
     id_order = File.id.asc() if sort_direction == "asc" else File.id.desc()
-    files = (await db.scalars(stmt.order_by(order, id_order).limit(limit).offset(offset))).all()
+    rows = (
+        await db.execute(
+            stmt.add_columns(FileFolder.name)
+            .outerjoin(
+                FileFolder,
+                (FileFolder.id == File.folder_id)
+                & (FileFolder.workspace_id == workspace.id)
+                & FileFolder.deleted.is_(False),
+            )
+            .order_by(order, id_order)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
     total = await db.scalar(count_stmt)
-    return FileListResponse(files=[file_to_read(file) for file in files], total=int(total or 0))
+    return FileListResponse(
+        files=[file_to_read(file, folder_name=folder_name) for file, folder_name in rows],
+        total=int(total or 0),
+    )

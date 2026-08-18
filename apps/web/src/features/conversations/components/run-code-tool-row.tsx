@@ -46,6 +46,8 @@ export function RunCodeToolRow({
   ]
     .filter((value): value is string => value !== null)
     .join(" · ")
+  const savedFolder =
+    result.outputs.find((output) => output.kind === "file" && output.folder)?.folder ?? null
   return (
     <ToolResultCard
       ariaLabel="Script result"
@@ -68,6 +70,17 @@ export function RunCodeToolRow({
     >
       <div className="grid min-w-0 gap-4">
         <ConversationMarkdownContent content={result.result} />
+        {savedFolder ? (
+          <p className="text-muted-foreground text-sm">
+            Saved to folder{" "}
+            <a
+              className="text-foreground font-medium underline-offset-4 hover:underline"
+              href={`/files?folder=${savedFolder.id}`}
+            >
+              {savedFolder.name}
+            </a>
+          </p>
+        ) : null}
         {result.outputs.length > 0 ? (
           <div className="divide-border border-border divide-y rounded-lg border px-2">
             {result.outputs.map((output) =>

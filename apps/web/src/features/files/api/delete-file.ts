@@ -24,7 +24,10 @@ export function useDeleteFileMutation() {
       queryClient.removeQueries({ queryKey: filesQueryKeys.detail(fileId) })
       queryClient.removeQueries({ queryKey: filesQueryKeys.revisions(fileId) })
       queryClient.removeQueries({ queryKey: filesQueryKeys.revisionContents(fileId) })
-      await queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: filesQueryKeys.folders() }),
+      ])
     },
   })
 }

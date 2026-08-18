@@ -302,6 +302,7 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {
         "name",
         "file_id",
+        "folder",
         "content",
     }
     write_file_fields = {field["key"]: field for field in write_file_entry["ui"]["arg_fields"]}

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.settings import settings
 from models.audit_event import AuditEvent
-from models.files import File, FileRevision
+from models.files import File, FileReference, FileRevision
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.tools.native import image_generation as image_generation_tools
@@ -193,6 +193,13 @@ async def test_generate_image_auto_policy_persists_workspace_scoped_file(
         )
         assert audit is not None
         assert audit.details["source"] == "native_image_generation"
+        assert await db.scalar(
+            select(FileReference.id).where(
+                FileReference.file_id == file.id,
+                FileReference.target_type == "conversation",
+                FileReference.target_id == context.conversation_id,
+            )
+        )
 
 
 async def test_generate_image_is_hidden_without_google_or_openai(

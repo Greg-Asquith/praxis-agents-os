@@ -15,7 +15,7 @@ from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
-from models.files import File, FileReference
+from models.files import File, FileFolder, FileReference
 from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
@@ -33,6 +33,7 @@ class AvailableFile:
     media_type: str
     size_bytes: int
     processing_status: str
+    folder_name: str | None = None
 
 
 async def load_run_context(
@@ -150,24 +151,26 @@ async def load_available_files(
 ) -> list[AvailableFile]:
     """Load files attached to a conversation for the runtime prompt block."""
     rows = (
-        (
-            await db.execute(
-                select(File)
-                .join(FileReference, FileReference.file_id == File.id)
-                .where(
-                    FileReference.workspace_id == conversation.workspace_id,
-                    FileReference.target_type == "conversation",
-                    FileReference.target_id == conversation.id,
-                    File.workspace_id == conversation.workspace_id,
-                    File.deleted == False,  # noqa: E712
-                )
-                .order_by(FileReference.created_at.desc(), File.id.desc())
-                .limit(settings.AVAILABLE_FILES_MAX_LISTED)
+        await db.execute(
+            select(File, FileFolder.name)
+            .join(FileReference, FileReference.file_id == File.id)
+            .outerjoin(
+                FileFolder,
+                (FileFolder.id == File.folder_id)
+                & (FileFolder.workspace_id == conversation.workspace_id)
+                & FileFolder.deleted.is_(False),
             )
+            .where(
+                FileReference.workspace_id == conversation.workspace_id,
+                FileReference.target_type == "conversation",
+                FileReference.target_id == conversation.id,
+                File.workspace_id == conversation.workspace_id,
+                File.deleted == False,  # noqa: E712
+            )
+            .order_by(FileReference.created_at.desc(), File.id.desc())
+            .limit(settings.AVAILABLE_FILES_MAX_LISTED)
         )
-        .scalars()
-        .all()
-    )
+    ).all()
     return [
         AvailableFile(
             id=file.id,
@@ -176,8 +179,9 @@ async def load_available_files(
             media_type=file.content_type,
             size_bytes=file.size_bytes,
             processing_status=file.processing_status,
+            folder_name=folder_name,
         )
-        for file in rows
+        for file, folder_name in rows
     ]
 
 

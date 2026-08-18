@@ -88,7 +88,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 workspace={workspace}
                 workspaces={workspaces}
               />
-              <AppBreadcrumbs conversations={conversationsData.conversations} pathname={pathname} />
+              <AppBreadcrumbs
+                conversations={conversationsData.conversations}
+                pathname={pathname}
+                search={location.search}
+              />
             </div>
             <div className="hidden shrink-0 md:block">
               <WorkspaceSwitcher

@@ -37,7 +37,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import Conversation
-from models.files import File, FileRevision
+from models.files import File, FileFolder, FileReference as FileReferenceRow, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
@@ -264,6 +264,7 @@ async def test_durable_write_requires_approval_and_records_agent_revision(
         _run_context(db_session, context, approved=True),
         name="report",
         content="approved content",
+        folder="Reports",
     )
 
     revision = await db_session.get(FileRevision, output.revision_id)
@@ -272,8 +273,69 @@ async def test_durable_write_requires_approval_and_records_agent_revision(
     assert revision.created_by_agent_id == context.agent.id
     assert revision.created_by_user_id is None
     assert revision.created_by_system is False
+    file = await db_session.get(File, output.file_id)
+    folder = await db_session.get(FileFolder, file.folder_id if file is not None else None)
+    assert folder is not None
+    assert folder.name == "Reports"
     stored = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
     assert stored == b"approved content"
+    assert await db_session.scalar(
+        select(FileReferenceRow.id).where(
+            FileReferenceRow.file_id == output.file_id,
+            FileReferenceRow.target_type == "conversation",
+            FileReferenceRow.target_id == context.conversation.id,
+        )
+    )
+
+    edited = await write_file(
+        _run_context(db_session, context, approved=True),
+        name=output.name,
+        content="updated content",
+        file_id=FileReference(entity_id=output.file_id, label=output.name),
+        expected_current_revision_id=output.revision_id,
+        folder="Ignored on edit",
+    )
+    await db_session.refresh(file)
+    assert edited.file_id == output.file_id
+    assert file.folder_id == folder.id
+    assert (
+        await db_session.scalar(select(FileFolder.id).where(FileFolder.name == "Ignored on edit"))
+        is None
+    )
+
+
+async def test_rejected_write_file_does_not_persist_its_requested_folder(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+
+    with pytest.raises(ModelRetry, match="editable text filenames only"):
+        await write_file(
+            _run_context(db_session, context, approved=True),
+            name="unsupported.pdf",
+            content="not a supported agent-authored file",
+            folder="Should Not Exist",
+        )
+
+    assert (
+        await db_session.scalar(
+            select(FileFolder.id).where(
+                FileFolder.workspace_id == context.workspace.id,
+                FileFolder.name == "Should Not Exist",
+            )
+        )
+        is None
+    )
+    assert (
+        await db_session.scalar(
+            select(AuditEvent.id).where(
+                AuditEvent.workspace_id == context.workspace.id,
+                AuditEvent.resource_type == "file_folder",
+            )
+        )
+        is None
+    )
 
 
 async def test_generated_png_uses_file_limits_revision_provenance_audit_and_preview(
@@ -292,6 +354,8 @@ async def test_generated_png_uses_file_limits_revision_provenance_audit_and_prev
         prompt="A small red square",
         content=png,
         media_type="image/png",
+        conversation_id=context.conversation.id,
+        requested_by_user_id=context.user.id,
     )
 
     file = await db_session.get(File, result.file_id)
@@ -315,6 +379,13 @@ async def test_generated_png_uses_file_limits_revision_provenance_audit_and_prev
     assert audit is not None
     assert audit.actor_type == "agent"
     assert audit.details["source"] == "native_image_generation"
+    assert await db_session.scalar(
+        select(FileReferenceRow.id).where(
+            FileReferenceRow.file_id == result.file_id,
+            FileReferenceRow.target_type == "conversation",
+            FileReferenceRow.target_id == context.conversation.id,
+        )
+    )
     preview = await create_file_preview(
         db_session,
         workspace=context.workspace,

@@ -180,6 +180,8 @@ async def generate_image_from_video(
             source="native_video_to_image",
             input_file_ids=(input_media.file_id,),
             input_revision_ids=(input_media.revision_id,),
+            conversation_id=ctx.deps.conversation.id,
+            requested_by_user_id=ctx.deps.user.id,
         )
     except AppValidationError as exc:
         raise ModelRetry(exc.message) from exc

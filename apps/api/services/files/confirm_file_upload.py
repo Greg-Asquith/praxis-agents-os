@@ -23,7 +23,9 @@ from services.files.domain import FileConfirmRequest, FileRead
 from services.files.utils import (
     best_effort_delete_file_object,
     file_to_read,
+    get_file_folder_name,
     get_file_for_workspace,
+    get_folder_for_workspace,
     require_file_write_access,
     revision_object_key,
     set_processing_state_for_revision,
@@ -54,7 +56,6 @@ async def confirm_file_upload(
     ref = token_ref(token_payload)
     if ref.bucket != StorageBucket.PRIVATE:
         raise AppValidationError("Upload token is not valid for this file", field="upload_token")
-
     file_upload = await db.scalar(
         select(FileUpload)
         .where(
@@ -73,7 +74,10 @@ async def confirm_file_upload(
             file_id=file_upload.file_id,
         )
         await best_effort_delete_file_object(ref.key)
-        return file_to_read(file)
+        return file_to_read(
+            file,
+            folder_name=await get_file_folder_name(db, workspace=workspace, file=file),
+        )
     if file_upload.expires_at < datetime.now(UTC):
         raise AppValidationError("File upload has expired", field="upload_token")
 
@@ -105,6 +109,13 @@ async def confirm_file_upload(
             conflicting_resource="file",
             details={"file_id": str(existing_file.id)},
         )
+    if is_new_file and payload.folder_id is not None:
+        await get_folder_for_workspace(
+            db,
+            workspace=workspace,
+            folder_id=payload.folder_id,
+            for_update=True,
+        )
 
     provider = get_storage_provider()
     allowed_types = {entry.content_type for entry in FILE_CONTRACT}
@@ -131,7 +142,14 @@ async def confirm_file_upload(
             file_upload.consumed_at = datetime.now(UTC)
             await best_effort_delete_file_object(ref.key, provider=provider)
             await db.flush()
-            return file_to_read(existing_file)
+            return file_to_read(
+                existing_file,
+                folder_name=await get_file_folder_name(
+                    db,
+                    workspace=workspace,
+                    file=existing_file,
+                ),
+            )
 
         stored, promoted = await promote_object_or_get_existing(
             provider,
@@ -165,6 +183,7 @@ async def confirm_file_upload(
             id=file_upload.file_id,
             workspace_id=workspace.id,
             name=file_upload.filename,
+            folder_id=payload.folder_id,
             category=entry.category.value,
             content_type=entry.content_type,
             extension=uploaded_extension,
@@ -234,4 +253,7 @@ async def confirm_file_upload(
         },
     )
     await db.refresh(file)
-    return file_to_read(file)
+    return file_to_read(
+        file,
+        folder_name=await get_file_folder_name(db, workspace=workspace, file=file),
+    )

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import NotFoundError
-from models.files import File, FileRevision
+from models.files import File, FileFolder, FileRevision
 from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead
 from services.storage.domain import StorageBucket, make_storage_object_ref
@@ -21,6 +21,18 @@ from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
 from utils.digests import sha256_hex as sha256_hex, sha256_hex_stream as sha256_hex_stream
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_required_text(value: str, *, field: str = "name", max_length: int = 255) -> str:
+    """Trim required labels and enforce their persisted length."""
+    from core.exceptions.general import AppValidationError
+
+    normalized = value.strip()
+    if not normalized:
+        raise AppValidationError("Value cannot be blank", field=field)
+    if len(normalized) > max_length:
+        raise AppValidationError(f"Value cannot exceed {max_length} characters", field=field)
+    return normalized
 
 
 def normalize_extension(extension: str) -> str:
@@ -110,6 +122,33 @@ async def get_file_for_workspace(
     return file
 
 
+async def get_folder_for_workspace(
+    db: AsyncSession,
+    *,
+    workspace: Workspace,
+    folder_id: UUID,
+    include_deleted: bool = False,
+    for_update: bool = False,
+) -> FileFolder:
+    """Fetch one workspace folder, or raise NotFoundError."""
+    stmt = select(FileFolder).where(
+        FileFolder.id == folder_id,
+        FileFolder.workspace_id == workspace.id,
+    )
+    if not include_deleted:
+        stmt = stmt.where(FileFolder.deleted.is_(False))
+    if for_update:
+        stmt = stmt.with_for_update()
+    folder = await db.scalar(stmt)
+    if folder is None:
+        raise NotFoundError(
+            "File folder not found",
+            resource_type="file_folder",
+            resource_id=str(folder_id),
+        )
+    return folder
+
+
 def private_ref_from_key(object_key: str):
     """Return a private storage ref for a workspace file object key."""
     return make_storage_object_ref(StorageBucket.PRIVATE, object_key)
@@ -174,7 +213,25 @@ async def set_processing_state_for_revision(
     )
 
 
-def file_to_read(file: File) -> FileRead:
+async def get_file_folder_name(
+    db: AsyncSession,
+    *,
+    workspace: Workspace,
+    file: File,
+) -> str | None:
+    """Resolve the current live folder name for a file response."""
+    if file.folder_id is None:
+        return None
+    return (
+        await get_folder_for_workspace(
+            db,
+            workspace=workspace,
+            folder_id=file.folder_id,
+        )
+    ).name
+
+
+def file_to_read(file: File, *, folder_name: str | None) -> FileRead:
     """Serialize a file model for API responses."""
     if file.current_revision_id is None:
         raise RuntimeError("Workspace file has no current revision")
@@ -183,6 +240,8 @@ def file_to_read(file: File) -> FileRead:
         workspace_id=file.workspace_id,
         name=file.name,
         description=file.description,
+        folder_id=file.folder_id,
+        folder_name=folder_name,
         category=file.category,
         content_type=file.content_type,
         extension=file.extension,

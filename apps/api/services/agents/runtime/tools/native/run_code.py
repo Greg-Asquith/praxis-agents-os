@@ -28,7 +28,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.native_tools import CodeExecutionTool
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from core.exceptions.general import ConflictError
 from core.settings import settings
 from models.agent import Agent as AgentModel
 from services.agents.models import build_model, resolve_agent_model
@@ -144,7 +143,8 @@ _REGISTERED_PROVIDER_LIST = _format_provider_list(_REGISTERED_PROVIDERS)
         "Do heavy computation or create new spreadsheets, presentations, documents, charts, "
         "and other files in an isolated provider sandbox. Anthropic and OpenAI can inspect and "
         "edit selected workspace documents directly; Google receives bounded text or derived "
-        "Markdown for read-only computation. Available providers: " + _REGISTERED_PROVIDER_CSV + "."
+        "Markdown for read-only computation. New files are grouped in this conversation's folder "
+        "unless you name another folder. Available providers: " + _REGISTERED_PROVIDER_CSV + "."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -163,7 +163,11 @@ _REGISTERED_PROVIDER_LIST = _format_provider_list(_REGISTERED_PROVIDERS)
         completed_label="Script completed",
         failed_label="Couldn't run script",
         approval_title="Run script",
-        approval_prompt="The agent wants to run a script with your data or create files in an isolated sandbox.",
+        approval_prompt=(
+            "The agent wants to run a script with your data or create files in an isolated "
+            "sandbox. Created files are saved together in this conversation's folder unless "
+            "an output folder is named."
+        ),
         approve_label="Approve & Run",
         arg_fields=(
             ToolFieldPresentation(key="task", label="Task", editable=True, format="multiline"),
@@ -173,6 +177,12 @@ _REGISTERED_PROVIDER_LIST = _format_provider_list(_REGISTERED_PROVIDERS)
                 editable=True,
                 format="entity_list",
                 entity_kind="file",
+                secondary=True,
+            ),
+            ToolFieldPresentation(
+                key="folder",
+                label="Output Folder",
+                editable=True,
                 secondary=True,
             ),
             ToolFieldPresentation(
@@ -217,6 +227,16 @@ async def run_code(
             )
         ),
     ] = None,
+    folder: Annotated[
+        str | None,
+        Field(
+            max_length=255,
+            description=(
+                "Optional folder name for newly created files. Omit to use this conversation's "
+                "folder. Existing-file edits keep their current folder."
+            ),
+        ),
+    ] = None,
     model_provider: Annotated[
         Annotated[str, Field(json_schema_extra={"enum": list(_REGISTERED_PROVIDERS)})] | None,
         Field(
@@ -254,20 +274,16 @@ async def run_code(
         edit_target=edit_target,
         tool_call_id=ctx.tool_call_id,
     )
-    try:
-        stored_outputs, persistence_skips = await persist_sandbox_outputs(
-            ctx.deps,
-            task=normalized_task,
-            captured=captured,
-            input_file_ids=[item.file_id for item in inputs],
-            input_revision_ids=[item.revision_id for item in inputs],
-            edit_target=edit_target,
-        )
-    except ConflictError as exc:
-        raise ToolFailed(
-            "The selected file changed while the sandbox was editing it. Run the edit again "
-            "against the latest revision."
-        ) from exc
+    normalized_folder = normalize_optional_text(folder)
+    stored_outputs, persistence_skips = await persist_sandbox_outputs(
+        ctx.deps,
+        task=normalized_task,
+        captured=captured,
+        input_file_ids=[item.file_id for item in inputs],
+        input_revision_ids=[item.revision_id for item in inputs],
+        edit_target=edit_target,
+        **({"folder": normalized_folder} if normalized_folder is not None else {}),
+    )
     durable_answer = rewrite_sandbox_links(answer, stored_outputs)
     bounded_answer = truncate_run_code_output(durable_answer)
     result: str | UntrustedContent = bounded_answer

@@ -14,7 +14,10 @@ export function shouldRedirectHomeForWorkspaceSwitch(
   pathname: string,
   search: Record<string, unknown> = {}
 ) {
-  if (pathname === "/files" && typeof search["fileId"] === "string") {
+  if (
+    pathname === "/files" &&
+    (typeof search["fileId"] === "string" || typeof search["folder"] === "string")
+  ) {
     return true
   }
 

@@ -119,8 +119,12 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   infer effects from proposed arguments or a model-authored reason.
 - Provider-native `run_code` remains distinct from Code Mode: its settled row
   presents the bounded computation result and retained generated Files or
-  artifacts, while pending approvals continue through the shared declarative
-  approval surface.
+  artifacts, links the shared output folder when one exists, and keeps pending
+  approvals on the shared declarative approval surface. The Files page keeps
+  folder scope in the `folder` search parameter; folder-scoped paging, sorting,
+  file detail deep links, uploads, and single/bulk moves must preserve that
+  scope. Table selection is local to the current folder and page and clears
+  after a successful move.
 - Conversation Markdown treats `/files?fileId=<uuid>` as an authenticated
   download action: clicking it mints a fresh signed URL through the Files API.
   Other internal and external Markdown links retain their normal behavior.

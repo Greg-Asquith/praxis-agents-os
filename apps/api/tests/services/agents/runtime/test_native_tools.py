@@ -2,6 +2,7 @@
 
 """Tests for provider-native runtime tool catalog entries."""
 
+import asyncio
 import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.conversation import Conversation, ConversationMessage
-from models.files import FileRevision
+from models.files import FileFolder, FileReference as FileReferenceRow, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
@@ -1062,9 +1063,64 @@ def test_run_code_catalog_contract() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_code_treats_folder_deleted_after_resolution_as_output_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder_resolved = asyncio.Event()
+    deletion_committed = asyncio.Event()
+    folder = SimpleNamespace(id=uuid4())
+
+    async def resolve_before_delete(*_args, **_kwargs):
+        folder_resolved.set()
+        return folder
+
+    async def lock_after_delete(*_args, **_kwargs):
+        await deletion_committed.wait()
+        raise run_code_output_tools.NotFoundError(
+            "File folder not found",
+            resource_type="file_folder",
+        )
+
+    monkeypatch.setattr(run_code_output_tools, "resolve_folder_by_name", resolve_before_delete)
+    monkeypatch.setattr(run_code_output_tools, "get_folder_for_workspace", lock_after_delete)
+    persist_task = asyncio.create_task(
+        run_code_tools.persist_sandbox_outputs(
+            cast(
+                RuntimeDeps,
+                SimpleNamespace(agent=None, db=None, user=None, workspace=None),
+            ),
+            task="Persist completed output",
+            captured=(
+                run_code_tools.CapturedSandboxFile(
+                    name="completed.xlsx",
+                    content=b"synthetic-xlsx-bytes",
+                    media_type=(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ),
+                ),
+            ),
+            input_file_ids=[],
+            input_revision_ids=[],
+            folder="Exports",
+        )
+    )
+    await folder_resolved.wait()
+    assert not persist_task.done()
+    deletion_committed.set()
+
+    stored, skipped = await persist_task
+
+    assert stored == []
+    assert skipped == [
+        "completed.xlsx: Output folder was deleted while the sandbox output was being saved"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
     db_session: AsyncSession,
     local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = build_user(email=f"run-code-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"run-code-{uuid4().hex[:8]}")
@@ -1133,6 +1189,101 @@ async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
             )
         ],
     )
+    artifact_only, artifact_skips = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Write notes",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="notes.md",
+                content=b"# Notes\n",
+                media_type="text/markdown",
+            ),
+        ),
+        input_file_ids=[],
+        input_revision_ids=[],
+    )
+    assert artifact_skips == []
+    assert artifact_only[0].kind == "artifact"
+    assert artifact_only[0].folder is None
+    assert (
+        await db_session.scalar(
+            select(FileFolder.id).where(FileFolder.workspace_id == workspace.id)
+        )
+        is None
+    )
+
+    rejected, rejected_skips = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Reject unsupported output",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="unsupported.bin",
+                content=b"not a supported workspace file",
+                media_type="application/octet-stream",
+            ),
+        ),
+        input_file_ids=[],
+        input_revision_ids=[],
+    )
+    assert rejected == []
+    assert rejected_skips == ["unsupported.bin: Unsupported file type"]
+    assert (
+        await db_session.scalar(
+            select(FileFolder.id).where(FileFolder.workspace_id == workspace.id)
+        )
+        is None
+    )
+
+    original_ensure_folder = run_code_output_tools.ensure_conversation_folder
+
+    async def fail_folder_resolution(_runtime_deps):
+        raise run_code_output_tools.ConflictError(
+            "Could not create the conversation output folder",
+            conflicting_resource="file_folder",
+        )
+
+    monkeypatch.setattr(
+        run_code_output_tools,
+        "ensure_conversation_folder",
+        fail_folder_resolution,
+    )
+    conflicted, conflict_skips = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Exercise a folder conflict",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="conflicted.xlsx",
+                content=b"synthetic-xlsx-bytes",
+                media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
+        ),
+        input_file_ids=[],
+        input_revision_ids=[],
+    )
+    assert conflicted == []
+    assert conflict_skips == ["conflicted.xlsx: Could not create the conversation output folder"]
+
+    folder_resolutions = 0
+    folder_locks = 0
+    original_get_folder = run_code_output_tools.get_folder_for_workspace
+
+    async def counted_ensure_folder(runtime_deps):
+        nonlocal folder_resolutions
+        folder_resolutions += 1
+        return await original_ensure_folder(runtime_deps)
+
+    async def counted_get_folder(*args, **kwargs):
+        nonlocal folder_locks
+        folder_locks += 1
+        return await original_get_folder(*args, **kwargs)
+
+    monkeypatch.setattr(
+        run_code_output_tools,
+        "ensure_conversation_folder",
+        counted_ensure_folder,
+    )
+    monkeypatch.setattr(run_code_output_tools, "get_folder_for_workspace", counted_get_folder)
+
     outputs, skipped = await run_code_tools.persist_sandbox_outputs(
         deps,
         task="Build outputs",
@@ -1147,6 +1298,13 @@ async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
                 content=b"synthetic-xlsx-bytes",
                 media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             ),
+            run_code_tools.CapturedSandboxFile(
+                name="summary.docx",
+                content=b"synthetic-docx-bytes",
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ),
+            ),
         ),
         input_file_ids=[inputs[0].file_id],
         input_revision_ids=[inputs[0].revision_id],
@@ -1154,8 +1312,73 @@ async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
     )
 
     assert inputs[0].content == b"campaign,amount\nSummer,42\n"
-    assert [output.kind for output in outputs] == ["artifact", "file"]
+    assert [output.kind for output in outputs] == ["artifact", "file", "file"]
     assert skipped == []
+    generated = outputs[1]
+    assert outputs[2].folder == generated.folder
+    assert folder_resolutions == 1
+    assert folder_locks == 1
+    assert generated.folder is not None
+    folder = await db_session.get(FileFolder, generated.folder.id)
+    assert folder is not None
+    assert folder.source_conversation_id == conversation.id
+    assert folder.created_by_agent_id == agent.id
+    assert await db_session.scalar(
+        select(FileReferenceRow.id).where(
+            FileReferenceRow.file_id == generated.reference.entity_id,
+            FileReferenceRow.target_type == "conversation",
+            FileReferenceRow.target_id == conversation.id,
+        )
+    )
+
+    reused, reuse_skips = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Build another output",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="follow-up.xlsx",
+                content=b"follow-up-xlsx",
+                media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
+        ),
+        input_file_ids=[],
+        input_revision_ids=[],
+    )
+    assert reuse_skips == []
+    assert reused[0].folder == generated.folder
+
+    explicit, explicit_skips = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Build exports",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="export.xlsx",
+                content=b"export-xlsx",
+                media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
+        ),
+        input_file_ids=[],
+        input_revision_ids=[],
+        folder="Exports",
+    )
+    assert explicit_skips == []
+    assert explicit[0].folder is not None
+    assert explicit[0].folder.name == "Exports"
+    explicit_reused, _ = await run_code_tools.persist_sandbox_outputs(
+        deps,
+        task="Build more exports",
+        captured=(
+            run_code_tools.CapturedSandboxFile(
+                name="export-2.xlsx",
+                content=b"export-xlsx-2",
+                media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
+        ),
+        input_file_ids=[],
+        input_revision_ids=[],
+        folder="Exports",
+    )
+    assert explicit_reused[0].folder == explicit[0].folder
 
     edit_target = run_code_tools.resolve_run_code_edit_target(
         inputs,
@@ -1197,7 +1420,7 @@ async def test_run_code_text_input_and_generated_outputs_use_governed_seams(
     assert edit_audit is not None
     assert edit_audit.details["revision_id"] == str(edited_revision.id)
 
-    with pytest.raises(run_code_tools.ConflictError, match="File has changed"):
+    with pytest.raises(run_code_tools.ToolFailed, match="selected file changed"):
         await run_code_tools.persist_sandbox_outputs(
             deps,
             task="Apply a stale edit",

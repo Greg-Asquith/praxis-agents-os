@@ -11,6 +11,7 @@ import { integrationProvidersQueryOptions } from "@/features/integrations/api/li
 import { getSchedule } from "@/features/schedules/api/get-schedule"
 import { schedulesQueryKeys } from "@/features/schedules/api/list-schedules"
 import { scheduleTitle } from "@/features/schedules/format"
+import { foldersQueryOptions } from "@/features/files/api/list-folders"
 import { titleFromSegment } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -20,6 +21,7 @@ type BreadcrumbRoute =
   | "/artifacts"
   | "/conversations"
   | "/context"
+  | "/files"
   | "/integrations"
   | "/knowledge"
   | "/schedules"
@@ -36,12 +38,13 @@ type BreadcrumbItem = {
 type AppBreadcrumbsProps = {
   conversations: Conversation[]
   pathname: string
+  search?: unknown
 }
 
 const DISABLED_AGENT_BREADCRUMB_QUERY_KEY = ["agents", "breadcrumb", "disabled"] as const
 const DISABLED_SCHEDULE_BREADCRUMB_QUERY_KEY = ["schedules", "breadcrumb", "disabled"] as const
 
-export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps) {
+export function AppBreadcrumbs({ conversations, pathname, search }: AppBreadcrumbsProps) {
   const agentId = getEntityId(pathname, "agents")
   const agentQuery = useQuery({
     ...agentBreadcrumbQueryOptions(agentId),
@@ -57,6 +60,11 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
     ...integrationProvidersQueryOptions(),
     enabled: integrationProviderKey !== null,
   })
+  const folderId = pathname === "/files" ? folderIdFromSearch(search) : null
+  const foldersQuery = useQuery({
+    ...foldersQueryOptions(),
+    enabled: folderId !== null,
+  })
 
   const conversationId = getEntityId(pathname, "conversations")
   const conversation = conversationId
@@ -65,6 +73,8 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
   const breadcrumbs = getBreadcrumbs({
     agentName: agentQuery.data?.name ?? null,
     conversationTitle: conversation ? (conversation.title ?? "Untitled conversation") : null,
+    fileFolderName:
+      foldersQuery.data?.folders.find((folder) => folder.id === folderId)?.name ?? null,
     integrationProviderName:
       integrationProvidersQuery.data?.find(
         (provider) => provider.provider_key === integrationProviderKey
@@ -120,12 +130,14 @@ export function AppBreadcrumbs({ conversations, pathname }: AppBreadcrumbsProps)
 function getBreadcrumbs({
   agentName,
   conversationTitle,
+  fileFolderName,
   integrationProviderName,
   pathname,
   scheduleName,
 }: {
   agentName: string | null
   conversationTitle: string | null
+  fileFolderName: string | null
   integrationProviderName: string | null
   pathname: string
   scheduleName: string | null
@@ -215,10 +227,16 @@ function getBreadcrumbs({
   }
 
   if (section === "files") {
-    return [
-      { key: "context", label: "Context", to: "/context" },
-      { key: "files", label: "Files" },
-    ]
+    return fileFolderName
+      ? [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "files", label: "Files", to: "/files" },
+          { key: "files-folder", label: fileFolderName },
+        ]
+      : [
+          { key: "context", label: "Context", to: "/context" },
+          { key: "files", label: "Files" },
+        ]
   }
 
   if (section === "artifacts") {
@@ -285,6 +303,12 @@ function getBreadcrumbs({
     { key: "home", label: "Home", to: "/" },
     { key: `route-${section}`, label: titleFromSegment(section) },
   ]
+}
+
+function folderIdFromSearch(search: unknown): string | null {
+  if (!search || typeof search !== "object" || !("folder" in search)) return null
+  const folder = search.folder
+  return typeof folder === "string" && folder.length > 0 ? folder : null
 }
 
 function agentBreadcrumbQueryOptions(agentId: string | null) {

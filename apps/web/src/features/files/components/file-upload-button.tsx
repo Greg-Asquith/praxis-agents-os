@@ -11,7 +11,7 @@ import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { contentTypeForWorkspaceFile, workspaceFileAcceptValue } from "@/lib/file"
 
-export function FileUploadButton() {
+export function FileUploadButton({ folderId = null }: { folderId?: string | null }) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement | null>(null)
   const requestUploadMutation = useRequestFileUploadMutation()
@@ -34,6 +34,7 @@ export function FileUploadButton() {
           content_type: contentTypeForWorkspaceFile(file),
           filename: file.name,
           size_bytes: file.size,
+          ...(folderId ? { allow_duplicate_content: true } : {}),
         })
         if (result.file) {
           uploadedNames.push(result.file.name)
@@ -46,6 +47,7 @@ export function FileUploadButton() {
         await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes)
         const confirmed = await confirmUploadMutation.mutateAsync({
           uploadToken: result.grant.upload_token,
+          folderId,
         })
         uploadedNames.push(confirmed.name)
       }

@@ -236,7 +236,8 @@ def _render_available_files(files: Sequence[AvailableFile]) -> str:
         "",
     ]
     lines.extend(
-        f"- {file.id} - {file.name} "
+        f"- {file.id} - {file.name}"
+        f"{f' [folder: {file.folder_name}]' if file.folder_name else ''} "
         f"({file.category}, {file.media_type}, {file.size_bytes} bytes, {file.processing_status})"
         for file in files
     )

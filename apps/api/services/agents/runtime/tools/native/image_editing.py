@@ -210,6 +210,8 @@ async def edit_image(
             source="native_image_editing",
             input_file_ids=tuple(item.file_id for item in input_media),
             input_revision_ids=tuple(item.revision_id for item in input_media),
+            conversation_id=ctx.deps.conversation.id,
+            requested_by_user_id=ctx.deps.user.id,
         )
     except AppValidationError as exc:
         raise ModelRetry(exc.message) from exc

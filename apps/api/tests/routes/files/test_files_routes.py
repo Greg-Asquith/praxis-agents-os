@@ -2,18 +2,20 @@
 
 from collections.abc import Iterator
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx2 import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
 from core.settings import settings
 from models.audit_event import AuditEvent
+from models.files import File, FileFolder
 from models.workspace import WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
+from services.files import delete_folder as delete_folder_service
 from tests.factories import build_user, build_workspace, build_workspace_membership
 from tests.support.auth import bearer_headers
 from tests.support.storage import reset_storage_provider_cache
@@ -65,6 +67,7 @@ async def _upload_and_confirm_file(
     filename: str = "notes.txt",
     content_type: str = "text/plain",
     content: bytes = b"hello",
+    folder_id: str | None = None,
 ) -> dict[str, object]:
     upload_response = await client.post(
         "/api/v1/files/uploads",
@@ -86,10 +89,204 @@ async def _upload_and_confirm_file(
     confirm_response = await client.post(
         "/api/v1/files/uploads/confirm",
         headers=headers,
-        json={"upload_token": grant["upload_token"]},
+        json={"upload_token": grant["upload_token"], "folder_id": folder_id},
     )
     assert confirm_response.status_code == 200
     return confirm_response.json()
+
+
+async def test_file_folder_routes_scope_move_upload_and_delete_contents(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+    created = await db_async_client.post(
+        "/api/v1/files/folders",
+        headers=headers,
+        json={"name": " Campaign Outputs ", "description": "Working files"},
+    )
+    assert created.status_code == 200
+    folder = created.json()
+    assert folder["name"] == "Campaign Outputs"
+
+    collision = await db_async_client.post(
+        "/api/v1/files/folders",
+        headers=headers,
+        json={"name": "campaign outputs"},
+    )
+    assert collision.status_code == 200
+    assert collision.json()["name"] == "campaign outputs (2)"
+
+    renamed = await db_async_client.patch(
+        f"/api/v1/files/folders/{folder['id']}",
+        headers=headers,
+        json={"name": "Campaign Deliverables", "description": "Final working files"},
+    )
+    assert renamed.status_code == 200
+    folder = renamed.json()
+
+    in_folder = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        filename="deck.pptx",
+        content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        content=b"deck",
+        folder_id=folder["id"],
+    )
+    at_root = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        filename="notes.txt",
+    )
+    assert in_folder["folder_id"] == folder["id"]
+    assert in_folder["folder_name"] == "Campaign Deliverables"
+
+    folders_response = await db_async_client.get("/api/v1/files/folders", headers=headers)
+    listed = {item["id"]: item for item in folders_response.json()["folders"]}
+    assert listed[folder["id"]]["file_count"] == 1
+    assert listed[folder["id"]]["total_bytes"] == 4
+    assert listed[folder["id"]]["updated_at"] == in_folder["updated_at"]
+
+    root_response = await db_async_client.get(
+        "/api/v1/files/", headers=headers, params={"root_only": "true"}
+    )
+    assert [item["id"] for item in root_response.json()["files"]] == [at_root["id"]]
+    scoped_response = await db_async_client.get(
+        "/api/v1/files/", headers=headers, params={"folder_id": folder["id"]}
+    )
+    assert [item["id"] for item in scoped_response.json()["files"]] == [in_folder["id"]]
+
+    moved = await db_async_client.post(
+        "/api/v1/files/move",
+        headers=headers,
+        json={"file_ids": [at_root["id"]], "folder_id": folder["id"]},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["files"][0]["folder_name"] == "Campaign Deliverables"
+
+    move_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.resource_type == AuditResourceType.FILE.value,
+            AuditEvent.resource_id == at_root["id"],
+            AuditEvent.action == AuditAction.UPDATE.value,
+            AuditEvent.details["action"].astext == "move",
+        )
+    )
+    assert move_audit is not None
+    assert move_audit.details["to_folder_id"] == folder["id"]
+
+    moved_to_root = await db_async_client.patch(
+        f"/api/v1/files/{at_root['id']}",
+        headers=headers,
+        json={"folder_id": None},
+    )
+    assert moved_to_root.status_code == 200
+    assert moved_to_root.json()["folder_id"] is None
+
+    missing_file_move = await db_async_client.post(
+        "/api/v1/files/move",
+        headers=headers,
+        json={"file_ids": [str(uuid4())], "folder_id": folder["id"]},
+    )
+    assert missing_file_move.status_code == 400
+
+    other_headers = await _authenticated_workspace(db_session)
+    other_folder = await db_async_client.post(
+        "/api/v1/files/folders",
+        headers=other_headers,
+        json={"name": "Other workspace"},
+    )
+    cross_workspace_move = await db_async_client.post(
+        "/api/v1/files/move",
+        headers=headers,
+        json={"file_ids": [at_root["id"]], "folder_id": other_folder.json()["id"]},
+    )
+    assert cross_workspace_move.status_code == 404
+
+    disposable_folder = await db_async_client.post(
+        "/api/v1/files/folders",
+        headers=headers,
+        json={"name": "Disposable"},
+    )
+    disposable_file = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        filename="disposable.txt",
+        folder_id=disposable_folder.json()["id"],
+    )
+    await db_session.execute(
+        delete(FileFolder).where(FileFolder.id == UUID(disposable_folder.json()["id"]))
+    )
+    await db_session.flush()
+    persisted_disposable = await db_session.get(File, UUID(disposable_file["id"]))
+    assert persisted_disposable is not None
+    await db_session.refresh(persisted_disposable)
+    assert persisted_disposable.folder_id is None
+
+    delete_module = __import__(delete_folder_service.__module__, fromlist=["delete_folder"])
+    with monkeypatch.context() as patcher:
+        patcher.setattr(delete_module, "MAX_FOLDER_DELETE_AUDIT_FILE_IDS", 0)
+        delete_response = await db_async_client.delete(
+            f"/api/v1/files/folders/{folder['id']}", headers=headers
+        )
+    assert delete_response.status_code == 204
+    assert (
+        await db_async_client.get(f"/api/v1/files/{in_folder['id']}", headers=headers)
+    ).status_code == 404
+
+    folder_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.resource_type == AuditResourceType.FILE_FOLDER.value,
+            AuditEvent.resource_id == folder["id"],
+            AuditEvent.action == AuditAction.DELETE.value,
+        )
+    )
+    assert folder_audit is not None
+    assert folder_audit.details["file_count"] == 1
+    assert folder_audit.details["file_ids"] == []
+    assert folder_audit.details["file_ids_truncated"] is True
+    rename_audit = await db_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.resource_type == AuditResourceType.FILE_FOLDER.value,
+            AuditEvent.resource_id == folder["id"],
+            AuditEvent.action == AuditAction.UPDATE.value,
+        )
+    )
+    assert rename_audit is not None
+
+
+async def test_folder_delete_rejects_more_than_the_synchronous_limit(
+    db_async_client: AsyncClient,
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await _authenticated_workspace(db_session)
+    folder = await db_async_client.post(
+        "/api/v1/files/folders",
+        headers=headers,
+        json={"name": "Too large"},
+    )
+    file = await _upload_and_confirm_file(
+        db_async_client,
+        headers=headers,
+        folder_id=folder.json()["id"],
+    )
+    delete_module = __import__(delete_folder_service.__module__, fromlist=["delete_folder"])
+    monkeypatch.setattr(delete_module, "MAX_SYNCHRONOUS_FOLDER_DELETE_FILES", 0)
+
+    response = await db_async_client.delete(
+        f"/api/v1/files/folders/{folder.json()['id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["max_file_count"] == 0
+    assert (
+        await db_async_client.get(f"/api/v1/files/{file['id']}", headers=headers)
+    ).status_code == 200
 
 
 async def test_file_routes_list_supports_sorting_and_pagination(

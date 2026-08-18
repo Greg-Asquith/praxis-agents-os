@@ -34,6 +34,48 @@ def _in_sql(column_name: str, values: tuple[str, ...]) -> str:
     return f"{column_name} IN ({', '.join(repr(value) for value in values)})"
 
 
+class FileFolder(BaseModel):
+    """Workspace-scoped, single-level grouping for logical files."""
+
+    __tablename__ = "file_folders"
+
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_by_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
+    source_conversation_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN created_by_user_id IS NOT NULL THEN 1 ELSE 0 END + "
+            "CASE WHEN created_by_agent_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="file_folders_exactly_one_creator_check",
+        ),
+        Index(
+            "uq_file_folders_workspace_name_live",
+            "workspace_id",
+            text("lower(name)"),
+            unique=True,
+            postgresql_where=text("deleted = false"),
+        ),
+        Index(
+            "uq_file_folders_workspace_conversation_live",
+            "workspace_id",
+            "source_conversation_id",
+            unique=True,
+            postgresql_where=text("deleted = false AND source_conversation_id IS NOT NULL"),
+        ),
+        Index("ix_file_folders_source_conversation", "source_conversation_id"),
+    )
+
+
 class File(BaseModel):
     """Workspace-scoped logical file with a current revision pointer."""
 
@@ -44,6 +86,11 @@ class File(BaseModel):
     )
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    folder_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("file_folders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     category = Column(String(32), nullable=False)
     content_type = Column(String(128), nullable=False)
     extension = Column(String(16), nullable=False)
@@ -79,6 +126,13 @@ class File(BaseModel):
             "processing_status",
             postgresql_where=text("deleted = false"),
         ),
+        Index(
+            "ix_files_workspace_folder",
+            "workspace_id",
+            "folder_id",
+            postgresql_where=text("deleted = false"),
+        ),
+        Index("ix_files_folder_id", "folder_id"),
     )
 
 

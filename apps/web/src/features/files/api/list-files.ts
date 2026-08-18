@@ -1,6 +1,6 @@
 // apps/web/src/features/files/api/list-files.ts
 
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
+import { queryOptions } from "@tanstack/react-query"
 
 import type {
   FileContractCategory,
@@ -19,12 +19,15 @@ export type ListFilesParams = {
   search?: string
   sortBy?: FileSortField
   sortDirection?: FileSortDirection
+  folderId?: string
+  rootOnly?: boolean
 }
 
 const baseFilesQueryKeys = createWorkspaceScopedQueryKeys("files")
 
 export const filesQueryKeys = {
   ...baseFilesQueryKeys,
+  folders: () => [...filesQueryKeys.workspace(), "folders"] as const,
   preview: (fileId: string) => [...filesQueryKeys.detail(fileId), "preview"] as const,
   revisionContents: (fileId: string) =>
     [...filesQueryKeys.detail(fileId), "revision-content"] as const,
@@ -40,6 +43,8 @@ async function listFiles({
   search,
   sortBy = "updated_at",
   sortDirection = "desc",
+  folderId,
+  rootOnly,
 }: ListFilesParams = {}) {
   return apiRequest<FileListResponse>("/files/", {
     query: {
@@ -49,11 +54,13 @@ async function listFiles({
       search,
       sort_by: sortBy,
       sort_direction: sortDirection,
+      folder_id: folderId,
+      root_only: rootOnly,
     },
   })
 }
 
-function filesQueryOptions(params: ListFilesParams = {}) {
+export function filesQueryOptions(params: ListFilesParams = {}) {
   return queryOptions({
     queryKey: filesQueryKeys.list(params),
     queryFn: () => listFiles(params),
@@ -63,10 +70,6 @@ function filesQueryOptions(params: ListFilesParams = {}) {
       return data?.files.some((file) => isInFlightStatus(file.processing_status)) ? 4_000 : false
     },
   })
-}
-
-export function useFilesQuery(params: ListFilesParams = {}) {
-  return useSuspenseQuery(filesQueryOptions(params))
 }
 
 function isInFlightStatus(status: FileProcessingStatus) {

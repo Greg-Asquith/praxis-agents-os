@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.asset_upload import AssetUpload
-from models.files import File, FileRevision, FileUpload
+from models.files import File, FileFolder, FileRevision, FileUpload
 from models.jobs import Job
 from services.assets.domain import AssetKind
 from services.files.utils import best_effort_delete_file_object, distinct_object_keys
@@ -29,6 +29,7 @@ async def sweep_deleted_files(db: AsyncSession, job: Job) -> None:
     """Hard-delete expired file tombstones and stale upload grants."""
     now = datetime.now(UTC)
     await _purge_expired_deleted_files(db, now=now)
+    await _purge_expired_deleted_folders(db, now=now)
     await _purge_expired_uploads(db, now=now)
     await _purge_expired_asset_uploads(db, now=now)
 
@@ -95,6 +96,31 @@ async def _purge_expired_deleted_files(db: AsyncSession, *, now: datetime) -> No
         for object_key in distinct_object_keys(list(revisions)):
             await best_effort_delete_file_object(object_key, provider=provider)
         await db.delete(file)
+
+
+async def _purge_expired_deleted_folders(db: AsyncSession, *, now: datetime) -> None:
+    cutoff = now - timedelta(days=settings.FILES_DELETED_RETENTION_DAYS)
+    folders = (
+        await db.scalars(
+            select(FileFolder)
+            .where(
+                FileFolder.deleted.is_(True),
+                FileFolder.deleted_at.is_not(None),
+                FileFolder.deleted_at < cutoff,
+                ~select(File.id)
+                .where(
+                    File.workspace_id == FileFolder.workspace_id,
+                    File.folder_id == FileFolder.id,
+                )
+                .exists(),
+            )
+            .order_by(FileFolder.deleted_at, FileFolder.id)
+            .limit(_SWEEP_BATCH_SIZE)
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    for folder in folders:
+        await db.delete(folder)
 
 
 async def _purge_expired_uploads(db: AsyncSession, *, now: datetime) -> None:

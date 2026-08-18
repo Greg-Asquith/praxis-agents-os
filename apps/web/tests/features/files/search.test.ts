@@ -8,12 +8,14 @@ describe("validateFilesSearch", () => {
       validateFilesSearch({
         direction: "asc",
         fileId: "file-1",
+        folder: "folder-1",
         page: "3",
         sort: "name",
       })
     ).toEqual({
       direction: "asc",
       fileId: "file-1",
+      folder: "folder-1",
       page: 3,
       sort: "name",
     })
@@ -24,6 +26,7 @@ describe("validateFilesSearch", () => {
       validateFilesSearch({
         direction: "sideways",
         fileId: 42,
+        folder: 42,
         page: 1,
         sort: "content_hash",
       })

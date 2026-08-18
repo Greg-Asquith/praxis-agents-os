@@ -13,6 +13,10 @@ describe("runCodeResult", () => {
         model_provider: "openai",
         outputs: [
           {
+            folder: {
+              id: "folder-1",
+              name: "Quarterly review",
+            },
             kind: "file",
             media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             name: "summary.xlsx",
@@ -37,6 +41,7 @@ describe("runCodeResult", () => {
       modelProvider: "openai",
       outputs: [
         {
+          folder: { id: "folder-1", name: "Quarterly review" },
           kind: "file",
           mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           name: "summary.xlsx",

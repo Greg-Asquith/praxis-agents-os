@@ -17,6 +17,7 @@ from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.domain import FileRead, FileRestoreRequest
 from services.files.utils import (
     file_to_read,
+    get_file_folder_name,
     get_file_for_workspace,
     require_file_write_access,
     set_processing_state_for_revision,
@@ -106,4 +107,7 @@ async def restore_file_revision(
         details={"action": "restore", "restored_from_revision_id": str(source.id)},
     )
     await db.refresh(file)
-    return file_to_read(file)
+    return file_to_read(
+        file,
+        folder_name=await get_file_folder_name(db, workspace=workspace, file=file),
+    )

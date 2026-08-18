@@ -14,6 +14,7 @@ const FILE_SORT_FIELDS = new Set<FileSortField>([
 export type FilesSearch = {
   direction?: FileSortDirection
   fileId?: string
+  folder?: string
   page?: number
   sort?: FileSortField
 }
@@ -23,6 +24,9 @@ export function validateFilesSearch(search: Record<string, unknown>): FilesSearc
 
   if (typeof search["fileId"] === "string") {
     result.fileId = search["fileId"]
+  }
+  if (typeof search["folder"] === "string") {
+    result.folder = search["folder"]
   }
 
   const page = Number(search["page"])

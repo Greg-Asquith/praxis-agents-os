@@ -258,7 +258,11 @@ Repo-wide expectations are in the root `AGENTS.md`.
   only for configured OpenAI, Anthropic, or Google providers. Anthropic and
   OpenAI receive bounded current-revision bytes through the provider file
   bridge; Google receives bounded framed text or AnyDoc-derived Markdown.
-  Generated text artifacts and governed Files persist directly. The dated provider-isolation
+  Generated text artifacts and governed Files persist directly. Retained File
+  outputs land in one lazily created folder per conversation unless the tool
+  names a folder explicitly; artifact-only runs create no folder. New Files
+  receive a conversation reference, while declared edits retain the source
+  file's existing folder and references. The dated provider-isolation
   probe record and re-probe policy live in `docs/architecture/governance.md`,
   not in the runtime module.
   Inner sandbox executions are audited even when the helper run fails
@@ -379,9 +383,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   uploads use the bounded signed API relay because Blob SAS cannot constrain
   request size. Managed asset and skill-document grants persist consumption
   state so confirmation is replay-safe and crash-idempotent, and the storage
-  sweeper deletes expired unconfirmed objects and grant rows. For a clean local reset
-  from the repository root, remove `apps/api/.local/storage` and re-upload
-  development files; there is deliberately no compatibility read path.
+  sweeper deletes expired unconfirmed objects and grant rows. File-folder
+  deletion remains synchronous only for at most 100 live files; reject larger
+  folders before locking their files, and keep the folder-level audit's file ID
+  sample bounded while per-file deletion events retain the complete audit trail.
+  For a clean local reset from the repository root, remove
+  `apps/api/.local/storage` and re-upload development files; there is deliberately
+  no compatibility read path.
 - Non-OAuth integration credentials remain secret references. Admins replace
   API keys and service-account keys in place through
   `PUT /integrations/connections/{connection_id}/credential`; discovery

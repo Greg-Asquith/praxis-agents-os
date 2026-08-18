@@ -730,6 +730,7 @@ function composerAttachmentFromUploaded(
 async function invalidateUploadedFileQueries(queryClient: QueryClient, fileId: string) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }),
+    queryClient.invalidateQueries({ queryKey: filesQueryKeys.folders() }),
     queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(fileId) }),
     queryClient.invalidateQueries({ queryKey: filesQueryKeys.revisions(fileId) }),
   ])

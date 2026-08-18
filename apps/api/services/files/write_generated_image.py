@@ -18,6 +18,9 @@ from models.workspace import Workspace
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType
 from services.audit_events.operations import safe_record_operation_audit_event
 from services.files.contract import contract_for_content_type, max_size_bytes
+from services.files.create_conversation_file_references import (
+    create_conversation_file_references,
+)
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.get_files_usage import get_files_usage
 from services.files.revision_actor import FileRevisionActor
@@ -55,10 +58,14 @@ async def write_generated_image(
     source: str = "native_image_generation",
     input_file_ids: Sequence[UUID] = (),
     input_revision_ids: Sequence[UUID] = (),
+    conversation_id: UUID | None = None,
+    requested_by_user_id: UUID | None = None,
 ) -> GeneratedImageWriteResult:
     """Validate and store a supported generated image with agent provenance and audit."""
     if len(input_file_ids) != len(input_revision_ids):
         raise ValueError("Generated-image input provenance requires paired file and revision ids")
+    if (conversation_id is None) != (requested_by_user_id is None):
+        raise ValueError("Generated-image conversation provenance requires both ids")
     if len(content) > settings.MAX_FILE_SIZE_IMAGE:
         raise AppValidationError(
             "Generated image is too large",
@@ -103,6 +110,14 @@ async def write_generated_image(
         extension=extension,
         actor=FileRevisionActor(agent_id=agent.id),
     )
+    if conversation_id is not None and requested_by_user_id is not None:
+        await create_conversation_file_references(
+            db,
+            workspace_id=workspace.id,
+            conversation_id=conversation_id,
+            file_ids=[stored.file.id],
+            created_by_user_id=requested_by_user_id,
+        )
     await safe_record_operation_audit_event(
         db,
         workspace_id=workspace.id,

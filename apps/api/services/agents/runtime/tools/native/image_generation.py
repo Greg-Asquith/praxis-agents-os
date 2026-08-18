@@ -249,6 +249,8 @@ async def generate_image(
             prompt=normalized_prompt,
             content=image.data,
             media_type=image.media_type,
+            conversation_id=ctx.deps.conversation.id,
+            requested_by_user_id=ctx.deps.user.id,
         )
     except AppValidationError as exc:
         raise ModelRetry(exc.message) from exc

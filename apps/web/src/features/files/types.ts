@@ -19,6 +19,8 @@ export type WorkspaceFile = {
   workspace_id: string
   name: string
   description: string | null
+  folder_id: string | null
+  folder_name: string | null
   category: FileContractCategory
   content_type: string
   extension: string
@@ -61,6 +63,21 @@ export type FileListResponse = {
   total: number
 }
 
+export type FileFolder = {
+  id: string
+  workspace_id: string
+  name: string
+  description: string | null
+  file_count: number
+  total_bytes: number
+  created_at: string
+  updated_at: string
+}
+
+export type FileFolderListResponse = {
+  folders: FileFolder[]
+}
+
 export type FileRevisionsListResponse = {
   revisions: FileRevision[]
   total: number
@@ -73,6 +90,7 @@ export type FileUploadRequest = {
   content_hash?: string | null
   file_id?: string | null
   allow_duplicate_content?: boolean
+  folder_id?: string | null
 }
 
 type FileUploadGrant = AssetUploadGrant & {

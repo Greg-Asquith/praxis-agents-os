@@ -19,6 +19,10 @@ describe("workspace switch navigation", () => {
     expect(shouldRedirectHomeForWorkspaceSwitch("/files", { fileId: "file-1" })).toBe(true)
   })
 
+  it("redirects an open workspace folder", () => {
+    expect(shouldRedirectHomeForWorkspaceSwitch("/files", { folder: "folder-1" })).toBe(true)
+  })
+
   it.each([
     "/",
     "/agents",

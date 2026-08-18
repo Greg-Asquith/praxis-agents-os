@@ -6,7 +6,11 @@ import { AppBreadcrumbs } from "@/components/shell/app-breadcrumbs"
 
 vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
-  useQuery: () => ({ data: undefined }),
+  useQuery: (options: { queryKey?: unknown[] }) => ({
+    data: options.queryKey?.includes("folders")
+      ? { folders: [{ id: "folder-1", name: "File Creation" }] }
+      : undefined,
+  }),
 }))
 
 vi.mock("@tanstack/react-router", async () => {
@@ -91,13 +95,22 @@ describe("getBreadcrumbs", () => {
       ["Gmail", undefined],
     ])
   })
+
+  it("shows the active file folder in the shell breadcrumb", () => {
+    expect(renderedBreadcrumbs("/files", { folder: "folder-1" })).toEqual([
+      ["Context", "/context"],
+      ["Files", "/files"],
+      ["File Creation", undefined],
+    ])
+  })
 })
 
-function renderedBreadcrumbs(pathname: string) {
+function renderedBreadcrumbs(pathname: string, search?: unknown) {
   const html = renderToStaticMarkup(
     createElement(AppBreadcrumbs, {
       conversations: [],
       pathname,
+      ...(search === undefined ? {} : { search }),
     })
   )
   const desktopBreadcrumb =

@@ -3,6 +3,7 @@
 """Route for listing workspace files."""
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Query
 
@@ -23,6 +24,8 @@ async def list_files(
     sort_direction: Annotated[str, Query(max_length=4)] = "desc",
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    folder_id: Annotated[UUID | None, Query()] = None,
+    root_only: Annotated[bool, Query()] = False,
 ) -> FileListResponse:
     workspace, _membership = workspace_context
     return await list_files_service(
@@ -34,4 +37,6 @@ async def list_files(
         sort_direction=sort_direction,
         limit=limit,
         offset=offset,
+        folder_id=folder_id,
+        root_only=root_only,
     )

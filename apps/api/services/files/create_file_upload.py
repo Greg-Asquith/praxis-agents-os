@@ -23,6 +23,7 @@ from services.files.get_files_usage import get_files_usage
 from services.files.utils import (
     file_to_read,
     file_upload_object_key,
+    get_file_folder_name,
     get_file_for_workspace,
     require_file_write_access,
 )
@@ -73,7 +74,17 @@ async def create_file_upload(
             content_hash=payload.content_hash,
         )
         if dedup_file is not None:
-            return FileUploadResult(deduplicated=True, file=file_to_read(dedup_file))
+            return FileUploadResult(
+                deduplicated=True,
+                file=file_to_read(
+                    dedup_file,
+                    folder_name=await get_file_folder_name(
+                        db,
+                        workspace=workspace,
+                        file=dedup_file,
+                    ),
+                ),
+            )
 
     usage = await get_files_usage(db, workspace=workspace)
     over_soft_limit = (

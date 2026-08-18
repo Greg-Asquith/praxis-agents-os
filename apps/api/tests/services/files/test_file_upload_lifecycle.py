@@ -15,7 +15,7 @@ from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
 from models.asset_upload import AssetUpload
 from models.audit_event import AuditEvent
-from models.files import File, FileRevision, FileUpload
+from models.files import File, FileFolder, FileRevision, FileUpload
 from models.jobs import Job
 from models.workspace import WorkspaceRole
 from services.assets.domain import AssetKind
@@ -149,6 +149,15 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
         actor=actor,
         content=b"dedup",
     )
+    folder = FileFolder(
+        workspace_id=workspace.id,
+        name="Deduplicated Files",
+        created_by_user_id=actor.id,
+    )
+    db_session.add(folder)
+    await db_session.flush()
+    existing_file.folder_id = folder.id
+    await db_session.flush()
 
     with pytest.raises(AppValidationError):
         await create_file_upload(
@@ -178,6 +187,7 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
     assert deduped.deduplicated is True
     assert deduped.file is not None
     assert deduped.file.id == existing_file.id
+    assert deduped.file.folder_name == folder.name
     pending_uploads = await db_session.scalar(
         select(func.count()).select_from(FileUpload).where(FileUpload.workspace_id == workspace.id)
     )
@@ -267,6 +277,13 @@ async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
     local_storage_settings: None,
 ) -> None:
     actor, workspace, membership = await _workspace_context(db_session)
+    folder = FileFolder(
+        workspace_id=workspace.id,
+        name="Upload Reports",
+        created_by_user_id=actor.id,
+    )
+    db_session.add(folder)
+    await db_session.flush()
     provider = get_storage_provider()
     grant_result = await create_file_upload(
         db_session,
@@ -293,12 +310,16 @@ async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
         actor=actor,
         workspace=workspace,
         membership=membership,
-        payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
+        payload=FileConfirmRequest(
+            upload_token=grant_result.grant.upload_token,
+            folder_id=folder.id,
+        ),
     )
 
     assert confirmed.name == "Report.md"
     assert confirmed.content_hash == sha256_hex(b"# Real data\n")
     assert confirmed.processing_status == "ready"
+    assert confirmed.folder_name == folder.name
     revision_count = await db_session.scalar(
         select(func.count()).select_from(FileRevision).where(FileRevision.file_id == confirmed.id)
     )
@@ -310,9 +331,13 @@ async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
         actor=actor,
         workspace=workspace,
         membership=membership,
-        payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
+        payload=FileConfirmRequest(
+            upload_token=grant_result.grant.upload_token,
+            folder_id=uuid4(),
+        ),
     )
     assert double_confirmed.current_revision_id == confirmed.current_revision_id
+    assert double_confirmed.folder_name == folder.name
     assert (
         await db_session.scalar(
             select(func.count())
@@ -347,9 +372,13 @@ async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
         actor=actor,
         workspace=workspace,
         membership=membership,
-        payload=FileConfirmRequest(upload_token=replace_grant.grant.upload_token),
+        payload=FileConfirmRequest(
+            upload_token=replace_grant.grant.upload_token,
+            folder_id=uuid4(),
+        ),
     )
     assert replaced.revision_count == 2
+    assert replaced.folder_name == folder.name
     latest = await db_session.scalar(
         select(FileRevision).where(FileRevision.id == replaced.current_revision_id)
     )
@@ -576,6 +605,15 @@ async def test_edit_and_restore_are_append_only_and_conflict_on_stale_revision(
         actor=actor,
         content=b"first",
     )
+    folder = FileFolder(
+        workspace_id=workspace.id,
+        name="Revision History",
+        created_by_user_id=actor.id,
+    )
+    db_session.add(folder)
+    await db_session.flush()
+    file.folder_id = folder.id
+    await db_session.flush()
 
     edited = await edit_file(
         db_session,
@@ -591,6 +629,7 @@ async def test_edit_and_restore_are_append_only_and_conflict_on_stale_revision(
     )
     assert edited.revision_count == 2
     assert edited.content_hash == sha256_hex(b"second")
+    assert edited.folder_name == folder.name
 
     with pytest.raises(ConflictError) as conflict:
         await edit_file(
@@ -628,6 +667,7 @@ async def test_edit_and_restore_are_append_only_and_conflict_on_stale_revision(
     assert restore_revision.restored_from_revision_id == original.id
     assert restore_revision.object_key == original.object_key
     assert restored.content_hash == original.content_hash
+    assert restored.folder_name == folder.name
 
 
 async def test_list_files_escapes_search_wildcards(
@@ -958,6 +998,24 @@ async def test_sweep_deleted_files_purges_expired_rows_and_abandoned_uploads(
     )
     retained_file.soft_delete(deleted_by=actor.id)
     retained_file.deleted_at = datetime.now(UTC) - timedelta(days=29)
+    purged_folder = FileFolder(
+        workspace_id=workspace.id,
+        name="Purged outputs",
+        created_by_user_id=actor.id,
+    )
+    purged_folder.soft_delete(deleted_by=actor.id)
+    purged_folder.deleted_at = datetime.now(UTC) - timedelta(days=31)
+    retained_folder = FileFolder(
+        workspace_id=workspace.id,
+        name="Retained outputs",
+        created_by_user_id=actor.id,
+    )
+    retained_folder.soft_delete(deleted_by=actor.id)
+    retained_folder.deleted_at = datetime.now(UTC) - timedelta(days=31)
+    db_session.add_all([purged_folder, retained_folder])
+    await db_session.flush()
+    file.folder_id = purged_folder.id
+    retained_file.folder_id = retained_folder.id
 
     provider = get_storage_provider()
     upload_ref_key = revision_object_key(workspace.id, uuid4(), uuid4(), ".txt")
@@ -1020,8 +1078,10 @@ async def test_sweep_deleted_files_purges_expired_rows_and_abandoned_uploads(
     await sweep_deleted_files(db_session, job)
 
     assert await db_session.get(File, file.id) is None
+    assert await db_session.get(FileFolder, purged_folder.id) is None
     assert await provider.stat_object(private_ref_from_key(revision.object_key)) is None
     assert await db_session.get(File, retained_file.id) is not None
+    assert await db_session.get(FileFolder, retained_folder.id) is not None
     assert (
         await provider.stat_object(private_ref_from_key(retained_revision.object_key)) is not None
     )

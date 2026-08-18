@@ -140,6 +140,7 @@ export async function invalidateStreamQueries(
   // Files written by run_code commit with the run, so refresh them only after the stream ends.
   if (touchedFileIds.size > 0) {
     invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }))
+    invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.folders() }))
     for (const fileId of touchedFileIds) {
       // The detail key prefixes revisions, preview, and revision-content keys.
       invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(fileId) }))

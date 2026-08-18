@@ -17,6 +17,7 @@ type RunCodeStoredOutput = {
   revisionNumber: number | null
   sizeBytes: number
   updatedExisting: boolean
+  folder: { id: string; name: string } | null
 }
 
 export type RunCodeResult = {
@@ -77,6 +78,7 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
   const revisionId = value["revision_id"]
   const revisionNumber = value["revision_number"]
   const updatedExisting = value["updated_existing"]
+  const folder = value["folder"]
   if (
     (kind !== "artifact" && kind !== "file") ||
     entityKind !== kind ||
@@ -89,7 +91,10 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
     (revisionNumber !== undefined &&
       revisionNumber !== null &&
       typeof revisionNumber !== "number") ||
-    (updatedExisting !== undefined && typeof updatedExisting !== "boolean")
+    (updatedExisting !== undefined && typeof updatedExisting !== "boolean") ||
+    (folder !== undefined &&
+      folder !== null &&
+      (!isRecord(folder) || typeof folder["id"] !== "string" || typeof folder["name"] !== "string"))
   ) {
     return null
   }
@@ -106,6 +111,9 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
     revisionNumber: typeof revisionNumber === "number" ? revisionNumber : null,
     sizeBytes: value["size_bytes"],
     updatedExisting: updatedExisting === true,
+    folder: isRecord(folder)
+      ? { id: folder["id"] as string, name: folder["name"] as string }
+      : null,
   }
 }
 

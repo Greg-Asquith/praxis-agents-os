@@ -34,6 +34,7 @@ async def write_agent_file(
     file_id: UUID | None = None,
     expected_current_revision_id: UUID | None = None,
     reject_existing_name: bool = False,
+    folder_id: UUID | None = None,
 ) -> AgentFileWriteResult:
     """Create an editable text file or append an editable text revision."""
     data = content.encode("utf-8")
@@ -71,6 +72,7 @@ async def write_agent_file(
             content_type=entry.content_type,
             extension=extension,
             actor=actor,
+            folder_id=folder_id,
         )
 
     file = await get_file_for_workspace(db, workspace=workspace, file_id=file_id)
