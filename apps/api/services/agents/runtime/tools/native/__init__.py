@@ -14,7 +14,7 @@ from services.agents.runtime.tools.native import (
 from services.agents.runtime.tools.native.classifier import (
     ClassifyOutput,
     resolve_classifier_model,
-    run_native_classifier,
+    run_native_classification,
 )
 from services.agents.runtime.tools.native.image_editing import (
     EditImageOutput,
@@ -59,7 +59,7 @@ __all__ = [
     "resolve_web_fetch_model",
     "resolve_web_search_model",
     "run_code",
-    "run_native_classifier",
+    "run_native_classification",
     "run_native_image_generation",
     "run_native_web_fetch",
     "run_native_web_search",

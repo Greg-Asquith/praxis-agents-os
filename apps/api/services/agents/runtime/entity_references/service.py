@@ -26,7 +26,7 @@ from services.agents.runtime.entity_references.schemas import (
 )
 from services.agents.runtime.tools.registry import (
     build_runtime_tools,
-    get_runtime_tool_definition,
+    resolve_runtime_tool_definition,
 )
 from services.audit_events import (
     AuditAction,
@@ -306,6 +306,9 @@ async def authorize_entity_field(
         else EMPTY_ACTIVE_CONTEXT
     )
     disabled = await get_disabled_tools(db, workspace)
+    from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
+
+    workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     wrapped_tool_names: list[str] = []
     mounted = build_runtime_tools(
         agent,
@@ -314,6 +317,7 @@ async def authorize_entity_field(
         wrapped_tool_names=wrapped_tool_names,
         workspace=workspace,
         disabled_tool_names=disabled,
+        workspace_definitions=workspace_definitions,
     )
     mounted_names = {tool.name for tool in mounted}.union(wrapped_tool_names)
     if tool_name not in mounted_names:
@@ -322,7 +326,7 @@ async def authorize_entity_field(
             field="tool_name",
             details={"tool_name": tool_name},
         )
-    definition = get_runtime_tool_definition(tool_name)
+    definition = resolve_runtime_tool_definition(tool_name, workspace_definitions)
     if definition is None:
         raise AppValidationError("Unknown runtime tool", field="tool_name")
     field = next(

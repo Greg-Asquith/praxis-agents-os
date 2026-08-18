@@ -37,6 +37,7 @@ DIRECT_TABLES = (
     "kb_documents",
     "kb_chunks",
     "skills",
+    "classifiers",
     "embedding_token_usage",
     "scratch_entries",
     "workspace_tool_settings",
@@ -163,6 +164,11 @@ def _seed_values(
         values["integration_resource_id"] = uuid4()
     if table.name == "kb_chunks":
         values.update(char_start=0, char_end=1)
+    if table.name == "classifiers":
+        values["labels"] = [
+            {"label": "one", "description": None},
+            {"label": "two", "description": None},
+        ]
     if table.name == "external_credentials":
         values.update(
             secret_provider="test",  # noqa: S106 - non-secret fixture metadata

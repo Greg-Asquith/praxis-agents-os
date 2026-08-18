@@ -13,6 +13,11 @@ from core.exceptions.general import AppValidationError, ConflictError
 from models.agent import Agent
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+from services.agents.runtime.tools.workspace_tools import (
+    RESERVED_WORKSPACE_TOOL_PREFIXES,
+    load_workspace_tool_definitions,
+    workspace_tool_names,
+)
 from services.agents.schemas import AgentRead, AgentUpdateRequest
 from services.agents.utils import (
     get_agent_for_workspace,
@@ -39,6 +44,8 @@ async def update_agent(
 ) -> AgentRead:
     require_agent_write_access(membership)
     agent = await get_agent_for_workspace(db, workspace=workspace, agent_id=agent_id)
+    workspace_definitions = await load_workspace_tool_definitions(db, workspace)
+    available_workspace_names = workspace_tool_names(workspace_definitions)
 
     changed_fields: list[str] = []
 
@@ -90,9 +97,16 @@ async def update_agent(
             for name, policy in candidate_tool_policies.items()
             if name in set(candidate_tool_names)
         }
+    stale_workspace_names = {
+        name for name in agent.tool_names or [] if name.startswith(RESERVED_WORKSPACE_TOOL_PREFIXES)
+    }
     candidate_tool_names, candidate_tool_policies = normalize_tool_configuration(
         tool_names=candidate_tool_names,
         tool_policies=candidate_tool_policies,
+        extra_tool_names=available_workspace_names.union(stale_workspace_names),
+        extra_allowed_policies={
+            definition.name: definition.allowed_policies() for definition in workspace_definitions
+        },
     )
     if candidate_tool_names != list(agent.tool_names or []):
         agent.tool_names = candidate_tool_names
@@ -193,7 +207,7 @@ async def update_agent(
         )
         await db.refresh(agent)
 
-    return AgentRead.from_agent(agent)
+    return AgentRead.from_agent(agent, extra_tool_names=available_workspace_names)
 
 
 def _set_if_changed(agent: Agent, field_name: str, value, changed_fields: list[str]) -> None:

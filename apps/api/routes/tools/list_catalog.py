@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
 from services.agents.runtime.tools.registry import list_allowed_tool_definitions
 from services.agents.runtime.tools.schemas import ToolCatalogEntry, ToolCatalogResponse
+from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
 from services.tools import get_disabled_tools
 
 router = APIRouter()
@@ -20,9 +21,11 @@ async def list_tool_catalog(
 ) -> ToolCatalogResponse:
     workspace, _membership = workspace_context
     disabled_tool_names = await get_disabled_tools(db, workspace)
+    workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     definitions = list_allowed_tool_definitions(
         workspace=workspace,
         disabled_tool_names=disabled_tool_names,
+        workspace_definitions=workspace_definitions,
     )
     return ToolCatalogResponse(
         tools=[ToolCatalogEntry.from_definition(definition) for definition in definitions]

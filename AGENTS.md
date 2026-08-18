@@ -1,9 +1,13 @@
 # AGENTS.md
 
+@TECHNICAL_LANGUAGE_GUIDE.md
+
 Guidance for coding agents working in this repository. This root file holds
 repo-wide expectations; backend standards live in `apps/api/AGENTS.md` and
 frontend standards in `apps/web/AGENTS.md` — read the one for the app you are
 changing. `REVIEW.md` is the code-review checklist.
+`TECHNICAL_LANGUAGE_GUIDE.md` (imported above) governs all writing: user-facing
+copy, public documentation, and code comments and docstrings.
 
 ## Project Intent
 

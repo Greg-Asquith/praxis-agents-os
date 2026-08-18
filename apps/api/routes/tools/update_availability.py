@@ -1,6 +1,6 @@
 # apps/api/routes/tools/update_availability.py
 
-"""Route for changing a workspace tool's availability."""
+"""Change static tool availability; workspace-defined tools use their own lifecycle routes."""
 
 from typing import Annotated
 

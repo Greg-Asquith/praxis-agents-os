@@ -274,7 +274,10 @@ class CodeModeBridge:
                 "parent_tool_call_id": self._outer_tool_call_id,
                 "tool_name": tool_name,
                 "args_sha256": args_sha256,
-                "summary": _tool_summary(tool_name),
+                "summary": _tool_summary(
+                    tool_name,
+                    _workspace_definitions(self._ctx.deps),
+                ),
                 "status": "failed",
                 "excerpt": None,
             }
@@ -289,9 +292,12 @@ class CodeModeBridge:
                 },
             )
             from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
-            from services.agents.runtime.tools.registry import get_runtime_tool_definition
+            from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 
-            definition = get_runtime_tool_definition(tool_name)
+            definition = resolve_runtime_tool_definition(
+                tool_name,
+                _workspace_definitions(self._ctx.deps),
+            )
             if (
                 self._taint.tainted
                 and definition is not None
@@ -579,9 +585,12 @@ class CodeModeBridge:
 
     def _record_effect(self, *, call: ToolCallPart, args_sha256: str) -> None:
         from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
-        from services.agents.runtime.tools.registry import get_runtime_tool_definition
+        from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 
-        definition = get_runtime_tool_definition(call.tool_name)
+        definition = resolve_runtime_tool_definition(
+            call.tool_name,
+            _workspace_definitions(self._ctx.deps),
+        )
         if definition is not None and definition.effect == TOOL_EFFECT_WRITE:
             self._executed_effects.append(
                 CodeModeExecutedEffect(call.tool_call_id, call.tool_name, args_sha256)
@@ -871,12 +880,15 @@ async def _settle_denied_decision_evidence(
         digest_args,
         record_invocation,
     )
-    from services.agents.runtime.tools.registry import get_runtime_tool_definition
+    from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 
     computed_digest, args_bytes = digest_args(dict(effective_args))
     if computed_digest != args_sha256 or not hasattr(deps, "workspace"):
         return
-    definition = get_runtime_tool_definition(tool_name)
+    definition = resolve_runtime_tool_definition(
+        tool_name,
+        _workspace_definitions(deps),
+    )
     await record_invocation(
         deps=deps,
         tool_name=tool_name,
@@ -946,10 +958,13 @@ async def _record_failed_suspension_audit(
         digest_args,
         record_invocation,
     )
-    from services.agents.runtime.tools.registry import get_runtime_tool_definition
+    from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 
     args_sha256, args_bytes = digest_args(dict(args))
-    definition = get_runtime_tool_definition(tool_name)
+    definition = resolve_runtime_tool_definition(
+        tool_name,
+        _workspace_definitions(deps),
+    )
     await record_invocation(
         deps=deps,
         tool_name=tool_name,
@@ -1139,15 +1154,19 @@ def _has_binary_or_multimodal_content(content: Any) -> bool:
     return any(not isinstance(part, str) or isinstance(part, BinaryContent) for part in content)
 
 
-def _tool_summary(tool_name: str) -> str:
-    from services.agents.runtime.tools.registry import get_runtime_tool_definition
+def _tool_summary(tool_name: str, workspace_definitions=()) -> str:
+    from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 
-    definition = get_runtime_tool_definition(tool_name)
+    definition = resolve_runtime_tool_definition(tool_name, workspace_definitions)
     return (
         definition.label
         if definition is not None and definition.label
         else tool_name.replace("_", " ").title()
     )
+
+
+def _workspace_definitions(deps):
+    return getattr(deps, "workspace_tool_definitions", ())
 
 
 def _bounded_excerpt(value: Any) -> str:

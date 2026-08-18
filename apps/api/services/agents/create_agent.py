@@ -10,6 +10,10 @@ from core.exceptions.general import ConflictError
 from models.agent import Agent
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+from services.agents.runtime.tools.workspace_tools import (
+    load_workspace_tool_definitions,
+    workspace_tool_names,
+)
 from services.agents.schemas import AgentCreateRequest, AgentRead
 from services.agents.utils import (
     is_agent_slug_integrity_error,
@@ -34,9 +38,16 @@ async def create_agent(
 ) -> AgentRead:
     require_agent_write_access(membership)
 
+    workspace_definitions = await load_workspace_tool_definitions(db, workspace)
+    extra_tool_names = workspace_tool_names(workspace_definitions)
+
     tool_names, tool_policies = normalize_tool_configuration(
         tool_names=payload.tool_names,
         tool_policies=payload.tool_policies,
+        extra_tool_names=extra_tool_names,
+        extra_allowed_policies={
+            definition.name: definition.allowed_policies() for definition in workspace_definitions
+        },
     )
     model_provider = validate_model_configuration(
         model_provider=payload.model_provider,
@@ -120,4 +131,4 @@ async def create_agent(
         },
     )
     await db.refresh(agent)
-    return AgentRead.from_agent(agent)
+    return AgentRead.from_agent(agent, extra_tool_names=extra_tool_names)

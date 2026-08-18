@@ -40,6 +40,12 @@ register_internal_entity_resolvers()
 
 def register_tool_definition(definition: RuntimeToolDefinition) -> None:
     """Register a provider-contributed definition in the singular catalog."""
+    from services.agents.runtime.tools.workspace_tools import RESERVED_WORKSPACE_TOOL_PREFIXES
+
+    if definition.name.startswith(RESERVED_WORKSPACE_TOOL_PREFIXES):
+        raise RuntimeError(
+            f"Runtime tool name uses a reserved workspace-defined prefix: {definition.name}"
+        )
     validate_definition(definition)
     definition.serialized_input_schema()
     if definition.name in RUNTIME_TOOL_CATALOG:
@@ -61,6 +67,18 @@ def get_runtime_tool_definition(name: str) -> RuntimeToolDefinition | None:
         (definition for definition in DELEGATION_TOOL_DEFINITIONS if definition.name == name),
         None,
     )
+
+
+def resolve_runtime_tool_definition(
+    name: str,
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
+) -> RuntimeToolDefinition | None:
+    """Resolve a per-run workspace definition before the immutable static catalog."""
+    workspace_definition = next(
+        (definition for definition in workspace_definitions if definition.name == name),
+        None,
+    )
+    return workspace_definition or get_runtime_tool_definition(name)
 
 
 def runtime_tool(
@@ -142,6 +160,7 @@ def build_runtime_tools(
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
     additional_tool_names: Sequence[str] = (),
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
 ):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     from services.agents.runtime.code_mode.stubs import (
@@ -155,6 +174,10 @@ def build_runtime_tools(
     )
 
     code_mode_enabled = bool(agent.code_mode_enabled)
+    definition_lookup = {
+        **RUNTIME_TOOL_CATALOG,
+        **{definition.name: definition for definition in workspace_definitions},
+    }
     tool_names = [
         *(
             definition.name
@@ -183,7 +206,7 @@ def build_runtime_tools(
         if name in mounted_tool_names:
             continue
         mounted_tool_names.add(name)
-        definition = RUNTIME_TOOL_CATALOG.get(name)
+        definition = definition_lookup.get(name)
         if definition is None:
             if skipped_tool_names is not None:
                 skipped_tool_names.append(name)
@@ -260,12 +283,13 @@ def list_allowed_tool_definitions(
     workspace: object | None,
     agent: Agent | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
 ) -> list[RuntimeToolDefinition]:
     """Return registry entries visible in the supplied workspace context."""
     return sorted(
         (
             definition
-            for definition in RUNTIME_TOOL_CATALOG.values()
+            for definition in (*RUNTIME_TOOL_CATALOG.values(), *workspace_definitions)
             if definition.configurable
             and permissions.is_tool_allowed(
                 definition,
@@ -278,14 +302,20 @@ def list_allowed_tool_definitions(
     )
 
 
-def list_tool_presentations() -> list[RuntimeToolDefinition]:
+def list_tool_presentations(
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
+) -> list[RuntimeToolDefinition]:
     """Return every first-party runtime entry's display metadata."""
     from services.agents.runtime.delegation.build_delegation_tools import (
         DELEGATION_TOOL_DEFINITIONS,
     )
 
     return sorted(
-        (*RUNTIME_TOOL_CATALOG.values(), *DELEGATION_TOOL_DEFINITIONS),
+        (
+            *RUNTIME_TOOL_CATALOG.values(),
+            *DELEGATION_TOOL_DEFINITIONS,
+            *workspace_definitions,
+        ),
         key=lambda definition: definition.name,
     )
 

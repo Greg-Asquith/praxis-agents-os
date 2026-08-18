@@ -2116,15 +2116,16 @@ async def test_classifier_handler_returns_index_aligned_closed_labels(
 ) -> None:
     _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
 
-    async def fake_run(**kwargs):
+    async def fake_run(_deps, **kwargs):
         assert kwargs["items"] == ["Refund requested", "Great service"]
         assert kwargs["labels"] == ["complaint", "praise", "other"]
+        assert kwargs["event_details"] == {}
         return [
             classifier_tools.ClassifiedItem(index=0, value="Refund requested", label="complaint"),
             classifier_tools.ClassifiedItem(index=1, value="Great service", label="praise"),
         ]
 
-    monkeypatch.setattr(classifier_tools, "run_native_classifier", fake_run)
+    monkeypatch.setattr(classifier_tools, "run_native_classification", fake_run)
 
     output = await classifier_tools.classify(
         SimpleNamespace(deps=_metering_deps()),
@@ -2173,8 +2174,8 @@ async def test_native_classifier_uses_literal_output_and_records_one_metered_cal
         record,
     )
 
-    results = await classifier_tools.run_native_classifier(
-        deps=_metering_deps(),
+    results = await classifier_tools.run_native_classification(
+        _metering_deps(),
         items=["useful", "irrelevant"],
         labels=labels,
         instructions="Classify relevance.",
@@ -2184,6 +2185,7 @@ async def test_native_classifier_uses_literal_output_and_records_one_metered_cal
             settings={},
             max_steps=2,
         ),
+        event_details={},
     )
 
     assert results == [

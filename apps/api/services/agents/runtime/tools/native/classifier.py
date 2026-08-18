@@ -198,12 +198,13 @@ async def classify(
         model_provider=model_provider,
         model=model,
     )
-    results = await run_native_classifier(
-        deps=ctx.deps,
+    results = await run_native_classification(
+        ctx.deps,
         items=validated_items,
         labels=validated_labels,
         instructions=validated_instructions,
         model_spec=model_spec,
+        event_details={},
     )
     return ClassifyOutput(
         results=results,
@@ -246,13 +247,14 @@ def resolve_classifier_model(
     )
 
 
-async def run_native_classifier(
-    *,
+async def run_native_classification(
     deps: RuntimeDeps,
+    *,
     items: list[str],
     labels: list[str],
     instructions: str | None,
     model_spec: ResolvedModel,
+    event_details: dict[str, object],
 ) -> list[ClassifiedItem]:
     """Run one metered structured-output classification helper call."""
     output_model = _classification_output_model(labels)
@@ -281,7 +283,11 @@ async def run_native_classifier(
             user_id=deps.user.id,
             run_id=deps.run.id,
             conversation_id=deps.conversation.id,
-            details={"item_count": len(items), "label_count": len(labels)},
+            details={
+                "item_count": len(items),
+                "label_count": len(labels),
+                **event_details,
+            },
         ),
         call,
     )

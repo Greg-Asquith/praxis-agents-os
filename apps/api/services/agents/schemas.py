@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.agent import Agent
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.agents.runtime.tools.workspace_tools import RESERVED_WORKSPACE_TOOL_PREFIXES
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -47,9 +48,17 @@ class AgentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     @classmethod
-    def from_agent(cls, agent: Agent) -> "AgentRead":
+    def from_agent(
+        cls,
+        agent: Agent,
+        *,
+        extra_tool_names: frozenset[str] = frozenset(),
+    ) -> "AgentRead":
         schema = cls.model_validate(agent)
-        schema.tool_names = _configurable_tool_names(schema.tool_names)
+        schema.tool_names = _configurable_tool_names(
+            schema.tool_names,
+            extra_tool_names=extra_tool_names,
+        )
         if schema.tool_policies is not None:
             schema.tool_policies = {
                 name: policy
@@ -198,11 +207,17 @@ def _normalize_text_list(value: list[str], *, field_name: str) -> list[str]:
     return normalized
 
 
-def _configurable_tool_names(value: list[str]) -> list[str]:
+def _configurable_tool_names(
+    value: list[str],
+    *,
+    extra_tool_names: frozenset[str] = frozenset(),
+) -> list[str]:
     return [
         name
         for name in value
-        if name in RUNTIME_TOOL_CATALOG and RUNTIME_TOOL_CATALOG[name].configurable
+        if name in extra_tool_names
+        or name.startswith(RESERVED_WORKSPACE_TOOL_PREFIXES)
+        or (name in RUNTIME_TOOL_CATALOG and RUNTIME_TOOL_CATALOG[name].configurable)
     ]
 
 

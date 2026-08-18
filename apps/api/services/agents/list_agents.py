@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent
 from models.workspace import Workspace
+from services.agents.runtime.tools.workspace_tools import (
+    load_workspace_tool_definitions,
+    workspace_tool_names,
+)
 from services.agents.schemas import AgentRead, AgentsListResponse
 from utils.pagination import paginate
 
@@ -36,8 +40,10 @@ async def list_agents(
         offset=offset,
     )
 
+    definitions = await load_workspace_tool_definitions(db, workspace)
+    extra_tool_names = workspace_tool_names(definitions)
     return AgentsListResponse(
-        agents=[AgentRead.from_agent(agent) for agent in agents],
+        agents=[AgentRead.from_agent(agent, extra_tool_names=extra_tool_names) for agent in agents],
         total=total or 0,
         limit=limit,
         offset=offset,

@@ -29,6 +29,7 @@ from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
+from models.classifiers import Classifier
 from models.conversation import Conversation, ConversationMessage
 from models.session import Session
 from models.user import User
@@ -40,6 +41,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_COMPLETED,
     RUN_TRIGGER_SCHEDULED,
 )
+from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.cancellation import request_agent_run_task_cancel
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
@@ -56,6 +58,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_EXTERNAL_WRITE,
 )
+from services.agents.runtime.tools.native.classifier import ClassifiedItem
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.agents.runtime.untrusted import (
     UNTRUSTED_CONTENT_END,
@@ -1219,6 +1222,70 @@ async def test_delegation_tool_names_are_audited_as_delegation_provider() -> Non
         assert _tool_provider(tool_name, None) == "delegation"
 
 
+async def test_workspace_classifier_dispatch_is_audited_as_classifier_provider(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_name = "classifier_audit_triage"
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=[tool_name],
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.classifiers.resolve_classifier_model",
+        lambda **_kwargs: ResolvedModel(
+            provider="openai",
+            model="gpt-5.6-luna",
+            settings={},
+            max_steps=2,
+        ),
+    )
+
+    async def classify(_deps, **_kwargs):
+        return [ClassifiedItem(index=0, value="Refund please", label="complaint")]
+
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.classifiers.run_native_classification",
+        classify,
+    )
+
+    try:
+        async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=context.workspace_id,
+                user_id=context.user_id,
+            )
+            db.add(
+                Classifier(
+                    workspace_id=context.workspace_id,
+                    created_by=context.user_id,
+                    name="audit_triage",
+                    display_name="Audit triage",
+                    description="Classify support messages.",
+                    labels=[{"label": "complaint"}, {"label": "other"}],
+                )
+            )
+            await db.commit()
+
+        result = await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name=tool_name,
+            args={"items": ["Refund please"]},
+        )
+        assert result.run.status == RUN_STATUS_COMPLETED
+
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name=tool_name,
+        )
+        assert event.tool_provider == "classifier"
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
 async def test_raw_json_tool_call_args_digest_like_execution_args() -> None:
     assert _tool_call_args_for_digest('{"value":"same"}') == {"value": "same"}
     assert digest_args(_tool_call_args_for_digest('{"value":"same"}')) == digest_args(
@@ -1324,6 +1391,7 @@ async def _delete_committed_runtime_context(
         )
         await db.execute(delete(Conversation).where(Conversation.id == context.conversation_id))
         await db.execute(delete(Agent).where(Agent.id == context.agent_id))
+        await db.execute(delete(Classifier).where(Classifier.workspace_id == context.workspace_id))
         await db.execute(
             delete(WorkspaceMembership).where(
                 WorkspaceMembership.workspace_id == context.workspace_id

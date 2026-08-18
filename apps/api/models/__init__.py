@@ -18,6 +18,7 @@ from models.artifacts import Artifact, ArtifactRevision, ArtifactShare  # noqa: 
 from models.asset_upload import AssetUpload  # noqa: F401
 from models.audit_event import AuditEvent  # noqa: F401
 from models.base import BaseModel  # noqa: F401
+from models.classifiers import Classifier  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
 from models.conversation_summary import ConversationSummary  # noqa: F401
 from models.conversation_todos import ConversationTodoList  # noqa: F401

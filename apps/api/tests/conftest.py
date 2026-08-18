@@ -61,6 +61,7 @@ _RLS_WORKSPACE_TABLES = frozenset(
         "artifact_shares",
         "artifacts",
         "audit_events",
+        "classifiers",
         "conversation_messages",
         "conversation_summaries",
         "conversation_todos",

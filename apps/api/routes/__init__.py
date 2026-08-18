@@ -11,6 +11,7 @@ from routes.artifact_serving import router as artifact_serving_router
 from routes.artifacts import router as artifacts_router
 from routes.audit_events import router as audit_events_router
 from routes.auth import router as auth_router
+from routes.classifiers import router as classifiers_router
 from routes.conversations import router as conversations_router
 from routes.files import router as files_router
 from routes.health import router as health_router
@@ -36,6 +37,7 @@ api_router.include_router(artifacts_router)
 api_router.include_router(agents_router)
 api_router.include_router(audit_events_router)
 api_router.include_router(auth_router)
+api_router.include_router(classifiers_router)
 api_router.include_router(conversations_router)
 api_router.include_router(files_router)
 api_router.include_router(integrations_router)

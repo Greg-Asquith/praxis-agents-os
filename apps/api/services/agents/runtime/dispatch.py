@@ -66,7 +66,7 @@ from services.agents.runtime.tools.contract import (
 )
 from services.agents.runtime.tools.registry import (
     RUNTIME_TOOL_CATALOG,
-    get_runtime_tool_definition,
+    resolve_runtime_tool_definition,
 )
 from services.agents.runtime.untrusted import serialize_untrusted_content
 from services.audit_events.enums import AuditStatus
@@ -316,7 +316,10 @@ async def dispatch_tool_execution(
 ) -> Any:
     """Execute one Pydantic AI tool through the Praxis dispatch policy."""
     tool_name = call.tool_name
-    definition = get_runtime_tool_definition(tool_name)
+    definition = resolve_runtime_tool_definition(
+        tool_name,
+        getattr(ctx.deps, "workspace_tool_definitions", ()),
+    )
     tool_provider = _tool_provider(tool_name, definition)
     args_sha256, args_bytes = digest_args(args)
     started = monotonic()
@@ -730,7 +733,13 @@ async def record_invocation(
         run=deps.run,
         tool_name=tool_name,
         tool_provider=tool_provider,
-        tool_version=_tool_version(tool_name),
+        tool_version=_tool_version(
+            tool_name,
+            resolve_runtime_tool_definition(
+                tool_name,
+                getattr(deps, "workspace_tool_definitions", ()),
+            ),
+        ),
         tool_call_id=tool_call_id,
         status=status,
         args=dict(args),
@@ -786,8 +795,11 @@ def _tool_provider(
     return "runtime"
 
 
-def _tool_version(tool_name: str) -> int | None:
-    definition = RUNTIME_TOOL_CATALOG.get(tool_name)
+def _tool_version(
+    tool_name: str,
+    definition: RuntimeToolDefinition | None = None,
+) -> int | None:
+    definition = definition or RUNTIME_TOOL_CATALOG.get(tool_name)
     return definition.version if definition is not None else None
 
 

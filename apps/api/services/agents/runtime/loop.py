@@ -32,6 +32,7 @@ from services.agents.runtime.prompt import (
 )
 from services.agents.runtime.skills import build_skill_capabilities
 from services.agents.runtime.tools import build_runtime_tools
+from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.completion_contract import ScheduleCompletionContract
 
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ def build_runtime_agent(
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
     additional_tool_names: Sequence[str] = (),
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
     history_compaction: HistoryCompaction | None = None,
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
@@ -100,6 +102,7 @@ def build_runtime_agent(
                 workspace=workspace,
                 disabled_tool_names=disabled_tool_names,
                 additional_tool_names=additional_tool_names,
+                workspace_definitions=workspace_definitions,
             ),
             capabilities=[
                 *build_runtime_capabilities(

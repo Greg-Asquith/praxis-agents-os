@@ -304,6 +304,16 @@ Repo-wide expectations are in the root `AGENTS.md`.
   Keep its item, label, instruction, and helper-step bounds settings-owned;
   adding helper-authored rationale or confidence output reopens the trust
   decision.
+- Workspace classifiers are the first producer of generic workspace-defined
+  runtime tools. Active rows are loaded for each run and synthesized as
+  `classifier_{name}(items)` definitions without mutating the process-global
+  registry; the ad-hoc `classify(items, labels, instructions, ...)` tool remains
+  available independently. A future family adds its own table/CRUD surface and
+  producer, reserves a unique prefix in `workspace_tools.py`, and contributes
+  one call to the aggregation loader. Workspace-defined names are unavailable
+  through the static tool-availability route, accept no per-call override of
+  stored configuration, and row changes take effect when the next run loads
+  definitions.
 - Native image generation uses the governed `generate_image` helper-tool path
   for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
   helper run. The tool generates exactly one image, preserves provider-returned

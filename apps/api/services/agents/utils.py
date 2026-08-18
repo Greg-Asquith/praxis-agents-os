@@ -2,7 +2,7 @@
 
 """Helpers specific to agent configuration services."""
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable, Mapping
 from uuid import UUID
 
 from sqlalchemy import select
@@ -109,20 +109,26 @@ def normalize_tool_configuration(
     *,
     tool_names: list[str],
     tool_policies: dict[str, str] | None,
+    extra_tool_names: Collection[str] = (),
+    extra_allowed_policies: Mapping[str, Collection[str]] | None = None,
 ) -> tuple[list[str], dict[str, str] | None]:
-    unknown_tools = sorted({name for name in tool_names if name not in RUNTIME_TOOL_CATALOG})
+    extra_name_set = set(extra_tool_names)
+    available_names = set(RUNTIME_TOOL_CATALOG).union(extra_name_set)
+    unknown_tools = sorted({name for name in tool_names if name not in available_names})
     if unknown_tools:
         raise AppValidationError(
             "Agent references unknown runtime tools",
             field="tool_names",
             details={
                 "unknown_tools": unknown_tools,
-                "available_tools": _configurable_tool_names(),
+                "available_tools": _configurable_tool_names(extra_name_set),
             },
         )
 
     configurable_tool_names = [
-        name for name in tool_names if RUNTIME_TOOL_CATALOG[name].configurable
+        name
+        for name in tool_names
+        if name in extra_name_set or RUNTIME_TOOL_CATALOG[name].configurable
     ]
     configurable_tool_name_set = set(configurable_tool_names)
 
@@ -130,7 +136,7 @@ def normalize_tool_configuration(
         return configurable_tool_names, None
 
     unknown_policy_catalog_tools = sorted(
-        {name for name in tool_policies if name not in RUNTIME_TOOL_CATALOG}
+        {name for name in tool_policies if name not in available_names}
     )
     if unknown_policy_catalog_tools:
         raise AppValidationError(
@@ -138,14 +144,17 @@ def normalize_tool_configuration(
             field="tool_policies",
             details={
                 "unknown_policy_tools": unknown_policy_catalog_tools,
-                "available_tools": _configurable_tool_names(),
+                "available_tools": _configurable_tool_names(extra_name_set),
             },
         )
 
     configurable_tool_policies = {
         name: policy
         for name, policy in tool_policies.items()
-        if (name in RUNTIME_TOOL_CATALOG and RUNTIME_TOOL_CATALOG[name].configurable)
+        if (
+            name in extra_name_set
+            or (name in RUNTIME_TOOL_CATALOG and RUNTIME_TOOL_CATALOG[name].configurable)
+        )
     }
 
     unknown_policy_tools = sorted(
@@ -173,13 +182,22 @@ def normalize_tool_configuration(
             },
         )
 
+    allowed_policy_lookup = {
+        name: definition.allowed_policies() for name, definition in RUNTIME_TOOL_CATALOG.items()
+    }
+    allowed_policy_lookup.update(
+        {
+            name: frozenset((extra_allowed_policies or {}).get(name, {"auto"}))
+            for name in extra_name_set
+        }
+    )
     unsupported_policies = {
         name: {
             "tool_policy": policy,
-            "allowed_tool_policies": sorted(RUNTIME_TOOL_CATALOG[name].allowed_policies()),
+            "allowed_tool_policies": sorted(allowed_policy_lookup[name]),
         }
         for name, policy in configurable_tool_policies.items()
-        if policy not in RUNTIME_TOOL_CATALOG[name].allowed_policies()
+        if policy not in allowed_policy_lookup[name]
     }
     if unsupported_policies:
         raise AppValidationError(
@@ -191,9 +209,12 @@ def normalize_tool_configuration(
     return configurable_tool_names, dict(configurable_tool_policies) or None
 
 
-def _configurable_tool_names() -> list[str]:
+def _configurable_tool_names(extra_tool_names: Collection[str] = ()) -> list[str]:
     return sorted(
-        name for name, definition in RUNTIME_TOOL_CATALOG.items() if definition.configurable
+        {
+            *(name for name, definition in RUNTIME_TOOL_CATALOG.items() if definition.configurable),
+            *extra_tool_names,
+        }
     )
 
 

@@ -48,6 +48,8 @@ from services.agents.runtime.persistence import (
 )
 from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
 from services.completion_contract import (
     REPORT_COMPLETION_TOOL_NAME,
     ScheduleCompletionContract,
@@ -86,6 +88,7 @@ class RuntimeAgentBuilder(Protocol):
         workspace: object | None = None,
         disabled_tool_names: frozenset[str] = frozenset(),
         additional_tool_names: Sequence[str] = (),
+        workspace_definitions: Sequence[RuntimeToolDefinition] = (),
         history_compaction: HistoryCompaction | None = None,
     ) -> RuntimeAgent: ...
 
@@ -205,6 +208,7 @@ async def prepare_runtime(
         if completion_contract is not None and completion_contract.required
         else ()
     )
+    workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     built_agent = await build_agent_for_run(
         db,
         run=run,
@@ -223,6 +227,7 @@ async def prepare_runtime(
         available_files=available_files,
         active_context=active_context,
         runtime_agent_builder=runtime_agent_builder,
+        workspace_definitions=workspace_definitions,
     )
     deps = RuntimeDeps(
         db=db,
@@ -236,6 +241,7 @@ async def prepare_runtime(
         envelope=run_envelope_builder(run),
         delegation_depth=run.delegation_depth or 0,
         active_context=active_context,
+        workspace_tool_definitions=tuple(workspace_definitions),
     )
     if deferred_tool_results is not None:
         await record_denied_approval_audit_events(
@@ -297,6 +303,7 @@ async def build_agent_for_run(
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     runtime_agent_builder: RuntimeAgentBuilder,
+    workspace_definitions: Sequence[RuntimeToolDefinition],
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
     delegate_agents = (
@@ -343,6 +350,7 @@ async def build_agent_for_run(
         workspace=workspace,
         disabled_tool_names=disabled_tool_names,
         additional_tool_names=completion_tool_names,
+        workspace_definitions=workspace_definitions,
         history_compaction=history_compaction,
     )
     _record_skipped_runtime_tools(run, skipped_tool_names)
