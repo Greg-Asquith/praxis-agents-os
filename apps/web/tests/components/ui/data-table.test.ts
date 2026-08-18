@@ -62,6 +62,13 @@ const CLICKS_COLUMN: DataColumn = {
   label: "Clicks",
   isMetric: true,
 }
+const DURATION_COLUMN: DataColumn = {
+  key: "averageSessionDuration",
+  kind: "number",
+  label: "Average session duration",
+  isMetric: true,
+  unit: "seconds",
+}
 const DATE_COLUMN: DataColumn = { key: "segments.date", kind: "date", label: "Date" }
 const STATUS_COLUMN: DataColumn = {
   key: "campaign.status",
@@ -83,6 +90,7 @@ describe("DataTable", () => {
     expect(formatDataCell(CTR_COLUMN, NODE("0.125"))).toBe("12.5%")
     expect(formatDataCell(DATE_COLUMN, NODE("2026-07-23"))).toContain("2026")
     expect(formatDataCell(ID_COLUMN, NODE("987654"))).toBe("987654")
+    expect(formatDataCell(DURATION_COLUMN, 92)).toBe("1 min 32 sec")
   })
 
   it("sums opted-in metric columns using raw report values", () => {
@@ -139,6 +147,10 @@ describe("DataTable", () => {
     expect(compareDataCellValues(ID_COLUMN, NODE("campaign-2"), NODE("campaign-10"))).toBeLessThan(
       0
     )
+    expect(compareDataCellValues(DURATION_COLUMN, 92, 120)).toBeLessThan(0)
+    expect(dataTableExport([DURATION_COLUMN], [{ averageSessionDuration: 92 }]).rows).toEqual([
+      ["92"],
+    ])
   })
 
   it("renders totals, export actions, truncation context, and row-detail affordances", () => {

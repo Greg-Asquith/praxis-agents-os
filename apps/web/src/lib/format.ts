@@ -109,6 +109,22 @@ export function formatBytes(value: number) {
   return `${String(value)} B`
 }
 
+export function formatDuration(value: number, unit: "milliseconds" | "seconds" = "seconds") {
+  const seconds = unit === "milliseconds" ? value / 1000 : value
+  if (!Number.isFinite(seconds)) {
+    return String(value)
+  }
+  const absoluteSeconds = Math.abs(seconds)
+  if (Math.round(absoluteSeconds * 100) / 100 < 60) {
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(seconds)} sec`
+  }
+  const roundedSeconds = Math.round(absoluteSeconds)
+  const minutes = Math.floor(roundedSeconds / 60)
+  const remainingSeconds = roundedSeconds % 60
+  const sign = seconds < 0 ? "−" : ""
+  return `${sign}${String(minutes)} min${remainingSeconds > 0 ? ` ${String(remainingSeconds)} sec` : ""}`
+}
+
 export function formatTime(
   value: string | Date,
   hour: "numeric" | "2-digit" | undefined = "numeric",

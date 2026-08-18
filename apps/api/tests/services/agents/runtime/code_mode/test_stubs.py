@@ -11,6 +11,9 @@ from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINI
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
+from integrations.google_analytics.tools import (
+    TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+)
 from services.agents.runtime.code_mode.stubs import (
     CodeModeCatalog,
     UnsupportedCodeModeSchemaError,
@@ -135,6 +138,72 @@ def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
     assert "mirrors the GAQL SELECT paths" in rendered
 
 
+def test_google_analytics_report_stub_declares_typed_inputs_and_rows() -> None:
+    definition = next(
+        item
+        for item in GOOGLE_ANALYTICS_TOOL_DEFINITIONS
+        if item.name == "google_analytics_run_report"
+    )
+
+    rendered = render_tool_stub(definition)
+
+    assert "class GoogleAnalyticsDateRange(TypedDict):" in rendered
+    assert "class GoogleAnalyticsFieldFilter(TypedDict):" in rendered
+    assert "class GoogleAnalyticsReportData(TypedDict):" in rendered
+    assert "rows: list[dict[str, GoogleAnalyticsValue]]" in rendered
+    assert (
+        "async def google_analytics_run_report(*, metrics: list[str], dimensions: list[str], "
+        "date_ranges: list[GoogleAnalyticsDateRange]"
+    ) in rendered
+    assert "-> GoogleAnalyticsRunReportOutput" in rendered
+    assert "Use google_analytics_list_report_fields" in rendered
+
+
+def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
+    definitions = {
+        item.name: item
+        for item in GOOGLE_ANALYTICS_TOOL_DEFINITIONS
+        if item.name
+        in {
+            "google_analytics_check_report_fields",
+            "google_analytics_run_realtime_report",
+        }
+    }
+
+    realtime = render_tool_stub(definitions["google_analytics_run_realtime_report"])
+    compatibility = render_tool_stub(definitions["google_analytics_check_report_fields"])
+
+    assert "class GoogleAnalyticsMinuteRange(TypedDict):" in realtime
+    assert "class GoogleAnalyticsRealtimeReportData(TypedDict):" in realtime
+    assert "rows: list[dict[str, GoogleAnalyticsValue]]" in realtime
+    assert "async def google_analytics_run_realtime_report(" in realtime
+    assert "-> GoogleAnalyticsRunRealtimeReportOutput" in realtime
+    assert "start_minutes_ago is the older boundary" in realtime
+    assert "the last 30 minutes is 29 through 0" in realtime
+    assert "class GoogleAnalyticsFieldCompatibility(TypedDict):" in compatibility
+    assert "incompatible_fields: list[str]" in compatibility
+    assert "async def google_analytics_check_report_fields(" in compatibility
+    assert "candidate_metrics: list[str]" in compatibility
+    assert "candidate_dimensions: list[str]" in compatibility
+    assert "-> GoogleAnalyticsCheckReportFieldsOutput" in compatibility
+
+
+def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids() -> None:
+    definitions = (
+        *GOOGLE_ADS_TOOL_DEFINITIONS,
+        *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+    )
+
+    rendered = render_stub_catalog(definitions)
+
+    assert "async def google_ads_run_report(" in rendered
+    assert "async def google_analytics_list_google_ads_links(" in rendered
+    assert "class GoogleAnalyticsGoogleAdsLink(TypedDict):" in rendered
+    assert "customer_id: str" in rendered
+    assert "integration_resource_id" not in rendered
+    assert "connection_id" not in rendered
+
+
 def test_every_first_party_eligible_schema_renders() -> None:
     definitions = {
         definition.name: definition
@@ -144,6 +213,7 @@ def test_every_first_party_eligible_schema_renders() -> None:
             *BIGQUERY_TOOL_DEFINITIONS,
             *GMAIL_TOOL_DEFINITIONS,
             *GOOGLE_ADS_TOOL_DEFINITIONS,
+            *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
         )
         if definition.code_eligible
     }

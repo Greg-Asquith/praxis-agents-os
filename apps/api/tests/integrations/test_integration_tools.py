@@ -18,6 +18,9 @@ from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
+from integrations.google_analytics.tools import (
+    TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+)
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -46,6 +49,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *GOOGLE_ADS_TOOL_DEFINITIONS,
             *AIRTABLE_TOOL_DEFINITIONS,
             *BIGQUERY_TOOL_DEFINITIONS,
+            *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
         )
     }
     expected = {
@@ -79,6 +83,11 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "bigquery_list_tables": ("read", "internal", "auto", False),
         "bigquery_get_table_schema": ("read", "internal", "auto", False),
         "bigquery_run_query": ("read", "internal", "auto", False),
+        "google_analytics_check_report_fields": ("read", "internal", "auto", False),
+        "google_analytics_list_google_ads_links": ("read", "internal", "auto", False),
+        "google_analytics_list_report_fields": ("read", "internal", "auto", False),
+        "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
+        "google_analytics_run_report": ("read", "internal", "auto", False),
     }
     assert set(definitions) == set(expected)
     denylisted = {
@@ -113,19 +122,32 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *GOOGLE_ADS_TOOL_DEFINITIONS,
         *AIRTABLE_TOOL_DEFINITIONS,
         *BIGQUERY_TOOL_DEFINITIONS,
+        *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
     )
 
     for definition in definitions:
         assert definition.output_model is not None, definition.name
-        for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
-            assert any(
-                marker in path
-                for marker in (
-                    ".properties.fields",
-                    ".properties.rows.items",
-                    "JsonValue.anyOf",
+        allowed_dynamic_markers = [
+            ".properties.fields",
+            ".properties.rows.items",
+            "JsonValue.anyOf",
+        ]
+        if definition.name in {
+            "google_analytics_run_realtime_report",
+            "google_analytics_run_report",
+        }:
+            allowed_dynamic_markers.extend(
+                (
+                    ".properties.totals.items",
+                    ".properties.maximums.items",
+                    ".properties.minimums.items",
                 )
-            ), (definition.name, path)
+            )
+        for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
+            assert any(marker in path for marker in allowed_dynamic_markers), (
+                definition.name,
+                path,
+            )
 
 
 def _dynamic_object_paths(value: Any, path: str = "$") -> list[str]:

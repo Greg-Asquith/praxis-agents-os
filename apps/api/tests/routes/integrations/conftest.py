@@ -12,6 +12,7 @@ from core.auth.sessions import session_manager
 from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
+from integrations.google_analytics.settings import google_analytics_settings
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.integrations.manifest import PROVIDER_MANIFESTS, register_provider_manifest
@@ -27,12 +28,19 @@ def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Ite
     from integrations.bigquery import PROVIDER as BIGQUERY_PROVIDER
     from integrations.gmail import PROVIDER as GMAIL_PROVIDER
     from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
+    from integrations.google_analytics import PROVIDER as GOOGLE_ANALYTICS_PROVIDER
 
     original = dict(PROVIDER_MANIFESTS)
     original_plugins = dict(PROVIDER_PLUGINS)
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
-    for plugin in (GMAIL_PROVIDER, GOOGLE_ADS_PROVIDER, AIRTABLE_PROVIDER, BIGQUERY_PROVIDER):
+    for plugin in (
+        GMAIL_PROVIDER,
+        GOOGLE_ADS_PROVIDER,
+        GOOGLE_ANALYTICS_PROVIDER,
+        AIRTABLE_PROVIDER,
+        BIGQUERY_PROVIDER,
+    ):
         register_provider_plugin(plugin)
         register_provider_manifest(plugin.manifest)
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_ID", "gmail-integration-client")
@@ -50,6 +58,18 @@ def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Ite
         google_ads_settings,
         "GOOGLE_ADS_OAUTH_CLIENT_SECRET",
         type(google_ads_settings.GOOGLE_ADS_OAUTH_CLIENT_SECRET)("google-ads-integration-secret"),
+    )
+    monkeypatch.setattr(
+        google_analytics_settings,
+        "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID",
+        "google-analytics-integration-client",
+    )
+    monkeypatch.setattr(
+        google_analytics_settings,
+        "GOOGLE_ANALYTICS_OAUTH_CLIENT_SECRET",
+        type(google_analytics_settings.GOOGLE_ANALYTICS_OAUTH_CLIENT_SECRET)(
+            "google-analytics-integration-secret"
+        ),
     )
     monkeypatch.setattr(
         settings,

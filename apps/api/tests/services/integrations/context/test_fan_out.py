@@ -159,46 +159,49 @@ async def test_fan_out_retries_when_no_compatible_entries() -> None:
         await run_context_fan_out(ctx, binding=_binding(), operation=lambda _entry: None)
 
 
-async def test_fan_out_calls_every_compatible_resource_and_no_incompatible_resource() -> None:
-    gmail_one = _entry(
-        "Inbox one",
-        provider_key="gmail",
-        resource_type="gmail_mailbox",
-    )
+async def test_fan_out_keeps_google_ads_and_analytics_bindings_isolated() -> None:
     google_ads = _entry(
         "Ads account",
         provider_key="google_ads",
         resource_type="google_ads_account",
     )
-    gmail_two = _entry(
-        "Inbox two",
-        provider_key="gmail",
-        resource_type="gmail_mailbox",
+    google_analytics = _entry(
+        "Analytics property",
+        provider_key="google_analytics",
+        resource_type="google_analytics_property",
     )
-    ctx = _ctx((gmail_one, google_ads, gmail_two))
-    calls = []
+    ctx = _ctx((google_ads, google_analytics), tool_name="google_ads_run_report")
+    calls: list[ResolvedContextEntry] = []
 
     async def operation(entry: ResolvedContextEntry):
         calls.append(entry)
         return {"resource_id": str(entry.integration_resource_id)}
 
-    results = await run_context_fan_out(
+    ads_results = await run_context_fan_out(
         ctx,
         binding=IntegrationToolBinding(
-            provider_keys=frozenset({"gmail"}),
-            resource_types=frozenset({"gmail_mailbox"}),
+            provider_keys=frozenset({"google_ads"}),
+            resource_types=frozenset({"google_ads_account"}),
+        ),
+        operation=operation,
+    )
+    ctx.tool_name = "google_analytics_list_google_ads_links"
+    analytics_results = await run_context_fan_out(
+        ctx,
+        binding=IntegrationToolBinding(
+            provider_keys=frozenset({"google_analytics"}),
+            resource_types=frozenset({"google_analytics_property"}),
         ),
         operation=operation,
     )
 
-    assert calls == [gmail_one, gmail_two]
-    assert [result.integration_resource_id for result in results] == [
-        gmail_one.integration_resource_id,
-        gmail_two.integration_resource_id,
+    assert calls == [google_ads, google_analytics]
+    assert [result.integration_resource_id for result in ads_results] == [
+        google_ads.integration_resource_id
     ]
-    assert google_ads.integration_resource_id not in {
-        result.integration_resource_id for result in results
-    }
+    assert [result.integration_resource_id for result in analytics_results] == [
+        google_analytics.integration_resource_id
+    ]
 
 
 async def test_fan_out_never_exceeds_active_context_target_budget() -> None:

@@ -217,7 +217,7 @@ Repo-wide expectations are in the root `AGENTS.md`.
   `entity_resolvers/` tree, with one module per entity kind. The package
   `__init__.py` only composes exported resolver definitions so provider
   manifests stay concise as their catalogs grow.
-- Packaged integrations are Gmail, Google Ads, Airtable, and BigQuery.
+- Packaged integrations are Gmail, Google Ads, Airtable, BigQuery, and Google Analytics.
   BigQuery contributes service-account dataset discovery, a job-synchronized
   table-schema cache for enabled datasets (connection jobs fan out into
   independently retryable dataset jobs), two cache-backed schema tools, and a
@@ -225,6 +225,18 @@ Repo-wide expectations are in the root `AGENTS.md`.
   byte, serialized-result, and row bounds. Query jobs bill through the service
   account's own project. BigQuery warehouse values are plain typed data under
   the operator-controlled database trust boundary.
+  Google Analytics contributes workspace OAuth and service-account connection,
+  a bearer-only Data/Admin REST client, and bounded Admin API discovery of
+  read-only GA4 properties. Its five code-eligible read tools discover bounded
+  standard/custom report fields, check which candidate fields can be added to a
+  compatible standard report, and run structured standard or realtime reports
+  with local request validation, header-typed metric values, and the shared
+  report row bound, and list the Google Ads accounts linked to each selected
+  property without exposing link creator email addresses. Standard reports also
+  expose access-restriction and sampling metadata. Accounts remain property
+  metadata, and discovery must not add per-property enrichment calls. Its OAuth
+  settings stay in the provider package
+  and use a Google Cloud client isolated from every other Google service.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

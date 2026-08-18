@@ -9,7 +9,7 @@ from services.integrations.http import IntegrationRequestPolicy, request_with_re
 from services.integrations.oauth.utils import parse_oauth_json_object
 
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-GOOGLE_PROVIDER_KEYS = frozenset({"gmail", "google_ads"})
+GOOGLE_PROVIDER_KEYS = frozenset({"gmail", "google_ads", "google_analytics"})
 
 
 @dataclass(frozen=True)

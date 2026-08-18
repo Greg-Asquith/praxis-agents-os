@@ -219,12 +219,12 @@ async def test_shared_context_group_accepts_mixed_workspace_owned_providers(
     db_session: AsyncSession,
     context_data: dict[str, object],
 ) -> None:
-    gmail = await _add_resource(
+    google_analytics = await _add_resource(
         db_session,
         user=context_data["user"],
         workspace=context_data["workspace"],
-        provider_key="gmail",
-        resource_type="gmail_mailbox",
+        provider_key="google_analytics",
+        resource_type="google_analytics_property",
     )
     google_ads = await _add_resource(
         db_session,
@@ -241,11 +241,11 @@ async def test_shared_context_group_accepts_mixed_workspace_owned_providers(
         workspace=context_data["workspace"],
         payload=ContextGroupCreateRequest(
             name="Mixed providers",
-            resource_ids=[gmail.id, google_ads.id],
+            resource_ids=[google_ads.id, google_analytics.id],
         ),
     )
 
-    assert {member.id for member in group.members} == {gmail.id, google_ads.id}
+    assert {member.id for member in group.members} == {google_ads.id, google_analytics.id}
 
 
 async def test_personal_context_group_accepts_actor_and_workspace_owned_resources(
