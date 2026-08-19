@@ -70,7 +70,7 @@ from tests.factories import build_user, build_workspace, build_workspace_members
 
 pytestmark = pytest.mark.asyncio
 
-execute_run_module = importlib.import_module("services.agents.runtime.execute_run")
+runtime_setup_module = importlib.import_module("services.agents.runtime.execute.setup")
 dispatch_module = importlib.import_module("services.agents.runtime.dispatch")
 
 
@@ -611,7 +611,7 @@ async def test_envelope_denies_write_tool_before_execution(
         tool_names=["dispatch_write_ok"],
     )
     monkeypatch.setattr(
-        execute_run_module,
+        runtime_setup_module,
         "build_run_envelope",
         lambda _run: RunEnvelope(
             principal="interactive",

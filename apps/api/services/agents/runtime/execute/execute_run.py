@@ -51,8 +51,6 @@ from .finalize import (
     finalize_terminal_run,
 )
 from .setup import (
-    RunEnvelopeBuilder,
-    RuntimeAgentBuilder,
     assemble_user_prompt,
     prepare_runtime,
     start_run,
@@ -62,7 +60,7 @@ from .stream import consume_stream
 from .types import ExecuteRunResult
 
 
-async def execute_run_with_builders(
+async def execute_run(
     db: AsyncSession,
     *,
     conversation_id: UUID,
@@ -77,19 +75,7 @@ async def execute_run_with_builders(
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
     usage: RunUsage | None = None,
-    runtime_agent_builder: RuntimeAgentBuilder,
-    run_envelope_builder: RunEnvelopeBuilder,
 ) -> ExecuteRunResult:
-    """Drive one agent turn to completion or approval suspension.
-
-    New turn prompts are persisted before provider streaming so cancellation does
-    not lose the user message. Resume callers pass rehydrated
-    ``message_history`` and ``deferred_tool_results`` instead of a new prompt.
-    This function owns the run lifecycle transaction boundaries: it commits the
-    running+lease state before provider streaming, commits final
-    messages/usage/status after the stream, and commits failures before
-    re-raising so rollback-based dependencies do not erase diagnostic state.
-    """
     run, conversation, agent = await load_run_context(
         db,
         conversation_id=conversation_id,
@@ -166,8 +152,6 @@ async def execute_run_with_builders(
             deferred_tool_results=deferred_tool_results,
             skills=skills,
             available_files=available_files,
-            runtime_agent_builder=runtime_agent_builder,
-            run_envelope_builder=run_envelope_builder,
         )
         built_agent = prepared.built_agent
         resolved_model = built_agent.runtime_agent.resolved_model

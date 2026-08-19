@@ -12,10 +12,8 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.agent_runs.domain import RUN_STATUS_PENDING
-from services.agents.runtime.envelope import build_run_envelope
-from services.agents.runtime.execute.execute_run import execute_run_with_builders
+from services.agents.runtime.execute.execute_run import execute_run as execute_run_impl
 from services.agents.runtime.execute.types import ExecuteRunResult
-from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.sinks import EventSink
 
 
@@ -45,7 +43,7 @@ async def execute_run(
     messages/usage/status after the stream, and commits failures before
     re-raising so rollback-based dependencies do not erase diagnostic state.
     """
-    return await execute_run_with_builders(
+    return await execute_run_impl(
         db,
         conversation_id=conversation_id,
         run_id=run_id,
@@ -59,14 +57,10 @@ async def execute_run(
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
         usage=usage,
-        runtime_agent_builder=build_runtime_agent,
-        run_envelope_builder=build_run_envelope,
     )
 
 
 __all__ = [
     "ExecuteRunResult",
-    "build_run_envelope",
-    "build_runtime_agent",
     "execute_run",
 ]

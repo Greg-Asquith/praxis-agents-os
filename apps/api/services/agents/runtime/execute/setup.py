@@ -5,7 +5,6 @@
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Protocol
 from uuid import UUID
 
 from pydantic_ai import DeferredToolResults
@@ -33,7 +32,7 @@ from services.agents.models import resolve_agent_model, resolve_model_context_bu
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
 from services.agents.runtime.dispatch import record_denied_approval_audit_events
-from services.agents.runtime.envelope import RunEnvelope
+from services.agents.runtime.envelope import build_run_envelope
 from services.agents.runtime.history import (
     HistoryCompaction,
     history_exceeds_context_budget,
@@ -41,7 +40,7 @@ from services.agents.runtime.history import (
     trim_watermark_key,
 )
 from services.agents.runtime.load_context import AvailableFile, load_actor_context
-from services.agents.runtime.loop import RuntimeAgent, _runtime_instructions
+from services.agents.runtime.loop import _runtime_instructions, build_runtime_agent
 from services.agents.runtime.persistence import (
     load_history_watermark_keys,
     load_message_history,
@@ -66,35 +65,6 @@ from services.tools import get_disabled_tools
 from .types import BuiltRuntimeAgent, PreparedRuntime
 
 logger = logging.getLogger(__name__)
-
-
-class RuntimeAgentBuilder(Protocol):
-    def __call__(
-        self,
-        agent: Agent,
-        *,
-        model: Model | None = None,
-        delegate_agents: Sequence[Agent] = (),
-        enable_delegation: bool = True,
-        force_delegation_tools: bool = False,
-        skills: Sequence[Skill] = (),
-        conversation_context_block: str = "",
-        core_memory_block: str = "",
-        completion_contract_block: str = "",
-        completion_contract: ScheduleCompletionContract | None = None,
-        available_files: Sequence[AvailableFile] = (),
-        active_context: ResolvedActiveContext | None = None,
-        skipped_tool_names: list[str] | None = None,
-        workspace: object | None = None,
-        disabled_tool_names: frozenset[str] = frozenset(),
-        additional_tool_names: Sequence[str] = (),
-        workspace_definitions: Sequence[RuntimeToolDefinition] = (),
-        history_compaction: HistoryCompaction | None = None,
-    ) -> RuntimeAgent: ...
-
-
-class RunEnvelopeBuilder(Protocol):
-    def __call__(self, run: AgentRun) -> RunEnvelope: ...
 
 
 def validate_execution_preconditions(
@@ -157,8 +127,6 @@ async def prepare_runtime(
     deferred_tool_results: DeferredToolResults | None,
     skills: Sequence[Skill],
     available_files: Sequence[AvailableFile],
-    runtime_agent_builder: RuntimeAgentBuilder,
-    run_envelope_builder: RunEnvelopeBuilder,
 ) -> PreparedRuntime:
     user, workspace, membership = await load_actor_context(db, run)
     conversation_context_block = render_conversation_context_block(
@@ -226,7 +194,6 @@ async def prepare_runtime(
         completion_tool_names=completion_tool_names,
         available_files=available_files,
         active_context=active_context,
-        runtime_agent_builder=runtime_agent_builder,
         workspace_definitions=workspace_definitions,
     )
     deps = RuntimeDeps(
@@ -238,7 +205,7 @@ async def prepare_runtime(
         agent=agent,
         run=run,
         sink=event_sink,
-        envelope=run_envelope_builder(run),
+        envelope=build_run_envelope(run),
         delegation_depth=run.delegation_depth or 0,
         active_context=active_context,
         workspace_tool_definitions=tuple(workspace_definitions),
@@ -302,7 +269,6 @@ async def build_agent_for_run(
     completion_tool_names: Sequence[str],
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
-    runtime_agent_builder: RuntimeAgentBuilder,
     workspace_definitions: Sequence[RuntimeToolDefinition],
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
@@ -333,7 +299,7 @@ async def build_agent_for_run(
         active_context=active_context,
         exclude_run_id=run.id if message_history is not None else None,
     )
-    runtime_agent = runtime_agent_builder(
+    runtime_agent = build_runtime_agent(
         agent,
         model=model,
         delegate_agents=delegate_agents,

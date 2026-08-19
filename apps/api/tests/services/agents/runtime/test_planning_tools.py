@@ -31,7 +31,7 @@ from tests.factories import build_user, build_workspace, build_workspace_members
 
 pytestmark = pytest.mark.asyncio
 
-execute_run_module = importlib.import_module("services.agents.runtime.execute_run")
+runtime_setup_module = importlib.import_module("services.agents.runtime.execute.setup")
 
 
 @dataclass(frozen=True)
@@ -203,7 +203,7 @@ async def test_write_todos_denied_by_envelope_before_execution(
 ) -> None:
     context = await _create_committed_planning_context(committed_db_session_factory)
     monkeypatch.setattr(
-        execute_run_module,
+        runtime_setup_module,
         "build_run_envelope",
         lambda _run: RunEnvelope(
             principal="interactive",

@@ -89,7 +89,7 @@ from tests.factories import build_user, build_workspace, build_workspace_members
 
 pytestmark = pytest.mark.asyncio
 
-execute_run_module = importlib.import_module("services.agents.runtime.execute_run")
+runtime_setup_module = importlib.import_module("services.agents.runtime.execute.setup")
 
 PUBLIC_RESULT_PRESENCE_CASES = [
     pytest.param({}, {"model_only": "must-not-leak"}, id="absent"),
@@ -1030,7 +1030,7 @@ async def test_execute_run_has_no_open_transaction_while_streaming(
         usage_limits=None,
     )
     monkeypatch.setattr(
-        execute_run_module,
+        runtime_setup_module,
         "build_runtime_agent",
         lambda _agent, **_kwargs: fake_runtime_agent,
     )
