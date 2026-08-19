@@ -49,6 +49,7 @@ import { BUILD_CHART_TOOL_NAME } from "@/features/conversations/native-tools/cha
 import {
   CLASSIFY_TOOL_NAME,
   classifierResult,
+  isClassifierToolName,
 } from "@/features/conversations/native-tools/classifier-tool"
 import {
   REPORT_COMPLETION_TOOL_NAME,
@@ -135,15 +136,25 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   {
     key: "classifier",
     matches: (activity) =>
-      activity.name === CLASSIFY_TOOL_NAME &&
+      isClassifierToolName(activity.name) &&
       (activity.status === "running" ||
         activity.status === "failed" ||
         activity.status === "denied" ||
         activity.status === "unknown" ||
         (activity.status === "completed" &&
           classifierResult(activity.args, activity.result) !== null)),
-    render: ({ activity, defaultOpen }) => (
-      <ClassifierToolRow activity={activity} defaultOpen={defaultOpen} />
+    render: ({ activity, defaultOpen, label }) => (
+      <ClassifierToolRow
+        activity={activity}
+        defaultOpen={defaultOpen}
+        label={
+          activity.name === CLASSIFY_TOOL_NAME
+            ? "Classify"
+            : label && label !== activity.name
+              ? label
+              : "Classifier"
+        }
+      />
     ),
   },
   {

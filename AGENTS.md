@@ -73,8 +73,9 @@ sessions), users, workspaces (memberships, invitations), agents, conversations
 configurable approval expiry, and staged-input cleanup), the
 LLM model catalog, AI usage and estimated public-rate costs, files and storage
 (signed uploads, revisions, background
-markdown extraction), skills, knowledge base, agent memories, the context hub,
-schedules, integrations (OAuth, API-key, and service-account connections),
+markdown extraction), skills, workspace classifiers, knowledge base, agent
+memories, the context hub, schedules, integrations (OAuth, API-key, and
+service-account connections),
 artifacts (dedicated immutable revisions, approval-gated agent
 tools, agent list/read/update across conversations, workspace management UI,
 append-only edit/restore flows, and

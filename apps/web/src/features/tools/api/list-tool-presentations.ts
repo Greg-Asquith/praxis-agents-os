@@ -2,16 +2,9 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { toolsQueryKeys } from "@/features/tools/api/query-keys"
 import type { ToolPresentationsResponse } from "@/features/tools/types"
-import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
-
-const baseToolPresentationsQueryKeys = createWorkspaceScopedQueryKeys("tools")
-
-const toolPresentationsQueryKeys = {
-  ...baseToolPresentationsQueryKeys,
-  presentations: () => [...baseToolPresentationsQueryKeys.workspace(), "presentations"] as const,
-}
 
 async function listToolPresentations() {
   return apiRequest<ToolPresentationsResponse>("/tools/presentations")
@@ -19,7 +12,7 @@ async function listToolPresentations() {
 
 export function toolPresentationsQueryOptions() {
   return queryOptions({
-    queryKey: toolPresentationsQueryKeys.presentations(),
+    queryKey: toolsQueryKeys.presentations(),
     queryFn: listToolPresentations,
     staleTime: 5 * 60_000,
   })

@@ -187,6 +187,39 @@ describe("renderCustomToolCallRow", () => {
     expect(html).not.toContain("Ran classify")
   })
 
+  it("renders every workspace classifier through the shared classifier presenter", () => {
+    integrationToolRowPresenters.mockReturnValue([])
+
+    const row = renderCustomToolCallRow({
+      ...props(),
+      defaultOpen: true,
+      label: "Location Search Term",
+      activity: {
+        id: "classifier-1",
+        kind: "result",
+        name: "classifier_location_search_term",
+        status: "completed",
+        args: { items: ["plumber in Camden", "emergency plumber near me"] },
+        result: {
+          model: "gpt-5.6-luna",
+          model_provider: "openai",
+          results: [
+            { index: 0, value: "plumber in Camden", label: "Location" },
+            { index: 1, value: "emergency plumber near me", label: "Other" },
+          ],
+        },
+      },
+    })
+    const html = renderToStaticMarkup(row)
+
+    expect(html).toContain("Location Search Term")
+    expect(html).toContain("2 Classified")
+    expect(html).toContain("Location · 1")
+    expect(html).toContain("Other · 1")
+    expect(html).toContain("plumber in Camden")
+    expect(html).not.toContain("classifier_location_search_term")
+  })
+
   it("renders artifact discovery through the native artifact presenter", () => {
     integrationToolRowPresenters.mockReturnValue([])
 

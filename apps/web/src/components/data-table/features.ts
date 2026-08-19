@@ -20,7 +20,7 @@ type AppColumnMeta = {
   isMetric?: boolean
   label?: string
   labelClassName?: string
-  width?: number
+  width?: number | "auto"
 }
 
 export const appTableFeatures = tableFeatures({

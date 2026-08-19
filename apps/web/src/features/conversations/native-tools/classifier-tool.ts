@@ -5,6 +5,7 @@ import { normalizeToolArgs } from "@/features/conversations/message-parts"
 import { isNonNegativeInteger, isRecord } from "@/lib/guards"
 
 export const CLASSIFY_TOOL_NAME = "classify"
+const CLASSIFIER_TOOL_PREFIX = "classifier_"
 
 export type ClassifierArgs = {
   instructions: string | null
@@ -25,13 +26,29 @@ export type ClassifierResult = {
   rows: ClassifiedItem[]
 }
 
-export function classifierArgs(value: unknown): ClassifierArgs | null {
+export function isClassifierToolName(name: string) {
+  return name === CLASSIFY_TOOL_NAME || name.startsWith(CLASSIFIER_TOOL_PREFIX)
+}
+
+export function classifierItems(value: unknown): string[] | null {
   const args = normalizeToolArgs(value)
   if (
     !isRecord(args) ||
     !isStringArray(args["items"]) ||
     args["items"].length === 0 ||
-    args["items"].some((item) => !item.trim()) ||
+    args["items"].some((item) => !item.trim())
+  ) {
+    return null
+  }
+  return args["items"]
+}
+
+export function classifierArgs(value: unknown): ClassifierArgs | null {
+  const args = normalizeToolArgs(value)
+  const items = classifierItems(value)
+  if (
+    !isRecord(args) ||
+    items === null ||
     !isStringArray(args["labels"]) ||
     args["labels"].length < 2 ||
     args["labels"].some((label) => !label.trim())
@@ -44,7 +61,7 @@ export function classifierArgs(value: unknown): ClassifierArgs | null {
   }
   return {
     instructions: typeof instructions === "string" && instructions.trim() ? instructions : null,
-    items: args["items"],
+    items,
     labels: args["labels"],
   }
 }

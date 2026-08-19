@@ -24,6 +24,7 @@ export type DataColumn = {
   kind: DataColumnKind
   label: string
   unit?: "micros" | "milliseconds" | "seconds"
+  width?: number | "auto"
 }
 
 export type DataRow = Record<string, unknown>

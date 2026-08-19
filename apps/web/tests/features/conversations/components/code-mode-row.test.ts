@@ -174,6 +174,30 @@ describe("CodeModeRow", () => {
     expect(html).not.toContain("Recorded result")
   })
 
+  it("renders workspace classifier children with the shared classifier result card", () => {
+    const classifier: ToolActivity = {
+      id: "workflow-1:1",
+      kind: "result",
+      name: "classifier_location_search_term",
+      status: "completed",
+      result: {
+        model: "gpt-5.6-luna",
+        model_provider: "openai",
+        results: [
+          { index: 0, value: "plumber in Camden", label: "Location" },
+          { index: 1, value: "boiler servicing", label: "Other" },
+        ],
+      },
+    }
+
+    const html = renderWorkflow(workflow([classifier]), true)
+
+    expect(html).toContain("Location Search Term")
+    expect(html).toContain("2 Classified")
+    expect(html).toContain('aria-label="2 classified items"')
+    expect(html).not.toContain("Classified with Location Search Term")
+  })
+
   it("bounds the supported 25-call workflow with stable intrinsic row sizing", () => {
     const html = renderWorkflow(
       workflow(Array.from({ length: 25 }, (_, index) => child(index + 1))),
@@ -331,6 +355,23 @@ function renderWorkflow(
           icon: "tool",
           result_fields: [],
           running_label: "Applying Keyword Batch…",
+        },
+      },
+      {
+        effect: "read",
+        label: "Location Search Term",
+        name: "classifier_location_search_term",
+        provider: "classifier",
+        ui: {
+          approval_prompt: "The agent wants to classify these items with a helper model.",
+          approval_title: "Location Search Term",
+          approve_label: "Approve & Classify",
+          arg_fields: [],
+          completed_label: "Classified with Location Search Term",
+          failed_label: "Couldn’t run Location Search Term",
+          icon: "sparkles",
+          result_fields: [],
+          running_label: "Classifying with Location Search Term",
         },
       },
     ],

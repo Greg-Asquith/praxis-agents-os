@@ -3,6 +3,7 @@
 import { PageHeader } from "@/components/shell/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AuditSettingsPanel } from "@/features/audit/components/audit-settings-panel"
+import { ClassifiersSettingsPanel } from "@/features/classifiers/components/classifiers-settings-panel"
 import { UsageSettingsPanel } from "@/features/usage/components/usage-dashboard-panel"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { InvitationsTable } from "@/features/workspaces/components/invitations-table"
@@ -19,15 +20,19 @@ export function WorkspaceSettingsRoute() {
     <div className="flex flex-col gap-6">
       <PageHeader
         actions={<WorkspaceRoleBadge role={workspace.current_user_role} />}
-        description="Manage workspace details, members, invitations, usage, and audit history."
+        description="Manage workspace details, members, reusable classifiers, usage, and audit history."
         title="Workspace Settings"
       />
 
       <Tabs defaultValue="details">
-        <TabsList variant="line">
+        <TabsList
+          className="max-w-full justify-start overflow-x-auto overflow-y-hidden"
+          variant="line"
+        >
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           {canManageWorkspace ? <TabsTrigger value="invitations">Invitations</TabsTrigger> : null}
+          {canManageWorkspace ? <TabsTrigger value="classifiers">Classifiers</TabsTrigger> : null}
           {canManageWorkspace ? <TabsTrigger value="usage">AI Usage</TabsTrigger> : null}
           {canManageWorkspace ? <TabsTrigger value="audit">Audit Log</TabsTrigger> : null}
         </TabsList>
@@ -40,6 +45,11 @@ export function WorkspaceSettingsRoute() {
         {canManageWorkspace ? (
           <TabsContent value="invitations">
             <InvitationsTable />
+          </TabsContent>
+        ) : null}
+        {canManageWorkspace ? (
+          <TabsContent value="classifiers">
+            <ClassifiersSettingsPanel />
           </TabsContent>
         ) : null}
         {canManageWorkspace ? (

@@ -144,6 +144,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   label, including replayed Code Mode children whose unrestricted arguments
   are intentionally not persisted. Also show label distribution plus
   provider/model details.
+- Workspace classifiers are managed by workspace owners and admins from the
+  Classifiers tab in Workspace Settings. Keep category and judging copy in
+  operator language, place the helper-model override behind Advanced, and
+  default it to Automatic. Classifier mutations invalidate the workspace
+  classifier list and both workspace tool query families so agent settings and
+  conversation presentations refresh without a reload. Saved changes apply to
+  the next agent run.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
   use the server-supplied canonical identity for provider-neutral comparison,

@@ -64,8 +64,9 @@ The core platform is wired end to end (API, worker, and UI):
   cancellation, plus provenance-tracked memory with core-memory prompt
   injection and operator review, correction, archive, and purge.
 - Tooling: a typed tool registry with a single audited dispatch choke point,
-  a tool catalog surface, per-agent tool policies, and a basic behavior evaluation
-  harness (`make evals`, intentionally outside `make check`).
+  a tool catalog surface, per-agent tool policies, workspace-defined classifiers
+  managed from Workspace Settings, and a basic behavior evaluation harness
+  (`make evals`, intentionally outside `make check`).
 - Files, skills, and Knowledge Base: signed two-phase uploads, immutable
   revisions, background markdown extraction, agent file tools, skill
   management with document pipelines, and pgvector-backed document retrieval

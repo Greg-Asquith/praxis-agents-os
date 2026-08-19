@@ -6,6 +6,7 @@ import { ClassifierToolRow } from "@/features/conversations/components/classifie
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   classifierArgs,
+  classifierItems,
   classifierResult,
 } from "@/features/conversations/native-tools/classifier-tool"
 
@@ -42,6 +43,8 @@ describe("classifier tool row", () => {
     expect(html).toContain("Where is my order?")
     expect(html).toContain("Classified value")
     expect(html).toContain("Assigned label")
+    expect(html).toContain('<col style="width:48px"/>')
+    expect(html.match(/<col style="width:auto"\/>/g)).toHaveLength(2)
     expect(html).toContain('aria-label="Copy Report Table"')
     expect(html).toContain('aria-label="Download Report CSV"')
     expect(html).not.toContain('data-slot="tool-field-well"')
@@ -124,6 +127,33 @@ describe("classifier tool row", () => {
     expect(html).toContain("praise · 1")
     expect(html).toContain("Refund requested")
     expect(html).toContain("Wonderful support")
+  })
+
+  it("uses the workspace classifier label and item-only arguments", () => {
+    const workspaceActivity = activity({
+      args: { items: ["London plumber", "boiler repair"] },
+      name: "classifier_location_search_term",
+      result: {
+        model: "gpt-5.6-luna",
+        model_provider: "openai",
+        results: [
+          { index: 0, value: "London plumber", label: "Location" },
+          { index: 1, value: "boiler repair", label: "Other" },
+        ],
+      },
+    })
+    const html = renderToStaticMarkup(
+      createElement(ClassifierToolRow, {
+        activity: workspaceActivity,
+        defaultOpen: true,
+        label: "Location Search Term",
+      })
+    )
+
+    expect(classifierItems(workspaceActivity.args)).toEqual(["London plumber", "boiler repair"])
+    expect(html).toContain("Location Search Term")
+    expect(html).toContain("2 Classified")
+    expect(html).toContain("London plumber")
   })
 })
 

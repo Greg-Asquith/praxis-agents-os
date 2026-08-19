@@ -265,11 +265,13 @@ completion reporting stay direct — they are conversation-shaped, not
 data-shaped.
 
 Helper-native tools also stay direct unless they return text-only JSON-safe
-data and send content only to a configured model provider. `classify` is the
-first eligible helper-native tool: its server-enforced closed label set keeps
-the composable return data-shaped. Each result's `value` is copied exactly from
-the corresponding validated tool input after the helper returns; the helper
-can author only the index and closed-set label, never arbitrary result text.
+data and send content only to a configured model provider. Native `classify`
+and active workspace-defined `classifier_{name}` tools meet that exception:
+their server-enforced closed label sets keep the composable return data-shaped.
+Workspace definitions are loaded at the start of each run, so saved changes
+apply to the next run. Each result's `value` is copied exactly from the
+corresponding validated tool input after the helper returns; the helper can
+author only the index and closed-set label, never arbitrary result text.
 
 ## Trace and replay
 

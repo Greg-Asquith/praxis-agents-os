@@ -410,7 +410,10 @@ function columnAlignment(column: DataColumn): "left" | "right" {
   return "left"
 }
 
-function columnWidth(column: DataColumn): number {
+function columnWidth(column: DataColumn): number | "auto" {
+  if (column.width !== undefined) {
+    return column.width
+  }
   if (/resource_?name$/i.test(column.key)) {
     return 240
   }
@@ -426,8 +429,11 @@ function columnWidth(column: DataColumn): number {
   return 120
 }
 
-function tableMinWidth(columns: { columnDef: { meta?: { width?: number } } }[]): number {
-  return columns.reduce((width, column) => width + (column.columnDef.meta?.width ?? 120), 0)
+function tableMinWidth(columns: { columnDef: { meta?: { width?: number | "auto" } } }[]): number {
+  return columns.reduce((width, column) => {
+    const columnWidth = column.columnDef.meta?.width
+    return width + (typeof columnWidth === "number" ? columnWidth : 120)
+  }, 0)
 }
 
 function scalarText(value: unknown): string | null {

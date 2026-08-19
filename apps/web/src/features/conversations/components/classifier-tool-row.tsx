@@ -11,29 +11,32 @@ import { ActivityStatusBadge } from "@/features/conversations/components/tool-ac
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   classifierArgs,
+  classifierItems,
   classifierResult,
 } from "@/features/conversations/native-tools/classifier-tool"
 import { pluralize } from "@/lib/format"
 
 const CLASSIFIER_COLUMNS: DataColumn[] = [
-  { align: "right", key: "index", kind: "number", label: "#" },
-  { key: "value", kind: "text", label: "Classified value" },
-  { key: "label", kind: "text", label: "Assigned label" },
+  { align: "right", key: "index", kind: "number", label: "#", width: 48 },
+  { key: "value", kind: "text", label: "Classified value", width: "auto" },
+  { key: "label", kind: "text", label: "Assigned label", width: "auto" },
 ]
 
 export function ClassifierToolRow({
   activity,
   defaultOpen = false,
+  label = "Classify",
 }: {
   activity: ToolActivity
   defaultOpen?: boolean
+  label?: string
 }) {
   if (activity.status === "running") {
     const args = classifierArgs(activity.args)
-    const count = args?.items.length ?? 0
+    const count = classifierItems(activity.args)?.length ?? 0
     return (
       <FanOutSkeleton
-        heading={<ClassifierHeading />}
+        heading={<ClassifierHeading label={label} />}
         label={count > 0 ? `Classifying ${String(count)} items…` : "Classifying items…"}
         {...(args ? { summary: labelSummary(args.labels) } : {})}
       />
@@ -45,7 +48,7 @@ export function ClassifierToolRow({
     activity.status === "denied" ||
     activity.status === "unknown"
   ) {
-    return <ClassifierFailureRow activity={activity} />
+    return <ClassifierFailureRow activity={activity} label={label} />
   }
   if (activity.status !== "completed") {
     return null
@@ -70,7 +73,7 @@ export function ClassifierToolRow({
           ? [{ label: "Instructions", summary: false, value: args.instructions }]
           : []),
       ]}
-      heading={<ClassifierHeading />}
+      heading={<ClassifierHeading label={label} />}
       trailing={<Badge variant="success">{String(count)} Classified</Badge>}
     >
       <DataTable
@@ -84,7 +87,7 @@ export function ClassifierToolRow({
   )
 }
 
-function ClassifierFailureRow({ activity }: { activity: ToolActivity }) {
+function ClassifierFailureRow({ activity, label }: { activity: ToolActivity; label: string }) {
   const message =
     typeof activity.result === "string" && activity.result.trim()
       ? activity.result
@@ -96,7 +99,7 @@ function ClassifierFailureRow({ activity }: { activity: ToolActivity }) {
       ariaLabel="Classification failed"
       defaultOpen
       details={[]}
-      heading={<ClassifierHeading />}
+      heading={<ClassifierHeading label={label} />}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <Alert variant="destructive">
@@ -125,11 +128,11 @@ function LabelDistribution({ labels, rows }: { labels: string[]; rows: { label: 
   )
 }
 
-function ClassifierHeading() {
+function ClassifierHeading({ label }: { label: string }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
       <SparklesIcon className="text-muted-foreground size-4 shrink-0" />
-      <span>Classify</span>
+      <span className="truncate">{label}</span>
     </span>
   )
 }
