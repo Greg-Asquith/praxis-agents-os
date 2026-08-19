@@ -76,6 +76,13 @@ describe("agentStreamReducer", () => {
     })
   })
 
+  it("tracks the stream transport connection", () => {
+    const connectedState = agentStreamReducer(initialAgentStreamState, { type: "connect" })
+
+    expect(connectedState.isConnected).toBe(true)
+    expect(agentStreamReducer(connectedState, { type: "disconnect" }).isConnected).toBe(false)
+  })
+
   it("stores conversation data from create and update events", () => {
     const created = {
       event: "conversation.created",
@@ -275,8 +282,10 @@ describe("agentStreamReducer", () => {
       },
     ])
 
-    const abortedState = agentStreamReducer(runningState, { type: "abort" })
+    const connectedState = agentStreamReducer(runningState, { type: "connect" })
+    const abortedState = agentStreamReducer(connectedState, { type: "abort" })
 
+    expect(abortedState.isConnected).toBe(false)
     expect(abortedState.done).toBe(true)
     expect(abortedState.status).toBe("running")
     expect(abortedState.messages).toBe(runningState.messages)

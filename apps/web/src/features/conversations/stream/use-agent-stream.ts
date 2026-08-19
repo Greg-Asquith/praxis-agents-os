@@ -89,6 +89,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       try {
         const response = await request(abortController.signal)
         await assertStreamResponse(response)
+        dispatch({ type: "connect" })
 
         for await (const streamEvent of parseSseStream(response.body)) {
           observedConversationId = streamEvent.data.conversation_id
@@ -117,6 +118,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       } finally {
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null
+          dispatch({ type: "disconnect" })
         }
         const closedWithoutDone = streamClosedNormally && observedDoneStatus === null
         if (closedWithoutDone) {

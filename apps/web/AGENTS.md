@@ -53,7 +53,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   plain-language outcome copy without keeping the conversation blocked. It
   includes the active approval's expiry deadline; schedule one healing read at
   that deadline instead of polling throughout a days-long wait. An active run
-  always takes precedence over an older expiry outcome.
+  always takes precedence over an older expiry outcome. Pending and running
+  heal reads use a four-second interval only while the tab has no connected
+  stream for that conversation.
 - API types are hand-written per feature in `types.ts`; there is no OpenAPI
   codegen. Use `type` aliases, not `interface` (lint-enforced).
 - Forms use native HTML forms plus `FormData` with the helpers in

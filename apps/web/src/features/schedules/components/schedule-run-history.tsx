@@ -72,8 +72,14 @@ const columns = columnHelper.columns([
   }),
 ])
 
-export function ScheduleRunHistory({ scheduleId }: { scheduleId: string }) {
-  const runsQuery = useScheduleRunsQuery(scheduleId, { limit: 100 })
+export function ScheduleRunHistory({
+  enabled,
+  scheduleId,
+}: {
+  enabled: boolean
+  scheduleId: string
+}) {
+  const runsQuery = useScheduleRunsQuery(scheduleId, { limit: 100 }, enabled)
   const runs = runsQuery.data?.items ?? EMPTY_RUNS
   const table = useAppTable({ columns, data: runs })
 

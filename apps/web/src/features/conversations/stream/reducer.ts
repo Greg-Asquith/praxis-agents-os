@@ -49,6 +49,7 @@ export type ApprovalState = {
 }
 
 export type AgentStreamState = {
+  isConnected: boolean
   conversation: Conversation | null
   conversationId: string | null
   runId: string | null
@@ -68,6 +69,8 @@ export type LiveTimelineItem =
 
 export type AgentStreamAction =
   | { type: "start" }
+  | { type: "connect" }
+  | { type: "disconnect" }
   | { type: "abort" }
   | { type: "reset" }
   | { type: "finishClosedStream" }
@@ -75,6 +78,7 @@ export type AgentStreamAction =
   | { type: "fail"; error: StreamError }
 
 export const initialAgentStreamState: AgentStreamState = {
+  isConnected: false,
   conversation: null,
   conversationId: null,
   runId: null,
@@ -95,16 +99,20 @@ export function agentStreamReducer(
   switch (action.type) {
     case "start":
       return { ...initialAgentStreamState, status: "pending" }
+    case "connect":
+      return { ...state, isConnected: true }
+    case "disconnect":
+      return { ...state, isConnected: false }
     case "abort":
       if (state.status === "idle" || state.done) {
         return state
       }
 
-      return { ...state, done: true }
+      return { ...state, isConnected: false, done: true }
     case "reset":
       return initialAgentStreamState
     case "finishClosedStream":
-      return { ...state, done: true }
+      return { ...state, isConnected: false, done: true }
     case "fail":
       return withStreamError(state, action.error)
     case "event":
@@ -475,6 +483,7 @@ function completeMessage(messages: ChatMessageDraft[], messageId: string): ChatM
 function withStreamError(state: AgentStreamState, error: StreamError): AgentStreamState {
   return {
     ...state,
+    isConnected: false,
     done: true,
     error,
     status: "failed",

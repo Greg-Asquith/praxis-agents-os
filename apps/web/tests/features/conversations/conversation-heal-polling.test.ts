@@ -42,18 +42,24 @@ function activeRunResponse(
 
 describe("conversation heal polling", () => {
   it.each(["pending", "running"] as const)("polls while a run is %s", (status) => {
-    expect(conversationHealPollInterval(status, null)).toBe(CONVERSATION_HEAL_POLL_INTERVAL_MS)
+    expect(conversationHealPollInterval(status, null, false)).toBe(
+      CONVERSATION_HEAL_POLL_INTERVAL_MS
+    )
+  })
+
+  it("does not poll while this conversation has a connected stream", () => {
+    expect(conversationHealPollInterval("running", null, true)).toBe(false)
   })
 
   it.each([null, "awaiting_approval", "completed", "failed", "cancelled"] as const)(
     "stops when the run status is %s",
     (status) => {
-      expect(conversationHealPollInterval(status, null)).toBe(false)
+      expect(conversationHealPollInterval(status, null, false)).toBe(false)
     }
   )
 
   it("stops after the query layer exhausts retries", () => {
-    expect(conversationHealPollInterval("running", new Error("API unavailable"))).toBe(false)
+    expect(conversationHealPollInterval("running", new Error("API unavailable"), false)).toBe(false)
   })
 
   it("waits until the approval deadline instead of polling throughout the wait", () => {
@@ -64,6 +70,7 @@ describe("conversation heal polling", () => {
       conversationActiveRunRefetchInterval(
         activeRunResponse("awaiting_approval", expiresAt),
         null,
+        false,
         now
       )
     ).toBe(7 * 24 * 60 * 60 * 1_000 + APPROVAL_EXPIRY_HEAL_POLL_INTERVAL_MS)
@@ -74,13 +81,20 @@ describe("conversation heal polling", () => {
       conversationActiveRunRefetchInterval(
         activeRunResponse("awaiting_approval", "2026-08-04T11:59:59Z"),
         null,
+        false,
         Date.parse("2026-08-04T12:00:00Z")
       )
     ).toBe(APPROVAL_EXPIRY_HEAL_POLL_INTERVAL_MS)
   })
 
   it("does not poll indefinitely when expiry is disabled", () => {
-    expect(conversationActiveRunRefetchInterval(activeRunResponse("awaiting_approval"), null)).toBe(
+    expect(
+      conversationActiveRunRefetchInterval(activeRunResponse("awaiting_approval"), null, false)
+    ).toBe(false)
+  })
+
+  it("threads stream connectivity through active-run polling", () => {
+    expect(conversationActiveRunRefetchInterval(activeRunResponse("running"), null, true)).toBe(
       false
     )
   })

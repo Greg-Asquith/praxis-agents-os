@@ -48,6 +48,7 @@ export function ScheduleDetailRoute() {
   const runScheduleNowMutation = useRunScheduleNowMutation()
   const [actionError, setActionError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [runHistoryVisible, setRunHistoryVisible] = useState(false)
   const agent = agentsData.agents.find((item) => item.id === schedule.agent_id) ?? null
 
   async function handleUpdateSchedule(payload: ScheduleUpdateRequest) {
@@ -172,7 +173,12 @@ export function ScheduleDetailRoute() {
           <AlertDescription>{actionError}</AlertDescription>
         </Alert>
       ) : null}
-      <Tabs defaultValue="settings">
+      <Tabs
+        defaultValue="settings"
+        onValueChange={(value) => {
+          setRunHistoryVisible(value === "history")
+        }}
+      >
         <TabsList variant="line">
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="history">Run history</TabsTrigger>
@@ -193,7 +199,7 @@ export function ScheduleDetailRoute() {
           </div>
         </TabsContent>
         <TabsContent value="history">
-          <ScheduleRunHistory scheduleId={schedule.id} />
+          <ScheduleRunHistory enabled={runHistoryVisible} scheduleId={schedule.id} />
         </TabsContent>
       </Tabs>
     </div>

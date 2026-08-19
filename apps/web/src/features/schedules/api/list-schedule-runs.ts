@@ -25,14 +25,25 @@ async function listScheduleRuns(
   })
 }
 
-function scheduleRunsQueryOptions(scheduleId: string, params: ListScheduleRunsParams = {}) {
+export const SCHEDULE_RUNS_REFETCH_INTERVAL_MS = 30_000
+
+export function scheduleRunsQueryOptions(
+  scheduleId: string,
+  params: ListScheduleRunsParams = {},
+  enabled = true
+) {
   return queryOptions({
+    enabled,
     queryKey: schedulesQueryKeys.runsList(scheduleId, params),
     queryFn: () => listScheduleRuns(scheduleId, params),
-    refetchInterval: 15_000,
+    refetchInterval: SCHEDULE_RUNS_REFETCH_INTERVAL_MS,
   })
 }
 
-export function useScheduleRunsQuery(scheduleId: string, params: ListScheduleRunsParams = {}) {
-  return useQuery(scheduleRunsQueryOptions(scheduleId, params))
+export function useScheduleRunsQuery(
+  scheduleId: string,
+  params: ListScheduleRunsParams = {},
+  enabled = true
+) {
+  return useQuery(scheduleRunsQueryOptions(scheduleId, params, enabled))
 }

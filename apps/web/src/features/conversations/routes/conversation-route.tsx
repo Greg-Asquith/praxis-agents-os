@@ -90,6 +90,7 @@ function ConversationDetail({
   const { pendingUserMessages, stream } = useConversationWorkspace()
   const [submittingApprovalRunId, setSubmittingApprovalRunId] = useState<string | null>(null)
   const isLiveStreamConversation = stream.conversationId === conversationId
+  const streamConnected = isLiveStreamConversation && stream.isConnected
   const streamActiveRun = isLiveStreamConversation
     ? streamActiveRunFromState({
         conversation,
@@ -126,7 +127,8 @@ function ConversationDetail({
             queryClient.getQueryState<ConversationActiveRunResponse>(activeRunQueryKey)
           return conversationHealPollInterval(
             streamActiveRun?.status ?? activeRunState?.data?.active_run?.status,
-            query.state.error ?? activeRunState?.error ?? null
+            query.state.error ?? activeRunState?.error ?? null,
+            streamConnected
           )
         },
       },
@@ -140,7 +142,12 @@ function ConversationDetail({
             ConversationActiveRunResponse,
             typeof activeRunQueryKey
           >
-        ) => conversationActiveRunRefetchInterval(query.state.data, query.state.error),
+        ) =>
+          conversationActiveRunRefetchInterval(
+            query.state.data,
+            query.state.error,
+            streamConnected
+          ),
       },
     ],
   })
