@@ -23,7 +23,7 @@ async def change_password(
     payload: PasswordChangeRequest,
 ) -> MessageResponse:
     validate_password_strength(payload.new_password)
-    if not user.has_password or not user.verify_password(payload.current_password):
+    if not user.has_password or not await user.verify_password_async(payload.current_password):
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_LOGIN_FAILED,
             request=request,
@@ -33,7 +33,7 @@ async def change_password(
         )
         raise AuthenticationError("Current password is incorrect")
 
-    user.set_password(payload.new_password)
+    await user.set_password_async(payload.new_password)
     current_session_token = session_token_from_request(request)
     revoked_count = await session_manager.revoke_user_sessions(
         db,

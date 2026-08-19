@@ -6,13 +6,16 @@ from fastapi import Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthenticationError, AuthorizationError
+from core.rate_limiting import record_login_failure
 from core.settings import settings
 from services.auth.schemas import AuthResponse, LoginRequest
 from services.auth.utils import (
+    enforce_login_failure_limit,
     get_user_by_email,
     issue_auth_response,
     record_auth_security_event,
     record_failed_login_attempt,
+    request_ip,
 )
 from services.security import SecurityEventType
 from services.workspaces.provisioning import provision_personal_workspace
@@ -26,7 +29,12 @@ async def login_with_password(
     response: Response,
     payload: LoginRequest,
 ) -> AuthResponse:
+    email = normalize_email(payload.email)
+    client_ip = request_ip(request)
+    await enforce_login_failure_limit(request, email)
+
     if not settings.EMAIL_AUTH_ENABLED:
+        await record_login_failure(client_ip, email)
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_LOGIN_FAILED,
             request=request,
@@ -36,9 +44,9 @@ async def login_with_password(
         )
         raise AuthorizationError("Email authentication is disabled")
 
-    email = normalize_email(payload.email)
     user = await get_user_by_email(db, email)
     if not user:
+        await record_login_failure(client_ip, email)
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_LOGIN_FAILED,
             request=request,
@@ -49,6 +57,7 @@ async def login_with_password(
         raise AuthenticationError("Invalid email or password")
 
     if user.is_locked:
+        await record_login_failure(client_ip, email)
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_LOGIN_FAILED,
             request=request,
@@ -62,8 +71,9 @@ async def login_with_password(
         not user.is_active
         or user.deleted
         or not user.has_password
-        or not user.verify_password(payload.password)
+        or not await user.verify_password_async(payload.password)
     ):
+        await record_login_failure(client_ip, email)
         await record_failed_login_attempt(
             user_id=user.id,
             reason="invalid_credentials",

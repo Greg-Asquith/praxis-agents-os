@@ -57,7 +57,7 @@ async def enable_totp(
         raise AuthenticationError("Invalid TOTP code")
 
     user.enable_totp()
-    backup_codes = user.generate_backup_codes()
+    backup_codes = await user.generate_backup_codes_async()
     await db.flush()
     await record_auth_security_event(
         db=db,

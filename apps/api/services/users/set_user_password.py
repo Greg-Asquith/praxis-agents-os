@@ -25,7 +25,7 @@ async def set_user_password(
 ) -> UserRead:
     validate_password_strength(payload.password)
     user = await get_user_or_raise(db, user_id=user_id)
-    user.set_password(payload.password)
+    await user.set_password_async(payload.password)
     revoked_sessions = await session_manager.revoke_user_sessions(db, user_id=str(user.id))
     await db.flush()
     await record_user_audit_event(

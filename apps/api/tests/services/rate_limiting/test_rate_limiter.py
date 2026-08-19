@@ -2,13 +2,20 @@
 
 from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address, ip_network
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import core.rate_limiting as rate_limiting_module
-from core.rate_limiting import RateLimiter, normalize_endpoint
+from core.rate_limiting import (
+    RateLimiter,
+    get_client_ip,
+    get_login_failure_status,
+    normalize_endpoint,
+    record_login_failure,
+)
 from core.settings import settings
 from models.jobs import Job
 from models.rate_limiting import RateLimitAttempt
@@ -46,6 +53,80 @@ async def test_invalid_trusted_proxy_cidr_is_not_logged(
     assert networks == (ip_network("192.0.2.0/24"),)
     assert warnings == ["Ignoring invalid TRUSTED_PROXY_CIDRS entry"]
     assert sensitive_value not in "".join(warnings)
+
+
+async def test_forwarded_for_is_used_only_for_a_trusted_socket_peer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "TRUSTED_PROXY_CIDRS", "10.0.0.0/8")
+    rate_limiting_module._parse_trusted_proxy_networks.cache_clear()
+    headers = {"X-Forwarded-For": "203.0.113.25"}
+
+    trusted_request = SimpleNamespace(
+        client=SimpleNamespace(host="10.0.0.2"),
+        headers=headers,
+    )
+    untrusted_request = SimpleNamespace(
+        client=SimpleNamespace(host="192.0.2.44"),
+        headers=headers,
+    )
+
+    assert get_client_ip(trusted_request) == "203.0.113.25"
+    assert get_client_ip(untrusted_request) == "192.0.2.44"
+
+
+async def test_login_failures_are_isolated_by_normalized_email(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        rate_limiting_module.rate_limiter.default_limits, "login_attempts", (2, 3600)
+    )
+    client_ip = "203.0.113.30"
+
+    await record_login_failure(client_ip, " First@Example.com ", db_session)
+    await record_login_failure(client_ip, "first@example.com", db_session)
+
+    blocked = await get_login_failure_status(client_ip, "FIRST@example.com", db_session)
+    different_account = await get_login_failure_status(client_ip, "second@example.com", db_session)
+
+    assert blocked.allowed is False
+    assert blocked.attempts == 2
+    assert different_account.allowed is True
+    assert different_account.attempts == 0
+
+
+async def test_anonymous_login_failures_are_isolated_by_flow(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        rate_limiting_module.rate_limiter.default_limits, "login_attempts", (1, 3600)
+    )
+    client_ip = "203.0.113.31"
+
+    await record_login_failure(
+        client_ip,
+        None,
+        db_session,
+        anonymous_scope="totp",
+    )
+
+    blocked_totp = await get_login_failure_status(
+        client_ip,
+        None,
+        db_session,
+        anonymous_scope="totp",
+    )
+    available_oauth = await get_login_failure_status(
+        client_ip,
+        None,
+        db_session,
+        anonymous_scope="oauth",
+    )
+
+    assert blocked_totp.allowed is False
+    assert available_oauth.allowed is True
 
 
 async def test_check_rate_limit_increments_existing_bucket(db_session: AsyncSession) -> None:

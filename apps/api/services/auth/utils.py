@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.sessions import session_manager
 from core.database import get_async_db_session_factory
 from core.dependencies import is_super_admin_email
-from core.rate_limiting import get_client_ip
+from core.rate_limiting import (
+    RateLimitResult,
+    build_rate_limit_error,
+    get_client_ip,
+    get_login_failure_status,
+    record_login_failure,
+)
 from core.settings import settings
 from models.user import User
 from services.auth.schemas import AuthResponse, AuthSession, AuthUser
@@ -199,6 +205,67 @@ async def record_auth_security_event(
     await safe_record_security_event(db, **event_kwargs)
 
 
+async def _raise_audited_login_rate_limit(
+    *,
+    request: Request,
+    result: RateLimitResult,
+    user_email: str | None,
+) -> None:
+    if result.allowed:
+        return
+    await record_auth_security_event(
+        event_type=SecurityEventType.RATE_LIMIT_EXCEEDED,
+        request=request,
+        user_email=user_email,
+        details={
+            "limit_type": "login_attempts",
+            "attempts": result.attempts,
+            "limit": result.limit,
+            "retry_after": result.retry_after,
+        },
+        committed=True,
+    )
+    raise build_rate_limit_error(result, limit_type="login_attempts")
+
+
+async def enforce_login_failure_limit(
+    request: Request,
+    email: str | None,
+    *,
+    anonymous_scope: str | None = None,
+) -> None:
+    """Reject and audit a login whose client-and-account budget is spent."""
+    result = await get_login_failure_status(
+        request_ip(request),
+        email,
+        anonymous_scope=anonymous_scope,
+    )
+    await _raise_audited_login_rate_limit(
+        request=request,
+        result=result,
+        user_email=email,
+    )
+
+
+async def record_and_enforce_login_failure(
+    request: Request,
+    email: str | None,
+    *,
+    anonymous_scope: str | None = None,
+) -> None:
+    """Consume a failed-login attempt, then audit and reject an exhausted budget."""
+    result = await record_login_failure(
+        request_ip(request),
+        email,
+        anonymous_scope=anonymous_scope,
+    )
+    await _raise_audited_login_rate_limit(
+        request=request,
+        result=result,
+        user_email=email,
+    )
+
+
 async def get_user_by_email(
     db: AsyncSession,
     email: str,
@@ -212,7 +279,7 @@ async def get_user_by_email(
     return result.scalar_one_or_none()
 
 
-def verify_totp_or_backup(
+async def verify_totp_or_backup(
     user: User,
     *,
     token: str | None,
@@ -220,7 +287,7 @@ def verify_totp_or_backup(
 ) -> bool:
     if token and user.verify_totp(token):
         return True
-    return bool(backup_code and user.verify_backup_code(backup_code))
+    return bool(backup_code and await user.verify_backup_code_async(backup_code))
 
 
 def request_ip(request: Request) -> str:

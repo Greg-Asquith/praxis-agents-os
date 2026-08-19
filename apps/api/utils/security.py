@@ -12,6 +12,7 @@ Provides:
 - Key rotation support
 """
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -240,6 +241,36 @@ def verify_password_hash(plain_password: str, hashed_password: str) -> bool:
         # A malformed/corrupt stored hash otherwise looks like a wrong password.
         logger.warning("Password verification failed due to an invalid stored hash", exc_info=True)
         return False
+
+
+async def hash_password_async(password: str) -> str:
+    """Hash one password without blocking the event loop."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_hash_async(plain_password: str, hashed_password: str) -> bool:
+    """Verify one password without blocking the event loop."""
+    return await asyncio.to_thread(verify_password_hash, plain_password, hashed_password)
+
+
+async def hash_passwords_async(passwords: list[str]) -> list[str]:
+    """Hash a bounded password list in one worker-thread call."""
+    return await asyncio.to_thread(lambda: [hash_password(password) for password in passwords])
+
+
+async def matching_password_hash_index_async(
+    plain_password: str,
+    hashed_passwords: list[str],
+) -> int | None:
+    """Find a matching hash in one worker-thread call."""
+
+    def find_match() -> int | None:
+        for index, hashed_password in enumerate(hashed_passwords):
+            if verify_password_hash(plain_password, hashed_password):
+                return index
+        return None
+
+    return await asyncio.to_thread(find_match)
 
 
 # =============================================================================

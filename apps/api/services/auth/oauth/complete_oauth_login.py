@@ -7,17 +7,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.oauth_providers.oauth_registry import oauth_registry
 from core.exceptions.auth import AuthenticationError
-from core.exceptions.general import ConflictError, NotFoundError
+from core.exceptions.general import ConflictError, NotFoundError, RateLimitError
 from core.exceptions.oauth import OAuthAuthenticationError
+from core.rate_limiting import record_login_failure
 from services.auth.oauth.utils import (
     clear_oauth_login_binding_cookie,
+    provider_email,
     resolve_provider_redirect_uri,
     upsert_oauth_user,
     verify_oauth_login_browser_binding,
     verify_oauth_state,
 )
 from services.auth.schemas import AuthResponse, OAuthCallbackRequest
-from services.auth.utils import issue_auth_response, record_auth_security_event
+from services.auth.utils import (
+    enforce_login_failure_limit,
+    issue_auth_response,
+    record_and_enforce_login_failure,
+    record_auth_security_event,
+    request_ip,
+)
 from services.security import SecurityEventType
 from utils.redirects import safe_next_path
 
@@ -30,9 +38,15 @@ async def complete_oauth_login(
     provider_name: str,
     payload: OAuthCallbackRequest,
 ) -> AuthResponse:
+    client_ip = request_ip(request)
     provider_name = provider_name.strip().lower()
     provider = oauth_registry.get_provider(provider_name)
     if provider is None:
+        await record_and_enforce_login_failure(
+            request,
+            None,
+            anonymous_scope="oauth",
+        )
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_OAUTH_FAILED,
             request=request,
@@ -41,6 +55,7 @@ async def complete_oauth_login(
         )
         raise NotFoundError("OAuth provider is not configured", resource_type="oauth_provider")
 
+    failure_email: str | None = None
     try:
         state_payload = verify_oauth_state(payload.state)
         verify_oauth_login_browser_binding(
@@ -68,6 +83,9 @@ async def complete_oauth_login(
                 endpoint="token",
             )
         profile = await provider.get_user_info(str(access_token))
+        failure_email = provider_email(provider_name, profile)
+        if failure_email is not None:
+            await enforce_login_failure_limit(request, failure_email)
         user = await upsert_oauth_user(
             db,
             provider_name=provider_name,
@@ -76,6 +94,16 @@ async def complete_oauth_login(
             request=request,
         )
     except Exception as exc:
+        if isinstance(exc, RateLimitError):
+            raise
+        if failure_email is None:
+            await record_and_enforce_login_failure(
+                request,
+                None,
+                anonymous_scope="oauth",
+            )
+        else:
+            await record_login_failure(client_ip, failure_email)
         details = {"provider": provider_name}
         if isinstance(exc, ConflictError) and exc.details.get("reason") == "oauth_email_collision":
             details["reason"] = "oauth_email_collision"
@@ -87,7 +115,9 @@ async def complete_oauth_login(
         )
         raise
 
+    await enforce_login_failure_limit(request, user.email)
     if user.is_locked:
+        await record_login_failure(client_ip, user.email)
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_OAUTH_FAILED,
             request=request,

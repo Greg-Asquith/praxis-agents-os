@@ -32,7 +32,7 @@ async def require_totp_enrollment_step_up(
 ) -> None:
     """Require the current password or a full session created by a recent login."""
     if current_password is not None:
-        if user.has_password and user.verify_password(current_password):
+        if user.has_password and await user.verify_password_async(current_password):
             return
         raise AuthenticationError("Current password is incorrect")
 
@@ -127,7 +127,7 @@ async def verify_and_consume_login_second_factor(
             )
             return result.scalar_one_or_none() is not None
 
-    if backup_code and user.verify_backup_code(backup_code):
+    if backup_code and await user.verify_backup_code_async(backup_code):
         user.failed_login_attempts = 0
         user.locked_until = None
         user.lockout_reason = None

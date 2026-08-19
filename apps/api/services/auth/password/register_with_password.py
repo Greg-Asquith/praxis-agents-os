@@ -85,7 +85,7 @@ async def register_with_password(
         raise ConflictError("A user with that email already exists", conflicting_resource="user")
 
     user = User(email=email, display_name=payload.display_name, is_active=True)
-    user.set_password(payload.password)
+    await user.set_password_async(payload.password)
     db.add(user)
 
     try:

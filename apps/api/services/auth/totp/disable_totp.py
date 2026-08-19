@@ -23,7 +23,11 @@ async def disable_totp(
     if not user.totp_enabled:
         return MessageResponse(message="TOTP is not enabled")
 
-    if not verify_totp_or_backup(user, token=payload.token, backup_code=payload.backup_code):
+    if not await verify_totp_or_backup(
+        user,
+        token=payload.token,
+        backup_code=payload.backup_code,
+    ):
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_TOTP_FAILED,
             request=request,

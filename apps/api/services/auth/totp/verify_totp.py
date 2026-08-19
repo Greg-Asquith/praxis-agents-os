@@ -9,12 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
 from core.exceptions.auth import AuthenticationError
+from core.rate_limiting import record_login_failure
 from models.user import User
 from services.auth.schemas import AuthResponse, AuthSession, TotpVerifyRequest
 from services.auth.utils import (
     build_auth_user,
+    enforce_login_failure_limit,
+    record_and_enforce_login_failure,
     record_auth_security_event,
     record_failed_login_attempt,
+    request_ip,
     session_token_from_request,
     set_auth_cookies,
 )
@@ -31,12 +35,23 @@ async def verify_totp(
     response: Response,
     payload: TotpVerifyRequest,
 ) -> AuthResponse:
+    client_ip = request_ip(request)
     session_token = session_token_from_request(request)
     if not session_token:
+        await record_and_enforce_login_failure(
+            request,
+            None,
+            anonymous_scope="totp",
+        )
         raise AuthenticationError("No partial session")
 
     partial_info = await session_manager.get_partial_session_info(db, session_token)
     if not partial_info:
+        await record_and_enforce_login_failure(
+            request,
+            None,
+            anonymous_scope="totp",
+        )
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_TOTP_FAILED,
             request=request,
@@ -47,6 +62,11 @@ async def verify_totp(
 
     user = await db.get(User, UUID(partial_info["user_id"]))
     if not user or user.deleted or not user.is_active:
+        await record_and_enforce_login_failure(
+            request,
+            None,
+            anonymous_scope="totp",
+        )
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_TOTP_FAILED,
             request=request,
@@ -55,12 +75,15 @@ async def verify_totp(
         )
         raise AuthenticationError("Invalid or expired partial session")
 
+    await enforce_login_failure_limit(request, user.email)
+
     if not await verify_and_consume_login_second_factor(
         db,
         user=user,
         token=payload.token,
         backup_code=payload.backup_code,
     ):
+        await record_login_failure(client_ip, user.email)
         await record_failed_login_attempt(
             user_id=user.id,
             reason="invalid_totp",

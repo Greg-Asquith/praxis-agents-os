@@ -41,8 +41,12 @@ from utils.security import (
     decrypt_data,
     encrypt_data,
     hash_password,
+    hash_password_async,
+    hash_passwords_async,
     hash_token,
+    matching_password_hash_index_async,
     verify_password_hash,
+    verify_password_hash_async,
     verify_token_hash,
 )
 
@@ -156,9 +160,18 @@ class User(BaseModel):
         self.password_hash = hash_password(password)
         self.password_changed_at = datetime.now(UTC)
 
+    async def set_password_async(self, password: str) -> None:
+        """Set a password without blocking the event loop."""
+        self.password_hash = await hash_password_async(password)
+        self.password_changed_at = datetime.now(UTC)
+
     def verify_password(self, password: str) -> bool:
         """Verify password against stored hash."""
         return verify_password_hash(password, self.password_hash)
+
+    async def verify_password_async(self, password: str) -> bool:
+        """Verify a password without blocking the event loop."""
+        return await verify_password_hash_async(password, self.password_hash)
 
     @property
     def has_password(self) -> bool:
@@ -239,38 +252,25 @@ class User(BaseModel):
 
     def generate_backup_codes(self) -> list[str]:
         """Generate backup codes for 2FA recovery."""
-        # Generate 8 backup codes (8 digits each)
-        backup_codes = []
-        hashed_codes = []
-        for _ in range(8):
-            code = "".join([str(secrets.randbelow(10)) for _ in range(8)])
-            backup_codes.append(code)
-            hashed_codes.append(hash_password(code))
-        # Store encrypted hashed codes
-        self.backup_codes_encrypted = encrypt_data(json.dumps(hashed_codes))
-        self.backup_codes_generated_at = datetime.now(UTC)
-        return backup_codes  # Return unhashed codes to user (one-time only)
+        backup_codes = self._generate_backup_codes()
+        self._store_backup_code_hashes([hash_password(code) for code in backup_codes])
+        return backup_codes
+
+    async def generate_backup_codes_async(self) -> list[str]:
+        """Generate backup codes with all hashes computed in one worker call."""
+        backup_codes = self._generate_backup_codes()
+        self._store_backup_code_hashes(await hash_passwords_async(backup_codes))
+        return backup_codes
 
     def verify_backup_code(self, code: str) -> bool:
         """Verify and consume a backup code."""
         if not self.backup_codes_encrypted:
             return False
         try:
-            # Decrypt and load hashed backup codes
-            hashed_codes_json = decrypt_data(self.backup_codes_encrypted)
-            hashed_codes = json.loads(hashed_codes_json)
-            # Check against each backup code
-            for i, hashed_code in enumerate(hashed_codes):
+            hashed_codes = self._load_backup_code_hashes()
+            for index, hashed_code in enumerate(hashed_codes):
                 if verify_password_hash(code, hashed_code):
-                    # Remove used backup code
-                    hashed_codes.pop(i)
-                    # Update stored codes
-                    if hashed_codes:
-                        self.backup_codes_encrypted = encrypt_data(json.dumps(hashed_codes))
-                    else:
-                        # All codes used
-                        self.backup_codes_encrypted = None
-                        self.backup_codes_generated_at = None
+                    self._consume_backup_code_hash(hashed_codes, index)
                     return True
             return False
         except Exception as exc:
@@ -278,15 +278,48 @@ class User(BaseModel):
                 "Failed to verify backup code", details={"user_id": self.id}
             ) from exc
 
+    async def verify_backup_code_async(self, code: str) -> bool:
+        """Verify and consume a backup code in one worker-thread call."""
+        if not self.backup_codes_encrypted:
+            return False
+        try:
+            hashed_codes = self._load_backup_code_hashes()
+            matching_index = await matching_password_hash_index_async(code, hashed_codes)
+            if matching_index is None:
+                return False
+            self._consume_backup_code_hash(hashed_codes, matching_index)
+            return True
+        except Exception as exc:
+            raise CustomValueError(
+                "Failed to verify backup code", details={"user_id": self.id}
+            ) from exc
+
+    @staticmethod
+    def _generate_backup_codes() -> list[str]:
+        return ["".join(str(secrets.randbelow(10)) for _ in range(8)) for _ in range(8)]
+
+    def _store_backup_code_hashes(self, hashed_codes: list[str]) -> None:
+        self.backup_codes_encrypted = encrypt_data(json.dumps(hashed_codes))
+        self.backup_codes_generated_at = datetime.now(UTC)
+
+    def _load_backup_code_hashes(self) -> list[str]:
+        return json.loads(decrypt_data(self.backup_codes_encrypted))
+
+    def _consume_backup_code_hash(self, hashed_codes: list[str], index: int) -> None:
+        hashed_codes.pop(index)
+        if hashed_codes:
+            self.backup_codes_encrypted = encrypt_data(json.dumps(hashed_codes))
+            return
+        self.backup_codes_encrypted = None
+        self.backup_codes_generated_at = None
+
     @property
     def backup_codes_remaining(self) -> int:
         """Get number of remaining backup codes."""
         if not self.backup_codes_encrypted:
             return 0
         try:
-            hashed_codes_json = decrypt_data(self.backup_codes_encrypted)
-            hashed_codes = json.loads(hashed_codes_json)
-            return len(hashed_codes)
+            return len(self._load_backup_code_hashes())
         except Exception as exc:
             raise CustomValueError(
                 "Failed to get backup codes remaining", details={"user_id": self.id}

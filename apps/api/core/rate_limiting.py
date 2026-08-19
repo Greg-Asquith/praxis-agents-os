@@ -9,16 +9,16 @@ Provides:
 - Designed for easy migration to Redis
 """
 
+import hashlib
 import logging
 import math
 import re
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from ipaddress import ip_address, ip_network
-from typing import Any
 
 from fastapi import Request
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -195,33 +195,55 @@ class RateLimiter:
         endpoint: str,
         limit_type: str = "requests_per_minute",
         db: AsyncSession | None = None,
-    ) -> dict[str, Any]:
-        """Get current rate limit status without incrementing counter."""
+    ) -> RateLimitResult:
+        """Read a rate-limit bucket without consuming an attempt."""
         if not self.enabled:
-            return {
-                "attempts": 0,
-                "limit": None,
-                "remaining": None,
-                "reset_time": None,
-                "enabled": False,
-            }
+            return RateLimitResult(
+                allowed=True,
+                attempts=0,
+                limit=None,
+                window_seconds=0,
+                reset_time=datetime.now(UTC),
+            )
 
-        # Get limit configuration
-        if limit_type in self.default_limits:
-            limit, window_seconds = self.default_limits[limit_type]
-        else:
-            limit, window_seconds = self.default_limits["requests_per_minute"]
+        try:
+            ip_address(ip)
+        except ValueError:
+            logger.warning("Invalid IP address for rate limit: %s", ip)
+            return RateLimitResult(
+                allowed=False,
+                attempts=999,
+                limit=1,
+                window_seconds=3600,
+                reset_time=datetime.now(UTC) + timedelta(hours=1),
+                retry_after=3600,
+            )
 
+        limit, window_seconds = self.default_limits.get(
+            limit_type,
+            self.default_limits["requests_per_minute"],
+        )
         if db is None:
             session_factory = get_async_db_session_factory()
             async with session_factory() as session:
-                return await self._get_status_db(
-                    session, ip, endpoint, limit_type, limit, window_seconds
+                return await self._get_rate_limit_status_db(
+                    session,
+                    ip,
+                    endpoint,
+                    limit_type,
+                    limit,
+                    window_seconds,
                 )
-        else:
-            return await self._get_status_db(db, ip, endpoint, limit_type, limit, window_seconds)
+        return await self._get_rate_limit_status_db(
+            db,
+            ip,
+            endpoint,
+            limit_type,
+            limit,
+            window_seconds,
+        )
 
-    async def _get_status_db(
+    async def _get_rate_limit_status_db(
         self,
         db: AsyncSession,
         ip: str,
@@ -229,33 +251,31 @@ class RateLimiter:
         limit_type: str,
         limit: int,
         window_seconds: int,
-    ) -> dict[str, Any]:
-        """Get rate limit status from database."""
+    ) -> RateLimitResult:
         now = datetime.now(UTC)
         window_start = self._window_start(now, window_seconds)
         reset_time = window_start + timedelta(seconds=window_seconds)
-
-        stmt = select(RateLimitAttempt.attempts).where(
-            and_(
-                RateLimitAttempt.ip_address == ip,
-                RateLimitAttempt.endpoint == endpoint,
-                RateLimitAttempt.limit_type == limit_type,
-                RateLimitAttempt.window_seconds == window_seconds,
-                RateLimitAttempt.window_start == window_start,
+        attempts = (
+            await db.scalar(
+                select(RateLimitAttempt.attempts).where(
+                    RateLimitAttempt.ip_address == ip,
+                    RateLimitAttempt.endpoint == endpoint,
+                    RateLimitAttempt.limit_type == limit_type,
+                    RateLimitAttempt.window_seconds == window_seconds,
+                    RateLimitAttempt.window_start == window_start,
+                )
             )
+            or 0
         )
-
-        result = await db.execute(stmt)
-        total_attempts = result.scalar_one_or_none() or 0
-        remaining = max(0, limit - total_attempts)
-
-        return {
-            "attempts": total_attempts,
-            "limit": limit,
-            "remaining": remaining,
-            "reset_time": reset_time.isoformat(),
-            "enabled": True,
-        }
+        allowed = attempts < limit
+        return RateLimitResult(
+            allowed=allowed,
+            attempts=attempts,
+            limit=limit,
+            window_seconds=window_seconds,
+            reset_time=reset_time,
+            retry_after=None if allowed else self._seconds_until(reset_time, now),
+        )
 
     @staticmethod
     def _window_start(now: datetime, window_seconds: int) -> datetime:
@@ -285,6 +305,45 @@ def normalize_endpoint(path: str) -> str:
         for segment in path.split("/")
     ]
     return "/".join(segments)
+
+
+def _login_failure_endpoint(email: str | None, *, anonymous_scope: str | None = None) -> str:
+    """Build a bounded, non-identifying bucket for one normalized account."""
+    subject = email.strip().lower() if email else f"anonymous:{anonymous_scope or 'login'}"
+    email_digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()
+    return f"/api/v1/auth/login/{email_digest}"
+
+
+async def get_login_failure_status(
+    ip: str,
+    email: str | None,
+    db: AsyncSession | None = None,
+    *,
+    anonymous_scope: str | None = None,
+) -> RateLimitResult:
+    """Read the failed-login budget for one client and account."""
+    return await rate_limiter.get_rate_limit_status(
+        ip=ip,
+        endpoint=_login_failure_endpoint(email, anonymous_scope=anonymous_scope),
+        limit_type="login_attempts",
+        db=db,
+    )
+
+
+async def record_login_failure(
+    ip: str,
+    email: str | None,
+    db: AsyncSession | None = None,
+    *,
+    anonymous_scope: str | None = None,
+) -> RateLimitResult:
+    """Durably consume one failed-login attempt for a client and account."""
+    return await rate_limiter.check_rate_limit(
+        ip=ip,
+        endpoint=_login_failure_endpoint(email, anonymous_scope=anonymous_scope),
+        limit_type="login_attempts",
+        db=db,
+    )
 
 
 @lru_cache(maxsize=32)
@@ -405,24 +464,36 @@ def get_client_ip(request) -> str:
 # Rate Limiting Decorators and Dependencies
 
 
-def _build_rate_limit_error(result: "RateLimitResult") -> RateLimitError:
+def rate_limit_response_details(
+    result: "RateLimitResult",
+    *,
+    limit_type: str,
+) -> dict[str, int | str | None]:
+    """Build the stable public details for one rejected rate-limit bucket."""
+    return {
+        "limit": result.limit,
+        "remaining": max(0, result.limit - result.attempts),
+        "reset": int(result.reset_time.timestamp()),
+        "retry_after": result.retry_after,
+        "type": limit_type,
+    }
+
+
+def build_rate_limit_error(
+    result: "RateLimitResult",
+    *,
+    limit_type: str,
+) -> RateLimitError:
     """Build the RFC-7807 RateLimitError (body + headers) for a blocked result."""
-    remaining = max(0, result.limit - result.attempts)
+    details = rate_limit_response_details(result, limit_type=limit_type)
     return RateLimitError(
         message=f"Rate limit exceeded. Try again in {result.retry_after} seconds.",
         retry_after=result.retry_after,
         limit=result.limit,
-        details={
-            "rate_limit": {
-                "limit": result.limit,
-                "remaining": remaining,
-                "reset": result.reset_time.isoformat(),
-                "retry_after": result.retry_after,
-            }
-        },
+        details={"rate_limit": details},
         headers={
             "X-RateLimit-Limit": str(result.limit),
-            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Remaining": str(details["remaining"]),
             "X-RateLimit-Reset": str(int(result.reset_time.timestamp())),
             "Retry-After": str(result.retry_after) if result.retry_after else None,
         },
@@ -446,7 +517,7 @@ async def enforce_rate_limit(
         custom_window=custom_window,
     )
     if not result.allowed:
-        raise _build_rate_limit_error(result)
+        raise build_rate_limit_error(result, limit_type=limit_type)
 
 
 def require_rate_limit(
@@ -476,7 +547,7 @@ def require_rate_limit(
         )
 
         if not result.allowed:
-            raise _build_rate_limit_error(result)
+            raise build_rate_limit_error(result, limit_type=limit_type)
 
         return  # Dependency satisfied
 

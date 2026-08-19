@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError, NotFoundError
-from core.rate_limiting import _build_rate_limit_error, rate_limiter
+from core.rate_limiting import build_rate_limit_error, rate_limiter
 from core.settings import settings
 from models.artifacts import Artifact, ArtifactRevision
 from services.artifacts.domain import CREATABLE_ARTIFACT_TYPES
@@ -74,7 +74,7 @@ async def check_workspace_share_rate_limit(
         db=db,
     )
     if not result.allowed:
-        raise _build_rate_limit_error(result)
+        raise build_rate_limit_error(result, limit_type="artifact_share_creation")
 
 
 def validate_artifact_content(*, artifact_type: str, title: str, content: str) -> bytes:

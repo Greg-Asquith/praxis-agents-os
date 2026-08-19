@@ -424,8 +424,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   lookup; RBAC uses the `require_role`/`require_owner`/`require_editor`/
   `require_read` dependencies.
 - CSRF is enforced when a session cookie is present (Origin check plus
-  HMAC-signed `X-CSRF-Token`); rate limiting is Postgres-backed and
-  fail-closed for auth flows. Do not widen exempt lists casually.
+  HMAC-signed `X-CSRF-Token`). Rate limiting is Postgres-backed and
+  fail-closed for auth flows: general requests consume minute and hour
+  budgets; login failures consume a client-IP-and-account budget while
+  successful logins don't; pre-account TOTP and OAuth failures use separate
+  per-flow IP buckets that don't block requests with a resolved account;
+  registration and password reset remain per IP.
+  Trust forwarded client IPs only from `TRUSTED_PROXY_CIDRS`. Keep Argon2
+  work on the async `User` helpers so it runs outside the event loop. Do not
+  widen exempt lists casually.
 - OAuth login state is bound to the initiating browser with a short-lived,
   HttpOnly, host-only cookie. Keep that check at the API callback boundary.
 - Workspace invitations are delivered only through the operator-shared link;

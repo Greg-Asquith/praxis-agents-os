@@ -32,7 +32,7 @@ async def create_user(
         is_active=payload.is_active,
     )
     if payload.password:
-        user.set_password(payload.password)
+        await user.set_password_async(payload.password)
     db.add(user)
     try:
         await db.flush()
