@@ -56,6 +56,7 @@ DEFAULT_CLASSIFIER_MODELS = {
 
 CLASSIFIER_MAX_LABEL_CHARS = 100
 CLASSIFIER_MAX_INSTRUCTIONS_CHARS = 4_000
+CLASSIFIER_BATCH_SIZE = 100
 
 CLASSIFIER_INSTRUCTIONS = """\
 Classify every supplied item into exactly one of the supplied labels.
@@ -256,7 +257,39 @@ async def run_native_classification(
     model_spec: ResolvedModel,
     event_details: dict[str, object],
 ) -> list[ClassifiedItem]:
-    """Run one metered structured-output classification helper call."""
+    """Classifies items through ordered, metered helper-model batches."""
+    results: list[ClassifiedItem] = []
+    for offset in range(0, len(items), CLASSIFIER_BATCH_SIZE):
+        batch_items = items[offset : offset + CLASSIFIER_BATCH_SIZE]
+        batch_results = await _run_classification_batch(
+            deps,
+            items=batch_items,
+            labels=labels,
+            instructions=instructions,
+            model_spec=model_spec,
+            event_details=event_details,
+        )
+        results.extend(
+            ClassifiedItem(
+                index=item.index + offset,
+                value=item.value,
+                label=item.label,
+            )
+            for item in batch_results
+        )
+    return results
+
+
+async def _run_classification_batch(
+    deps: RuntimeDeps,
+    *,
+    items: list[str],
+    labels: list[str],
+    instructions: str | None,
+    model_spec: ResolvedModel,
+    event_details: dict[str, object],
+) -> list[ClassifiedItem]:
+    """Runs one metered structured-output classification helper call."""
     output_model = _classification_output_model(labels)
     helper = PydanticAgent(
         build_model(model_spec),
@@ -284,9 +317,9 @@ async def run_native_classification(
             run_id=deps.run.id,
             conversation_id=deps.conversation.id,
             details={
+                **event_details,
                 "item_count": len(items),
                 "label_count": len(labels),
-                **event_details,
             },
         ),
         call,

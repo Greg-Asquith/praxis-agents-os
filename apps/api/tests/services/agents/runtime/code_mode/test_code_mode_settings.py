@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.settings import Settings
+from services.agents.runtime.code_mode.bridge import _normalize_boundary_value
 
 
 def test_code_mode_defaults_are_bounded() -> None:
@@ -12,12 +13,26 @@ def test_code_mode_defaults_are_bounded() -> None:
     assert resolved.AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS == 65
     assert resolved.AGENT_CODE_MODE_MAX_NESTED_CALLS == 25
     assert resolved.AGENT_CODE_MODE_OUTPUT_MAX_CHARS == 8_000
-    assert resolved.AGENT_CODE_MODE_VALUE_MAX_BYTES == 262_144
+    assert resolved.AGENT_CODE_MODE_VALUE_MAX_BYTES == 1_048_576
     assert resolved.AGENT_CODE_MODE_RESULT_MAX_BYTES == 32_768
     assert resolved.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES == 512 * 1024
     assert resolved.AGENT_CODE_MODE_STATE_MAX_BYTES == 2 * 1024 * 1024
     assert resolved.AGENT_CODE_MODE_MEMORY_MAX_BYTES == 64 * 1024 * 1024
     assert resolved.AGENT_CODE_MODE_MAX_RECURSION_DEPTH == 100
+
+
+def test_default_boundary_accepts_observed_report_size() -> None:
+    resolved = Settings()
+    report = "x" * 600_000
+
+    assert (
+        _normalize_boundary_value(
+            report,
+            tool_name="report",
+            max_bytes=resolved.AGENT_CODE_MODE_VALUE_MAX_BYTES,
+        )
+        == report
+    )
 
 
 def test_worker_request_backstop_must_exceed_script_timeout() -> None:

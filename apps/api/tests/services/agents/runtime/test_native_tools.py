@@ -210,7 +210,7 @@ def test_native_classifier_settings_defaults_and_bounds() -> None:
 
     assert resolved.NATIVE_CLASSIFIER_PROVIDER == "openai"
     assert resolved.NATIVE_CLASSIFIER_MODEL == "gpt-5.6-luna"
-    assert resolved.NATIVE_CLASSIFIER_MAX_ITEMS == 100
+    assert resolved.NATIVE_CLASSIFIER_MAX_ITEMS == 500
     assert resolved.NATIVE_CLASSIFIER_MAX_ITEM_CHARS == 4_000
     assert resolved.NATIVE_CLASSIFIER_MAX_LABELS == 50
     assert resolved.NATIVE_CLASSIFIER_MAX_STEPS == 2
@@ -1996,8 +1996,8 @@ def test_classifier_registration_is_code_eligible_and_bounded() -> None:
     [
         ({"items": [], "labels": ["yes", "no"]}, "at least one item"),
         (
-            {"items": ["item"] * 101, "labels": ["yes", "no"]},
-            "at most 100 items",
+            {"items": ["item"] * 501, "labels": ["yes", "no"]},
+            "at most 500 items",
         ),
         ({"items": ["  "], "labels": ["yes", "no"]}, "item 0 must not be blank"),
         (
@@ -2141,10 +2141,21 @@ async def test_classifier_handler_returns_index_aligned_closed_labels(
     assert output["model"] == "gpt-5.6-luna"
 
 
-async def test_native_classifier_uses_literal_output_and_records_one_metered_call(
+@pytest.mark.parametrize(
+    ("item_count", "expected_batch_sizes"),
+    [
+        (100, [100]),
+        (200, [100, 100]),
+        (201, [100, 100, 1]),
+    ],
+)
+async def test_native_classifier_batches_calls_and_records_each_invocation(
     monkeypatch: pytest.MonkeyPatch,
+    item_count: int,
+    expected_batch_sizes: list[int],
 ) -> None:
     captured_events = []
+    built_batches: list[int] = []
 
     async def record(event) -> bool:
         captured_events.append(event)
@@ -2157,26 +2168,33 @@ async def test_native_classifier_uses_literal_output_and_records_one_metered_cal
     assert label_schema["enum"] == labels
     assert "value" not in schema["$defs"]["ClosedSetClassifiedItem"]["properties"]
 
+    def build_test_model(_spec):
+        batch_size = expected_batch_sizes[len(built_batches)]
+        built_batches.append(batch_size)
+        return TestModel(
+            custom_output_args={
+                "results": [
+                    {"index": index, "label": labels[index % len(labels)]}
+                    for index in range(batch_size)
+                ]
+            }
+        )
+
     monkeypatch.setattr(
         classifier_tools,
         "build_model",
-        lambda _spec: TestModel(
-            custom_output_args={
-                "results": [
-                    {"index": 0, "label": "keep"},
-                    {"index": 1, "label": "discard"},
-                ]
-            }
-        ),
+        build_test_model,
     )
     monkeypatch.setattr(
         "services.ai_usage.run_metered_helper.record_ai_usage_durable",
         record,
     )
 
+    items = [f"item-{index}" for index in range(item_count)]
+    classifier_id = str(uuid4())
     results = await classifier_tools.run_native_classification(
         _metering_deps(),
-        items=["useful", "irrelevant"],
+        items=items,
         labels=labels,
         instructions="Classify relevance.",
         model_spec=ResolvedModel(
@@ -2185,20 +2203,66 @@ async def test_native_classifier_uses_literal_output_and_records_one_metered_cal
             settings={},
             max_steps=2,
         ),
-        event_details={},
+        event_details={
+            "classifier_id": classifier_id,
+            "classifier_name": "relevance",
+        },
     )
 
-    assert results == [
-        classifier_tools.ClassifiedItem(index=0, value="useful", label="keep"),
-        classifier_tools.ClassifiedItem(index=1, value="irrelevant", label="discard"),
+    assert built_batches == expected_batch_sizes
+    assert [result.index for result in results] == list(range(item_count))
+    assert [result.value for result in results] == items
+    assert [result.label for result in results] == [
+        labels[(index % classifier_tools.CLASSIFIER_BATCH_SIZE) % len(labels)]
+        for index in range(item_count)
     ]
-    assert len(captured_events) == 1
-    event = captured_events[0]
-    assert event.purpose == "classification"
-    assert event.details == {"item_count": 2, "label_count": 2}
-    assert event.requests == 1
-    assert event.input_tokens > 0
-    assert event.output_tokens > 0
+    assert len(captured_events) == len(expected_batch_sizes)
+    for event, batch_size in zip(captured_events, expected_batch_sizes, strict=True):
+        assert event.purpose == "classification"
+        assert event.details == {
+            "classifier_id": classifier_id,
+            "classifier_name": "relevance",
+            "item_count": batch_size,
+            "label_count": 2,
+        }
+        assert event.requests == 1
+        assert event.input_tokens > 0
+        assert event.output_tokens > 0
+
+
+async def test_native_classifier_later_batch_failure_returns_no_partial_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def run_batch(_deps, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ModelRetry("classify helper returned the wrong number of results. Try again.")
+        return [
+            classifier_tools.ClassifiedItem(index=index, value=value, label="keep")
+            for index, value in enumerate(kwargs["items"])
+        ]
+
+    monkeypatch.setattr(classifier_tools, "_run_classification_batch", run_batch)
+
+    with pytest.raises(ModelRetry, match="wrong number of results"):
+        await classifier_tools.run_native_classification(
+            _metering_deps(),
+            items=[f"item-{index}" for index in range(200)],
+            labels=["keep", "discard"],
+            instructions=None,
+            model_spec=ResolvedModel(
+                provider=PROVIDER_OPENAI,
+                model="gpt-5.4-nano",
+                settings={},
+                max_steps=2,
+            ),
+            event_details={},
+        )
+
+    assert calls == 2
 
 
 @pytest.mark.parametrize(

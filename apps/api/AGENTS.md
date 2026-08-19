@@ -297,13 +297,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   when a tool returns a File reference and forbid bare download labels.
 - Native batch classification uses the code-eligible `classify` helper-tool
   path for OpenAI, Anthropic, and Google. It always uses a configured cheap
-  helper independently from the calling agent, meters one ledger row per
-  batch, frames items as untrusted data, and accepts only ordered labels from
-  the caller's closed set. Public results pair each label with the exact
-  server-copied input `value`; the helper never authors that free-text field.
-  Keep its item, label, instruction, and helper-step bounds settings-owned;
-  adding helper-authored rationale or confidence output reopens the trust
-  decision.
+  helper independently from the calling agent, accepts up to 500 items per
+  tool call, and processes them sequentially in batches of at most 100. It
+  meters one ledger row per helper invocation, frames items as untrusted data,
+  and accepts only ordered labels from the caller's closed set. Public results
+  pair each label with the exact server-copied input `value`; the helper never
+  authors that free-text field. Keep its public item, label, instruction, and
+  helper-step bounds settings-owned; the internal 100-item batch size stays a
+  runtime constant. Adding helper-authored rationale or confidence output
+  reopens the trust decision.
 - Workspace classifiers are the first producer of generic workspace-defined
   runtime tools. Active rows are loaded for each run and synthesized as
   `classifier_{name}(items)` definitions without mutating the process-global

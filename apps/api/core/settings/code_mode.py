@@ -40,7 +40,7 @@ class CodeModeSettingsMixin:
         description="Maximum captured print-output characters per script.",
     )
     AGENT_CODE_MODE_VALUE_MAX_BYTES: int = Field(
-        default=262_144,
+        default=1_048_576,
         ge=1,
         description="Maximum serialized bytes for each value crossing the Monty boundary.",
     )

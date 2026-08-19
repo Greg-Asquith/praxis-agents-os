@@ -141,7 +141,7 @@ configured in `core/settings/code_mode.py` (`AGENT_CODE_MODE_*`):
 | Interpreter memory / recursion depth | `AGENT_CODE_MODE_MEMORY_MAX_BYTES` (64 MiB) / `AGENT_CODE_MODE_MAX_RECURSION_DEPTH` (100) |
 | Nested calls per script | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25) |
 | Captured print output | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000) |
-| Each value crossing the boundary | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (256 KiB) |
+| Each value crossing the boundary | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (1 MiB) |
 | Model-facing final result | `AGENT_CODE_MODE_RESULT_MAX_BYTES` (32 KiB) — intentionally much tighter than the boundary-value limit, so a workflow returns compact, decision-ready data rather than raw payloads |
 | Suspended interpreter snapshot / durable resume artifact | `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` / `AGENT_CODE_MODE_STATE_MAX_BYTES`, cross-validated so a valid configuration can always fit |
 
@@ -150,9 +150,11 @@ rejects or converts over-budget and non-serializable boundary values — normal
 dispatch deliberately preserves structured results, so free-text truncation is
 not the interpreter boundary. Model/provider spend flows through the existing
 usage accounting and AI-usage ledger unchanged.
-One nested `classify` call is one helper-model request. Scripts stay inside the
-shared wall-clock and nested-call budgets by classifying bounded batches, not
-by looping over individual items.
+One nested `classify` call accepts up to 500 items and issues sequential
+helper-model requests in batches of at most 100. Each helper invocation records
+its own usage event. Scripts stay inside the shared wall-clock and nested-call
+budgets by using one bounded classifier call, not by looping over individual
+items.
 
 ## Durable approvals
 

@@ -56,7 +56,7 @@ class LLMSettingsMixin:
         description="Default model for native classifier helper calls.",
     )
     NATIVE_CLASSIFIER_MAX_ITEMS: int = Field(
-        default=100,
+        default=500,
         ge=1,
         le=500,
         description="Maximum items accepted by one native classifier call.",
