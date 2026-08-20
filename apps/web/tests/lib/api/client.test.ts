@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { apiFetch, buildUrl, setApiUnauthorizedHandler } from "@/lib/api/client"
+import {
+  apiFetch,
+  apiRequest,
+  apiRequestNoContent,
+  buildUrl,
+  setApiUnauthorizedHandler,
+} from "@/lib/api/client"
+import type { ApiError } from "@/lib/api/errors"
 
 afterEach(() => {
   setApiUnauthorizedHandler(null)
@@ -39,5 +46,43 @@ describe("unauthorized responses", () => {
     await apiFetch("/auth/totp/verify", { method: "POST", sessionPolicy: "optional" })
 
     expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+})
+
+describe("response contracts", () => {
+  it("resolves a no-content request without decoding JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    await expect(apiRequestNoContent("/agents/agent-1", { method: "DELETE" })).resolves.toBe(
+      undefined
+    )
+  })
+
+  it("parses an API problem from a failed no-content request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Agent not found." }), {
+          headers: { "Content-Type": "application/problem+json" },
+          status: 404,
+          statusText: "Not Found",
+        })
+      )
+    )
+
+    const request = apiRequestNoContent("/agents/missing", { method: "DELETE" })
+
+    await expect(request).rejects.toMatchObject({
+      message: "Agent not found.",
+      status: 404,
+    } satisfies Partial<ApiError>)
+  })
+
+  it("rejects a no-content response requested through the JSON contract", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    await expect(apiRequest<{ id: string }>("/agents/agent-1")).rejects.toThrow(
+      "API request to /agents/agent-1 returned status 204 without valid JSON."
+    )
   })
 })

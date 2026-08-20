@@ -2,7 +2,7 @@
 
 import { env } from "@/config/env"
 import { getCsrfToken } from "@/lib/api/csrf"
-import { parseApiError } from "@/lib/api/errors"
+import { ApiError, parseApiError } from "@/lib/api/errors"
 
 type QueryValue = string | number | boolean | null | undefined
 
@@ -117,9 +117,34 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     throw await parseApiError(response)
   }
 
-  if (response.status === 204) {
-    return undefined as T
+  try {
+    return (await response.json()) as T
+  } catch {
+    throw new ApiError({
+      status: response.status,
+      message: `API request to ${path} returned status ${String(response.status)} without valid JSON.`,
+      problem: null,
+    })
+  }
+}
+
+export async function apiRequestNoContent(
+  path: string,
+  options: ApiRequestOptions = {}
+): Promise<void> {
+  const response = await apiFetch(path, options)
+
+  if (!response.ok) {
+    throw await parseApiError(response)
   }
 
-  return (await response.json()) as T
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return
+  }
+
+  throw new ApiError({
+    status: response.status,
+    message: `API request to ${path} returned status ${String(response.status)} with unexpected content.`,
+    problem: null,
+  })
 }

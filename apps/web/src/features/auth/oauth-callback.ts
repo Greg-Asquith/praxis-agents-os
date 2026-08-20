@@ -1,10 +1,7 @@
 // apps/web/src/features/auth/oauth-callback.ts
 
+import { isRecord } from "@/lib/guards"
 import { decodeBase64Url } from "@/lib/utils"
-
-type OAuthStatePayload = {
-  provider?: unknown
-}
 
 const OAUTH_PROVIDER_PATTERN = /^[a-z0-9_-]{1,64}$/
 
@@ -65,8 +62,11 @@ function providerFromState(state: string | null) {
   }
 
   try {
-    const payload = JSON.parse(decodeBase64Url(payloadSegment)) as OAuthStatePayload
-    return validProvider(typeof payload.provider === "string" ? payload.provider : null)
+    const payload: unknown = JSON.parse(decodeBase64Url(payloadSegment))
+    if (!isRecord(payload)) {
+      return null
+    }
+    return validProvider(typeof payload["provider"] === "string" ? payload["provider"] : null)
   } catch {
     return null
   }

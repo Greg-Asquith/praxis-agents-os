@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { memoriesQueryKeys } from "@/features/memories/api/list-memories"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 type DeleteMemoryInput = {
   memoryId: string
@@ -14,7 +14,7 @@ export function useDeleteMemoryMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ memoryId, purge }: DeleteMemoryInput) =>
-      apiRequest<undefined>(`/memories/${memoryId}`, {
+      apiRequestNoContent(`/memories/${memoryId}`, {
         method: "DELETE",
         query: { purge },
       }),

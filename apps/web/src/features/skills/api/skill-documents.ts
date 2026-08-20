@@ -10,7 +10,7 @@ import type {
   SkillDocumentUploadRequest,
 } from "@/features/skills/types"
 import type { AssetUploadGrant } from "@/features/storage/types"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequest, apiRequestNoContent } from "@/lib/api/client"
 
 type SkillDocumentUploadInput = {
   payload: SkillDocumentUploadRequest
@@ -50,7 +50,7 @@ export async function createSkillDocumentDownload(skillId: string, documentName:
 }
 
 async function deleteSkillDocument({ documentName, skillId }: SkillDocumentDeleteInput) {
-  return apiRequest<undefined>(`/skills/${skillId}/documents/${documentName}`, {
+  return apiRequestNoContent(`/skills/${skillId}/documents/${documentName}`, {
     method: "DELETE",
   })
 }

@@ -3,10 +3,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { invalidateClassifierQueries } from "@/features/classifiers/api/invalidate-classifier-queries"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 async function deleteClassifier(classifierId: string) {
-  return apiRequest<undefined>(`/classifiers/${classifierId}`, {
+  return apiRequestNoContent(`/classifiers/${classifierId}`, {
     method: "DELETE",
   })
 }

@@ -8,6 +8,7 @@ import type { OAuthCallbackResponse } from "@/features/integrations/types"
 import type { OAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { getErrorMessage } from "@/lib/api/errors"
 import { fullDocumentRedirect } from "@/lib/full-document-redirect"
+import { isRecord } from "@/lib/guards"
 import { decodeBase64Url } from "@/lib/utils"
 
 const completionPromises = new Map<string, Promise<OAuthCallbackResponse>>()
@@ -47,8 +48,11 @@ function providerKeyFromState(state: string) {
     return null
   }
   try {
-    const payload = JSON.parse(decodeBase64Url(payloadSegment)) as { provider_key?: unknown }
-    const providerKey = typeof payload.provider_key === "string" ? payload.provider_key : null
+    const payload: unknown = JSON.parse(decodeBase64Url(payloadSegment))
+    if (!isRecord(payload)) {
+      return null
+    }
+    const providerKey = typeof payload["provider_key"] === "string" ? payload["provider_key"] : null
     return providerKey && /^[a-z0-9_]+$/.test(providerKey) ? providerKey : null
   } catch {
     return null

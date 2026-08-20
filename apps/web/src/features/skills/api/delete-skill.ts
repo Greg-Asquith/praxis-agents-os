@@ -3,10 +3,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { skillsQueryKeys } from "@/features/skills/api/list-skills"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 async function deleteSkill(skillId: string) {
-  return apiRequest<undefined>(`/skills/${skillId}`, {
+  return apiRequestNoContent(`/skills/${skillId}`, {
     method: "DELETE",
   })
 }

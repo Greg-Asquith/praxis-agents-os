@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { artifactQueryKeys } from "@/features/artifacts/api/list-artifacts"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 type RevokeArtifactShareInput = {
   artifactId: string
@@ -11,7 +11,7 @@ type RevokeArtifactShareInput = {
 }
 
 async function revokeArtifactShare({ artifactId, shareId }: RevokeArtifactShareInput) {
-  return apiRequest<undefined>(`/artifacts/${artifactId}/shares/${shareId}`, {
+  return apiRequestNoContent(`/artifacts/${artifactId}/shares/${shareId}`, {
     method: "DELETE",
   })
 }

@@ -3,10 +3,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { agentsQueryKeys } from "@/features/agents/api/list-agents"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 async function deleteAgent(agentId: string) {
-  return apiRequest<undefined>(`/agents/${agentId}`, {
+  return apiRequestNoContent(`/agents/${agentId}`, {
     method: "DELETE",
   })
 }

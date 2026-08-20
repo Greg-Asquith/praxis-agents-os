@@ -3,10 +3,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { schedulesQueryKeys } from "@/features/schedules/api/list-schedules"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 async function deleteSchedule(scheduleId: string) {
-  return apiRequest<undefined>(`/schedules/${scheduleId}`, {
+  return apiRequestNoContent(`/schedules/${scheduleId}`, {
     method: "DELETE",
   })
 }

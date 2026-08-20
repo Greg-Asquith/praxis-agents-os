@@ -3,10 +3,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { integrationsQueryKeys } from "@/features/integrations/api/query-keys"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 async function deleteContextGroup(groupId: string) {
-  return apiRequest<undefined>(`/integrations/context-groups/${groupId}`, { method: "DELETE" })
+  return apiRequestNoContent(`/integrations/context-groups/${groupId}`, { method: "DELETE" })
 }
 
 export function useDeleteContextGroupMutation() {

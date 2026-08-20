@@ -2,11 +2,11 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 import { workspacesQueryKey } from "@/features/workspaces/api/list-workspaces"
 
 async function deleteWorkspace(workspaceId: string) {
-  return apiRequest<undefined>(`/workspaces/${workspaceId}`, {
+  return apiRequestNoContent(`/workspaces/${workspaceId}`, {
     method: "DELETE",
   })
 }

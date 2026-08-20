@@ -3,14 +3,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { filesQueryKeys } from "./list-files"
-import { apiRequest } from "@/lib/api/client"
+import { apiRequestNoContent } from "@/lib/api/client"
 
 type DeleteFileInput = {
   fileId: string
 }
 
 async function deleteFile({ fileId }: DeleteFileInput) {
-  return apiRequest<undefined>(`/files/${fileId}`, {
+  return apiRequestNoContent(`/files/${fileId}`, {
     method: "DELETE",
   })
 }
