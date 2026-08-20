@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from httpx2 import AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
@@ -30,6 +31,7 @@ from services.audit_events import (
     TerminalIntegrationOperationDetail,
     record_integration_operation_audit_event,
 )
+from services.audit_events.queries import _rolled_up_audit_events_statement
 from tests.factories import build_user, build_workspace, build_workspace_membership
 from tests.support.auth import bearer_headers
 
@@ -452,17 +454,32 @@ async def test_audit_event_list_rolls_up_before_pagination_and_uses_provider_sta
     )
     await db_session.commit()
 
+    legacy_statement = _rolled_up_audit_events_statement(workspace_id=workspace.id)
+    legacy_total = int(
+        (
+            await db_session.execute(
+                select(func.count()).select_from(legacy_statement.order_by(None).subquery())
+            )
+        ).scalar_one()
+    )
+
     first_page = await db_async_client.get(
         "/api/v1/audit-events/", headers=headers, params={"limit": 1, "offset": 0}
     )
     second_page = await db_async_client.get(
         "/api/v1/audit-events/", headers=headers, params={"limit": 1, "offset": 1}
     )
+    empty_page = await db_async_client.get(
+        "/api/v1/audit-events/", headers=headers, params={"limit": 1, "offset": 50}
+    )
 
     assert first_page.status_code == 200
     assert second_page.status_code == 200
-    assert first_page.json()["total"] == 2
+    assert empty_page.status_code == 200
+    assert first_page.json()["total"] == legacy_total == 2
     assert second_page.json()["total"] == 2
+    assert empty_page.json()["total"] == 2
+    assert empty_page.json()["events"] == []
     rolled_up = first_page.json()["events"][0]
     assert rolled_up["id"] == str(completed.id)
     assert rolled_up["detail_event_id"] == str(provider_failure.id)

@@ -147,4 +147,7 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
             postgresql_with={"m": 16, "ef_construction": 64},
         ),
         Index("ix_agent_memories_superseded_by_id", "superseded_by_id"),
+        Index("ix_agent_memories_source_conversation_id", "source_conversation_id"),
+        Index("ix_agent_memories_source_run_id", "source_run_id"),
+        Index("ix_agent_memories_workspace_agent", "workspace_id", "agent_id"),
     )

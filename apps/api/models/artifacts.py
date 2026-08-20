@@ -65,6 +65,9 @@ class Artifact(BaseModel):
             "created_at",
             postgresql_where=text("deleted = false"),
         ),
+        Index("ix_artifacts_current_version_id", "current_version_id"),
+        Index("ix_artifacts_agent_id", "agent_id"),
+        Index("ix_artifacts_run_id", "run_id"),
     )
 
 
@@ -128,6 +131,12 @@ class ArtifactRevision(Base, UUIDMixin, CreatedAtMixin):
             "artifact_id",
             "revision_number",
             name="uq_artifact_revisions_artifact_number",
+        ),
+        Index("ix_artifact_revisions_created_by_user_id", "created_by_user_id"),
+        Index("ix_artifact_revisions_created_by_agent_id", "created_by_agent_id"),
+        Index(
+            "ix_artifact_revisions_restored_from_revision_id",
+            "restored_from_revision_id",
         ),
     )
 

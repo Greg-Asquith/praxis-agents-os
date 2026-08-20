@@ -185,6 +185,12 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
         ),
         UniqueConstraint("file_id", "revision_number", name="uq_file_revisions_file_number"),
         Index("ix_file_revisions_workspace_hash", "workspace_id", "content_hash"),
+        Index("ix_file_revisions_created_by_user_id", "created_by_user_id"),
+        Index("ix_file_revisions_created_by_agent_id", "created_by_agent_id"),
+        Index(
+            "ix_file_revisions_restored_from_revision_id",
+            "restored_from_revision_id",
+        ),
     )
 
 

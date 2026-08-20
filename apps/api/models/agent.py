@@ -169,6 +169,11 @@ class AgentSchedule(BaseModel):
             "created_at",
             postgresql_where=text("deleted = false"),
         ),
+        Index(
+            "ix_agent_schedules_due",
+            "next_run_at",
+            postgresql_where=text("deleted = false AND is_active = true"),
+        ),
     )
 
 

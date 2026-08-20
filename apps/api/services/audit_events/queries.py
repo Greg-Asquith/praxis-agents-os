@@ -5,7 +5,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import String, and_, case, cast, func, select, union_all
+from sqlalchemy import String, and_, case, cast, func, select, true, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -397,15 +397,40 @@ async def list_rolled_up_audit_events_page(
         occurred_after=occurred_after,
         occurred_before=occurred_before,
     )
-    total = int(
-        (
-            await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
-        ).scalar_one()
+    numbered_events = (
+        stmt.add_columns(func.count().over().label("total_count"))
+        .cte("numbered_audit_events")
+        .prefix_with("MATERIALIZED")
     )
-    rows = (await db.execute(stmt.limit(limit).offset(offset))).all()
+    page = (
+        select(numbered_events)
+        .order_by(numbered_events.c.occurred_at.desc(), numbered_events.c.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .cte("audit_event_page")
+    )
+    page_total = select(
+        func.coalesce(func.max(numbered_events.c.total_count), 0).label("total_count")
+    ).cte("audit_event_page_total")
+    page_event = aliased(AuditEvent, page)
+    rows = (
+        await db.execute(
+            select(
+                page_event,
+                page.c.detail_event_id,
+                page.c.effective_status,
+                page.c.effective_summary,
+                page_total.c.total_count,
+            )
+            .select_from(page_total.outerjoin(page, true()))
+            .order_by(page.c.occurred_at.desc(), page.c.id.desc())
+        )
+    ).all()
+    total = int(rows[0].total_count)
     return [
         (event, detail_event_id, effective_status, effective_summary)
-        for event, detail_event_id, effective_status, effective_summary in rows
+        for event, detail_event_id, effective_status, effective_summary, _total_count in rows
+        if event is not None
     ], total
 
 

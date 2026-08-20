@@ -68,9 +68,9 @@ class Job(Base, UUIDMixin, TimestampMixin):
         ),
         Index(
             "ix_jobs_claim",
-            "status",
-            "run_after",
             "priority",
+            "run_after",
+            "created_at",
             postgresql_where=text("status = 'pending'"),
         ),
         Index(
