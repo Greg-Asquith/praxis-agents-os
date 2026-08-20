@@ -143,7 +143,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
   const canStopStream =
     stream.isStreaming &&
     stream.runId !== null &&
-    stream.status === "running" &&
+    (stream.status === "queued" || stream.status === "running") &&
     (props.mode === "create" || stream.conversationId === props.conversationId)
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
@@ -571,6 +571,12 @@ export function ConversationComposer(props: ConversationComposerProps) {
           {selectedModelLabel ? (
             <span className="text-muted-foreground mr-2 hidden max-w-[40%] truncate text-xs sm:inline">
               {selectedModelLabel}
+            </span>
+          ) : null}
+
+          {stream.status === "queued" ? (
+            <span aria-live="polite" className="text-muted-foreground mr-2 text-xs">
+              Starting up...
             </span>
           ) : null}
 

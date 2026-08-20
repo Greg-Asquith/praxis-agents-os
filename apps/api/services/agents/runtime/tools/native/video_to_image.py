@@ -160,6 +160,7 @@ async def generate_image_from_video(
         media_type_overrides=VIDEO_PROVIDER_MEDIA_TYPE_OVERRIDES,
     )
     model_spec = resolve_video_to_image_model(model=model)
+    await ctx.deps.db.commit()
     image = await run_native_image_generation(
         deps=ctx.deps,
         prompt=normalized_prompt,

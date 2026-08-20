@@ -4,7 +4,6 @@
 
 import asyncio
 import logging
-import os
 from collections.abc import Sequence
 from contextlib import suppress
 from uuid import UUID
@@ -28,7 +27,10 @@ from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
 )
 from services.agents.runtime.execute_run import execute_run
-from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
+from services.agents.runtime.heartbeat import (
+    agent_run_owner_instance_id,
+    heartbeat_agent_run_lease,
+)
 from services.agents.runtime.run_persistence import restored_run_usage
 from services.agents.runtime.sinks import EventSink
 
@@ -48,7 +50,7 @@ async def run_turn_worker(
     model: Model | None = None,
 ) -> None:
     """Run one interactive turn to completion with an independent DB session."""
-    owner_instance_id = _owner_instance_id()
+    owner_instance_id = agent_run_owner_instance_id()
     heartbeat_stop = asyncio.Event()
     heartbeat_task: asyncio.Task[None] | None = None
     session_factory = get_async_db_session_factory()
@@ -115,7 +117,7 @@ async def run_resume_worker(
     expected_status: str = RUN_STATUS_AWAITING_APPROVAL,
 ) -> None:
     """Resume a suspended approval run with an independent DB session."""
-    owner_instance_id = _owner_instance_id()
+    owner_instance_id = agent_run_owner_instance_id()
     heartbeat_stop = asyncio.Event()
     heartbeat_task: asyncio.Task[None] | None = None
     session_factory = get_async_db_session_factory()
@@ -180,10 +182,6 @@ async def run_resume_worker(
             user_id=user_id,
         )
         await sink.close()
-
-
-def _owner_instance_id() -> str:
-    return f"{os.uname().nodename}:{os.getpid()}"
 
 
 async def _finalize_linked_schedule_run(

@@ -138,6 +138,19 @@ describe("parseSseStream", () => {
     ])
   })
 
+  it("accepts the transient queued run status", async () => {
+    await expect(
+      collectEvents([
+        'event: run.status\ndata: {"run_id":"run-1","conversation_id":"conversation-1","seq":1,"status":"queued"}\n\n',
+      ])
+    ).resolves.toEqual([
+      {
+        event: "run.status",
+        data: { ...envelope, status: "queued" },
+      },
+    ])
+  })
+
   it("parses one event split across multiple chunks", async () => {
     await expect(
       collectEvents([

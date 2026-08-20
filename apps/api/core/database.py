@@ -68,9 +68,13 @@ def get_maintenance_async_engine() -> AsyncEngine:
     global _maintenance_async_engine
 
     if _maintenance_async_engine is None:
+        engine_kwargs = _engine_kwargs()
+        if "poolclass" not in engine_kwargs:
+            engine_kwargs["pool_size"] = settings.DB_MAINTENANCE_POOL_SIZE
+            engine_kwargs["max_overflow"] = settings.DB_MAINTENANCE_POOL_MAX_OVERFLOW
         _maintenance_async_engine = create_async_engine(
             settings.maintenance_database_url,
-            **_engine_kwargs(),
+            **engine_kwargs,
         )
     return _maintenance_async_engine
 

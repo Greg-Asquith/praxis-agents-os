@@ -34,7 +34,7 @@ from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.run_manager import run_task_registry
+from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.audit_events.utils import request_audit_context
 
@@ -115,6 +115,8 @@ async def resume_agent_run_stream(
             sink=sink,
             expected_status=RUN_STATUS_RUNNING,
         ),
+        sink=sink,
+        queued_lease=QueuedRunLease(workspace_id=workspace.id, user_id=actor.id),
     )
 
     return StreamingResponse(

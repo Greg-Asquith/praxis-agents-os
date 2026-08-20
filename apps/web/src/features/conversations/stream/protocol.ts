@@ -38,6 +38,7 @@ type StreamEnvelope = {
 export type MessageChannel = "text" | "thinking"
 
 export type WorkflowState = "started" | "completed" | "failed"
+export type StreamRunStatus = AgentRunStatus | "queued"
 
 export type StreamError = {
   code: string
@@ -55,7 +56,7 @@ export type StreamEvent =
     }
   | {
       event: "run.status"
-      data: StreamEnvelope & { status: AgentRunStatus }
+      data: StreamEnvelope & { status: StreamRunStatus }
     }
   | {
       event: "message.start"

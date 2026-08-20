@@ -450,7 +450,8 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
 
     spawned = []
 
-    def capture_spawn(_run_id, coroutine) -> None:
+    def capture_spawn(_run_id, coroutine, *, sink=None, queued_lease=None) -> None:
+        del sink, queued_lease
         spawned.append(coroutine)
 
     monkeypatch.setattr(run_task_registry, "spawn", capture_spawn)

@@ -177,6 +177,27 @@ async def test_reap_abandoned_runs_leaves_live_lease_running(
     assert run.status == RUN_STATUS_RUNNING
 
 
+async def test_reap_abandoned_runs_leaves_queued_pending_run_with_live_lease(
+    db_session: AsyncSession,
+    run_context: RunContext,
+) -> None:
+    now = datetime.now(UTC)
+    run = await _create_run(db_session, run_context)
+    run.created_at = now - timedelta(minutes=2)
+    run.lease_expires_at = now + timedelta(seconds=90)
+    await db_session.flush()
+
+    result = await reap_abandoned_runs(
+        db_session,
+        run_id=run.id,
+        now=now,
+        pending_grace_seconds=60,
+    )
+
+    assert result.failed_run_ids == []
+    assert run.status == RUN_STATUS_PENDING
+
+
 async def test_resumed_run_survives_original_start_deadline(
     db_session: AsyncSession,
     run_context: RunContext,

@@ -12,23 +12,29 @@ from services.agent_runs.domain import RUN_STATUS_CANCELLED
 from services.agents.runtime.cancellation import AGENT_RUN_CANCEL_REQUEST
 from services.agents.runtime.heartbeat import cancel_target_if_run_cancelled
 from services.agents.runtime.run_manager import RunTaskRegistry
+from services.agents.runtime.sinks import StreamSink
 
 pytestmark = pytest.mark.asyncio
 
 
-async def test_run_task_registry_cancel_delivers_to_live_task() -> None:
+async def test_run_task_registry_cancel_cleans_up_task_before_it_starts() -> None:
     registry = RunTaskRegistry()
     release = asyncio.Event()
     run_id = uuid4()
+    sink = StreamSink(run_id=run_id, conversation_id=uuid4(), max_queue_size=2)
+    worker = release.wait()
 
-    task = registry.spawn(run_id, release.wait())
+    task = registry.spawn(run_id, worker, sink=sink)
     assert registry.cancel(run_id) is True
 
     with pytest.raises(asyncio.CancelledError) as exc_info:
         await task
+    await registry.drain(max_wait_seconds=1)
     assert AGENT_RUN_CANCEL_REQUEST in exc_info.value.args
     assert task.cancelled()
     assert registry.cancel(run_id) is False
+    assert worker.cr_frame is None
+    assert await asyncio.wait_for(sink.next_frame(), timeout=1) is None
 
 
 async def test_heartbeat_cancel_detection_cancels_live_target(monkeypatch: pytest.MonkeyPatch):

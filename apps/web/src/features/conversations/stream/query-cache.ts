@@ -10,7 +10,7 @@ import type {
   ConversationActiveRunResponse,
   ConversationMessagesResponse,
 } from "@/features/conversations/types"
-import type { StreamEvent } from "@/features/conversations/stream/protocol"
+import type { StreamEvent, StreamRunStatus } from "@/features/conversations/stream/protocol"
 import {
   RUN_CODE_TOOL_NAME,
   runCodeTouchedFileIds,
@@ -60,6 +60,9 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
 
   const conversationId = streamEvent.data.conversation_id
   const status = streamEvent.data.status
+  if (status === "queued") {
+    return
+  }
   queryClient.setQueryData<Conversation>(
     conversationsQueryKeys.detail(conversationId),
     (current) =>
@@ -180,13 +183,14 @@ export function streamActiveRunFromState({
   conversation: Conversation
   done: boolean
   runId: string | null
-  status: AgentRunStatus | "idle"
+  status: StreamRunStatus | "idle"
 }): AgentRun | null | undefined {
-  if (runId === null || done || !isActiveRunStatus(status)) {
+  const persistedStatus = status === "queued" ? "pending" : status
+  if (runId === null || done || !isActiveRunStatus(persistedStatus)) {
     return undefined
   }
 
-  return buildStreamAgentRun(conversation, runId, status)
+  return buildStreamAgentRun(conversation, runId, persistedStatus)
 }
 
 function buildStreamAgentRun(

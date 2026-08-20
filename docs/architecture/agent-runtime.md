@@ -141,6 +141,11 @@ In both cases, persistence must be abort-safe: user message, assistant deltas,
 tool calls, terminal errors, and approval suspension state should commit at clear
 boundaries rather than waiting for a long stream to finish.
 
+Interactive turns return the runtime database transaction before each model
+request and provider-backed helper call. Successful tools commit at the dispatch
+boundary. Retrying tools and tools with invalid output roll back staged database
+work and reload the runtime state before model continuation.
+
 ### Approval / human-in-the-loop, durably
 
 Use Pydantic AI's deferred-tool flow rather than inventing a parallel approval
@@ -322,19 +327,19 @@ POST works.
 Each event: SSE `event:` = type, `data:` = JSON carrying `run_id`,
 `conversation_id`, and a monotonic `seq`.
 
-| `event:`                 | `data` payload                                  |
-| ------------------------ | ----------------------------------------------- |
-| `conversation.created`   | `{ conversation }` first event on create stream |
-| `conversation.updated`   | `{ conversation }` e.g. async title update      |
-| `run.status`             | `{ status }` running / awaiting_approval / terminal |
-| `message.start`          | `{ message_id, role }`                          |
-| `message.delta`          | `{ message_id, text }` (token chunk)            |
-| `message.end`            | `{ message_id }`                                |
-| `tool.call`              | `{ tool_call_id, name, args }`                  |
-| `tool.result`            | `{ tool_call_id, name?, result }`               |
-| `tool.approval_required` | `{ tool_call_id, name, args }`                  |
-| `error`                  | `{ code, message }`                             |
-| `done`                   | `{ status }` terminal — client closes           |
+| `event:`                 | `data` payload                                                  |
+| ------------------------ | --------------------------------------------------------------- |
+| `conversation.created`   | `{ conversation }` first event on create stream                 |
+| `conversation.updated`   | `{ conversation }` e.g. async title update                      |
+| `run.status`             | `{ status }`; `queued` is transient while the turn waits to run |
+| `message.start`          | `{ message_id, role }`                                          |
+| `message.delta`          | `{ message_id, text }` (token chunk)                            |
+| `message.end`            | `{ message_id }`                                                |
+| `tool.call`              | `{ tool_call_id, name, args }`                                  |
+| `tool.result`            | `{ tool_call_id, name?, result }`                               |
+| `tool.approval_required` | `{ tool_call_id, name, args }`                                  |
+| `error`                  | `{ code, message }`                                             |
+| `done`                   | `{ status }` terminal — client closes                           |
 
 The protocol is versioned so client and runtime can evolve independently: the
 backend sends `X-Praxis-Stream-Version: 1` on turn streams and exposes that

@@ -4,12 +4,14 @@
 
 import asyncio
 import logging
+import os
 from contextlib import suppress
 from uuid import UUID
 
 from core.database import (
     configure_async_db_session,
     get_async_db_session_factory,
+    get_async_engine,
     set_session_tenant_context,
 )
 from core.settings import settings
@@ -21,6 +23,18 @@ from services.agents.runtime.cancellation import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def agent_run_owner_instance_id() -> str:
+    """Returns the process identity recorded on live agent-run leases."""
+    return f"{os.uname().nodename}:{os.getpid()}"
+
+
+def _runtime_pool_status() -> str:
+    try:
+        return get_async_engine().pool.status()
+    except Exception:
+        return "unavailable"
 
 
 async def renew_agent_run_lease_once(
@@ -56,13 +70,16 @@ async def heartbeat_agent_run_lease(
     owner_instance_id: str,
     stop: asyncio.Event,
     cancel_target: asyncio.Task | None = None,
+    renew_immediately: bool = False,
 ) -> None:
     """Renew a run lease until ``stop`` is set or the run is no longer live."""
     interval = settings.AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS
     while not stop.is_set():
-        with suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), timeout=interval)
-            break
+        if not renew_immediately:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=interval)
+                break
+        renew_immediately = False
 
         try:
             renewed = await renew_agent_run_lease_once(
@@ -72,10 +89,14 @@ async def heartbeat_agent_run_lease(
                 owner_instance_id=owner_instance_id,
             )
         except Exception:
-            logger.warning(
+            logger.error(
                 "Failed to renew agent run lease",
                 exc_info=True,
-                extra={"run_id": str(run_id), "owner_instance_id": owner_instance_id},
+                extra={
+                    "run_id": str(run_id),
+                    "owner_instance_id": owner_instance_id,
+                    "pool_status": _runtime_pool_status(),
+                },
             )
             continue
 

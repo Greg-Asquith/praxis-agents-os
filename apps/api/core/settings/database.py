@@ -38,6 +38,18 @@ class DatabaseSettingsMixin:
     DB_POOL_MAX_OVERFLOW: int = Field(
         default=10, ge=0, le=100, description="Max overflow connections beyond the pool size"
     )
+    DB_MAINTENANCE_POOL_SIZE: int = Field(
+        default=3,
+        ge=1,
+        le=100,
+        description="Maintenance connection pool size per process",
+    )
+    DB_MAINTENANCE_POOL_MAX_OVERFLOW: int = Field(
+        default=3,
+        ge=0,
+        le=100,
+        description="Maximum overflow connections beyond the maintenance pool size",
+    )
     AI_USAGE_DB_POOL_SIZE: int = Field(
         default=2,
         ge=1,

@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic_core import to_jsonable_python
 
+DEFAULT_STREAM_QUEUE_SIZE = 5_000
+
 
 @dataclass(frozen=True)
 class SinkEvent:
@@ -76,7 +78,13 @@ class CollectingSink(SequencedSink):
 class StreamSink(SequencedSink):
     """Async queue sink that yields formatted SSE frames."""
 
-    def __init__(self, *, run_id: UUID, conversation_id: UUID, max_queue_size: int = 0):
+    def __init__(
+        self,
+        *,
+        run_id: UUID,
+        conversation_id: UUID,
+        max_queue_size: int = DEFAULT_STREAM_QUEUE_SIZE,
+    ):
         super().__init__(run_id=run_id, conversation_id=conversation_id)
         self._queue: asyncio.Queue[SinkEvent | None] = asyncio.Queue(maxsize=max_queue_size)
         self._closed = False
@@ -102,7 +110,12 @@ class StreamSink(SequencedSink):
 
     def detach(self) -> None:
         """Stop queueing events after the live HTTP client has gone away."""
+        if self._detached:
+            return
         self._detached = True
+        while not self._queue.empty():
+            self._queue.get_nowait()
+        self._queue.put_nowait(None)
 
     @property
     def detached(self) -> bool:

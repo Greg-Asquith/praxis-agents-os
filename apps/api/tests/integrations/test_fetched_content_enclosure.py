@@ -45,6 +45,7 @@ async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> Non
         AsyncMock(),
     )
     deps = SimpleNamespace(
+        db=SimpleNamespace(commit=AsyncMock()),
         envelope=SimpleNamespace(side_effect_policy="allow"),
         run=SimpleNamespace(id="run-1"),
         workspace=SimpleNamespace(id="workspace-1"),

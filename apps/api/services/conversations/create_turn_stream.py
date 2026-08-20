@@ -20,7 +20,7 @@ from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.run_manager import run_task_registry
+from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.worker import run_turn_worker
 from services.conversations.schemas import ConversationTurnCreateRequest
@@ -151,6 +151,8 @@ async def create_conversation_turn_stream(
             sink=sink,
             client_message_id=payload.client_message_id,
         ),
+        sink=sink,
+        queued_lease=QueuedRunLease(workspace_id=workspace.id, user_id=actor.id),
     )
 
     return StreamingResponse(

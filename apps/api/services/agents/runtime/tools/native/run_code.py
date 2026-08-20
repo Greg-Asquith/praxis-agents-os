@@ -266,6 +266,7 @@ async def run_code(
         updates_file_id=updates_file_id,
         provider=model_spec.provider,
     )
+    await ctx.deps.db.commit()
     answer, captured, skipped = await run_native_code_execution(
         deps=ctx.deps,
         task=normalized_task,

@@ -83,6 +83,18 @@ describe("agentStreamReducer", () => {
     expect(agentStreamReducer(connectedState, { type: "disconnect" }).isConnected).toBe(false)
   })
 
+  it("tracks a queued turn without marking it terminal", () => {
+    const state = reduceEvents([
+      {
+        event: "run.status",
+        data: { ...eventWithSeq(1), status: "queued" },
+      },
+    ])
+
+    expect(state.status).toBe("queued")
+    expect(state.done).toBe(false)
+  })
+
   it("stores conversation data from create and update events", () => {
     const created = {
       event: "conversation.created",

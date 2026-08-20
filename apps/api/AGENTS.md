@@ -73,6 +73,15 @@ Repo-wide expectations are in the root `AGENTS.md`.
   it exposes aggregate usage and workspace/user/model/purpose attribution but
   never workspace content. RLS remains unchanged.
 
+The per-process connection and turn-concurrency settings are defined as
+follows:
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `AGENT_RUN_MAX_CONCURRENT_TURNS` | `11` | Maximum admitted interactive turns per API process. Keep this value at or below `DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW - 4`. |
+| `DB_MAINTENANCE_POOL_MAX_OVERFLOW` | `3` | Maximum overflow connections beyond the maintenance pool size per process. |
+| `DB_MAINTENANCE_POOL_SIZE` | `3` | Persistent connections in the maintenance pool per process. |
+
 ## Agent Runtime And Providers
 
 - The agent runtime lives in `services/agents/runtime/`: SSE streaming with a
@@ -122,7 +131,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Every agent tool flows through the tool registry and the single dispatch
   choke point (`runtime/dispatch.py`), which owns per-invocation audit,
   policy/approval enforcement, run envelopes, and bounded tool results. Do
-  not execute tool logic around it.
+  not execute tool logic around it. Interactive turns release their database
+  transaction before every model request and provider-backed helper call.
+  Completed tool calls commit before the next request; retrying or invalid tool
+  calls roll back their staged database work and reload runtime state before
+  model continuation. `RunTaskRegistry` bounds admitted turns per API
+  process and emits a transient `queued` stream status while a turn waits;
+  this value is not a persisted run lifecycle status. Stream sinks use a
+  bounded queue and detach slow consumers when that queue fills.
 - Code-mode execution lives under `services/agents/runtime/code_mode/` and
   uses the dedicated `core/settings/code_mode.py` mixin. Its lazily created
   Monty subprocess pool must close in API, worker, and test lifecycles. The

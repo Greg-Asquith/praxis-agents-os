@@ -16,6 +16,7 @@ from pydantic_ai import (
     DeferredToolRequests,
     DeferredToolResults,
     ModelRetry,
+    RunContext,
     ToolApproved,
     ToolDenied,
 )
@@ -44,6 +45,7 @@ from services.agent_runs.domain import (
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.cancellation import request_agent_run_task_cancel
+from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
 from services.agents.runtime.dispatch import (
     _tool_call_args_for_digest,
@@ -119,8 +121,10 @@ def dispatch_test_tools():
         provider="test",
         label="Dispatch secret",
         description="Return a fixed value for dispatch tests.",
+        takes_ctx=True,
     )
-    async def dispatch_secret(value: str) -> dict[str, bool]:
+    async def dispatch_secret(ctx: RunContext[RuntimeDeps], value: str) -> dict[str, bool]:
+        assert ctx.deps.db.in_transaction() is False
         counters["read_ok"] += 1
         return {"ok": bool(value)}
 
@@ -129,8 +133,16 @@ def dispatch_test_tools():
         provider="test",
         label="Dispatch retry",
         description="Raise a retry for dispatch tests.",
+        takes_ctx=True,
     )
-    async def dispatch_retry(value: str) -> str:
+    async def dispatch_retry(
+        ctx: RunContext[RuntimeDeps],
+        value: str,
+        conversation_title: str | None = None,
+    ) -> str:
+        if conversation_title is not None:
+            ctx.deps.conversation.title = conversation_title
+            await ctx.deps.db.flush()
         raise ModelRetry(f"retry requested for {value}")
 
     @runtime_tool(
@@ -150,8 +162,15 @@ def dispatch_test_tools():
         description="Return an invalid write output for dispatch tests.",
         effect=TOOL_EFFECT_WRITE,
         output_model=DispatchToolOutput,
+        takes_ctx=True,
     )
-    async def dispatch_bad_write() -> dict[str, str]:
+    async def dispatch_bad_write(
+        ctx: RunContext[RuntimeDeps],
+        conversation_title: str | None = None,
+    ) -> dict[str, str]:
+        if conversation_title is not None:
+            ctx.deps.conversation.title = conversation_title
+            await ctx.deps.db.flush()
         return {"wrong": "shape"}
 
     @runtime_tool(
@@ -557,6 +576,7 @@ async def test_output_contract_failures_record_mutation_risk(
     )
 
     try:
+        rolled_back_title = f"rolled-back-{uuid4().hex}"
         await _execute_single_tool(
             committed_db_session_factory,
             read_context,
@@ -569,7 +589,7 @@ async def test_output_contract_failures_record_mutation_risk(
             committed_db_session_factory,
             write_context,
             tool_name="dispatch_bad_write",
-            args={},
+            args={"conversation_title": rolled_back_title},
             final_text="write recovered",
             seen_messages=write_messages,
         )
@@ -590,6 +610,11 @@ async def test_output_contract_failures_record_mutation_risk(
         assert write_event.details["outcome"] == "unverified_mutation"
         assert "Tool output did not match" in " ".join(map(str, read_messages))
         assert "external action may have completed" in " ".join(map(str, write_messages))
+        async with committed_db_session_factory() as verification_db:
+            persisted_title = await verification_db.scalar(
+                select(Conversation.title).where(Conversation.id == write_context.conversation_id)
+            )
+        assert persisted_title != rolled_back_title
     finally:
         await _delete_committed_runtime_context(
             committed_db_session_factory,
@@ -967,6 +992,109 @@ async def test_envelope_allows_scheduled_internal_write_tool(
         )
         assert event.status == "success"
         assert event.details["outcome"] == "completed"
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_tool_turn_releases_transaction_before_each_model_request(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_secret"],
+    )
+
+    try:
+        async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=context.workspace_id,
+                user_id=context.user_id,
+            )
+            stream_function, _seen_messages = _single_tool_stream(
+                tool_name="dispatch_secret",
+                args={"value": "transaction-boundary"},
+            )
+
+            async def asserting_stream(messages, info):
+                assert db.in_transaction() is False
+                async for event in stream_function(messages, info):
+                    yield event
+
+            result = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Use the tool.",
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=asserting_stream,
+                    model_name="transaction-boundary-model",
+                ),
+            )
+
+        assert result.run.status == RUN_STATUS_COMPLETED
+        assert dispatch_test_tools["read_ok"] == 1
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_retrying_tool_releases_transaction_before_next_model_request(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_retry"],
+    )
+
+    try:
+        rolled_back_title = f"rolled-back-{uuid4().hex}"
+        async with committed_db_session_factory() as db:
+            await set_session_tenant_context(
+                db,
+                workspace_id=context.workspace_id,
+                user_id=context.user_id,
+            )
+            stream_function, _seen_messages = _single_tool_stream(
+                tool_name="dispatch_retry",
+                args={
+                    "value": "retry-boundary",
+                    "conversation_title": rolled_back_title,
+                },
+                final_text="retry observed",
+            )
+
+            async def asserting_stream(messages, info):
+                assert db.in_transaction() is False
+                async for event in stream_function(messages, info):
+                    yield event
+
+            result = await execute_run(
+                db,
+                conversation_id=context.conversation_id,
+                run_id=context.run_id,
+                user_prompt="Use the tool.",
+                sink=CollectingSink(
+                    run_id=context.run_id,
+                    conversation_id=context.conversation_id,
+                ),
+                model=FunctionModel(
+                    stream_function=asserting_stream,
+                    model_name="retry-transaction-boundary-model",
+                ),
+            )
+
+        assert result.output == "retry observed"
+        async with committed_db_session_factory() as verification_db:
+            persisted_title = await verification_db.scalar(
+                select(Conversation.title).where(Conversation.id == context.conversation_id)
+            )
+        assert persisted_title != rolled_back_title
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 

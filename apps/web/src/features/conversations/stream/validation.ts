@@ -9,6 +9,7 @@ import type {
   MessageChannel,
   StreamEvent,
   StreamEventName,
+  StreamRunStatus,
   WorkflowState,
 } from "@/features/conversations/stream/protocol"
 import { isRecord } from "@/lib/guards"
@@ -21,6 +22,7 @@ const AGENT_RUN_STATUSES: ReadonlySet<string> = new Set([
   "failed",
   "cancelled",
 ])
+const STREAM_RUN_STATUSES: ReadonlySet<string> = new Set([...AGENT_RUN_STATUSES, "queued"])
 
 const CONVERSATION_SOURCES: ReadonlySet<string> = new Set([
   "direct",
@@ -64,7 +66,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         event: "run.status",
         data: {
           ...envelope,
-          status: requiredAgentRunStatus(eventName, "data.status", data["status"]),
+          status: requiredStreamRunStatus(eventName, "data.status", data["status"]),
         },
       }
     case "message.start": {
@@ -479,6 +481,20 @@ function requiredAgentRunStatus(
     AGENT_RUN_STATUSES,
     "a supported run status"
   ) as AgentRunStatus
+}
+
+function requiredStreamRunStatus(
+  eventName: StreamEventName,
+  field: string,
+  value: unknown
+): StreamRunStatus {
+  return requiredEnum(
+    eventName,
+    field,
+    value,
+    STREAM_RUN_STATUSES,
+    "a supported stream run status"
+  ) as StreamRunStatus
 }
 
 function requiredNullableAgentRunStatus(

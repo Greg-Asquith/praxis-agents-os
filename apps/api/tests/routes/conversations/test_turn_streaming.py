@@ -896,7 +896,11 @@ async def test_concurrent_turn_creations_allow_exactly_one_active_run(
     def discard_worker(
         _run_id: UUID,
         worker: Coroutine[Any, Any, Any],
+        *,
+        sink=None,
+        queued_lease=None,
     ) -> None:
+        del sink, queued_lease
         worker.close()
 
     monkeypatch.setattr(run_task_registry, "spawn", discard_worker)

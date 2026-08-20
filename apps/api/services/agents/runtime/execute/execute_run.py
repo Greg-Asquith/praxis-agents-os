@@ -169,8 +169,7 @@ async def execute_run(
             message_history=built_agent.history,
             deferred_tool_results=deferred_tool_results,
         )
-        if eager_tool_return_ids:
-            await db.commit()
+        await db.commit()
 
         # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
         live_deferred_result_ids: set[str] = set()

@@ -59,7 +59,7 @@ async def test_generate_image_approval_resumes_with_edited_prompt(
     generated_prompts: list[str] = []
 
     async def fake_generate(*, deps, prompt: str, aspect_ratio, model_spec) -> BinaryImage:
-        del deps
+        assert deps.db.in_transaction() is False
         generated_prompts.append(prompt)
         assert aspect_ratio == "3:2"
         assert model_spec.model == "gemini-3.1-flash-image"

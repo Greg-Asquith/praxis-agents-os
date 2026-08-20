@@ -208,7 +208,8 @@ async def test_invalid_turn_attachment_fails_before_run_creation(
 
 
 def _patch_spawn(monkeypatch: pytest.MonkeyPatch, module) -> None:
-    def fake_spawn(_run_id, coro):
+    def fake_spawn(_run_id, coro, *, sink=None, queued_lease=None):
+        del sink, queued_lease
         coro.close()
 
     monkeypatch.setattr(module.run_task_registry, "spawn", fake_spawn)

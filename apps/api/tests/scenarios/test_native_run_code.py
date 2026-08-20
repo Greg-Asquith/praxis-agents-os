@@ -73,7 +73,8 @@ def _file_reference(file_id: UUID, label: str = "budget.csv") -> dict[str, objec
 
 def _script_run_code(monkeypatch: pytest.MonkeyPatch, executed: list[str]) -> None:
     async def fake_execution(*, deps, task: str, inputs, model_spec, edit_target, tool_call_id):
-        del deps, inputs, model_spec, edit_target, tool_call_id
+        assert deps.db.in_transaction() is False
+        del inputs, model_spec, edit_target, tool_call_id
         executed.append(task)
         return "The computed total is 42.", [], []
 
@@ -271,6 +272,7 @@ async def test_run_code_conflict_preserves_the_first_concurrent_revision(
             actor=FileRevisionActor(user_id=deps.user.id),
             expected_current_revision_id=edit_target.revision_id,
         )
+        await deps.db.commit()
         return (
             "Updated the workbook.",
             [

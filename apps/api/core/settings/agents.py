@@ -2,9 +2,12 @@
 
 """Agent runtime durability settings."""
 
+import logging
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRunSettingsMixin:
@@ -56,6 +59,11 @@ class AgentRunSettingsMixin:
         default=1200,
         gt=0,
         description="Hard maximum runtime before an observed agent run can be reaped.",
+    )
+    AGENT_RUN_MAX_CONCURRENT_TURNS: int = Field(
+        default=11,
+        ge=1,
+        description="Maximum interactive agent turns admitted concurrently per API process.",
     )
     AGENT_RUN_REAPER_INTERVAL_SECONDS: int = Field(
         default=30,
@@ -243,3 +251,18 @@ class AgentRunSettingsMixin:
         default=True,
         description="Enable provider-native prompt caching where the provider needs explicit opt-in.",
     )
+
+    @model_validator(mode="after")
+    def warn_when_turn_limit_exceeds_pool_headroom(self):
+        """Warns when turn concurrency exceeds the runtime pool sizing rule."""
+        pool_headroom_limit = self.DB_POOL_SIZE + self.DB_POOL_MAX_OVERFLOW - 4
+        if pool_headroom_limit < self.AGENT_RUN_MAX_CONCURRENT_TURNS:
+            logger.warning(
+                "AGENT_RUN_MAX_CONCURRENT_TURNS exceeds DB_POOL_SIZE + "
+                "DB_POOL_MAX_OVERFLOW - 4; agent turns may exhaust runtime database headroom",
+                extra={
+                    "agent_run_max_concurrent_turns": self.AGENT_RUN_MAX_CONCURRENT_TURNS,
+                    "runtime_pool_headroom_limit": pool_headroom_limit,
+                },
+            )
+        return self

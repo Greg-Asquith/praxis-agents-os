@@ -1,7 +1,6 @@
 // apps/web/src/features/conversations/stream/reducer.ts
 
 import type {
-  AgentRunStatus,
   Conversation,
   PendingDelegatedApproval,
   TaintSource,
@@ -10,10 +9,11 @@ import type {
   MessageChannel,
   StreamError,
   StreamEvent,
+  StreamRunStatus,
   WorkflowState,
 } from "@/features/conversations/stream/protocol"
 
-type AgentStreamStatus = "idle" | AgentRunStatus
+type AgentStreamStatus = "idle" | StreamRunStatus
 
 export type ChatMessageDraft = {
   channel: MessageChannel

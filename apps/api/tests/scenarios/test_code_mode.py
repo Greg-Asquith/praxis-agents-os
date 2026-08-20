@@ -832,8 +832,9 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
     assert actor is not None and workspace is not None
     spawned = 0
 
-    def discard_worker(_run_id, coroutine) -> None:
+    def discard_worker(_run_id, coroutine, *, sink=None, queued_lease=None) -> None:
         nonlocal spawned
+        del sink, queued_lease
         spawned += 1
         coroutine.close()
 

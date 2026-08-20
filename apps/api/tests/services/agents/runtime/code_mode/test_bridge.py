@@ -820,7 +820,7 @@ async def test_nested_dispatch_audits_each_call_with_parent_and_effective_args_d
     monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
     monkeypatch.setattr(dispatch_module, "raise_if_agent_run_cancelled", AsyncMock())
     deps = SimpleNamespace(
-        db=object(),
+        db=SimpleNamespace(commit=AsyncMock()),
         membership=SimpleNamespace(id=uuid4()),
         workspace=SimpleNamespace(id=uuid4()),
         user=SimpleNamespace(id=uuid4()),
@@ -1851,7 +1851,7 @@ async def test_nested_calls_reach_praxis_authorization_and_envelope_hooks(
         AsyncMock(),
     )
     deps = SimpleNamespace(
-        db=object(),
+        db=SimpleNamespace(commit=AsyncMock()),
         membership=SimpleNamespace(id=uuid4()),
         workspace=SimpleNamespace(id=uuid4()),
         user=SimpleNamespace(id=uuid4()),

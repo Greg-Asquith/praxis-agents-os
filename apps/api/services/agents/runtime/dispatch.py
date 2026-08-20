@@ -38,8 +38,10 @@ from pydantic_ai import (
     DeferredToolResults,
     ModelRetry,
     ToolDenied,
+    ToolFailed,
     ToolReturn,
 )
+from pydantic_ai.exceptions import ToolFailedError, ToolRetryError
 from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
@@ -346,6 +348,7 @@ async def dispatch_tool_execution(
             error_code="WorkspaceMembershipRevoked",
             **taint_audit,
         )
+        await ctx.deps.db.commit()
         raise ModelRetry(MEMBERSHIP_DENIAL_MESSAGE)
 
     if (
@@ -370,6 +373,7 @@ async def dispatch_tool_execution(
             error_code="WorkspaceRoleDenied",
             **taint_audit,
         )
+        await ctx.deps.db.commit()
         raise ModelRetry(ROLE_DENIAL_MESSAGE)
 
     envelope_verdict = check_envelope(definition, ctx.deps, args=args)
@@ -389,6 +393,7 @@ async def dispatch_tool_execution(
             approval_ref=approval_ref,
             **taint_audit,
         )
+        await ctx.deps.db.commit()
         raise ModelRetry(envelope_verdict.denied_message)
     if envelope_verdict.requires_approval and not getattr(ctx, "tool_call_approved", False):
         await record_invocation(
@@ -415,6 +420,9 @@ async def dispatch_tool_execution(
         )
         setattr(approval_required, CODE_MODE_PENDING_AUDIT_RECORDED_ATTR, True)
         raise approval_required
+
+    # Authorization reads must not hold a connection while the tool awaits a provider.
+    await ctx.deps.db.commit()
 
     try:
         await raise_if_agent_run_cancelled(
@@ -464,6 +472,25 @@ async def dispatch_tool_execution(
                     **taint_audit,
                 )
         raise
+    except (ModelRetry, ToolFailed, ToolFailedError, ToolRetryError) as exc:
+        await record_invocation(
+            deps=ctx.deps,
+            tool_name=tool_name,
+            tool_provider=tool_provider,
+            status=AuditStatus.FAILURE,
+            args=args,
+            args_sha256=args_sha256,
+            args_bytes=args_bytes,
+            started=started,
+            tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
+            outcome="failed",
+            approval_ref=approval_ref,
+            error_code=exc.__class__.__name__,
+            **taint_audit,
+        )
+        await _rollback_failed_tool_transaction(ctx.deps)
+        raise
     except Exception as exc:
         await record_invocation(
             deps=ctx.deps,
@@ -510,6 +537,7 @@ async def dispatch_tool_execution(
             error_code="OutputContractValidationError",
             **taint_audit,
         )
+        await _rollback_failed_tool_transaction(ctx.deps)
         raise ModelRetry(exc.retry_message) from exc
 
     bounded_result, result_size = truncate_result(
@@ -559,6 +587,7 @@ async def dispatch_tool_execution(
         result_original_chars=result_size.original_chars,
         **taint_audit,
     )
+    await ctx.deps.db.commit()
     return result
 
 
@@ -571,6 +600,15 @@ async def _active_workspace_role(deps: RuntimeDeps) -> str | None:
             WorkspaceMembership.deleted.is_(False),
         )
     )
+
+
+async def _rollback_failed_tool_transaction(deps: RuntimeDeps) -> None:
+    """Rolls back failed tool work and reloads runtime objects for model continuation."""
+    await deps.db.rollback()
+    runtime_objects = list(deps.db.sync_session.identity_map.values())
+    for instance in runtime_objects:
+        await deps.db.refresh(instance)
+    await deps.db.commit()
 
 
 async def record_denied_approval_audit_events(

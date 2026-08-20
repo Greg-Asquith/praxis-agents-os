@@ -46,7 +46,7 @@ type UseAgentStreamOptions = {
   onConversationCreated?: (conversationId: string) => void
 }
 
-const STREAMING_STATUSES = new Set(["pending", "running"])
+const STREAMING_STATUSES = new Set(["pending", "queued", "running"])
 
 export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions = {}) {
   const queryClient = useQueryClient()
