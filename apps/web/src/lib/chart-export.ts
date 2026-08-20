@@ -90,7 +90,10 @@ export async function downloadChartPng(
   const height =
     EXPORT_PADDING + headerHeight + plotHeight + legendHeight + captionHeight + EXPORT_PADDING
 
-  const clone = source.cloneNode(true) as SVGSVGElement
+  const clone = source.cloneNode(true)
+  if (!(clone instanceof SVGSVGElement)) {
+    throw new Error("This browser cannot export the chart.")
+  }
   inlineSvgPresentation(source, clone)
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
   clone.setAttribute("width", String(plotWidth))

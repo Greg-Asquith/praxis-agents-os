@@ -9,6 +9,7 @@ import { apiRequest } from "@/lib/api/client"
 import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
 const baseEntityReferenceQueryKeys = createWorkspaceScopedQueryKeys("tool-entity-references")
+const INITIAL_PAGE_PARAM: string | null = null
 
 type LookupBase = {
   conversationId: string
@@ -82,7 +83,7 @@ export function entityReferenceSearchQueryOptions(request: EntityReferenceSearch
     queryKey: entityReferenceQueryKeys.search(request),
     queryFn: ({ pageParam, signal }) =>
       lookupEntityReferences({ ...request, cursor: pageParam }, signal),
-    initialPageParam: null as string | null,
+    initialPageParam: INITIAL_PAGE_PARAM,
     getNextPageParam: (page) => page.next_cursor ?? null,
     staleTime: 15_000,
   })

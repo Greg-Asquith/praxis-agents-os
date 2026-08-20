@@ -12,6 +12,7 @@ import type {
   StreamRunStatus,
   WorkflowState,
 } from "@/features/conversations/stream/protocol"
+import { isRecord } from "@/lib/guards"
 
 type AgentStreamStatus = "idle" | StreamRunStatus
 
@@ -461,10 +462,10 @@ function nestedResultStatus(
   result: unknown,
   parentToolCallId: string | undefined
 ): ToolCallState["status"] {
-  if (!parentToolCallId || typeof result !== "object" || result === null || Array.isArray(result)) {
+  if (!parentToolCallId || !isRecord(result)) {
     return "completed"
   }
-  const status = (result as Record<string, unknown>)["status"]
+  const status = result["status"]
   if (status === "failed" || status === "denied") {
     return status
   }

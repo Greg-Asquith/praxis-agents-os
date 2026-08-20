@@ -9,12 +9,15 @@ export function reactNodeToText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") {
     return String(node)
   }
-  if (Array.isArray(node)) {
-    return (node as ReactNode[]).map(reactNodeToText).join("")
+  if (isReactNodeArray(node)) {
+    return node.map(reactNodeToText).join("")
   }
-  if (isValidElement(node)) {
-    const props = node.props as { children?: ReactNode }
-    return reactNodeToText(props.children)
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return reactNodeToText(node.props.children)
   }
   return ""
+}
+
+export function isReactNodeArray(node: ReactNode): node is ReactNode[] {
+  return Array.isArray(node)
 }

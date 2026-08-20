@@ -12,9 +12,9 @@ import type {
   StreamRunStatus,
   WorkflowState,
 } from "@/features/conversations/stream/protocol"
-import { isRecord } from "@/lib/guards"
+import { isNonNegativeInteger, isOneOf, isPositiveInteger, isRecord } from "@/lib/guards"
 
-const AGENT_RUN_STATUSES: ReadonlySet<string> = new Set([
+const AGENT_RUN_STATUSES: ReadonlySet<AgentRunStatus> = new Set([
   "pending",
   "running",
   "awaiting_approval",
@@ -22,17 +22,17 @@ const AGENT_RUN_STATUSES: ReadonlySet<string> = new Set([
   "failed",
   "cancelled",
 ])
-const STREAM_RUN_STATUSES: ReadonlySet<string> = new Set([...AGENT_RUN_STATUSES, "queued"])
+const STREAM_RUN_STATUSES: ReadonlySet<StreamRunStatus> = new Set([...AGENT_RUN_STATUSES, "queued"])
 
-const CONVERSATION_SOURCES: ReadonlySet<string> = new Set([
+const CONVERSATION_SOURCES: ReadonlySet<Conversation["source"]> = new Set([
   "direct",
   "scheduled",
   "delegated",
   "event",
 ])
 
-const MESSAGE_CHANNELS: ReadonlySet<string> = new Set(["text", "thinking"])
-const WORKFLOW_STATES: ReadonlySet<string> = new Set(["started", "completed", "failed"])
+const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set(["text", "thinking"])
+const WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set(["started", "completed", "failed"])
 
 type StreamEnvelope = {
   run_id: string
@@ -76,7 +76,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         "channel",
         MESSAGE_CHANNELS,
         "a supported message channel"
-      ) as MessageChannel | undefined
+      )
       return {
         event: "message.start",
         data: {
@@ -184,7 +184,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
             data["state"],
             WORKFLOW_STATES,
             "a supported workflow state"
-          ) as WorkflowState,
+          ),
           ...(outputExcerpt === undefined ? {} : { output_excerpt: outputExcerpt }),
           ...(errorExcerpt === undefined ? {} : { error_excerpt: errorExcerpt }),
         },
@@ -281,7 +281,7 @@ function parseConversation(eventName: StreamEventName, value: unknown): Conversa
       conversation["source"],
       CONVERSATION_SOURCES,
       "a supported conversation source"
-    ) as Conversation["source"],
+    ),
     last_message_at: requiredNullableString(
       eventName,
       `${field}.last_message_at`,
@@ -427,10 +427,10 @@ function requiredPositiveInteger(
   field: string,
   value: unknown
 ): number {
-  if (!Number.isInteger(value) || (value as number) < 1) {
+  if (!isPositiveInteger(value)) {
     invalidField(eventName, field, "must be a positive integer")
   }
-  return value as number
+  return value
 }
 
 function requiredNonNegativeInteger(
@@ -438,20 +438,20 @@ function requiredNonNegativeInteger(
   field: string,
   value: unknown
 ): number {
-  if (!Number.isInteger(value) || (value as number) < 0) {
+  if (!isNonNegativeInteger(value)) {
     invalidField(eventName, field, "must be a non-negative integer")
   }
-  return value as number
+  return value
 }
 
-function requiredEnum(
+function requiredEnum<T extends string>(
   eventName: StreamEventName,
   field: string,
   value: unknown,
-  values: ReadonlySet<string>,
+  values: ReadonlySet<T>,
   expectation: string
-): string {
-  if (typeof value !== "string" || !values.has(value)) {
+): T {
+  if (!isOneOf(values, value)) {
     invalidField(eventName, field, `must be ${expectation}`)
   }
   return value
@@ -474,13 +474,7 @@ function requiredAgentRunStatus(
   field: string,
   value: unknown
 ): AgentRunStatus {
-  return requiredEnum(
-    eventName,
-    field,
-    value,
-    AGENT_RUN_STATUSES,
-    "a supported run status"
-  ) as AgentRunStatus
+  return requiredEnum(eventName, field, value, AGENT_RUN_STATUSES, "a supported run status")
 }
 
 function requiredStreamRunStatus(
@@ -488,13 +482,7 @@ function requiredStreamRunStatus(
   field: string,
   value: unknown
 ): StreamRunStatus {
-  return requiredEnum(
-    eventName,
-    field,
-    value,
-    STREAM_RUN_STATUSES,
-    "a supported stream run status"
-  ) as StreamRunStatus
+  return requiredEnum(eventName, field, value, STREAM_RUN_STATUSES, "a supported stream run status")
 }
 
 function requiredNullableAgentRunStatus(
@@ -505,13 +493,13 @@ function requiredNullableAgentRunStatus(
   return value === null ? null : requiredAgentRunStatus(eventName, field, value)
 }
 
-function optionalEnum(
+function optionalEnum<T extends string>(
   eventName: StreamEventName,
   record: Record<string, unknown>,
   key: string,
-  values: ReadonlySet<string>,
+  values: ReadonlySet<T>,
   expectation: string
-): string | undefined {
+): T | undefined {
   if (!Object.hasOwn(record, key)) {
     return undefined
   }

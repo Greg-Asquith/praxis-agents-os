@@ -40,6 +40,7 @@ import { NotFoundRoute } from "@/routes/not-found"
 import { PendingRoute } from "@/routes/pending"
 import { RoutePendingFallback } from "@/routes/route-pending"
 import { safeRedirectPath, validateAuthRedirectSearch } from "@/lib/safe-redirect"
+import { isRecord } from "@/lib/guards"
 import { setActiveUserId } from "@/lib/workspace"
 
 type RouterContext = {
@@ -61,7 +62,7 @@ const authRoute = createRoute({
   beforeLoad: async ({ context, location }) => {
     const user = await getOptionalCurrentUser(context.queryClient)
     if (user) {
-      const search = location.search as Record<string, unknown>
+      const search = isRecord(location.search) ? location.search : {}
       throw redirect({ href: safeRedirectPath(search["redirect"]) ?? "/" })
     }
   },

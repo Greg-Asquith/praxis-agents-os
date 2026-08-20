@@ -1,17 +1,35 @@
 // apps/web/src/features/conversations/native-tools/chart-tool.ts
 
 import type { ChartSeries, ChartSpec } from "@/components/tool-ui/chart-types"
-import { isRecord } from "@/lib/guards"
+import { isOneOf, isRecord } from "@/lib/guards"
 
 export const BUILD_CHART_TOOL_NAME = "build_chart"
 
-const CHART_TYPES = new Set(["line", "bar", "area", "scatter", "pie", "composed"])
-const SERIES_TYPES = new Set(["line", "bar", "area"])
-const X_FORMATS = new Set(["text", "number", "currency", "percent", "date", "datetime"])
-const NUMERIC_FORMATS = new Set(["number", "currency", "percent"])
-const CURVES = new Set(["linear", "monotone", "step"])
-const LINE_STYLES = new Set(["solid", "dashed", "dotted"])
-const SCALES = new Set(["auto", "linear", "log"])
+const CHART_TYPES: ReadonlySet<ChartSpec["chart_type"]> = new Set([
+  "line",
+  "bar",
+  "area",
+  "scatter",
+  "pie",
+  "composed",
+])
+const SERIES_TYPES: ReadonlySet<NonNullable<ChartSeries["kind"]>> = new Set(["line", "bar", "area"])
+const X_FORMATS: ReadonlySet<ChartSpec["x_axis"]["format"]> = new Set([
+  "text",
+  "number",
+  "currency",
+  "percent",
+  "date",
+  "datetime",
+])
+const NUMERIC_FORMATS: ReadonlySet<ChartSeries["format"]> = new Set([
+  "number",
+  "currency",
+  "percent",
+])
+const CURVES: ReadonlySet<ChartSeries["curve"]> = new Set(["linear", "monotone", "step"])
+const LINE_STYLES: ReadonlySet<ChartSeries["line_style"]> = new Set(["solid", "dashed", "dotted"])
+const SCALES: ReadonlySet<ChartSpec["y_axes"][number]["scale"]> = new Set(["auto", "linear", "log"])
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 const CURRENCY_CODE = /^[A-Z]{3}$/
 const DECIMAL_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
@@ -73,7 +91,7 @@ export function chartSpec(value: unknown): ChartSpec | null {
   if (
     !isRecord(candidate) ||
     !onlyKeys(candidate, ROOT_KEYS) ||
-    !enumValue(candidate["chart_type"], CHART_TYPES) ||
+    !isOneOf(CHART_TYPES, candidate["chart_type"]) ||
     !boundedString(candidate["title"], 1, 120) ||
     !optionalString(candidate["subtitle"], 240) ||
     !optionalString(candidate["caption"], 500)
@@ -81,7 +99,7 @@ export function chartSpec(value: unknown): ChartSpec | null {
     return null
   }
 
-  const chartType = candidate["chart_type"] as ChartSpec["chart_type"]
+  const chartType = candidate["chart_type"]
   const xAxis = parseXAxis(candidate["x_axis"])
   const yAxes = parseYAxes(candidate["y_axes"])
   if (!xAxis || !yAxes) {
@@ -96,10 +114,10 @@ export function chartSpec(value: unknown): ChartSpec | null {
     return null
   }
   const series = candidate["series"].map((item) => parseSeries(item, chartType, defaultAxisId))
-  if (series.some((item) => item === null)) {
+  const normalizedSeries = series.filter(isPresent)
+  if (normalizedSeries.length !== series.length) {
     return null
   }
-  const normalizedSeries = series as ChartSeries[]
   const axisIds = new Set(yAxes.map((axis) => axis.id))
   if (normalizedSeries.some((item) => !axisIds.has(item.y_axis_id))) {
     return null
@@ -150,7 +168,8 @@ function parseYAxes(value: unknown): ChartSpec["y_axes"] | null {
     return null
   }
   const axes = entries.map((entry, index) => parseYAxis(entry, index))
-  return axes.some((axis) => axis === null) ? null : (axes as ChartSpec["y_axes"])
+  const parsedAxes = axes.filter(isPresent)
+  return parsedAxes.length === axes.length ? parsedAxes : null
 }
 
 function parseYAxis(value: unknown, index: number): ChartSpec["y_axes"][number] | null {
@@ -312,23 +331,21 @@ function parseOptions(
 
 function parseTheme(value: unknown): ChartSpec["options"]["theme"] | null {
   const theme = value === undefined ? {} : value
+  const palette = isRecord(theme) ? theme["palette"] : undefined
   if (
     !isRecord(theme) ||
     !onlyKeys(theme, THEME_KEYS) ||
     !optionalHex(theme["background_color"]) ||
     !optionalHex(theme["text_color"]) ||
     !optionalHex(theme["grid_color"]) ||
-    (theme["palette"] !== undefined &&
-      (!Array.isArray(theme["palette"]) ||
-        theme["palette"].length > 12 ||
-        theme["palette"].some((color) => typeof color !== "string" || !HEX_COLOR.test(color))))
+    (palette !== undefined && !isHexColorArray(palette))
   ) {
     return null
   }
   return {
     background_color: stringOrNull(theme["background_color"]),
     grid_color: stringOrNull(theme["grid_color"]),
-    palette: (theme["palette"] as string[] | undefined) ?? [],
+    palette: palette ?? [],
     text_color: stringOrNull(theme["text_color"]),
   }
 }
@@ -405,16 +422,24 @@ function optionalHex(value: unknown) {
   )
 }
 
-function enumValue(value: unknown, values: Set<string>): value is string {
-  return typeof value === "string" && values.has(value)
+function optionalEnum<T extends string>(value: unknown, values: ReadonlySet<T>, allowNull = false) {
+  return value === undefined || (allowNull && value === null) || isOneOf(values, value)
 }
 
-function optionalEnum(value: unknown, values: Set<string>, allowNull = false) {
-  return value === undefined || (allowNull && value === null) || enumValue(value, values)
+function enumDefault<T extends string>(value: unknown, values: ReadonlySet<T>, fallback: T): T {
+  return isOneOf(values, value) ? value : fallback
 }
 
-function enumDefault<T extends string>(value: unknown, values: Set<string>, fallback: T): T {
-  return enumValue(value, values) ? (value as T) : fallback
+function isHexColorArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 12 &&
+    value.every((color) => typeof color === "string" && HEX_COLOR.test(color))
+  )
+}
+
+function isPresent<T>(value: T | null): value is T {
+  return value !== null
 }
 
 function stringOrNull(value: unknown): string | null {

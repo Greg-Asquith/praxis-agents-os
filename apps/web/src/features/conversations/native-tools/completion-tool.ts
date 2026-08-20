@@ -24,8 +24,7 @@ export function completionReport(value: unknown): CompletionReport | null {
     (status !== "pass" && status !== "fail") ||
     typeof summary !== "string" ||
     !summary.trim() ||
-    !Array.isArray(evidence) ||
-    evidence.some((item) => typeof item !== "string" || !item.trim())
+    !isNonEmptyStringArray(evidence)
   ) {
     return null
   }
@@ -33,6 +32,10 @@ export function completionReport(value: unknown): CompletionReport | null {
   return {
     status,
     summary: summary.trim(),
-    evidence: evidence.map((item) => (item as string).trim()),
+    evidence: evidence.map((item) => item.trim()),
   }
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim())
 }

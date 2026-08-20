@@ -4,6 +4,7 @@ import {
   isDateTimeString,
   isNonNegativeInteger,
   isNullableString,
+  isOneOf,
   isPositiveInteger,
   normalizeRecord,
 } from "@/lib/guards"
@@ -21,6 +22,27 @@ describe("normalizeRecord", () => {
     expect(normalizeRecord(["report.md"])).toBeNull()
     expect(normalizeRecord('["report.md"]')).toBeNull()
     expect(normalizeRecord("not-json")).toBeNull()
+  })
+})
+
+describe("isOneOf", () => {
+  const values: ReadonlySet<"pending" | "running"> = new Set(["pending", "running"])
+
+  it("accepts members and narrows their literal type", () => {
+    const value: unknown = "pending"
+
+    expect(isOneOf(values, value)).toBe(true)
+    if (!isOneOf(values, value)) {
+      throw new Error("Expected a known value")
+    }
+    const narrowed: "pending" | "running" = value
+    expect(narrowed).toBe("pending")
+  })
+
+  it("rejects unknown strings and non-string values", () => {
+    expect(isOneOf(values, "completed")).toBe(false)
+    expect(isOneOf(values, 1)).toBe(false)
+    expect(isOneOf(values, null)).toBe(false)
   })
 })
 

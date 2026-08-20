@@ -18,7 +18,8 @@ export function normalizeToolArgs(value: unknown) {
   }
 
   try {
-    return JSON.parse(value) as unknown
+    const parsed: unknown = JSON.parse(value)
+    return parsed
   } catch {
     return value
   }
@@ -30,7 +31,8 @@ export function traceExcerptResult(excerpt: string): unknown {
     return excerpt
   }
   try {
-    return JSON.parse(trimmed) as unknown
+    const parsed: unknown = JSON.parse(trimmed)
+    return parsed
   } catch {
     return excerpt
   }

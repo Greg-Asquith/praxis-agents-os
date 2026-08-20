@@ -27,7 +27,8 @@ function normalizeToolArgs(args: unknown) {
   }
 
   try {
-    return JSON.parse(args) as unknown
+    const parsed: unknown = JSON.parse(args)
+    return parsed
   } catch {
     return args
   }

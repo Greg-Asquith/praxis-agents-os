@@ -192,7 +192,14 @@ describe("EntityFieldInput", () => {
       throw new Error("Expected an entity search query function")
     }
 
-    await second.queryFn({ pageParam: "cursor-2", signal } as never)
+    await second.queryFn({
+      client: new QueryClient(),
+      direction: "forward",
+      meta: undefined,
+      pageParam: "cursor-2",
+      queryKey: second.queryKey,
+      signal,
+    })
 
     expect(first.queryKey).not.toEqual(second.queryKey)
     const [path, options] = vi.mocked(apiRequest).mock.calls[0] ?? []

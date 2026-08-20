@@ -110,16 +110,21 @@ export function classifierResult(
       value: classifiedValue,
     }
   })
-  if (rows.some((row) => row === null)) {
+  const classifiedRows = rows.filter(isClassifiedItem)
+  if (classifiedRows.length !== rows.length) {
     return null
   }
 
   return {
-    labels: args?.labels ?? [...new Set((rows as ClassifiedItem[]).map((row) => row.label))],
+    labels: args?.labels ?? [...new Set(classifiedRows.map((row) => row.label))],
     model: resultValue["model"],
     modelProvider: resultValue["model_provider"],
-    rows: rows as ClassifiedItem[],
+    rows: classifiedRows,
   }
+}
+
+function isClassifiedItem(value: ClassifiedItem | null): value is ClassifiedItem {
+  return value !== null
 }
 
 function isStringArray(value: unknown): value is string[] {

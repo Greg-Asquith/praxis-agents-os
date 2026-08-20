@@ -55,8 +55,8 @@ export function EntityFieldInput({
 }) {
   const multiple = field.format === "entity_list"
   const exactValues = useMemo(() => referenceValues(value, multiple), [multiple, value])
-  const invalidShape = exactValues === null
-  const missingSelection = !invalidShape && !field.secondary && exactValues.length === 0
+  const invalidReference = exactValues === null
+  const missingSelection = !invalidReference && !field.secondary && exactValues.length === 0
   const hydration = useQuery({
     ...entityReferenceHydrationQueryOptions({
       conversationId,
@@ -65,7 +65,7 @@ export function EntityFieldInput({
       fieldKey: field.key,
       toolName,
     }),
-    enabled: !invalidShape && exactValues.length > 0,
+    enabled: !invalidReference && exactValues.length > 0,
   })
   const [searchInput, setSearchInput] = useState("")
   const [open, setOpen] = useState(false)
@@ -89,14 +89,14 @@ export function EntityFieldInput({
     return hydrated.length === (exactValues ?? []).length ? hydrated : []
   }, [exactValues, hydration.data?.choices])
   const unresolved =
-    !invalidShape &&
+    !invalidReference &&
     exactValues.length > 0 &&
     !hydration.isPending &&
     !hydration.isFetching &&
     (hydration.isError || selected.length !== exactValues.length)
-  const unavailable = invalidShape || unresolved
+  const unavailable = invalidReference || unresolved
   const checking =
-    !invalidShape && exactValues.length > 0 && (hydration.isPending || hydration.isFetching)
+    !invalidReference && exactValues.length > 0 && (hydration.isPending || hydration.isFetching)
   const valid = !checking && !unavailable && !missingSelection
 
   useEffect(() => {

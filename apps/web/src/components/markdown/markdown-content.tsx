@@ -197,8 +197,8 @@ function markdownComponents(): Components {
       </p>
     ),
     pre: ({ children }) => {
-      if (isValidElement(children)) {
-        const props = children.props as { children?: ReactNode; className?: string }
+      if (isValidElement<{ children?: ReactNode; className?: string }>(children)) {
+        const props = children.props
         return (
           <MarkdownCodeBlock
             code={reactNodeToText(props.children).replace(/\n$/, "")}

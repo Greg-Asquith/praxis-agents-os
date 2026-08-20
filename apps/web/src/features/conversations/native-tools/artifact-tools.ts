@@ -89,14 +89,19 @@ export function artifactListToolResult(value: unknown): ArtifactListToolResult |
     return null
   }
   const items = value["items"].map(artifactToolSummary)
-  if (items.some((item) => item === null)) {
+  const summaries = items.filter(isArtifactToolSummary)
+  if (summaries.length !== items.length) {
     return null
   }
   return {
-    items: items as ArtifactToolSummary[],
+    items: summaries,
     total: value["total"],
     returned: value["returned"],
   }
+}
+
+function isArtifactToolSummary(value: ArtifactToolSummary | null): value is ArtifactToolSummary {
+  return value !== null
 }
 
 export function artifactReadToolResult(value: unknown): ArtifactReadToolResult | null {

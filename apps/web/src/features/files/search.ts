@@ -1,6 +1,7 @@
 // apps/web/src/features/files/search.ts
 
 import type { FileSortDirection, FileSortField } from "@/features/files/types"
+import { isOneOf } from "@/lib/guards"
 
 const FILE_SORT_FIELDS = new Set<FileSortField>([
   "created_at",
@@ -35,8 +36,8 @@ export function validateFilesSearch(search: Record<string, unknown>): FilesSearc
   }
 
   const sort = search["sort"]
-  if (typeof sort === "string" && FILE_SORT_FIELDS.has(sort as FileSortField)) {
-    result.sort = sort as FileSortField
+  if (isOneOf(FILE_SORT_FIELDS, sort)) {
+    result.sort = sort
   }
 
   const direction = search["direction"]

@@ -101,7 +101,8 @@ function parseSseFrame(frame: string): StreamEvent | null {
 
 function parseJsonData(eventName: StreamEventName, value: string): unknown {
   try {
-    return JSON.parse(value) as unknown
+    const parsed: unknown = JSON.parse(value)
+    return parsed
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown JSON parse error"
     throw new Error(`Invalid JSON for SSE event "${eventName}": ${detail}`, {

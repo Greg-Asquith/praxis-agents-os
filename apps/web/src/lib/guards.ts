@@ -12,7 +12,7 @@ export function normalizeRecord(value: unknown): Record<string, unknown> | null 
     return null
   }
   try {
-    const parsed = JSON.parse(value) as unknown
+    const parsed: unknown = JSON.parse(value)
     return isRecord(parsed) ? parsed : null
   } catch {
     return null
@@ -25,6 +25,11 @@ export function stringValue(value: unknown): string | null {
 
 export function optionalString(value: unknown): string | null {
   return typeof value === "string" ? value : null
+}
+
+export function isOneOf<T extends string>(values: ReadonlySet<T>, value: unknown): value is T {
+  const candidates: ReadonlySet<string> = values
+  return typeof value === "string" && candidates.has(value)
 }
 
 export function isNonNegativeInteger(value: unknown): value is number {

@@ -5,7 +5,7 @@ import { CheckIcon, CopyIcon, DownloadIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
-import { reactNodeToText } from "@/lib/react-node"
+import { isReactNodeArray, reactNodeToText } from "@/lib/react-node"
 import { downloadTableCsv, tableToTsv, type ExportTable } from "@/lib/table-export"
 import { cn } from "@/lib/utils"
 
@@ -92,51 +92,52 @@ export function MarkdownTableCell({ children, className, ...props }: React.Compo
 }
 
 function extractTable(children: ReactNode): ExtractedTable {
-  const headerCells: React.ReactElement[] = []
+  const headerCells: React.ReactElement<{ children?: ReactNode }>[] = []
   findElementsByTag(children, "th", headerCells)
 
-  const rowElements: React.ReactElement[] = []
+  const rowElements: React.ReactElement<{ children?: ReactNode }>[] = []
   findElementsByTag(children, "tr", rowElements)
 
   const rows: string[][] = []
   for (const row of rowElements) {
-    const dataCells: React.ReactElement[] = []
-    const props = row.props as { children?: ReactNode }
-    findElementsByTag(props.children, "td", dataCells)
+    const dataCells: React.ReactElement<{ children?: ReactNode }>[] = []
+    findElementsByTag(row.props.children, "td", dataCells)
     if (dataCells.length === 0) {
       continue
     }
 
     rows.push(
       dataCells.map((cell) => {
-        const cellProps = cell.props as { children?: ReactNode }
-        return reactNodeToText(cellProps.children).trim()
+        return reactNodeToText(cell.props.children).trim()
       })
     )
   }
 
   return {
     headers: headerCells.map((cell) => {
-      const props = cell.props as { children?: ReactNode }
-      return reactNodeToText(props.children).trim()
+      return reactNodeToText(cell.props.children).trim()
     }),
     rows,
   }
 }
 
-function findElementsByTag(node: ReactNode, tag: string, out: React.ReactElement[]): void {
+function findElementsByTag(
+  node: ReactNode,
+  tag: string,
+  out: React.ReactElement<{ children?: ReactNode }>[]
+): void {
   if (node === null || node === undefined || typeof node === "boolean") {
     return
   }
 
-  if (Array.isArray(node)) {
-    for (const child of node as ReactNode[]) {
+  if (isReactNodeArray(node)) {
+    for (const child of node) {
       findElementsByTag(child, tag, out)
     }
     return
   }
 
-  if (!isValidElement(node)) {
+  if (!isValidElement<{ children?: ReactNode }>(node)) {
     return
   }
 
@@ -145,6 +146,5 @@ function findElementsByTag(node: ReactNode, tag: string, out: React.ReactElement
     return
   }
 
-  const props = node.props as { children?: ReactNode }
-  findElementsByTag(props.children, tag, out)
+  findElementsByTag(node.props.children, tag, out)
 }

@@ -1,6 +1,6 @@
 // apps/web/src/features/audit/operation-detail.ts
 
-import { isRecord } from "@/lib/guards"
+import { isOneOf, isRecord } from "@/lib/guards"
 
 export type AuditDetailValue =
   string | number | boolean | null | AuditDetailValue[] | { [key: string]: AuditDetailValue }
@@ -248,13 +248,14 @@ function parseEffect(value: unknown): OperationEffect | null {
 
 function parseCounts(value: unknown): OperationCounts | null {
   if (!isRecord(value)) return null
-  const parsed = {
-    applied: value["applied"],
-    skipped: value["skipped"],
-    failed: value["failed"],
-    unverified: value["unverified"],
+  const applied = value["applied"]
+  const skipped = value["skipped"]
+  const failed = value["failed"]
+  const unverified = value["unverified"]
+  if (!isCount(applied) || !isCount(skipped) || !isCount(failed) || !isCount(unverified)) {
+    return null
   }
-  return Object.values(parsed).every(isCount) ? (parsed as OperationCounts) : null
+  return { applied, skipped, failed, unverified }
 }
 
 function countStatuses(
@@ -266,9 +267,8 @@ function countStatuses(
 }
 
 function countsEqual(left: OperationCounts, right: OperationCounts): boolean {
-  return Object.keys(left).every(
-    (key) => left[key as OperationOutcomeStatus] === right[key as OperationOutcomeStatus]
-  )
+  const statuses: OperationOutcomeStatus[] = ["applied", "skipped", "failed", "unverified"]
+  return statuses.every((status) => left[status] === right[status])
 }
 
 function isDetailRecord(value: unknown): value is Record<string, AuditDetailValue> {
@@ -282,11 +282,11 @@ function isDetailValue(value: unknown): value is AuditDetailValue {
 }
 
 function isOutcomeStatus(value: unknown): value is OperationOutcomeStatus {
-  return typeof value === "string" && OUTCOME_STATUSES.has(value as OperationOutcomeStatus)
+  return isOneOf(OUTCOME_STATUSES, value)
 }
 
 function isEffectStatus(value: unknown): value is OperationEffectStatus {
-  return typeof value === "string" && EFFECT_STATUSES.has(value as OperationEffectStatus)
+  return isOneOf(EFFECT_STATUSES, value)
 }
 
 function isCount(value: unknown): value is number {

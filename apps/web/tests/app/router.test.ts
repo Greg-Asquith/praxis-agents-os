@@ -46,16 +46,30 @@ describe("conversation route pending behavior", () => {
     if (typeof beforeLoad !== "function") {
       throw new Error("Expected the app route auth guard")
     }
+    const beforeLoadContext: Parameters<typeof beforeLoad>[0] = {
+      abortController: new AbortController(),
+      buildLocation: router.buildLocation,
+      cause: "enter",
+      context: { queryClient },
+      location: {
+        external: false,
+        hash: "",
+        href: "/invitations/accept?token=invite-token",
+        pathname: "/invitations/accept",
+        publicHref: "/invitations/accept?token=invite-token",
+        search: { token: "invite-token" },
+        searchStr: "?token=invite-token",
+        state: { __TSR_index: 0 },
+      },
+      matches: [],
+      navigate: router.navigate,
+      params: {},
+      preload: false,
+      routeId: router.routesByPath["/invitations/accept"].parentRoute.id,
+      search: { token: "invite-token" },
+    }
 
-    await expect(
-      beforeLoad({
-        context: { queryClient },
-        location: {
-          pathname: "/invitations/accept",
-          searchStr: "?token=invite-token",
-        },
-      } as never)
-    ).rejects.toMatchObject({
+    await expect(beforeLoad(beforeLoadContext)).rejects.toMatchObject({
       options: {
         search: { redirect: "/invitations/accept?token=invite-token" },
         to: "/login",

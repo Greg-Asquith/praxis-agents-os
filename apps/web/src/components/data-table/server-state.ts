@@ -3,6 +3,7 @@
 import type { PaginationState, SortingState } from "@tanstack/react-table"
 
 import { clampPaginationOffset } from "@/components/ui/pagination-controls"
+import { isOneOf } from "@/lib/guards"
 
 type ServerPaginationParams = {
   limit: number
@@ -45,12 +46,12 @@ export function sortingStateToServer<TField extends string>(
   fallback: ServerSortParams<TField>
 ): ServerSortParams<TField> {
   const firstSort = state[0]
-  if (!firstSort || !validFields.has(firstSort.id as TField)) {
+  if (!firstSort || !isOneOf(validFields, firstSort.id)) {
     return fallback
   }
 
   return {
-    sort_by: firstSort.id as TField,
+    sort_by: firstSort.id,
     sort_direction: firstSort.desc ? "desc" : "asc",
   }
 }

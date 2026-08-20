@@ -79,6 +79,8 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
   const revisionNumber = value["revision_number"]
   const updatedExisting = value["updated_existing"]
   const folder = value["folder"]
+  const folderId = isRecord(folder) ? folder["id"] : undefined
+  const folderName = isRecord(folder) ? folder["name"] : undefined
   if (
     (kind !== "artifact" && kind !== "file") ||
     entityKind !== kind ||
@@ -94,7 +96,7 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
     (updatedExisting !== undefined && typeof updatedExisting !== "boolean") ||
     (folder !== undefined &&
       folder !== null &&
-      (!isRecord(folder) || typeof folder["id"] !== "string" || typeof folder["name"] !== "string"))
+      (!isRecord(folder) || typeof folderId !== "string" || typeof folderName !== "string"))
   ) {
     return null
   }
@@ -111,9 +113,10 @@ function runCodeStoredOutput(value: unknown): RunCodeStoredOutput | null {
     revisionNumber: typeof revisionNumber === "number" ? revisionNumber : null,
     sizeBytes: value["size_bytes"],
     updatedExisting: updatedExisting === true,
-    folder: isRecord(folder)
-      ? { id: folder["id"] as string, name: folder["name"] as string }
-      : null,
+    folder:
+      isRecord(folder) && typeof folderId === "string" && typeof folderName === "string"
+        ? { id: folderId, name: folderName }
+        : null,
   }
 }
 

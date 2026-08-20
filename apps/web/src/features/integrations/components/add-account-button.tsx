@@ -16,6 +16,7 @@ import { ApiKeyConnectForm } from "@/features/integrations/components/api-key-co
 import { OAuthConnectionForm } from "@/features/integrations/components/connect-oauth-button"
 import { ServiceAccountConnectForm } from "@/features/integrations/components/service-account-connect-dialog"
 import type { IntegrationProvider } from "@/features/integrations/types"
+import { isOneOf } from "@/lib/guards"
 
 type SupportedAuthMode = "api_key" | "oauth" | "service_account"
 
@@ -134,7 +135,6 @@ function AuthModeChoice({
 function configuredModes(provider: IntegrationProvider): SupportedAuthMode[] {
   return provider.auth_modes.filter(
     (mode): mode is SupportedAuthMode =>
-      SUPPORTED_AUTH_MODES.has(mode as SupportedAuthMode) &&
-      provider.configured_auth_modes[mode] === true
+      isOneOf(SUPPORTED_AUTH_MODES, mode) && provider.configured_auth_modes[mode] === true
   )
 }

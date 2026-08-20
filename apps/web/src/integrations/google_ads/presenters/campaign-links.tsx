@@ -11,7 +11,7 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { titleCaseToken } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { isOneOf, isRecord } from "@/lib/guards"
 
 export const googleAdsCampaignLinksPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-negative-list-campaign-links",
@@ -149,24 +149,24 @@ function campaignLinkResult(value: unknown): CampaignLinkResult | null {
     return null
   }
   const action = value["action"]
-  const allowedOutcomes =
+  const allowedOutcomes: ReadonlySet<CampaignLinkCampaignOutcome["outcome"]> =
     action === "LINK"
       ? new Set(["linked", "already_linked", "failed"])
       : new Set(["unlinked", "not_linked", "failed"])
   const campaigns: CampaignLinkCampaignOutcome[] = []
   for (const campaign of value["campaigns"]) {
+    const outcome = isRecord(campaign) ? campaign["outcome"] : undefined
     if (
       !isRecord(campaign) ||
       typeof campaign["campaign_id"] !== "string" ||
       typeof campaign["campaign_name"] !== "string" ||
-      typeof campaign["outcome"] !== "string" ||
-      !allowedOutcomes.has(campaign["outcome"]) ||
+      !isOneOf(allowedOutcomes, outcome) ||
       (campaign["external_ref"] !== null && typeof campaign["external_ref"] !== "string")
     ) {
       return null
     }
-    const failed = campaign["outcome"] === "failed"
-    const applied = campaign["outcome"] === "linked" || campaign["outcome"] === "unlinked"
+    const failed = outcome === "failed"
+    const applied = outcome === "linked" || outcome === "unlinked"
     if (
       (failed &&
         (typeof campaign["message"] !== "string" || typeof campaign["error_code"] !== "string")) ||
@@ -178,10 +178,11 @@ function campaignLinkResult(value: unknown): CampaignLinkResult | null {
     campaigns.push({
       campaignId: campaign["campaign_id"],
       campaignName: campaign["campaign_name"] || campaign["campaign_id"],
-      errorCode: failed ? (campaign["error_code"] as string) : null,
+      errorCode:
+        failed && typeof campaign["error_code"] === "string" ? campaign["error_code"] : null,
       externalRef: campaign["external_ref"],
-      message: failed ? (campaign["message"] as string) : null,
-      outcome: campaign["outcome"] as CampaignLinkCampaignOutcome["outcome"],
+      message: failed && typeof campaign["message"] === "string" ? campaign["message"] : null,
+      outcome,
     })
   }
   return {
