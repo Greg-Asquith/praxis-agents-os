@@ -12,7 +12,7 @@ from models.agent import AgentSchedule, AgentScheduleRun
 from services.agent_runs.domain import RUN_OUTCOME_BLOCKED, RunOutcome
 from services.agent_schedules.domain import SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE
 from services.agent_schedules.runs import RUN_STATUS_TERMINAL_FAILED, schedule_health_from_run
-from services.completion_contract import (
+from services.agents.runtime.completion_contract import (
     ScheduleCompletionContract,
     serialized_completion_contract,
 )

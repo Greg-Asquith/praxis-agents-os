@@ -64,6 +64,7 @@ from services.agents.runtime.approval_state import (
     APPROVAL_STATE_METADATA_KEY,
     load_suspended_run_state,
 )
+from services.agents.runtime.completion_contract import ScheduleCompletionContract
 from services.agents.runtime.events import (
     EVENT_DONE,
     EVENT_ERROR,
@@ -84,7 +85,6 @@ from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, register_tool_definition
 from services.agents.runtime.worker import run_turn_worker
-from services.completion_contract import ScheduleCompletionContract
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio

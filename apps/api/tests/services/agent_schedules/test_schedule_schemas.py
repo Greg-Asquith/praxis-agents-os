@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from models.agent import AgentScheduleRun
 from services.agent_schedules.runs import schedule_health_from_run
 from services.agent_schedules.schemas import AgentScheduleCreateRequest
-from services.completion_contract import (
+from services.agents.runtime.completion_contract import (
     MAX_COMPLETION_JSON_BYTES,
     MAX_SCHEDULE_BUDGET,
     validate_completion_json,

@@ -48,20 +48,20 @@ def _disable_periodic_enqueuers(monkeypatch: pytest.MonkeyPatch) -> None:
     async def noop(_db: AsyncSession) -> None:
         return None
 
-    for name in (
-        "ensure_sweep_job",
-        "ensure_files_sweep_job",
-        "ensure_artifact_shares_sweep_job",
-        "ensure_audit_event_sweep_job",
-        "ensure_security_event_sweep_job",
-        "ensure_scratch_sweep_job",
-        "ensure_rate_limit_sweep_job",
-        "ensure_integrations_sweep_job",
-        "ensure_memory_sweep_job",
-        "ensure_integrations_rediscover_job",
-        "ensure_refresh_webhooks_job",
+    for target in (
+        "services.jobs.handlers.sweep_terminal_jobs.ensure_sweep_job",
+        "services.jobs.handlers.sweep_deleted_files.ensure_files_sweep_job",
+        "services.jobs.handlers.sweep_expired_artifact_shares.ensure_artifact_shares_sweep_job",
+        "services.jobs.handlers.sweep_expired_audit_events.ensure_audit_event_sweep_job",
+        "services.jobs.handlers.sweep_expired_security_events.ensure_security_event_sweep_job",
+        "services.jobs.handlers.sweep_expired_scratch.ensure_scratch_sweep_job",
+        "services.jobs.handlers.sweep_rate_limit_attempts.ensure_rate_limit_sweep_job",
+        "workers.job_runner.ensure_integrations_sweep_job",
+        "workers.job_runner.ensure_memory_sweep_job",
+        "workers.job_runner.ensure_integrations_rediscover_job",
+        "workers.job_runner.ensure_refresh_webhooks_job",
     ):
-        monkeypatch.setattr(job_runner, name, noop)
+        monkeypatch.setattr(target, noop)
 
 
 async def _clear_jobs(session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -272,7 +272,10 @@ async def test_job_enqueued_by_periodic_enqueuer_is_processed(
         enqueued = True
         await enqueue_job(db, kind=kind)
 
-    monkeypatch.setattr(job_runner, "ensure_sweep_job", enqueue_once)
+    monkeypatch.setattr(
+        "services.jobs.handlers.sweep_terminal_jobs.ensure_sweep_job",
+        enqueue_once,
+    )
 
     await job_runner.run_drain(
         shutdown_event=asyncio.Event(),

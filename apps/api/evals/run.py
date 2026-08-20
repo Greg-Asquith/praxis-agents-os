@@ -36,6 +36,7 @@ from models.agent import Agent
 from services.agents.runtime.history import HistoryCompaction
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
+from services.runtime_catalogs import assemble_runtime_catalogs
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
 FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
@@ -225,6 +226,7 @@ def _response_judges(judge_model: str) -> list[LLMJudge]:
 
 
 async def main() -> None:
+    assemble_runtime_catalogs()
     provider, model = _configured_model()
     await run_memory_calibration()
     judge_model = f"{provider}:{model}"

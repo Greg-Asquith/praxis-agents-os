@@ -53,6 +53,7 @@ from integrations.google_analytics.tools import (
 )
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.completion_contract import REPORT_COMPLETION_TOOL_NAME
 from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATE_TO_AGENT_DEFINITION,
     DELEGATION_TOOL_DEFINITIONS,
@@ -83,7 +84,6 @@ from services.agents.runtime.tools.registry import (
 )
 from services.agents.runtime.tools.schemas import ToolPresentationRead
 from services.agents.utils import validate_tool_configuration
-from services.completion_contract import REPORT_COMPLETION_TOOL_NAME
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.memories.domain import MemoryKind, MemoryScope, MemoryType
 

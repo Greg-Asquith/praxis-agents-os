@@ -29,6 +29,12 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND_KEY,
 )
 from services.agents.models import resolve_agent_model, resolve_model_context_budget
+from services.agents.runtime.completion_contract import (
+    REPORT_COMPLETION_TOOL_NAME,
+    ScheduleCompletionContract,
+    completion_contract_from_run_metadata,
+    render_completion_contract_instructions,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
 from services.agents.runtime.dispatch import record_denied_approval_audit_events
@@ -49,12 +55,6 @@ from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
-from services.completion_contract import (
-    REPORT_COMPLETION_TOOL_NAME,
-    ScheduleCompletionContract,
-    completion_contract_from_run_metadata,
-    render_completion_contract_instructions,
-)
 from services.conversation_summaries.load_history_summary import load_history_summary
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context

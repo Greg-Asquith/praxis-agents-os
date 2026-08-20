@@ -1,4 +1,4 @@
-# apps/api/services/completion_contract.py
+# apps/api/services/agents/runtime/completion_contract.py
 
 """Validated completion-report contracts for unattended schedule runs."""
 

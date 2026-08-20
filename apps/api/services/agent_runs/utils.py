@@ -36,7 +36,7 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_KIND_KEY,
 )
 from services.agents.runtime.approval_state import clear_suspended_run_metadata
-from services.completion_contract import validate_completion_json
+from services.agents.runtime.completion_contract import validate_completion_json
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
 BLOCKED_ERROR_CODES = frozenset(

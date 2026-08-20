@@ -44,6 +44,7 @@ from services.agents.runtime.approval_state import (
     build_suspended_run_metadata,
     clear_suspended_run_metadata,
 )
+from services.agents.runtime.completion_contract import completion_contract_from_run_metadata
 from services.agents.runtime.load_context import load_run_context
 from services.agents.runtime.persistence import (
     persist_new_messages,
@@ -55,7 +56,6 @@ from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 from services.ai_usage.domain import AIUsageEventData
 from services.ai_usage.record_agent_run_fallback import record_agent_run_fallback
 from services.ai_usage.record_in_transaction import record_ai_usage_in_transaction
-from services.completion_contract import completion_contract_from_run_metadata
 
 logger = logging.getLogger(__name__)
 _RUN_USAGE_ADAPTER = TypeAdapter(RunUsage)

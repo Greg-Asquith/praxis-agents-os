@@ -47,6 +47,7 @@ from services.agent_schedules.runs import (
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
 from services.agents.runtime.sinks import NullSink
+from services.runtime_catalogs import assemble_runtime_catalogs
 from workers.concurrency import run_worker_batch, worker_run_slot
 
 setup_logging()
@@ -239,6 +240,7 @@ async def _claim_one_schedule_run() -> UUID | None:
 
 async def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint for the scheduled agent runner."""
+    assemble_runtime_catalogs()
     parser = argparse.ArgumentParser(description="Run scheduled Praxis agents.")
     parser.add_argument("--once", action="store_true", help="Run one polling pass and exit.")
     args = parser.parse_args(argv)

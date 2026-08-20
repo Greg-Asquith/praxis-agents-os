@@ -38,6 +38,13 @@ from services.agents.runtime.code_mode.executor import (
     ScriptSuspension,
     get_code_mode_executor,
 )
+from services.agents.runtime.code_mode.metadata import (
+    CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY,
+    CODE_MODE_HANDLER_STARTED_METADATA_KEY,
+    CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
+    CODE_MODE_PENDING_AUDIT_RECORDED_ATTR,
+    CODE_MODE_TAINT_SOURCES_METADATA_KEY,
+)
 from services.agents.runtime.code_mode.state import (
     CODE_MODE_STATE_EFFECT_LIMIT,
     CODE_MODE_STATE_METADATA_KEY,
@@ -51,7 +58,15 @@ from services.agents.runtime.code_mode.state import (
     load_code_mode_state,
 )
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.dispatch import (
+    PUBLIC_RESULT_METADATA_KEY,
+    cleanup_staged_tool_content,
+    digest_args,
+    record_invocation,
+)
 from services.agents.runtime.events import EVENT_TOOL_CALL, EVENT_TOOL_RESULT, EVENT_WORKFLOW_STATE
+from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
+from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.audit_events.enums import AuditStatus
 from utils.json_safe import json_safe_value
@@ -258,15 +273,6 @@ class CodeModeBridge:
                 args=normalized_args,
                 tool_call_id=f"{self._outer_tool_call_id}:{self._call_count}",
             )
-            from services.agents.runtime.dispatch import (
-                CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY,
-                CODE_MODE_HANDLER_STARTED_METADATA_KEY,
-                CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
-                CODE_MODE_PENDING_AUDIT_RECORDED_ATTR,
-                CODE_MODE_TAINT_SOURCES_METADATA_KEY,
-                digest_args,
-            )
-
             args_sha256, _args_bytes = digest_args(normalized_args)
             trace_entry = {
                 "order": self._call_count,
@@ -291,9 +297,6 @@ class CodeModeBridge:
                     "args": normalized_args,
                 },
             )
-            from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
-            from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
-
             definition = resolve_runtime_tool_definition(
                 tool_name,
                 _workspace_definitions(self._ctx.deps),
@@ -418,11 +421,6 @@ class CodeModeBridge:
             or decision not in {"approved", "denied"}
         ):
             raise CodeModeStateError("schema_mismatch", "Code Mode continuation decision is stale")
-        from services.agents.runtime.dispatch import (
-            CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
-            digest_args,
-        )
-
         computed_digest, _ = digest_args(dict(effective_args))
         if computed_digest != args_sha256:
             raise CodeModeStateError("schema_mismatch", "Code Mode continuation arguments changed")
@@ -440,12 +438,6 @@ class CodeModeBridge:
                 state.nested_call_id, status="denied", result=str(message or "Denied by user")
             )
             return {"exc_type": "PermissionError", "message": str(message or "Denied by user")}
-
-        from services.agents.runtime.dispatch import (
-            CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY,
-            CODE_MODE_HANDLER_STARTED_METADATA_KEY,
-            CODE_MODE_TAINT_SOURCES_METADATA_KEY,
-        )
 
         call_metadata = {
             CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY: self._outer_tool_call_id,
@@ -526,8 +518,6 @@ class CodeModeBridge:
     ) -> None:
         if not hasattr(self._ctx.deps, "workspace"):
             return
-        from services.agents.runtime.dispatch import record_invocation
-
         await record_invocation(
             deps=self._ctx.deps,
             tool_name=call.tool_name,
@@ -546,8 +536,6 @@ class CodeModeBridge:
         )
 
     def _nested_result_values(self, *, tool_name: str, result: Any) -> tuple[Any, Any]:
-        from services.agents.runtime.dispatch import PUBLIC_RESULT_METADATA_KEY
-
         presentation_result: Any = None
         has_public_result = False
         if isinstance(result, ToolReturn):
@@ -584,9 +572,6 @@ class CodeModeBridge:
                 return
 
     def _record_effect(self, *, call: ToolCallPart, args_sha256: str) -> None:
-        from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
-        from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
-
         definition = resolve_runtime_tool_definition(
             call.tool_name,
             _workspace_definitions(self._ctx.deps),
@@ -875,13 +860,6 @@ async def _settle_denied_decision_evidence(
         or not tool_name
     ):
         return
-    from services.agents.runtime.dispatch import (
-        cleanup_staged_tool_content,
-        digest_args,
-        record_invocation,
-    )
-    from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
-
     computed_digest, args_bytes = digest_args(dict(effective_args))
     if computed_digest != args_sha256 or not hasattr(deps, "workspace"):
         return
@@ -926,8 +904,6 @@ async def _cleanup_unclaimable_approved_content(
         or not hasattr(deps, "workspace")
     ):
         return
-    from services.agents.runtime.dispatch import cleanup_staged_tool_content
-
     await cleanup_staged_tool_content(
         deps=deps,
         tool_name=tool_name,
@@ -953,13 +929,6 @@ async def _record_failed_suspension_audit(
         or not isinstance(args, Mapping)
     ):
         return
-    from services.agents.runtime.dispatch import (
-        cleanup_staged_tool_content,
-        digest_args,
-        record_invocation,
-    )
-    from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
-
     args_sha256, args_bytes = digest_args(dict(args))
     definition = resolve_runtime_tool_definition(
         tool_name,
@@ -1155,8 +1124,6 @@ def _has_binary_or_multimodal_content(content: Any) -> bool:
 
 
 def _tool_summary(tool_name: str, workspace_definitions=()) -> str:
-    from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
-
     definition = resolve_runtime_tool_definition(tool_name, workspace_definitions)
     return (
         definition.label

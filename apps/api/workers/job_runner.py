@@ -33,25 +33,12 @@ from services.integrations.events import ensure_refresh_webhooks_job
 from services.jobs.claim_jobs import claim_jobs
 from services.jobs.domain import JOB_STATUS_RUNNING
 from services.jobs.finalize_job import finalize_job_failure, finalize_job_success
-from services.jobs.handlers.sweep_deleted_files import ensure_files_sweep_job
-from services.jobs.handlers.sweep_expired_agent_run_approvals import (
-    ensure_agent_run_approval_sweep_job,
-)
-from services.jobs.handlers.sweep_expired_artifact_shares import (
-    ensure_artifact_shares_sweep_job,
-)
-from services.jobs.handlers.sweep_expired_audit_events import ensure_audit_event_sweep_job
-from services.jobs.handlers.sweep_expired_scratch import ensure_scratch_sweep_job
-from services.jobs.handlers.sweep_expired_security_events import (
-    ensure_security_event_sweep_job,
-)
-from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_sweep_job
-from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
 from services.jobs.heartbeat_job_lease import heartbeat_job_lease
 from services.jobs.log_concurrency_warnings import log_job_concurrency_warnings
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import get_job_handler
 from services.memories.ensure_sweep_job import ensure_memory_sweep_job
+from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
 from workers.concurrency import run_worker_batch, worker_run_slot
 
@@ -66,6 +53,22 @@ async def run_once(
     shutdown_event: asyncio.Event | None = None,
 ) -> int:
     """Reclaim stale work, claim due jobs, and execute one claimed batch."""
+    # These modules register handlers, so process entry points assemble before importing them.
+    from services.jobs.handlers.sweep_deleted_files import ensure_files_sweep_job
+    from services.jobs.handlers.sweep_expired_agent_run_approvals import (
+        ensure_agent_run_approval_sweep_job,
+    )
+    from services.jobs.handlers.sweep_expired_artifact_shares import (
+        ensure_artifact_shares_sweep_job,
+    )
+    from services.jobs.handlers.sweep_expired_audit_events import ensure_audit_event_sweep_job
+    from services.jobs.handlers.sweep_expired_scratch import ensure_scratch_sweep_job
+    from services.jobs.handlers.sweep_expired_security_events import (
+        ensure_security_event_sweep_job,
+    )
+    from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_sweep_job
+    from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
+
     owner_id = owner_instance_id or _owner_instance_id()
     session_factory = get_maintenance_async_db_session_factory()
 
@@ -341,6 +344,7 @@ async def _claim_one_job(*, owner_instance_id: str) -> UUID | None:
 
 async def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint for the generic job runner."""
+    assemble_runtime_catalogs()
     parser = argparse.ArgumentParser(description="Run generic Praxis background jobs.")
     parser.add_argument("--once", action="store_true", help="Run one polling pass and exit.")
     args = parser.parse_args(argv)

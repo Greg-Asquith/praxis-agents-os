@@ -23,7 +23,7 @@ from services.agent_schedules.runs import (
     mark_run_terminal_failure_and_disable_schedule,
 )
 from services.agent_schedules.schemas import schedule_side_effect_policy
-from services.completion_contract import (
+from services.agents.runtime.completion_contract import (
     COMPLETION_CONTRACT_KEY,
     completion_contract_from_execution_params,
     serialized_completion_contract,

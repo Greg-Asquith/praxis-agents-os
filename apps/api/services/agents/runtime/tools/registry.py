@@ -1,6 +1,4 @@
 # apps/api/services/agents/runtime/tools/registry.py
-# ruff: noqa: E402
-
 """Python-owned catalog of built-in runtime tools."""
 
 import logging
@@ -11,6 +9,10 @@ from pydantic import BaseModel
 
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.delegation.build_delegation_tools import (
+    DELEGATION_TOOL_DEFINITIONS,
+    build_delegation_tools,
+)
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -25,6 +27,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
     validate_definition,
 )
+from services.agents.runtime.tools.workspace_tools import RESERVED_WORKSPACE_TOOL_PREFIXES
 
 if TYPE_CHECKING:
     from services.integrations.context.domain import ResolvedActiveContext
@@ -33,15 +36,9 @@ logger = logging.getLogger(__name__)
 
 RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {}
 
-from services.agents.runtime.entity_references.internal import register_internal_entity_resolvers
-
-register_internal_entity_resolvers()
-
 
 def register_tool_definition(definition: RuntimeToolDefinition) -> None:
     """Register a provider-contributed definition in the singular catalog."""
-    from services.agents.runtime.tools.workspace_tools import RESERVED_WORKSPACE_TOOL_PREFIXES
-
     if definition.name.startswith(RESERVED_WORKSPACE_TOOL_PREFIXES):
         raise RuntimeError(
             f"Runtime tool name uses a reserved workspace-defined prefix: {definition.name}"
@@ -58,10 +55,6 @@ def get_runtime_tool_definition(name: str) -> RuntimeToolDefinition | None:
     definition = RUNTIME_TOOL_CATALOG.get(name)
     if definition is not None:
         return definition
-
-    from services.agents.runtime.delegation.build_delegation_tools import (
-        DELEGATION_TOOL_DEFINITIONS,
-    )
 
     return next(
         (definition for definition in DELEGATION_TOOL_DEFINITIONS if definition.name == name),
@@ -163,6 +156,7 @@ def build_runtime_tools(
     workspace_definitions: Sequence[RuntimeToolDefinition] = (),
 ):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
+    # Importing the Code Mode package while this registry initializes reaches dispatch.
     from services.agents.runtime.code_mode.stubs import (
         CodeModeCatalog,
         UnsupportedCodeModeSchemaError,
@@ -271,8 +265,6 @@ def build_runtime_tools(
         tools.append(build_run_workflow_tool(CodeModeCatalog.build(wrapped_entries)))
 
     if include_delegation:
-        from services.agents.runtime.delegation import build_delegation_tools
-
         tools.extend(build_delegation_tools())
 
     return tools
@@ -306,10 +298,6 @@ def list_tool_presentations(
     workspace_definitions: Sequence[RuntimeToolDefinition] = (),
 ) -> list[RuntimeToolDefinition]:
     """Return every first-party runtime entry's display metadata."""
-    from services.agents.runtime.delegation.build_delegation_tools import (
-        DELEGATION_TOOL_DEFINITIONS,
-    )
-
     return sorted(
         (
             *RUNTIME_TOOL_CATALOG.values(),
@@ -366,20 +354,3 @@ def _normalize_tool_policies(raw: Any) -> dict[str, ToolPolicy]:
 
 def _derive_label(name: str) -> str:
     return name.replace("_", " ").capitalize()
-
-
-# Import provider modules for registration side effects.
-from services.agents.runtime.tools import (
-    artifacts as _artifacts,  # noqa: F401
-    charting as _charting,  # noqa: F401
-    code_mode as _code_mode,  # noqa: F401
-    completion as _completion,  # noqa: F401
-    files as _files,  # noqa: F401
-    kb as _kb,  # noqa: F401
-    memory as _memory,  # noqa: F401
-    native as _native,  # noqa: F401
-    planning as _planning,  # noqa: F401
-)
-from services.integrations.loader import load_enabled_providers
-
-load_enabled_providers()

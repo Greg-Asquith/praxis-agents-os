@@ -326,6 +326,7 @@ apps/api/
       stubs.py                         # CodeModeCatalog + Python stub rendering
       executor.py                      # Monty worker pool, execute/resume drivers
       bridge.py                        # nested dispatch, taint, trace, bounds, suspension
+      metadata.py                      # nested-dispatch metadata keys shared with dispatch
       state.py                         # durable resume artifact build/load/clear
       approval.py                      # trusted nested-approval metadata contract
 apps/web/src/features/

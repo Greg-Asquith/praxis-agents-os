@@ -32,6 +32,9 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.runtime_catalogs import assemble_runtime_catalogs
+
+assemble_runtime_catalogs()
 
 pydantic_ai_models.ALLOW_MODEL_REQUESTS = False
 

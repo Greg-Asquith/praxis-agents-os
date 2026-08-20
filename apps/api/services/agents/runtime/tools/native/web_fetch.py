@@ -41,6 +41,7 @@ from services.agents.models.domain import (
 from services.agents.models.registry import get_model
 from services.agents.models.utils import has_provider_api_key
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.dispatch import truncate_result
 from services.agents.runtime.tools import (
     TOOL_EGRESS_ARBITRARY_URL,
     TOOL_POLICY_APPROVAL,
@@ -441,9 +442,6 @@ def _blocked_domain_for_url(url: str) -> str | None:
 
 
 def _truncate_fetched_content(content: str) -> str:
-    # Import locally to avoid the registry/dispatch import cycle at process start.
-    from services.agents.runtime.dispatch import truncate_result
-
     bounded, _size = truncate_result(
         None,
         content,

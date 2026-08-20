@@ -36,18 +36,16 @@ from services.agents.runtime.tools import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.agents.runtime.tools.native.classifier_contract import (
+    CLASSIFIER_MAX_INSTRUCTIONS_CHARS,
+    SUPPORTED_CLASSIFIER_PROVIDERS,
+    ClassifierProvider,
+)
 from services.agents.runtime.tools.registry import runtime_tool
 from services.ai_usage.domain import PURPOSE_CLASSIFICATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
 from utils.validation import normalize_optional_text
 
-ClassifierProvider = Literal["openai", "anthropic", "google"]
-
-SUPPORTED_CLASSIFIER_PROVIDERS = (
-    PROVIDER_OPENAI,
-    PROVIDER_ANTHROPIC,
-    PROVIDER_GOOGLE,
-)
 DEFAULT_CLASSIFIER_MODELS = {
     PROVIDER_OPENAI: "gpt-5.6-luna",
     PROVIDER_ANTHROPIC: "claude-haiku-4-5",
@@ -55,7 +53,6 @@ DEFAULT_CLASSIFIER_MODELS = {
 }
 
 CLASSIFIER_MAX_LABEL_CHARS = 100
-CLASSIFIER_MAX_INSTRUCTIONS_CHARS = 4_000
 CLASSIFIER_BATCH_SIZE = 100
 
 CLASSIFIER_INSTRUCTIONS = """\

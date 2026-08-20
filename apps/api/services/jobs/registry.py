@@ -62,7 +62,3 @@ def job_handler(
 def get_job_handler(kind: str) -> JobHandlerDefinition | None:
     """Return the registered handler definition for a kind, if any."""
     return JOB_HANDLERS.get(kind)
-
-
-# Assembly point for built-in handlers and future plan-owned handlers.
-from services.jobs import handlers as _handlers  # noqa: E402,F401

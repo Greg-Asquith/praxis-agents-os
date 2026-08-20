@@ -8,15 +8,15 @@ from pydantic import Field, StringConstraints
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
-from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE, ToolPresentation
-from services.agents.runtime.tools.registry import runtime_tool
-from services.completion_contract import (
+from services.agents.runtime.completion_contract import (
     MAX_COMPLETION_JSON_BYTES,
     REPORT_COMPLETION_TOOL_NAME,
     completion_contract_from_run_metadata,
     validate_completion_json,
 )
+from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE, ToolPresentation
+from services.agents.runtime.tools.registry import runtime_tool
 
 CompletionStatus = Literal["pass", "fail"]
 CompletionEvidence = Annotated[

@@ -204,9 +204,13 @@ def load_enabled_providers() -> None:
             register_tool_definition(definition)
 ```
 
-- Called once from the registry assembly point (the import-for-side-effects
-  block at the bottom of `runtime/tools/registry.py`), so the API process
-  and both workers get identical catalogs.
+- Called by `assemble_runtime_catalogs()` after built-in job handlers, internal
+  entity resolvers, and core runtime tools are registered. The API lifespan,
+  worker supervisor and standalone runners, maintenance commands, live eval
+  runner, and test bootstrap invoke this explicit, idempotent composition entry
+  point, so every process gets the same catalogs. Assembly serializes callers;
+  after one attempt fails, later calls re-raise that failure instead of using or
+  extending partially registered process state.
 - **Fail-fast at boot**: an unknown key (module missing), a package without
   `PROVIDER`, or a plugin failing validation raises at startup. A
   misconfigured deployment must not come up half-integrated.

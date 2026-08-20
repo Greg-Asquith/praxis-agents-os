@@ -52,7 +52,7 @@ from services.agent_runs.domain import (
     RUN_TRIGGER_DELEGATED,
     RunUsageSnapshot,
 )
-from services.completion_contract import MAX_COMPLETION_JSON_BYTES
+from services.agents.runtime.completion_contract import MAX_COMPLETION_JSON_BYTES
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio

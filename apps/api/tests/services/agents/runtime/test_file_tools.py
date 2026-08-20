@@ -58,12 +58,10 @@ from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_AUTO,
 )
-from services.agents.runtime.tools.files import (
-    list_files as runtime_list_files,
-    read_file,
-    write_file,
-)
+from services.agents.runtime.tools.files.list_files import list_files as runtime_list_files
+from services.agents.runtime.tools.files.read_file import read_file
 from services.agents.runtime.tools.files.utils import slice_text
+from services.agents.runtime.tools.files.write_file import write_file
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files import create_file_preview, write_agent_file, write_generated_image
 from services.files.contract import FileCategory

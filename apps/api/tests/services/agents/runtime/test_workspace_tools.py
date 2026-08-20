@@ -177,7 +177,7 @@ def test_static_registration_rejects_reserved_workspace_prefix(
         register_tool_definition(definition)
 
     monkeypatch.setattr(
-        "services.agents.runtime.tools.workspace_tools.RESERVED_WORKSPACE_TOOL_PREFIXES",
+        "services.agents.runtime.tools.registry.RESERVED_WORKSPACE_TOOL_PREFIXES",
         (*RESERVED_WORKSPACE_TOOL_PREFIXES, "extractor_"),
     )
     with pytest.raises(RuntimeError, match="reserved workspace-defined prefix"):

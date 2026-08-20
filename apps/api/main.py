@@ -40,9 +40,10 @@ from middleware import (
 )
 from routes import api_router, artifact_serving_router, health_router
 from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
-from services.agents.runtime.code_mode import close_code_mode_executor
+from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.events import STREAM_VERSION_HEADER
 from services.notifications.registration import register_notification_action_handlers
+from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
 
 # Initialize logging as early as possible so all subsequent loggers/middleware use it
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     logger.info("Starting FastAPI application...")
+    assemble_runtime_catalogs()
     setup_agent_tracing()
     register_notification_action_handlers()
     logger.info("Notification action handlers registered")

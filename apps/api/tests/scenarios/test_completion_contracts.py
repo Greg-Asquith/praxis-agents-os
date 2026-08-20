@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.agent_run import AgentRun
 from models.workspace import WorkspaceRole
-from services.completion_contract import REPORT_COMPLETION_TOOL_NAME
+from services.agents.runtime.completion_contract import REPORT_COMPLETION_TOOL_NAME
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,

@@ -52,6 +52,13 @@ from services.agents.runtime.cancellation import (
     is_agent_run_cancel_request,
     raise_if_agent_run_cancelled,
 )
+from services.agents.runtime.code_mode.metadata import (
+    CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY,
+    CODE_MODE_HANDLER_STARTED_METADATA_KEY,
+    CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
+    CODE_MODE_PENDING_AUDIT_RECORDED_ATTR,
+    CODE_MODE_TAINT_SOURCES_METADATA_KEY,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
 from services.agents.runtime.staged_tool_content import (
@@ -79,12 +86,6 @@ from services.audit_events.tool_events import (
 from services.workspaces.utils import EDITOR_ROLES
 from utils.json_safe import json_safe_value
 from utils.tokens import estimate_tokens
-
-CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY = "praxis_code_mode_parent_tool_call_id"
-CODE_MODE_HANDLER_STARTED_METADATA_KEY = "praxis_code_mode_handler_started"
-CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY = "praxis_code_mode_derived_from_untrusted"
-CODE_MODE_TAINT_SOURCES_METADATA_KEY = "praxis_code_mode_taint_sources"
-CODE_MODE_PENDING_AUDIT_RECORDED_ATTR = "_praxis_code_mode_pending_audit_recorded"
 
 Handler = Callable[[Mapping[str, Any]], Awaitable[Any]]
 

@@ -13,7 +13,7 @@ from core.settings import settings
 from models.classifiers import Classifier
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.models.registry import get_model
-from services.agents.runtime.tools.native.classifier import (
+from services.agents.runtime.tools.native.classifier_contract import (
     CLASSIFIER_MAX_INSTRUCTIONS_CHARS,
     SUPPORTED_CLASSIFIER_PROVIDERS,
 )

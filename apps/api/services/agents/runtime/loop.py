@@ -23,6 +23,7 @@ from services.agents.models import (
 )
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.capabilities import build_runtime_capabilities
+from services.agents.runtime.completion_contract import ScheduleCompletionContract
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.history import HistoryCompaction, HistoryTrimmer
 from services.agents.runtime.load_context import AvailableFile
@@ -33,7 +34,6 @@ from services.agents.runtime.prompt import (
 from services.agents.runtime.skills import build_skill_capabilities
 from services.agents.runtime.tools import build_runtime_tools
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
-from services.completion_contract import ScheduleCompletionContract
 
 if TYPE_CHECKING:
     from services.integrations.context.domain import ResolvedActiveContext

@@ -20,14 +20,18 @@ from core.database import (
 from models.jobs import Job
 from services.jobs.domain import TERMINAL_JOB_STATUSES
 from services.jobs.enqueue_job import enqueue_job
-from services.jobs.handlers.converge_application_encryption import (
-    APPLICATION_ENCRYPTION_JOB_KIND,
-)
+from services.runtime_catalogs import assemble_runtime_catalogs
 from workers.job_runner import run_once
 
 
 async def run(mode: str) -> int:
     """Enqueue the maintenance job, execute worker passes, and print its report."""
+    assemble_runtime_catalogs()
+
+    from services.jobs.handlers.converge_application_encryption import (
+        APPLICATION_ENCRYPTION_JOB_KIND,
+    )
+
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         await configure_async_db_session(db)

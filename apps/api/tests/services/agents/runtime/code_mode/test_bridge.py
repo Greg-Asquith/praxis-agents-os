@@ -23,6 +23,7 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import RunUsage
 
+import services.agents.runtime.code_mode.bridge as bridge_module
 from core.settings import settings
 from services.agents.runtime.capabilities import build_runtime_capabilities
 from services.agents.runtime.code_mode.approval import (
@@ -330,11 +331,10 @@ async def test_load_failure_settles_decision_evidence_and_staged_cleanup(
         message="No" if decision == "denied" else None,
     )
     ctx.deps.workspace = SimpleNamespace(id=uuid4())
-    dispatch_module = __import__("services.agents.runtime.dispatch", fromlist=["record_invocation"])
     record_invocation = AsyncMock()
     cleanup = AsyncMock()
-    monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
-    monkeypatch.setattr(dispatch_module, "cleanup_staged_tool_content", cleanup)
+    monkeypatch.setattr(bridge_module, "record_invocation", record_invocation)
+    monkeypatch.setattr(bridge_module, "cleanup_staged_tool_content", cleanup)
     if effectful:
         ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["executed_effects"] = [
             {
@@ -399,11 +399,10 @@ async def test_resume_failure_settles_decision_evidence_and_staged_cleanup(
         message="No" if decision == "denied" else None,
     )
     ctx.deps.workspace = SimpleNamespace(id=uuid4())
-    dispatch_module = __import__("services.agents.runtime.dispatch", fromlist=["record_invocation"])
     record_invocation = AsyncMock()
     cleanup = AsyncMock()
-    monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
-    monkeypatch.setattr(dispatch_module, "cleanup_staged_tool_content", cleanup)
+    monkeypatch.setattr(bridge_module, "record_invocation", record_invocation)
+    monkeypatch.setattr(bridge_module, "cleanup_staged_tool_content", cleanup)
     if effectful:
         ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["executed_effects"] = [
             {
@@ -465,11 +464,10 @@ async def test_stale_denial_does_not_settle_evidence(
     decision_metadata[CODE_MODE_DECISION_KEY]["nested_tool_call_id"] = "stale"
     ctx.tool_call_metadata = decision_metadata
     ctx.deps.workspace = SimpleNamespace(id=uuid4())
-    dispatch_module = __import__("services.agents.runtime.dispatch", fromlist=["record_invocation"])
     record_invocation = AsyncMock()
     cleanup = AsyncMock()
-    monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
-    monkeypatch.setattr(dispatch_module, "cleanup_staged_tool_content", cleanup)
+    monkeypatch.setattr(bridge_module, "record_invocation", record_invocation)
+    monkeypatch.setattr(bridge_module, "cleanup_staged_tool_content", cleanup)
 
     result = await execute_code_mode_workflow(
         ctx=ctx,

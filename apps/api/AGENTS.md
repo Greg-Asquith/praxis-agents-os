@@ -140,6 +140,18 @@ follows:
   process and emits a transient `queued` stream status while a turn waits;
   this value is not a persisted run lifecycle status. Stream sinks use a
   bounded queue and detach slow consumers when that queue fills.
+- Process startup composes built-in job handlers, internal entity resolvers,
+  core runtime tools, and enabled integration providers through the idempotent
+  `services/runtime_catalogs/assemble_runtime_catalogs.py` operation. Registry
+  modules define registration and lookup only; do not add contribution imports
+  to their module scope. The API lifespan, worker supervisor, standalone worker
+  entry points, maintenance commands, eval runner, and test bootstrap must
+  assemble before dispatching work so invalid providers fail before the process
+  serves or claims work. Assembly serializes callers, and a failed attempt makes
+  the process unusable so partially registered catalogs cannot be retried. The
+  provider-native and file-tool package initializers are namespace-only;
+  assembly imports their concrete contribution modules so route and utility
+  imports cannot populate a partial catalog.
 - Code-mode execution lives under `services/agents/runtime/code_mode/` and
   uses the dedicated `core/settings/code_mode.py` mixin. Its lazily created
   Monty subprocess pool must close in API, worker, and test lifecycles. The

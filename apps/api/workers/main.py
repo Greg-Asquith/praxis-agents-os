@@ -14,7 +14,8 @@ from core.database import (
 )
 from core.logging import setup_logging
 from core.settings import settings
-from services.agents.runtime.code_mode import close_code_mode_executor
+from services.agents.runtime.code_mode.executor import close_code_mode_executor
+from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
 from workers import agent_runner, job_runner
 
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 async def main() -> int:
     """Run both worker loops under one shutdown event."""
+    assemble_runtime_catalogs()
     shutdown_event = asyncio.Event()
     _install_signal_handlers(shutdown_event)
 
