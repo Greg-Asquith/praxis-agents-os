@@ -8,7 +8,10 @@ Non-agent utility models, such as conversation naming and native helper tools,
 resolve from settings-owned constants.
 """
 
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
+
+from pydantic_ai import ModelRetry
 
 from core.settings import settings
 from services.agents.models.domain import (
@@ -19,7 +22,8 @@ from services.agents.models.domain import (
     ModelContextBudget,
     ResolvedModel,
 )
-from services.agents.models.registry import get_model
+from services.agents.models.registry import find_model, get_model
+from services.agents.models.utils import has_provider_api_key
 
 
 def _require_active(provider: str, model: str):
@@ -31,6 +35,94 @@ def _require_active(provider: str, model: str):
             details={"provider": provider, "model": model},
         )
     return info
+
+
+def configured_helper_providers(
+    supported: Sequence[str],
+    *,
+    is_configured: Callable[[str], bool] = has_provider_api_key,
+) -> tuple[str, ...]:
+    """Returns configured helper providers from a caller-owned ordered allowlist.
+
+    The caller keeps provider-specific eligibility policy by supplying the
+    allowlist and, when needed, its credential predicate.
+    """
+    return tuple(provider for provider in supported if is_configured(provider))
+
+
+def format_provider_list(providers: Sequence[str]) -> str:
+    """Formats provider names for registered tool descriptions and errors."""
+    if not providers:
+        return "none"
+    if len(providers) == 1:
+        return providers[0]
+    if len(providers) == 2:
+        return " and ".join(providers)
+    return f"{', '.join(providers[:-1])}, and {providers[-1]}"
+
+
+def require_configured_provider(
+    provider: str,
+    *,
+    configured: Sequence[str],
+    supported: Sequence[str],
+    tool_name: str,
+) -> None:
+    """Requires a provider configured for one caller-owned helper policy."""
+    if provider in supported and provider in configured:
+        return
+    if not configured:
+        raise ModelRetry(f"No native {tool_name} providers are configured.")
+    raise ModelRetry(
+        f"Provider '{provider}' is not configured for native {tool_name}. "
+        f"Available configured providers: {', '.join(configured)}."
+    )
+
+
+def require_helper_model(
+    *,
+    provider: str,
+    model: str | None,
+    supported: Sequence[str],
+    defaults: Mapping[str, str],
+    tool_name: str,
+    require_structured_output: bool = False,
+) -> ResolvedModel:
+    """Resolves an active catalog model without encoding helper selection policy.
+
+    Callers retain configured-provider checks, agent-model inheritance, fixed
+    provider pins, and settings-owned request limits.
+    """
+    normalized_provider = provider.strip().lower()
+    normalized_model = model.strip() if model is not None else None
+    if normalized_provider not in supported:
+        raise ModelRetry(f"Provider '{normalized_provider}' does not support native {tool_name}.")
+    resolved_model = normalized_model or defaults.get(normalized_provider)
+    if resolved_model is None:
+        raise ModelRetry(f"Provider '{normalized_provider}' does not support native {tool_name}.")
+
+    try:
+        info = _require_active(normalized_provider, resolved_model)
+    except ModelConfigurationError as exc:
+        if find_model(normalized_provider, resolved_model) is not None:
+            raise ModelRetry(
+                f"Model '{normalized_provider}:{resolved_model}' is deprecated."
+            ) from exc
+        raise ModelRetry(
+            f"Unknown native {tool_name} helper model. Choose a model from the "
+            f"{normalized_provider} model catalog or omit model."
+        ) from exc
+    if require_structured_output and not info.supports_structured_output:
+        raise ModelRetry(
+            f"Model '{normalized_provider}:{resolved_model}' does not support structured output."
+        )
+
+    return ResolvedModel(
+        provider=normalized_provider,
+        model=resolved_model,
+        settings=dict(info.default_settings),
+        max_steps=DEFAULT_MAX_STEPS,
+    )
 
 
 def resolve_agent_model(agent) -> ResolvedModel:

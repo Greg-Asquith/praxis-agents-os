@@ -29,11 +29,14 @@ from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
-    ModelConfigurationError,
     ResolvedModel,
 )
-from services.agents.models.registry import get_model
-from services.agents.models.utils import has_provider_api_key
+from services.agents.models.resolution import (
+    configured_helper_providers,
+    format_provider_list,
+    require_configured_provider,
+    require_helper_model,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EGRESS_PROVIDER_QUERY,
@@ -69,24 +72,12 @@ URLs when the provider makes them available.
 
 def configured_native_search_providers() -> tuple[str, ...]:
     """Return native-search providers with configured API keys in stable order."""
-    return tuple(
-        provider for provider in SUPPORTED_NATIVE_SEARCH_PROVIDERS if has_provider_api_key(provider)
-    )
-
-
-def _format_provider_list(providers: tuple[str, ...]) -> str:
-    if not providers:
-        return "none"
-    if len(providers) == 1:
-        return providers[0]
-    if len(providers) == 2:
-        return " and ".join(providers)
-    return f"{', '.join(providers[:-1])}, and {providers[-1]}"
+    return configured_helper_providers(SUPPORTED_NATIVE_SEARCH_PROVIDERS)
 
 
 _REGISTERED_NATIVE_SEARCH_PROVIDERS = configured_native_search_providers()
 _REGISTERED_NATIVE_SEARCH_PROVIDER_CSV = ", ".join(_REGISTERED_NATIVE_SEARCH_PROVIDERS) or "none"
-_REGISTERED_NATIVE_SEARCH_PROVIDER_LIST = _format_provider_list(_REGISTERED_NATIVE_SEARCH_PROVIDERS)
+_REGISTERED_NATIVE_SEARCH_PROVIDER_LIST = format_provider_list(_REGISTERED_NATIVE_SEARCH_PROVIDERS)
 
 
 class WebSearchSource(BaseModel):
@@ -223,13 +214,26 @@ def resolve_web_search_model(
     model: str | None = None,
 ) -> ResolvedModel:
     """Resolve the helper model for web search independently from the agent."""
-    requested_provider = _clean_optional(model_provider)
-    requested_model = _clean_optional(model)
+    requested_provider = normalize_optional_text(model_provider)
+    requested_model = normalize_optional_text(model)
 
     if requested_provider is not None:
-        return _native_model_spec(
-            provider=requested_provider,
-            model=requested_model or _default_model_for_provider(requested_provider),
+        normalized_provider = requested_provider.strip().lower()
+        require_configured_provider(
+            normalized_provider,
+            configured=configured_native_search_providers(),
+            supported=SUPPORTED_NATIVE_SEARCH_PROVIDERS,
+            tool_name="web_search",
+        )
+        return replace(
+            require_helper_model(
+                provider=normalized_provider,
+                model=requested_model,
+                supported=SUPPORTED_NATIVE_SEARCH_PROVIDERS,
+                defaults=DEFAULT_NATIVE_SEARCH_MODELS,
+                tool_name="web_search",
+            ),
+            max_steps=settings.NATIVE_WEB_SEARCH_MAX_STEPS,
         )
     if requested_model is not None:
         raise ModelRetry("web_search model requires model_provider.")
@@ -243,9 +247,15 @@ def resolve_web_search_model(
         raise ModelRetry("No native web_search providers are configured.")
 
     fallback_provider = configured_providers[0]
-    return _native_model_spec(
-        provider=fallback_provider,
-        model=DEFAULT_NATIVE_SEARCH_MODELS[fallback_provider],
+    return replace(
+        require_helper_model(
+            provider=fallback_provider,
+            model=None,
+            supported=SUPPORTED_NATIVE_SEARCH_PROVIDERS,
+            defaults=DEFAULT_NATIVE_SEARCH_MODELS,
+            tool_name="web_search",
+        ),
+        max_steps=settings.NATIVE_WEB_SEARCH_MAX_STEPS,
     )
 
 
@@ -367,51 +377,3 @@ def _safe_http_url(value: object) -> str | None:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return normalized
-
-
-def _native_model_spec(*, provider: str, model: str) -> ResolvedModel:
-    normalized_provider = provider.strip().lower()
-    normalized_model = model.strip()
-    _require_configured_provider(normalized_provider)
-
-    try:
-        info = get_model(normalized_provider, normalized_model)
-    except ModelConfigurationError as exc:
-        raise ModelRetry(
-            "Unknown native web_search helper model. Choose a model from the "
-            f"{normalized_provider} model catalog or omit model."
-        ) from exc
-    if info.deprecated:
-        raise ModelRetry(f"Model '{normalized_provider}:{normalized_model}' is deprecated.")
-
-    return ResolvedModel(
-        provider=normalized_provider,
-        model=normalized_model,
-        settings=dict(info.default_settings),
-        max_steps=settings.NATIVE_WEB_SEARCH_MAX_STEPS,
-    )
-
-
-def _default_model_for_provider(provider: str) -> str:
-    normalized_provider = provider.strip().lower()
-    _require_configured_provider(normalized_provider)
-    model = DEFAULT_NATIVE_SEARCH_MODELS.get(normalized_provider)
-    if model is None:
-        raise ModelRetry(f"Provider '{normalized_provider}' does not support native web_search.")
-    return model
-
-
-def _require_configured_provider(provider: str) -> None:
-    configured_providers = configured_native_search_providers()
-    if provider in configured_providers:
-        return
-    if not configured_providers:
-        raise ModelRetry("No native web_search providers are configured.")
-    raise ModelRetry(
-        f"Provider '{provider}' is not configured for native web_search. "
-        f"Available configured providers: {', '.join(configured_providers)}."
-    )
-
-
-def _clean_optional(value: str | None) -> str | None:
-    return normalize_optional_text(value)

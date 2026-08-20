@@ -35,11 +35,14 @@ from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
-    ModelConfigurationError,
     ResolvedModel,
 )
-from services.agents.models.registry import get_model
-from services.agents.models.utils import has_provider_api_key
+from services.agents.models.resolution import (
+    configured_helper_providers,
+    format_provider_list,
+    require_configured_provider,
+    require_helper_model,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_native_tool_invocation_audit_event
 from services.agents.runtime.entity_references.domain import FileReference
@@ -113,26 +116,12 @@ class RunCodeOutput(BaseModel):
 
 def configured_native_run_code_providers() -> tuple[str, ...]:
     """Return supported providers that have an API key configured."""
-    return tuple(
-        provider
-        for provider in SUPPORTED_NATIVE_RUN_CODE_PROVIDERS
-        if has_provider_api_key(provider)
-    )
-
-
-def _format_provider_list(providers: tuple[str, ...]) -> str:
-    if not providers:
-        return "none"
-    if len(providers) == 1:
-        return providers[0]
-    if len(providers) == 2:
-        return " and ".join(providers)
-    return f"{', '.join(providers[:-1])}, and {providers[-1]}"
+    return configured_helper_providers(SUPPORTED_NATIVE_RUN_CODE_PROVIDERS)
 
 
 _REGISTERED_PROVIDERS = configured_native_run_code_providers()
 _REGISTERED_PROVIDER_CSV = ", ".join(_REGISTERED_PROVIDERS) or "none"
-_REGISTERED_PROVIDER_LIST = _format_provider_list(_REGISTERED_PROVIDERS)
+_REGISTERED_PROVIDER_LIST = format_provider_list(_REGISTERED_PROVIDERS)
 
 
 @runtime_tool(
@@ -312,9 +301,25 @@ def resolve_run_code_model(
     requested_provider = normalize_optional_text(model_provider)
     requested_model = normalize_optional_text(model)
     if requested_provider is not None:
-        return _native_model_spec(
-            provider=requested_provider,
-            model=requested_model or _default_model_for_provider(requested_provider),
+        normalized_provider = requested_provider.strip().lower()
+        configured = configured_native_run_code_providers()
+        if not configured:
+            raise ModelRetry("No isolated native run_code providers are configured.")
+        require_configured_provider(
+            normalized_provider,
+            configured=configured,
+            supported=SUPPORTED_NATIVE_RUN_CODE_PROVIDERS,
+            tool_name="run_code",
+        )
+        return replace(
+            require_helper_model(
+                provider=normalized_provider,
+                model=requested_model,
+                supported=SUPPORTED_NATIVE_RUN_CODE_PROVIDERS,
+                defaults=DEFAULT_NATIVE_RUN_CODE_MODELS,
+                tool_name="run_code",
+            ),
+            max_steps=settings.NATIVE_RUN_CODE_MAX_STEPS,
         )
     if requested_model is not None:
         raise ModelRetry("run_code model requires model_provider.")
@@ -325,48 +330,15 @@ def resolve_run_code_model(
     if not configured:
         raise ModelRetry("No isolated native run_code providers are configured.")
     fallback = configured[0]
-    return _native_model_spec(provider=fallback, model=DEFAULT_NATIVE_RUN_CODE_MODELS[fallback])
-
-
-def _native_model_spec(*, provider: str, model: str) -> ResolvedModel:
-    normalized_provider = provider.strip().lower()
-    normalized_model = model.strip()
-    _require_configured_provider(normalized_provider)
-    try:
-        info = get_model(normalized_provider, normalized_model)
-    except ModelConfigurationError as exc:
-        raise ModelRetry(
-            "Unknown native run_code helper model. Choose a model from the provider catalog "
-            "or omit model."
-        ) from exc
-    if info.deprecated:
-        raise ModelRetry(f"Model '{normalized_provider}:{normalized_model}' is deprecated.")
-    return ResolvedModel(
-        provider=normalized_provider,
-        model=normalized_model,
-        settings=dict(info.default_settings),
+    return replace(
+        require_helper_model(
+            provider=fallback,
+            model=None,
+            supported=SUPPORTED_NATIVE_RUN_CODE_PROVIDERS,
+            defaults=DEFAULT_NATIVE_RUN_CODE_MODELS,
+            tool_name="run_code",
+        ),
         max_steps=settings.NATIVE_RUN_CODE_MAX_STEPS,
-    )
-
-
-def _default_model_for_provider(provider: str) -> str:
-    normalized = provider.strip().lower()
-    _require_configured_provider(normalized)
-    default = DEFAULT_NATIVE_RUN_CODE_MODELS.get(normalized)
-    if default is None:
-        raise ModelRetry(f"Provider '{normalized}' does not support native run_code.")
-    return default
-
-
-def _require_configured_provider(provider: str) -> None:
-    configured = configured_native_run_code_providers()
-    if provider in configured:
-        return
-    if not configured:
-        raise ModelRetry("No isolated native run_code providers are configured.")
-    raise ModelRetry(
-        f"Provider '{provider}' is not configured for native run_code. "
-        f"Available configured providers: {', '.join(configured)}."
     )
 
 

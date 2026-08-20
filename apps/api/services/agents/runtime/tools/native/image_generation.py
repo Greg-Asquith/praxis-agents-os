@@ -19,6 +19,7 @@ credential changes require an API and worker restart to refresh its choices.
 """
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, Field
@@ -40,10 +41,14 @@ from services.agents.models import build_model
 from services.agents.models.domain import (
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
-    ModelConfigurationError,
     ResolvedModel,
 )
-from services.agents.models.registry import get_model
+from services.agents.models.resolution import (
+    configured_helper_providers,
+    format_provider_list,
+    require_configured_provider,
+    require_helper_model,
+)
 from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
@@ -97,24 +102,15 @@ inside it. After generating the image, respond with a short confirmation.
 
 def configured_native_image_providers() -> tuple[str, ...]:
     """Return configured native-image providers in stable order."""
-    return tuple(
-        provider
-        for provider in SUPPORTED_NATIVE_IMAGE_PROVIDERS
-        if is_provider_configured(provider)
+    return configured_helper_providers(
+        SUPPORTED_NATIVE_IMAGE_PROVIDERS,
+        is_configured=is_provider_configured,
     )
-
-
-def _format_provider_list(providers: tuple[str, ...]) -> str:
-    if not providers:
-        return "none"
-    if len(providers) == 1:
-        return providers[0]
-    return " and ".join(providers)
 
 
 _REGISTERED_NATIVE_IMAGE_PROVIDERS = configured_native_image_providers()
 _REGISTERED_NATIVE_IMAGE_PROVIDER_CSV = ", ".join(_REGISTERED_NATIVE_IMAGE_PROVIDERS) or "none"
-_REGISTERED_NATIVE_IMAGE_PROVIDER_LIST = _format_provider_list(_REGISTERED_NATIVE_IMAGE_PROVIDERS)
+_REGISTERED_NATIVE_IMAGE_PROVIDER_LIST = format_provider_list(_REGISTERED_NATIVE_IMAGE_PROVIDERS)
 
 
 class GenerateImageOutput(BaseModel):
@@ -286,9 +282,34 @@ def resolve_image_generation_model(
     """Resolve a provider-supported native-image helper model."""
     requested_provider = model_provider.strip().lower()
     requested_model = normalize_optional_text(model)
-    return _native_model_spec(
-        provider=requested_provider,
-        model=requested_model or _default_model_for_provider(requested_provider),
+    require_configured_provider(
+        requested_provider,
+        configured=configured_native_image_providers(),
+        supported=SUPPORTED_NATIVE_IMAGE_PROVIDERS,
+        tool_name="generate_image",
+    )
+    if requested_provider == PROVIDER_GOOGLE:
+        google_model = requested_model or DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE]
+        if google_model != DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE]:
+            raise ModelRetry(
+                "Google generate_image currently supports gemini-3.1-flash-image. "
+                "Omit model to use it."
+            )
+        return ResolvedModel(
+            provider=requested_provider,
+            model=google_model,
+            settings={},
+            max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
+        )
+    return replace(
+        require_helper_model(
+            provider=requested_provider,
+            model=requested_model,
+            supported=SUPPORTED_NATIVE_IMAGE_PROVIDERS,
+            defaults=DEFAULT_NATIVE_IMAGE_MODELS,
+            tool_name="generate_image",
+        ),
+        max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
     )
 
 
@@ -439,58 +460,3 @@ def _was_content_policy_refusal(messages: list[ModelMessage]) -> bool:
         if details.get("refusal") or details.get("block_reason"):
             return True
     return False
-
-
-def _native_model_spec(*, provider: str, model: str) -> ResolvedModel:
-    normalized_provider = provider.strip().lower()
-    normalized_model = model.strip()
-    _require_configured_provider(normalized_provider)
-
-    if normalized_provider == PROVIDER_GOOGLE:
-        if normalized_model != DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE]:
-            raise ModelRetry(
-                "Google generate_image currently supports gemini-3.1-flash-image. "
-                "Omit model to use it."
-            )
-        settings_map: dict[str, object] = {}
-    else:
-        try:
-            info = get_model(normalized_provider, normalized_model)
-        except ModelConfigurationError as exc:
-            raise ModelRetry(
-                "Unknown OpenAI generate_image helper model. Choose a model from the OpenAI "
-                "catalog or omit model."
-            ) from exc
-        if info.deprecated:
-            raise ModelRetry(f"Model '{normalized_provider}:{normalized_model}' is deprecated.")
-        settings_map = dict(info.default_settings)
-
-    return ResolvedModel(
-        provider=normalized_provider,
-        model=normalized_model,
-        settings=settings_map,
-        max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
-    )
-
-
-def _default_model_for_provider(provider: str) -> str:
-    normalized_provider = provider.strip().lower()
-    _require_configured_provider(normalized_provider)
-    model = DEFAULT_NATIVE_IMAGE_MODELS.get(normalized_provider)
-    if model is None:
-        raise ModelRetry(
-            f"Provider '{normalized_provider}' does not support native generate_image."
-        )
-    return model
-
-
-def _require_configured_provider(provider: str) -> None:
-    configured = configured_native_image_providers()
-    if provider in configured:
-        return
-    if not configured:
-        raise ModelRetry("No native generate_image providers are configured.")
-    raise ModelRetry(
-        f"Provider '{provider}' is not configured for native generate_image. "
-        f"Available configured providers: {', '.join(configured)}."
-    )

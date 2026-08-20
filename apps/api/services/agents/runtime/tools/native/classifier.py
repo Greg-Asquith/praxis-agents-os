@@ -8,6 +8,7 @@ providers and steer stale selections with a model-visible retry. Provider-key
 changes require an API and worker restart before advertised choices change.
 """
 
+from dataclasses import replace
 from html import escape
 from typing import Annotated, Literal, cast
 
@@ -21,11 +22,14 @@ from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
-    ModelConfigurationError,
     ResolvedModel,
 )
-from services.agents.models.registry import get_model
-from services.agents.models.utils import has_provider_api_key
+from services.agents.models.resolution import (
+    configured_helper_providers,
+    format_provider_list,
+    require_configured_provider,
+    require_helper_model,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EFFECT_READ,
@@ -81,22 +85,12 @@ class ClassifyOutput(BaseModel):
 
 def configured_classifier_providers() -> tuple[str, ...]:
     """Return configured providers supported by the classifier helper."""
-    return tuple(
-        provider for provider in SUPPORTED_CLASSIFIER_PROVIDERS if has_provider_api_key(provider)
-    )
-
-
-def _format_provider_list(providers: tuple[str, ...]) -> str:
-    if not providers:
-        return "none"
-    if len(providers) == 1:
-        return providers[0]
-    return ", ".join(providers[:-1]) + f", and {providers[-1]}"
+    return configured_helper_providers(SUPPORTED_CLASSIFIER_PROVIDERS)
 
 
 _REGISTERED_CLASSIFIER_PROVIDERS = configured_classifier_providers()
 _REGISTERED_CLASSIFIER_PROVIDER_CSV = ", ".join(_REGISTERED_CLASSIFIER_PROVIDERS) or "none"
-_REGISTERED_CLASSIFIER_PROVIDER_LIST = _format_provider_list(_REGISTERED_CLASSIFIER_PROVIDERS)
+_REGISTERED_CLASSIFIER_PROVIDER_LIST = format_provider_list(_REGISTERED_CLASSIFIER_PROVIDERS)
 
 
 @runtime_tool(
@@ -221,9 +215,23 @@ def resolve_classifier_model(
     requested_model = normalize_optional_text(model)
 
     if requested_provider is not None:
-        return _classifier_model_spec(
-            provider=requested_provider,
-            model=requested_model or _default_model_for_provider(requested_provider),
+        normalized_provider = requested_provider.strip().lower()
+        require_configured_provider(
+            normalized_provider,
+            configured=configured_classifier_providers(),
+            supported=SUPPORTED_CLASSIFIER_PROVIDERS,
+            tool_name="classify",
+        )
+        return replace(
+            require_helper_model(
+                provider=normalized_provider,
+                model=requested_model,
+                supported=SUPPORTED_CLASSIFIER_PROVIDERS,
+                defaults=DEFAULT_CLASSIFIER_MODELS,
+                tool_name="classify",
+                require_structured_output=True,
+            ),
+            max_steps=settings.NATIVE_CLASSIFIER_MAX_STEPS,
         )
     if requested_model is not None:
         raise ModelRetry("classify model requires model_provider.")
@@ -231,17 +239,31 @@ def resolve_classifier_model(
     configured_providers = configured_classifier_providers()
     default_provider = settings.NATIVE_CLASSIFIER_PROVIDER.strip().lower()
     if default_provider in configured_providers:
-        return _classifier_model_spec(
-            provider=default_provider,
-            model=settings.NATIVE_CLASSIFIER_MODEL,
+        return replace(
+            require_helper_model(
+                provider=default_provider,
+                model=settings.NATIVE_CLASSIFIER_MODEL,
+                supported=SUPPORTED_CLASSIFIER_PROVIDERS,
+                defaults=DEFAULT_CLASSIFIER_MODELS,
+                tool_name="classify",
+                require_structured_output=True,
+            ),
+            max_steps=settings.NATIVE_CLASSIFIER_MAX_STEPS,
         )
     if not configured_providers:
         raise ModelRetry("No native classify providers are configured.")
 
     fallback_provider = configured_providers[0]
-    return _classifier_model_spec(
-        provider=fallback_provider,
-        model=DEFAULT_CLASSIFIER_MODELS[fallback_provider],
+    return replace(
+        require_helper_model(
+            provider=fallback_provider,
+            model=None,
+            supported=SUPPORTED_CLASSIFIER_PROVIDERS,
+            defaults=DEFAULT_CLASSIFIER_MODELS,
+            tool_name="classify",
+            require_structured_output=True,
+        ),
+        max_steps=settings.NATIVE_CLASSIFIER_MAX_STEPS,
     )
 
 
@@ -299,7 +321,7 @@ async def _run_classification_batch(
     async def call(usage: RunUsage):
         return await helper.run(
             prompt,
-            usage_limits=UsageLimits(request_limit=settings.NATIVE_CLASSIFIER_MAX_STEPS),
+            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
             usage=usage,
         )
 
@@ -444,51 +466,3 @@ def _validate_classification_results(
         # validated input so the public result shows an exact value/label pair.
         validated.append(ClassifiedItem(index=index, value=items[index], label=label))
     return validated
-
-
-def _classifier_model_spec(*, provider: str, model: str) -> ResolvedModel:
-    normalized_provider = provider.strip().lower()
-    normalized_model = model.strip()
-    _require_configured_provider(normalized_provider)
-
-    try:
-        info = get_model(normalized_provider, normalized_model)
-    except ModelConfigurationError as exc:
-        raise ModelRetry(
-            "Unknown native classify helper model. Choose a model from the "
-            f"{normalized_provider} model catalog or omit model."
-        ) from exc
-    if info.deprecated:
-        raise ModelRetry(f"Model '{normalized_provider}:{normalized_model}' is deprecated.")
-    if not info.supports_structured_output:
-        raise ModelRetry(
-            f"Model '{normalized_provider}:{normalized_model}' does not support structured output."
-        )
-
-    return ResolvedModel(
-        provider=normalized_provider,
-        model=normalized_model,
-        settings=dict(info.default_settings),
-        max_steps=settings.NATIVE_CLASSIFIER_MAX_STEPS,
-    )
-
-
-def _default_model_for_provider(provider: str) -> str:
-    normalized_provider = provider.strip().lower()
-    _require_configured_provider(normalized_provider)
-    model = DEFAULT_CLASSIFIER_MODELS.get(normalized_provider)
-    if model is None:
-        raise ModelRetry(f"Provider '{normalized_provider}' does not support native classify.")
-    return model
-
-
-def _require_configured_provider(provider: str) -> None:
-    configured_providers = configured_classifier_providers()
-    if provider in configured_providers:
-        return
-    if not configured_providers:
-        raise ModelRetry("No native classify providers are configured.")
-    raise ModelRetry(
-        f"Provider '{provider}' is not configured for native classify. "
-        f"Available configured providers: {', '.join(configured_providers)}."
-    )

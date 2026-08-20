@@ -41,6 +41,7 @@ from models.files import FileFolder, FileReference as FileReferenceRow, FileRevi
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
+from services.agents.models import resolution as model_resolution
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_AZURE,
@@ -2098,7 +2099,7 @@ def test_classifier_resolution_rejects_deprecated_model(
 ) -> None:
     _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
     monkeypatch.setattr(
-        classifier_tools,
+        model_resolution,
         "get_model",
         lambda _provider, _model: SimpleNamespace(
             deprecated=True,

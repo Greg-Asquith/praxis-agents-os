@@ -35,11 +35,14 @@ from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
-    ModelConfigurationError,
     ResolvedModel,
 )
-from services.agents.models.registry import get_model
-from services.agents.models.utils import has_provider_api_key
+from services.agents.models.resolution import (
+    configured_helper_providers,
+    format_provider_list,
+    require_configured_provider,
+    require_helper_model,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import truncate_result
 from services.agents.runtime.tools import (
@@ -77,9 +80,8 @@ def configured_native_fetch_providers() -> tuple[str, ...]:
     blocked_domains_configured = bool(configured_web_fetch_blocked_domains())
     return tuple(
         provider
-        for provider in SUPPORTED_NATIVE_FETCH_PROVIDERS
-        if has_provider_api_key(provider)
-        and not (provider == PROVIDER_GOOGLE and blocked_domains_configured)
+        for provider in configured_helper_providers(SUPPORTED_NATIVE_FETCH_PROVIDERS)
+        if not (provider == PROVIDER_GOOGLE and blocked_domains_configured)
     )
 
 
@@ -92,17 +94,9 @@ def configured_web_fetch_blocked_domains() -> tuple[str, ...]:
     )
 
 
-def _format_provider_list(providers: tuple[str, ...]) -> str:
-    if not providers:
-        return "none"
-    if len(providers) == 1:
-        return providers[0]
-    return " and ".join(providers)
-
-
 _REGISTERED_NATIVE_FETCH_PROVIDERS = configured_native_fetch_providers()
 _REGISTERED_NATIVE_FETCH_PROVIDER_CSV = ", ".join(_REGISTERED_NATIVE_FETCH_PROVIDERS) or "none"
-_REGISTERED_NATIVE_FETCH_PROVIDER_LIST = _format_provider_list(_REGISTERED_NATIVE_FETCH_PROVIDERS)
+_REGISTERED_NATIVE_FETCH_PROVIDER_LIST = format_provider_list(_REGISTERED_NATIVE_FETCH_PROVIDERS)
 
 
 class WebFetchSource(BaseModel):
@@ -247,13 +241,26 @@ def resolve_web_fetch_model(
     model: str | None = None,
 ) -> ResolvedModel:
     """Resolve the helper model for URL fetching independently from the agent."""
-    requested_provider = _clean_optional(model_provider)
-    requested_model = _clean_optional(model)
+    requested_provider = normalize_optional_text(model_provider)
+    requested_model = normalize_optional_text(model)
 
     if requested_provider is not None:
-        return _native_model_spec(
-            provider=requested_provider,
-            model=requested_model or _default_model_for_provider(requested_provider),
+        normalized_provider = requested_provider.strip().lower()
+        require_configured_provider(
+            normalized_provider,
+            configured=configured_native_fetch_providers(),
+            supported=SUPPORTED_NATIVE_FETCH_PROVIDERS,
+            tool_name="fetch_url",
+        )
+        return replace(
+            require_helper_model(
+                provider=normalized_provider,
+                model=requested_model,
+                supported=SUPPORTED_NATIVE_FETCH_PROVIDERS,
+                defaults=DEFAULT_NATIVE_FETCH_MODELS,
+                tool_name="fetch_url",
+            ),
+            max_steps=settings.NATIVE_WEB_FETCH_MAX_STEPS,
         )
     if requested_model is not None:
         raise ModelRetry("fetch_url model requires model_provider.")
@@ -267,9 +274,15 @@ def resolve_web_fetch_model(
         raise ModelRetry("No native fetch_url providers are configured.")
 
     fallback_provider = configured_providers[0]
-    return _native_model_spec(
-        provider=fallback_provider,
-        model=DEFAULT_NATIVE_FETCH_MODELS[fallback_provider],
+    return replace(
+        require_helper_model(
+            provider=fallback_provider,
+            model=None,
+            supported=SUPPORTED_NATIVE_FETCH_PROVIDERS,
+            defaults=DEFAULT_NATIVE_FETCH_MODELS,
+            tool_name="fetch_url",
+        ),
+        max_steps=settings.NATIVE_WEB_FETCH_MAX_STEPS,
     )
 
 
@@ -448,51 +461,3 @@ def _truncate_fetched_content(content: str) -> str:
         default_limit=settings.AGENT_TOOL_RESULT_MAX_CHARS,
     )
     return cast(str, bounded)
-
-
-def _native_model_spec(*, provider: str, model: str) -> ResolvedModel:
-    normalized_provider = provider.strip().lower()
-    normalized_model = model.strip()
-    _require_configured_provider(normalized_provider)
-
-    try:
-        info = get_model(normalized_provider, normalized_model)
-    except ModelConfigurationError as exc:
-        raise ModelRetry(
-            "Unknown native fetch_url helper model. Choose a model from the "
-            f"{normalized_provider} model catalog or omit model."
-        ) from exc
-    if info.deprecated:
-        raise ModelRetry(f"Model '{normalized_provider}:{normalized_model}' is deprecated.")
-
-    return ResolvedModel(
-        provider=normalized_provider,
-        model=normalized_model,
-        settings=dict(info.default_settings),
-        max_steps=settings.NATIVE_WEB_FETCH_MAX_STEPS,
-    )
-
-
-def _default_model_for_provider(provider: str) -> str:
-    normalized_provider = provider.strip().lower()
-    _require_configured_provider(normalized_provider)
-    model = DEFAULT_NATIVE_FETCH_MODELS.get(normalized_provider)
-    if model is None:
-        raise ModelRetry(f"Provider '{normalized_provider}' does not support native fetch_url.")
-    return model
-
-
-def _require_configured_provider(provider: str) -> None:
-    configured_providers = configured_native_fetch_providers()
-    if provider in configured_providers:
-        return
-    if not configured_providers:
-        raise ModelRetry("No native fetch_url providers are configured.")
-    raise ModelRetry(
-        f"Provider '{provider}' is not configured for native fetch_url. "
-        f"Available configured providers: {', '.join(configured_providers)}."
-    )
-
-
-def _clean_optional(value: str | None) -> str | None:
-    return normalize_optional_text(value)
