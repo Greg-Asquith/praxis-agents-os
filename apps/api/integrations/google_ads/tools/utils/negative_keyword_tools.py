@@ -152,7 +152,6 @@ async def run_negative_keyword_tool(
                 entity_references,
                 full_ledger,
                 max_entities=len(entity_references),
-                keywords=keyword_values,
                 include_keyword_outcomes=True,
                 spec=spec,
             ),
@@ -201,10 +200,9 @@ def pending_operation_detail(
 def entity_result(
     action: NegativeKeywordAction,
     references: Sequence[ScopedEntityReference],
-    result: Mapping[str, Any],
+    result: GoogleAdsMutationLedger,
     *,
     max_entities: int,
-    keywords: Sequence[Mapping[str, str]] = (),
     include_keyword_outcomes: bool,
     spec: NegativeKeywordToolSpec,
 ) -> dict[str, Any]:
@@ -213,7 +211,7 @@ def entity_result(
     skipped_key = "skipped_existing" if action == "add" else "not_found"
     counts = _entity_counts(action, references, result, spec=spec)
     outcomes = (
-        _keyword_outcomes(action, references, keywords, result, spec=spec)
+        result.keyword_outcomes(entity_id_key=spec.entity_id_key)
         if include_keyword_outcomes
         else {}
     )
@@ -283,7 +281,7 @@ def _account_target(
 def _entity_counts(
     action: NegativeKeywordAction,
     references: Sequence[ScopedEntityReference],
-    result: Mapping[str, Any],
+    result: GoogleAdsMutationLedger,
     *,
     spec: NegativeKeywordToolSpec,
 ) -> dict[str, dict[str, int]]:
@@ -307,80 +305,9 @@ def _entity_counts(
     return counts
 
 
-def _single_external_ref(result: Mapping[str, Any]) -> str | None:
+def _single_external_ref(result: GoogleAdsMutationLedger) -> str | None:
     resource_names = result.get("resource_names")
     if isinstance(resource_names, list) and len(resource_names) == 1:
         resource_name = resource_names[0]
         return resource_name if isinstance(resource_name, str) else None
     return None
-
-
-def _keyword_outcomes(
-    action: NegativeKeywordAction,
-    references: Sequence[ScopedEntityReference],
-    keywords: Sequence[Mapping[str, str]],
-    result: Mapping[str, Any],
-    *,
-    spec: NegativeKeywordToolSpec,
-) -> dict[str, list[dict[str, str]]]:
-    if isinstance(result, GoogleAdsMutationLedger):
-        return result.keyword_outcomes(entity_id_key=spec.entity_id_key)
-
-    # Suite-local provider doubles retain the old projected mapping seam. Real
-    # provider operations always return a validated ledger before reaching here.
-    applied_key = "added" if action == "add" else "removed"
-    skipped_key = "skipped_existing" if action == "add" else "not_found"
-    outcomes = {reference.provider_entity_id: [] for reference in references}
-    requested = [
-        (reference.provider_entity_id, keyword["text"], keyword["match_type"])
-        for reference in references
-        for keyword in keywords
-    ]
-    seen: set[tuple[str, str, str]] = set()
-    indexed: dict[tuple[str, str], list[dict[str, str]]] = {}
-    applied_rows = result.get(applied_key, [])
-    resource_names = result.get("resource_names")
-    if not isinstance(resource_names, list) or len(resource_names) != len(applied_rows):
-        raise ValueError("Applied negative keyword rows do not match provider resource names")
-    for key, outcome in (
-        (applied_key, applied_key),
-        (skipped_key, skipped_key),
-        (spec.errors_key, "failed"),
-    ):
-        for item in result.get(key, []):
-            entity_id = str(item.get(spec.entity_id_key, ""))
-            text = str(item.get("text", ""))
-            match_type = str(item.get("match_type", ""))
-            identity = (entity_id, text.casefold(), match_type)
-            was_requested = any(
-                entity_id == requested_entity_id
-                and text.casefold() == requested_text.casefold()
-                and (requested_match_type == "ANY" or requested_match_type == match_type)
-                for requested_entity_id, requested_text, requested_match_type in requested
-            )
-            if not was_requested or identity in seen:
-                raise ValueError("Provider returned contradictory negative keyword outcomes")
-            seen.add(identity)
-            row = {"text": text, "match_type": match_type, "outcome": outcome}
-            if outcome == applied_key:
-                row["external_ref"] = str(item.get("resource_name", ""))
-            elif outcome == "failed":
-                row["error_code"] = str(item.get("error_code", "unknown"))[:100]
-            indexed.setdefault((entity_id, text.casefold()), []).append(row)
-    for index, item in enumerate(applied_rows):
-        if str(item.get("resource_name", "")) != resource_names[index]:
-            raise ValueError("Applied negative keyword resource attribution is inconsistent")
-    match_order = {"EXACT": 0, "PHRASE": 1, "BROAD": 2, "ANY": 3}
-    for entity_id, requested_text, requested_match_type in requested:
-        matching = [
-            row
-            for row in indexed.get((entity_id, requested_text.casefold()), [])
-            if requested_match_type == "ANY" or row["match_type"] == requested_match_type
-        ]
-        if not matching or (requested_match_type != "ANY" and len(matching) != 1):
-            raise ValueError("Provider did not account for a requested negative keyword")
-        matching.sort(key=lambda row: match_order[row["match_type"]])
-        outcomes[entity_id].extend(matching)
-    if sum(len(rows) for rows in outcomes.values()) != len(seen):
-        raise ValueError("Provider negative keyword outcomes could not be attributed exactly")
-    return outcomes

@@ -17,8 +17,11 @@ from integrations.google_ads.operations.campaign_negative_keywords import (
     remove_campaign_negative_keywords,
 )
 from integrations.google_ads.operations.mutation_outcomes import (
+    AD_GROUP_KEYWORD_MUTATION_SPEC,
+    CAMPAIGN_KEYWORD_MUTATION_SPEC,
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
+    build_keyword_mutation_ledger,
     build_mutation_ledger,
 )
 from integrations.google_ads.tools.add_ad_group_negative_keywords import (
@@ -60,7 +63,7 @@ from tests.integrations.google_ads.support import (
     _campaign_reference,
     _CampaignNegativeKeywordClient,
     _writable_google_ads_entry,
-    mutation_ledger_double,
+    mutation_ledger,
 )
 
 
@@ -407,7 +410,7 @@ async def test_campaign_negative_keyword_fan_out_bound_accepts_2500_operations(
         "results": [{"campaign": {"id": str(index), "status": "ENABLED"}} for index in range(1, 51)]
     }
     provider_add = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "added": [],
                 "resource_names": [],
@@ -690,7 +693,7 @@ async def test_ad_group_negative_keyword_tools_bound_and_fail_closed(monkeypatch
         "results": [{"adGroup": {"id": str(index)}} for index in range(1, 51)]
     }
     provider_add = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "added": [],
                 "resource_names": [],
@@ -833,63 +836,8 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
         {"text": "free", "match_type": "EXACT"},
         {"text": "jobs", "match_type": "PHRASE"},
     ]
-    result = {
-        "added": [
-            {
-                "campaign_id": "20",
-                "text": "jobs",
-                "match_type": "PHRASE",
-                "resource_name": "customers/111/campaignCriteria/20~4",
-            },
-            {
-                "campaign_id": "10",
-                "text": "free",
-                "match_type": "EXACT",
-                "resource_name": "customers/111/campaignCriteria/10~1",
-            },
-        ],
-        "resource_names": [
-            "customers/111/campaignCriteria/20~4",
-            "customers/111/campaignCriteria/10~1",
-        ],
-        "skipped_existing": [{"campaign_id": "10", "text": "jobs", "match_type": "PHRASE"}],
-        "campaign_errors": [
-            {
-                "campaign_id": "20",
-                "text": "free",
-                "match_type": "EXACT",
-                "message": "Keyword is restricted",
-                "error_code": "INVALID_KEYWORD_TEXT",
-            }
-        ],
-    }
-
-    display = entity_result(
-        "add",
-        campaigns,
-        result,
-        max_entities=2,
-        keywords=keywords,
-        include_keyword_outcomes=True,
-        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
-    model = entity_result(
-        "add",
-        campaigns,
-        result,
-        max_entities=2,
-        include_keyword_outcomes=False,
-        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
-    pending = pending_operation_detail(
-        entry,
-        campaigns,
-        "add",
-        keywords,
-        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
-    ledger = build_mutation_ledger(
-        family="campaign_negative_keywords",
+    ledger = build_keyword_mutation_ledger(
+        spec=CAMPAIGN_KEYWORD_MUTATION_SPEC,
         action="add",
         parent_fields=[
             {"campaign_id": campaign.campaign_id, **keyword}
@@ -907,11 +855,30 @@ def test_campaign_negative_keyword_evidence_is_exact_ordered_and_display_only() 
             ("failed", None, "INVALID_KEYWORD_TEXT", "restricted"),
             ("applied", "customers/111/campaignCriteria/20~4", None, None),
         ],
-        projection=GoogleAdsMutationProjection(
-            applied_key="added",
-            skipped_key="skipped_existing",
-            errors_key="campaign_errors",
-        ),
+    )
+
+    display = entity_result(
+        "add",
+        campaigns,
+        ledger,
+        max_entities=2,
+        include_keyword_outcomes=True,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
+    model = entity_result(
+        "add",
+        campaigns,
+        ledger,
+        max_entities=2,
+        include_keyword_outcomes=False,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
+    pending = pending_operation_detail(
+        entry,
+        campaigns,
+        "add",
+        keywords,
+        spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
     detail = terminal_operation_detail(pending, ledger)
 
@@ -960,58 +927,8 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
         {"text": "term", "match_type": "ANY"},
         {"text": "missing", "match_type": "EXACT"},
     ]
-    result = {
-        "removed": [
-            {
-                "ad_group_id": "20",
-                "text": "Term",
-                "match_type": "PHRASE",
-                "resource_name": "customers/111/adGroupCriteria/20~3",
-            },
-            {
-                "ad_group_id": "10",
-                "text": "term",
-                "match_type": "BROAD",
-                "resource_name": "customers/111/adGroupCriteria/10~2",
-            },
-        ],
-        "resource_names": [
-            "customers/111/adGroupCriteria/20~3",
-            "customers/111/adGroupCriteria/10~2",
-        ],
-        "not_found": [
-            {"ad_group_id": "10", "text": "missing", "match_type": "EXACT"},
-            {"ad_group_id": "20", "text": "missing", "match_type": "EXACT"},
-        ],
-        "ad_group_errors": [
-            {
-                "ad_group_id": "10",
-                "text": "term",
-                "match_type": "EXACT",
-                "message": "Criterion could not be removed",
-                "error_code": "CANNOT_REMOVE_CRITERION",
-            }
-        ],
-    }
-
-    display = entity_result(
-        "remove",
-        ad_groups,
-        result,
-        max_entities=2,
-        keywords=keywords,
-        include_keyword_outcomes=True,
-        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
-    pending = pending_operation_detail(
-        entry,
-        ad_groups,
-        "remove",
-        keywords,
-        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
-    ledger = build_mutation_ledger(
-        family="ad_group_negative_keywords",
+    ledger = build_keyword_mutation_ledger(
+        spec=AD_GROUP_KEYWORD_MUTATION_SPEC,
         action="remove",
         parent_fields=[
             {"ad_group_id": ad_group.ad_group_id, **keyword}
@@ -1029,11 +946,22 @@ def test_ad_group_negative_keyword_removal_evidence_attributes_any_expansion() -
             ("applied", "customers/111/adGroupCriteria/10~2", None, None),
             ("applied", "customers/111/adGroupCriteria/20~3", None, None),
         ],
-        projection=GoogleAdsMutationProjection(
-            applied_key="removed",
-            skipped_key="not_found",
-            errors_key="ad_group_errors",
-        ),
+    )
+
+    display = entity_result(
+        "remove",
+        ad_groups,
+        ledger,
+        max_entities=2,
+        include_keyword_outcomes=True,
+        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
+    )
+    pending = pending_operation_detail(
+        entry,
+        ad_groups,
+        "remove",
+        keywords,
+        spec=AD_GROUP_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
     detail = terminal_operation_detail(pending, ledger)
 
@@ -1122,13 +1050,13 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
         "skipped_existing": [],
         "campaign_errors": [],
     }
+    ledger = mutation_ledger(result)
 
     display = entity_result(
         "add",
         campaigns,
-        result,
+        ledger,
         max_entities=50,
-        keywords=keywords,
         include_keyword_outcomes=True,
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
     )
@@ -1138,24 +1066,6 @@ def test_campaign_negative_keyword_maximum_evidence_fits_existing_bounds() -> No
         "add",
         keywords,
         spec=CAMPAIGN_NEGATIVE_KEYWORD_TOOL_SPEC,
-    )
-    parent_fields = [
-        {"campaign_id": campaign.campaign_id, **keyword}
-        for campaign in campaigns
-        for keyword in keywords
-    ]
-    ledger = build_mutation_ledger(
-        family="campaign_negative_keywords",
-        action="add",
-        parent_fields=parent_fields,
-        skipped_indices={},
-        submitted=list(enumerate(parent_fields)),
-        outcomes=[("applied", item["resource_name"], None, None) for item in added],
-        projection=GoogleAdsMutationProjection(
-            applied_key="added",
-            skipped_key="skipped_existing",
-            errors_key="campaign_errors",
-        ),
     )
     detail = terminal_operation_detail(pending, ledger)
     display_bytes = len(json.dumps(display, ensure_ascii=False, separators=(",", ":")).encode())

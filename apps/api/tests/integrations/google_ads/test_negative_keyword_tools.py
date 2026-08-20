@@ -25,7 +25,7 @@ from integrations.google_ads.tools.schemas.negative_keyword import (
 )
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
-from tests.integrations.google_ads.support import mutation_ledger_double
+from tests.integrations.google_ads.support import mutation_ledger
 
 
 async def test_add_negative_keywords_targets_one_account_and_uses_normalized_rows(
@@ -50,7 +50,7 @@ async def test_add_negative_keywords_targets_one_account_and_uses_normalized_row
     client = AsyncMock()
     client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
     provider_add = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "added": [
                     {
@@ -139,7 +139,7 @@ async def test_add_negative_keywords_audits_only_exact_applied_outcome(monkeypat
     client = AsyncMock()
     client.post.return_value = {"results": [{"sharedSet": {"id": "50"}}]}
     provider_add = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "added": [
                     {
@@ -339,7 +339,7 @@ async def test_add_negative_keywords_classifies_audit_outcome(
     )
     monkeypatch.setattr(
         "integrations.google_ads.tools.add_negative_keywords.add_negative_keywords",
-        AsyncMock(return_value=mutation_ledger_double(provider_result)),
+        AsyncMock(return_value=mutation_ledger(provider_result)),
     )
     monkeypatch.setattr(
         "services.integrations.operations.record_integration_operation_audit_event",

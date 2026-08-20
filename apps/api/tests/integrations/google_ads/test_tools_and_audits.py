@@ -69,7 +69,7 @@ from services.integrations.operations import (
 from tests.integrations.google_ads.support import (
     _campaign_reference,
     _writable_google_ads_entry,
-    mutation_ledger_double,
+    mutation_ledger,
 )
 
 
@@ -97,7 +97,7 @@ async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkey
     )
     terminal_detail = terminal_operation_detail(
         detail,
-        mutation_ledger_double(
+        mutation_ledger(
             {
                 "added": [
                     {
@@ -287,7 +287,7 @@ def test_negative_keyword_audit_detail_retains_all_applied_rows() -> None:
             for item in provider_result["added"]
         ],
     )
-    detail = terminal_operation_detail(pending, mutation_ledger_double(provider_result))
+    detail = terminal_operation_detail(pending, mutation_ledger(provider_result))
 
     assert detail.intent_counts.applied == 500
     assert len(detail.intent_groups[0].items) == 500
@@ -463,7 +463,7 @@ async def test_create_negative_keyword_list_normalizes_and_fans_out_by_account(
         tool_name="google_ads_create_negative_keyword_list",
     )
     provider_create = AsyncMock(
-        side_effect=lambda _client, **kwargs: mutation_ledger_double(
+        side_effect=lambda _client, **kwargs: mutation_ledger(
             {
                 "created_names": ["Alpha List", "Beta List"],
                 "resource_names": [
@@ -528,7 +528,7 @@ def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_resul
         entry,
         ["Created List", "Existing List", "Rejected List"],
     )
-    detail = terminal_operation_detail(pending, mutation_ledger_double(partial_result))
+    detail = terminal_operation_detail(pending, mutation_ledger(partial_result))
 
     assert audit_status(detail) == AuditStatus.PARTIAL
     assert detail.target.external_id == "111"
@@ -556,7 +556,7 @@ def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_resul
     }
     noop = terminal_operation_detail(
         create_list_pending_operation_detail(entry, ["Existing List"]),
-        mutation_ledger_double(noop_result),
+        mutation_ledger(noop_result),
     )
     assert audit_status(noop) == AuditStatus.SUCCESS
     assert noop.intent_counts.model_dump() == {
@@ -576,7 +576,7 @@ def test_create_negative_keyword_list_audit_detail_covers_partial_and_noop_resul
     }
     failed = terminal_operation_detail(
         create_list_pending_operation_detail(entry, ["Rejected List"]),
-        mutation_ledger_double(failed_result),
+        mutation_ledger(failed_result),
     )
     assert audit_status(failed) == AuditStatus.FAILURE
 
@@ -596,7 +596,7 @@ async def test_create_negative_keyword_list_durable_audit_failures_are_not_succe
     )
     provider_client = AsyncMock(return_value=object())
     provider_create = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "created_names": ["New List"],
                 "resource_names": ["customers/111/sharedSets/50"],
@@ -721,7 +721,7 @@ async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) ->
 
     client.post.side_effect = lookup
     provider_update = AsyncMock(
-        side_effect=lambda _client, **kwargs: mutation_ledger_double(
+        side_effect=lambda _client, **kwargs: mutation_ledger(
             {
                 "resource_names": [
                     f"customers/{kwargs['customer_id']}/campaigns/{campaign_id}"
@@ -796,7 +796,7 @@ def test_campaign_status_audit_detail_covers_partial_and_noop_results() -> None:
 
     detail = terminal_operation_detail(
         campaign_status_pending_operation_detail(entry, campaigns, "PAUSED"),
-        mutation_ledger_double(partial_result),
+        mutation_ledger(partial_result),
     )
 
     assert audit_status(detail) == AuditStatus.PARTIAL
@@ -823,7 +823,7 @@ def test_campaign_status_audit_detail_covers_partial_and_noop_results() -> None:
     }
     failed = terminal_operation_detail(
         campaign_status_pending_operation_detail(entry, [campaigns[0]], "PAUSED"),
-        mutation_ledger_double(failed_result),
+        mutation_ledger(failed_result),
     )
     assert audit_status(failed) == AuditStatus.FAILURE
 
@@ -843,7 +843,7 @@ async def test_campaign_status_durable_audit_failures_are_not_success(monkeypatc
     provider_client = AsyncMock(return_value=object())
     verifier = AsyncMock()
     provider_update = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "resource_names": ["customers/111/campaigns/10"],
                 "campaign_errors": [],
@@ -1187,7 +1187,7 @@ async def test_negative_list_campaign_links_reverify_and_mutate_one_account(
         ]
     }
     provider_link = AsyncMock(
-        return_value=mutation_ledger_double(
+        return_value=mutation_ledger(
             {
                 "resource_names": ["customers/111/campaignSharedSets/10~50"],
                 "skipped_existing": ["20"],

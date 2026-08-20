@@ -3,7 +3,9 @@
 import pytest
 
 from integrations.google_ads.operations.mutation_outcomes import (
+    CAMPAIGN_KEYWORD_MUTATION_SPEC,
     GoogleAdsMutationProjection,
+    build_keyword_mutation_ledger,
     build_mutation_ledger,
 )
 
@@ -113,6 +115,52 @@ def test_ledger_rejects_out_of_range_skipped_parent() -> None:
                 errors_key="campaign_errors",
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "effect_fields",
+    [
+        {"campaign_id": "20", "text": "brand", "match_type": "EXACT"},
+        {"campaign_id": "10", "text": "other", "match_type": "EXACT"},
+        {"campaign_id": "10", "text": "brand", "match_type": "BROAD"},
+    ],
+)
+def test_keyword_ledger_rejects_effects_attributed_to_a_different_parent(
+    effect_fields: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="does not match its parent intent"):
+        build_keyword_mutation_ledger(
+            spec=CAMPAIGN_KEYWORD_MUTATION_SPEC,
+            action="add",
+            parent_fields=[{"campaign_id": "10", "text": "Brand", "match_type": "EXACT"}],
+            skipped_indices={},
+            submitted=[(0, effect_fields)],
+            outcomes=[("applied", "customers/1/campaignCriteria/10~1", None, None)],
+        )
+
+
+def test_keyword_ledger_accepts_casefolded_text_and_any_expansion() -> None:
+    ledger = build_keyword_mutation_ledger(
+        spec=CAMPAIGN_KEYWORD_MUTATION_SPEC,
+        action="remove",
+        parent_fields=[{"campaign_id": "10", "text": "Brand", "match_type": "ANY"}],
+        skipped_indices={},
+        submitted=[
+            (0, {"campaign_id": "10", "text": "brand", "match_type": "EXACT"}),
+            (0, {"campaign_id": "10", "text": "BRAND", "match_type": "BROAD"}),
+        ],
+        outcomes=[
+            ("applied", "customers/1/campaignCriteria/10~1", None, None),
+            ("applied", "customers/1/campaignCriteria/10~2", None, None),
+        ],
+    )
+
+    assert [
+        row["match_type"] for row in ledger.keyword_outcomes(entity_id_key="campaign_id")["10"]
+    ] == [
+        "EXACT",
+        "BROAD",
+    ]
 
 
 def test_unverified_effect_fails_closed_after_provider_dispatch() -> None:

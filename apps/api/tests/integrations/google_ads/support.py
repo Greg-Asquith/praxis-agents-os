@@ -4,9 +4,13 @@ from typing import Any
 from uuid import uuid4
 
 from integrations.google_ads.operations.mutation_outcomes import (
-    GoogleAdsMutationEffect,
-    GoogleAdsMutationParent,
-    freeze_fields,
+    AD_GROUP_KEYWORD_MUTATION_SPEC,
+    CAMPAIGN_KEYWORD_MUTATION_SPEC,
+    SHARED_SET_KEYWORD_MUTATION_SPEC,
+    GoogleAdsMutationLedger,
+    GoogleAdsMutationProjection,
+    build_keyword_mutation_ledger,
+    build_mutation_ledger,
 )
 from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
@@ -19,74 +23,8 @@ async def _static_token(_force: bool) -> str:
     return "access-token"
 
 
-class _MutationLedgerDouble(dict[str, Any]):
-    """Suite-local stand-in for isolated provider-operation mocks."""
-
-    def __init__(self, result: dict[str, Any]) -> None:
-        super().__init__(result)
-        self.parents = _parents_from_result(result)
-
-    def require_verified(self) -> None:
-        return None
-
-    def result(self) -> dict[str, Any]:
-        return dict(self)
-
-
-def mutation_ledger_double(result: dict[str, Any]) -> _MutationLedgerDouble:
-    return _MutationLedgerDouble(result)
-
-
-def _parents_from_result(result: dict[str, Any]) -> tuple[GoogleAdsMutationParent, ...]:
-    parents: list[GoogleAdsMutationParent] = []
-    slot = 0
-
-    def applied(fields: dict[str, str], external_ref: str) -> None:
-        nonlocal slot
-        parents.append(
-            GoogleAdsMutationParent(
-                identity=freeze_fields(fields),
-                decision="submit",
-                effects=(
-                    GoogleAdsMutationEffect(
-                        slot=slot,
-                        fields=freeze_fields(fields),
-                        outcome="applied",
-                        external_ref=external_ref,
-                    ),
-                ),
-            )
-        )
-        slot += 1
-
-    def skipped(fields: dict[str, str]) -> None:
-        parents.append(
-            GoogleAdsMutationParent(
-                identity=freeze_fields(fields),
-                decision="skipped",
-                skip_reason="already_satisfied",
-            )
-        )
-
-    def failed(fields: dict[str, str], error: dict[str, Any]) -> None:
-        nonlocal slot
-        parents.append(
-            GoogleAdsMutationParent(
-                identity=freeze_fields(fields),
-                decision="submit",
-                effects=(
-                    GoogleAdsMutationEffect(
-                        slot=slot,
-                        fields=freeze_fields(fields),
-                        outcome="failed",
-                        error_code=str(error.get("error_code", "unknown")),
-                        message=str(error.get("message", "provider rejected the mutation")),
-                    ),
-                ),
-            )
-        )
-        slot += 1
-
+def mutation_ledger(result: dict[str, Any]) -> GoogleAdsMutationLedger:
+    """Builds a real ledger from a compact projected result fixture."""
     applied_key = "added" if "added" in result else "removed" if "removed" in result else None
     skipped_key = (
         "skipped_existing"
@@ -100,49 +38,134 @@ def _parents_from_result(result: dict[str, Any]) -> tuple[GoogleAdsMutationParen
         None,
     )
     if applied_key is not None and skipped_key is not None and errors_key is not None:
-        for item in result[applied_key]:
-            fields = {
-                key: str(value)
-                for key, value in item.items()
-                if key not in {"resource_name", "message", "error_code", "scope"}
-            }
-            applied(fields, str(item["resource_name"]))
-        for item in result[skipped_key]:
-            skipped({key: str(value) for key, value in item.items()})
-        for error in result[errors_key]:
-            fields = {
-                key: str(value)
-                for key, value in error.items()
-                if key not in {"message", "error_code", "scope"}
-            }
-            if fields:
-                failed(fields, error)
-        return tuple(parents)
+        spec = {
+            "keyword_errors": SHARED_SET_KEYWORD_MUTATION_SPEC,
+            "campaign_errors": CAMPAIGN_KEYWORD_MUTATION_SPEC,
+            "ad_group_errors": AD_GROUP_KEYWORD_MUTATION_SPEC,
+        }[errors_key]
+        parent_fields, skipped_indices, submitted, outcomes = _ledger_inputs(
+            applied=result[applied_key],
+            skipped=result[skipped_key],
+            failed=result[errors_key],
+        )
+        return build_keyword_mutation_ledger(
+            spec=spec,
+            action="add" if applied_key == "added" else "remove",
+            parent_fields=parent_fields,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=outcomes,
+        )
 
     if "list_errors" in result:
-        for name, resource_name in zip(
-            result.get("created_names", ()), result.get("resource_names", ()), strict=True
-        ):
-            applied({"name": str(name)}, str(resource_name))
-        for name in result.get("skipped_existing", ()):
-            skipped({"name": str(name)})
-        for error in result["list_errors"]:
-            if name := str(error.get("name", "")):
-                failed({"name": name}, error)
-        return tuple(parents)
+        applied = [
+            {"name": str(name), "resource_name": str(resource_name)}
+            for name, resource_name in zip(
+                result.get("created_names", ()), result.get("resource_names", ()), strict=True
+            )
+        ]
+        skipped = [{"name": str(name)} for name in result.get("skipped_existing", ())]
+        parent_fields, skipped_indices, submitted, outcomes = _ledger_inputs(
+            applied=applied,
+            skipped=skipped,
+            failed=result["list_errors"],
+        )
+        return build_mutation_ledger(
+            family="negative_keyword_lists",
+            action="create",
+            parent_fields=parent_fields,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=outcomes,
+            projection=GoogleAdsMutationProjection(
+                applied_key="created",
+                skipped_key="skipped_existing",
+                errors_key="list_errors",
+            ),
+        )
 
     if "campaign_errors" in result:
+        applied = []
         for resource_name in result.get("resource_names", ()):
             terminal = str(resource_name).rsplit("/", 1)[-1]
-            applied({"campaign_id": terminal.split("~", 1)[0]}, str(resource_name))
-        for campaign_id in result.get("skipped_existing", result.get("not_found", ())):
-            skipped({"campaign_id": str(campaign_id)})
-        for error in result["campaign_errors"]:
-            if campaign_id := str(error.get("campaign_id", "")):
-                failed({"campaign_id": campaign_id}, error)
-        return tuple(parents)
+            applied.append(
+                {
+                    "campaign_id": terminal.split("~", 1)[0],
+                    "resource_name": str(resource_name),
+                }
+            )
+        skip_key = "skipped_existing" if "skipped_existing" in result else "not_found"
+        skipped = [{"campaign_id": str(value)} for value in result.get(skip_key, ())]
+        parent_fields, skipped_indices, submitted, outcomes = _ledger_inputs(
+            applied=applied,
+            skipped=skipped,
+            failed=result["campaign_errors"],
+        )
+        is_link = skip_key in result
+        return build_mutation_ledger(
+            family="campaign_shared_set_links" if is_link else "campaign_status",
+            action=("link" if skip_key == "skipped_existing" else "unlink")
+            if is_link
+            else "update",
+            parent_fields=parent_fields,
+            skipped_indices=skipped_indices,
+            submitted=submitted,
+            outcomes=outcomes,
+            projection=GoogleAdsMutationProjection(
+                applied_key="applied" if is_link else "updated",
+                skipped_key=skip_key if is_link else "skipped",
+                errors_key="campaign_errors",
+            ),
+        )
 
-    raise ValueError("Mutation ledger test double requires a recognized total result")
+    raise ValueError("Mutation ledger fixture requires a recognized total result")
+
+
+def _ledger_inputs(
+    *,
+    applied: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+) -> tuple[
+    list[dict[str, str]],
+    dict[int, str],
+    list[tuple[int, dict[str, str]]],
+    list[tuple[str, str | None, str | None, str | None]],
+]:
+    parent_fields: list[dict[str, str]] = []
+    skipped_indices: dict[int, str] = {}
+    submitted: list[tuple[int, dict[str, str]]] = []
+    outcomes: list[tuple[str, str | None, str | None, str | None]] = []
+
+    for item in applied:
+        fields = _outcome_fields(item)
+        parent_fields.append(fields)
+        submitted.append((len(parent_fields) - 1, fields))
+        outcomes.append(("applied", str(item["resource_name"]), None, None))
+    for item in skipped:
+        parent_fields.append(_outcome_fields(item))
+        skipped_indices[len(parent_fields) - 1] = "already_satisfied"
+    for item in failed:
+        fields = _outcome_fields(item)
+        parent_fields.append(fields)
+        submitted.append((len(parent_fields) - 1, fields))
+        outcomes.append(
+            (
+                "failed",
+                None,
+                str(item.get("error_code", "unknown")),
+                str(item.get("message", "provider rejected the mutation")),
+            )
+        )
+    return parent_fields, skipped_indices, submitted, outcomes
+
+
+def _outcome_fields(item: dict[str, Any]) -> dict[str, str]:
+    return {
+        key: str(value)
+        for key, value in item.items()
+        if key not in {"resource_name", "message", "error_code", "scope"}
+    }
 
 
 class _DiscoveryClient:

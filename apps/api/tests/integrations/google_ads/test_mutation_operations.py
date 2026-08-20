@@ -63,7 +63,7 @@ async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None
         campaign_ids=["10", "20"],
         status="PAUSED",
     )
-    assert isinstance(result, GoogleAdsMutationLedger)
+    assert type(result) is GoogleAdsMutationLedger
     assert client.last_json["partialFailure"] is True
     assert client.last_login_customer_id == "111"
     assert result["resource_names"] == ["customers/333/campaigns/10"]
@@ -157,7 +157,7 @@ async def test_link_negative_keyword_list_skips_existing_and_maps_failures() -> 
         campaign_ids=["10", "20", "30"],
         action="LINK",
     )
-    assert isinstance(result, GoogleAdsMutationLedger)
+    assert type(result) is GoogleAdsMutationLedger
 
     assert client.calls[0]["json"]["query"] == (
         "SELECT campaign_shared_set.campaign, campaign_shared_set.shared_set, "
@@ -331,7 +331,7 @@ async def test_create_negative_keyword_list_skips_existing_and_maps_partial_fail
         login_customer_id="111-111-1111",
         names=["existing list", "Created List", "Rejected List"],
     )
-    assert isinstance(result, GoogleAdsMutationLedger)
+    assert type(result) is GoogleAdsMutationLedger
 
     assert client.calls[0] == {
         "path": "customers/3333333333/googleAds:searchStream",
@@ -504,7 +504,7 @@ async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> 
             {"text": "Rejected broad", "match_type": "BROAD"},
         ],
     )
-    assert isinstance(result, GoogleAdsMutationLedger)
+    assert type(result) is GoogleAdsMutationLedger
 
     assert (
         "shared_criterion.shared_set = 'customers/3333333333/sharedSets/50'"
@@ -811,7 +811,7 @@ async def test_remove_negative_keywords_resolves_precise_and_any_rows() -> None:
             {"text": "missing", "match_type": "PHRASE"},
         ],
     )
-    assert isinstance(result, GoogleAdsMutationLedger)
+    assert type(result) is GoogleAdsMutationLedger
 
     assert "shared_criterion.criterion_id" in client.calls[0]["json"]["query"]
     assert client.calls[1]["json"] == {

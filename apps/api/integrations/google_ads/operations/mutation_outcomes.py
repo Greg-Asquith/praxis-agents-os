@@ -360,6 +360,11 @@ def build_keyword_mutation_ledger(
     outcomes: Sequence[tuple[MutationEffectOutcome, str | None, str | None, str | None]],
 ) -> GoogleAdsMutationLedger:
     """Build any shared-set, campaign, or ad-group keyword mutation ledger."""
+    for parent_index, effect_fields in submitted:
+        if 0 <= parent_index < len(parent_fields) and not _keyword_effect_matches_parent(
+            parent_fields[parent_index], effect_fields
+        ):
+            raise ValueError("Google Ads keyword effect does not match its parent intent")
     return build_mutation_ledger(
         family=spec.family,
         action=action,
@@ -376,4 +381,29 @@ def build_keyword_mutation_ledger(
             ),
             error_scope=spec.error_scope,
         ),
+    )
+
+
+def _keyword_effect_matches_parent(
+    parent_fields: Mapping[str, object],
+    effect_fields: Mapping[str, object],
+) -> bool:
+    if parent_fields.keys() != effect_fields.keys():
+        return False
+    parent_text = parent_fields.get("text")
+    effect_text = effect_fields.get("text")
+    parent_match_type = parent_fields.get("match_type")
+    effect_match_type = effect_fields.get("match_type")
+    if not all(
+        isinstance(value, str) and value
+        for value in (parent_text, effect_text, parent_match_type, effect_match_type)
+    ):
+        return False
+    if parent_text.casefold() != effect_text.casefold():
+        return False
+    if parent_match_type != "ANY" and parent_match_type != effect_match_type:
+        return False
+    return all(
+        parent_fields[key] == effect_fields[key]
+        for key in parent_fields.keys() - {"text", "match_type"}
     )
