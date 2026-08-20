@@ -92,6 +92,12 @@ if grep -q '/readyz' "$TEST_TMP/rendered/services/praxis-api.yaml"; then
   exit 1
 fi
 grep -q 'value: drain' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
+grep -A1 'name: WORKER_MAX_CONCURRENT_RUNS' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
+  | grep -q 'value: "4"'
+grep -A1 'name: DB_MAINTENANCE_POOL_SIZE' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
+  | grep -q 'value: "3"'
+grep -A1 'name: DB_MAINTENANCE_POOL_MAX_OVERFLOW' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
+  | grep -q 'value: "3"'
 grep -q 'maxRetries: 0' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 if grep -R -q --exclude='test.sh' 'PUBLIC_ASSET_PREFIX\|/assets$' "$GCP_DIR"; then
   echo "deployment helpers must preserve the application's existing public object keys" >&2
@@ -115,6 +121,28 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/undersized-web-render" \
   exit 1
 fi
 grep -q 'WEB_MEMORY must be at least 512Mi' "$TEST_TMP/undersized-web.out"
+
+sed 's/^WORKER_MAX_CONCURRENT_RUNS=4$/WORKER_MAX_CONCURRENT_RUNS=0/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/invalid-worker-concurrency.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/invalid-worker-concurrency-render" \
+  "$TEST_TMP/invalid-worker-concurrency.env" abcdef0123456789 \
+  >"$TEST_TMP/invalid-worker-concurrency.out" 2>&1; then
+  echo "render unexpectedly accepted zero worker concurrency" >&2
+  exit 1
+fi
+grep -q 'WORKER_MAX_CONCURRENT_RUNS must be a positive integer' \
+  "$TEST_TMP/invalid-worker-concurrency.out"
+
+sed 's/^WORKER_MAX_CONCURRENT_RUNS=4$/WORKER_MAX_CONCURRENT_RUNS=6/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/oversized-worker-concurrency.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/oversized-worker-concurrency-render" \
+  "$TEST_TMP/oversized-worker-concurrency.env" abcdef0123456789 \
+  >"$TEST_TMP/oversized-worker-concurrency.out" 2>&1; then
+  echo "render unexpectedly accepted worker concurrency without pool headroom" >&2
+  exit 1
+fi
+grep -q 'WORKER_MAX_CONCURRENT_RUNS must not exceed the smaller runtime or maintenance database pool capacity minus one (5)' \
+  "$TEST_TMP/oversized-worker-concurrency.out"
 
 sed -e 's/^DEPLOYMENT_ENVIRONMENT=staging$/DEPLOYMENT_ENVIRONMENT=production/' \
   -e 's/^LOG_RETENTION_DAYS=90$/LOG_RETENTION_DAYS=400/' \

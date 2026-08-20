@@ -4,6 +4,7 @@ import logging
 from unittest.mock import Mock
 
 import pytest
+from pydantic import ValidationError
 
 import core.database as database_module
 from core.settings import Settings, settings
@@ -27,6 +28,21 @@ def test_default_turn_concurrency_preserves_runtime_pool_headroom(
         record.getMessage().startswith("AGENT_RUN_MAX_CONCURRENT_TURNS exceeds")
         for record in caplog.records
     )
+
+
+def test_worker_concurrency_preserves_runtime_and_maintenance_pool_headroom() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="WORKER_MAX_CONCURRENT_RUNS must not exceed the smaller runtime or maintenance",
+    ):
+        Settings(
+            _env_file=None,
+            WORKER_MAX_CONCURRENT_RUNS=6,
+            DB_POOL_SIZE=5,
+            DB_POOL_MAX_OVERFLOW=10,
+            DB_MAINTENANCE_POOL_SIZE=3,
+            DB_MAINTENANCE_POOL_MAX_OVERFLOW=3,
+        )
 
 
 def test_turn_concurrency_warns_when_runtime_pool_headroom_is_too_small(

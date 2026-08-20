@@ -47,10 +47,13 @@ from services.jobs.handlers.sweep_expired_security_events import (
 )
 from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_sweep_job
 from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
+from services.jobs.heartbeat_job_lease import heartbeat_job_lease
+from services.jobs.log_concurrency_warnings import log_job_concurrency_warnings
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import get_job_handler
 from services.memories.ensure_sweep_job import ensure_memory_sweep_job
 from services.security import ensure_application_encryption_keys_loaded
+from workers.concurrency import run_worker_batch, worker_run_slot
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -60,6 +63,7 @@ async def run_once(
     *,
     owner_instance_id: str | None = None,
     batch_size: int | None = None,
+    shutdown_event: asyncio.Event | None = None,
 ) -> int:
     """Reclaim stale work, claim due jobs, and execute one claimed batch."""
     owner_id = owner_instance_id or _owner_instance_id()
@@ -88,24 +92,31 @@ async def run_once(
         await ensure_memory_sweep_job(db)
         await ensure_integrations_rediscover_job(db)
         await ensure_refresh_webhooks_job(db)
-        claimed_jobs = await claim_jobs(
-            db,
-            owner_instance_id=owner_id,
-            batch_size=batch_size or settings.JOBS_WORKER_BATCH_SIZE,
-            lock_ttl_seconds=settings.JOBS_LOCK_TTL_SECONDS,
-        )
-        job_ids = [job.id for job in claimed_jobs]
+        await log_job_concurrency_warnings(db)
         await db.commit()
 
-    for job_id in job_ids:
-        await execute_claimed_job(job_id, owner_instance_id=owner_id)
+    async def claim_and_execute_one() -> bool:
+        job_id = await _claim_one_job(owner_instance_id=owner_id)
+        if job_id is None:
+            return False
+        await _execute_claimed_job(job_id, owner_instance_id=owner_id)
+        return True
 
-    return len(job_ids)
+    return await run_worker_batch(
+        max_items=batch_size or settings.JOBS_WORKER_BATCH_SIZE,
+        run_one=claim_and_execute_one,
+        shutdown_event=shutdown_event,
+    )
 
 
 async def execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
     """Execute one claimed job and finalize the attempt."""
-    definition = None
+    async with worker_run_slot():
+        await _execute_claimed_job(job_id, owner_instance_id=owner_instance_id)
+
+
+async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
+    """Executes one claimed job after the caller reserves worker capacity."""
     maintenance_session_factory = get_maintenance_async_db_session_factory()
     async with maintenance_session_factory() as maintenance_db:
         claimed_job = await maintenance_db.scalar(
@@ -126,85 +137,139 @@ async def execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
         workspace_id = claimed_job.workspace_id
         user_id = claimed_job.concurrency_user_id
 
-    is_system_job = workspace_id is None and user_id is None
-    session_factory = (
-        get_maintenance_async_db_session_factory()
-        if is_system_job
-        else get_async_db_session_factory()
-    )
-    async with session_factory() as db:
-        await configure_async_db_session(db)
-        if not is_system_job:
-            await set_session_tenant_context(
-                db,
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
-        now_utc = datetime.now(UTC)
-        job = await db.scalar(
-            select(Job)
-            .where(
-                Job.id == job_id,
-                Job.status == JOB_STATUS_RUNNING,
-                Job.locked_by == owner_instance_id,
-                Job.lock_expires_at.is_not(None),
-                Job.lock_expires_at > now_utc,
-            )
-            .with_for_update()
+    heartbeat_stop = asyncio.Event()
+    lease_lost = asyncio.Event()
+    heartbeat_task: asyncio.Task | None = None
+    handler_task: asyncio.Task | None = None
+    try:
+        is_system_job = workspace_id is None and user_id is None
+        session_factory = (
+            get_maintenance_async_db_session_factory()
+            if is_system_job
+            else get_async_db_session_factory()
         )
-        if job is None:
-            await db.rollback()
-            logger.warning(
-                "Claimed job is no longer executable by this worker",
-                extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+        async with session_factory() as db:
+            await configure_async_db_session(db)
+            if not is_system_job:
+                await set_session_tenant_context(
+                    db,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                )
+            now_utc = datetime.now(UTC)
+            job = await db.scalar(
+                select(Job).where(
+                    Job.id == job_id,
+                    Job.status == JOB_STATUS_RUNNING,
+                    Job.locked_by == owner_instance_id,
+                    Job.lock_expires_at.is_not(None),
+                    Job.lock_expires_at > now_utc,
+                )
             )
-            return
+            if job is None:
+                await db.rollback()
+                logger.warning(
+                    "Claimed job is no longer executable by this worker",
+                    extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+                )
+                return
 
-        definition = get_job_handler(job.kind)
-        if definition is None:
-            await finalize_job_failure(
-                db,
-                job,
-                code="unknown_kind",
-                message=f"No handler is registered for job kind '{job.kind}'",
-                force_terminal=True,
-            )
-            await db.commit()
-            logger.error(
-                "Generic job failed because its handler is not registered",
-                extra={"job_id": str(job.id), "kind": job.kind},
-            )
-            return
+            definition = get_job_handler(job.kind)
+            if definition is None:
+                heartbeat_stop.set()
+                finalized = await finalize_job_failure(
+                    db,
+                    job,
+                    owner_instance_id=owner_instance_id,
+                    code="unknown_kind",
+                    message=f"No handler is registered for job kind '{job.kind}'",
+                    force_terminal=True,
+                )
+                if finalized is None:
+                    await db.rollback()
+                    _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                    return
+                await db.commit()
+                logger.error(
+                    "Generic job failed because its handler is not registered",
+                    extra={"job_id": str(job.id), "kind": job.kind},
+                )
+                return
 
-        try:
-            timeout_seconds = definition.timeout or settings.JOBS_HANDLER_TIMEOUT_SECONDS
-            await asyncio.wait_for(definition.function(db, job), timeout=timeout_seconds)
-            await finalize_job_success(db, job)
-            await db.commit()
-            logger.info(
-                "Generic job completed",
-                extra={"job_id": str(job.id), "kind": job.kind},
-            )
-        except TimeoutError:
-            await db.rollback()
-            await _record_job_failure(
-                job_id,
-                owner_instance_id=owner_instance_id,
-                code="handler_timeout",
-                message=f"Job handler exceeded timeout for kind '{definition.kind}'",
-            )
-        except Exception as exc:
-            await db.rollback()
-            logger.exception(
-                "Generic job handler failed",
-                extra={"job_id": str(job_id), "kind": definition.kind},
-            )
-            await _record_job_failure(
-                job_id,
-                owner_instance_id=owner_instance_id,
-                code=exc.__class__.__name__,
-                message=str(exc) or exc.__class__.__name__,
-            )
+            try:
+                timeout_seconds = definition.timeout or settings.JOBS_HANDLER_TIMEOUT_SECONDS
+                handler_task = asyncio.create_task(
+                    definition.function(db, job),
+                    name=f"generic-job-handler:{job_id}",
+                )
+                heartbeat_task = asyncio.create_task(
+                    heartbeat_job_lease(
+                        job_id=job_id,
+                        owner_instance_id=owner_instance_id,
+                        stop=heartbeat_stop,
+                        lease_lost=lease_lost,
+                        cancel_target=handler_task,
+                    ),
+                    name=f"generic-job-heartbeat:{job_id}",
+                )
+                await asyncio.wait_for(handler_task, timeout=timeout_seconds)
+                heartbeat_stop.set()
+                finalized = await finalize_job_success(
+                    db,
+                    job,
+                    owner_instance_id=owner_instance_id,
+                )
+                if not finalized:
+                    await db.rollback()
+                    _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                    return
+                await db.commit()
+                logger.info(
+                    "Generic job completed",
+                    extra={"job_id": str(job.id), "kind": job.kind},
+                )
+            except asyncio.CancelledError:
+                heartbeat_stop.set()
+                await db.rollback()
+                current_task = asyncio.current_task()
+                if not lease_lost.is_set() or (
+                    current_task is not None and current_task.cancelling() > 0
+                ):
+                    raise
+                _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                return
+            except TimeoutError:
+                heartbeat_stop.set()
+                await db.rollback()
+                await _record_job_failure(
+                    job_id,
+                    owner_instance_id=owner_instance_id,
+                    code="handler_timeout",
+                    message=f"Job handler exceeded timeout for kind '{definition.kind}'",
+                )
+            except Exception as exc:
+                heartbeat_stop.set()
+                await db.rollback()
+                logger.exception(
+                    "Generic job handler failed",
+                    extra={"job_id": str(job_id), "kind": definition.kind},
+                )
+                await _record_job_failure(
+                    job_id,
+                    owner_instance_id=owner_instance_id,
+                    code=exc.__class__.__name__,
+                    message=str(exc) or exc.__class__.__name__,
+                )
+    finally:
+        heartbeat_stop.set()
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+        if handler_task is not None and not handler_task.done():
+            handler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await handler_task
 
 
 async def run_forever(
@@ -244,13 +309,11 @@ async def run_drain(
     owner_id = owner_instance_id or _owner_instance_id()
     total_claimed = 0
     while not shutdown_event.is_set():
-        claimed_count = await _run_once_until_shutdown(
-            shutdown_event=shutdown_event,
+        claimed_count = await run_once(
             owner_instance_id=owner_id,
-            batch_size=1,
+            batch_size=settings.WORKER_MAX_CONCURRENT_RUNS,
+            shutdown_event=shutdown_event,
         )
-        if claimed_count is None:
-            return total_claimed
         total_claimed += claimed_count
         if shutdown_event.is_set():
             return total_claimed
@@ -259,6 +322,21 @@ async def run_drain(
         logger.info("Executed generic job batch", extra={"count": claimed_count})
 
     return total_claimed
+
+
+async def _claim_one_job(*, owner_instance_id: str) -> UUID | None:
+    session_factory = get_maintenance_async_db_session_factory()
+    async with session_factory() as db:
+        await configure_async_db_session(db)
+        claimed = await claim_jobs(
+            db,
+            owner_instance_id=owner_instance_id,
+            batch_size=1,
+            lock_ttl_seconds=settings.JOBS_LOCK_TTL_SECONDS,
+        )
+        job_id = claimed[0].id if claimed else None
+        await db.commit()
+        return job_id
 
 
 async def main(argv: Sequence[str] | None = None) -> int:
@@ -312,7 +390,17 @@ async def _record_job_failure(
                     extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
                 )
                 return
-            terminal = await finalize_job_failure(db, job, code=code, message=message)
+            terminal = await finalize_job_failure(
+                db,
+                job,
+                owner_instance_id=owner_instance_id,
+                code=code,
+                message=message,
+            )
+            if terminal is None:
+                await db.rollback()
+                _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                return
             await db.commit()
             logger.warning(
                 "Generic job attempt failed",
@@ -328,6 +416,13 @@ async def _record_job_failure(
             logger.exception("Failed to record generic job failure", extra={"job_id": str(job_id)})
 
 
+def _log_stale_job_result(job_id: UUID, *, owner_instance_id: str) -> None:
+    logger.warning(
+        "Dropped generic job result because this worker no longer owns the lease",
+        extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+    )
+
+
 async def _run_once_until_shutdown(
     *,
     shutdown_event: asyncio.Event,
@@ -335,9 +430,16 @@ async def _run_once_until_shutdown(
     batch_size: int | None = None,
 ) -> int | None:
     pass_coro = (
-        run_once(owner_instance_id=owner_instance_id)
+        run_once(
+            owner_instance_id=owner_instance_id,
+            shutdown_event=shutdown_event,
+        )
         if batch_size is None
-        else run_once(owner_instance_id=owner_instance_id, batch_size=batch_size)
+        else run_once(
+            owner_instance_id=owner_instance_id,
+            batch_size=batch_size,
+            shutdown_event=shutdown_event,
+        )
     )
     polling_task = asyncio.create_task(
         pass_coro,

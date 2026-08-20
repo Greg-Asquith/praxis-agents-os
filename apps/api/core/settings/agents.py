@@ -20,6 +20,14 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum wall-clock seconds for one worker drain execution.",
     )
+    WORKER_MAX_CONCURRENT_RUNS: int = Field(
+        default=4,
+        ge=1,
+        description=(
+            "Maximum scheduled runs and generic jobs active per worker process; "
+            "must preserve one runtime and maintenance pool connection for heartbeats"
+        ),
+    )
     AGENT_SCHEDULE_WORKER_POLL_SECONDS: float = Field(
         default=5.0,
         gt=0,
@@ -264,5 +272,19 @@ class AgentRunSettingsMixin:
                     "agent_run_max_concurrent_turns": self.AGENT_RUN_MAX_CONCURRENT_TURNS,
                     "runtime_pool_headroom_limit": pool_headroom_limit,
                 },
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_worker_limit_preserves_pool_headroom(self):
+        """Reject worker concurrency that can block lease heartbeats behind handlers."""
+        runtime_capacity = self.DB_POOL_SIZE + self.DB_POOL_MAX_OVERFLOW
+        maintenance_capacity = self.DB_MAINTENANCE_POOL_SIZE + self.DB_MAINTENANCE_POOL_MAX_OVERFLOW
+        worker_pool_limit = min(runtime_capacity, maintenance_capacity) - 1
+        if worker_pool_limit < self.WORKER_MAX_CONCURRENT_RUNS:
+            raise ValueError(
+                "WORKER_MAX_CONCURRENT_RUNS must not exceed the smaller runtime or "
+                "maintenance database pool capacity minus one; this preserves a "
+                "connection for lease heartbeats"
             )
         return self

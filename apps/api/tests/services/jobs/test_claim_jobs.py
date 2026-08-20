@@ -65,39 +65,6 @@ async def test_concurrent_claims_split_without_overlap(
     assert len(second_claim) == 2
 
 
-async def test_claim_logs_workspace_concurrency_warning(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import importlib
-
-    claim_jobs_module = importlib.import_module("services.jobs.claim_jobs")
-
-    await db_session.execute(delete(Job))
-    await db_session.flush()
-    monkeypatch.setattr(claim_jobs_module.settings, "JOBS_WORKSPACE_CONCURRENCY_LIMIT", 1)
-    warnings: list[str] = []
-
-    def record_warning(message: str, *args: object, **kwargs: object) -> None:
-        warnings.append(message)
-
-    monkeypatch.setattr(claim_jobs_module.logger, "warning", record_warning)
-    workspace = build_workspace(slug=f"job-limit-{uuid4().hex[:8]}")
-    db_session.add(workspace)
-    await db_session.flush()
-    db_session.add_all(
-        [
-            build_job(workspace_id=workspace.id, payload={"n": 1}),
-            build_job(workspace_id=workspace.id, payload={"n": 2}),
-        ]
-    )
-    await db_session.flush()
-
-    await claim_jobs(db_session, owner_instance_id="worker", batch_size=2)
-
-    assert any("exceeds configured warning threshold" in message for message in warnings)
-
-
 async def test_claim_jobs_skips_workspaces_at_running_cap(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,

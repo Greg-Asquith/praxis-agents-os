@@ -285,31 +285,74 @@ async def test_job_enqueued_by_periodic_enqueuer_is_processed(
     await _clear_jobs(committed_db_session_factory)
 
 
-async def test_schedule_drain_claims_one_item_per_pass(
+async def test_schedule_drain_admits_up_to_shared_capacity_per_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     batch_sizes: list[int | None] = []
+    expected_shutdown_event = asyncio.Event()
 
     async def run_once(
         *,
         owner_instance_id: str,
         model=None,
         batch_size: int | None = None,
+        shutdown_event: asyncio.Event | None = None,
     ) -> int:
         assert owner_instance_id == "single-claim-agent-worker"
         assert model is None
+        assert shutdown_event is expected_shutdown_event
         batch_sizes.append(batch_size)
         return 0
 
+    monkeypatch.setattr(settings, "WORKER_MAX_CONCURRENT_RUNS", 3)
     monkeypatch.setattr(agent_runner, "run_once", run_once)
 
     claimed_count = await agent_runner.run_drain(
-        shutdown_event=asyncio.Event(),
+        shutdown_event=expected_shutdown_event,
         owner_instance_id="single-claim-agent-worker",
     )
 
     assert claimed_count == 0
-    assert batch_sizes == [1]
+    assert batch_sizes == [3]
+
+
+async def test_schedule_drain_allows_admitted_run_to_finish_after_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def run_once(
+        *,
+        owner_instance_id: str,
+        model=None,
+        batch_size: int | None = None,
+        shutdown_event: asyncio.Event | None = None,
+    ) -> int:
+        assert owner_instance_id == "finish-agent-worker"
+        assert model is None
+        assert batch_size == settings.WORKER_MAX_CONCURRENT_RUNS
+        assert shutdown_event is not None
+        started.set()
+        await release.wait()
+        return 1
+
+    monkeypatch.setattr(agent_runner, "run_once", run_once)
+    shutdown_event = asyncio.Event()
+    drain_task = asyncio.create_task(
+        agent_runner.run_drain(
+            shutdown_event=shutdown_event,
+            owner_instance_id="finish-agent-worker",
+        )
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    shutdown_event.set()
+    await asyncio.sleep(0.05)
+
+    assert drain_task.done() is False
+
+    release.set()
+    assert await asyncio.wait_for(drain_task, timeout=1) == 1
 
 
 async def test_shutdown_mid_queue_leaves_unclaimed_jobs_pending(
@@ -327,6 +370,7 @@ async def test_shutdown_mid_queue_leaves_unclaimed_jobs_pending(
     job_handler(kind=kind, timeout=1.0)(handler)
     _disable_periodic_enqueuers(monkeypatch)
     monkeypatch.setattr(settings, "JOBS_WORKER_BATCH_SIZE", 3)
+    monkeypatch.setattr(settings, "WORKER_MAX_CONCURRENT_RUNS", 1)
     await _clear_jobs(committed_db_session_factory)
     try:
         async with committed_db_session_factory() as db:
@@ -394,8 +438,12 @@ async def test_overlapping_drains_execute_each_job_once(
 
 
 async def test_worker_settings_validate_mode_and_positive_budget() -> None:
-    assert Settings(_env_file=None).WORKER_MODE == "forever"
+    defaults = Settings(_env_file=None)
+    assert defaults.WORKER_MODE == "forever"
+    assert defaults.WORKER_MAX_CONCURRENT_RUNS == 4
     with pytest.raises(ValidationError):
         Settings(_env_file=None, WORKER_MODE="once")
     with pytest.raises(ValidationError):
         Settings(_env_file=None, WORKER_DRAIN_MAX_SECONDS=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, WORKER_MAX_CONCURRENT_RUNS=0)

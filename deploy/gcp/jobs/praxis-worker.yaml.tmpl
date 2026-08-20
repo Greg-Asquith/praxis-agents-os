@@ -115,6 +115,16 @@ spec:
                   value: "${AGENT_RUN_APPROVAL_EXPIRY_DAYS}"
                 - name: WORKER_MODE
                   value: drain
+                - name: DB_POOL_SIZE
+                  value: "${DB_POOL_SIZE}"
+                - name: DB_POOL_MAX_OVERFLOW
+                  value: "${DB_POOL_MAX_OVERFLOW}"
+                - name: DB_MAINTENANCE_POOL_SIZE
+                  value: "${DB_MAINTENANCE_POOL_SIZE}"
+                - name: DB_MAINTENANCE_POOL_MAX_OVERFLOW
+                  value: "${DB_MAINTENANCE_POOL_MAX_OVERFLOW}"
                 - name: WORKER_DRAIN_MAX_SECONDS
                   value: "${WORKER_DRAIN_MAX_SECONDS}"
+                - name: WORKER_MAX_CONCURRENT_RUNS
+                  value: "${WORKER_MAX_CONCURRENT_RUNS}"
 ${RUNTIME_SECRET_ENV_YAML}

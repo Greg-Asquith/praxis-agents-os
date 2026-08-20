@@ -199,6 +199,45 @@ async def test_run_once_executes_due_once_schedule(
         assert [message.role for message in messages] == ["user", "assistant"]
 
 
+async def test_run_once_executes_claimed_schedules_concurrently(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for _ in range(2):
+        await _create_due_schedule(committed_db_session_factory)
+    both_started = asyncio.Event()
+    active = 0
+    peak_active = 0
+
+    async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
+        nonlocal active, peak_active
+        assert owner_instance_id == "parallel-worker"
+        assert model is None
+        active += 1
+        peak_active = max(peak_active, active)
+        if active == 2:
+            both_started.set()
+        try:
+            await asyncio.wait_for(both_started.wait(), timeout=1)
+        finally:
+            active -= 1
+
+    async def fake_finalize(_prepared) -> None:
+        return None
+
+    monkeypatch.setattr(settings, "WORKER_MAX_CONCURRENT_RUNS", 2)
+    monkeypatch.setattr(agent_runner, "_execute_prepared", fake_execute_prepared)
+    monkeypatch.setattr(agent_runner, "_finalize", fake_finalize)
+
+    attempted = await asyncio.wait_for(
+        run_once(owner_instance_id="parallel-worker", batch_size=2),
+        timeout=2,
+    )
+
+    assert attempted == 2
+    assert peak_active == 2
+
+
 async def test_run_once_suspends_approval_required_schedule(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -615,10 +654,16 @@ async def test_run_forever_waits_for_in_flight_pass_on_shutdown(
     release_pass = asyncio.Event()
     pass_completed = False
 
-    async def fake_run_once(*, owner_instance_id: str, model=None) -> int:
+    async def fake_run_once(
+        *,
+        owner_instance_id: str,
+        model=None,
+        shutdown_event: asyncio.Event | None = None,
+    ) -> int:
         nonlocal pass_completed
         assert owner_instance_id == "test-worker"
         assert model is None
+        assert shutdown_event is not None
         pass_started.set()
         await release_pass.wait()
         pass_completed = True
@@ -649,9 +694,15 @@ async def test_run_forever_cancels_in_flight_pass_after_shutdown_timeout(
     pass_started = asyncio.Event()
     pass_cancelled = asyncio.Event()
 
-    async def fake_run_once(*, owner_instance_id: str, model=None) -> int:
+    async def fake_run_once(
+        *,
+        owner_instance_id: str,
+        model=None,
+        shutdown_event: asyncio.Event | None = None,
+    ) -> int:
         assert owner_instance_id == "test-worker"
         assert model is None
+        assert shutdown_event is not None
         pass_started.set()
         try:
             await asyncio.Event().wait()

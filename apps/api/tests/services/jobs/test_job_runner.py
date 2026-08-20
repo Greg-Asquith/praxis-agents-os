@@ -17,6 +17,7 @@ from core.database import (
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
 )
+from core.settings import settings
 from models.agent import Agent
 from models.jobs import Job
 from models.user import User
@@ -28,6 +29,8 @@ from services.jobs.domain import (
     JOB_STATUS_SUCCEEDED,
 )
 from services.jobs.enqueue_job import enqueue_job
+from services.jobs.heartbeat_job_lease import heartbeat_job_lease
+from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import JOB_HANDLERS, job_handler
 from tests.factories import build_user, build_workspace
 
@@ -73,6 +76,178 @@ async def test_run_once_executes_registered_kind(
         assert job.status == JOB_STATUS_SUCCEEDED
         assert job.payload["handled"] is True
     await _clear_jobs(committed_db_session_factory)
+
+
+async def test_run_once_executes_claimed_jobs_concurrently(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kind = f"tests.job_runner.parallel.{uuid4().hex}"
+    both_started = asyncio.Event()
+    active = 0
+    peak_active = 0
+    warning_passes = 0
+
+    async def handler(_db: AsyncSession, _job: Job) -> None:
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        if active == 2:
+            both_started.set()
+        try:
+            await asyncio.wait_for(both_started.wait(), timeout=1)
+        finally:
+            active -= 1
+
+    async def record_warning_pass(_db: AsyncSession) -> None:
+        nonlocal warning_passes
+        warning_passes += 1
+
+    job_handler(kind=kind, timeout=2.0)(handler)
+    monkeypatch.setattr(settings, "WORKER_MAX_CONCURRENT_RUNS", 2)
+    monkeypatch.setattr(job_runner, "log_job_concurrency_warnings", record_warning_pass)
+    try:
+        await _clear_jobs(committed_db_session_factory)
+        async with committed_db_session_factory() as db:
+            for index in range(3):
+                await enqueue_job(db, kind=kind, payload={"index": index})
+            await db.commit()
+
+        attempted = await asyncio.wait_for(
+            job_runner.run_once(owner_instance_id="parallel-worker", batch_size=3),
+            timeout=2,
+        )
+
+        assert attempted == 3
+        assert peak_active == 2
+        assert warning_passes == 1
+    finally:
+        JOB_HANDLERS.pop(kind, None)
+        await _clear_jobs(committed_db_session_factory)
+
+
+async def test_heartbeat_prevents_reclaim_until_worker_stops(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _clear_jobs(committed_db_session_factory)
+    owner_instance_id = "heartbeat-worker"
+    async with committed_db_session_factory() as db:
+        job = Job(
+            kind="tests.job_runner.heartbeat",
+            status=JOB_STATUS_RUNNING,
+            attempts=1,
+            locked_by=owner_instance_id,
+            locked_at=datetime.now(UTC),
+            lock_expires_at=datetime.now(UTC) + timedelta(seconds=0.04),
+        )
+        db.add(job)
+        await db.commit()
+        job_id = job.id
+
+    stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(
+        heartbeat_job_lease(
+            job_id=job_id,
+            owner_instance_id=owner_instance_id,
+            stop=stop,
+            interval_seconds=0.01,
+            lock_ttl_seconds=0.05,
+        )
+    )
+    try:
+        await asyncio.sleep(0.08)
+        async with committed_db_session_factory() as db:
+            assert await reclaim_stale_jobs(db) == 0
+            await db.commit()
+            persisted = await db.get(Job, job_id)
+            assert persisted is not None
+            assert persisted.status == JOB_STATUS_RUNNING
+    finally:
+        stop.set()
+        await heartbeat_task
+
+    await asyncio.sleep(0.06)
+    async with committed_db_session_factory() as db:
+        assert await reclaim_stale_jobs(db) == 1
+        await db.commit()
+        persisted = await db.get(Job, job_id)
+        assert persisted is not None
+        assert persisted.status == JOB_STATUS_PENDING
+    await _clear_jobs(committed_db_session_factory)
+
+
+async def test_runner_cancels_handler_after_lease_ownership_changes(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kind = f"tests.job_runner.lease_loss.{uuid4().hex}"
+    owner_instance_id = "stale-worker"
+    handler_started = asyncio.Event()
+    handler_cancelled = asyncio.Event()
+    handler_completed = False
+
+    async def handler(_db: AsyncSession, _job: Job) -> None:
+        nonlocal handler_completed
+        handler_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            handler_cancelled.set()
+            raise
+        handler_completed = True
+
+    async def fast_heartbeat(**kwargs) -> None:
+        await heartbeat_job_lease(
+            **kwargs,
+            interval_seconds=0.01,
+            lock_ttl_seconds=0.1,
+        )
+
+    job_handler(kind=kind, timeout=2.0)(handler)
+    monkeypatch.setattr(job_runner, "heartbeat_job_lease", fast_heartbeat)
+    await _clear_jobs(committed_db_session_factory)
+    try:
+        async with committed_db_session_factory() as db:
+            job = Job(
+                kind=kind,
+                status=JOB_STATUS_RUNNING,
+                attempts=1,
+                locked_by=owner_instance_id,
+                locked_at=datetime.now(UTC),
+                lock_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+            )
+            db.add(job)
+            await db.commit()
+            job_id = job.id
+
+        execution_task = asyncio.create_task(
+            job_runner.execute_claimed_job(
+                job_id,
+                owner_instance_id=owner_instance_id,
+            )
+        )
+        await asyncio.wait_for(handler_started.wait(), timeout=1)
+
+        async with committed_db_session_factory() as db:
+            persisted = await db.get(Job, job_id)
+            assert persisted is not None
+            persisted.locked_by = "replacement-worker"
+            persisted.locked_at = datetime.now(UTC)
+            persisted.lock_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+            await db.commit()
+
+        await asyncio.wait_for(handler_cancelled.wait(), timeout=1)
+        await asyncio.wait_for(execution_task, timeout=1)
+
+        async with committed_db_session_factory() as db:
+            persisted = await db.get(Job, job_id)
+            assert persisted is not None
+            assert persisted.status == JOB_STATUS_RUNNING
+            assert persisted.locked_by == "replacement-worker"
+        assert handler_completed is False
+    finally:
+        JOB_HANDLERS.pop(kind, None)
+        await _clear_jobs(committed_db_session_factory)
 
 
 async def test_workspace_handler_cannot_read_another_workspaces_rows(

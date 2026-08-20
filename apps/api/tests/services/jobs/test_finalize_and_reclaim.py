@@ -25,11 +25,17 @@ async def test_retryable_failure_requeues_with_backoff(
     now = datetime(2026, 1, 1, tzinfo=UTC)
     monkeypatch.setattr("services.jobs.finalize_job.retry_backoff", lambda _attempts: 45.0)
     job = build_job(status=JOB_STATUS_RUNNING, attempts=1, max_attempts=3)
+    job.locked_by = "worker"
     db_session.add(job)
     await db_session.flush()
 
     terminal = await finalize_job_failure(
-        db_session, job, code="boom", message=" exploded ", now=now
+        db_session,
+        job,
+        owner_instance_id="worker",
+        code="boom",
+        message=" exploded ",
+        now=now,
     )
 
     assert terminal is False
@@ -53,10 +59,17 @@ async def test_final_failure_creates_notification_for_initiator(
         attempts=2,
         max_attempts=2,
     )
+    job.locked_by = "worker"
     db_session.add(job)
     await db_session.flush()
 
-    terminal = await finalize_job_failure(db_session, job, code="final", message="done")
+    terminal = await finalize_job_failure(
+        db_session,
+        job,
+        owner_instance_id="worker",
+        code="final",
+        message="done",
+    )
 
     assert terminal is True
     assert job.status == JOB_STATUS_FAILED
@@ -68,10 +81,17 @@ async def test_final_failure_creates_notification_for_initiator(
 
 async def test_final_failure_without_initiator_does_not_notify(db_session: AsyncSession) -> None:
     job = build_job(status=JOB_STATUS_RUNNING, attempts=1, max_attempts=1)
+    job.locked_by = "worker"
     db_session.add(job)
     await db_session.flush()
 
-    terminal = await finalize_job_failure(db_session, job, code="final", message="done")
+    terminal = await finalize_job_failure(
+        db_session,
+        job,
+        owner_instance_id="worker",
+        code="final",
+        message="done",
+    )
 
     assert terminal is True
     assert job.status == JOB_STATUS_FAILED
@@ -89,7 +109,7 @@ async def test_success_clears_lock_and_errors(db_session: AsyncSession) -> None:
     db_session.add(job)
     await db_session.flush()
 
-    await finalize_job_success(db_session, job)
+    assert await finalize_job_success(db_session, job, owner_instance_id="worker") is True
 
     assert job.status == "succeeded"
     assert job.locked_by is None
@@ -97,11 +117,56 @@ async def test_success_clears_lock_and_errors(db_session: AsyncSession) -> None:
     assert job.finished_at is not None
 
 
+async def test_stale_owner_cannot_finalize_success(db_session: AsyncSession) -> None:
+    job = build_job(status=JOB_STATUS_RUNNING)
+    job.locked_by = "current-worker"
+    job.locked_at = datetime.now(UTC)
+    job.lock_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+    db_session.add(job)
+    await db_session.flush()
+
+    finalized = await finalize_job_success(
+        db_session,
+        job,
+        owner_instance_id="stale-worker",
+    )
+
+    assert finalized is False
+    await db_session.refresh(job)
+    assert job.status == JOB_STATUS_RUNNING
+    assert job.locked_by == "current-worker"
+
+
+async def test_stale_owner_cannot_finalize_failure(db_session: AsyncSession) -> None:
+    job = build_job(status=JOB_STATUS_RUNNING, attempts=1, max_attempts=2)
+    job.locked_by = "current-worker"
+    job.locked_at = datetime.now(UTC)
+    job.lock_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+    db_session.add(job)
+    await db_session.flush()
+
+    terminal = await finalize_job_failure(
+        db_session,
+        job,
+        owner_instance_id="stale-worker",
+        code="stale",
+        message="stale result",
+    )
+
+    assert terminal is None
+    await db_session.refresh(job)
+    assert job.status == JOB_STATUS_RUNNING
+    assert job.locked_by == "current-worker"
+    assert job.last_error_code is None
+
+
 async def test_reclaim_stale_jobs_only_reclaims_expired(db_session: AsyncSession) -> None:
     now = datetime(2026, 1, 1, tzinfo=UTC)
     expired = build_job(status=JOB_STATUS_RUNNING)
+    expired.locked_by = "expired-worker"
     expired.lock_expires_at = now - timedelta(seconds=1)
     fresh = build_job(status=JOB_STATUS_RUNNING, payload={"fresh": True})
+    fresh.locked_by = "fresh-worker"
     fresh.lock_expires_at = now + timedelta(seconds=1)
     db_session.add_all([expired, fresh])
     await db_session.flush()

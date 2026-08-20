@@ -29,12 +29,19 @@ async def reclaim_stale_jobs(
         .with_for_update(skip_locked=True)
     )
     jobs = list(result.scalars().all())
+    reclaimed_count = 0
     for job in jobs:
-        await finalize_job_failure(
+        owner_instance_id = job.locked_by
+        if owner_instance_id is None:
+            continue
+        finalized = await finalize_job_failure(
             db,
             job,
+            owner_instance_id=owner_instance_id,
             code="lease_expired",
             message="Worker lease expired before job completed",
             now=now_utc,
         )
-    return len(jobs)
+        if finalized is not None:
+            reclaimed_count += 1
+    return reclaimed_count

@@ -47,6 +47,7 @@ from services.agent_schedules.runs import (
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
 from services.agents.runtime.sinks import NullSink
+from workers.concurrency import run_worker_batch, worker_run_slot
 
 setup_logging()
 setup_agent_tracing()
@@ -58,6 +59,7 @@ async def run_once(
     owner_instance_id: str | None = None,
     model: Model | None = None,
     batch_size: int | None = None,
+    shutdown_event: asyncio.Event | None = None,
 ) -> int:
     """Reconcile stale work, claim due schedules, and execute one claimed batch."""
     owner_id = owner_instance_id or _owner_instance_id()
@@ -68,22 +70,24 @@ async def run_once(
         reconciled = await reconcile_schedule_run_execution(db)
         if reconciled:
             logger.info("Reconciled scheduled agent runs", extra={"count": reconciled})
-        claimed = await claim_due_schedule_runs(
-            db,
-            batch_size=batch_size or settings.AGENT_SCHEDULE_WORKER_BATCH_SIZE,
-            claim_ttl_seconds=settings.AGENT_SCHEDULE_RUN_CLAIM_TTL_SECONDS,
-        )
-        schedule_run_ids = [claimed_run.run.id for claimed_run in claimed]
         await db.commit()
 
-    for schedule_run_id in schedule_run_ids:
-        await execute_claimed_schedule_run(
+    async def claim_and_execute_one() -> bool:
+        schedule_run_id = await _claim_one_schedule_run()
+        if schedule_run_id is None:
+            return False
+        await _execute_claimed_schedule_run(
             schedule_run_id=schedule_run_id,
             owner_instance_id=owner_id,
             model=model,
         )
+        return True
 
-    return len(schedule_run_ids)
+    return await run_worker_batch(
+        max_items=batch_size or settings.AGENT_SCHEDULE_WORKER_BATCH_SIZE,
+        run_one=claim_and_execute_one,
+        shutdown_event=shutdown_event,
+    )
 
 
 async def execute_claimed_schedule_run(
@@ -93,6 +97,21 @@ async def execute_claimed_schedule_run(
     model: Model | None = None,
 ) -> None:
     """Prepare, execute, and finalize one claimed schedule run."""
+    async with worker_run_slot():
+        await _execute_claimed_schedule_run(
+            schedule_run_id=schedule_run_id,
+            owner_instance_id=owner_instance_id,
+            model=model,
+        )
+
+
+async def _execute_claimed_schedule_run(
+    *,
+    schedule_run_id: UUID,
+    owner_instance_id: str,
+    model: Model | None = None,
+) -> None:
+    """Executes one schedule run after the caller reserves worker capacity."""
     prepared = await _prepare(schedule_run_id)
     if prepared is None or not prepared.should_execute:
         return
@@ -100,10 +119,7 @@ async def execute_claimed_schedule_run(
     conversation_id, agent_run_id, _user_prompt = _execution_values(prepared)
 
     heartbeat_stop = asyncio.Event()
-    execution_task = asyncio.create_task(
-        _execute_prepared(prepared, owner_instance_id=owner_instance_id, model=model),
-        name=f"scheduled-agent-run:{agent_run_id}",
-    )
+    execution_task = asyncio.current_task()
     heartbeat_task = asyncio.create_task(
         heartbeat_agent_run_lease(
             run_id=agent_run_id,
@@ -117,7 +133,7 @@ async def execute_claimed_schedule_run(
     )
 
     try:
-        await execution_task
+        await _execute_prepared(prepared, owner_instance_id=owner_instance_id, model=model)
     except asyncio.CancelledError:
         if not await _agent_run_was_cancelled(
             agent_run_id,
@@ -149,10 +165,6 @@ async def execute_claimed_schedule_run(
         heartbeat_task.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat_task
-        if not execution_task.done():
-            execution_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await execution_task
 
     await _finalize(prepared)
 
@@ -195,14 +207,12 @@ async def run_drain(
     owner_id = owner_instance_id or _owner_instance_id()
     total_claimed = 0
     while not shutdown_event.is_set():
-        claimed_count = await _run_once_until_shutdown(
-            shutdown_event=shutdown_event,
+        claimed_count = await run_once(
             owner_instance_id=owner_id,
             model=model,
-            batch_size=1,
+            batch_size=settings.WORKER_MAX_CONCURRENT_RUNS,
+            shutdown_event=shutdown_event,
         )
-        if claimed_count is None:
-            return total_claimed
         total_claimed += claimed_count
         if shutdown_event.is_set():
             return total_claimed
@@ -211,6 +221,20 @@ async def run_drain(
         logger.info("Executed scheduled agent run batch", extra={"count": claimed_count})
 
     return total_claimed
+
+
+async def _claim_one_schedule_run() -> UUID | None:
+    session_factory = get_maintenance_async_db_session_factory()
+    async with session_factory() as db:
+        await configure_async_db_session(db)
+        claimed = await claim_due_schedule_runs(
+            db,
+            batch_size=1,
+            claim_ttl_seconds=settings.AGENT_SCHEDULE_RUN_CLAIM_TTL_SECONDS,
+        )
+        schedule_run_id = claimed[0].run.id if claimed else None
+        await db.commit()
+        return schedule_run_id
 
 
 async def main(argv: Sequence[str] | None = None) -> int:
@@ -241,12 +265,17 @@ async def _run_once_until_shutdown(
     batch_size: int | None = None,
 ) -> int | None:
     pass_coro = (
-        run_once(owner_instance_id=owner_instance_id, model=model)
+        run_once(
+            owner_instance_id=owner_instance_id,
+            model=model,
+            shutdown_event=shutdown_event,
+        )
         if batch_size is None
         else run_once(
             owner_instance_id=owner_instance_id,
             model=model,
             batch_size=batch_size,
+            shutdown_event=shutdown_event,
         )
     )
     polling_task = asyncio.create_task(

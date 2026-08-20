@@ -2,7 +2,6 @@
 
 """Claim generic background jobs for execution."""
 
-import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, func, or_, select
@@ -11,10 +10,7 @@ from sqlalchemy.orm import aliased
 
 from core.settings import settings
 from models.jobs import Job
-from services.jobs.count_jobs import count_in_flight_jobs
 from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_RUNNING
-
-logger = logging.getLogger(__name__)
 
 
 async def claim_jobs(
@@ -124,21 +120,4 @@ async def claim_jobs(
         job.last_error_message = None
 
     await db.flush()
-    await _log_workspace_concurrency_warnings(db)
     return jobs
-
-
-async def _log_workspace_concurrency_warnings(db: AsyncSession) -> None:
-    counts = await count_in_flight_jobs(db)
-    limit = settings.JOBS_WORKSPACE_CONCURRENCY_LIMIT
-    for workspace_id, count in counts.items():
-        if workspace_id is None or count <= limit:
-            continue
-        logger.warning(
-            "Workspace in-flight job count exceeds configured warning threshold",
-            extra={
-                "workspace_id": str(workspace_id),
-                "in_flight_jobs": count,
-                "limit": limit,
-            },
-        )
