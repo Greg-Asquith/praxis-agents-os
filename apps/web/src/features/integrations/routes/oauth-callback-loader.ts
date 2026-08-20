@@ -13,7 +13,15 @@ import { decodeBase64Url } from "@/lib/utils"
 
 const completionPromises = new Map<string, Promise<OAuthCallbackResponse>>()
 
-export async function loadIntegrationOAuthCallback(search: OAuthCallbackSearch) {
+type IntegrationOAuthCallbackLoaderDependencies = {
+  completeIntegrationOAuth?: typeof completeIntegrationOAuth
+  redirect?: typeof fullDocumentRedirect
+}
+
+export async function loadIntegrationOAuthCallback(
+  search: OAuthCallbackSearch,
+  deps: IntegrationOAuthCallbackLoaderDependencies = {}
+) {
   if (!search.state) {
     return { error: "This connection link is missing its OAuth state." }
   }
@@ -26,20 +34,20 @@ export async function loadIntegrationOAuthCallback(search: OAuthCallbackSearch) 
 
   let response: OAuthCallbackResponse
   try {
-    response = await completeOnce(input)
+    response = await completeOnce(input, deps.completeIntegrationOAuth ?? completeIntegrationOAuth)
   } catch (error) {
     const message = getErrorMessage(error)
     const providerKey = providerKeyFromState(search.state)
     if (providerKey) {
       const query = new URLSearchParams({ integration_error: message })
-      return fullDocumentRedirect(
+      return (deps.redirect ?? fullDocumentRedirect)(
         `/integrations/${encodeURIComponent(providerKey)}?${query.toString()}`
       )
     }
     return { error: message }
   }
 
-  return fullDocumentRedirect(response.next_path ?? "/")
+  return (deps.redirect ?? fullDocumentRedirect)(response.next_path ?? "/")
 }
 
 function providerKeyFromState(state: string) {
@@ -59,14 +67,17 @@ function providerKeyFromState(state: string) {
   }
 }
 
-function completeOnce(input: CompleteIntegrationOAuthInput) {
+function completeOnce(
+  input: CompleteIntegrationOAuthInput,
+  complete: typeof completeIntegrationOAuth
+) {
   const key = `${input.state}:${input.code ?? ""}:${input.error ?? ""}`
   const existing = completionPromises.get(key)
   if (existing) {
     return existing
   }
 
-  const promise = completeIntegrationOAuth(input)
+  const promise = complete(input)
   completionPromises.set(key, promise)
   return promise
 }

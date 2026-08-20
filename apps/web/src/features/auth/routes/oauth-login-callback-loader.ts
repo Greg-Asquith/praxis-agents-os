@@ -18,13 +18,21 @@ import { safeRedirectPath } from "@/lib/safe-redirect"
 
 const loginCompletionPromises = new Map<string, Promise<AuthResponse>>()
 
-export async function loadOAuthLoginCallback({
-  queryClient,
-  search,
-}: {
-  queryClient: QueryClient
-  search: OAuthCallbackSearch
-}) {
+type OAuthLoginCallbackLoaderDependencies = {
+  completeOauthLogin?: typeof completeOauthLogin
+  redirect?: typeof fullDocumentRedirect
+}
+
+export async function loadOAuthLoginCallback(
+  {
+    queryClient,
+    search,
+  }: {
+    queryClient: QueryClient
+    search: OAuthCallbackSearch
+  },
+  deps: OAuthLoginCallbackLoaderDependencies = {}
+) {
   const callback = readOauthCallback(OAUTH_LOGIN_PROVIDER_STORAGE_KEY, search)
   if (callback.providerError) {
     return {
@@ -46,7 +54,7 @@ export async function loadOAuthLoginCallback({
 
   let response: AuthResponse
   try {
-    response = await completeLoginOnce(input)
+    response = await completeLoginOnce(input, deps.completeOauthLogin ?? completeOauthLogin)
   } catch (error) {
     return { error: getErrorMessage(error), nextPath: null, twoFactorPending: false }
   }
@@ -61,17 +69,17 @@ export async function loadOAuthLoginCallback({
     return { error: null, nextPath, twoFactorPending: true }
   }
 
-  return fullDocumentRedirect(nextPath ?? "/")
+  return (deps.redirect ?? fullDocumentRedirect)(nextPath ?? "/")
 }
 
-function completeLoginOnce(input: OAuthCallbackInput) {
+function completeLoginOnce(input: OAuthCallbackInput, complete: typeof completeOauthLogin) {
   const key = `${input.provider}:${input.state}:${input.code}`
   const existing = loginCompletionPromises.get(key)
   if (existing) {
     return existing
   }
 
-  const promise = completeOauthLogin(input)
+  const promise = complete(input)
   loginCompletionPromises.set(key, promise)
   return promise
 }

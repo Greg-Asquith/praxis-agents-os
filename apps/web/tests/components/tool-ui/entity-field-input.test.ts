@@ -1,12 +1,7 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { beforeEach, describe, expect, it, vi } from "vitest"
-
-vi.mock("@/lib/api/client", () => ({
-  apiRequest: vi.fn(),
-  setApiRequestHeadersProvider: vi.fn(),
-}))
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { EntityFieldInput } from "@/components/tool-ui/entity-field-input"
 import {
@@ -16,8 +11,13 @@ import {
   type EntityReferenceHydration,
 } from "@/components/tool-ui/entity-reference-queries"
 import type { EntityChoice } from "@/features/tools/types"
-import { apiRequest } from "@/lib/api/client"
 import { isRecord } from "@/lib/guards"
+import {
+  getFetchRequest,
+  getJsonRequestBody,
+  jsonResponse,
+  stubFetch,
+} from "../../support/fetch-stub"
 
 const field = {
   key: "file_id",
@@ -68,8 +68,8 @@ function renderEntityInput(value: unknown, choices: EntityChoice[] = []): string
 }
 
 describe("EntityFieldInput", () => {
-  beforeEach(() => {
-    vi.mocked(apiRequest).mockReset()
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it("blocks legacy raw identifiers with an explicit unavailable state", () => {
@@ -174,11 +174,9 @@ describe("EntityFieldInput", () => {
   })
 
   it("isolates search generations and forwards TanStack Query cancellation", async () => {
-    vi.mocked(apiRequest).mockResolvedValue({
-      entity_kind: "file",
-      choices: [],
-      next_cursor: null,
-    })
+    const fetchStub = stubFetch(
+      jsonResponse({ entity_kind: "file", choices: [], next_cursor: null })
+    )
     const base = {
       conversationId: "conversation-1",
       dependentArgs: {},
@@ -202,9 +200,14 @@ describe("EntityFieldInput", () => {
     })
 
     expect(first.queryKey).not.toEqual(second.queryKey)
-    const [path, options] = vi.mocked(apiRequest).mock.calls[0] ?? []
-    expect(path).toBe("/tools/conversations/conversation-1/entity-references")
-    expect(options?.signal).toBe(signal)
-    expect(options?.body).toMatchObject({ search: "second", cursor: "cursor-2" })
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe(
+      "http://localhost:8000/api/v1/tools/conversations/conversation-1/entity-references"
+    )
+    expect(init).toMatchObject({ credentials: "include", method: "POST", signal })
+    expect(getJsonRequestBody(init)).toMatchObject({
+      search: "second",
+      cursor: "cursor-2",
+    })
   })
 })

@@ -3,21 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
 import type { AuthResponse } from "@/features/auth/types"
+import { getFetchRequest, jsonResponse, stubFetch } from "../../support/fetch-stub"
 
-const { completeOauthLogin, fullDocumentRedirect } = vi.hoisted(() => ({
-  completeOauthLogin: vi.fn(),
-  fullDocumentRedirect: vi.fn((path: string) => ({ redirectedTo: path })),
-}))
+const completeOauthLogin = vi.fn()
+const redirect = vi.fn((path: string): never => {
+  throw new RedirectCapture(path)
+})
+const deps = { completeOauthLogin, redirect }
 
-vi.mock("@/features/auth/api/oauth-login", () => ({ completeOauthLogin }))
-vi.mock("@/lib/full-document-redirect", () => ({ fullDocumentRedirect }))
+class RedirectCapture extends Error {
+  readonly path: string
+
+  constructor(path: string) {
+    super(`Redirected to ${path}`)
+    this.path = path
+  }
+}
 
 const storage = new Map<string, string>()
 
 beforeEach(() => {
   storage.clear()
   completeOauthLogin.mockReset()
-  fullDocumentRedirect.mockClear()
+  redirect.mockClear()
   vi.stubGlobal("window", {
     location: { origin: "https://praxis.example" },
     sessionStorage: {
@@ -34,10 +42,13 @@ afterEach(() => {
 
 describe("OAuth login callback loader", () => {
   it("returns a renderable error without exchanging an incomplete callback", async () => {
-    const result = await loadOAuthLoginCallback({
-      queryClient: new QueryClient(),
-      search: { state: "state-only" },
-    })
+    const result = await loadOAuthLoginCallback(
+      {
+        queryClient: new QueryClient(),
+        search: { state: "state-only" },
+      },
+      deps
+    )
 
     expect(result).toEqual({
       error: "This sign-in link is missing required information. Please try signing in again.",
@@ -50,10 +61,13 @@ describe("OAuth login callback loader", () => {
   it("rejects a traversal provider from state without exchanging the login callback", async () => {
     const traversalPayload = "eyJwcm92aWRlciI6Ii4uLy4uL2ZpbGVzL2ZpbGUtaWQvcHVyZ2U_eD0ifQ"
 
-    const result = await loadOAuthLoginCallback({
-      queryClient: new QueryClient(),
-      search: { code: "one-time-code", state: `header.${traversalPayload}.signature` },
-    })
+    const result = await loadOAuthLoginCallback(
+      {
+        queryClient: new QueryClient(),
+        search: { code: "one-time-code", state: `header.${traversalPayload}.signature` },
+      },
+      deps
+    )
 
     expect(result).toEqual({
       error: "This sign-in link is missing required information. Please try signing in again.",
@@ -66,10 +80,13 @@ describe("OAuth login callback loader", () => {
   it("rejects a traversal provider from session storage", async () => {
     storage.set("praxis.oauthLoginProvider", "../../files/file-id/purge?x=")
 
-    const result = await loadOAuthLoginCallback({
-      queryClient: new QueryClient(),
-      search: { code: "one-time-code", state: "one-time-state" },
-    })
+    const result = await loadOAuthLoginCallback(
+      {
+        queryClient: new QueryClient(),
+        search: { code: "one-time-code", state: "one-time-state" },
+      },
+      deps
+    )
 
     expect(result).toEqual({
       error: "This sign-in link is missing required information. Please try signing in again.",
@@ -91,9 +108,9 @@ describe("OAuth login callback loader", () => {
     const search = { code: "one-time-code", state: "one-time-state" }
 
     storage.set("praxis.oauthLoginProvider", "google")
-    const first = await loadOAuthLoginCallback({ queryClient, search })
+    const first = await loadOAuthLoginCallback({ queryClient, search }, deps)
     storage.set("praxis.oauthLoginProvider", "google")
-    const second = await loadOAuthLoginCallback({ queryClient, search })
+    const second = await loadOAuthLoginCallback({ queryClient, search }, deps)
 
     expect(first).toEqual({
       error: null,
@@ -116,11 +133,42 @@ describe("OAuth login callback loader", () => {
     } satisfies AuthResponse)
     storage.set("praxis.oauthLoginProvider", "google")
 
-    await loadOAuthLoginCallback({
-      queryClient: new QueryClient(),
-      search: { code: `code-${nextPath}`, state: `state-${nextPath}` },
+    await expect(
+      loadOAuthLoginCallback(
+        {
+          queryClient: new QueryClient(),
+          search: { code: `code-${nextPath}`, state: `state-${nextPath}` },
+        },
+        deps
+      )
+    ).rejects.toMatchObject({ path: expected })
+
+    expect(redirect).toHaveBeenLastCalledWith(expected)
+  })
+
+  it("uses the production login API when dependencies are omitted", async () => {
+    const response: AuthResponse = {
+      next_path: "/agents",
+      requires_twofa: true,
+      session: { expires_at: "2026-07-17T00:00:00Z", twofa_verified: false },
+      user: null,
+    }
+    const fetchStub = stubFetch(jsonResponse(response))
+    storage.set("praxis.oauthLoginProvider", "google")
+
+    await expect(
+      loadOAuthLoginCallback({
+        queryClient: new QueryClient(),
+        search: { code: "production-code", state: "production-state" },
+      })
+    ).resolves.toEqual({
+      error: null,
+      nextPath: "/agents",
+      twoFactorPending: true,
     })
 
-    expect(fullDocumentRedirect).toHaveBeenLastCalledWith(expected)
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe("http://localhost:8000/api/v1/auth/oauth/google/callback")
+    expect(init).toMatchObject({ credentials: "include", method: "POST" })
   })
 })

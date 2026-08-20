@@ -9,13 +9,20 @@ import { ApiError, getErrorMessage } from "@/lib/api/errors"
 
 const acceptInvitationPromises = new Map<string, Promise<WorkspaceInvitationAcceptResponse>>()
 
-export async function loadAcceptInvitation({
-  queryClient,
-  token: rawToken,
-}: {
-  queryClient: QueryClient
-  token: string | undefined
-}) {
+type AcceptInvitationLoaderDependencies = {
+  acceptInvitation?: typeof acceptInvitation
+}
+
+export async function loadAcceptInvitation(
+  {
+    queryClient,
+    token: rawToken,
+  }: {
+    queryClient: QueryClient
+    token: string | undefined
+  },
+  deps: AcceptInvitationLoaderDependencies = {}
+) {
   const token = rawToken?.trim() ?? ""
   if (!token) {
     return { error: "This invitation link is missing a token.", errorReason: null, result: null }
@@ -23,7 +30,7 @@ export async function loadAcceptInvitation({
 
   let result: WorkspaceInvitationAcceptResponse
   try {
-    result = await acceptInvitationOnce(token)
+    result = await acceptInvitationOnce(token, deps.acceptInvitation ?? acceptInvitation)
   } catch (error) {
     const errorReason =
       error instanceof ApiError && error.problem?.["reason"] === "invitation_email_mismatch"
@@ -36,13 +43,13 @@ export async function loadAcceptInvitation({
   return { error: null, errorReason: null, result }
 }
 
-function acceptInvitationOnce(token: string) {
+function acceptInvitationOnce(token: string, accept: typeof acceptInvitation) {
   const existing = acceptInvitationPromises.get(token)
   if (existing) {
     return existing
   }
 
-  const promise = acceptInvitation({ token })
+  const promise = accept({ token })
   acceptInvitationPromises.set(token, promise)
   return promise
 }

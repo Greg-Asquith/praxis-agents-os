@@ -6,19 +6,24 @@ import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callbac
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
 import type { IdentitiesResponse } from "@/features/auth/types"
 import type { OAuthCallbackResponse } from "@/features/integrations/types"
+import { getFetchRequest, jsonResponse, stubFetch } from "../../support/fetch-stub"
 
-const { completeIntegrationOAuth, completeOauthLink } = vi.hoisted(() => ({
-  completeIntegrationOAuth: vi.fn(),
-  completeOauthLink: vi.fn(),
-}))
+const completeIntegrationOAuth = vi.fn()
+const completeOauthLink = vi.fn()
+const redirect = vi.fn((path: string): never => {
+  throw new RedirectCapture(path)
+})
+const integrationDeps = { completeIntegrationOAuth, redirect }
+const linkDeps = { completeOauthLink, redirect }
 
-vi.mock("@/features/auth/api/oauth-link", () => ({
-  completeOauthLink,
-  OAUTH_LINK_PROVIDER_STORAGE_KEY: "praxis.oauthLinkProvider",
-}))
-vi.mock("@/features/integrations/api/complete-oauth-callback", () => ({
-  completeIntegrationOAuth,
-}))
+class RedirectCapture extends Error {
+  readonly path: string
+
+  constructor(path: string) {
+    super(`Redirected to ${path}`)
+    this.path = path
+  }
+}
 
 const storage = new Map<string, string>()
 
@@ -26,6 +31,7 @@ beforeEach(() => {
   storage.clear()
   completeIntegrationOAuth.mockReset()
   completeOauthLink.mockReset()
+  redirect.mockClear()
   vi.stubGlobal("window", {
     location: { origin: "https://praxis.example" },
     sessionStorage: {
@@ -47,31 +53,26 @@ describe("secondary OAuth callback loaders", () => {
     storage.set("praxis.oauthLinkProvider", "google")
     const queryClient = new QueryClient()
 
-    const redirect = await captureRedirect(
-      loadOAuthLinkCallback({
-        queryClient,
-        search: { code: "link-code", state: "link-state" },
-      })
+    const request = loadOAuthLinkCallback(
+      { queryClient, search: { code: "link-code", state: "link-state" } },
+      linkDeps
     )
 
+    await expect(request).rejects.toMatchObject({ path: "/profile" })
     expect(queryClient.getQueryData(identitiesQueryKey)).toEqual(identities)
-    expect(redirect).toMatchObject({
-      options: {
-        href: "https://praxis.example/profile",
-        reloadDocument: true,
-        replace: true,
-      },
-    })
   })
 
   it("rejects a traversal provider from state without exchanging the link callback", async () => {
     const traversalPayload = "eyJwcm92aWRlciI6Ii4uLy4uL2ZpbGVzL2ZpbGUtaWQvcHVyZ2U_eD0ifQ"
 
     await expect(
-      loadOAuthLinkCallback({
-        queryClient: new QueryClient(),
-        search: { code: "link-code", state: `header.${traversalPayload}.signature` },
-      })
+      loadOAuthLinkCallback(
+        {
+          queryClient: new QueryClient(),
+          search: { code: "link-code", state: `header.${traversalPayload}.signature` },
+        },
+        linkDeps
+      )
     ).resolves.toEqual({
       error: "This sign-in link is missing required information. Please try connecting again.",
     })
@@ -82,10 +83,13 @@ describe("secondary OAuth callback loaders", () => {
     storage.set("praxis.oauthLinkProvider", "../../files/file-id/purge?x=")
 
     await expect(
-      loadOAuthLinkCallback({
-        queryClient: new QueryClient(),
-        search: { code: "link-code", state: "link-state" },
-      })
+      loadOAuthLinkCallback(
+        {
+          queryClient: new QueryClient(),
+          search: { code: "link-code", state: "link-state" },
+        },
+        linkDeps
+      )
     ).resolves.toEqual({
       error: "This sign-in link is missing required information. Please try connecting again.",
     })
@@ -93,7 +97,7 @@ describe("secondary OAuth callback loaders", () => {
   })
 
   it("returns an integration error without exchanging a callback missing state", async () => {
-    await expect(loadIntegrationOAuthCallback({ code: "code" })).resolves.toEqual({
+    await expect(loadIntegrationOAuthCallback({ code: "code" }, integrationDeps)).resolves.toEqual({
       error: "This connection link is missing its OAuth state.",
     })
     expect(completeIntegrationOAuth).not.toHaveBeenCalled()
@@ -106,33 +110,64 @@ describe("secondary OAuth callback loaders", () => {
     }
     completeIntegrationOAuth.mockResolvedValue(response)
 
-    const redirect = await captureRedirect(
-      loadIntegrationOAuthCallback({ code: "code", state: "integration-state" })
+    const request = loadIntegrationOAuthCallback(
+      { code: "code", state: "integration-state" },
+      integrationDeps
     )
 
-    expect(redirect).toMatchObject({
-      options: {
-        href: "https://praxis.example/agents",
-        reloadDocument: true,
-        replace: true,
-      },
-    })
+    await expect(request).rejects.toMatchObject({ path: "/agents" })
   })
 
   it("returns integration failures to the provider detail page", async () => {
     const payload = "eyJwcm92aWRlcl9rZXkiOiJnb29nbGVfYWRzIn0"
     completeIntegrationOAuth.mockRejectedValue(new Error("Authorization denied"))
 
-    const redirect = await captureRedirect(
-      loadIntegrationOAuthCallback({ code: "code", state: `header.${payload}.signature` })
+    const request = loadIntegrationOAuthCallback(
+      { code: "code", state: `header.${payload}.signature` },
+      integrationDeps
     )
 
-    expect(redirect).toMatchObject({
-      options: {
-        href: "https://praxis.example/integrations/google_ads?integration_error=Authorization+denied",
-        reloadDocument: true,
-        replace: true,
-      },
+    await expect(request).rejects.toMatchObject({
+      path: "/integrations/google_ads?integration_error=Authorization+denied",
+    })
+  })
+
+  it("uses the production link API and redirect when dependencies are omitted", async () => {
+    const identities: IdentitiesResponse = { has_password: true, identities: [] }
+    const fetchStub = stubFetch(jsonResponse(identities))
+    storage.set("praxis.oauthLinkProvider", "google")
+
+    const thrownRedirect = await captureRedirect(
+      loadOAuthLinkCallback({
+        queryClient: new QueryClient(),
+        search: { code: "production-link-code", state: "production-link-state" },
+      })
+    )
+
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe("http://localhost:8000/api/v1/auth/oauth/google/link/callback")
+    expect(init).toMatchObject({ credentials: "include", method: "POST" })
+    expect(thrownRedirect).toMatchObject({
+      options: { href: "https://praxis.example/profile", reloadDocument: true, replace: true },
+    })
+  })
+
+  it("uses the production integration API and redirect when dependencies are omitted", async () => {
+    const response: OAuthCallbackResponse = {
+      connection: { id: "connection-production", status: "active" },
+      next_path: "/agents",
+    }
+    const fetchStub = stubFetch(jsonResponse(response))
+
+    const thrownRedirect = await captureRedirect(
+      loadIntegrationOAuthCallback({ code: "production-code", state: "production-state" })
+    )
+
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe("http://localhost:8000/api/v1/integrations/oauth/callback")
+    expect(init).toMatchObject({ credentials: "include", method: "POST" })
+    expect(thrownRedirect).toMatchObject({
+      options: { href: "https://praxis.example/agents", reloadDocument: true, replace: true },
     })
   })
 })

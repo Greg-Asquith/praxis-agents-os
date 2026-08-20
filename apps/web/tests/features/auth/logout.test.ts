@@ -11,20 +11,11 @@ import {
   setActiveUserId,
   setActiveWorkspaceSlug,
 } from "@/lib/workspace"
-
-const { apiRequest } = vi.hoisted(() => ({
-  apiRequest: vi.fn(),
-}))
-
-vi.mock("@/lib/api/client", () => ({
-  apiRequest,
-  setApiRequestHeadersProvider: vi.fn(),
-}))
+import { getFetchRequest, jsonResponse, stubFetch } from "../../support/fetch-stub"
 
 const storage = new Map<string, string>()
 
 beforeEach(() => {
-  apiRequest.mockReset()
   storage.clear()
   vi.stubGlobal("window", {
     localStorage: {
@@ -41,7 +32,7 @@ afterEach(() => {
 
 describe("logout mutation", () => {
   it("clears private query data and resets the active workspace", async () => {
-    apiRequest.mockResolvedValue({ message: "Signed out" })
+    const fetchStub = stubFetch(jsonResponse({ message: "Signed out" }))
     const queryClient = new QueryClient()
     queryClient.setQueryData(currentUserQueryOptions().queryKey, {
       id: "user-a",
@@ -75,7 +66,10 @@ describe("logout mutation", () => {
       .build(queryClient, logoutMutationOptions(queryClient))
     await mutation.execute(undefined)
 
-    expect(apiRequest).toHaveBeenCalledWith("/auth/logout", { method: "POST" })
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe("http://localhost:8000/api/v1/auth/logout")
+    expect(init).toMatchObject({ credentials: "include", method: "POST" })
+    expect(new Headers(init.headers).get("X-Workspace")).toBe("acme")
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0)
     expect(window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)).toBeNull()
     expect(activeUserQueryScope()).toBe("__no_user__")
@@ -83,7 +77,7 @@ describe("logout mutation", () => {
   })
 
   it("clears local authenticated state when the server logout fails", async () => {
-    apiRequest.mockRejectedValue(new Error("Server unavailable"))
+    stubFetch(jsonResponse({ detail: "Server unavailable" }, { status: 503 }))
     const queryClient = new QueryClient()
     queryClient.setQueryData(identitiesQueryOptions().queryKey, {
       has_password: true,

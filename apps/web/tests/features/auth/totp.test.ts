@@ -1,18 +1,10 @@
 import { QueryClient } from "@tanstack/react-query"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { currentUserQueryKey } from "@/features/auth/api/get-current-user"
 import { totpVerificationRequest, verifyTotpMutationOptions } from "@/features/auth/api/totp"
 import type { AuthResponse, AuthUser } from "@/features/auth/types"
-
-const { apiRequest } = vi.hoisted(() => ({
-  apiRequest: vi.fn(),
-}))
-
-vi.mock("@/lib/api/client", () => ({
-  apiRequest,
-  setApiRequestHeadersProvider: vi.fn(),
-}))
+import { getFetchRequest, jsonResponse, stubFetch } from "../../support/fetch-stub"
 
 const user: AuthUser = {
   id: "user-a",
@@ -37,8 +29,8 @@ const verifiedResponse: AuthResponse = {
   user,
 }
 
-beforeEach(() => {
-  apiRequest.mockReset()
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe("TOTP verification", () => {
@@ -48,7 +40,7 @@ describe("TOTP verification", () => {
   })
 
   it("upgrades the partial session and seeds the authenticated user cache", async () => {
-    apiRequest.mockResolvedValue(verifiedResponse)
+    const fetchStub = stubFetch(jsonResponse(verifiedResponse))
 
     const queryClient = new QueryClient()
     const mutation = queryClient
@@ -58,12 +50,15 @@ describe("TOTP verification", () => {
     const response = await mutation.execute({ token: "123456" })
 
     expect(response).toEqual(verifiedResponse)
-    expect(apiRequest).toHaveBeenCalledOnce()
-    expect(apiRequest).toHaveBeenCalledWith("/auth/totp/verify", {
-      body: { token: "123456" },
+    expect(fetchStub).toHaveBeenCalledOnce()
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe("http://localhost:8000/api/v1/auth/totp/verify")
+    expect(init).toMatchObject({
+      body: JSON.stringify({ token: "123456" }),
+      credentials: "include",
       method: "POST",
-      sessionPolicy: "optional",
     })
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json")
     expect(queryClient.getQueryData(currentUserQueryKey)).toEqual(user)
   })
 })

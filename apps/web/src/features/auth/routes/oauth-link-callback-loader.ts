@@ -16,13 +16,21 @@ import { fullDocumentRedirect } from "@/lib/full-document-redirect"
 
 const linkCompletionPromises = new Map<string, Promise<IdentitiesResponse>>()
 
-export async function loadOAuthLinkCallback({
-  queryClient,
-  search,
-}: {
-  queryClient: QueryClient
-  search: OAuthCallbackSearch
-}) {
+type OAuthLinkCallbackLoaderDependencies = {
+  completeOauthLink?: typeof completeOauthLink
+  redirect?: typeof fullDocumentRedirect
+}
+
+export async function loadOAuthLinkCallback(
+  {
+    queryClient,
+    search,
+  }: {
+    queryClient: QueryClient
+    search: OAuthCallbackSearch
+  },
+  deps: OAuthLinkCallbackLoaderDependencies = {}
+) {
   const callback = readOauthCallback(OAUTH_LINK_PROVIDER_STORAGE_KEY, search)
   if (callback.providerError) {
     return { error: `The provider reported an error: ${callback.providerError}.` }
@@ -38,23 +46,23 @@ export async function loadOAuthLinkCallback({
 
   let identities: IdentitiesResponse
   try {
-    identities = await completeLinkOnce(input)
+    identities = await completeLinkOnce(input, deps.completeOauthLink ?? completeOauthLink)
   } catch (error) {
     return { error: getErrorMessage(error) }
   }
 
   queryClient.setQueryData(identitiesQueryKey, identities)
-  return fullDocumentRedirect("/profile")
+  return (deps.redirect ?? fullDocumentRedirect)("/profile")
 }
 
-function completeLinkOnce(input: OAuthCallbackInput) {
+function completeLinkOnce(input: OAuthCallbackInput, complete: typeof completeOauthLink) {
   const key = `${input.provider}:${input.state}:${input.code}`
   const existing = linkCompletionPromises.get(key)
   if (existing) {
     return existing
   }
 
-  const promise = completeOauthLink(input)
+  const promise = complete(input)
   linkCompletionPromises.set(key, promise)
   return promise
 }

@@ -1,18 +1,9 @@
 import { QueryClient } from "@tanstack/react-query"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { currentUserQueryKey, getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
-import { ApiError } from "@/lib/api/errors"
-
-const { apiRequest, reportSessionLoss } = vi.hoisted(() => ({
-  apiRequest: vi.fn(),
-  reportSessionLoss: vi.fn(),
-}))
-
-vi.mock("@/lib/api/client", () => ({
-  apiRequest,
-  reportSessionLoss,
-}))
+import { setApiUnauthorizedHandler } from "@/lib/api/client"
+import { getFetchRequest, jsonResponse, stubFetch } from "../../support/fetch-stub"
 
 const user = {
   id: "user-a",
@@ -27,30 +18,32 @@ const user = {
   updated_at: "2026-07-30T00:00:00Z",
 }
 
-beforeEach(() => {
-  apiRequest.mockReset()
-  reportSessionLoss.mockReset()
+afterEach(() => {
+  setApiUnauthorizedHandler(null)
+  vi.unstubAllGlobals()
 })
 
 describe("optional current user", () => {
   it("revalidates stale cached identity and reports a revoked session", async () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(currentUserQueryKey, user, { updatedAt: 0 })
-    apiRequest.mockRejectedValue(
-      new ApiError({ status: 401, message: "Session expired", problem: null })
-    )
+    const reportSessionLoss = vi.fn()
+    setApiUnauthorizedHandler(reportSessionLoss)
+    const fetchStub = stubFetch(jsonResponse({ detail: "Session expired" }, { status: 401 }))
 
     await expect(getOptionalCurrentUser(queryClient)).resolves.toBeNull()
 
-    expect(apiRequest).toHaveBeenCalledWith("/auth/me", { sessionPolicy: "optional" })
+    const { init, url } = getFetchRequest(fetchStub)
+    expect(url.href).toBe("http://localhost:8000/api/v1/auth/me")
+    expect(init).toMatchObject({ credentials: "include", method: "GET" })
     expect(reportSessionLoss).toHaveBeenCalledOnce()
   })
 
   it("allows the login route's unauthenticated probe without reporting session loss", async () => {
     const queryClient = new QueryClient()
-    apiRequest.mockRejectedValue(
-      new ApiError({ status: 401, message: "Not authenticated", problem: null })
-    )
+    const reportSessionLoss = vi.fn()
+    setApiUnauthorizedHandler(reportSessionLoss)
+    stubFetch(jsonResponse({ detail: "Not authenticated" }, { status: 401 }))
 
     await expect(getOptionalCurrentUser(queryClient)).resolves.toBeNull()
 
@@ -60,9 +53,10 @@ describe("optional current user", () => {
   it("keeps fresh identity cached within the normal stale window", async () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(currentUserQueryKey, user)
+    const fetchStub = stubFetch(jsonResponse(user))
 
     await expect(getOptionalCurrentUser(queryClient)).resolves.toEqual(user)
 
-    expect(apiRequest).not.toHaveBeenCalled()
+    expect(fetchStub).not.toHaveBeenCalled()
   })
 })

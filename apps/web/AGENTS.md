@@ -44,6 +44,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - All requests go through `src/lib/api/client.ts`, which sends credentials,
   the CSRF header, and the `X-Workspace` header. Do not call `fetch` directly
   from features.
+- `apiRequest<T>` trusts same-origin API JSON and types it with the
+  feature-owned response `type`. Treat URL and state payloads, SSE frames,
+  retained tool arguments and results, credential JSON, and integration
+  payloads as `unknown` until a feature guard or `src/lib/guards.ts` proves
+  their shape.
+- Use `apiRequestNoContent` for endpoints that return no content. Use the
+  shared `isOneOf` guard to narrow values against a closed string set.
 - SSE handling lives in `src/features/conversations/stream/`: a hand-written
   parser, a typed versioned event protocol, and a reducer. The parser throws
   on unknown event names, so a new server-side event breaks stale clients —

@@ -54,6 +54,18 @@ export default defineConfig([
       ],
       "@typescript-eslint/switch-exhaustiveness-check": "error",
       "no-console": ["error", { allow: ["warn", "error"] }],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAsExpression > TSAsExpression",
+          message:
+            "Chained type assertions hide a type error. Decode the value or fix the source type.",
+        },
+        {
+          selector: "TSAsExpression > TSNeverKeyword",
+          message: "`as never` disables the type system. Build a typed input instead.",
+        },
+      ],
     },
   },
   {

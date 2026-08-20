@@ -8,6 +8,7 @@ import {
   setApiUnauthorizedHandler,
 } from "@/lib/api/client"
 import type { ApiError } from "@/lib/api/errors"
+import { jsonResponse, stubFetch } from "../../support/fetch-stub"
 
 afterEach(() => {
   setApiUnauthorizedHandler(null)
@@ -30,7 +31,7 @@ describe("unauthorized responses", () => {
   it("reports a 401 from an authenticated request, including raw streaming requests", async () => {
     const onUnauthorized = vi.fn()
     setApiUnauthorizedHandler(onUnauthorized)
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })))
+    stubFetch(new Response(null, { status: 401 }))
 
     await apiFetch("/conversations/conversation-1/turns", { method: "POST" })
 
@@ -40,7 +41,7 @@ describe("unauthorized responses", () => {
   it("does not report expected pre-auth or partial-session 401 responses", async () => {
     const onUnauthorized = vi.fn()
     setApiUnauthorizedHandler(onUnauthorized)
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })))
+    stubFetch(new Response(null, { status: 401 }))
 
     await apiFetch("/auth/login", { method: "POST", sessionPolicy: "optional" })
     await apiFetch("/auth/totp/verify", { method: "POST", sessionPolicy: "optional" })
@@ -51,7 +52,7 @@ describe("unauthorized responses", () => {
 
 describe("response contracts", () => {
   it("resolves a no-content request without decoding JSON", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+    stubFetch(new Response(null, { status: 204 }))
 
     await expect(apiRequestNoContent("/agents/agent-1", { method: "DELETE" })).resolves.toBe(
       undefined
@@ -59,14 +60,14 @@ describe("response contracts", () => {
   })
 
   it("parses an API problem from a failed no-content request", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ detail: "Agent not found." }), {
+    stubFetch(
+      jsonResponse(
+        { detail: "Agent not found." },
+        {
           headers: { "Content-Type": "application/problem+json" },
           status: 404,
           statusText: "Not Found",
-        })
+        }
       )
     )
 
@@ -79,7 +80,7 @@ describe("response contracts", () => {
   })
 
   it("rejects a no-content response requested through the JSON contract", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+    stubFetch(new Response(null, { status: 204 }))
 
     await expect(apiRequest<{ id: string }>("/agents/agent-1")).rejects.toThrow(
       "API request to /agents/agent-1 returned status 204 without valid JSON."
