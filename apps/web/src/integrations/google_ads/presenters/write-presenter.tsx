@@ -7,7 +7,7 @@ import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { fanOutEntries, type FanOutEntry } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
-import type { ToolRowPresenter } from "@/integrations/contract"
+import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
 import { formatGoogleAdsAccountId } from "@/lib/format"
@@ -40,12 +40,101 @@ export type GoogleAdsWriteVariant<Args, Result> = {
   waitingLabel: string
 }
 
-type AnyWriteVariant = GoogleAdsWriteVariant<unknown, unknown>
+type RenderContext = ToolRowPresenterProps
+
+export type GoogleAdsWriteRenderer = (context: RenderContext) => ReactNode | null
 
 export function defineGoogleAdsWriteVariant<Args, Result>(
   variant: GoogleAdsWriteVariant<Args, Result>
-): GoogleAdsWriteVariant<Args, Result> {
-  return variant
+): GoogleAdsWriteRenderer {
+  return ({ activity, approvalDecision, defaultOpen, ui }) => {
+    const args = variant.approval.parseArgs(activity.args)
+
+    if (approvalDecision) {
+      if (!args) {
+        return null
+      }
+      const fields = ui?.arg_fields ?? []
+      const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
+      const currentParsedArgs = variant.approval.parseArgs(currentArgs) ?? args
+      return (
+        <ToolApprovalDecisionCard
+          activityId={activity.id}
+          approveLabel={variant.approval.approveLabel}
+          args={activity.args}
+          controls={approvalDecision}
+          fallbackFields={approvalFallbackFields(activity.args, fields)}
+          fields={fields}
+          icon={<GoogleAdsLogo className="size-4" />}
+          label={variant.approval.label}
+          prompt={approvalCopy(variant.approval.prompt, currentParsedArgs)}
+          title={approvalCopy(variant.approval.title, currentParsedArgs)}
+          toolName={activity.name}
+        >
+          {variant.approval.renderSummary?.(currentArgs, args)}
+        </ToolApprovalDecisionCard>
+      )
+    }
+
+    if (activity.status === "running" || activity.status === "awaiting_approval") {
+      return (
+        <FanOutSkeleton
+          heading={<GoogleAdsToolHeading>{variant.heading}</GoogleAdsToolHeading>}
+          label={
+            activity.status === "awaiting_approval"
+              ? variant.waitingLabel
+              : lifecycleCopy(variant.progressLabel, args)
+          }
+        />
+      )
+    }
+
+    if (
+      activity.status === "denied" ||
+      activity.status === "failed" ||
+      activity.status === "unknown"
+    ) {
+      return writeFailure(
+        activity.id,
+        args,
+        activity.status === "denied" ? variant.deniedDescription : variant.failedDescription,
+        defaultOpen,
+        variant
+      )
+    }
+
+    const fanOut = parseWriteFanOut(activity.result, variant)
+    if (!fanOut) {
+      return writeFailure(activity.id, args, variant.resultFailure, defaultOpen, variant)
+    }
+
+    return (
+      <div aria-label={variant.resultAriaLabel} className="w-full min-w-0">
+        <FanOutShell
+          contextLabel="Account"
+          defaultOpen={defaultOpen}
+          {...(variant.details ? { details: variant.details(args) } : {})}
+          entries={fanOut.entries}
+          emptyLabel={variant.emptyLabel}
+          externalLabel="Customer ID"
+          formatContextValue={formatGoogleAdsAccountId}
+          heading={<GoogleAdsToolHeading>{variant.heading}</GoogleAdsToolHeading>}
+          renderFailed={(entry) =>
+            variant.renderFailure?.(args, entry.errorMessage ?? variant.failedDescription) ?? (
+              <p className="text-destructive text-sm">
+                {entry.errorMessage ?? variant.failedDescription}
+              </p>
+            )
+          }
+        >
+          {(_entry, index) => {
+            const result = fanOut.data[index] ?? null
+            return result === null ? null : variant.renderOutcome(result)
+          }}
+        </FanOutShell>
+      </div>
+    )
+  }
 }
 
 export function createGoogleAdsWritePresenter({
@@ -53,105 +142,13 @@ export function createGoogleAdsWritePresenter({
   variants,
 }: {
   key: string
-  variants: Record<string, object>
+  variants: Record<string, GoogleAdsWriteRenderer>
 }): ToolRowPresenter {
   return {
     handlesApprovals: true,
     key,
     matches: (activity) => Object.hasOwn(variants, activity.name),
-    render: ({ activity, approvalDecision, defaultOpen, ui }) => {
-      const configuredVariant = variants[activity.name]
-      if (!configuredVariant) {
-        return null
-      }
-      const variant = configuredVariant as unknown as AnyWriteVariant
-      const args = variant.approval.parseArgs(activity.args)
-
-      if (approvalDecision) {
-        if (!args) {
-          return null
-        }
-        const fields = ui?.arg_fields ?? []
-        const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
-        const currentParsedArgs = variant.approval.parseArgs(currentArgs) ?? args
-        return (
-          <ToolApprovalDecisionCard
-            activityId={activity.id}
-            approveLabel={variant.approval.approveLabel}
-            args={activity.args}
-            controls={approvalDecision}
-            fallbackFields={approvalFallbackFields(activity.args, fields)}
-            fields={fields}
-            icon={<GoogleAdsLogo className="size-4" />}
-            label={variant.approval.label}
-            prompt={approvalCopy(variant.approval.prompt, currentParsedArgs)}
-            title={approvalCopy(variant.approval.title, currentParsedArgs)}
-            toolName={activity.name}
-          >
-            {variant.approval.renderSummary?.(currentArgs, args)}
-          </ToolApprovalDecisionCard>
-        )
-      }
-
-      if (activity.status === "running" || activity.status === "awaiting_approval") {
-        return (
-          <FanOutSkeleton
-            heading={<GoogleAdsToolHeading>{variant.heading}</GoogleAdsToolHeading>}
-            label={
-              activity.status === "awaiting_approval"
-                ? variant.waitingLabel
-                : lifecycleCopy(variant.progressLabel, args)
-            }
-          />
-        )
-      }
-
-      if (
-        activity.status === "denied" ||
-        activity.status === "failed" ||
-        activity.status === "unknown"
-      ) {
-        return writeFailure(
-          activity.id,
-          args,
-          activity.status === "denied" ? variant.deniedDescription : variant.failedDescription,
-          defaultOpen,
-          variant
-        )
-      }
-
-      const fanOut = parseWriteFanOut(activity.result, variant)
-      if (!fanOut) {
-        return writeFailure(activity.id, args, variant.resultFailure, defaultOpen, variant)
-      }
-
-      return (
-        <div aria-label={variant.resultAriaLabel} className="w-full min-w-0">
-          <FanOutShell
-            contextLabel="Account"
-            defaultOpen={defaultOpen}
-            {...(variant.details ? { details: variant.details(args) } : {})}
-            entries={fanOut.entries}
-            emptyLabel={variant.emptyLabel}
-            externalLabel="Customer ID"
-            formatContextValue={formatGoogleAdsAccountId}
-            heading={<GoogleAdsToolHeading>{variant.heading}</GoogleAdsToolHeading>}
-            renderFailed={(entry) =>
-              variant.renderFailure?.(args, entry.errorMessage ?? variant.failedDescription) ?? (
-                <p className="text-destructive text-sm">
-                  {entry.errorMessage ?? variant.failedDescription}
-                </p>
-              )
-            }
-          >
-            {(_entry, index) => {
-              const result = fanOut.data[index]
-              return result === null ? null : variant.renderOutcome(result)
-            }}
-          </FanOutShell>
-        </div>
-      )
-    },
+    render: (context) => variants[context.activity.name]?.(context) ?? null,
   }
 }
 
@@ -166,15 +163,15 @@ function lifecycleCopy<Args>(
   return typeof value === "function" ? value(args) : value
 }
 
-function parseWriteFanOut(
+function parseWriteFanOut<Args, Result>(
   value: unknown,
-  variant: AnyWriteVariant
-): { data: unknown[]; entries: FanOutEntry[] } | null {
+  variant: GoogleAdsWriteVariant<Args, Result>
+): { data: (Result | null)[]; entries: FanOutEntry[] } | null {
   const parsedEntries = fanOutEntries(value)
   if (!parsedEntries) {
     return null
   }
-  const data: unknown[] = []
+  const data: (Result | null)[] = []
   const entries = parsedEntries.map((entry) => {
     if (entry.status !== "success") {
       data.push(null)
@@ -196,12 +193,12 @@ function parseWriteFanOut(
   return { data, entries }
 }
 
-function writeFailure<Args>(
+function writeFailure<Args, Result>(
   activityId: string,
   args: Args | null,
   description: string,
   defaultOpen: boolean,
-  variant: GoogleAdsWriteVariant<Args, unknown>
+  variant: GoogleAdsWriteVariant<Args, Result>
 ) {
   const entry: FanOutEntry = {
     data: null,
