@@ -3,6 +3,7 @@
 """Consume Pydantic AI stream events for execute_run."""
 
 from collections.abc import AsyncIterable, Sequence
+from time import monotonic
 from typing import Any
 
 from pydantic_ai import DeferredToolResults
@@ -60,7 +61,10 @@ async def consume_stream(
         part = getattr(event, "part", None)
         if isinstance(part, NativeToolCallPart):
             state.native_tool_calls[part.tool_call_id] = part
+            state.native_tool_call_started.setdefault(part.tool_call_id, monotonic())
         elif isinstance(part, NativeToolReturnPart):
+            # Stream-observed wall time between call and return parts.
+            started = state.native_tool_call_started.pop(part.tool_call_id, None)
             await record_native_tool_invocation_audit_event(
                 deps=deps,
                 call_part=state.native_tool_calls.pop(
@@ -68,6 +72,9 @@ async def consume_stream(
                     None,
                 ),
                 return_part=part,
+                latency_ms=(
+                    None if started is None else max(1, int((monotonic() - started) * 1000))
+                ),
             )
         if (
             isinstance(event, FunctionToolCallEvent)

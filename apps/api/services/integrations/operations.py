@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from time import monotonic
 from typing import Literal
 from uuid import UUID
 
@@ -26,6 +27,7 @@ from services.audit_events import (
     record_integration_operation_audit_event,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.http import TransportAttemptCounter, track_transport_attempts
 
 type IntegrationTerminalAuditStatus = Literal[
     AuditStatus.SUCCESS,
@@ -83,25 +85,48 @@ async def run_audited_integration_operation[T](
             raise_on_error=True,
         )
 
-    try:
-        outcome = await execute()
-        if outcome.status not in _TERMINAL_AUDIT_STATUSES:
-            raise ValueError("Integration audit outcomes must have a terminal status")
-        if durable and outcome.operation_detail is None:
-            raise ValueError("Successful external integration writes require terminal evidence")
-        if outcome.operation_detail is not None and not isinstance(
-            outcome.operation_detail, TerminalIntegrationOperationDetail
-        ):
-            raise ValueError("Integration audit outcomes require terminal-phase operation detail")
-    except asyncio.CancelledError as exc:
-        disposition = getattr(
-            exc,
-            "failure_disposition",
-            IntegrationFailureDisposition.NOT_DISPATCHED,
-        )
-        if durable:
-            exc.failure_disposition = disposition
-        with suppress(BaseException):
+    started = monotonic()
+    with track_transport_attempts() as transport:
+        try:
+            outcome = await execute()
+            if outcome.status not in _TERMINAL_AUDIT_STATUSES:
+                raise ValueError("Integration audit outcomes must have a terminal status")
+            if durable and outcome.operation_detail is None:
+                raise ValueError("Successful external integration writes require terminal evidence")
+            if outcome.operation_detail is not None and not isinstance(
+                outcome.operation_detail, TerminalIntegrationOperationDetail
+            ):
+                raise ValueError(
+                    "Integration audit outcomes require terminal-phase operation detail"
+                )
+        except asyncio.CancelledError as exc:
+            disposition = getattr(
+                exc,
+                "failure_disposition",
+                IntegrationFailureDisposition.NOT_DISPATCHED,
+            )
+            if durable:
+                exc.failure_disposition = disposition
+            with suppress(BaseException):
+                await _record_terminal_operation(
+                    ctx,
+                    entry,
+                    tool_name=tool_name,
+                    operation=operation,
+                    status=AuditStatus.FAILURE,
+                    error_code=_failure_error_code(exc, disposition),
+                    operation_detail=pending_operation_detail,
+                    related_event_id=pending_event_id,
+                    latency_ms=_elapsed_ms(started),
+                    transport=transport,
+                    raise_on_error=durable,
+                )
+            raise
+        except Exception as exc:
+            disposition = getattr(exc, "failure_disposition", None)
+            if durable and disposition is None:
+                disposition = IntegrationFailureDisposition.AMBIGUOUS
+                exc.failure_disposition = disposition
             await _record_terminal_operation(
                 ctx,
                 entry,
@@ -111,38 +136,25 @@ async def run_audited_integration_operation[T](
                 error_code=_failure_error_code(exc, disposition),
                 operation_detail=pending_operation_detail,
                 related_event_id=pending_event_id,
+                latency_ms=_elapsed_ms(started),
+                transport=transport,
                 raise_on_error=durable,
             )
-        raise
-    except Exception as exc:
-        disposition = getattr(exc, "failure_disposition", None)
-        if durable and disposition is None:
-            disposition = IntegrationFailureDisposition.AMBIGUOUS
-            exc.failure_disposition = disposition
+            raise
+
         await _record_terminal_operation(
             ctx,
             entry,
             tool_name=tool_name,
             operation=operation,
-            status=AuditStatus.FAILURE,
-            error_code=_failure_error_code(exc, disposition),
-            operation_detail=pending_operation_detail,
+            status=outcome.status,
+            external_ref=outcome.external_ref,
+            operation_detail=outcome.operation_detail,
             related_event_id=pending_event_id,
+            latency_ms=_elapsed_ms(started),
+            transport=transport,
             raise_on_error=durable,
         )
-        raise
-
-    await _record_terminal_operation(
-        ctx,
-        entry,
-        tool_name=tool_name,
-        operation=operation,
-        status=outcome.status,
-        external_ref=outcome.external_ref,
-        operation_detail=outcome.operation_detail,
-        related_event_id=pending_event_id,
-        raise_on_error=durable,
-    )
     if outcome.status == AuditStatus.UNVERIFIED:
         raise IntegrationError(
             "The provider mutation outcome could not be verified exactly.",
@@ -152,6 +164,10 @@ async def run_audited_integration_operation[T](
             failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
         )
     return outcome.value
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(1, int((monotonic() - started) * 1000))
 
 
 def _failure_error_code(
@@ -174,6 +190,8 @@ async def _record_terminal_operation(
     error_code: str | None = None,
     operation_detail: IntegrationOperationDetail | None,
     related_event_id: UUID | None,
+    latency_ms: int | None = None,
+    transport: TransportAttemptCounter | None = None,
     raise_on_error: bool,
 ) -> None:
     async def record() -> None:
@@ -189,6 +207,8 @@ async def _record_terminal_operation(
                     error_code=error_code,
                     operation_detail=operation_detail,
                     related_event_id=related_event_id,
+                    latency_ms=latency_ms,
+                    transport=transport,
                     raise_on_error=raise_on_error,
                 )
         except TimeoutError:
@@ -287,8 +307,11 @@ async def _record_operation(
     error_code: str | None = None,
     operation_detail: IntegrationOperationDetail | None = None,
     related_event_id: UUID | None = None,
+    latency_ms: int | None = None,
+    transport: TransportAttemptCounter | None = None,
     raise_on_error: bool = False,
 ) -> UUID | None:
+    observed_transport = transport is not None and transport.requests > 0
     return await record_integration_operation_audit_event(
         workspace_id=ctx.deps.workspace.id,
         agent=ctx.deps.agent,
@@ -305,5 +328,8 @@ async def _record_operation(
         error_code=error_code,
         operation_detail=operation_detail,
         related_event_id=related_event_id,
+        latency_ms=latency_ms,
+        http_requests=transport.requests if observed_transport else None,
+        http_attempts=transport.attempts if observed_transport else None,
         raise_on_error=raise_on_error,
     )

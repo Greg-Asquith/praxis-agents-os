@@ -8,7 +8,10 @@ integration calls use httpx2 and the integration policy below.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
@@ -35,6 +38,30 @@ class IntegrationRequestPolicy(StrEnum):
     READ = "read"
     IDEMPOTENT_WRITE = "idempotent_write"
     MUTATION = "mutation"
+
+
+@dataclass
+class TransportAttemptCounter:
+    """Accumulates logical request and dispatched attempt counts for one operation."""
+
+    requests: int = 0
+    attempts: int = 0
+
+
+_attempt_counter: ContextVar[TransportAttemptCounter | None] = ContextVar(
+    "integration_transport_attempts", default=None
+)
+
+
+@contextmanager
+def track_transport_attempts() -> Iterator[TransportAttemptCounter]:
+    """Counts provider requests and retry attempts issued within this context."""
+    counter = TransportAttemptCounter()
+    token = _attempt_counter.set(counter)
+    try:
+        yield counter
+    finally:
+        _attempt_counter.reset(token)
 
 
 async def resolve_before_dispatch[T](resolve: Callable[[], Awaitable[T]]) -> T:
@@ -102,11 +129,16 @@ async def _request_with_client(
         IntegrationRequestPolicy.READ,
         IntegrationRequestPolicy.IDEMPOTENT_WRITE,
     }
+    counter = _attempt_counter.get()
+    if counter is not None:
+        counter.requests += 1
 
     for attempt in range(settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS):
         last_status = None
         last_error = None
         response: httpx2.Response | None = None
+        if counter is not None:
+            counter.attempts += 1
         try:
             response = await client.request(method, url, **kwargs)
             if response.status_code < 400:

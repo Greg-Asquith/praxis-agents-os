@@ -63,6 +63,7 @@ class EventTranslationState:
     next_message_index: int = 0
     active_messages: dict[int, tuple[str, MessageChannel]] = field(default_factory=dict)
     native_tool_calls: dict[str, NativeToolCallPart] = field(default_factory=dict)
+    native_tool_call_started: dict[str, float] = field(default_factory=dict)
 
     def start_message(self, part_index: int, run_id: str, channel: MessageChannel) -> str:
         self.next_message_index += 1

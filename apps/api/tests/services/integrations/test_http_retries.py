@@ -86,6 +86,54 @@ async def test_retry_after_is_honored_capped_and_bounded(monkeypatch) -> None:
     assert sleeps == [7, 7]
 
 
+async def test_transport_attempts_are_counted_across_retries(monkeypatch) -> None:
+    responses = iter([503, 503, 200])
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(next(responses, 200), request=request)
+
+    original_client = httpx2.AsyncClient
+    transport = httpx2.MockTransport(handler)
+    monkeypatch.setattr(
+        integration_http.httpx2,
+        "AsyncClient",
+        lambda: original_client(transport=transport),
+    )
+    monkeypatch.setattr(settings, "INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(integration_http.asyncio, "sleep", AsyncMock())
+
+    with integration_http.track_transport_attempts() as counter:
+        response = await integration_http.request_with_retries(
+            "GET",
+            "https://provider.example/resource",
+            operation="read_resource",
+            provider_key="example",
+            policy=IntegrationRequestPolicy.READ,
+        )
+        await integration_http.request_with_retries(
+            "GET",
+            "https://provider.example/resource",
+            operation="read_resource",
+            provider_key="example",
+            policy=IntegrationRequestPolicy.READ,
+        )
+
+    assert response.status_code == 200
+    assert counter.requests == 2
+    assert counter.attempts == 4
+
+    # Outside the tracking context, requests accumulate nothing.
+    await integration_http.request_with_retries(
+        "GET",
+        "https://provider.example/resource",
+        operation="read_resource",
+        provider_key="example",
+        policy=IntegrationRequestPolicy.READ,
+    )
+    assert counter.requests == 2
+    assert counter.attempts == 4
+
+
 async def test_401_maps_without_retry(monkeypatch) -> None:
     calls = 0
 

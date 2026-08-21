@@ -330,6 +330,14 @@ def _normalize_trace_entry(item: Mapping[str, object]) -> dict[str, Any]:
     excerpt = item.get("excerpt")
     if excerpt is not None and not isinstance(excerpt, str):
         raise TypeError("excerpt must be a string or null")
+    started_at = item.get("started_at")
+    if started_at is not None and not isinstance(started_at, str):
+        raise TypeError("started_at must be a string or null")
+    duration_ms = item.get("duration_ms")
+    if duration_ms is not None and (
+        not isinstance(duration_ms, int) or isinstance(duration_ms, bool) or duration_ms < 1
+    ):
+        raise ValueError("duration_ms must be a positive integer or null")
     presentation_truncated = item.get("presentation_truncated", False)
     if not isinstance(presentation_truncated, bool):
         raise TypeError("presentation_truncated must be a boolean")

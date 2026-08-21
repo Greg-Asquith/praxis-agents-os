@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx2
 import pytest
 
 from core.exceptions.integration import (
@@ -12,6 +13,7 @@ from core.exceptions.integration import (
     IntegrationError,
     IntegrationFailureDisposition,
 )
+from core.settings import settings
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
@@ -39,9 +41,11 @@ from services.audit_events import (
     TerminalIntegrationOperationDetail,
     terminal_applied_operation_detail,
 )
+from services.integrations import http as integration_http
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
 from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.manifest import PROVIDER_MANIFESTS, IntegrationProviderManifest
 from services.integrations.operations import (
     IntegrationAuditOutcome,
@@ -260,6 +264,91 @@ async def test_suite_local_provider_read_and_write_follow_the_published_recipe(
     assert read["results"][0]["data"] == {"value": "resource-1"}
     assert write["results"][0]["data"] == {"created": 1}
     assert events == ["success", "pending", "provider", "success"]
+
+
+async def test_terminal_audit_records_latency_and_transport_attempts(
+    synthetic_provider, monkeypatch
+) -> None:
+    recorded: list[dict] = []
+
+    async def audit(**kwargs):
+        recorded.append(kwargs)
+        return uuid4()
+
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    monkeypatch.setattr(settings, "INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(integration_http.asyncio, "sleep", AsyncMock())
+    responses = iter([503, 200])
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(next(responses, 200), request=request)
+
+    entry = _entry()
+    ctx = _ctx(entry, READ_TOOL)
+
+    async def execute():
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+            await integration_http.request_with_retries(
+                "GET",
+                "https://provider.example/resource",
+                operation="read",
+                provider_key="test_provider",
+                policy=IntegrationRequestPolicy.READ,
+                client=client,
+            )
+        return IntegrationAuditOutcome({"value": entry.external_id})
+
+    value = await run_audited_integration_operation(
+        ctx, entry, tool_name=READ_TOOL, operation="read", execute=execute
+    )
+
+    assert value == {"value": "resource-1"}
+    [terminal] = recorded
+    assert terminal["status"] is AuditStatus.SUCCESS
+    assert terminal["latency_ms"] >= 1
+    assert terminal["http_requests"] == 1
+    assert terminal["http_attempts"] == 2
+
+    recorded.clear()
+
+    async def execute_without_transport():
+        return IntegrationAuditOutcome({"value": entry.external_id})
+
+    await run_audited_integration_operation(
+        ctx, entry, tool_name=READ_TOOL, operation="read", execute=execute_without_transport
+    )
+    [terminal] = recorded
+    assert terminal["latency_ms"] >= 1
+    assert terminal["http_requests"] is None
+    assert terminal["http_attempts"] is None
+
+    recorded.clear()
+
+    async def execute_failure():
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(503, request=request))
+        ) as client:
+            await integration_http.request_with_retries(
+                "GET",
+                "https://provider.example/resource",
+                operation="read",
+                provider_key="test_provider",
+                policy=IntegrationRequestPolicy.READ,
+                client=client,
+            )
+        raise AssertionError("unreachable")
+
+    with pytest.raises(IntegrationConnectionError):
+        await run_audited_integration_operation(
+            ctx, entry, tool_name=READ_TOOL, operation="read", execute=execute_failure
+        )
+    [terminal] = recorded
+    assert terminal["status"] is AuditStatus.FAILURE
+    assert terminal["latency_ms"] >= 1
+    assert terminal["http_requests"] == 1
+    assert terminal["http_attempts"] == 3
 
 
 async def test_external_write_cannot_disable_durable_evidence(synthetic_provider) -> None:

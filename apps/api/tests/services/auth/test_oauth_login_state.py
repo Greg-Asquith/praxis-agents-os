@@ -195,6 +195,10 @@ async def test_oauth_callback_returns_only_safe_state_next_path(
         "services.auth.oauth.complete_oauth_login.issue_auth_response",
         issue_auth_response,
     )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.enforce_login_failure_limit",
+        AsyncMock(),
+    )
 
     result = await complete_oauth_login(
         AsyncMock(),

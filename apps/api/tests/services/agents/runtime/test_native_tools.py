@@ -3581,6 +3581,58 @@ async def test_native_tool_parts_translate_to_tool_events() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_observed_native_tool_audit_records_latency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.agents.runtime.execute import stream as stream_module
+
+    recorded: list[dict] = []
+
+    async def fake_record(**kwargs) -> None:
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(
+        stream_module,
+        "record_native_tool_invocation_audit_event",
+        fake_record,
+    )
+    run_id = uuid4()
+    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
+
+    async def events():
+        yield PartStartEvent(
+            index=0,
+            part=NativeToolCallPart(
+                tool_name="web_search",
+                tool_call_id="native-search-call",
+                args={"query": "latest docs"},
+            ),
+        )
+        yield PartStartEvent(
+            index=1,
+            part=NativeToolReturnPart(
+                tool_name="web_search",
+                tool_call_id="native-search-call",
+                content={"status": "completed"},
+            ),
+        )
+
+    await stream_module.consume_stream(
+        events(),
+        deps=cast(RuntimeDeps, SimpleNamespace()),
+        skills=(),
+        run=cast(AgentRun, SimpleNamespace(id=run_id)),
+        deferred_tool_results=None,
+        event_sink=sink,
+    )
+
+    [audit] = recorded
+    assert audit["call_part"].tool_call_id == "native-search-call"
+    assert audit["return_part"].tool_call_id == "native-search-call"
+    assert audit["latency_ms"] >= 1
+
+
+@pytest.mark.asyncio
 async def test_native_tool_audit_uses_digest_only(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

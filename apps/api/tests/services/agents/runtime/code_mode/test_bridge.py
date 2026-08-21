@@ -611,7 +611,13 @@ async def test_two_call_workflow_emits_parented_events_and_bounded_trace(
         ("workflow.state", {"tool_call_id": "outer-call", "state": "completed"}),
     ]
     trace = result.metadata[CODE_MODE_TRACE_METADATA_KEY]
-    assert trace["calls"] == [
+    timed_calls = []
+    for call_entry in trace["calls"]:
+        call_entry = dict(call_entry)
+        assert isinstance(call_entry.pop("started_at"), str)
+        assert call_entry.pop("duration_ms") >= 1
+        timed_calls.append(call_entry)
+    assert timed_calls == [
         {
             "order": 1,
             "tool_call_id": "outer-call:1",
@@ -944,7 +950,21 @@ async def test_nested_approval_suspends_instead_of_becoming_script_error(
 
 async def test_nested_approval_resumes_from_snapshot_in_fresh_executor(
     executor: MontyExecutor,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    started_at_values = iter(
+        [
+            "2026-08-21T09:00:00+00:00",
+            "2026-08-21T09:05:00+00:00",
+        ]
+    )
+    monkeypatch.setattr(
+        bridge_module,
+        "datetime",
+        SimpleNamespace(
+            now=lambda _timezone: SimpleNamespace(isoformat=started_at_values.__next__)
+        ),
+    )
     calls: list[int] = []
 
     async def gated(value: int) -> int:
@@ -962,6 +982,8 @@ async def test_nested_approval_resumes_from_snapshot_in_fresh_executor(
             code=code,
             executor=executor,
         )
+    [pending_trace] = ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["nested_trace"]
+    assert pending_trace["started_at"] == "2026-08-21T09:00:00+00:00"
     approval_metadata = exc_info.value.metadata
     args_sha256, _args_bytes = digest_args({"value": 21})
     ctx.tool_call_metadata = build_code_mode_decision_metadata(
@@ -995,6 +1017,9 @@ async def test_nested_approval_resumes_from_snapshot_in_fresh_executor(
 
     assert result.return_value == 42
     assert calls == [21]
+    [settled_trace] = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+    assert settled_trace["started_at"] == "2026-08-21T09:05:00+00:00"
+    assert settled_trace["duration_ms"] >= 1
 
 
 async def test_settled_workflow_does_not_turn_next_outer_call_into_continuation(

@@ -9,6 +9,7 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
 from uuid import UUID
@@ -148,6 +149,7 @@ class CodeModeBridge:
             )
         self._taint.overflow = taint_sources_overflow
         self._trace = list(trace or ())
+        self._trace_started: dict[str, float] = {}
         self._executed_effects = list(executed_effects or ())
 
     @classmethod
@@ -290,8 +292,10 @@ class CodeModeBridge:
                 ),
                 "status": "failed",
                 "excerpt": None,
+                "started_at": datetime.now(UTC).isoformat(),
             }
             self._trace.append(trace_entry)
+            self._trace_started[call.tool_call_id] = monotonic()
             await self._ctx.deps.sink.emit(
                 ToolCallEvent(
                     tool_call_id=call.tool_call_id,
@@ -387,6 +391,7 @@ class CodeModeBridge:
                 raise
             trace_entry["status"] = "succeeded"
             trace_entry["excerpt"] = _bounded_excerpt(normalized_result)
+            self._finish_trace_timing(trace_entry)
             # ToolReturn metadata is persisted and streamed to the application but
             # never enters model context. Keep the complete governed nested value
             # here so replay is as transparent as the live tool-result event.
@@ -446,6 +451,9 @@ class CodeModeBridge:
             CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY: self._taint.tainted,
             CODE_MODE_TAINT_SOURCES_METADATA_KEY: list(self._taint.sources),
         }
+        # Resume runs in a fresh process; time only the approved settlement execution.
+        self._trace_entry(state.nested_call_id)["started_at"] = datetime.now(UTC).isoformat()
+        self._trace_started[state.nested_call_id] = monotonic()
         try:
             result = await self._manager.handle_call(
                 call,
@@ -527,7 +535,7 @@ class CodeModeBridge:
             args=args,
             args_sha256=args_sha256,
             args_bytes=args_bytes,
-            started=monotonic(),
+            started=None,
             tool_call_id=call.tool_call_id,
             parent_tool_call_id=self._outer_tool_call_id,
             outcome="approval_requested",
@@ -554,6 +562,11 @@ class CodeModeBridge:
         )
         return normalized, presentation_result if has_public_result else normalized
 
+    def _finish_trace_timing(self, entry: dict[str, Any]) -> None:
+        started = self._trace_started.pop(str(entry.get("tool_call_id")), None)
+        if started is not None:
+            entry["duration_ms"] = max(1, int((monotonic() - started) * 1000))
+
     def _mark_trace(
         self,
         tool_call_id: str,
@@ -566,6 +579,7 @@ class CodeModeBridge:
             if entry.get("tool_call_id") == tool_call_id:
                 entry["status"] = status
                 entry["excerpt"] = _bounded_excerpt(result)
+                self._finish_trace_timing(entry)
                 if status == "succeeded":
                     entry["presentation_result"] = (
                         result if presentation_result is None else presentation_result
@@ -592,6 +606,7 @@ class CodeModeBridge:
         excerpt = _bounded_excerpt(str(error))
         trace_entry["status"] = status
         trace_entry["excerpt"] = excerpt
+        self._finish_trace_timing(trace_entry)
         await self._ctx.deps.sink.emit(
             ToolResultEvent(
                 tool_call_id=trace_entry["tool_call_id"],
@@ -872,7 +887,7 @@ async def _settle_denied_decision_evidence(
         args=dict(effective_args),
         args_sha256=args_sha256,
         args_bytes=args_bytes,
-        started=monotonic(),
+        started=None,
         tool_call_id=nested_call_id,
         parent_tool_call_id=outer_tool_call_id,
         outcome="denied_approval",
@@ -939,7 +954,7 @@ async def _record_failed_suspension_audit(
         args=dict(args),
         args_sha256=args_sha256,
         args_bytes=args_bytes,
-        started=monotonic(),
+        started=None,
         tool_call_id=nested_call_id,
         parent_tool_call_id=outer_tool_call_id,
         outcome="failed",

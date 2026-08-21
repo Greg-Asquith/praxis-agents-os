@@ -38,6 +38,9 @@ async def record_integration_operation_audit_event(
     error_code: str | None,
     operation_detail: IntegrationOperationDetail | None = None,
     related_event_id: UUID | None = None,
+    latency_ms: int | None = None,
+    http_requests: int | None = None,
+    http_attempts: int | None = None,
     raise_on_error: bool = False,
 ) -> UUID | None:
     """Record one provider operation in an independent transaction.
@@ -63,6 +66,9 @@ async def record_integration_operation_audit_event(
                 "external_ref": external_ref,
                 "error_code": error_code,
                 "related_event_id": str(related_event_id) if related_event_id else None,
+                **({"latency_ms": latency_ms} if latency_ms is not None else {}),
+                **({"http_requests": http_requests} if http_requests is not None else {}),
+                **({"http_attempts": http_attempts} if http_attempts is not None else {}),
             }
             if operation_detail is not None:
                 details["operation_detail"] = operation_detail.model_dump(mode="json")

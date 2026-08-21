@@ -175,7 +175,9 @@ follows:
   shapes; tools without a declared output model remain explicitly `Any`.
   Completed-run nested traces retain each complete normalized nested result as
   application-only presentation evidence, with no additional UI sampling or
-  truncation. Suspended artifacts may omit the oldest presentation values only
+  truncation. Trace entries record a wall-clock start and, once settled, the
+  measured execution duration; a resumed approval times only its settlement
+  execution. Suspended artifacts may omit the oldest presentation values only
   to meet the aggregate state ceiling, while retaining their trace summaries
   and explicit truncation markers. When a nested tool supplies a governed
   `public_result`, that richer value is the presentation evidence while only
@@ -227,7 +229,9 @@ follows:
   field values.
   Pending integration-operation evidence contains requested intent only;
   successful writes must return the one canonical terminal detail with exactly
-  aligned intent outcomes and concrete provider effects. Intent and effect
+  aligned intent outcomes and concrete provider effects. Terminal operation
+  rows also record execution latency and, when the shared retrying HTTP seam
+  dispatched requests, the logical request and per-request attempt counts. Intent and effect
   counts are validated independently. There is no schema-version compatibility
   layer. The runtime rejects caller-supplied tool names or context bindings
   that do not match the actually dispatched definition, and outcomes must be
