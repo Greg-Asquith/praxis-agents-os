@@ -1,48 +1,46 @@
-# Integration Provider Packaging
+# Integration provider packaging
 
-- **Status**: living document (binds every provider)
-- **Rule**: implementation work follows this note; a change that deviates
-  records the deviation back into this note in the same PR. Every new
-  provider follows the checklist in §8 — a provider that needs edits
+- **Status:** Living document that applies to every provider.
+- **Rule:** Implementation work follows this note. Record any deviation in
+  this note in the same pull request. Every provider follows the checklist in
+  section 8. A provider that needs edits
   outside its own package (beyond the four named shared edit points
-  named in §8) is an architecture regression and a review failure.
+  named in section 8) is an architecture regression and a review failure.
 - This note contains **structure, not product scope**. What each provider
   does is its plan's business; where its code lives and what it may touch
   is this note's.
 
 ## 1. The problem this solves
 
-A tightly coupled integration architecture creates broad failure domains: every integration's tools,
-credentials, and UI were woven through shared modules, so every deployment
-carried every provider, and touching one provider meant regression-testing
-all of them. Praxis will accumulate many providers (Google Ads, Meta,
-Gmail, Drive, Microsoft variants, Airtable, …) and different customers
-want disjoint subsets. Without a packaging law, the registry becomes
-the same monolith with better naming.
+A tightly coupled integration architecture increases the impact of each
+change. When integrations share modules, every deployment carries every
+provider and each provider change requires broad regression testing. Praxis is
+designed to support many providers, while each customer may enable a different
+subset. Without a packaging rule, the registry becomes difficult to maintain.
 
 Goals, in priority order:
 
-1. **Adding provider N+1 touches only its own package** (plus the four
-   named shared edit points in §8 when applicable). No unnamed shared-file
-   sprawl.
+1. **Adding the next provider changes only its package**, plus the four named
+   shared edit points in section 8 when applicable. Don't add changes to
+   unnamed shared files.
 2. **Per-deployment enablement**: a deployment that wants only Gmail runs
    only Gmail — disabled providers contribute no tools, no manifest
    entries, no provider cards, no UI bytes.
-3. **Blast-radius isolation**: a provider's bugs, dependencies, and tests
+3. **Change isolation:** A provider's bugs, dependencies, and tests
    are contained in its package. Provider→provider imports are forbidden.
 4. **No governance regression**: policy, approvals, audit, and credential
    handling stay centralized. Packaging distributes
-   *contribution*, never *enforcement*.
+   _contribution_, never _enforcement_.
 
 ## 2. Principles
 
 1. **One registry, one choke point — modular population.** There is still
    exactly one `RUNTIME_TOOL_CATALOG`, one dispatch choke point, one
    provider-manifest map, one credential service, one OAuth engine, one
-   discovery harness. Provider packages *contribute entries* to these; they
+   discovery harness. Provider packages _contribute entries_ to these; they
    never fork or wrap them. Interconnection is the failure mode, not
    centralization — a single audited dispatch seam is a feature.
-2. **Default-first UI.** Every provider tool MUST ship a complete
+2. **Default-first UI.** Every provider tool must ship a complete
    server-declared `ToolPresentation` (icon, status labels, arg/result
    fields, approval copy). The web app's declarative default row renders
    any provider tool acceptably with **zero** provider frontend code.
@@ -54,20 +52,20 @@ Goals, in priority order:
    provider; providers import only published core seams; providers never
    import each other. Both sides enforce this mechanically (§4.6, §5.5),
    not by convention.
-4. **Enablement has two current layers**, checked in order:
-   - *Install-time*: provider SDK dependencies are per-provider optional
+4. **Enablement has two layers**, checked in order:
+   - _Install time:_ Provider software development kit (SDK) dependencies are per-provider optional
      extras (`pyproject.toml`); the base install carries none. (v1
      providers are REST-over-httpx2 and need no extras; the pattern
      exists for the first SDK-needing provider.)
-   - *Boot-time*: `INTEGRATIONS_ENABLED_PROVIDERS` (settings) names the
-     provider packages to load. Not listed ⇒ never imported: no manifest
+   - _Startup:_ `INTEGRATIONS_ENABLED_PROVIDERS` names the
+     provider packages to load. An unlisted provider isn't imported, so it has no manifest
      entry, no tools, no catalog presence, invisible to the product.
-   There is deliberately no second per-provider enable flag or manifest
-   availability gate: a provider is either named in the boot allowlist or it
-   is absent. Required deployment configuration is validated fail-fast when
-   the provider's operational slice lands. Workspace-level provider toggles
-   remain a future slice of the existing `is_tool_allowed` seam.
-5. **New provider ≠ new protocol.** Provider tools flow through the
+     There is deliberately no second per-provider enable flag or manifest
+     availability gate: a provider is either named in the boot allowlist or it
+     is absent. Required deployment configuration is validated fail-fast when
+     the provider's operational slice lands. Workspace-level provider toggles
+     remain a future slice of the existing `is_tool_allowed` seam.
+5. **Providers use existing protocols.** Provider tools flow through the
    existing SSE events (`tool.call`/`tool.result`/`tool.approval_required`)
    and the existing presentation schema. Adding SSE event types or
    presentation field formats is a platform change with its own review,
@@ -75,7 +73,7 @@ Goals, in priority order:
 6. **Model output and transcript evidence may differ only through the governed
    public-result seam.** A tool may return Pydantic AI `ToolReturn` metadata
    named `public_result` when an operator needs complete bounded evidence that
-   would be too large for model context. The tool must declare
+   is too large for model context. The tool must declare
    `max_public_result_chars`; dispatch converts the value to JSON-safe data,
    redacts sensitive-key values, validates it against the tool's output model,
    and rejects it above the declared budget before Pydantic AI persists or
@@ -101,16 +99,16 @@ Goals, in priority order:
 
 ## 3. What stays centralized (deliberately)
 
-| Concern | Owner | Why it must not fragment |
-|---|---|---|
-| Tool contract, registry, dispatch, audit, approvals, envelopes | `services/agents/runtime/tools/` + `dispatch.py` | one policy/audit surface |
-| Provider manifest contract + registration | `services/integrations/manifest.py` | one catalog the routes/UI read |
-| Credential storage, encryption, refresh locking, crypto-shred | `services/integrations/credentials/` | security-critical, identical per provider |
-| Secrets provider abstraction | `services/secrets/` | governance §5 |
-| OAuth connect flows, api-key connect, state signing | `routes/integrations/` + engine services | one hardened flow, parameterized by manifest |
-| Discovery job harness, status machine, sweeps | `services/integrations/discovery/` | one lifecycle; providers supply only `discover_resources` |
-| Active-context resolution + provider-native targeting + safe fan-out | `services/integrations/context/` | one place that maps public provider scopes to exactly one authorized internal resource and publishes results without platform UUIDs |
-| SSE protocol, `ToolActivity` shape, presentation schema, public-result enforcement | stream/protocol + tool contract | stale-client safety; closed vocabularies; bounded transcript evidence |
+| Concern                                                                            | Owner                                            | Why it must not fragment                                                                                                            |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Tool contract, registry, dispatch, audit, approvals, envelopes                     | `services/agents/runtime/tools/` + `dispatch.py` | one policy/audit surface                                                                                                            |
+| Provider manifest contract + registration                                          | `services/integrations/manifest.py`              | one catalog the routes/UI read                                                                                                      |
+| Credential storage, encryption, refresh locking, crypto-shred                      | `services/integrations/credentials/`             | security-critical, identical per provider                                                                                           |
+| Secrets provider abstraction                                                       | `services/secrets/`                              | governance §5                                                                                                                       |
+| OAuth connect flows, api-key connect, state signing                                | `routes/integrations/` + engine services         | one hardened flow, parameterized by manifest                                                                                        |
+| Discovery job harness, status machine, sweeps                                      | `services/integrations/discovery/`               | one lifecycle; providers supply only `discover_resources`                                                                           |
+| Active-context resolution + provider-native targeting + safe fan-out               | `services/integrations/context/`                 | one place that maps public provider scopes to exactly one authorized internal resource and publishes results without platform UUIDs |
+| SSE protocol, `ToolActivity` shape, presentation schema, public-result enforcement | stream/protocol + tool contract                  | stale-client safety; closed vocabularies; bounded transcript evidence                                                               |
 
 The presentation field-format vocabulary is closed:
 `text`, `multiline`, `markdown`, `html`, `bytes`, `datetime`, `boolean`,
@@ -155,9 +153,9 @@ apps/api/integrations/
 ```
 
 `integrations/` is a top-level package beside `services/`, `routes/`,
-`models/` — deliberately *outside* `services/` so the import laws in §4.6
+`models/` — deliberately _outside_ `services/` so the import laws in §4.6
 are a package boundary, not a subdirectory convention. Tests mirror it at
-`apps/api/tests/integrations/<key>/`.
+`apps/api/tests/integrations/PROVIDER_KEY/`.
 
 ### 4.2 The plugin contract
 
@@ -183,7 +181,7 @@ contain a kind, audit operation name, and raw-content fetch function; the
 engine retains connection scoping, response bounds, HTML sanitization, and
 failure auditing. Successful preview renders are not audited: the governed
 tool call that surfaced the content is the durable audit record, and
-per-render read events would only add noise. Anything a provider needs
+per-render read events add noise. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
 don't grow the contract ad hoc. The optional metadata job kind lets a
 warehouse-style provider trigger provider-owned cache refresh from discovery
@@ -219,7 +217,7 @@ def load_enabled_providers() -> None:
   mode ⇒ scopes, api_key mode ⇒ form fields; `requires_discovery` ⇒
   `discover_resources` is not None; every tool carries a complete
   `ToolPresentation` (principle 2 is machine-checked, not aspirational).
-- A future *external* distribution path (separately installed provider
+- A future _external_ distribution path (separately installed provider
   wheels discovered via an entry-point group) slots in behind the same
   contract: the loader gains a second source of `IntegrationProviderPlugin`
   values and nothing else changes. Not built until someone needs it.
@@ -229,7 +227,7 @@ def load_enabled_providers() -> None:
 - `INTEGRATIONS_ENABLED_PROVIDERS: list[str] = []` — the boot-time
   enablement list. Empty default: integrations are opt-in per deployment.
 - Per-provider operational settings (OAuth client ids, developer tokens)
-  live in provider-owned `BaseSettings` inside `integrations/<key>/`.
+  live in provider-owned `BaseSettings` inside `integrations/PROVIDER_KEY/`.
   Provider configuration is deployment state, but keeping its schema in the
   package preserves the import boundary. These values are prerequisites for
   loading or using the provider, not a second enablement mechanism.
@@ -238,24 +236,24 @@ def load_enabled_providers() -> None:
 
 Per-provider extras in `apps/api/pyproject.toml` when (and only when) a
 provider needs an SDK, following the storage precedent exactly: extra
-`integration-<key>`, guarded import inside the module
+`integration-PROVIDER_KEY`, guarded import inside the module
 (`try: import x / except ImportError: x = None`), instantiation-time
-failure with a clear error naming the extra. REST-only providers (all
-current providers) declare no extra.
+failure with a clear error naming the extra. All shipped providers use REST
+and declare no extra.
 
 ### 4.6 Import laws (enforced)
 
 1. Nothing under `services/`, `routes/`, `models/`, `workers/`, or
    `core/` imports `integrations.*` — except `services/integrations/
-   loader.py` (dynamically, by configured key).
-2. `integrations.<key>` may import: `services/integrations/` published
+loader.py` (dynamically, by configured key).
+2. `integrations.PROVIDER_KEY` may import the published `services/integrations/`
    seams (plugin contract, `http.py` retries, credential accessors,
    domain vocabulary), `services/secrets/` ops,
    `services/agents/runtime/tools/` contract + decorator,
    `services/jobs/registry.py` solely to register a provider-owned handler,
    `core/exceptions/`, `core/settings`, and `utils/`. Nothing else in
    `services/` without adding the seam to this list first.
-3. `integrations.<a>` never imports `integrations.<b>`.
+3. `integrations.PROVIDER_A` never imports `integrations.PROVIDER_B`.
 4. Enforcement: a dedicated test (`tests/integrations/test_import_laws.py`)
    walks the AST of both trees and asserts 1–3. It runs in the default
    suite so violations fail CI, not review.
@@ -350,31 +348,30 @@ behaviors guarantee this:
   raising `ModelConfigurationError`. An agent that had Gmail tools keeps
   running (without them) when Gmail is disabled; the tool selector
   renders unavailable saved tools, so the UI story is consistent.
-  Unknown *policies* and other config corruption still raise — leniency
+  Unknown _policies_ and other config corruption still raise — leniency
   applies only to catalog absence.
 
 ## 5. Frontend layout
 
-### 5.1 No pnpm workspace (decision, revisit trigger recorded)
+### 5.1 Single frontend package
 
 `apps/web` stays a single Vite SPA. A pnpm workspace with
-`packages/integration-*` would add build orchestration, dependency-cruiser
-and knip reconfiguration, and version management — and buy nothing at
-runtime, because every workspace package still lands in the same bundle.
-The two things that matter — **boundaries** and **not shipping disabled
-providers' UI to the browser** — are achieved with directory law +
-dependency-cruiser rules and per-provider lazy chunks. Revisit only if
-provider UIs are ever distributed/installed separately from the app.
+`packages/integration-*` adds build orchestration, dependency checks, Knip
+configuration, and version management. It provides no runtime separation
+because every package enters the same bundle. Directory rules, dependency
+checks, and per-provider lazy chunks enforce boundaries and keep unavailable
+provider UI out of the browser. Revisit this decision if provider UI becomes
+separately distributed or installed.
 
 ### 5.2 The module namespace
 
 ```
 apps/web/src/integrations/
-  contract.ts        # IntegrationUiModule type + re-exported tool-UI contracts
-  registry.ts        # providerKey -> () => import('./<key>') map (the ONE shared edit point)
+  contract.ts        # IntegrationUiModule type and re-exported tool-UI contracts
+  registry.ts        # providerKey maps to a lazy provider import
   gmail/
     index.ts         # default-exports IntegrationUiModule
-    *-row.tsx        # custom ToolRowPresenters (only if earned — principle 2)
+    *-row.tsx        # custom ToolRowPresenters when needed
   google_ads/
   ...
 ```
@@ -386,15 +383,15 @@ backend: a boundary, not a subfolder.
 
 ```ts
 export type IntegrationUiModule = {
-  providerKey: string
-  toolRowPresenters?: ToolRowPresenter[]        // custom rows, first-match-wins
-  icons?: Record<string, LucideIcon>            // extends the tool-ui icon tokens
-  ConnectHelp?: ComponentType<{ provider: IntegrationProviderEntry }>
-}
+  providerKey: string;
+  toolRowPresenters?: ToolRowPresenter[]; // custom rows, first-match-wins
+  icons?: Record<string, LucideIcon>; // extends the tool-ui icon tokens
+  ConnectHelp?: ComponentType<{ provider: IntegrationProviderEntry }>;
+};
 ```
 
 - `registry.ts` holds a static `Record<string, () => Promise<{default:
-  IntegrationUiModule}>>`. Static import literals are required for Vite to
+IntegrationUiModule}>>`. Static import literals are required for Vite to
   code-split — one chunk per provider, fetched only when needed.
 - Load triggers: the integrations page loads modules for the provider keys
   the server catalog returns; the conversation view loads modules for the
@@ -427,34 +424,34 @@ token map. No other shared file changes per provider.
 4. The tool-UI contract types a provider needs (`ToolActivity`,
    `ToolRowPresenter`/`ToolRowPresenterProps`, `ToolUi`) are published
    type-only through `src/integrations/contract.ts` (re-exporting from
-   their current homes) so rule 1 stays a clean path rule. knip learns
+   their defining modules) so rule 1 stays a clean path rule. Knip treats
    `src/integrations/*/index.ts` as entry points.
 
 ## 6. Provider enablement, end to end
 
-| Layer | Mechanism | Effect when off |
-|---|---|---|
-| Install (backend) | pyproject extra `integration-<key>` | SDK absent; package import-guards explain which extra to install |
-| Boot (backend) | `INTEGRATIONS_ENABLED_PROVIDERS` | package never imported: no manifest, no tools, no catalog/provider-card presence |
-| Boot (frontend) | server catalog is the source of truth | provider card absent; module chunk never requested |
-| Workspace (future) | per-workspace provider toggles on the same `is_tool_allowed` seam | provider hidden for that workspace |
+| Layer              | Mechanism                                                         | Effect when off                                                                  |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Install (backend)  | pyproject extra `integration-PROVIDER_KEY`                        | SDK absent; package import-guards explain which extra to install                 |
+| Boot (backend)     | `INTEGRATIONS_ENABLED_PROVIDERS`                                  | package never imported: no manifest, no tools, no catalog/provider-card presence |
+| Boot (frontend)    | server catalog is the source of truth                             | provider card absent; module chunk never requested                               |
+| Workspace (future) | per-workspace provider toggles on the same `is_tool_allowed` seam | provider hidden for that workspace                                               |
 
-## 7. Failure modes → countermeasures
+## 7. Failure modes and countermeasures
 
-| Failure mode | Countermeasure here |
-|---|---|
-| Everything shipped always | boot-time enablement list; lazy web chunks; per-provider extras |
-| Provider logic woven through shared modules | package namespaces + machine-enforced import laws (§4.6, §5.5) |
-| Every tool needed bespoke UI | default-first: server-declared presentation renders everything; custom rows exceptional |
-| One provider's change regression-tested all | per-package tests; provider→provider imports forbidden |
-| Registry sprawl | single registry retained; contribution via one boring contract; loader invariants machine-check it |
-| Disabling anything broke agents | lenient run-time resolution (§4.8); UI preserves unavailable saved tools |
+| Failure mode                                | Countermeasure here                                                                                |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Everything shipped always                   | boot-time enablement list; lazy web chunks; per-provider extras                                    |
+| Provider logic woven through shared modules | package namespaces + machine-enforced import laws (§4.6, §5.5)                                     |
+| Every tool needed bespoke UI                | default-first: server-declared presentation renders everything; custom rows exceptional            |
+| One provider's change regression-tested all | per-package tests; provider→provider imports forbidden                                             |
+| Registry sprawl                             | single registry retained; contribution via one boring contract; loader invariants machine-check it |
+| Disabling anything broke agents             | lenient run-time resolution (§4.8); UI preserves unavailable saved tools                           |
 
-## 8. Provider N+1 checklist
+## 8. Provider addition checklist
 
 Adding a provider touches:
 
-1. `apps/api/integrations/<key>/` — the package (manifest, client,
+1. `apps/api/integrations/PROVIDER_KEY/` — the package (manifest, client,
    discovery, operations, a one-module-per-tool tree with presentations,
    per-package tests).
 2. `apps/api/pyproject.toml` — an extra, only if it needs an SDK.
@@ -464,11 +461,11 @@ Adding a provider touches:
    do not add provider routes or branches to shared services.
 5. If the provider owns a metadata cache, register its handler through
    `services/jobs/registry.py` and declare only the kind on the plugin.
-6. Optionally `apps/web/src/integrations/<key>/` + **one line** in
+6. Optionally add `apps/web/src/integrations/PROVIDER_KEY/` and **one line** in
    `src/integrations/registry.ts` — only if it earns custom UI. Add a semantic
    token to the closed `VALID_TOOL_ICONS` set when its tool presentations need
    a provider icon.
-7. Ask whether any tool returns content a person would want to **see** rather
+7. Determine whether a tool returns content a person wants to **see** rather
    than read about. If so, name the engine-owned presenter kits and optional
    preview kinds the provider package composes; provider packages contribute
    adapters only and never add kit logic.
@@ -489,15 +486,15 @@ It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,
 or any `features/` code. Reviewers hold the line here.
 
-## 9. Current provider set
+## 9. Provider set
 
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, and Google
-Analytics through the §8 N+1 checklist. There is no fake or sample provider in product
+Analytics. Each follows the section 8 checklist. There is no sample provider in product
 code: contract and loader tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
-Manual QA connects real dev credentials (Airtable's API key is the cheapest
-connect). The engine's generic manifest-driven OAuth flow is the only token
+Manual quality assurance uses real development credentials. Airtable's API key
+provides a convenient connection test. The engine's generic manifest-driven OAuth flow is the only token
 path; revisit only if a real provider cannot use it.
 
 BigQuery demonstrates the checklist end to end. Its package under

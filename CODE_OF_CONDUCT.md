@@ -1,6 +1,6 @@
-# Contributor Covenant Code of Conduct
+# Contributor Covenant code of conduct
 
-## Our Pledge
+## Our pledge
 
 We as members, contributors, and leaders pledge to make participation in our
 community a harassment-free experience for everyone, regardless of age, body
@@ -12,7 +12,7 @@ sexual identity and orientation.
 We pledge to act and interact in ways that contribute to an open, welcoming,
 diverse, inclusive, and healthy community.
 
-## Our Standards
+## Our standards
 
 Examples of behavior that contributes to a positive environment for our
 community include:
@@ -22,8 +22,7 @@ community include:
 - Giving and gracefully accepting constructive feedback
 - Accepting responsibility and apologizing to those affected by our mistakes,
   and learning from the experience
-- Focusing on what is best not just for us as individuals, but for the overall
-  community
+- Focusing on what is best for both individuals and the overall community
 
 Examples of unacceptable behavior include:
 
@@ -37,23 +36,23 @@ Examples of unacceptable behavior include:
 - Other conduct which could reasonably be considered inappropriate in a
   professional setting
 
-## Enforcement Responsibilities
+## Enforcement responsibilities
 
 Community leaders are responsible for clarifying and enforcing our standards
-of acceptable behavior and will take appropriate and fair corrective action
+of acceptable behavior and take appropriate and fair corrective action
 in response to any behavior that they deem inappropriate, threatening,
 offensive, or harmful.
 
 Community leaders have the right and responsibility to remove, edit, or reject
 comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct, and will communicate reasons for
+not aligned with this Code of Conduct. They communicate reasons for
 moderation decisions when appropriate.
 
 ## Scope
 
 This Code of Conduct applies within all community spaces, and also applies
 when an individual is officially representing the community in public spaces.
-Examples of representing our community include using an official e-mail
+Examples of representing our community include using an official email
 address, posting via an official social media account, or acting as an
 appointed representative at an online or offline event.
 
@@ -62,14 +61,14 @@ appointed representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the maintainer,
 [@Greg-Asquith](https://github.com/Greg-Asquith), through GitHub. All complaints
-will be reviewed and investigated promptly and fairly.
+receive a prompt and fair review and investigation.
 
 All community leaders are obligated to respect the privacy and security of
 the reporter of any incident.
 
-## Enforcement Guidelines
+## Enforcement guidelines
 
-Community leaders will follow these Community Impact Guidelines in determining
+Community leaders follow these Community Impact Guidelines when determining
 the consequences for any action they deem in violation of this Code of
 Conduct:
 
@@ -94,7 +93,7 @@ includes avoiding interactions in community spaces as well as external
 channels like social media. Violating these terms may lead to a temporary or
 permanent ban.
 
-### 3. Temporary Ban
+### 3. Temporary ban
 
 **Community Impact**: A serious violation of community standards, including
 sustained inappropriate behavior.
@@ -105,7 +104,7 @@ private interaction with the people involved, including unsolicited
 interaction with those enforcing the Code of Conduct, is allowed during this
 period. Violating these terms may lead to a permanent ban.
 
-### 4. Permanent Ban
+### 4. Permanent ban
 
 **Community Impact**: Demonstrating a pattern of violation of community
 standards, including sustained inappropriate behavior, harassment of an
@@ -116,14 +115,13 @@ the community.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor
-Covenant](https://www.contributor-covenant.org), version 2.1, available at
-<https://www.contributor-covenant.org/version/2/1/code_of_conduct.html>.
+This Code of Conduct is adapted from [Contributor Covenant version
+2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html).
 
 Community Impact Guidelines were inspired by
 [Mozilla's code of conduct enforcement
 ladder](https://github.com/mozilla/diversity).
 
 For answers to common questions about this code of conduct, see the
-[FAQ](https://www.contributor-covenant.org/faq). Translations are available
-at <https://www.contributor-covenant.org/translations>.
+[Contributor Covenant FAQ](https://www.contributor-covenant.org/faq). See the
+[available translations](https://www.contributor-covenant.org/translations).

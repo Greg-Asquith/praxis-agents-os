@@ -1,9 +1,9 @@
-# Code-Mode Orchestration
+# Code Mode orchestration
 
 Status: **implemented end to end**. Agents with code mode enabled expose one
 orchestration tool, `run_workflow`, that runs a short model-authored Python
 script in a sandboxed interpreter. The script composes the agent's
-already-authorized tools; every nested call still crosses the same
+already-authorized tools. Every nested call still crosses the same
 authorization, approval, and audit path as a direct call. The web app renders
 the workflow script, its nested calls, and mid-workflow approvals live and on
 replay. This note describes how it works, why it is shaped this way, and how
@@ -11,13 +11,13 @@ to build on it.
 
 ## What code mode is
 
-Without code mode, a multi-step data task costs one model request per tool
-call, and every intermediate result travels through model context — paying
-tokens and risking transcription errors on the way. Code mode lets the agent
-write one short Python script against typed stubs of tools it already has: a
-sandboxed interpreter can fetch, filter, aggregate, and act while intermediate
-data stays local to the interpreter. The result is fewer model requests, lower
-token use, and computed rather than transcribed values.
+Without code mode, a multi-step data task uses one model request per tool
+call. Every intermediate result travels through model context, which uses
+tokens and can introduce transcription errors. Code mode lets the agent write
+one short Python script against typed stubs of its available tools. A sandboxed
+interpreter can fetch, filter, aggregate, and act while intermediate data stays
+local. This design reduces model requests and token use. It also returns
+computed values instead of transcribed values.
 
 The architecture is a **composition surface, not an authority**. A script can
 invoke only tools the agent could invoke directly, and every nested call
@@ -27,22 +27,20 @@ audit path as a direct call. Code mode never aggregates or weakens per-call
 decisions (see `governance.md` and `threat-model.md` §7).
 
 Code mode is distinct from provider-native computation. `run_workflow`
-composes Praxis tools in a local sandbox; a separate `run_code` capability for
-pandas-class computation in a provider sandbox is planned but not built.
-Neither sandbox may invoke the other. "Workflow" names Praxis-side tool
-composition; "script" stays reserved for one-shot provider-sandbox
-computation — the payload is Python either way, but the product capability is
-the governed workflow it orchestrates.
+combines Praxis tools in a local sandbox. The separate `run_code` capability
+performs computation and document generation in a provider sandbox. Neither
+sandbox may invoke the other. A workflow combines Praxis tools. A script runs
+one provider-sandbox computation. Both use Python, but they have different
+authority and execution boundaries.
 
 ## Enablement
 
 Code mode is a per-agent capability: `agents.code_mode_enabled`, one checkbox
 in the agent form above the tool list. `run_workflow` is never a catalog row
 and cannot be mounted directly. There is no workspace-global switch and no
-automatic activation. The operator-facing copy lives only in the checkbox
-popover and uses outcome language ("Lets the agent combine several tools in
-one workflow… Leave it off for simple chat or single-action agents"), keeping
-sandbox mechanics out of a non-technical operator's face.
+automatic activation. The checkbox popover contains the operator-facing
+explanation. It describes outcomes without exposing sandbox implementation
+details.
 
 ## How a workflow executes
 
@@ -62,8 +60,8 @@ both representations.
 Integration stubs expose provider-native scoped references only. Their fixed
 results are operation-specific typed dictionaries, so a workflow can pass a
 created reference directly into a later tool without a discovery/report call
-or a Praxis UUID. The server resolves each provider scope against current
-active context at the nested dispatch boundary; missing scopes fail closed.
+or a Praxis UUID. The server resolves each provider scope against the active
+context at the nested dispatch boundary. Missing scopes fail closed.
 
 A tool whose schema falls outside the supported stub subset stays directly
 mounted (with a logged warning) rather than receiving a lossy stub.
@@ -105,7 +103,7 @@ failures surface as catchable in-workflow exceptions (a `ToolDenied` becomes a
 denial the script can handle), nested calls do not consume the agent's retry
 budget, and approvals suspend the outer tool (below).
 
-The complete trust chain:
+The complete trust chain is:
 
 ```text
 model
@@ -135,15 +133,15 @@ nested dispatch requires a session-isolation or per-tool-barrier design first.
 Every resource the sandbox and its boundary can consume has an explicit limit,
 configured in `core/settings/code_mode.py` (`AGENT_CODE_MODE_*`):
 
-| Bound | Setting (default) |
-| --- | --- |
-| Interpreter + cumulative wall-clock time | `AGENT_CODE_MODE_TIMEOUT_SECONDS` (60s), backstopped by `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS`, which replaces an unresponsive worker |
-| Interpreter memory / recursion depth | `AGENT_CODE_MODE_MEMORY_MAX_BYTES` (64 MiB) / `AGENT_CODE_MODE_MAX_RECURSION_DEPTH` (100) |
-| Nested calls per script | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25) |
-| Captured print output | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000) |
-| Each value crossing the boundary | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (1 MiB) |
-| Model-facing final result | `AGENT_CODE_MODE_RESULT_MAX_BYTES` (32 KiB) — intentionally much tighter than the boundary-value limit, so a workflow returns compact, decision-ready data rather than raw payloads |
-| Suspended interpreter snapshot / durable resume artifact | `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` / `AGENT_CODE_MODE_STATE_MAX_BYTES`, cross-validated so a valid configuration can always fit |
+| Bound                                                    | Setting (default)                                                                                                                                                                   |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interpreter + cumulative wall-clock time                 | `AGENT_CODE_MODE_TIMEOUT_SECONDS` (60s), backstopped by `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS`, which replaces an unresponsive worker                                            |
+| Interpreter memory / recursion depth                     | `AGENT_CODE_MODE_MEMORY_MAX_BYTES` (64 MiB) / `AGENT_CODE_MODE_MAX_RECURSION_DEPTH` (100)                                                                                           |
+| Nested calls per script                                  | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25)                                                                                                                                             |
+| Captured print output                                    | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000)                                                                                                                                          |
+| Each value crossing the boundary                         | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (1 MiB)                                                                                                                                           |
+| Model-facing final result                                | `AGENT_CODE_MODE_RESULT_MAX_BYTES` (32 KiB) — intentionally much tighter than the boundary-value limit, so a workflow returns compact, decision-ready data rather than raw payloads |
+| Suspended interpreter snapshot / durable resume artifact | `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` / `AGENT_CODE_MODE_STATE_MAX_BYTES`, cross-validated so a valid configuration can always fit                                                   |
 
 Cumulative budgets survive approval suspension and resume. The bridge itself
 rejects or converts over-budget and non-serializable boundary values — normal
@@ -197,19 +195,20 @@ over budget), recovery branches on what already ran:
   recovery, listing the completed actions. Automatic redrafting is forbidden
   because a fresh script could repeat a side effect.
 
-A run holds at most one suspended workflow; a second workflow that would
+A run holds at most one suspended workflow. A second workflow that attempts to
 suspend fails closed with a structured failure instead of overwriting the
 first snapshot. If a suspension artifact exceeds its aggregate bound,
-application-only presentation values are dropped oldest-first (marked
-`presentation_truncated`) before the suspension is abandoned entirely.
+the runtime drops the earliest application-only presentation values first and
+marks them `presentation_truncated`. If the artifact remains too large, the
+runtime abandons the suspension.
 
 ### One nested call, one decision
 
 The operator approves the familiar nested tool action and its effective
 arguments; the Python script is collapsed context, not a consent artifact. One
-decision authorizes exactly one nested tool-call id, once — approval of call N
-never leaks to call N+1 just because the outer call resumed as approved. The
-approval card uses the nested tool's server-declared presentation and supports
+decision authorizes exactly one nested tool-call ID once. Approval of call N
+doesn't apply to call N+1 because the outer call resumed as approved. The
+approval card uses the nested tool's server-declared presentation. It supports
 the existing validated argument-override path. Denial resumes the script and
 injects a typed denial the script can handle; it does not silently abandon the
 workflow.
@@ -220,8 +219,8 @@ staged-content cleanup, each exactly once.
 
 ### Batch consent is one list-shaped call
 
-Loops over write tools would otherwise turn one logical action into dozens of
-approvals. The rule for every `code_eligible=True` write tool: when the
+Loops over write tools can turn one logical action into dozens of approvals.
+Every `code_eligible=True` write tool follows this rule: when the
 provider operation accepts a batch, the tool must accept that batch as one
 list-shaped argument and declare an editable `records` presentation exposing
 every bounded row before approval. The operator-edited row set becomes the
@@ -233,9 +232,10 @@ arguments) are deliberately excluded.
 ## Untrusted data: whole-interpreter taint
 
 Code mode adds one threat channel: **tool outputs consumed by model-authored
-code**. Data can flow between tools without model narration, so a poisoned
-read could steer a later call invisibly — and ordinary Python transformation
-erases `UntrustedNode` shape before the final value returns to the model.
+code**. Data can flow between tools without model narration, so malicious
+content can influence a later call without appearing in the transcript. An
+ordinary Python transformation also erases the `UntrustedNode` shape before
+the final value returns to the model.
 
 The bridge applies conservative whole-interpreter taint rather than data-flow
 tracking: if any nested result contains an `UntrustedNode`, the interpreter is
@@ -260,8 +260,8 @@ always-mounted internals, `report_completion`, `run_workflow`, provider-native
 An eligible tool must return data that is useful to compose and that Monty can
 serialize, have a schema the stub generator can represent faithfully, and
 already be selected and allowed for the agent, workspace, and context.
-Deferred-loading and MCP-derived tools are excluded for now. Binary or
-multimodal producers, faithful-render surfaces (e.g. Gmail message reading),
+Support for deferred-loading and Model Context Protocol (MCP) tools is pending.
+Binary or multimodal producers, faithful-render surfaces such as Gmail message reading,
 conversational acts, memory, planning, skill loading, delegation, and
 completion reporting stay direct — they are conversation-shaped, not
 data-shaped.
@@ -285,9 +285,9 @@ call ids, tool name, an effective-arguments digest (never unrestricted
 arguments), a presentation-resolvable summary, status (succeeded, failed,
 pending, denied), and a bounded result or failure excerpt.
 
-The completed-run trace also retains the complete normalized nested result as
-**application-only presentation evidence**: replay shows exactly the governed
-value the sandbox received — every fan-out resource and row — without it ever
+The completed run trace also retains the complete normalized nested result as
+**application-only presentation evidence**. Replay shows the governed value
+that the sandbox received, including every distributed resource and row, without it
 entering model context. Tools with a richer governed `public_result` contract
 use that complete user-only value for replay and live SSE while only
 `return_value` enters the sandbox. The settled workflow card separately
@@ -321,16 +321,16 @@ supports. Operator-facing guidance lives only in the enablement popover.
 apps/api/
   core/settings/code_mode.py           # AGENT_CODE_MODE_* bounds + cross-validation
   services/agents/runtime/
-    tools/code_mode.py                 # run_workflow definition + per-run tool factory
+    tools/code_mode.py                 # run_workflow definition and per-run tool factory
     code_mode/
-      stubs.py                         # CodeModeCatalog + Python stub rendering
+      stubs.py                         # CodeModeCatalog and Python stub rendering
       executor.py                      # Monty worker pool, execute/resume drivers
       bridge.py                        # nested dispatch, taint, trace, bounds, suspension
       metadata.py                      # nested-dispatch metadata keys shared with dispatch
       state.py                         # durable resume artifact build/load/clear
       approval.py                      # trusted nested-approval metadata contract
 apps/web/src/features/
-  agents/components/                   # code-mode enablement checkbox + popover
+  agents/components/                   # code-mode enablement checkbox and popover
   conversations/components/            # workflow card, nested-call rows, approvals, replay
 ```
 
@@ -364,7 +364,7 @@ exists, rather than being half-supported: parallel nested dispatch (needs safe
 session isolation), stubs for deferred-loading and MCP-derived tools (the
 latter needs a threat-model delta for MCP output flowing through scripts),
 in-sandbox tool discovery, workspace-level controls, workflow-scoped tool
-grants (consent would cover unreviewed future arguments), a deduplicating
+grants, because consent can cover unreviewed future arguments, a deduplicating
 execution ledger that could replay past writes instead of the fail-closed
 recovery branch, and object-storage snapshot offload. Treat these as design
 decisions to revisit explicitly, not gaps to patch in passing.

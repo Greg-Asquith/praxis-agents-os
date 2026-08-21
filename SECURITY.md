@@ -1,8 +1,8 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Supported versions
 
-Praxis Agents OS is currently in the `0.x` release series. Security fixes are
+Praxis Agents OS is in the `0.x` release series. Security fixes are
 provided for the latest `0.x` minor release only.
 
 | Version | Supported |
@@ -10,9 +10,9 @@ provided for the latest `0.x` minor release only.
 | 0.1.x   | Yes       |
 | < 0.1   | No        |
 
-## Reporting a Vulnerability
+## Report a vulnerability
 
-Please do not open a public issue for a suspected vulnerability.
+Don't open a public issue for a suspected vulnerability.
 
 Use GitHub's private vulnerability reporting flow: open the repository's
 **Security** tab, choose **Report a vulnerability**, and submit the report
@@ -20,10 +20,10 @@ privately. Include the affected version, reproduction details, likely impact,
 and any suggested mitigation.
 
 The maintainer aims to acknowledge reports within five working days. This is a
-target, not a service-level agreement. Updates will follow as the issue is
-validated and a remediation path is established.
+target, not a service-level agreement. The maintainer provides updates after
+validating the issue and identifying a remediation path.
 
-## Dependency Audit Policy
+## Dependency audit policy
 
 CI audits the locked production dependency sets for both applications. The API
 audit exports hashed requirements from `apps/api/uv.lock` without development
@@ -39,19 +39,19 @@ temporary exception must identify the `ecosystem` (`python` or `npm`), affected
 `package`, scanner `advisory` ID, specific `rationale`, accountable `owner`, and
 an ISO `expires` date. npm exceptions use GHSA IDs. Expiry is exclusive: an
 entry fails CI on its expiry date, before the scanner runs. Remove exceptions
-as soon as the dependency is fixed; extending one requires a fresh risk review.
+when the dependency is fixed. Extending one requires a new risk review.
 
-Run the same audits locally from the repository root:
+From the repository root, run the same audits locally:
 
 ```bash
 python3 .github/scripts/dependency_audit.py api
 python3 .github/scripts/dependency_audit.py web
 ```
 
-## Deployment Hardening
+## Harden a deployment
 
 Do not leave registration open while claiming the first super-admin identity.
-For a new deployment:
+To claim the first super-admin identity safely:
 
 1. Deploy with `ALLOW_SIGNUP=false`.
 2. Register or provision the intended administrator through a controlled path.

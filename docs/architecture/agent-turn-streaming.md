@@ -1,33 +1,34 @@
-# Agent Turn Streaming & Disconnect-Safe Persistence
+# Agent turn streaming and disconnect-safe persistence
 
-How interactive agent turns stream to the client while remaining durable when
-the client goes away. The implementation lives in
+This document explains how interactive agent turns stream to the client and
+remain durable after the client disconnects. The implementation lives in
 `services/conversations/create_turn_stream.py`,
 `services/agents/runtime/worker.py`, and
 `services/agents/runtime/execute_run.py`.
 
-## Guarantees (non-negotiable)
+## Required guarantees
 
-1. **UI streaming** — the client sees assistant text, tool calls, and run status
+1. **UI streaming.** The client receives assistant text, tool calls, and run status
    live over SSE while a turn runs.
-2. **Saving disconnected threads** — if the client disconnects mid-turn, the turn
+2. **Disconnected thread persistence.** If the client disconnects during a turn, the turn
    keeps running server-side and its result is persisted in full.
-3. **Reconnect on refresh if active** — on reload, the client restores the turn by
+3. **Recovery after refresh.** On reload, the client restores the turn by
    reading persisted state from the database, and resumes a "working" indicator if
    a run is still in flight.
 
 ## Explicit non-goal
 
 **Live token replay on refresh.** A refreshed client is not reattached to the
-in-flight token stream. Guarantee 3 is satisfied by **DB-heal**, not by a shared
-event bus: refreshing while a turn is mid-flight shows the last persisted state
-plus a "working" indicator; the completed reply appears once the worker finishes
-and the client re-fetches. Tokens produced between the last persisted state and
-the refresh are not replayed — they arrive whole on completion.
+in-flight token stream. The client recovers from the database instead of using
+a shared event bus. During an active turn, a refreshed client shows the last
+persisted state and a "working" indicator. It fetches the complete reply after
+the worker finishes. Tokens produced after the last persisted state aren't
+replayed individually.
 
-True live resume would require an addressable per-run event buffer (Redis
-Streams or Postgres `LISTEN/NOTIFY`) plus a GET resume route. The DB-heal
-design does not preclude adding it, but nothing today needs it.
+Live resumption requires an addressable event buffer for each run, such as
+Redis Streams or Postgres `LISTEN/NOTIFY`, and a `GET` resume route. The
+database recovery design remains compatible with that addition. Live
+resumption is outside the implemented scope.
 
 ## Architecture
 
@@ -42,21 +43,22 @@ design does not preclude adding it, but nothing today needs it.
 3. The worker owns its **own** `AsyncSession` for the full turn, independent of the
    request. It runs `execute_run` to completion; `execute_run` owns the run
    lifecycle commits for running, terminal success, and terminal failure state.
-4. The response generator forwards sink events until `done`/`close` (happy path) or
-   until the client disconnects. Disconnect cancels **only** the draining; the
-   worker is untouched and runs to completion + persistence.
-5. On refresh, the client reads persisted messages + active-run status and heals.
+4. The response generator forwards sink events until `done`, `close`, or a
+   client disconnect. A disconnect stops only the drain. The worker continues
+   through completion and persistence.
+5. On refresh, the client reads persisted messages and active-run status to
+   recover its state.
 
-### Transaction / session ownership (the load-bearing decision)
+### Transaction and session ownership
 
 The request-scoped session dependency (`core/database.py:get_async_db_session`)
-commits in its `else`/`finally` *after the handler returns*. With a
+commits in its `else` or `finally` block after the handler returns. With a
 `StreamingResponse` the handler returns immediately and the body runs afterward, so
 that dependency no longer brackets the work. It also gets torn down when the
 connection drops — exactly when the worker must keep running. Therefore:
 
 - **The worker creates and closes its own session** via
-  `get_async_db_session_factory()` + `configure_async_db_session()`. It does not use
+  `get_async_db_session_factory()` and `configure_async_db_session()`. It doesn't use
   the request session for turn work.
 - Only the worker task touches that session. The sink drain is pure queue reads, so
   there is no cross-task use of one `AsyncSession`.
@@ -66,7 +68,7 @@ This composes with the `execute_run` contract:
 - **Success** commits final messages, usage, and terminal run status inside
   `execute_run`.
 - **Failure** calls `fail_agent_run` + `db.commit()` inside `execute_run` before
-  re-raising, then emits terminal stream events (`run.status`, `error`, `done`);
+  re-raising. It then emits terminal stream events (`run.status`, `error`, and `done`).
   the worker rolls back any residual state and logs.
 
 ### Background task registry
@@ -79,7 +81,7 @@ completion via a done-callback that logs any exception, and exposes a
 `drain(timeout)` used at `lifespan` shutdown — before `close_db_connections()` —
 so a normal deploy lets in-flight turns commit instead of orphaning them.
 
-### Concurrency guard (one active run per conversation)
+### Concurrency guard
 
 Before creating a run, the route rejects the request if the conversation already
 has a non-terminal `agent_run`. This prevents concurrent detached workers racing
@@ -102,7 +104,7 @@ active `run_id` so the client can attach its heal loop to it.
 - The POST body means the browser cannot use native `EventSource`; the client
   uses `fetch` + `ReadableStream`.
 
-### Read surface for refresh-resume
+### Read state after a refresh
 
 - Persisted transcript: `GET /conversations/{id}/messages`.
 - Active-run status: the conversation payload exposes whether a non-terminal
@@ -113,60 +115,59 @@ working state and re-fetches with backoff until the run goes terminal.
 
 ### `POST /agent-runs/{run_id}/cancel`
 
-Explicit, deliberate stop — distinct from a disconnect. Cancellation is
+Cancellation is an explicit stop, distinct from a disconnect. It is
 cooperative: the worker is signalled to stop and meaningful partial output is
-persisted rather than discarded. Implementation gotcha that shaped it:
+persisted instead of discarded. One implementation constraint shapes this flow:
 `asyncio.CancelledError` is a `BaseException`, not an `Exception`, so it does
 not flow through `execute_run`'s failure path — cancellation is recorded
 deliberately.
 
 ## Disconnect semantics
 
-- Client disconnect → the `StreamingResponse` generator is cancelled → draining
-  stops. The worker task is **not** cancelled.
+- A client disconnect cancels the `StreamingResponse` generator and stops the
+  drain. It doesn't cancel the worker task.
 - The worker completes `execute_run`, persists messages + usage + terminal status,
-  and commits. The sink keeps accepting `emit` calls that no one reads; they are
+  and commits. The sink continues accepting unread `emit` calls. The events are
   discarded when the task ends.
 - `StreamSink.emit` is **non-blocking** for the producer. A blocked producer
-  would let a dead client stall a turn that must complete, so backpressure is
+  can let a disconnected client stall a turn that must complete, so backpressure is
   deliberately not applied here.
 
-## Crash / restart durability
+## Crash and restart durability
 
-A detached worker lives in one process's memory. Any hard stop — crash, OOM,
-`SIGKILL`, a deploy that skips graceful drain, host failure — would leave its run
-stuck non-terminal with nothing in that process to move it, and a heal loop that
-spins forever. The recovery mechanism makes that impossible by construction and
+A detached worker lives in one process's memory. A hard stop can result from a
+crash, out-of-memory (OOM) termination, `SIGKILL`, a deployment without graceful
+drain, or host failure. Without recovery, its run remains non-terminal and the
+client continues polling. The recovery mechanism prevents that state and
 mirrors the scheduled path, which survives dead workers via a lease
 (`agent_schedule_runs.claim_expires_at`, reaped lazily at claim time).
 Interactive `agent_runs` carries the analogous lease and reaps the same way.
 
 ### Defense in depth (ordered by detection latency)
 
-1. **Graceful drain** — planned restarts: `drain()` in `lifespan` awaits in-flight
+1. **Graceful drain.** During planned restarts, `drain()` in `lifespan` awaits in-flight
    workers so they commit. No orphan created in the first place.
-2. **Lease + heartbeat** — the worker stamps `agent_runs.lease_expires_at = now +
-   LEASE_TTL` when it starts and renews it on a heartbeat ticker. A dead worker
+2. **Lease and heartbeat.** The worker stamps `agent_runs.lease_expires_at = now +
+LEASE_TTL` when it starts and renews it on a heartbeat ticker. A dead worker
    stops renewing; its lease goes stale within one TTL regardless of crash cause.
-3. **Lazy on-read reaping** — the paths that ask "is a run active?" reap a
-   lease-expired run *before* answering:
+3. **Reaping during reads.** The paths that ask "is a run active?" reap a
+   lease-expired run _before_ answering:
    - the **active-run guard** (new turn on a conversation): a stale
      `running`/`pending` run is failed first, so an orphan can never block
      future turns;
    - the **active-run status read** (refresh heal loop): a stale run is failed
      before being reported, so the heal loop can never spin forever.
-   Both call `reap_abandoned_runs` scoped to the one run/conversation — the
-   same lazy-at-claim-time pattern the scheduler uses.
-4. **Startup sweep** — a one-shot sweep on boot fails anything left non-terminal
+     Both call `reap_abandoned_runs` scoped to the one run/conversation — the
+     same lazy-at-claim-time pattern the scheduler uses.
+4. **Startup sweep.** A one-time sweep at startup fails any run left non-terminal
    with an expired lease by a prior process (covers crash-then-restart).
-5. **Hard deadline backstop** — `reap_abandoned_runs` also fails runs past
+5. **Hard deadline.** `reap_abandoned_runs` also fails runs past
    `started_at + AGENT_RUN_MAX_DURATION_SECONDS`. Catches an alive-but-wedged
    worker (hung provider call, runaway tool loop) that is still leasing.
 
-Together these guarantee a bounded time to terminal state for every run that
-anyone observes. A periodic background sweep would add only hygiene for
-unobserved rows — interactive turns, by definition, have an observer — so none
-runs in the API lifespan.
+Together, these controls place a time bound on the terminal state of every
+observed run. The API lifespan doesn't run a periodic sweep for unobserved
+rows because interactive turns have an observer.
 
 ### Schema
 
@@ -184,14 +185,14 @@ The worker spawns a sibling ticker task that, every
 short-lived session (`UPDATE agent_runs SET lease_expires_at = now() + :ttl
 WHERE id = :id`) and commits immediately. It must not share the turn's session:
 the turn flushes-but-does-not-commit until the end, so a heartbeat commit on
-that session would prematurely commit partial state. The ticker is cancelled
+that session can prematurely commit partial state. The ticker is cancelled
 when the turn finishes.
 
 False-positive safety: the lease TTL is comfortably larger than the heartbeat
 interval (default TTL 90s, interval 30s) to tolerate transient event-loop
 blocking, and settings validation rejects `HEARTBEAT_INTERVAL >= LEASE_TTL` so
 a misconfiguration cannot make every live run look abandoned. A genuinely
-CPU-blocking tool would stall the loop and pause heartbeats, so such tools must
+CPU-blocking tool can stall the loop and pause heartbeats, so such tools must
 run in a threadpool.
 
 ### Reaper
@@ -220,7 +221,7 @@ rows if the worker already wrote `completed`; if the reaper wins, the worker's
 `AGENT_RUN_PENDING_GRACE_SECONDS` in `core/settings/agents.py`. Settings
 validation keeps the heartbeat interval below the lease TTL.
 
-## Frontend (heal loop)
+## Frontend recovery loop
 
 `src/features/conversations/conversation-heal-polling.ts`:
 

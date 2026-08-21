@@ -1,4 +1,4 @@
-# Agent Behavior Evaluations
+# Agent behavior evaluations
 
 These optional evaluations exercise the same agent runtime used by the system,
 using live provider models and the configured embedding provider. They check
@@ -7,7 +7,7 @@ following, tool choice, and resistance to hostile external content. Because
 they use paid model APIs, they stay outside pytest and never run as part of
 `make check`.
 
-Run from the repository root:
+From the repository root, run the live-model evaluations:
 
 ```sh
 EVALS_MODEL=openai:gpt-5.6-luna OPENAI_API_KEY=... make evals

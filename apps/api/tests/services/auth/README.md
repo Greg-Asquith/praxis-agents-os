@@ -1,6 +1,7 @@
 <!-- apps/api/tests/services/auth/README.md -->
-# Auth Service Tests
 
-Add focused tests here for high-risk auth service behavior: password login,
+# Authentication service tests
+
+Add focused tests here for high-risk authentication service behavior: password sign-in,
 registration, session lifecycle, OAuth code exchange, TOTP, and audit/security
 logging.

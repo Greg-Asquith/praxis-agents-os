@@ -5,22 +5,34 @@ identity, workspaces, agent runs, tool dispatch, integrations, durable jobs,
 and the platform's audit trail. For the quickest way to run the whole product,
 start with the [repository README](../../README.md#quickstart-docker-only).
 
-## Development Setup
+## Set up development
+
+From the `apps/api` directory, install all dependencies, including the
+development group:
 
 ```bash
-# Install all dependencies (including dev group)
 uv sync
+```
 
-# Run locally
+Start the API with its local defaults:
+
+```bash
 uv run python main.py
-# or directly via uvicorn
-uv run uvicorn main:app --reload --port 8000 --no-access-log
+```
 
-# Run the background worker (agent schedules and the generic jobs queue)
+To configure Uvicorn directly, start it with the required options:
+
+```bash
+uv run uvicorn main:app --reload --port 8000 --no-access-log
+```
+
+In a separate terminal, start the worker for schedules and queued jobs:
+
+```bash
 uv run python -m workers.main
 ```
 
-## Runtime Notes
+## Runtime notes
 
 - The API binds to `0.0.0.0:8080` in Docker; locally it defaults to port `8000` when run via `python main.py`.
 - Environment variables are loaded from `.env` (see `.env.example` for required keys).
@@ -29,7 +41,7 @@ uv run python -m workers.main
   - `/api/v1/users/*` handles super-admin user CRUD and admin password setting.
   - OAuth routes never redirect. The frontend owns provider redirects and calls the API only for server-to-server provider work.
 
-## API Module Layout
+## API module layout
 
 - Every FastAPI route operation lives in its own route file. Package
   `__init__.py` files compose those route modules into routers.
@@ -37,10 +49,10 @@ uv run python -m workers.main
   files re-export operation functions only.
 - Service-specific helpers live in that service directory's `utils.py`.
   Reusable helpers live in the top-level `utils/` package.
-- Route files should stay thin: validate HTTP boundary concerns, call one service
+- Keep route files thin: validate HTTP boundary concerns, call one service
   operation, and return its response model.
 
-## Test Layout
+## Test layout
 
 Tests live under `tests/` and are grouped by what they prove:
 
@@ -57,19 +69,19 @@ Tests live under `tests/` and are grouped by what they prove:
 
 Do not create one test file for every route or service operation by default.
 Prioritize high-risk, security-sensitive, externally observable, and regression-
-prone behavior. Database-backed tests should use PostgreSQL via
+prone behavior. Database-backed tests must use PostgreSQL through
 `TEST_DATABASE_URL`; do not use SQLite as a behavioral substitute for this API.
 
-Run the suite:
+Run the test suite:
 
 ```bash
 uv run pytest
 ```
 
-## Database Migrations
+## Manage database migrations
 
-Alembic owns database schema changes for this service. Migrations are run
-explicitly from `apps/api`; the API does not apply migrations at startup.
+Alembic owns database schema changes for this service. Run migrations
+explicitly from `apps/api`. The API doesn't apply migrations at startup.
 
 Required runtime environment variables, including `DATABASE_URL`, `SECRET_KEY`,
 and an application encryption source (`ENCRYPTION_KEYS` or
@@ -100,13 +112,13 @@ uv run alembic revision --autogenerate \
   -m "describe app schema change"
 ```
 
-Check that the current models match the migration state:
+Check that the application models match the migration state:
 
 ```bash
 uv run alembic check
 ```
 
-## Application Encryption Rotation
+## Rotate application encryption keys
 
 `ENCRYPTION_KEYS` is a newest-first comma-separated list or JSON array of
 Fernet keys. Non-local environments can set `ENCRYPTION_KEYS_SECRET_NAME`; the

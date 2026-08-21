@@ -1,93 +1,82 @@
-# Skills, Files, Knowledge Base, and Memories — what's the difference?
+# Choose between skills, files, the Knowledge Base, and memories
 
-Praxis gives you several ways to give your agents context. They can look
-similar at first — "I have a document, where do I put it?" — but each one
-answers a different question:
+Praxis provides four ways to give agents context. Choose the one that matches
+how you want the agent to use the information:
 
-| You want the agent to… | Use |
-|---|---|
-| Follow a set of instructions or a process | **Skill** |
-| Work on a specific document right now | **File** |
-| Be able to look things up whenever they're relevant | **Knowledge Base** |
-| Remember things about you and your work over time | **Memories** |
+| Goal                                                                   | Use                |
+| ---------------------------------------------------------------------- | ------------------ |
+| Follow instructions or a repeatable process                            | **Skill**          |
+| Read, edit, or create a specific document                              | **File**           |
+| Find shared reference information when relevant                        | **Knowledge Base** |
+| Retain preferences, decisions, or project context across conversations | **Memory**         |
 
-## Skills — teach an agent *how* to do something
+## Skills teach an agent how to do something
 
-A skill is a set of instructions: how to write your weekly report, how to
-qualify a sales lead, what tone to use in customer emails. Think of it as a
-recipe or a playbook.
+A skill contains instructions for a repeatable task. For example, a skill can
+define how to write a weekly report, qualify a sales lead, or format customer
+emails.
 
-- You create skills once and assign them to the agents that need them. An
-  agent without the skill won't use it.
-- Agents are smart about skills: they see a short description of each skill
-  they have, and only pull in the full instructions when the task calls for
-  it. You can give an agent several skills without slowing it down.
-- Skills can include supporting documents — for example, a report template
-  or a style guide the instructions refer to.
+Create a skill once, then assign it to the agents that need it. An agent sees a
+short description first and loads the full instructions only when the task
+requires them. A skill can also include supporting documents, such as a report
+template or style guide.
 
-**Use a skill when** you'd otherwise be pasting the same instructions into
-the chat again and again.
+Use a skill if you repeat the same instructions in several conversations. For
+example, create a skill when every customer onboarding email
+must follow the same structure.
 
-**Example:** "Draft our customer onboarding email" should come out the same
-way every time — that's a skill.
+## Files give an agent a specific document
 
-## Files — hand an agent a specific document
+Files store documents in your workspace, including spreadsheets, PDF files,
+reports, and images. Attach a file to a conversation when you want an agent to
+read or change that document. Agents can also create files.
 
-Files are your workspace's document storage — spreadsheets, PDFs, reports,
-images. Attach a file to a conversation and the agent will read it and work
-with it. Agents can also create and edit files, and every change is saved as
-a new version, so you can always see what changed and go back.
+Praxis saves each change as a separate revision. You can review earlier
+revisions and restore one when needed.
 
-**Use a file when** the task is about *that document*: "summarize this PDF",
-"fix the numbers in this spreadsheet", "turn these notes into a proposal".
+Use a file when the task concerns a specific document. Examples include
+summarizing a PDF file, correcting a spreadsheet, or turning meeting notes into
+a proposal.
 
-**Example:** Uploading this month's sales export and asking for a summary —
-that's a file.
+## The Knowledge Base stores workspace knowledge
 
-## Knowledge Base — what your workspace knows
+The Knowledge Base is a searchable reference library for your workspace. It
+can contain product details, policies, pricing, frequently asked questions,
+and client information.
 
-The Knowledge Base is your workspace's shared reference library: product
-details, policies, pricing, FAQs, background on your clients. You don't
-attach it to anything — every agent in the workspace automatically searches
-it when a question calls for it, in any conversation.
+Every agent in the workspace can search shared entries when a task requires
+them. Add an entry by uploading a document, importing a web page, or writing
+the content in Praxis. Mark an entry as private when only you may access it.
 
-- Add entries by uploading a document, pointing at a web page, or writing
-  one directly.
-- Everything in it is searchable, so agents find the relevant part on their
-  own — you don't have to remember to hand it over.
-- You can mark an entry as private, and then only you will see it come up.
+Use the Knowledge Base when agents need to find the information across many
+conversations. For example, add a refund policy so agents can use it when they
+answer customer questions.
 
-**Use the Knowledge Base when** the information should be available to every
-agent, every time it's relevant — not just in one conversation.
+### Choose between a file and the Knowledge Base
 
-**Example:** Your refund policy. Any agent answering a customer question
-should be able to find it without you attaching anything.
+Use a file to work on a document in a conversation. Use the Knowledge Base to
+make reference information searchable across the workspace.
 
-### File or Knowledge Base?
+When you upload a document through the Knowledge Base, Praxis also stores it
+in Files. This keeps the source document available for later work.
 
-The same document can be either — it depends on what it's *for*. A file is
-for working on: the agent reads or edits that document in that conversation.
-A Knowledge Base entry is for looking up: any agent can find it whenever it
-helps. If you upload a document straight into the Knowledge Base, Praxis
-keeps a copy in your Files too, so you don't have to choose in advance.
+### Choose between a skill and the Knowledge Base
 
-### Skill or Knowledge Base?
+Use a skill for instructions about how an agent performs a task. Use the
+Knowledge Base for facts that an agent may need while performing a task.
 
-Skills are *how to act*; the Knowledge Base is *what's true*. "Always open
-proposals with a one-paragraph summary" is a skill. "Our standard proposal
-turnaround is five business days" is a Knowledge Base entry. When in doubt:
-if it reads like instructions, it's a skill; if it reads like facts, it
-belongs in the Knowledge Base.
+For example, "Start every proposal with a one-paragraph summary" belongs in a
+skill. "Our standard proposal turnaround is five business days" belongs in the
+Knowledge Base.
 
-## Memories — what an agent remembers over time
+## Memories retain useful context over time
 
-Memories let agents retain useful context across conversations — your
-preferences, ongoing projects, and decisions — so you do not have to repeat
-yourself. Agents can keep durable core memories and searchable notes, while
-you retain full visibility and control.
+Memories store preferences, decisions, and ongoing project context across
+conversations. Agents can save durable core memories and searchable notes.
 
-The Memory page lets you review what was saved, correct it without losing
-version history, archive it, or permanently remove it. Use a memory when the
-information is personal or evolves through work with an agent; use the
-Knowledge Base for shared reference material that should be available across
-the workspace.
+In **Memories**, you can review saved information, correct it while preserving
+revision history, archive it, or permanently delete it.
+
+Use a memory for information that develops through your work with an agent.
+Use the Knowledge Base for shared reference material that applies across the
+workspace.

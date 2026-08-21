@@ -1,5 +1,7 @@
 <!-- apps/api/tests/routes/auth/README.md -->
-# Auth Route Tests
 
-Add focused tests here for key auth HTTP boundary behavior such as login,
-registration, OAuth API-only callbacks, session cookies, and TOTP endpoints.
+# Authentication route tests
+
+Add focused tests here for important authentication behavior at the HTTP
+boundary. Cover sign-in, registration, API-only OAuth callbacks, session
+cookies, and time-based one-time password (TOTP) endpoints.

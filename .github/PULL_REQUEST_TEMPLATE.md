@@ -1,6 +1,6 @@
 ## Summary
 
-Describe the outcome and why the change is needed.
+Describe the outcome first, then explain why the change is needed.
 
 ## Related issue
 
@@ -11,7 +11,7 @@ Link the issue that defines the scope.
 - [ ] Focused checks:
 - [ ] `make check`
 
-List any checks that could not be run and why.
+List any checks you couldn't run, and explain why.
 
 ## Risk review
 
@@ -26,4 +26,4 @@ Mark every area this change touches:
 - [ ] SSE protocol or conversation persistence
 - [ ] None of the above
 
-Describe the mitigation and test coverage for each selected risk.
+For each selected risk, describe the mitigation and test coverage.

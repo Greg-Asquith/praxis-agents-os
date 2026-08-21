@@ -1,10 +1,11 @@
 <!-- apps/api/tests/services/agents/runtime/README.md -->
-# Agent Runtime Tests
+
+# Agent runtime tests
 
 Tests for the Pydantic AI agent runtime under `services/agents/runtime/`.
 
-`test_pydantic_ai_spike.py` is build-sequence step 1 from
-`docs/architecture/agent-runtime.md`: it pins the pydantic-ai behaviours the runtime
-design depends on (message serialization, the streaming driver, and deferred-tool
-approval/resume) against the installed version. It is deterministic and provider-free
-(`TestModel`), so it runs without a database or model credentials.
+The `test_pydantic_ai_spike.py` file implements the first build-sequence step
+from `docs/architecture/agent-runtime.md`. It checks the Pydantic AI behavior
+that the runtime depends on: message serialization, streaming, and deferred
+tool approval and resumption. The test uses `TestModel`, so it runs without a
+database, provider, or model credentials.

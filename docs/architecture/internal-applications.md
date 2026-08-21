@@ -1,24 +1,23 @@
-# Internal Applications
+# Internal applications
 
-- **Status**: design position; the applications capability is **not yet
-  built**. Everything below is design intent except where it names existing
-  substrate. The load-bearing rule stands regardless of how the slicing
-  evolves: applications ride the platform — its identity, dispatch, policy,
-  and audit boundaries — rather than beside it.
-- **Rule**: implementation work cites the section it implements. A change
-  that deviates records the deviation back into this note in the same PR.
+- **Status:** Pending. The applications capability isn't implemented. Unless a
+  section explicitly identifies existing infrastructure, every present-tense
+  statement below defines a design requirement rather than available behavior.
+  Applications must use the platform's identity, dispatch, policy, and audit
+  boundaries.
+- **Rule:** Implementation work cites the section it implements. Record any
+  deviation in this note in the same pull request.
 - This note contains **architecture, not product scope**. Intake flows,
-  triage policy, and catalogue UX are product territory; where an
+  triage policy, and catalog user experience are product decisions. This note defines where an
   application's code lives, what it may touch, and who may change what is
   this note's.
 
 ## 1. Objective
 
-Let people inside an organisation use AI coding tools to build internal
-applications that become shared, governed software — without inventing
-their own identity, credentials, storage, permissions, approvals, audit,
-or lifecycle. Praxis provides the architecture; builders provide the
-workflow.
+The proposed capability lets people inside an organization use AI coding tools
+to build shared internal applications. Applications use Praxis identity,
+credentials, storage, permissions, approvals, audit, and lifecycle controls.
+Praxis provides the architecture, and builders provide the workflow.
 
 Two constraints shape everything below, both taken as product decisions:
 
@@ -29,20 +28,20 @@ Two constraints shape everything below, both taken as product decisions:
 2. **Built anywhere.** Builders author applications locally with their own
    coding tools (Claude Code, Codex, Cursor) on their own subscriptions.
    Praxis is not the required build environment and carries no build-time
-   model spend. Building *inside* Praxis (an agent authoring an app
-   in-workspace) is a possible later on-ramp, never the required path.
+   model spend. In-workspace application authoring is a possible later entry
+   point, not a required path.
 
-These resolve the apparent tension by decoupling build time from run time:
+These constraints separate build time from run time:
 **applications are built anywhere, published into Praxis, and run inside
 it.**
 
 ## 2. Core position: applications are workspace content, not deployments
 
-An application is a first-class workspace resource — like agents, skills,
-and files — not a deployed service:
+An application is a proposed workspace resource, like agents, skills, and
+files. It isn't a separately deployed service:
 
 - **What it is**: a versioned application contract (§7) + a static
-  frontend bundle + configuration that *references* Praxis resources
+  frontend bundle + configuration that _references_ Praxis resources
   (which registry tools it may call, which data collections it owns,
   which agents/schedules it uses).
 - **Where the bytes live**: the bundle is object storage content versioned
@@ -57,43 +56,42 @@ and files — not a deployed service:
   Retirement is soft delete under the standard retention laws
   (`governance.md` §3).
 
-Consequences that fall out of this single choice:
+This choice has the following consequences:
 
-| Lifecycle concern | Becomes |
-|---|---|
-| Deployment, versioning, rollback | `FileRevision` semantics + a current-version pointer |
-| Catalogue | a workspace list surface over application rows |
-| Audience control | workspace membership/roles at read time (groups later) |
-| Ownership, transfer | columns + ordinary CRUD, audited |
-| Audit and incident history | existing `audit_events`, actor = user *via* app |
-| Disable/revoke | row flag checked at frame mint and token verify time |
+| Lifecycle concern                | Becomes                                                |
+| -------------------------------- | ------------------------------------------------------ |
+| Deployment, versioning, rollback | `FileRevision` semantics + a current-version pointer   |
+| Catalogue                        | a workspace list surface over application rows         |
+| Audience control                 | workspace membership/roles at read time (groups later) |
+| Ownership, transfer              | columns + ordinary CRUD, audited                       |
+| Audit and incident history       | existing `audit_events`, actor = user _via_ app        |
+| Disable/revoke                   | row flag checked at frame mint and token verify time   |
 
 This is where the codebase already points: artifacts serve versioned HTML
 bundles sandboxed with strict CSP, and dormant scaffolding exists for exactly
 this surface — `middleware/utils.py` matches `/apps/{id}/frame` paths,
 `middleware/security_headers.py` relaxes `frame-ancestors` for them, and the
 CORS allowlist already carries `X-Praxis-App-Frame-Token`. Internal
-applications are artifacts grown up: bundle + contract + scoped capabilities +
-audience.
+applications extend artifacts with a bundle, contract, scoped capabilities,
+and an audience.
 
 ## 3. The three-tier change model
 
-The answer to "everyone commits to core" vs "everything sits separately"
-is that neither happens. Three tiers of change, each with its own author,
-artifact, and route:
+The design separates application work from core platform changes. It defines
+three change tiers, each with an owner, artifact, and route:
 
-| Tier | Who ships it | Artifact | Route | Repo access |
-|---|---|---|---|---|
-| **Application** — workflow, UI, config, business rules | Internal builder + their coding agent | Contract + bundle | Push/upload → validation gates → draft → publish | None |
-| **Building block** — new tool, provider operation, collection type, UI component | Platform/technical owner | In-repo package | Normal review, following the packaging law (`integration-packaging.md`) | Yes, isolated |
-| **Platform** — dispatch, identity, contracts, policy, serving | Core maintainers | Core code | Normal review | Yes |
+| Tier                                                                             | Who ships it                          | Artifact          | Route                                                                   | Repo access   |
+| -------------------------------------------------------------------------------- | ------------------------------------- | ----------------- | ----------------------------------------------------------------------- | ------------- |
+| **Application** — workflow, UI, config, business rules                           | Internal builder + their coding agent | Contract + bundle | Push/upload → validation gates → draft → publish                        | None          |
+| **Building block** — new tool, provider operation, collection type, UI component | Platform/technical owner              | In-repo package   | Normal review, following the packaging law (`integration-packaging.md`) | Yes, isolated |
+| **Platform** — dispatch, identity, contracts, policy, serving                    | Core maintainers                      | Core code         | Normal review                                                           | Yes           |
 
 - Builders **cannot** reach the repository. An application that needs a
   capability no existing building block provides produces a **capability
   request** (the brief's exception path), which a technical owner may
   implement as a tier-2 package — contribution stays isolated by the same
   import laws and enablement layers that govern integration providers.
-- Tier 2 already has a proven shape: self-contained packages, boot-time
+- Tier 2 uses an established shape: self-contained packages, startup
   enablement, AST-enforced import laws, one-line registration, default
   server-declared UI. Building blocks beyond integrations (e.g. an app
   data collection type) follow the same law.
@@ -109,7 +107,7 @@ token mechanism with two mint paths.
 
 ### 4.1 Frame tokens (runtime)
 
-1. A user opens a published app from the catalogue. They are already
+1. A user opens a published app from the catalog. They are already
    authenticated, workspace-resolved, and role-checked by the existing
    dependency stack.
 2. The server mints a **short-lived frame token** from that session:
@@ -122,7 +120,7 @@ token mechanism with two mint paths.
    on the app capability surface (§5) verify audience and scope on every
    call.
 
-The app is therefore a **narrower principal than its user**: a buggy or
+The app is therefore a **narrower principal than its user**. A faulty or
 malicious generated bundle can only do what its contract declares, and
 only on behalf of a user entitled to do it anyway. Every audit row
 records (user, via application X, version N).
@@ -144,7 +142,7 @@ displayed once. The builder drops it in `.env.local`.
   collections resolve to a scratch/dev namespace under a dev token so
   builders do not iterate against shared rows.
 - Dev tokens are a human's scoped credential for a build loop — they do
-  not create machine identity, and they never appear in a published
+  don't create machine identity, and they never appear in a published
   bundle (the validation gates reject any embedded credential, and the
   dev harness design in §6 keeps them out of browser code entirely).
 
@@ -159,7 +157,7 @@ already outside the cookie-CSRF path by design.
 
 ## 5. Runtime enforcement boundary
 
-Policy checks alone are insufficient if the runtime still permits an
+Policy checks are insufficient if the runtime permits an
 application to bypass Praxis. The boundary is structural:
 
 ### 5.1 The sandbox
@@ -177,24 +175,24 @@ by scanning generated code:
 - no credential exposure beyond the short-lived, scope-limited frame
   token;
 - no cross-app or cross-workspace reach (audience-checked at mint,
-  scope-checked per call, workspace-scoped rows underneath).
+  scope-checked per call, and workspace-scoped rows in storage).
 
 ### 5.2 The app capability surface
 
 A deliberately narrow API, every route requiring a frame/dev token and
 enforcing contract scopes:
 
-| Capability | Backed by | State |
-|---|---|---|
-| Execute registry tool | **Headless dispatch** — a non-agent entrypoint over the existing choke point (`services/agents/runtime/dispatch.py`), with an envelope minted for app principals | New; the dispatch module explicitly reserves this seam ("wrap this module") |
-| App data collections | New app data service on the reserved `app` schema (`AppModel` base + empty `app` Alembic branch exist; zero tables today) | New, bounded |
-| Files | Existing files service, app-scoped key namespace | Extension |
-| Invoke an agent / read runs | Existing agent runtime + runs API, scope-gated | Extension |
-| Approvals | A generic approval primitive (not a paused conversation), surfaced in the existing approvals UI | New |
+| Capability                  | Backed by                                                                                                                                                        | State                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Execute registry tool       | **Headless dispatch** — a non-agent entrypoint over the existing choke point (`services/agents/runtime/dispatch.py`), with an envelope minted for app principals | Pending; the dispatch module reserves this seam ("wrap this module") |
+| App data collections        | Proposed app data service on the reserved `app` schema (`AppModel` base and empty `app` Alembic branch exist; no tables exist)                                   | Pending, bounded                                                     |
+| Files                       | Existing files service, app-scoped key namespace                                                                                                                 | Pending extension                                                    |
+| Invoke an agent / read runs | Existing agent runtime and runs API, scope-gated                                                                                                                 | Pending extension                                                    |
+| Approvals                   | A generic approval primitive, separate from a paused conversation and surfaced in the existing approvals UI                                                      | Pending                                                              |
 
 Server-side application logic beyond this surface is not hosted.
-Behavior that needs server-side trust is *expressed in Praxis
-primitives* — an agent, a schedule, a job handler, a registry tool. If it
+Behavior that needs server-side trust uses Praxis primitives, such as an
+agent, schedule, job handler, or registry tool. If it
 cannot be, that is a tier-2 capability request by design. The underlying
 Python that calls provider APIs lives in exactly one place — registry
 tools inside provider packages holding centrally-managed credentials —
@@ -214,19 +212,19 @@ and applications reach it only through dispatch.
   model context; if an app feeds content into an agent run, the existing
   threat-model channels apply unchanged (`threat-model.md` §2).
 
-### 5.4 Known failure modes → countermeasures
+### 5.4 Known failure modes and countermeasures
 
-| Brief failure mode | Countermeasure |
-|---|---|
-| Data embedded in source/HTML | App data service + validation gate (inline-data budget) |
+| Brief failure mode                             | Countermeasure                                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Data embedded in source/HTML                   | App data service + validation gate (inline-data budget)                             |
 | Persistence via downloads/self-modifying files | Immutable revisions; bundle is read-only at runtime; collections are the write path |
-| Credentials in code or browser config | Secrets never reach builders; dev proxy keeps tokens server-side; secret-scan gate |
-| Direct DB/external API access | CSP `connect-src` allowlist; no DB surface exists to reach |
-| No shared authn/authz | Frame runs inside Praxis session; contract-scoped tokens |
-| Undeclared side effects | Effect-classified dispatch + envelope + approvals |
-| No audit/approval boundary | Single choke point; app calls cannot route around it |
-| No deployment/versioning/ownership | Rows + revisions + owner columns (§2) |
-| Unbounded dependencies/infrastructure | Bundle is static assets; there is no infrastructure to request |
+| Credentials in code or browser config          | Secrets never reach builders; dev proxy keeps tokens server-side; secret-scan gate  |
+| Direct DB/external API access                  | CSP `connect-src` allowlist; no DB surface exists to reach                          |
+| No shared authn/authz                          | Frame runs inside Praxis session; contract-scoped tokens                            |
+| Undeclared side effects                        | Effect-classified dispatch + envelope + approvals                                   |
+| No audit/approval boundary                     | Single choke point; app calls cannot route around it                                |
+| No deployment/versioning/ownership             | Rows + revisions + owner columns (§2)                                               |
+| Unbounded dependencies/infrastructure          | Bundle is static assets; there is no infrastructure to request                      |
 
 ## 6. The build loop (local-first)
 
@@ -235,16 +233,16 @@ and applications reach it only through dispatch.
 `praxis create-app` (or a template repository) scaffolds a normal web
 project:
 
-- Vite + the approved UI component baseline;
+- Vite and the approved UI component baseline;
 - a typed client for the app capability surface (generated from the
   authenticated OpenAPI schema route);
 - a manifest/contract stub;
-- **coding-agent instructions** (`AGENTS.md`/`CLAUDE.md`) plus a
-  machine-readable building-block catalogue snapshot — tool names, input/
-  output schemas, effects, approval defaults, example calls — so Claude
-  Code/Codex/Cursor discover capabilities the way they discover anything:
-  by reading files in the repo. Refreshable via the dev token from the
-  live catalogue route.
+- **coding-agent instructions** in `AGENTS.md` and `CLAUDE.md`, plus a
+  machine-readable building-block catalog snapshot. The snapshot contains
+  tool names, input and output schemas, effects, approval defaults, and
+  example calls. Claude Code, Codex, and Cursor discover capabilities by
+  reading repository files. The development token refreshes the snapshot
+  from the live catalog route.
 
 All build-time model spend is on the builder's own tooling subscription.
 Praxis model spend occurs only when a published app invokes agents or
@@ -252,15 +250,15 @@ models at runtime, metered by the existing per-run usage accounting.
 
 ### 6.2 Dev harness
 
-The template's dev server serves the bundle locally in a shell-emulating
+The template's development server serves the bundle locally in a shell-emulating
 frame and proxies `/api/*` to the configured Praxis instance, attaching
 the dev token server-side. The browser only ever talks to localhost;
-production CORS is untouched; the token stays out of client code.
+production CORS is unchanged. The token stays out of client code.
 
 ### 6.3 Publish
 
-`praxis apps push` (CLI) or UI upload sends bundle + manifest. On
-receipt, server-side validation gates run:
+The `praxis apps push` command-line interface (CLI) or UI upload sends the
+bundle and manifest. After receipt, the server runs these validation gates:
 
 - secret/credential scan; inline-dataset and generated-binary budgets;
 - manifest ↔ requested-scope consistency; every requested building block
@@ -270,15 +268,15 @@ receipt, server-side validation gates run:
 - ownership and audience declared; maintainability budgets
   **[default — confirm at review]**.
 
-Failures return a machine-readable report naming the violated contract
-and the supported replacement pattern — feedback a coding agent can apply
-directly. Pass → draft version → publish to audience. The CLI path is
-also the future CI seam.
+Failures return a machine-readable report that names the violated contract
+and supported replacement. A coding agent can apply this feedback directly.
+A successful validation creates a draft version that an owner can publish to
+the intended audience. The CLI can also support a future CI workflow.
 
 ## 7. Application contract (minimum viable)
 
 Versioned, machine-readable, stored with the application row; drives
-provisioning, token scoping, validation, catalogue, and audit — never
+provisioning, token scoping, validation, catalog, and audit — never
 documentation-only. Minimum fields:
 
 - application id, version, title, purpose;
@@ -295,20 +293,20 @@ Changes that widen audience, add write scopes, or add sensitive resources
 re-enter validation rather than inheriting a prior approval — enforced by
 scope-diffing contract versions at publish time.
 
-## 8. Existing substrate this rides on
+## 8. Existing foundation
 
-| Need | Existing asset | Gap |
-|---|---|---|
-| Capability contract | `RuntimeToolDefinition` — effect, effect_scope, policies, output model, presentation, import-time validation | No serialized **input** JSON Schema in the catalogue; no `version` field on tools; both cheap now, migrations later |
-| One audited execution path | `dispatch.py` choke point + envelopes + audit | Agent-run-coupled; needs the headless entrypoint + app-principal envelope |
-| Approvals | Suspend/resume + approvals UI | Conversation-coupled; needs a generic primitive |
-| Per-workspace capability gating | `is_tool_allowed` seam + per-agent tool policies | No per-workspace grant model |
-| Credentials/secrets | Integration credential engine + secrets providers | None for this note's purposes |
-| Versioned content + serving | Files/`FileRevision`; the artifacts serving pipeline; `/apps/{id}/frame` middleware scaffolding | App serving route, mint/verify, and bundle conventions unbuilt |
-| App data | `app` schema + Alembic branch + `AppModel` base | Zero tables; the collection service is greenfield |
-| Background work | Generic jobs harness | App-attributed enqueue conventions only |
-| Governance/threat model | `governance.md`, `threat-model.md` | New rows/sections, same shape |
-| Working integrations to compose | OAuth, API-key, and service-account connections with discovery and context selection | None for this note's purposes |
+| Need                            | Existing asset                                                                                               | Gap                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Capability contract             | `RuntimeToolDefinition` — effect, effect_scope, policies, output model, presentation, import-time validation | No serialized **input** JSON Schema in the catalog and no `version` field on tools; adding either later requires a migration |
+| One audited execution path      | `dispatch.py` choke point + envelopes + audit                                                                | Agent-run-coupled; needs the headless entrypoint + app-principal envelope                                                    |
+| Approvals                       | Suspend/resume + approvals UI                                                                                | Conversation-coupled; needs a generic primitive                                                                              |
+| Per-workspace capability gating | `is_tool_allowed` seam + per-agent tool policies                                                             | No per-workspace grant model                                                                                                 |
+| Credentials/secrets             | Integration credential engine + secrets providers                                                            | None for this note's purposes                                                                                                |
+| Versioned content + serving     | Files/`FileRevision`; the artifacts serving pipeline; `/apps/{id}/frame` middleware scaffolding              | App serving route, mint/verify, and bundle conventions unbuilt                                                               |
+| App data                        | `app` schema, Alembic branch, and `AppModel` base                                                            | The collection service requires its first tables and implementation                                                          |
+| Background work                 | Generic jobs harness                                                                                         | App-attributed enqueue conventions only                                                                                      |
+| Governance/threat model         | `governance.md`, `threat-model.md`                                                                           | New rows/sections, same shape                                                                                                |
+| Working integrations to compose | OAuth, API-key, and service-account connections with discovery and context selection                         | None for this note's purposes                                                                                                |
 
 ## 9. Non-goals
 
@@ -324,10 +322,11 @@ scope-diffing contract versions at publish time.
 
 ## 10. Open decisions
 
-Resolved before implementation starts, with these working defaults:
+Resolve these decisions before implementation starts. The list includes
+proposed defaults:
 
 1. First supported application shape and a first reference application
-   (internal, read-mostly, recognisable to a non-technical operator) —
+   (internal, read-mostly, recognizable to a non-technical operator) —
    maintainer decision.
 2. Frame/dev token mechanics: lifetime, storage, revocation, and whether
    dev tokens default read-only (§4.2 default).

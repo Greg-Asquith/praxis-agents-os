@@ -5,15 +5,17 @@ maintainable changes that strengthen a clean foundation for small teams.
 
 ## Development setup
 
-Install Python 3.12, `uv`, Node.js 24, `pnpm`, and Docker. Then run:
+Install Python 3.12, `uv`, Node.js 24, `pnpm`, and Docker. Then prepare the
+local environment and start the development services:
 
 ```bash
 make bootstrap
 make dev
 ```
 
-The default development flow runs Postgres in Docker and the API, worker, and
-web app locally with reload. Before opening a pull request, run:
+The default development flow runs Postgres in Docker. It runs the API, worker,
+and web app locally with automatic reload. Before opening a pull request, run
+the full quality gate:
 
 ```bash
 make check
@@ -22,7 +24,7 @@ make check
 Focused commands and architecture expectations are documented in
 [AGENTS.md](AGENTS.md), [apps/api/AGENTS.md](apps/api/AGENTS.md), and
 [apps/web/AGENTS.md](apps/web/AGENTS.md). The
-[review checklist](REVIEW.md) describes what maintainers scrutinize.
+[review checklist](REVIEW.md) describes the maintainers' review criteria.
 
 ## Issue-driven workflow
 

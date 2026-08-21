@@ -1,8 +1,8 @@
-# Inbound Integration Events
+# Inbound integration events
 
-- **Status**: living document (receipt spine implemented; subscriptions pending)
-- **Rule**: implementation work cites the section it implements and records any
-  deviation back into this note in the same PR. Defaults stay visibly marked
+- **Status:** The receipt foundation is implemented. Subscriptions are pending.
+- **Rule:** Implementation work cites the section it implements and records any
+  deviation in this note in the same pull request. Defaults stay visibly marked
   `[default — confirm at review]` until an implementation lands and replaces
   the marker with `*(implemented)*`.
 - The receipt, registration, provider-lifecycle, processing, retention, and
@@ -11,9 +11,9 @@
 
 ## 1. Problem and non-goals
 
-The integration engine is pull-first: Praxis discovers resources and
-calls provider APIs, but providers cannot notify Praxis that something changed.
-That leaves reactive workflows such as “triage a new email” without an honest
+The integration engine starts requests to provider APIs to discover resources
+and read data. Providers cannot notify Praxis that something changed. This
+leaves reactive workflows such as "triage a new email" without a defined
 receipt, verification, deduplication, or unattended-run model.
 
 Inbound events use the existing provider-package, jobs, audit, and agent-runtime
@@ -47,35 +47,36 @@ then performs only this sequence:
 3. Verify the request before parsing provider payload fields or writing any
    payload-derived log or row.
 4. Insert one compact event row, enqueue `integrations.process_event`, commit,
-   and return 2xx.
+   and return a `2xx` response.
 
 The route has no session dependency, bearer dependency, user resolution, or
 workspace-header contract. Provider cryptographic verification is its sole
 authentication mechanism. Cookies and bearer headers are ignored by the
 handler. A browser request that includes a `session` cookie is still subject to
-the normal CSRF middleware and should fail without a valid origin and CSRF token.
+the normal CSRF middleware and fails without a valid origin and CSRF token.
 
 No CSRF exemption is added. `CSRFMiddleware` only enforces unsafe methods when a
 `session` cookie is present (`apps/api/middleware/csrf.py`), so genuine provider
 requests already pass without weakening the exemption list. Adding the webhook
-prefix to that list would unnecessarily exempt browser-borne cookie requests.
+Adding the prefix to that list unnecessarily exempts browser requests that
+carry cookies.
 
 Receipt uses the existing Postgres-backed rate limiter with a fail-closed
 posture. Its key is bounded to provider key plus trusted source IP; it must not
 include attacker-controlled webhook ids or event ids. The first implementation
 adds an `integration_webhook_receipts` limit type and limit of 120 requests per
-minute per provider/source-IP pair *(implemented)*. Rejected
+minute per provider/source-IP pair _(implemented)_. Rejected
 requests, including verification failures, consume the same budget so invalid
 traffic cannot become unbounded cryptographic or audit work.
 
 ## 3. Verification
 
 Verification belongs to the provider package behind a central engine contract.
-The packaging law still holds: routes and workers call a published integration
-seam; core code never imports a concrete provider. When event delivery is
-implemented, `IntegrationProviderPlugin` gains an optional verifier/watch seam
-whose input is provider-neutral request metadata plus raw bytes and whose output
-is a normalized, already-authenticated receipt. Providers with
+The packaging rule still applies: routes and workers call a published
+integration contract, and core code never imports a concrete provider.
+`IntegrationProviderPlugin` includes an optional verifier and watch contract.
+Its input contains provider-neutral request metadata and raw bytes. Its output
+is a normalized, authenticated receipt. Providers with
 `event_delivery="none"` expose no event contribution.
 
 The normalized verifier result contains only data needed before processing:
@@ -145,8 +146,8 @@ lifecycle status. Secret values never enter the row.
 | `processed_at`         | Nullable terminal-processing timestamp                       |
 
 Payload persistence is capped by `INTEGRATIONS_EVENT_PAYLOAD_MAX_BYTES`, 64 KiB
-*(implemented)*. The HTTP layer also rejects bodies beyond a
-separate hard receipt cap of 1 MiB *(implemented)*, preventing
+_(implemented)_. The HTTP layer also rejects bodies beyond a
+separate hard receipt cap of 1 MiB _(implemented)_, preventing
 unbounded reads. An authenticated body above the persistence cap stores only its
 digest and normalized envelope; processing re-pulls authoritative data from the
 provider. Payloads are untrusted external data even after transport
@@ -163,7 +164,7 @@ Receipt uses insert-or-ignore. A duplicate returns 2xx and creates neither a
 second row nor a second job. `integrations.process_event` remains idempotent under
 job retry and checks the row status before effects.
 
-Terminal event rows are retained for 30 days *(implemented)*. The existing
+Terminal event rows are retained for 30 days _(implemented)_. The existing
 `integrations.sweep_stale` job owns the deletion clause; receipt does not
 introduce a second sweeper.
 
@@ -202,29 +203,29 @@ trigger `event`. The database CHECK, `services.agent_runs.domain` trigger set,
 runtime principal literal, and every exhaustive trigger branch must grow
 together in the implementing migration.
 
-The safety law is non-negotiable: an `event` run is unattended and receives the
+The safety rule is required: an `event` run is unattended and receives the
 same side-effect posture as a scheduled run. Its server-minted envelope is
-hard-coded to `require_approval` *(implemented)*; therefore an
+hard-coded to `require_approval` _(implemented)_; therefore an
 event-triggered run cannot execute an unapproved external write. Internal Praxis
 writes remain available, and tools that always require approval remain stricter.
 No client or prompt field can widen the envelope. There is no event-specific
-policy setting in v1 *(implemented)*; any future divergence requires a
+policy setting in the initial version _(implemented)_. Any future divergence requires a
 product decision.
 
 ## 7. Provider posture
 
-| Provider   | Manifest `event_delivery`                                             | Verification and lifecycle                                                                                | First implementation posture                                                       |
-| ---------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Gmail      | `pubsub_push`                                                         | Google Pub/Sub OIDC push; `users.watch`; watches renew before their roughly seven-day expiry              | First reactive-email provider after the receipt spine                              |
-| Airtable   | `webhook`                                                             | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice *(implemented)*                                  |
-| Google Ads | `none`                                                                | Google Ads has no push surface                                                                            | Poll-only; do not create a webhook placeholder                                     |
-| Google Analytics | `none`                                                          | Reporting data has no provider push surface                                                               | Poll-only reporting data; do not create a webhook placeholder                      |
+| Provider         | Manifest `event_delivery` | Verification and lifecycle                                                                                        | First implementation posture                                  |
+| ---------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Gmail            | `pubsub_push`             | Google Pub/Sub OIDC push; `users.watch`; watches renew before their roughly seven-day expiry                      | First reactive-email provider after the receipt spine         |
+| Airtable         | `webhook`                 | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice _(implemented)_                      |
+| Google Ads       | `none`                    | Google Ads has no push surface                                                                                    | Poll-only; do not create a webhook placeholder                |
+| Google Analytics | `none`                    | Reporting data has no provider push surface                                                                       | Poll-only reporting data; do not create a webhook placeholder |
 
-Gmail watch renewal and Airtable webhook refresh ride registered job kinds, not
+Gmail watch renewal and Airtable webhook refresh use registered job kinds, not
 API-process timers. Gmail renewal runs daily `[default — confirm at review]`,
-matching Google's current recommendation while remaining inside the seven-day
+matching Google's recommendation verified on 2026-07-10 while remaining inside the seven-day
 maximum. Airtable refresh follows the provider-reported expiry with a 24-hour
-safety margin where supported *(implemented)*. Failures use the
+safety margin where supported _(implemented)_. Failures use the
 existing connection status and notification policy rather than a
 provider-specific alert path.
 
@@ -238,11 +239,12 @@ Google Ads push surface is documented.
 
 ## 8. Rollout order and revisit triggers
 
-The central receipt spine plus Airtable webhooks — route, verification
-contract, persistence/dedup, processing job, security audit, retention, and
-synthetic-provider coverage — is implemented. Remaining rollout order:
+The central receipt foundation and Airtable webhooks are implemented. This
+includes the route, verification contract, deduplication, processing job,
+security audit, retention, and synthetic-provider coverage. The remaining
+work follows this order:
 
-1. Gmail `users.watch` + Pub/Sub verification, renewal, and reactive-email
+1. Add Gmail `users.watch`, Pub/Sub verification, renewal, and the reactive-email
    subscription path.
 2. Subscription management routes and UI after the trigger contract has proven
    safe operationally.
@@ -252,7 +254,7 @@ Revisit only with observed need:
 - Per-workspace event quotas and admin visibility after receipt volume is known.
 - Filters, coalescing, batching, and debounce after duplicate/noisy-provider data
   exists.
-- Subscription UI beyond the smallest agent + prompt-template flow.
+- Subscription UI beyond the smallest agent and prompt-template flow.
 - Per-subscription envelope overrides only with an explicit permission model and
   audit design.
 - External provider wheels only through the integration-packaging entry-point

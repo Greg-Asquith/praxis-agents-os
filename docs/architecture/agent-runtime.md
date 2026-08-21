@@ -1,35 +1,35 @@
-# Agent Runtime Architecture
+# Agent runtime architecture
 
-Status: **implemented end to end**. The backend has the model registry,
+Status: **implemented end to end**. The backend includes the model registry,
 `agent_runs`, the Pydantic AI runtime core, event sinks, durable streamed
 interactive turns, scheduled-run worker execution, approval suspend/resume, and
-runtime delegation tools for allowlisted specialist agents. The Vite app has
+runtime delegation tools for approved specialist agents. The Vite app includes
 typed conversation transport, a real chat surface, agent management, approval
-controls, and delegated tool-call rendering. This note describes the runtime as
-it runs today and the design rules that keep it that shape.
+controls, and delegated tool-call rendering. This note describes the runtime
+and the design rules that preserve its structure.
 
 ## Decision
 
-Run the agent runtime **in the Python API**. The frontend is a **Vite SPA** that
-talks only to FastAPI: REST for data/auth, a custom **SSE protocol** for live agent
-turns. We do **not** use the Vercel AI SDK on either side — neither its runtime nor
-its UI-message wire format. We own the loop and the wire format.
+Run the agent runtime **in the Python API**. The frontend is a Vite single-page
+application (SPA) that communicates only with FastAPI. It uses REST for data
+and authentication, and a custom server-sent events (SSE) protocol for live
+agent turns. The system doesn't use the Vercel AI SDK or its UI message format.
+Praxis owns the execution loop and wire format.
 
-Rationale: with the runtime in the API, a server-side JS tier would have nothing
-left to do for an authenticated operational tool — it would be pure overhead.
-One backend owns runtime, providers, scheduling, auth, and audit, which also
-makes scheduled execution a plain in-process function call instead of a
-cross-service poke.
+Keeping the runtime in the API avoids a separate server-side JavaScript tier.
+One backend owns runtime execution, providers, scheduling, authentication, and
+audit. Scheduled execution therefore uses an in-process function call instead
+of an HTTP call between services.
 
 ## Process topology
 
-Three long-lived processes, one database:
+Three long-lived processes use one database:
 
-| Process            | Role                                                            |
-| ------------------ | --------------------------------------------------------------- |
-| `api` (FastAPI)    | REST + the SSE turn/resume endpoints. Hosts interactive runs.   |
-| `worker` (Python)  | Claims due schedule runs and executes them via the same runtime.|
-| `web` (Vite SPA)   | Static assets. No server runtime. Consumes the API.             |
+| Process           | Role                                                             |
+| ----------------- | ---------------------------------------------------------------- |
+| `api` (FastAPI)   | REST and SSE turn or resume endpoints. Hosts interactive runs.   |
+| `worker` (Python) | Claims due schedule runs and executes them via the same runtime. |
+| `web` (Vite SPA)  | Static assets. No server runtime. Consumes the API.              |
 
 The **`agent_schedule_runs` table is the only interface between scheduling and
 execution handoff.** The scanner writes claimable rows; the worker pulls them.
@@ -78,17 +78,17 @@ async def execute_run(
   conversation and delegated child `agent_run`, then calls `execute_run` with an
   isolated session and shared usage accounting.
 
-Persistence is inside `execute_run`, so a scheduled run with no live client will
-produce the same `ConversationMessage` history a user can open later. Successful
+Persistence is inside `execute_run`, so a scheduled run without a live client
+produces the same `ConversationMessage` history that someone can open later. Successful
 runs commit final messages, usage, and terminal status at completion; failures
 commit terminal run state before re-raising. The sink is **only** for live
-streaming — a fan-out, never the source of truth.
+streaming. It distributes events but is never the source of truth.
 
 ### Conversation ownership and delegation
 
-A live conversation has one primary agent. The UI should not expose a per-message
-agent selector in the composer; that adds ambiguity about who owns the thread,
-which tools are available, and how prior assistant messages should be interpreted.
+A live conversation has one primary agent. The UI must not expose a
+per-message agent selector in the composer. Such a selector makes thread
+ownership, tool availability, and earlier assistant messages ambiguous.
 
 Use `conversations.active_agent_id` as the canonical primary agent for the thread.
 Users choose an agent when creating a conversation, or change the conversation's
@@ -102,8 +102,8 @@ delegation tools for its `allowed_agent_ids`. A delegate agent can run internall
 and return a result to the primary agent, which remains responsible for the
 user-visible response.
 
-Persist delegation as run/subrun metadata and stream it as tool activity where
-useful. By default, `ConversationMessage` should contain the user-visible primary
+Persist delegation as run and subrun metadata. Stream it as tool activity when
+useful. By default, `ConversationMessage` contains the visible primary
 agent response, while delegate transcripts/results remain available for audit,
 debugging, and future replay without cluttering the main conversation.
 Delegated child conversations use `source="agent_call"` and are excluded from the
@@ -126,11 +126,11 @@ interactive from scheduled runs and hot usage columns alongside the full
 ### Streaming session ownership
 
 Do not run `execute_run` on the request-scoped SQLAlchemy session after returning
-the `StreamingResponse`. The current middleware commits or rolls back the
+the `StreamingResponse`. The request middleware commits or rolls back the
 request session once the response object is produced, while the stream body may
 still be executing.
 
-The SSE endpoint should either:
+The SSE endpoint can use either of these session ownership models:
 
 - run the agent inside the streaming generator and own the session until the
   generator exits, or
@@ -138,7 +138,7 @@ The SSE endpoint should either:
   with the stream through `StreamSink`.
 
 In both cases, persistence must be abort-safe: user message, assistant deltas,
-tool calls, terminal errors, and approval suspension state should commit at clear
+tool calls, terminal errors, and approval suspension state must commit at clear
 boundaries rather than waiting for a long stream to finish.
 
 Interactive turns return the runtime database transaction before each model
@@ -146,11 +146,11 @@ request and provider-backed helper call. Successful tools commit at the dispatch
 boundary. Retrying tools and tools with invalid output roll back staged database
 work and reload the runtime state before model continuation.
 
-### Approval / human-in-the-loop, durably
+### Durable human approval
 
 Use Pydantic AI's deferred-tool flow rather than inventing a parallel approval
 protocol. Tools that always need approval can use `requires_approval=True`; tools
-that need conditional approval should raise `ApprovalRequired(...)`.
+that need conditional approval raise `ApprovalRequired(...)`.
 
 When a tool needs approval, Pydantic AI returns `DeferredToolRequests`. At that
 point `execute_run`:
@@ -158,14 +158,15 @@ point `execute_run`:
 1. emits `tool.approval_required`,
 2. writes the Pydantic AI message history plus the pending deferred tool requests
    to `agent_runs.metadata["approval_state"]` as a versioned JSON snapshot,
-3. sets run status `awaiting_approval` and **returns** (no long-lived hang).
+3. sets the run status to `awaiting_approval` and returns without keeping a
+   long-lived process open.
 
 Resume is a fresh entry: `POST /agent-runs/{id}/resume` with the decision re-enters
 `execute_run`, which rehydrates from the run's approval-state snapshot and continues
 by passing `message_history` and `DeferredToolResults` back to Pydantic AI. Approved
 decisions may include `override_args`; these are mapped to
-`ToolApproved(override_args=...)` so a user can correct a proposed tool call before
-execution. Denials should use `ToolDenied` so the model receives a typed denial
+`ToolApproved(override_args=...)` so an operator can correct a proposed tool call before
+execution. Denials use `ToolDenied` so the model receives a typed denial
 result. This reuses the existing `RUN_STATUS_AWAITING_APPROVAL` state for scheduled
 runs and the generic run status for interactive runs.
 
@@ -174,8 +175,11 @@ Do not store opaque Pydantic AI runtime objects in run metadata.
 
 ## Backend package layout
 
-Follows existing conventions: thin routes, one operation per file, domain logic in
-`services/`, reusable helpers in `services/<svc>/utils.py`.
+The backend package follows existing conventions: thin routes, one operation
+per file, domain logic in `services/`, and reusable helpers in
+`services/SERVICE/utils.py`.
+
+Replace `SERVICE` with the service directory name. The package layout is:
 
 ```
 apps/api/
@@ -253,16 +257,17 @@ apps/api/
   the full model list stays in the Advanced section. The Agents table shows
   each catalog-backed selection by provider and model type instead of its model
   name.
-- **Library:** build the loop on **Pydantic AI** (typed tools, structured output,
-  streaming, multi-provider — fits the existing Pydantic stack). If provider breadth
-  ever outgrows it, drop **LiteLLM** in as the provider layer underneath the factory
-  without touching `execute_run`. Keep `execute_run` library-agnostic so this stays
-  swappable.
-- Infra-provider settings already live in `core/settings/providers.py`; LLM model
-  config is a separate, new concern (model catalog + credentials), not folded into
-  that mixin.
+- **Library:** Build the loop on **Pydantic AI** because it provides typed
+  tools, structured output, streaming, and multiple providers within the
+  existing Pydantic stack. Keep `execute_run` independent of provider-library
+  details. This boundary supports replacing the provider layer without
+  changing the execution path. LiteLLM is the preferred replacement if
+  Pydantic AI no longer covers the required providers.
+- Infrastructure provider settings live in `core/settings/providers.py`.
+  Large language model (LLM) configuration remains separate and includes the
+  model catalog and credentials.
 
-### Pydantic AI usage
+### Use of Pydantic AI
 
 Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
 
@@ -324,7 +329,7 @@ Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
 builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
 design reference only.
 
-## The SSE wire protocol (custom, owned by us)
+## The Praxis SSE wire protocol
 
 One streaming POST per turn: the request carries the user message; the response
 is `text/event-stream`. The client reads `response.body` — not `EventSource`, so
@@ -354,7 +359,7 @@ The protocol is versioned so client and runtime can evolve independently. The
 backend sends `X-Praxis-Stream-Version: 1` on turn streams and exposes that
 header through cross-origin resource sharing (CORS) for the Vite client.
 
-## Frontend (Vite SPA)
+## Frontend (Vite single-page application)
 
 `apps/web` is a Vite React SPA with TanStack Router and TanStack Query. The
 runtime-facing frontend lives mostly under `src/features/conversations` and
@@ -392,7 +397,7 @@ apps/web/src/features/
   artifacts. `pnpm check` verifies the handwritten parser against the
   checked-in contract but does not load Python models.
 
-### Auth / CORS / cookies (do not loosen — add explicit local config)
+### Authentication, CORS, and cookies
 
 The SPA is a separate origin from the API in dev. Per repo policy we never relax
 CORS/cookie/CSRF for convenience:
@@ -403,7 +408,7 @@ CORS/cookie/CSRF for convenience:
 - **Local dev:** explicit allowed origin for the Vite dev server + `SameSite=Lax`/
   credentialed fetch, configured in settings — not a wildcard.
 
-## Current implementation
+## Implemented scope
 
 The production runtime includes scheduled and interactive runs, approval
 pause/resume, cooperative cancellation, bounded tool results, single-level

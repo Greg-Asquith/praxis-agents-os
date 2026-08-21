@@ -1,58 +1,58 @@
 <!-- docs/architecture/governance.md -->
 
-# Governance & Lifecycle
+# Governance and lifecycle
 
-- **Status**: living policy document
-- **Rule**: implementation changes cite the relevant section (for example,
+- **Status:** Living policy document.
+- **Rule:** Implementation changes cite the relevant section (for example,
   "per `governance.md` §3 Retention"). Any deliberate deviation is recorded
   back into this note in the same pull request. When a policy ships, its cell
-  moves from `[default — confirm at review]` to *(enforced)*.
-- This note contains **policy, not implementation**. Enforcement mechanics
+  moves from `[default — confirm at review]` to _(enforced)_.
+- This note contains **policy, not implementation**. Enforcement details
   live in the code and tests that implement it.
 
 Every default below is marked `[default — confirm at review]` unless marked
-*(enforced)*. Flipping a default updates this note alongside the code.
+_(enforced)_. Flipping a default updates this note alongside the code.
 
-## 1. Role Matrix
+## 1. Role matrix
 
-Role machinery: `WorkspaceRole` owner/admin/member/read_only
-(`models/workspace.py`); role sets `MANAGER_ROLES` (owner+admin),
-`EDITOR_ROLES` (+member), `READ_ROLES` (+read_only)
-(`services/workspaces/utils.py`); gating via `require_role` and the
+Role definitions use the `WorkspaceRole` values `owner`, `admin`, `member`,
+and `read_only` in `models/workspace.py`. The role sets are `MANAGER_ROLES`
+(`owner` and `admin`), `EDITOR_ROLES` (also `member`), and `READ_ROLES` (also
+`read_only`) in `services/workspaces/utils.py`. Access checks use `require_role` and the
 `require_owner`/`require_editor`/`require_read` shortcuts
 (`core/dependencies.py`). Super-admin is an email allowlist
 (`require_super_admin`, `core/dependencies.py`).
 
-Legend: ✓ allowed, — denied. All non-*(enforced)* cells are
+Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 `[default — confirm at review]`.
 
-| Operation | read_only | member | admin | owner |
-|---|---|---|---|---|
-| View agents/conversations/schedules/skills/files/KB/artifacts | ✓ | ✓ | ✓ | ✓ |
-| Create/edit agents, skills *(enforced: EDITOR)* | — | ✓ | ✓ | ✓ |
-| Create schedules *(enforced: `agent_schedules/authorisation.py`)* | — | ✓ | ✓ | ✓ |
-| Mutate others' schedules *(enforced: owner-or-admin)* | — | — | ✓ | ✓ |
-| Upload/edit/delete files *(enforced: `services/files` access gates)* | — | ✓ | ✓ | ✓ |
-| Hard-delete / purge files *(enforced: `require_file_purge_access`)* | — | — | ✓ | ✓ |
-| Connect/revoke own user-scoped integrations *(enforced)* | — | ✓ | ✓ | ✓ |
-| Connect/revoke workspace-scoped integrations *(enforced)* | — | — | ✓ | ✓ |
-| Select integration resources / set conversation context / edit context groups *(enforced)* | — | ✓ | ✓ | ✓ |
-| View credential metadata — never secret values *(enforced)* | — | — | ✓ | ✓ |
-| Enter API keys / secret references *(enforced)* | — | — | ✓ | ✓ |
-| Replace API keys / service-account keys on an existing connection *(enforced)* | — | — | ✓ | ✓ |
-| Create/edit KB documents *(enforced)* | — | ✓ | ✓ | ✓ |
-| Delete workspace-scope memories *(enforced)* | — | — | ✓ | ✓ |
-| Edit/delete own-scope (user/agent) memories *(enforced)* | — | ✓ | ✓ | ✓ |
-| Create artifacts via agents *(enforced)* | — | ✓ | ✓ | ✓ |
-| Create/revoke artifact share links *(enforced)* | — | — | ✓ | ✓ |
-| View audit log *(enforced: MANAGER)* | — | — | ✓ | ✓ |
-| View security events *(enforced: super-admin only — `security_events` has no workspace column)* | — | — | — | — |
-| Configure agent tool policies *(enforced: EDITOR via agents)* | — | ✓ | ✓ | ✓ |
+| Operation                                                                                       | read_only | member | admin | owner |
+| ----------------------------------------------------------------------------------------------- | --------- | ------ | ----- | ----- |
+| View agents/conversations/schedules/skills/files/KB/artifacts                                   | ✓         | ✓      | ✓     | ✓     |
+| Create/edit agents, skills _(enforced: EDITOR)_                                                 | —         | ✓      | ✓     | ✓     |
+| Create schedules _(enforced: `agent_schedules/authorisation.py`)_                               | —         | ✓      | ✓     | ✓     |
+| Mutate others' schedules _(enforced: owner-or-admin)_                                           | —         | —      | ✓     | ✓     |
+| Upload/edit/delete files _(enforced: `services/files` access gates)_                            | —         | ✓      | ✓     | ✓     |
+| Hard-delete / purge files _(enforced: `require_file_purge_access`)_                             | —         | —      | ✓     | ✓     |
+| Connect/revoke own user-scoped integrations _(enforced)_                                        | —         | ✓      | ✓     | ✓     |
+| Connect/revoke workspace-scoped integrations _(enforced)_                                       | —         | —      | ✓     | ✓     |
+| Select integration resources / set conversation context / edit context groups _(enforced)_      | —         | ✓      | ✓     | ✓     |
+| View credential metadata — never secret values _(enforced)_                                     | —         | —      | ✓     | ✓     |
+| Enter API keys / secret references _(enforced)_                                                 | —         | —      | ✓     | ✓     |
+| Replace API keys / service-account keys on an existing connection _(enforced)_                  | —         | —      | ✓     | ✓     |
+| Create/edit KB documents _(enforced)_                                                           | —         | ✓      | ✓     | ✓     |
+| Delete workspace-scope memories _(enforced)_                                                    | —         | —      | ✓     | ✓     |
+| Edit/delete own-scope (user/agent) memories _(enforced)_                                        | —         | ✓      | ✓     | ✓     |
+| Create artifacts via agents _(enforced)_                                                        | —         | ✓      | ✓     | ✓     |
+| Create/revoke artifact share links _(enforced)_                                                 | —         | —      | ✓     | ✓     |
+| View audit log _(enforced: MANAGER)_                                                            | —         | —      | ✓     | ✓     |
+| View security events _(enforced: super-admin only — `security_events` has no workspace column)_ | —         | —      | —     | —     |
+| Configure agent tool policies _(enforced: EDITOR via agents)_                                   | —         | ✓      | ✓     | ✓     |
 
 Context Groups inherit the active workspace's scope. In a shared workspace,
 group members must come from connections owned by that same workspace. In a
 personal workspace, groups may additionally include connections owned by the
-current actor, but never connections owned by another workspace. Standalone
+active actor, but never connections owned by another workspace. Standalone
 resource context intentionally retains actor-or-workspace visibility, including
 personal connections selected while acting in a shared workspace.
 
@@ -61,12 +61,12 @@ user-scoped memory is visible and mutable only to its owning user, including
 when another workspace member is an admin or owner. Workspace-scoped memory
 edits are member+, matching KB document edits; archive and purge remain
 admin+. Agent-scoped memories are workspace-visible and member-editable.
-*(enforced)*
+_(enforced)_
 
-## 2. Approval Defaults Per Tool Effect
+## 2. Approval defaults by tool effect
 
 Mechanics are the registry `effect` metadata, the dispatch choke point, and
-per-agent `tool_policies`; this section is the policy law:
+per-agent `tool_policies`. The following rules define the policy:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
@@ -75,13 +75,13 @@ per-agent `tool_policies`; this section is the policy law:
   can still be stricter: durable Praxis file writes require approval even
   though they do not cross the Praxis boundary, and agent-initiated KB
   document writes default `approval` through the KB write-policy choke
-  point. *(enforced for todos, scratch, Praxis Files, and auto-mounted
+  point. _(enforced for todos, scratch, Praxis Files, and auto-mounted
   memory notes. There is deliberately no agent KB write tool; the recorded
-  default applies when one ships.)*
+  default applies when one ships.)_
 - Core-memory saves and updates always require approval, even though memory is
   Praxis-internal state and the tools are auto-mounted. The conditional check
   remains inside the tool body so an agent policy cannot weaken it.
-  *(enforced)*
+  _(enforced)_
 - `run_code` is an internal-effect write because it can create durable Praxis
   Files and artifacts. It defaults to `approval` but supports `auto`, including
   unattended scheduled computations. Only OpenAI, Anthropic, and Google are
@@ -95,12 +95,12 @@ per-agent `tool_policies`; this section is the policy law:
   bytes. Re-run the capability, file-output, DNS, and HTTPS probes after a
   relevant Pydantic AI, provider SDK, or provider API change. This dated probe
   evidence is an operator-maintained verification record, not runtime package
-  metadata or an application availability gate. *(enforced except manual
-  re-probe discipline)*
+  metadata or an application availability gate. _(enforced except manual
+  re-probe discipline)_
   A 2026-08-17 Plan 157 bridge probe on those same pinned versions confirmed
   that Anthropic and OpenAI accepted an unchanged XLSX upload, mounted the real
-  workbook at `/files/input/<opaque>/input.xlsx` and
-  `/mnt/data/<opaque>-input.xlsx` respectively, and edited it with sandbox
+  workbook at `/files/input/OPAQUE_ID/input.xlsx` and
+  `/mnt/data/OPAQUE_ID-input.xlsx` respectively, and edited it with sandbox
   `openpyxl`. OpenAI accepted `purpose="user_data"` with a one-hour
   `expires_after` backstop. Both bridge-active sandboxes again failed DNS and
   HTTPS access, and both uploaded inputs were deleted successfully and returned
@@ -136,12 +136,12 @@ per-agent `tool_policies`; this section is the policy law:
   service and route layers.
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
-  and external KB writes) default `approval`. *(enforced for integration
-  writes and artifact publication; no external KB targets exist)*
+  and external KB writes) default `approval`. _(enforced for integration
+  writes and artifact publication; no external KB targets exist)_
 - Tool policy and human approval never grant a workspace role. Runtime
   dispatch reloads the initiating user's active membership and requires
   `EDITOR_ROLES` before every `effect="write"` invocation; read-only members
-  may continue conversations and use `effect="read"` tools. *(enforced)*
+  may continue conversations and use `effect="read"` tools. _(enforced)_
 - Code mode never aggregates or weakens tool decisions. The outer
   `run_workflow` tool has no side effect; every nested call independently
   retains its declared effect and egress, active membership and role check,
@@ -150,14 +150,14 @@ per-agent `tool_policies`; this section is the policy law:
   approval carries the same staged-content, expiry, and audit treatment as a
   direct call's approval. Eligible gated and write tools may therefore be
   exposed as workflow stubs; every decision remains scoped to one nested call
-  and its validated effective arguments. *(enforced)*
+  and its validated effective arguments. _(enforced)_
 - Batch consent is one list-shaped call whose complete bounded row set the
   operator reviews and may edit before approval. The edited set is what
   executes and what the audit digest records. No Code Mode mechanism approves
-  arguments the operator has not seen. *(enforced)*
-- Anything that **spends money** (e.g. Google Ads mutations) is
+  arguments the operator has not seen. _(enforced)_
+- Any tool that **spends money**, such as a Google Ads mutation, is
   `approval` with `supports_auto=False` — per-agent configuration may not
-  weaken it. *(enforced)*
+  weaken it. _(enforced)_
 - Non-interactive principals: scheduled runs stamp a server-minted
   side-effect grant at run preparation time; the default is
   `require_approval`, and schedules may explicitly opt into `allow` when
@@ -165,53 +165,54 @@ per-agent `tool_policies`; this section is the policy law:
   under `require_approval` pause through the normal approval flow, while
   internal writes continue automatically. Delegated runs inherit the
   parent's side-effect grant and delegation cap at child-run creation.
-  *(enforced)*
+  _(enforced)_
 
-## 3. Retention & Deletion
+## 3. Retention and deletion
 
-Two laws:
+Two rules govern deletion:
 
-1. **Deletion is symmetric** — soft-deleting a row that owns blobs
-   tombstones the blobs; the sweeper hard-deletes rows AND blobs together.
-2. **Audit rows survive their subject's deletion** — audit FKs are
-   `ondelete="SET NULL"` *(enforced: `models/audit_event.py`)*.
+1. **Deletion is symmetric.** Soft-deleting a row that owns blobs marks the
+   blobs for deletion. The cleanup job permanently deletes the rows and blobs
+   together.
+2. **Audit rows survive their subject's deletion.** Audit foreign keys are
+   `ondelete="SET NULL"` _(enforced: `models/audit_event.py`)_.
 
-Sweepers ride the generic jobs harness (one sweep kind per resource,
-registered by the owning domain). Values not marked *(enforced)* are
+Cleanup operations use the generic jobs system, with one operation per resource
+registered by the owning domain). Values not marked _(enforced)_ are
 `[default — confirm at review]`.
 
-| Resource | Soft delete | Hard delete after | Storage cascade | Audit survives | Export |
-|---|---|---|---|---|---|
-| Files/FileRevisions | ✓ *(enforced)* | 30 d *(enforced)* | tombstone blob; sweeper deletes both *(enforced)* | ✓ *(enforced)* | single-file signed downloads *(enforced)*; batch export [default — confirm at review] |
-| Scratch | TTL expiry *(enforced)* | 7 d rolling TTL; content purged on expiry *(enforced)* | n/a (DB text) | rows summarized *(enforced)* | — |
-| Jobs + payloads | terminal rows kept *(enforced)* | 30 d *(enforced)* | n/a | counters only *(enforced)* | — |
-| KB documents/chunks/embeddings | ✓ *(enforced)* | 30 d after soft-delete; chunks/vectors cascade on hard-delete *(enforced)* | n/a (canonical markdown in Postgres) | ✓ (audit rows have no subject FK) *(enforced)* | ✓ (canonical markdown) *(enforced)* |
-| Memories | supersession and archive by default *(enforced)* | archive at `expires_at`; hard-delete only by an explicit user purge *(enforced)* | n/a | ✓ | ✓ |
-| Credentials | revoke = soft *(enforced)* | 30 d after revoke; tokens crypto-shredded at revoke *(enforced)* | n/a | metadata only, never values | — |
-| Integration resources/discovery runs | ✓ / plain rows *(enforced)* | 90 d *(enforced)* | n/a | counters | — |
-| Artifact shares | revocable *(enforced)* | at `expires_at` (default 7 d) *(enforced)* | n/a | ✓ *(enforced)* | — |
-| Audit events | append-only | 400 d | n/a | n/a | ✓ (super-admin) |
-| Security events | append-only | 400 d | n/a | n/a | super-admin only |
-| Conversation todos | rides conversation | with conversation | n/a | digest rows | — |
-| Conversation summaries | derived rows, one per trim watermark | with conversation; safe to regenerate | n/a (bounded Postgres text) | no separate audit; source messages remain canonical | — |
+| Resource                             | Soft delete                                      | Hard delete after                                                                | Storage cascade                                   | Audit survives                                      | Export                                                                                |
+| ------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Files/FileRevisions                  | ✓ _(enforced)_                                   | 30 d _(enforced)_                                                                | tombstone blob; sweeper deletes both _(enforced)_ | ✓ _(enforced)_                                      | single-file signed downloads _(enforced)_; batch export [default — confirm at review] |
+| Scratch                              | TTL expiry _(enforced)_                          | 7 d rolling TTL; content purged on expiry _(enforced)_                           | n/a (DB text)                                     | rows summarized _(enforced)_                        | —                                                                                     |
+| Jobs + payloads                      | terminal rows kept _(enforced)_                  | 30 d _(enforced)_                                                                | n/a                                               | counters only _(enforced)_                          | —                                                                                     |
+| KB documents/chunks/embeddings       | ✓ _(enforced)_                                   | 30 d after soft-delete; chunks/vectors cascade on hard-delete _(enforced)_       | n/a (canonical markdown in Postgres)              | ✓ (audit rows have no subject FK) _(enforced)_      | ✓ (canonical markdown) _(enforced)_                                                   |
+| Memories                             | supersession and archive by default _(enforced)_ | archive at `expires_at`; hard-delete only by an explicit user purge _(enforced)_ | n/a                                               | ✓                                                   | ✓                                                                                     |
+| Credentials                          | revoke = soft _(enforced)_                       | 30 d after revoke; tokens crypto-shredded at revoke _(enforced)_                 | n/a                                               | metadata only, never values                         | —                                                                                     |
+| Integration resources/discovery runs | ✓ / plain rows _(enforced)_                      | 90 d _(enforced)_                                                                | n/a                                               | counters                                            | —                                                                                     |
+| Artifact shares                      | revocable _(enforced)_                           | at `expires_at` (default 7 d) _(enforced)_                                       | n/a                                               | ✓ _(enforced)_                                      | —                                                                                     |
+| Audit events                         | append-only                                      | 400 d                                                                            | n/a                                               | n/a                                                 | ✓ (super-admin)                                                                       |
+| Security events                      | append-only                                      | 400 d                                                                            | n/a                                               | n/a                                                 | super-admin only                                                                      |
+| Conversation todos                   | follows the conversation lifecycle               | with conversation                                                                | n/a                                               | digest rows                                         | —                                                                                     |
+| Conversation summaries               | derived rows, one per trim watermark             | with conversation; safe to regenerate                                            | n/a (bounded Postgres text)                       | no separate audit; source messages remain canonical | —                                                                                     |
 
-## 4. Quotas & Cost Controls
+## 4. Quotas and cost controls
 
-Law: all limits are **soft in v1 — counters + admin visibility first, hard
-enforcement second**. Values not marked *(enforced)* are
+All limits initially use **counters and admin visibility without hard
+enforcement**. Values not marked _(enforced)_ are
 `[default — confirm at review]`.
 
-| Quota | Default |
-|---|---|
-| Per-workspace storage | 10 GB *(counter + soft flag enforced; no hard enforcement)* |
-| Upload size | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (50 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB) *(enforced)* |
-| Embedding budget | 2 M tokens/month/workspace *(enforced)* |
-| Job concurrency | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings *(counter and claim-seam enforcement in place)* |
-| Per-run token/step caps | runtime `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through schedule completion contracts *(enforced)* |
-| Artifact-share creation | 10/hour/workspace *(enforced)* |
-| Integration API retries | `Retry-After`-aware, bounded attempts *(enforced)* |
+| Quota                   | Default                                                                                                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Per-workspace storage   | 10 GB _(counter + soft flag enforced; no hard enforcement)_                                                                                                                                                                                           |
+| Upload size             | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (50 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB) _(enforced)_ |
+| Embedding budget        | 2 M tokens/month/workspace _(enforced)_                                                                                                                                                                                                               |
+| Job concurrency         | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings _(counter and claim-seam enforcement in place)_                                                                                                                   |
+| Per-run token/step caps | runtime `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through schedule completion contracts _(enforced)_                                                                                               |
+| Artifact-share creation | 10/hour/workspace _(enforced)_                                                                                                                                                                                                                        |
+| Integration API retries | `Retry-After`-aware, bounded attempts _(enforced)_                                                                                                                                                                                                    |
 
-## 5. Secrets Operating Model
+## 5. Secrets operating model
 
 - Production **requires** a cloud secret-manager provider (GCP Secret
   Manager, Azure Key Vault, or AWS Secrets Manager, behind a provider
@@ -219,44 +220,44 @@ enforcement second**. Values not marked *(enforced)* are
   **local-only** the way console email is; the production-safety
   `model_validator` in `core/settings/__init__.py` rejects a missing
   or incompletely configured secret provider outside local environments.
-  *(enforced)*
+  _(enforced)_
 - The API accepts **references only** (`{provider, name, version}`). A raw
   secret value in a request body is a validation error — except the
   deliberate api-key connect flow, which immediately writes the value
-  to the manager and stores only the reference. *(enforced)*
+  to the manager and stores only the reference. _(enforced)_
 - Only OAuth tokens are stored (encrypted) in Postgres; everything else is
-  a reference resolved at call time. *(enforced)*
-- Rotation = new secret version + asynchronous connection discovery; the old
+  a reference resolved at call time. _(enforced)_
+- Rotation adds a secret version and starts asynchronous connection discovery. The old
   version stays readable while the new version is checked. Reference
   credentials are replaced in place on the existing connection, without
-  changing auth mode or deleting externally owned secrets. *(enforced)*
+  changing auth mode or deleting externally owned secrets. _(enforced)_
 - The local-only encrypted store has its own API-root-anchored path, separate
   from served object storage. API and worker processes coordinate through an
   OS-level lock, and same-directory atomic replacement prevents partial or
   lost writes. Secret-store availability failures are operational 503s; they
   preserve credentials and prior resources for discovery retry rather than
-  requesting reauthentication. *(enforced)*
-- Entry rights per §1 (admin+). [default — confirm at review]
+  requesting reauthentication. _(enforced)_
+- Entry rights follow section 1 and require an admin or owner. [default — confirm at review]
 - Audited events: reference create/update/delete and every **resolve
   failure** — never secret values, and no audit on successful resolves (too
-  noisy). *(enforced)*
+  noisy). _(enforced)_
 
-## 6. Notification Policy
+## 6. Notification policy
 
-Target: the existing in-app substrate
-(`services/notifications/service.py` `create_notification`). Email stays out
-until a digest exists. Workspace invitations currently create neither email
-nor in-app notifications: the inviting operator shares the returned link.
+In-app delivery uses the notification service at
+`services/notifications/service.py`. Public notification routes and UI are
+pending. Email delivery is pending until a digest exists. Workspace invitations
+create neither email nor in-app notifications, so the inviting operator shares the returned link.
 A pending, unexpired invitation may admit account creation while signup is
 closed; OAuth requires the provider-verified address and auto-accepts on full
 sign-in, while password registration requires the raw invitation token. Rows not marked
-*(enforced)* are `[default — confirm at review]`.
+_(enforced)_ are `[default — confirm at review]`.
 
-| Event | Notify (in-app) | Recipient |
-|---|---|---|
-| Schedule run terminal failure / auto-disable | ✓ | schedule owner |
-| OAuth integration `needs_reauth` | ✓ *(enforced)* | connecting user *(enforced)* |
-| Reference integration `needs_credential` | ✓ *(enforced)* | connecting user |
-| Integration discovery terminal failure | ✓ *(enforced)* | connecting user *(enforced)* |
-| Job pipeline failure — only after final retry exhausted | ✓ *(enforced)* | initiator (`initiated_by_user_id`) *(enforced)* |
-| Every tool invocation, successful runs, routine refreshes | — (audit only) | — |
+| Event                                                     | Notify (in-app) | Recipient                                       |
+| --------------------------------------------------------- | --------------- | ----------------------------------------------- |
+| Schedule run terminal failure / auto-disable              | ✓               | schedule owner                                  |
+| OAuth integration `needs_reauth`                          | ✓ _(enforced)_  | connecting user _(enforced)_                    |
+| Reference integration `needs_credential`                  | ✓ _(enforced)_  | connecting user                                 |
+| Integration discovery terminal failure                    | ✓ _(enforced)_  | connecting user _(enforced)_                    |
+| Job pipeline failure — only after final retry exhausted   | ✓ _(enforced)_  | initiator (`initiated_by_user_id`) _(enforced)_ |
+| Every tool invocation, successful runs, routine refreshes | — (audit only)  | —                                               |

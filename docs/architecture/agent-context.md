@@ -1,37 +1,36 @@
 <!-- docs/architecture/agent-context.md -->
 
-# Agent Context Systems
+# Agent context systems
 
-How the four operator-facing context mechanisms — Skills, Files, the Knowledge
-Base, and Memories — get information into an agent's context window, how they
-differ, and when a new feature should build on each. A fifth mechanism,
-conversation-summary compaction, is internal and included here only to keep it
-from being confused with memory.
+Praxis has four operator-facing context systems: Skills, Files, the Knowledge
+Base, and Memories. This document explains how each system adds information to
+an agent's context and where future features belong. It also distinguishes
+internal conversation-summary compaction from memory.
 
 All prompt-side injection flows through the single system-prompt assembly
 point in `apps/api/services/agents/runtime/prompt.py`; all tool-side access
-flows through the runtime tool registry. New context sources should extend
+flows through the runtime tool registry. New context sources must extend
 those two seams rather than adding a third path.
 
-For the non-technical version of this comparison, see
-`docs/guides/skills-files-knowledge-memories.md`.
+For an operator-focused comparison, see [Choose between skills, files, the
+Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 
 ## At a glance
 
-| | Skills | Files | Knowledge Base | Memories |
-|---|---|---|---|---|
-| Answers | "How do I do this task?" | "Work with this specific document" | "What does the workspace know?" | "What has the agent learned over time?" |
-| Content | Procedural instructions + reference docs | Arbitrary documents with revision history | Canonical markdown, chunked and embedded | Durable facts with provenance |
-| Storage | `skills` table; docs in object storage | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings) |
-| Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments | `knowledge` instruction prompt block + auto-mounted search tools | Budgeted core-memory prompt block + auto-mounted memory tools |
-| Retrieval | None | None | Hybrid RRF: lexical + pgvector semantic + recency | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`) |
-| Scope | Workspace rows, assigned per agent via `Agent.skill_ids` | Workspace; conversation visibility via `file_references` | Workspace-wide, with per-user private tier | Per workspace/agent/user scope |
-| Agent-writable | No | Yes (`write_file`; auto by default, approval configurable) | No (read tools only) | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
-| Status | Shipped end to end | Shipped end to end | Shipped end to end | Shipped end to end |
+| Comparison         | Skills                                                                  | Files                                                                                      | Knowledge Base                                                            | Memories                                                                                            |
+| ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Answers            | "How do I do this task?"                                                | "Work with this specific document"                                                         | "What does the workspace know?"                                           | "What has the agent learned over time?"                                                             |
+| Content            | Procedural instructions + reference docs                                | Arbitrary documents with revision history                                                  | Canonical markdown, chunked and embedded                                  | Durable facts with provenance                                                                       |
+| Storage            | `skills` table; docs in object storage                                  | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings)                                       |
+| Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
+| Retrieval          | None                                                                    | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
+| Scope              | Workspace rows, assigned per agent via `Agent.skill_ids`                | Workspace; conversation visibility via `file_references`                                   | Workspace-wide, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
+| Agent-writable     | No                                                                      | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
+| Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
 ## Skills
 
-Reusable *procedural* knowledge: how an agent should perform a class of task.
+Reusable _procedural_ knowledge: how an agent should perform a class of task.
 
 - **Model.** `apps/api/models/skills.py`. A skill is `name`, `human_name`,
   `description`, full `instructions`, and a `documentation_refs` manifest for
@@ -43,15 +42,15 @@ Reusable *procedural* knowledge: how an agent should perform a class of task.
   only `"{human_name}: {description}"` until it calls `load_capability`,
   which injects the full `instructions`. A conditional `read_skill_document`
   tool serves attached documents on demand, and refuses until the owning
-  skill capability is loaded. Skills are *not* a system-prompt block.
+  skill capability is loaded. Skills are _not_ a system-prompt block.
 - **Management.** `/skills` routes, `services/skills/`, web UI at `/skills`.
   Assigned to agents in the agent editor.
 - **Lifecycle notes.** `load_capability` call/return pairs are preserved
   across history trimming so activated skills survive compaction.
   `last_used_at` is stamped on activation.
 
-Use a skill when the content is *instructions the agent should follow* —
-playbooks, formats, procedures — and only some agents should have it.
+Use a skill for instructions that selected agents must follow, including
+procedures and required formats.
 
 ## Files
 
@@ -84,22 +83,23 @@ handing an agent a specific document to work on.
   delete-with-contents, revisions, diffs, previews, and restore. Deleting a
   folder uses the normal per-file soft-delete and audit lifecycle before the
   existing sweeper purges both files and old folder tombstones.
-- **Scope note.** Attachment scopes what is *listed in the prompt*, but the
+- **Scope note.** Attachment scopes what is _listed in the prompt_, but the
   file tools can reach any workspace file — attachment is salience, not a
   security boundary.
 - **Relationship to Artifacts.** Separate aggregates, deliberately. Files are
   the workspace's document store — inputs and working material, inert bytes
   behind signed downloads. Artifacts are agent-authored deliverables that get
-  *rendered*: the CSP-locked serving pipeline, sandboxed previews, and share
+  _rendered_: the CSP-locked serving pipeline, sandboxed previews, and share
   links exist only for artifacts. `create_artifact` and `update_artifact` are
   auto-mounted on every agent and remain external-effect tools with an
   approval default, while `write_file` is an internal write. The razor:
-  content the user will view, present, or share → artifact; data or documents
-  kept for reference and later work → file. An `.html` File is never served as
+  use an artifact for content that someone views, presents, or shares. Use a
+  file for data or documents kept for reference and later work. An `.html`
+  file is never served as
   a page; an `html` artifact is.
 
-Use files when the unit of work is *a specific document* — read it, edit it,
-produce it — rather than something the agent should find by searching.
+Use a file when the task reads, edits, or creates a specific document. Use the
+Knowledge Base when the agent must find information by searching.
 
 ## Knowledge Base
 
@@ -108,7 +108,7 @@ agent consults via retrieval.
 
 - **Model.** `apps/api/models/kb.py`: `kb_documents` (canonical `content_md`
   in Postgres, `source_type ∈ {upload, url, manual, conversation,
-  integration}`, `is_private`, optional pin to a `file_revision_id`) and
+integration}`, `is_private`, optional pin to a `file_revision_id`) and
   `kb_chunks` (chunk text, LLM-generated `context_line`, `HALFVEC(1024)`
   embedding with HNSW index, generated `tsv`).
 - **Ingestion.** `services/kb/create_document.py` → `ingest_kb_document` job:
@@ -131,9 +131,8 @@ agent consults via retrieval.
   document to that file revision; URL and manual KB documents have no File
   at all. A File is not searchable unless a KB document is created from it.
 
-Use the KB when the content is *reference information any agent might need*
-and the access pattern is "find the relevant part", not "process this
-document".
+Use the Knowledge Base for reference information that any agent might need to
+find. Use a file when the agent must process a specific document.
 
 ## Memories
 
@@ -155,11 +154,11 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
 - **Management.** `/memories` routes, `services/memories/`, web UI where
   operators review, correct, archive, and purge memories.
 
-Use memory when an agent *learns something during a conversation* that should
-shape later conversations — not for reference documents (KB) or working
-material (files).
+Use memory for information learned during a conversation that must shape later
+conversations. Store reference documents in the Knowledge Base and working
+documents in Files.
 
-## Conversation summaries (compaction — not memory)
+## Conversation summaries (compaction—not memory)
 
 When a conversation's history is trimmed (`services/agents/runtime/history.py`),
 a background job summarizes the trimmed span with a small model and the
@@ -169,11 +168,13 @@ This is per-conversation, derived, and has no user surface. It keeps long
 conversations coherent; it does not persist anything across conversations and
 should never be described as memory.
 
-## Choosing a home for new context
+## Choose a home for context
 
-- Instructions on *how to act*, selectively assigned → **Skill**.
-- A durable uploaded or generated document to read or edit → **File**.
-- A versioned agent-authored report, page, diagram, or table the user will
-  view, present, or share → **Artifact**.
-- Reference material found by search, shared workspace-wide → **KB document**.
-- Something learned that should persist across conversations → **Memory**.
+- For selectively assigned instructions about how to act, use a **Skill**.
+- For a durable uploaded or generated document to read or edit, use a **File**.
+- For a versioned agent-authored report, page, diagram, or table that someone
+  views, presents, or shares, use an **Artifact**.
+- For shared reference material found through search, use a **Knowledge Base
+  document**.
+- For learned information that must persist across conversations, use a
+  **Memory**.

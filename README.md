@@ -53,7 +53,7 @@ In PowerShell, set the variable first with
 `.local/` and `apps/api/.env`, both ignored by Git. Stop the stack with
 `Ctrl+C`; the local database is preserved as a Docker Volume.
 
-## What's Included
+## What's included
 
 The core platform is wired end to end (API, worker, and UI):
 
@@ -100,12 +100,12 @@ The core platform is wired end to end (API, worker, and UI):
 
 Notifications exist as a backend service without routes or UI yet.
 
-### No Telemetry
+### No telemetry
 
 Praxis sends no analytics or phone-home data. Observability is opt-in and runs
 in infrastructure you configure.
 
-## Repository Layout
+## Repository layout
 
 ```text
 .
@@ -161,7 +161,7 @@ Local infrastructure:
 - Postgres 18 with pgvector available; pgvector is enabled by Alembic migration
 - Docker Compose for local service orchestration
 
-## Contributor Prerequisites
+## Contributor prerequisites
 
 Install these before running the apps locally:
 
@@ -171,7 +171,7 @@ Install these before running the apps locally:
 - `pnpm`
 - Docker Desktop or another Docker Compose compatible runtime
 
-## Local Make Targets
+## Local Make targets
 
 The root `Makefile` wraps the common local development flow and includes
 sectioned targets from `makefiles/`.
@@ -219,7 +219,7 @@ checks, the migration-drift check, the database-backed API test suite
 (provisioning the local test database automatically), and the complete
 frontend check.
 
-## Backend Development
+## Develop the backend
 
 Start a Postgres database first. The default `apps/api/.env.example` expects
 Postgres at `localhost:5432`; the bundled Compose database service starts a
@@ -267,7 +267,7 @@ GCS deployments must set `GCP_PROJECT_ID` and the immutable
 account/region suffix reduces the permitted prefix length, which settings
 validation reports before startup.
 
-### Cloud Storage Provisioning
+### Provision cloud storage
 
 Praxis creates one private bucket or container for each workspace.
 Workspace creation queues this work; the first private write or signed upload
@@ -280,10 +280,10 @@ public resource.
 The API and worker must use the same runtime identity and storage configuration.
 Grant that identity only the capabilities used by the selected provider:
 
-| Provider | Required configuration | Runtime identity capabilities |
-|---|---|---|
-| GCS | `GCP_PROJECT_ID`, `GCS_PUBLIC_ASSETS_BUCKET`, `GCS_WORKSPACE_BUCKET_LOCATION` | Get, create, and update buckets; create, read, copy, and delete objects. For signed URLs with Cloud Run or other metadata-server credentials, enable the IAM Service Account Credentials API and grant `iam.serviceAccounts.signBlob` on the runtime service account. |
-| S3 | `S3_PUBLIC_ASSETS_BUCKET`, `AWS_ACCOUNT_ID`, `AWS_REGION`, `PUBLIC_ASSETS_BASE_URL` | Create and inspect buckets; set public-access block, encryption, ownership, versioning, policy, and tags; read, write, copy, and delete objects. Account-regional workspace buckets are unsupported in `me-south-1` and `me-central-1`. |
+| Provider   | Required configuration                                                                                                                        | Runtime identity capabilities                                                                                                                                                                                                                                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GCS        | `GCP_PROJECT_ID`, `GCS_PUBLIC_ASSETS_BUCKET`, `GCS_WORKSPACE_BUCKET_LOCATION`                                                                 | Get, create, and update buckets; create, read, copy, and delete objects. For signed URLs with Cloud Run or other metadata-server credentials, enable the IAM Service Account Credentials API and grant `iam.serviceAccounts.signBlob` on the runtime service account.                                                        |
+| S3         | `S3_PUBLIC_ASSETS_BUCKET`, `AWS_ACCOUNT_ID`, `AWS_REGION`, `PUBLIC_ASSETS_BASE_URL`                                                           | Create and inspect buckets; set public-access block, encryption, ownership, versioning, policy, and tags; read, write, copy, and delete objects. Account-regional workspace buckets are unsupported in `me-south-1` and `me-central-1`.                                                                                      |
 | Azure Blob | `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_PUBLIC_CONTAINER`; optionally `AZURE_STORAGE_ACCOUNT_URL` and `AZURE_MANAGED_IDENTITY_CLIENT_ID` | Create and inspect containers; update metadata and access policy; read, write, copy, and delete blobs. Signed URLs also require `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`; `Storage Blob Data Contributor` plus `Storage Blob Delegator` are suitable built-in-role starting points. |
 
 Plan capacity before adopting bucket-per-workspace storage. S3 accounts default
@@ -322,7 +322,7 @@ Database-backed tests skip cleanly unless `TEST_DATABASE_URL` is set — run
 `make api-test` from the repo root to provision the local test database and
 run the full suite. When you add behavior, add focused tests alongside it.
 
-## Database Migrations
+## Manage database migrations
 
 Alembic has separate migration heads for core tables and app tables.
 
@@ -350,7 +350,7 @@ uv run alembic revision --autogenerate \
   -m "describe app schema change"
 ```
 
-## Frontend Development
+## Develop the frontend
 
 From `apps/web`:
 
@@ -372,7 +372,7 @@ pnpm check
 Vitest unit tests, prettier, knip dead-code detection, dependency-cruiser
 architecture rules, and the production build.
 
-## Docker Compose
+## Use Docker Compose
 
 The root `docker-compose.yml` defines local Postgres, API, worker, and web
 services. Its one-shot `init` service creates missing local configuration, and
@@ -416,21 +416,21 @@ set the login credential through their database administration layer. API and
 worker startup verify that the runtime connection authenticates directly as
 `praxis_app` and that the maintenance connection uses a different role.
 
-Production deployment currently targets cloud infrastructure: outside
+Production deployment targets cloud infrastructure. Outside
 `ENVIRONMENT=local`, Praxis requires cloud-backed storage and a cloud secret
-manager. A production email transport is not implemented yet. Public cloud
-deployment guides are still pending; the Docker quickstart is the supported
-documented installation path for this release.
+manager. A production email transport and public cloud deployment guides are
+pending. The Docker quickstart is the supported installation path for this
+release.
 
-Self-service password reset is not implemented. An instance operator can
+Self-service password reset is pending. An instance operator can
 recover an account through the super-admin password-management route after
 configuring `SUPER_ADMIN_EMAILS`; keep a tested administrative recovery path
 for every production deployment.
 
-## Project Direction
+## Project direction
 
 The core platform is in place, including sandboxed code execution (Code Mode).
-Current work is focused on what agents can do next: user-developed apps that
+Development focuses on expanding what agents can do through user-developed apps that
 live inside Praxis under the same identity, approval, and audit boundaries.
 
 ## Contributing
